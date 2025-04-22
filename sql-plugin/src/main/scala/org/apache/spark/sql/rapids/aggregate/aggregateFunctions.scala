@@ -256,24 +256,24 @@ class CudfMergeM2 extends CudfAggregate {
           withResource(hcv.getChildColumnView(0)) { partialN =>
             withResource(hcv.getChildColumnView(1)) { partialMean =>
               withResource(hcv.getChildColumnView(2)) { partialM2 =>
-                var mergeN: Double = 0
+                var mergeN: Integer = 0
                 var mergeMean: Double = 0.0
                 var mergeM2: Double = 0.0
 
                 for (i <- 0 until partialN.getRowCount.toInt) {
-                  val n = partialN.getDouble(i)
+                  val n = partialN.getInt(i)
                   if (n > 0) {
                     val mean = partialMean.getDouble(i)
                     val m2 = partialM2.getDouble(i)
                     val delta = mean - mergeMean
                     val newN = n + mergeN
-                    mergeM2 += m2 + delta * delta * n * mergeN / newN
-                    mergeMean = (mergeMean * mergeN + mean * n) / newN
+                    mergeM2 += m2 + delta * delta * n.toDouble * mergeN.toDouble / newN.toDouble
+                    mergeMean = (mergeMean * mergeN.toDouble + mean * n.toDouble) / newN.toDouble
                     mergeN = newN
                   }
                 }
 
-                withResource(ColumnVector.fromDoubles(mergeN)) { cvMergeN =>
+                withResource(ColumnVector.fromInts(mergeN)) { cvMergeN =>
                   withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
                     withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
                       Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
@@ -292,7 +292,7 @@ class CudfMergeM2 extends CudfAggregate {
   override val name: String = "CudfMergeM2"
   override val dataType: DataType =
     StructType(
-      StructField("n", DoubleType, nullable = false) ::
+      StructField("n", IntegerType, nullable = false) ::
         StructField("avg", DoubleType, nullable = true) ::
         StructField("m2", DoubleType, nullable = true) :: Nil)
 }
@@ -1877,7 +1877,7 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   // In the future, when we make CudfM2 aggregate outputs all the buffers at once,
   // we need to make sure that bufferN is a LongType.
   //
-  // Note that our avg and m2 outputs are nullable while Spark's
+  // Note that avg and m2 output from libcudf's M2 aggregate are nullable while Spark's
   // corresponding buffers require them to be non-nullable.
   // As such, we need to convert those nulls into Double(0.0) in the postUpdate step.
   // This will not affect the outcome of the merge step.
@@ -1898,9 +1898,16 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
     bufferN :: bufferAvg :: bufferM2 :: Nil
 
   // Before merging we have 3 columns and we need to combine them into a structs column.
+  // This is because we are going to do the merging using libcudf's native MERGE_M2 aggregate,
+  // which only accepts one column in the input.
+  //
+  // We cast `n` to be an Integer, as that's what MERGE_M2 expects. Note that Spark keeps
+  // `n` as Double thus we also need to cast `n` back to Double after merging.
+  // In the future, we need to rewrite CudfMergeM2 such that it accepts `n` in Double type and
+  // also output `n` in Double type.
   override lazy val preMerge: Seq[Expression] = {
     val childrenWithNames =
-      GpuLiteral("n", StringType) :: bufferN ::
+      GpuLiteral("n", StringType) :: GpuCast(bufferN, IntegerType) ::
         GpuLiteral("avg", StringType) :: bufferAvg ::
         GpuLiteral("m2", StringType) :: bufferM2 :: Nil
     GpuCreateNamedStruct(childrenWithNames) :: Nil
@@ -1910,12 +1917,14 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeM2)
 
   // The postMerge step needs to extract 3 columns (n, avg, m2) from the structs column
-  // output from the merge step.
+  // output from the merge step. Note that the first one is casted to Double to match with Spark.
+  //
+  // In the future, when rewriting CudfMergeM2, we will need to output it in Double type.
   override lazy val postMerge: Seq[Expression] = Seq(
-    GpuGetStructField(mergeM2.attr, 0),
-    GpuCoalesce(Seq(GpuGetStructField(mergeM2.attr, 1),
+    GpuCast(GpuGetStructField(mergeM2.attr, 0), DoubleType),
+    GpuCoalesce(Seq(GpuCast(GpuGetStructField(mergeM2.attr, 1), DoubleType),
       GpuLiteral(0.0, DoubleType))),
-    GpuCoalesce(Seq(GpuGetStructField(mergeM2.attr, 2),
+    GpuCoalesce(Seq(GpuCast(GpuGetStructField(mergeM2.attr, 2), DoubleType),
       GpuLiteral(0.0, DoubleType))))
 }
 
