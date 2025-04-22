@@ -137,7 +137,7 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
 
   override lazy val allMetrics: Map[String, GpuMetric] = {
     val mapBuilder = Map.newBuilder[String, GpuMetric]
-    mapBuilder += "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "TotalTime")
+    mapBuilder += SCAN_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, "TotalTime")
     // Add common embedded metrics
     hybridCommonMetrics.foreach { case (key, generator) =>
       mapBuilder += key -> generator()
@@ -161,15 +161,15 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val scanTime = gpuLongMetric("scanTime")
+    val scanTime = gpuLongMetric(SCAN_TIME)
     inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
         override def hasNext: Boolean = {
-          val startNs = System.nanoTime()
-          val hasNext = batches.hasNext
-          scanTime += NANOSECONDS.toMillis(System.nanoTime() - startNs)
-          hasNext
+          scanTime.ns {
+            val hasNext = batches.hasNext
+            hasNext
+          }
         }
 
         override def next(): ColumnarBatch = {

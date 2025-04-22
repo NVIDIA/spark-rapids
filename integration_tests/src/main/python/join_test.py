@@ -337,6 +337,36 @@ def test_hash_join_side_is_build_side_asymmetric(data_gen, join_type, kudo_enabl
     }
     hash_join_side_is_build_side(data_gen, join_type, confs)
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', all_asymmetric_sized_join_types, ids=idfn)
+def test_hash_join_side_is_build_side_basic(join_type):
+    def _do_join(spark):
+        left = [
+            (1, ("Alice",)),
+            (2, ("Bob",)),
+            (3, None),
+            (4, (None,)),
+        ]
+        right = [
+            (11, ("Alice",)),
+            (33, None),
+            (333, None),
+            (44, (None,)),
+        ]
+        schema = StructType([
+            StructField("id", IntegerType()),
+            StructField("name", StructType([
+                StructField("value", StringType())]))])
+        left = spark.createDataFrame(left, schema)
+        right = spark.createDataFrame(right, schema)
+        if (join_type == "LeftOuter"):
+            return left.hint("SHUFFLE_HASH").join(right, "name", join_type).select(left.id, left.name, right.id, right.name)
+        elif (join_type == "RightOuter"):
+            return left.join(right.hint("SHUFFLE_HASH"), "name", join_type).select(left.id, left.name, right.id, right.name)
+        else:
+            raise RuntimeError("Only supports left join and right join")
+    assert_gpu_and_cpu_are_equal_collect(_do_join)
+
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)

@@ -178,6 +178,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.And"></a>spark.rapids.sql.expression.And|`and`|Logical AND|true|None|
 <a name="sql.expression.AnsiCast"></a>spark.rapids.sql.expression.AnsiCast| |Convert a column of one type of data into another type|true|None|
 <a name="sql.expression.ArrayContains"></a>spark.rapids.sql.expression.ArrayContains|`array_contains`|Returns a boolean if the array contains the passed in key|true|None|
+<a name="sql.expression.ArrayDistinct"></a>spark.rapids.sql.expression.ArrayDistinct|`array_distinct`|Removes duplicate values from the array|true|None|
 <a name="sql.expression.ArrayExcept"></a>spark.rapids.sql.expression.ArrayExcept|`array_except`|Returns an array of the elements in array1 but not in array2, without duplicates|true|This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+|
 <a name="sql.expression.ArrayExists"></a>spark.rapids.sql.expression.ArrayExists|`exists`|Return true if any element satisfies the predicate LambdaFunction|true|None|
 <a name="sql.expression.ArrayFilter"></a>spark.rapids.sql.expression.ArrayFilter|`filter`|Filter an input array using a given predicate|true|None|
@@ -216,7 +217,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Concat"></a>spark.rapids.sql.expression.Concat|`concat`|List/String concatenate|true|None|
 <a name="sql.expression.ConcatWs"></a>spark.rapids.sql.expression.ConcatWs|`concat_ws`|Concatenates multiple input strings or array of strings into a single string using a given separator|true|None|
 <a name="sql.expression.Contains"></a>spark.rapids.sql.expression.Contains| |Contains|true|None|
-<a name="sql.expression.Conv"></a>spark.rapids.sql.expression.Conv|`conv`|Convert string representing a number from one base to another|false|This is disabled by default because GPU implementation is incomplete. We currently only support from/to_base values of 10 and 16. We fall back on CPU if the signed conversion is signalled via a negative to_base. GPU implementation does not check for an 64-bit signed/unsigned int overflow when performing the conversion to return `FFFFFFFFFFFFFFFF` or `18446744073709551615` or to throw an error in the ANSI mode. It is safe to enable if the overflow is not possible or detected externally. For instance decimal strings not longer than 18 characters / hexadecimal strings not longer than 15 characters disregarding the sign cannot cause an overflow.          |
+<a name="sql.expression.Conv"></a>spark.rapids.sql.expression.Conv|`conv`|Convert string representing a number from one base to another|true|None|
 <a name="sql.expression.Cos"></a>spark.rapids.sql.expression.Cos|`cos`|Cosine|true|None|
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|`cosh`|Hyperbolic cosine|true|None|
 <a name="sql.expression.Cot"></a>spark.rapids.sql.expression.Cot|`cot`|Cotangent|true|None|
