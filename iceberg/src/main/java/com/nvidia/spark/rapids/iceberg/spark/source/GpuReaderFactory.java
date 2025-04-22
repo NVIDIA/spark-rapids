@@ -99,11 +99,10 @@ class GpuReaderFactory implements PartitionReaderFactory {
   public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition partition) {
     if (partition instanceof GpuSparkInputPartition) {
       GpuSparkInputPartition rTask = (GpuSparkInputPartition) partition;
-      scala.Tuple3<Boolean, Boolean, FileFormat> ret = multiFileReadCheck(rTask);
-      boolean canAccelerateRead = ret._1();
-      if (canAccelerateRead) {
-        boolean isMultiThread = ret._2();
-        FileFormat ff = ret._3();
+      FileCheckResult ret = multiFileReadCheck(rTask);
+      if (ret.canAccelerateRead()) {
+        boolean isMultiThread = ret.isMultiThread();
+        FileFormat ff = ret.getFileFormat();
         return createMultiFileBatchReader(rTask, isMultiThread, ff, metrics);
       } else {
         return createBatchReader(rTask, metrics);
@@ -118,6 +117,30 @@ class GpuReaderFactory implements PartitionReaderFactory {
     return true;
   }
 
+  private static class FileCheckResult {
+    private final boolean canAccelerateRead;
+    private final boolean isMultiThread;
+    private final FileFormat fileFormat;
+
+    public FileCheckResult(boolean canAccelerateRead, boolean isMultiThread, FileFormat fileFormat) {
+      this.canAccelerateRead = canAccelerateRead;
+      this.isMultiThread = isMultiThread;
+      this.fileFormat = fileFormat;
+    }
+
+    public boolean canAccelerateRead() {
+      return canAccelerateRead;
+    }
+
+    public boolean isMultiThread() {
+      return isMultiThread;
+    }
+
+    public FileFormat getFileFormat() {
+      return fileFormat;
+    }
+  }
+
   /**
    * Return a tuple as (canAccelerateRead, isMultiThread, fileFormat).
    * - "canAccelerateRead" Whether the input read task can be accelerated by
@@ -126,7 +149,7 @@ class GpuReaderFactory implements PartitionReaderFactory {
    * - "fileFormat" The file format of this combined task. Acceleration requires
    * all the files in a combined task have the same format.
    */
-  private scala.Tuple3<Boolean, Boolean, FileFormat> multiFileReadCheck(GpuSparkInputPartition readTask) {
+  private FileCheckResult multiFileReadCheck(GpuSparkInputPartition readTask) {
     Collection<FileScanTask> scans = readTask.taskGroup()
         .tasks()
         .stream()
@@ -152,6 +175,6 @@ class GpuReaderFactory implements PartitionReaderFactory {
     // Get the final decision for the subtype of the Rapids reader.
     boolean useMultiThread = MultiFileReaderUtils.useMultiThreadReader(
         canUseCoalescing, canUseMultiThread, files, allCloudSchemes);
-    return scala.Tuple3.apply(canAccelerateRead, useMultiThread, ff);
+    return new FileCheckResult(canAccelerateRead, useMultiThread, ff);
   }
 }
