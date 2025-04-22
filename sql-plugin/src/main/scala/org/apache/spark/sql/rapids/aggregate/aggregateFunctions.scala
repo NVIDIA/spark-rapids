@@ -21,6 +21,8 @@ import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, Group
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.jni.CentralMomentHostUDF
+import com.nvidia.spark.rapids.jni.CentralMomentHostUDF.AggregationType
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, TypeUtilsShims}
 import com.nvidia.spark.rapids.window._
 
@@ -242,7 +244,8 @@ class CudfM2 extends CudfAggregate {
       }
     }
 
-  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.M2()
+  override lazy val groupByAggregate: GroupByAggregation =
+    GroupByAggregation.hostUDF(new CentralMomentHostUDF(AggregationType.GroupBy))
 
   override val name: String = "CudfM2"
   override def dataType: DataType = DoubleType
@@ -287,7 +290,8 @@ class CudfMergeM2 extends CudfAggregate {
       }
     }
 
-  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeM2()
+  override lazy val groupByAggregate: GroupByAggregation =
+    GroupByAggregation.hostUDF(new CentralMomentHostUDF(AggregationType.GroupByMerge))
 
   override val name: String = "CudfMergeM2"
   override val dataType: DataType =
@@ -2025,7 +2029,7 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
 }
 
 case class GpuReplaceNullmask(
-    input: Expression, 
+    input: Expression,
     mask: Expression) extends GpuExpression with ShimExpression {
 
   override def dataType: DataType = input.dataType
@@ -2092,7 +2096,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   protected val cudfMaxMinByAggregate: CudfAggregate
 
-  private lazy val bufferOrdering: AttributeReference = 
+  private lazy val bufferOrdering: AttributeReference =
     AttributeReference("ordering", orderingExpr.dataType)()
 
   private lazy val bufferValue: AttributeReference =
@@ -2100,7 +2104,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   // Cudf allows only one column as input, so wrap value and ordering columns by
   // a struct before just going into cuDF.
-  private def createStructExpression(order: Expression, value: Expression): Expression = 
+  private def createStructExpression(order: Expression, value: Expression): Expression =
     GpuReplaceNullmask(
       GpuCreateNamedStruct(Seq(
         GpuLiteral(CudfMaxMinBy.KEY_ORDERING, StringType), order,
