@@ -85,10 +85,6 @@
             <artifactId>RoaringBitmap</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.parquet</groupId>
-            <artifactId>parquet-column</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
@@ -155,30 +151,6 @@
             <plugin>
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
-<!--                  <execution>-->
-<!--                      <id>copy-and-replace</id>-->
-<!--                      <phase>generate-sources</phase>-->
-<!--                      <goals>-->
-<!--                          <goal>run</goal>-->
-<!--                      </goals>-->
-<!--                      <configuration>-->
-<!--                          <target>-->
-<!--                        &lt;!&ndash; Step 1: Copy files to the new package directory &ndash;&gt;-->
-<!--                        <copy todir="${basedir}/src/main/scala/com/nvidia/spark/rapids/parquet/iceberg/shaded"-->
-<!--                              overwrite="true">-->
-<!--                        <fileset dir="${basedir}/src/main/scala/com/nvidia/spark/rapids/parquet">-->
-<!--                            <include name="**/*.scala" />-->
-<!--                        </fileset>-->
-<!--                        </copy>-->
-<!--                        &lt;!&ndash; Step 2: Replace the old package name in copied files &ndash;&gt;-->
-<!--                        <replaceregexp match="package\s+com\.nvidia\.spark\.rapids\.parquet"-->
-<!--                             replace="package com.nvidia.spark.rapids.parquet.iceberg.shaded"-->
-<!--                             flags="g">-->
-<!--                        <fileset dir="${basedir}/src/main/scala/com/nvidia/spark/rapids/parquet/iceberg/shaded" includes="**/*.scala"/>-->
-<!--                        </replaceregexp>-->
-<!--                        </target>-->
-<!--                      </configuration>-->
-<!--                  </execution>-->
                 <execution>
                   <id>copy-notice</id>
                   <goals>
