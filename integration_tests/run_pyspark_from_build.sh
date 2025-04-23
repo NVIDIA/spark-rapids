@@ -54,10 +54,6 @@
 #   - Check for missing dependencies like findspark or xdist.
 #   - Verify that the necessary jars are correctly linked.
 #
-# Contributing:
-#   Contributions should follow the NVIDIA Spark-Rapids project guidelines.
-#   Ensure changes are tested thoroughly to maintain compatibility.
-#
 # ============================================================================
 
 set -ex
