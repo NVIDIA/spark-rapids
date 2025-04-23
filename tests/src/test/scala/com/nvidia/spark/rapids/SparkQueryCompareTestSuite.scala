@@ -2224,7 +2224,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       testName: String,
       df: SparkSession => DataFrame,
       conf: SparkConf = new SparkConf(),
-      repart: Int = 0,
+      repart: Integer = 1,
       sort: Boolean = false,
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
@@ -2263,22 +2263,17 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes(
       testName: String,
       df: SparkSession => DataFrame,
+      repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      repart: Int = 0,
-      sort: Boolean = false,
-      maxFloatDiff: Double = 0.0,
-      incompat: Boolean = false,
-      execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false,
-      assumeCondition: SparkSession => (Boolean, String) = null,
-      skipCanonicalizationCheck: Boolean = false,
-      existClasses: String = null,  // Gpu plan should contain the `existClasses`
-      nonExistClasses: String = null)
-      (testFun: DataFrame => DataFrame): Unit = {
+      skipCanonicalizationCheck: Boolean = false)(testFun: DataFrame => DataFrame): Unit = {
 
-    testSparkResultsAreEqualWithAnsiModes(testName, df, conf, repart, sort, maxFloatDiff, incompat,
-    execsAllowedNonGpu, sortBeforeRepart, assumeCondition, skipCanonicalizationCheck, existClasses,
-    nonExistClasses)(testFun)
+    testSparkResultsAreEqualWithAnsiModes(testName, df,
+      conf=conf,
+      repart=repart,
+      sort=true,
+      sortBeforeRepart = sortBeforeRepart,
+      skipCanonicalizationCheck = skipCanonicalizationCheck)(testFun)
   }
 
   def testWithAnsiModes(testName: String)(testFun: => Unit): Unit = {
