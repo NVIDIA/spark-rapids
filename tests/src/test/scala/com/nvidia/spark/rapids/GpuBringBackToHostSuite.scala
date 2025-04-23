@@ -41,7 +41,7 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
   }
 
   testWithAnsiModes("doExecuteColumnar returns a columnar batch with a valid numRows") {
-    withGpuSparkSession(spark => {
+    withGpuSparkSession { spark =>
       val data = mixedDf(spark, numSlices = 1)
       val plan = GpuBringBackToHost(
         GpuRowToColumnarExec(data.queryExecution.sparkPlan, RequireSingleBatch))
@@ -56,6 +56,6 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
       assert(batch.numCols() == data.columns.length)
       assert(batch.numRows() == data.count())
       assert(!batches.hasNext)
-    })
+    }
   }
 }
