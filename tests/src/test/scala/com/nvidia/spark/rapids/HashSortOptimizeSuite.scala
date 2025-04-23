@@ -152,10 +152,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
     }, conf)
   }
 
-  test("should not insert sort because of missing GpuDataWritingCommandExec") {
-    // HashAggregate operator not supported in ANSI mode.
-    // https://github.com/NVIDIA/spark-rapids/issues/5114
-    assumePriorToSpark400
+  testWithAnsiModes("should not insert sort because of missing GpuDataWritingCommandExec") {
     val conf = sparkConf.clone()
     withGpuSparkSession(spark => {
       buildDataFrame1(spark).createOrReplaceTempView("t1")

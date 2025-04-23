@@ -40,10 +40,7 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
     assertResult(numRows)(rowId)
   }
 
-  test("doExecuteColumnar returns a columnar batch with a valid numRows") {
-    // HashAggregate operator not supported in ANSI mode.
-    // https://github.com/NVIDIA/spark-rapids/issues/5114
-    assumePriorToSpark400
+  testWithAnsiModes("doExecuteColumnar returns a columnar batch with a valid numRows") {
     withGpuSparkSession(spark => {
       val data = mixedDf(spark, numSlices = 1)
       val plan = GpuBringBackToHost(

@@ -31,14 +31,9 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("pi()")
   }
 
-  // Aggregate operator not supported in ANSI mode.
-  // https://github.com/NVIDIA/spark-rapids/issues/5114
-  testSparkResultsAreEqual("Test md5", mixedDfWithNulls) {
-    frame => {
-      assumePriorToSpark400
-      frame.selectExpr("md5(strings)", "md5(cast(ints as string))",
-        "md5(cast(longs as binary))")
-    }
+  testSparkResultsAreEqualWithAnsiModes("Test md5", mixedDfWithNulls) {
+    frame => frame.selectExpr("md5(strings)", "md5(cast(ints as string))",
+      "md5(cast(longs as binary))")
   }
 
   testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls) {

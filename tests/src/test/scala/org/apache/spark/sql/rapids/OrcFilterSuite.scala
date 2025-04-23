@@ -38,12 +38,9 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     assert(0 < actual && actual < numRows)
   }
 
-  test("Support for pushing down filters for boolean types gpu write gpu read") {
+  testWithAnsiModes("Support for pushing down filters for boolean types gpu write gpu read") {
     withTempPath { file =>
       var gpuPlans: Array[SparkPlan] = Array.empty
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       val testConf = new SparkConf().set(
         RapidsConf.TEST_ALLOWED_NONGPU.key,
         "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
@@ -85,27 +82,21 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("Support for pushing down filters for boolean types cpu write gpu read") {
+  testWithAnsiModes("Support for pushing down filters for boolean types cpu write gpu read") {
     withTempPath { file =>
       withCpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(i == 2))
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
       })
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       withGpuSparkSession(spark => {
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
       })
     }
   }
 
-  test("Support for pushing down filters for decimal types gpu write gpu read") {
+  testWithAnsiModes("Support for pushing down filters for decimal types gpu write gpu read") {
     withTempPath { file =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       withGpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
         val df = spark.createDataFrame(data).toDF("a")
@@ -128,23 +119,20 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("Support for pushing down filters for decimal types cpu write gpu read") {
+  testWithAnsiModes("Support for pushing down filters for decimal types cpu write gpu read") {
     withTempPath { file =>
       withCpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
       })
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       withGpuSparkSession(spark => {
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
       })
     }
   }
 
-  test("Support for pushing down filters for timestamp types cpu write gpu read") {
+  testWithAnsiModes("Support for pushing down filters for timestamp types cpu write gpu read") {
     withTempPath { file =>
       withCpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"
@@ -155,9 +143,6 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
       })
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       withGpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, s"a == '$timeString'")
@@ -183,11 +168,8 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("Support for pushing down filters for timestamp types gpu write gpu read") {
+  testWithAnsiModes("Support for pushing down filters for timestamp types gpu write gpu read") {
     withTempPath { file =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       withGpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"
         val data = (0 until 10).map { i =>

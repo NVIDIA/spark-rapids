@@ -25,11 +25,8 @@ import org.apache.spark.sql.{functions, DataFrame, SparkSession}
 import org.apache.spark.sql.internal.SQLConf
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
-  test("Aggregate") {
+  testWithAnsiModes("Aggregate") {
     doTestReplay("10[*]") { spark =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -37,11 +34,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Broadcast join") {
+  testWithAnsiModes("Broadcast join") {
     doTestReplay("32[*]") { spark =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -56,7 +50,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Subquery Filter") {
+  testWithAnsiModes("Subquery Filter") {
     doTestReplay("13[*]") { spark =>
       spark.range(0, 100, 1, 10)
         .createTempView("df1")
@@ -68,11 +62,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Subquery in projection") {
+  testWithAnsiModes("Subquery in projection") {
     doTestReplay("11[*]") { spark =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       spark.sql(
         """
           |CREATE TEMPORARY VIEW t1
@@ -89,11 +80,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("No broadcast join") {
+  testWithAnsiModes("No broadcast join") {
     doTestReplay("30[*]") { spark =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -110,11 +98,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("AQE broadcast") {
+  testWithAnsiModes("AQE broadcast") {
     doTestReplay("93[*]") { spark =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -131,11 +116,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("AQE Exchange") {
+  testWithAnsiModes("AQE Exchange") {
     doTestReplay("28[*]") { spark =>
-      // Aggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       spark.range(0, 1000, 1, 100)
@@ -145,7 +127,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Partition only") {
+  testWithAnsiModes("Partition only") {
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[0 2]")
@@ -166,7 +148,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Non-empty lore dump path") {
+  testWithAnsiModes("Non-empty lore dump path") {
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[*]")
@@ -186,7 +168,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
+  testWithAnsiModes("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
     doTestReplay("56[*]") { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
@@ -202,7 +184,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("GpuShuffledSymmetricHashJoin with in Kudo mode") {
+  testWithAnsiModes("GpuShuffledSymmetricHashJoin with in Kudo mode") {
     doTestReplay("56[*]") { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")

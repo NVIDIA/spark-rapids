@@ -30,25 +30,11 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
   }
 
-  testSparkResultsAreEqual("Test ORC count chunked by rows", fileSplitsOrc,
-    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048")) {
-    frameCount => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
-      frameCount
-    }
-  }
+  testSparkResultsAreEqualWithAnsiModes("Test ORC count chunked by rows", fileSplitsOrc,
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048"))(frameCount)
 
-  testSparkResultsAreEqual("Test ORC count chunked by bytes", fileSplitsOrc,
-    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "100")) {
-    frameCount => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
-      frameCount
-    }
-  }
+  testSparkResultsAreEqualWithAnsiModes("Test ORC count chunked by bytes", fileSplitsOrc,
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "100"))(frameCount)
 
   testSparkResultsAreEqual("schema-can-prune dis-order read schema",
     frameFromOrcWithSchema("schema-can-prune.orc", StructType(Seq(

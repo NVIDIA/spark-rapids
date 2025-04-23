@@ -262,10 +262,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("SPARK-31026: Parquet predicate pushdown for fields having dots in the names") {
-    // Aggregate operator not supported in ANSI mode.
-    // https://github.com/NVIDIA/spark-rapids/issues/5114
-    assumePriorToSpark400
+  testWithAnsiModes("SPARK-31026: Parquet predicate pushdown for fields having dots in the names") {
     withCpuSparkSession(spark => {
       import spark.implicits._
       val df1 = Seq(Some(1), None).toDF("col.dots")

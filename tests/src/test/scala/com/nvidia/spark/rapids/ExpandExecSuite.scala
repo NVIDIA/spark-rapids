@@ -21,12 +21,9 @@ import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 
 class ExpandExecSuite extends SparkQueryCompareTestSuite {
 
-  IGNORE_ORDER_testSparkResultsAreEqual("group with aggregates",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("group with aggregates",
     createDataFrame, repart = 2) {
     frame => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       import frame.sparkSession.implicits._
       frame.groupBy($"key")
         .agg(
@@ -38,78 +35,59 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("cube with count",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("cube with count",
     createDataFrame, repart = 2) {
     frame => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       import frame.sparkSession.implicits._
       frame.cube($"key", $"cat1", $"cat2").count()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("cube with count distinct",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("cube with count distinct",
     createDataFrame, repart = 2) {
     frame => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat2")
         .agg(countDistinct($"cat1").as("cat1_cnt"))
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("cube with sum",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("cube with sum",
     createDataFrame, repart = 2) {
     frame => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       import frame.sparkSession.implicits._
       frame.cube($"key", $"cat1", $"cat2").sum()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("rollup with count",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("rollup with count",
     createDataFrame, repart = 2) {
     frame => {
-      assumePriorToSpark400
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat1", $"cat2").count()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("rollup with count distinct",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("rollup with count distinct",
     createDataFrame, repart = 2) {
     frame => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat2")
         .agg(countDistinct($"cat1").as("cat1_cnt"))
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("rollup with sum",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("rollup with sum",
     createDataFrame, repart = 2) {
     frame => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat1", $"cat2").sum()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("sql with grouping expressions",
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("sql with grouping expressions",
     createDataFrame, repart = 2) {
     frame => {
-      // HashAggregate operator not supported in ANSI mode.
-      // https://github.com/NVIDIA/spark-rapids/issues/5114
-      assumePriorToSpark400
       frame.createOrReplaceTempView("t0")
       val sql =
         """SELECT key, cat1, cat2, COUNT(DISTINCT value)
@@ -120,10 +98,9 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("sql with different shape grouping expressions",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("sql with different shape " +
+    "grouping expressions", createDataFrame, repart = 2) {
     frame => {
-      assumePriorToSpark400
       frame.createOrReplaceTempView("t0")
       val sql =
         """SELECT key, cat1, cat2, COUNT(DISTINCT value)
