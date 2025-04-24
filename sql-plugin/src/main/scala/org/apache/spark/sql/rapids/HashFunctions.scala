@@ -16,8 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
+import java.util.Optional
+
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.Hash
@@ -54,9 +56,16 @@ case class GpuSha1(child: Expression)
     withResource(HashUtils.normalizeInput(input.getBase)) { normalized =>
       // at the moment sha1 on CuDF doesn't support lists, so have to translate
       // BinaryType into StringType first before we operate on it
-      withResource(GpuCast.castToString(normalized, BinaryType, CastOptions.DEFAULT_CAST_OPTIONS))
-      { stringCV => 
+      val stringCV = withResource(normalized.getChildColumnView(0)) { dataCol =>
+        withResource(new ColumnView(DType.STRING, normalized.getRowCount,
+          Optional.of[java.lang.Long](normalized.getNullCount),
+          dataCol.getData, normalized.getValid, normalized.getOffsets)) { cv =>
+          cv.copyToColumnVector()
+        }
+      }
+      withResource(stringCV) { stringCV => 
         withResource(ColumnVector.sha1Hash(stringCV)) { fullResult =>
+          // necessary because cudf treats nulls as "" for hashing
           fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, stringCV)
         }
       }
