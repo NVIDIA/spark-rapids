@@ -40,6 +40,9 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  * files. So after reading from parquet, we need to deal with missing column, type promotion,
  * etc. And these are all handled in [[GpuParquetReaderPostProcessor]].
  *
+ * For details of schema evolution, please refer to
+ * [[https://iceberg.apache.org/spec/#schema-evolution iceberg spec]].
+ *
  * @param fileReadSchema Schema passed to actual parquet reader.
  * @param idToConstant   Constant fields.
  * @param expectedSchema Iceberg schema required by reader.
