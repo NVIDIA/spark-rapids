@@ -622,6 +622,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -669,6 +670,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -692,6 +694,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -716,6 +719,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -740,6 +744,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
