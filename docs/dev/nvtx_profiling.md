@@ -53,7 +53,7 @@ try {
   nvtxRange.close()
 }
 ```
-See [nvtx_ranges.md](https://nvidia.github.io/spark-rapids/docs/dev/nvtx_ranges.html) for documentation on existing ranges and registering a new range.
+See [nvtx_ranges.md](nvtx_ranges.md) for documentation on existing ranges and registering a new range.
 
 In C++ land:
 ```

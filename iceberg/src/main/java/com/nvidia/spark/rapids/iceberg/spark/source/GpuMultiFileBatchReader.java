@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import com.nvidia.spark.rapids.*;
+import com.nvidia.spark.rapids.parquet.*;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
