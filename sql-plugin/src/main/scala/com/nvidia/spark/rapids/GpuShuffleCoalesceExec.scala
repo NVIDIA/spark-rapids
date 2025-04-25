@@ -26,6 +26,7 @@ import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
+import com.nvidia.spark.rapids.GpuShuffleCoalesceUtils.bufferExecutor
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -117,6 +118,10 @@ object CoalesceReadOption {
 }
 
 object GpuShuffleCoalesceUtils {
+
+  val bufferExecutor =
+    TrampolineUtil.newDaemonCachedThreadPool("bufferNextBatch", 20)
+
   /**
    * Return an iterator that will pull in batches from the input iterator,
    * concatenate them up to the "targetSize" and move the concatenated result
@@ -322,8 +327,6 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     onTaskCompletion(tc)(close())
   }
 
-  private val bufferExecutor =
-    TrampolineUtil.newDaemonSingleThreadExecutor("bufferNextBatch")
   private var bufferingFuture : Future[_] = null
 
   protected def tableOperator: SerializedTableOperator[T]
