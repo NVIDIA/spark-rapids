@@ -53,21 +53,22 @@ case class GpuSha1(child: Expression)
   override def dataType: DataType = StringType
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(HashUtils.normalizeInput(input.getBase)) { normalized =>
+    val normalizedStringCV = withResource(HashUtils.normalizeInput(input.getBase))
+    { normalized =>
       // at the moment sha1 on CuDF doesn't support lists, so have to translate
       // BinaryType into StringType first before we operate on it
-      val stringCV = withResource(normalized.getChildColumnView(0)) { dataCol =>
+      withResource(normalized.getChildColumnView(0)) { dataCol =>
         withResource(new ColumnView(DType.STRING, normalized.getRowCount,
           Optional.of[java.lang.Long](normalized.getNullCount),
           dataCol.getData, normalized.getValid, normalized.getOffsets)) { cv =>
           cv.copyToColumnVector()
         }
       }
-      withResource(stringCV) { stringCV => 
-        withResource(ColumnVector.sha1Hash(stringCV)) { fullResult =>
-          // necessary because cudf treats nulls as "" for hashing
-          fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, stringCV)
-        }
+    }
+    withResource(normalizedStringCV) { normalizedStringCV => 
+      withResource(ColumnVector.sha1Hash(normalizedStringCV)) { fullResult =>
+        // necessary because cudf treats nulls as "" for hashing
+        fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, normalizedStringCV)
       }
     }
   }
