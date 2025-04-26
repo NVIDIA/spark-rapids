@@ -55,6 +55,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
                             <artifactSet>
                                 <includes>
                                     <include>com.nvidia:rapids-4-spark-sql_${scala.binary.version}:*</include>
