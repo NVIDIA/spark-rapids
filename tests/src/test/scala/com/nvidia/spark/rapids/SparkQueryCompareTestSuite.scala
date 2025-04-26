@@ -59,6 +59,19 @@ object TestResourceFinder {
   }
 }
 
+object TestAnsiConfig {
+  // Read system property for ansi mode once at initialization
+  val ansiEnabled: Boolean = Option(System.getProperty("spark.sql.ansi.enabled"))
+    .map(_.toLowerCase)
+    .map {
+      case "true" => true
+      case _ => false
+    }
+    .getOrElse(false)
+    
+}
+
+
 object SparkSessionHolder extends Logging {
 
   private var spark = createSparkSession()
@@ -79,17 +92,19 @@ object SparkSessionHolder extends Logging {
     // Add Locale setting
     Locale.setDefault(Locale.US)
 
+    
+    
+
     val builder = getBuilder()
         .master("local[1]")
         .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
         .config("spark.rapids.sql.test.enabled", "false")
-        .config("spark.sql.ansi.enabled", "false")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
-        .appName("rapids spark plugin integration tests (scala)")
+        .appName("rapids spark plugin integration tests (scala)")     
 
     // comma separated config from command line
     val commandLineVariables = System.getenv("SPARK_CONF")
@@ -154,6 +169,7 @@ object SparkSessionHolder extends Logging {
  */
 trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.withSparkSession
+  import TestAnsiConfig.ansiEnabled
 
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
 

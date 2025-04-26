@@ -171,5 +171,60 @@
                 </dependency>
             </dependencies>
         </profile>
+        <!-- #if scala-2.13 -->
+        <profile>
+            <id>release400</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.scalatest</groupId>
+                        <artifactId>scalatest-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>test</id>
+                                <phase>none</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>test-ansi-off</id>
+                                <configuration>
+                                    <systemProperties>
+                                        <spark.sql.ansi.enabled>false</spark.sql.ansi.enabled>
+                                    </systemProperties>
+                                    <forkMode>once</forkMode>
+                                    <logForkedProcessCommand>true</logForkedProcessCommand>
+                                </configuration>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>test-ansi-on</id>
+                                <configuration>
+                                    <systemProperties>
+                                        <spark.sql.ansi.enabled>true</spark.sql.ansi.enabled>
+                                    </systemProperties>
+                                    <forkMode>once</forkMode>
+                                    <logForkedProcessCommand>true</logForkedProcessCommand>
+                                </configuration>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                            </execution>                            
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- #endif scala-2.13 -->
+
     </profiles>
 </project>
