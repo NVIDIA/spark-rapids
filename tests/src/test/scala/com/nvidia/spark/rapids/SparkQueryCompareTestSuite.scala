@@ -59,19 +59,6 @@ object TestResourceFinder {
   }
 }
 
-object TestAnsiConfig {
-  // Read system property for ansi mode once at initialization
-  val ansiEnabled: Boolean = Option(System.getProperty("spark.sql.ansi.enabled"))
-    .map(_.toLowerCase)
-    .map {
-      case "true" => true
-      case _ => false
-    }
-    .getOrElse(false)
-    
-}
-
-
 object SparkSessionHolder extends Logging {
 
   private var spark = createSparkSession()
@@ -169,8 +156,6 @@ object SparkSessionHolder extends Logging {
  */
 trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.withSparkSession
-  import TestAnsiConfig.ansiEnabled
-
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
 
   override def afterAll(): Unit = {
@@ -2376,4 +2361,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def isCdh330: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 0) == 0
 
   def isCdh332: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 2) == 0
+
+  // SparkSession => (Boolean, String)
+
+  def ignoreAnsi(issue: String)(spark: SparkSession): (Boolean, String) = {
+    (!SQLConf.get.ansiEnabled, s"ANSI mode is not supported in this test: ${issue}")
+  }
 }
