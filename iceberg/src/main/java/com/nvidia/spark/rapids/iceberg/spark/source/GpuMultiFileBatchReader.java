@@ -315,7 +315,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
             fileReadSchema, filteredRowGroups, caseSensitive);
         StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
-            updatedSchema.asStruct(), fileReadSchema, new GpuParquetReader.SparkSchemaConverter());
+            updatedSchema.asStruct(), fileReadSchema, new SparkSchemaConverter());
 
         // cache the updated constants
         Map<Integer, ?> updatedConstants =
