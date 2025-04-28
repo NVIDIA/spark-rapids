@@ -1604,6 +1604,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("In non-final aggregation stages, if the previous pass has a row reduction ratio " +
         "greater than this value, the next aggregation pass will be skipped." +
         "Setting this to 1 essentially disables this feature.")
+    .internal()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The ratio value must be in [0, 1].")
     .createWithDefault(0.85)
