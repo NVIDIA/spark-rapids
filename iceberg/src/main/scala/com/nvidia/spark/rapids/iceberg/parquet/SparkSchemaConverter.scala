@@ -82,9 +82,17 @@ class SparkSchemaConverter extends TypeWithSchemaVisitor[DataType] {
     // GpuIcebergReader.
     iPrimitive.typeId match {
       case TypeID.LONG =>
-        if (primitiveType.getPrimitiveTypeName == PrimitiveType.PrimitiveTypeName.INT32) IntegerType else LongType
+        if (primitiveType.getPrimitiveTypeName == PrimitiveType.PrimitiveTypeName.INT32) {
+          IntegerType
+        } else {
+          LongType
+        }
       case TypeID.DOUBLE =>
-        if (primitiveType.getPrimitiveTypeName == PrimitiveType.PrimitiveTypeName.FLOAT) FloatType else DoubleType
+        if (primitiveType.getPrimitiveTypeName == PrimitiveType.PrimitiveTypeName.FLOAT) {
+          FloatType
+        } else {
+          DoubleType
+        }
       case TypeID.DECIMAL =>
         val metadata = primitiveType.getDecimalMetadata
         DecimalType(metadata.getPrecision, metadata.getScale)
