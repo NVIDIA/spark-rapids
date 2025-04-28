@@ -947,13 +947,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
-    .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
-      "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
-      "documentation for more details.")
-    .booleanConf
-    .createWithDefault(false)
-
   val HAS_EXTENDED_YEAR_VALUES = conf("spark.rapids.sql.hasExtendedYearValues")
       .doc("Spark 3.2.0+ extended parsing of years in dates and " +
           "timestamps to support the full range of possible values. Prior " +
@@ -3003,8 +2996,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isFloatFormatNumberEnabled: Boolean = get(ENABLE_FLOAT_FORMAT_NUMBER)
-
-  lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
 
   lazy val hasExtendedYearValues: Boolean = get(HAS_EXTENDED_YEAR_VALUES)
 
