@@ -22,7 +22,6 @@ import java.util.{ArrayList => JArrayList, List => JList}
 import scala.annotation.nowarn
 
 import org.apache.iceberg.parquet.TypeWithSchemaVisitor
-import org.apache.iceberg.relocated.com.google.common.base.Preconditions
 import org.apache.iceberg.relocated.com.google.common.collect.Lists
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{GroupType, MessageType, PrimitiveType, Type => ParquetType}
 import org.apache.iceberg.spark.SparkSchemaUtil
