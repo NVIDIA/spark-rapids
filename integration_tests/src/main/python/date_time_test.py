@@ -33,7 +33,7 @@ last_supported_tz_time = datetime(2200, 12, 30, 23, 59, 59, 999999, tzinfo=timez
 
 fixed_offset_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
 variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
-fixed_offset_timezones_iana = ["Pacific/Pitcairn", "Etc/GMT-0", "Etc/GMT+0", "Asia/Bangkok", "GMT", "MST"]
+fixed_offset_timezones_iana = ["Pacific/Pitcairn", "Etc/GMT-0", "Etc/GMT+0", "Asia/Bangkok", "GMT", "MST", "Asia/Calcutta"]
 variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "America/Halifax", "America/Los_Angeles", "America/New_York", "America/Chicago", "Asia/Kolkata", "Australia/Adelaide", "Pacific/Chatham", "Australia/Lord_Howe"]
 all_tzs = pytz.all_timezones
 all_tzs.remove('ROC')
