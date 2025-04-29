@@ -38,16 +38,21 @@ fi
 
 # Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
 export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
+# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
+PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+[[ $(printf "%s\n" "3.9" "$PYTHON_VERSION" | sort -V | head -n1) = "3.9" ]] && IS_PY39_OR_LATER=1 || IS_PY39_OR_LATER=0
 # Install if python pip does not exist.
 if [ -z "$($PYSPARK_PYTHON -m pip --version || true)" ]; then
-    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-        $PYSPARK_PYTHON get-pip.py && rm get-pip.py
+    if [ "$IS_PY39_OR_LATER" == 1 ]; then
+        curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+    else
+        curl https://bootstrap.pypa.io/pip/$PYTHON_VERSION/get-pip.py -o get-pip.py
+    fi
+    $PYSPARK_PYTHON get-pip.py && rm get-pip.py
 fi
 
-# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 # Set the path of python site-packages, and install packages here.
-PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
+PYTHON_SITE_PACKAGES="$HOME/.local/lib/python${PYTHON_VERSION}/site-packages"
 # Use "python -m pip install" to make sure pip matches with python.
 $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
