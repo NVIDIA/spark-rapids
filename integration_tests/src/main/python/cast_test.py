@@ -1074,6 +1074,9 @@ def test_cast_string_to_timestamp_invalid():
 @pytest.mark.parametrize('pattern',
                          [
                              pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}',       id='yyyy-mm-dd'),
+                             pytest.param(r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss, ts < 2200'), # will use GPU
+                             pytest.param(r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} CTT', id='yyyy-mm-dd hh:mm:ss, ts < 2200, CTT'), # will use GPU
+                             pytest.param(r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST', id='yyyy-mm-dd hh:mm:ss, ts < 2200, PST'), # will use GPU
                              pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss'),
                              pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-ddThh:mm:ss'),
                              pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-dd hh:mm:ss'),
