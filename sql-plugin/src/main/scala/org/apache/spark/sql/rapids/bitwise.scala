@@ -158,3 +158,13 @@ case class GpuBitwiseNot(child: Expression) extends CudfUnaryExpression with Exp
 
   override def toString: String = s"~${child.sql}"
 }
+
+case class GpuBitwiseCount(child: Expression) extends CudfUnaryExpression with ExpectsInputTypes {
+  override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegralType, BooleanType))
+
+  override def unaryOp: UnaryOp = UnaryOp.BIT_COUNT
+
+  override def dataType: DataType = IntegerType
+
+  override def toString: String = s"bit_count(${child.sql})"
+}
