@@ -117,11 +117,11 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
 
   private def doProcessPrimitive(fieldType: Type.PrimitiveType): GpuColumnVector = {
     val curFieldId = currentField.fieldId
-    val `type` = SparkSchemaUtil.convert(fieldType)
+    val sparkType = SparkSchemaUtil.convert(fieldType)
     // need to check for key presence since associated value could be null
     if (processor.idToConstant.containsKey(curFieldId)) {
-      withResource(GpuScalar.from(processor.idToConstant.get(curFieldId), `type`)) { scalar =>
-        return GpuColumnVector.from(scalar, batch.numRows, `type`)
+      withResource(GpuScalar.from(processor.idToConstant.get(curFieldId), sparkType)) { scalar =>
+        return GpuColumnVector.from(scalar, batch.numRows, sparkType)
       }
     }
     if (curFieldId == MetadataColumns.ROW_POSITION.fieldId) {
@@ -138,7 +138,7 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
       }
     }
     if (currentField.isOptional) {
-      return GpuColumnVector.fromNull(batch.numRows, `type`)
+      return GpuColumnVector.fromNull(batch.numRows, sparkType)
     }
 
     throw new IllegalArgumentException("Missing required field: " + currentField.fieldId)
@@ -152,8 +152,8 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
 object GpuParquetReaderPostProcessor {
   private[parquet] type HandlerResult = Either[ColumnarBatch, GpuColumnVector]
 
-  private[parquet] def doUpCastIfNeeded(oldColumn: GpuColumnVector, targetType: Type.PrimitiveType)
-  = {
+  private[parquet] def doUpCastIfNeeded(oldColumn: GpuColumnVector,
+      targetType: Type.PrimitiveType): GpuColumnVector = {
     val expectedSparkType = SparkSchemaUtil.convert(targetType)
     if (DataType.equalsStructurally(oldColumn.dataType, expectedSparkType)) {
       oldColumn.incRefCount()
