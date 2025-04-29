@@ -36,7 +36,7 @@ variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "Americ
 fixed_offset_timezones_iana = ["Pacific/Pitcairn", "Etc/GMT-0", "Etc/GMT+0", "Asia/Bangkok", "GMT", "MST", "Asia/Calcutta"]
 variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "America/Halifax", "America/Los_Angeles", "America/New_York", "America/Chicago", "Asia/Kolkata", "Australia/Adelaide", "Pacific/Chatham", "Australia/Lord_Howe"]
 all_tzs = pytz.all_timezones
-all_tzs.remove('ROC')
+all_tzs.remove('ROC') # remove ROC because ZoneInfo does not support ROC
 tz_rules_date_gen = DateGen(end=date(2170,12,31))
 tz_rules_date_n_time_gens = [tz_rules_date_gen, TimestampGen(end=last_supported_tz_time)]
 

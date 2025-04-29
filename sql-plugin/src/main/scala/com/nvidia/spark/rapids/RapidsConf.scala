@@ -625,7 +625,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "such as Daylight Savings. For efficiency reasons, timestamp" +
       " transitions are stored on the GPU. We store transitions up to some set year." +
       " Adding more years will use more memory, every 100 years is roughly 1MB.")
-    .commonlyUsed()
+    .startupOnly()
     .integerConf
     .createWithDefault(2200)
 
