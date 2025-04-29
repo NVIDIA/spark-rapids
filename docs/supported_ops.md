@@ -4451,11 +4451,11 @@ are limited.
 <tr>
 <td rowSpan="2">BitwiseCount</td>
 <td rowSpan="2">`bit_count`</td>
-<td rowSpan="2">Returns the number of bits that are set in the argument</td>
+<td rowSpan="2">Returns the number of bits that are set in the input as unsigned 64-bit integer</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
-<td> </td>
+<td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
