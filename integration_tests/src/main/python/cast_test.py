@@ -864,8 +864,8 @@ def test_cast_date_integral_and_fp_ansi_off():
             "cast(a as boolean)", "cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)", "cast(a as float)", "cast(a as double)"),
             conf=ansi_disabled_conf)
 
-def test_cast_string_to_timestamp_invalid():
-    def _gen(spark):
+def test_cast_string_to_timestamp_valid():
+    def _gen_df(spark):
         return spark.createDataFrame(
             [
                 ("2023-11-05T03:04:55 +00:00",),
@@ -946,11 +946,15 @@ def test_cast_string_to_timestamp_invalid():
                 ("T01:02:03 UTC",),
             ],
             'str_col string')
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: _gen(spark).selectExpr("cast(str_col as timestamp)"))
+    def _query(spark):
+        # depends on the timezone info in `GpuTimeZoneDB`, load first
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: _query(spark))
 
-def test_cast_string_to_timestamp_valid():
-    def _gen(spark):
+def test_cast_string_to_timestamp_invalid():
+    def _gen_df(spark):
         return spark.createDataFrame(
             [
                 # empty after strip
@@ -961,7 +965,7 @@ def test_cast_string_to_timestamp_valid():
                 (" -2025-2-29 ",),
 
                 # non-existence tz, result is invalid, but keeps tz type is other
-                (" 2023-11-05 03:04:55 non-existence-tz "),
+                (" 2023-11-05 03:04:55 non-existence-tz ",),
 
                 # invalid month
                 ("-2025-13-1",),
@@ -1059,23 +1063,29 @@ def test_cast_string_to_timestamp_valid():
                 ("-300001-01-01",),
             ],
             'str_col string')
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: _gen(spark).selectExpr("cast(str_col as timestamp)"))
+    def _query(spark):
+        # depends on the timezone info in `GpuTimeZoneDB`, load first
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: _query(spark))
 
 @pytest.mark.parametrize('pattern',
                          [
                              pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}',       id='yyyy-mm-dd'),
-                             pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss'),
-                             pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-ddThh:mm:ss')
+                             pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss'),
+                             pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-ddThh:mm:ss'),
+                             pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-dd hh:mm:ss'),
+                             pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-ddThh:mm:ss')
                          ])
 def test_cast_string_to_timestamp_const_format(pattern):
     gen = [("str_col", StringGen(pattern))]
     def _query(spark):
+        # depends on the timezone info in `GpuTimeZoneDB`, load first
         spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
         return gen_df(spark, gen).selectExpr("cast(str_col as timestamp)")
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
-
-    spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.shutdown()
 
