@@ -1481,9 +1481,10 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
       }),
     expr[BitwiseCount](
-      "Returns the number of bits that are set in the argument",
+      "Returns the number of bits that are set in the input as unsigned 64-bit integer",
       ExprChecks.unaryProject(
-        TypeSig.INT, TypeSig.INT, TypeSig.integral, TypeSig.integral),
+        TypeSig.INT, TypeSig.INT,
+        TypeSig.integral + TypeSig.BOOLEAN, TypeSig.integral + TypeSig.BOOLEAN),
       (a, conf, p, r) => new UnaryExprMeta[BitwiseCount](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseCount(child)
       }),
