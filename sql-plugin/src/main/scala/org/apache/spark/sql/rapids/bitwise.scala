@@ -159,12 +159,21 @@ case class GpuBitwiseNot(child: Expression) extends CudfUnaryExpression with Exp
   override def toString: String = s"~${child.sql}"
 }
 
-case class GpuBitwiseCount(child: Expression) extends CudfUnaryExpression with ExpectsInputTypes {
+case class GpuBitwiseCount(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegralType, BooleanType))
-
-  override def unaryOp: UnaryOp = UnaryOp.BIT_COUNT
 
   override def dataType: DataType = IntegerType
 
   override def toString: String = s"bit_count(${child.sql})"
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    if (input.dataType() == LongType || input.dataType() == BooleanType) {
+      input.getBase.bitCount()
+    } else {
+      // For integer type, Spark always evaluates bit_count as if the input is UINT64.
+      withResource(input.getBase.castTo(DType.UINT64)) { castedInput =>
+        castedInput.bitCount()
+      }
+    }
+  }
 }
