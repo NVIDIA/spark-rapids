@@ -2172,7 +2172,6 @@ class CudfBitXorAgg(override val dataType: DataType) extends CudfAggregate {
 abstract class GpuBitAggregate extends GpuAggregateFunction {
   def child: Expression
 
-
   override def nullable: Boolean = true
 
   override def dataType: DataType = child.dataType
