@@ -59,9 +59,9 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
         // until we fix https://github.com/NVIDIA/spark-rapids/issues/2118 we need to fall
         // back to CPU when parsing two-digit years
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-          "ProjectExec,Alias,Cast,GetTimestamp,UnixTimestamp,Literal,ShuffleExchangeExec")) {
+          "ProjectExec,Alias,Cast,GetTimestamp,UnixTimestamp,Literal,ShuffleExchangeExec"),
+    assumeCondition = ignoreAnsi("TBD GH Issue URL")) {
       df => {
-        assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
         df.withColumn("c1", to_date(col("c0"), "dd/MM/yy"))
       }
   }
@@ -69,18 +69,18 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+      conf = CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("TBD GH Issue URL")) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
     }
   }
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd LEGACY",
     datesAsStrings,
-    conf = LEGACY_TIME_PARSER_POLICY_CONF) {
+    conf = LEGACY_TIME_PARSER_POLICY_CONF,
+    assumeCondition = ignoreAnsi("TBD GH Issue URL")) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
     }
   }
@@ -89,7 +89,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
     conf = LEGACY_TIME_PARSER_POLICY_CONF) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0"), "yyyy/MM/dd"))
     }
   }
@@ -98,7 +97,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       datesAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
     }
   }
@@ -107,7 +105,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
     conf = LEGACY_TIME_PARSER_POLICY_CONF) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
     }
   }
@@ -116,7 +113,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       datesAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0"), "MM/dd/yyyy"))
     }
   }
@@ -125,7 +121,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0"), "yyyy/MM"))
     }
   }
@@ -146,7 +141,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       timestampsAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
     }
   }
@@ -155,7 +149,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       timestampsAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_timestamp(col("c0"), "dd/MM/yyyy"))
     }
   }
@@ -166,7 +159,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
         // All of the dates being parsed are valid for all of the versions of Spark supported.
         .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", to_date(col("c0")))
     }
   }
@@ -175,7 +167,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       timestampsAsStrings,
       CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd"))
     }
   }
@@ -184,7 +175,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     timestampsAsStrings,
     CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", unix_timestamp(col("c0"), "yyyy/MM"))
     }
   }
@@ -193,7 +183,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     timestampsAsStrings,
     CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.createOrReplaceTempView("df")
       val spark = getActiveSession
       spark.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
@@ -204,7 +193,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       timestampsAsStrings,
       CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
     }
   }
@@ -213,7 +201,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     timestampsAsStrings,
     LEGACY_TIME_PARSER_POLICY_CONF) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
     }
   }
@@ -222,7 +209,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     timestampsAsStrings,
     LEGACY_TIME_PARSER_POLICY_CONF) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", unix_timestamp(col("c0"), "yyyy/MM/dd HH:mm:ss"))
     }
   }
@@ -233,7 +219,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,Alias,UnixTimestamp,Literal,ShuffleExchangeExec")) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss.SSS"))
     }
   }
@@ -242,7 +227,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       timestampsAsStrings,
       CORRECTED_TIME_PARSER_POLICY) {
     df => {
-      assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
       df.withColumn("c1", unix_timestamp(col("c0")))
     }
   }
@@ -288,8 +272,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(!planStr.contains(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key))
   }
 
-  test("parsenowNiranjan") {
-    assume(!TestAnsiConfig.ansiEnabled, "ANSI mode is not supported in this test")
+  test("parse now") {  
     def now(spark: SparkSession) = {
       import spark.implicits._
       Seq("now").toDF("c0")
