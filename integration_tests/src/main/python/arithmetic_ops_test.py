@@ -825,7 +825,7 @@ def test_bit_not(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('~a'))
 
 
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', integral_gens + boolean_gens, ids=idfn)
 def test_bit_count(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=10).selectExpr('bit_count(a)'))
