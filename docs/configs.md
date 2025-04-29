@@ -46,6 +46,6 @@ Name | Description | Default Value | Applicable at
 <a name="sql.reader.batchSizeBytes"></a>spark.rapids.sql.reader.batchSizeBytes|Soft limit on the maximum number of bytes the reader reads per batch. The readers will read chunks of data until this limit is met or exceeded. Note that the reader may estimate the number of bytes that will be used on the GPU in some cases based on the schema and number of rows in each batch.|2147483647|Runtime
 <a name="sql.reader.batchSizeRows"></a>spark.rapids.sql.reader.batchSizeRows|Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.|2147483647|Runtime
 <a name="sql.udfCompiler.enabled"></a>spark.rapids.sql.udfCompiler.enabled|When set to true, Scala UDFs will be considered for compilation as Catalyst expressions|false|Runtime
-
+<a name="timezone.transitionCache.maxYear"></a>spark.rapids.timezone.transitionCache.maxYear|Set the max year for timestamp processing for timezones with transitions such as Daylight Savings. For efficiency reasons, timestamp transitions are stored on the GPU. We store transitions up to some set year. Adding more years will use more memory, every 100 years is roughly 1MB.|2200|Runtime
 For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
 
