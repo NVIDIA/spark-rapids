@@ -49,3 +49,4 @@ Name | Description | Default Value | Applicable at
 <a name="timezone.transitionCache.maxYear"></a>spark.rapids.timezone.transitionCache.maxYear|Set the max year for timestamp processing for timezones with transitions such as Daylight Savings. For efficiency reasons, timestamp transitions are stored on the GPU. We store transitions up to some set year. Adding more years will use more memory, every 100 years is roughly 1MB.|2200|Runtime
 
 For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
+
