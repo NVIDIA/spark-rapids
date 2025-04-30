@@ -869,10 +869,10 @@ def test_cast_date_integral_and_fp_ansi_off():
 # Here use df.show() to test ToPrettyString on date column. If fall back occurs, `with_gpu_session` will report error:
 #   Part of the plan is not columnar class
 @allow_non_gpu('CollectLimitExec')
-def test_to_pretty_string_for_date():
+def test_to_pretty_string_for_date_and_test_cast_between_date_string():
     def _query(spark):
         df = spark.createDataFrame([('2025-01-02',), ('2025-01-03',)], 'str_col string').selectExpr(
-            "CAST(str_col as date)")
+            "CAST(str_col as date)", "CAST(CAST(str_col as date) as string)")
         df.explain()
         spark.createDataFrame([('2025-01-02',), ('2025-01-03',)], 'str_col string').selectExpr(
             "CAST(str_col as date)").show()
