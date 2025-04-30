@@ -199,8 +199,6 @@
                                     <environmentVariables>
                                         <SPARK_CONF>spark.sql.ansi.enabled=false</SPARK_CONF>
                                     </environmentVariables>
-                                    <forkMode>once</forkMode>
-                                    <logForkedProcessCommand>true</logForkedProcessCommand>
                                 </configuration>
                                 <goals>
                                     <goal>test</goal>
@@ -212,8 +210,6 @@
                                     <environmentVariables>
                                         <SPARK_CONF>spark.sql.ansi.enabled=true</SPARK_CONF>
                                     </environmentVariables>
-                                    <forkMode>once</forkMode>
-                                    <logForkedProcessCommand>true</logForkedProcessCommand>
                                 </configuration>
                                 <goals>
                                     <goal>test</goal>
