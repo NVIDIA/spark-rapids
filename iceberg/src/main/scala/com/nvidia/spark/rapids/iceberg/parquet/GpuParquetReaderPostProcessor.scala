@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
 import java.util
 import org.apache.iceberg.{MetadataColumns, Schema}
@@ -69,8 +70,10 @@ class GpuParquetReaderPostProcessor(
       s"File read schema field count ${fileReadSchema.getFieldCount} doesn't match expected " +
         s"columnar batch columns ${originalBatch.numCols()}")
 
-    withResource(new ColumnarBatchHandler(this, originalBatch)) { handler =>
-      TypeUtil.visit(expectedSchema, handler).left.get
+    withRetryNoSplit(GpuColumnVector.incRefCounts(originalBatch)) { batch =>
+      withResource(new ColumnarBatchHandler(this, batch)) { handler =>
+        TypeUtil.visit(expectedSchema, handler).left.get
+      }
     }
   }
 }
@@ -80,6 +83,8 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     private val batch: ColumnarBatch
 ) extends TypeUtil.SchemaVisitor[HandlerResult] with AutoCloseable {
   private var currentField: NestedField = _
+  // This is used to hold the column vectors that are created during the travel of the batch, so
+  // that if exception happens, we can close them all at once.
   private val vectorBuffer: ArrayBuffer[GpuColumnVector] = new ArrayBuffer[GpuColumnVector](
     batch.numCols())
 
