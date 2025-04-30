@@ -79,9 +79,6 @@ object SparkSessionHolder extends Logging {
     // Add Locale setting
     Locale.setDefault(Locale.US)
 
-    
-    
-
     val builder = getBuilder()
         .master("local[1]")
         .config("spark.sql.adaptive.enabled", "false")
@@ -91,7 +88,7 @@ object SparkSessionHolder extends Logging {
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
-        .appName("rapids spark plugin integration tests (scala)")     
+        .appName("rapids spark plugin integration tests (scala)")
 
     // comma separated config from command line
     val commandLineVariables = System.getenv("SPARK_CONF")

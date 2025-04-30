@@ -194,7 +194,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-    test("GpuShuffledSymmetricHashJoin with in Kudo mode") {
+  test("GpuShuffledSymmetricHashJoin with in Kudo mode") {
     skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     doTestReplay("56[*]") { spark =>
       // Disable broadcast join, force hash join
