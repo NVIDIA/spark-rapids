@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,19 +21,20 @@
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
-
-import org.apache.hadoop.conf.Configuration
+package com.nvidia.spark.rapids.shims.parquet
 
 import org.apache.spark.sql.internal.SQLConf
 
-object ParquetFieldIdShims {
-  /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
-  def setupParquetFieldIdWriteConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // Parquet field ID support configs are not supported until Spark 3.3
-  }
+object ParquetStringPredShims {
 
-  /** Parquet field ID support configs are not supported until Spark 3.3 */
-  def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = false
+  /** Parquet supports only 'startWith' as a string push-down filter before Spark 3.4.0 */
+  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringStartWith
 }

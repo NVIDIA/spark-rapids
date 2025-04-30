@@ -15,32 +15,31 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
 {"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "350db143"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "400"}
+{"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
+
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.internal.SQLConf
 
-object ParquetStringPredShims {
-
-  /**
-   * Parquet supports more operations as string push-down filters from Spark 3.4.0.
-   * So a new config is introduced.
-   */
-  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringPredicate
+object ParquetTimestampNTZShims {
+  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    // This timestamp_NTZ flag is introduced in Spark 3.4.0.
+    // do nothing
+  }
 }
