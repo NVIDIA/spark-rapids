@@ -24,6 +24,8 @@ sudo apt-get install -y zip
 # Configure spark environment on Databricks
 export SPARK_HOME=$DB_HOME/spark
 
+SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+
 # Workaround to support local spark job
 sudo ln -sf $DB_HOME/jars/ $SPARK_HOME/jars
 
@@ -54,8 +56,6 @@ fi
 # Set the path of python site-packages, and install packages here.
 PYTHON_SITE_PACKAGES="$HOME/.local/lib/python${PYTHON_VERSION}/site-packages"
 # Use "python -m pip install" to make sure pip matches with python.
-$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES -r ${SCRIPTPATH}/../../integration_tests/requirements.txt
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES requests pytest-order
 
-# Install fastparquet (and numpy as its dependency).
-echo -e "fsspec==2025.3.0\nfastparquet==0.8.3;python_version=='3.8'\nfastparquet==2024.5.0;python_version>='3.9'" > fastparquet.txt
-$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES -r fastparquet.txt
