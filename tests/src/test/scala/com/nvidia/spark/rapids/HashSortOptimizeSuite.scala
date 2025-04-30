@@ -152,7 +152,8 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
     }, conf)
   }
 
-  testWithAnsiModes("should not insert sort because of missing GpuDataWritingCommandExec") {
+  test("should not insert sort because of missing GpuDataWritingCommandExec") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     val conf = sparkConf.clone()
     withGpuSparkSession(spark => {
       buildDataFrame1(spark).createOrReplaceTempView("t1")

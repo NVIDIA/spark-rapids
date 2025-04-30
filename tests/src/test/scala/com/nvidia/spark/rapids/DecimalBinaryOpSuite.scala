@@ -122,8 +122,9 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
   }
 
   // https://github.com/NVIDIA/spark-rapids/issues/6076
-  testSparkResultsAreEqualWithAnsiModes("SPARK-24957: average with decimal followed by " +
-      "aggregation returning wrong result", decimals) {
+  testSparkResultsAreEqual("SPARK-24957: average with decimal followed by " +
+      "aggregation returning wrong result", decimals,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     df => df.groupBy("text").agg(avg("number").as("avg_res"))
         .groupBy("text").agg(sum("avg_res"))
   }

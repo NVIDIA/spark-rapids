@@ -40,7 +40,8 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
     assertResult(numRows)(rowId)
   }
 
-  testWithAnsiModes("doExecuteColumnar returns a columnar batch with a valid numRows") {
+  test("doExecuteColumnar returns a columnar batch with a valid numRows") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withGpuSparkSession { spark =>
       val data = mixedDf(spark, numSlices = 1)
       val plan = GpuBringBackToHost(

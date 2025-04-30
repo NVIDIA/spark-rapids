@@ -21,8 +21,9 @@ import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 
 class ExpandExecSuite extends SparkQueryCompareTestSuite {
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("group with aggregates",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("group with aggregates",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       import frame.sparkSession.implicits._
       frame.groupBy($"key")
@@ -35,16 +36,18 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("cube with count",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("cube with count",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       import frame.sparkSession.implicits._
       frame.cube($"key", $"cat1", $"cat2").count()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("cube with count distinct",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("cube with count distinct",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat2")
@@ -52,24 +55,27 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("cube with sum",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("cube with sum",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       import frame.sparkSession.implicits._
       frame.cube($"key", $"cat1", $"cat2").sum()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("rollup with count",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("rollup with count",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat1", $"cat2").count()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("rollup with count distinct",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("rollup with count distinct",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat2")
@@ -77,16 +83,18 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("rollup with sum",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("rollup with sum",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat1", $"cat2").sum()
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("sql with grouping expressions",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("sql with grouping expressions",
+    createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       frame.createOrReplaceTempView("t0")
       val sql =
@@ -98,8 +106,9 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes("sql with different shape " +
-    "grouping expressions", createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("sql with different shape " +
+    "grouping expressions", createDataFrame, repart = 2,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       frame.createOrReplaceTempView("t0")
       val sql =

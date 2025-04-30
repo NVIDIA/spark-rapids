@@ -31,12 +31,14 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("pi()")
   }
 
-  testSparkResultsAreEqualWithAnsiModes("Test md5", mixedDfWithNulls) {
+  testSparkResultsAreEqual("Test md5", mixedDfWithNulls,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("md5(strings)", "md5(cast(ints as string))",
       "md5(cast(longs as binary))")
   }
 
-  testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls) {
+  testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("hash(longs, 1, null, 'stock string', ints, strings)")
   }
 }

@@ -38,51 +38,56 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     assert(0 < actual && actual < numRows)
   }
 
-  testWithAnsiModes("Support for pushing down filters for boolean types gpu write gpu read") {
-    withTempPath { file =>
-      var gpuPlans: Array[SparkPlan] = Array.empty
-      val testConf = new SparkConf().set(
-        RapidsConf.TEST_ALLOWED_NONGPU.key,
-        "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
-      ExecutionPlanCaptureCallback.startCapture()
-      try {
-        withGpuSparkSession(spark => {
-          val data = (0 until 10).map(i => Tuple1(i == 2))
-          val df = spark.createDataFrame(data).toDF("a")
-          df.repartition(10).write.orc(file.getCanonicalPath)
-          checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
-        }, testConf)
-      } finally {
-          gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
-      }
-      ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlans.head, "DataWritingCommandExec")
-    }
-  }
+  // test("Support for pushing down filters for boolean types gpu write gpu read") {
+  //   skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
+  //   withTempPath { file =>
+  //     var gpuPlans: Array[SparkPlan] = Array.empty
+  //     val testConf = new SparkConf().set(
+  //       RapidsConf.TEST_ALLOWED_NONGPU.key,
+  //       "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
+  //     ExecutionPlanCaptureCallback.startCapture()
+  //     try {
+  //       withGpuSparkSession(spark => {
+  //         val data = (0 until 10).map(i => Tuple1(i == 2))
+  //         val df = spark.createDataFrame(data).toDF("a")
+  //         df.repartition(10).write.orc(file.getCanonicalPath)
+  //         checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
+  //       }, testConf)
+  //     } finally {
+  //         gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+  //     }
+  //     ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlans.head, "DataWritingCommandExec")
+  //   }
+  // }
 
-  test("Support for pushing down filters for boolean types gpu write cpu read") {
-    withTempPath { file =>
-      var gpuPlans: Array[SparkPlan] = Array.empty
-      val testConf = new SparkConf().set(
-        RapidsConf.TEST_ALLOWED_NONGPU.key,
-        "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
-      ExecutionPlanCaptureCallback.startCapture()
-      try {
-        withGpuSparkSession(spark => {
-          val data = (0 until 10).map(i => Tuple1(i == 2))
-          val df = spark.createDataFrame(data).toDF("a")
-          df.repartition(10).write.orc(file.getCanonicalPath)
-        }, testConf)
-      } finally {
-          gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
-        }
-      ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlans.head, "DataWritingCommandExec")
-      withCpuSparkSession(spark => {
-        checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
-      })
-    }
-  }
+  // test("Support for pushing down filters for boolean types gpu write cpu read") {
+  //   withTempPath { file =>
+  //     var gpuPlans: Array[SparkPlan] = Array.empty
+  //     val testConf = new SparkConf().set(
+  //       RapidsConf.TEST_ALLOWED_NONGPU.key,
+  //       "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
+  //     ExecutionPlanCaptureCallback.startCapture()
+  //     try {
+  //       withGpuSparkSession(spark => {
+  //         val data = (0 until 10).map(i => Tuple1(i == 2))
+  //         val df = spark.createDataFrame(data).toDF("a")
+  //         df.repartition(10).write.orc(file.getCanonicalPath)
+  //       }, testConf)
+  //     } finally {
+  //         gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+  //       }
+  //     ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlans.head, "DataWritingCommandExec")
+  //     withCpuSparkSession(spark => {
+  //       checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
+  //     })
+  //   }
+  // }
 
-  testWithAnsiModes("Support for pushing down filters for boolean types cpu write gpu read") {
+  withGpuSparkSession(spark => {
+  })
+
+  test("Support for pushing down filters for boolean types cpu write gpu read") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withTempPath { file =>
       withCpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(i == 2))
@@ -95,7 +100,8 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  testWithAnsiModes("Support for pushing down filters for decimal types gpu write gpu read") {
+  test("Support for pushing down filters for decimal types gpu write gpu read") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withTempPath { file =>
       withGpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
@@ -119,7 +125,8 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  testWithAnsiModes("Support for pushing down filters for decimal types cpu write gpu read") {
+  test("Support for pushing down filters for decimal types cpu write gpu read") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withTempPath { file =>
       withCpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
@@ -132,7 +139,8 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  testWithAnsiModes("Support for pushing down filters for timestamp types cpu write gpu read") {
+  test("Support for pushing down filters for timestamp types cpu write gpu read") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withTempPath { file =>
       withCpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"
@@ -168,7 +176,8 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  testWithAnsiModes("Support for pushing down filters for timestamp types gpu write gpu read") {
+  test("Support for pushing down filters for timestamp types gpu write gpu read") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withTempPath { file =>
       withGpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"

@@ -647,13 +647,16 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
       sortBeforeRepart: Boolean = false,
-      skipCanonicalizationCheck: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+      skipCanonicalizationCheck: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
+      (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       sort=true,
       sortBeforeRepart = sortBeforeRepart,
-      skipCanonicalizationCheck = skipCanonicalizationCheck)(fun)
+      skipCanonicalizationCheck = skipCanonicalizationCheck,
+      assumeCondition = assumeCondition)(fun)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
@@ -2209,91 +2212,6 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     }
   }
 
-  // Define a case class for ANSI configuration
-  case class AnsiConfig(enabled: Boolean) {
-    override def toString: String = s"ANSI=${enabled}"
-  }
-
-  // Configurations to test with for parametrized ANSI testing
-  val ansiConfigs = Seq(
-    AnsiConfig(enabled = false),
-    AnsiConfig(enabled = true)
-  )
-
-  // Parametrized test helper that runs with both ANSI modes
-  def testSparkResultsAreEqualWithAnsiModes(
-      testName: String,
-      df: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf(),
-      repart: Integer = 1,
-      sort: Boolean = false,
-      maxFloatDiff: Double = 0.0,
-      incompat: Boolean = false,
-      execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false,
-      assumeCondition: SparkSession => (Boolean, String) = null,
-      skipCanonicalizationCheck: Boolean = false,
-      existClasses: String = null,  // Gpu plan should contain the `existClasses`
-      nonExistClasses: String = null)
-      (testFun: DataFrame => DataFrame): Unit = {
-
-    for (ansiConfig <- ansiConfigs) {
-      // Skip HashAggregate tests with ANSI=true
-      val shouldSkip = ansiConfig.enabled
-
-      if (!shouldSkip) {
-        testSparkResultsAreEqual(
-          s"$testName ($ansiConfig)",
-          df,
-          conf,
-          repart,
-          sort,
-          maxFloatDiff,
-          incompat
-        )(testFun)
-      } else {
-        // Skip test: https://github.com/NVIDIA/spark-rapids/issues/5114
-        test(s"$testName ($ansiConfig)") {
-          assume(false, "HashAggregate operator not supported in ANSI mode. " +
-            "See https://github.com/NVIDIA/spark-rapids/issues/5114")
-        }
-      }
-    }
-  }
-
-  def IGNORE_ORDER_testSparkResultsAreEqualWithAnsiModes(
-      testName: String,
-      df: SparkSession => DataFrame,
-      repart: Integer = 1,
-      conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false,
-      skipCanonicalizationCheck: Boolean = false)(testFun: DataFrame => DataFrame): Unit = {
-
-    testSparkResultsAreEqualWithAnsiModes(testName, df,
-      conf=conf,
-      repart=repart,
-      sort=true,
-      sortBeforeRepart = sortBeforeRepart,
-      skipCanonicalizationCheck = skipCanonicalizationCheck)(testFun)
-  }
-
-  def testWithAnsiModes(testName: String)(testFun: => Unit): Unit = {
-    for (ansiConfig <- ansiConfigs) {
-      val shouldSkip = ansiConfig.enabled
-
-      if (!shouldSkip) {
-        test(s"$testName ($ansiConfig)") {
-          testFun
-        }
-      } else {
-        test(s"$testName ($ansiConfig)") {
-          assume(false, "HashAggregate operator not supported in ANSI mode. " +
-            "See https://github.com/NVIDIA/spark-rapids/issues/5114")
-        }
-      }
-    }
-  }
-
   def assumePriorToSpark320: Assertion =
     assume(!VersionUtils.isSpark320OrLater, "Spark version not before 3.2.0")
 
@@ -2363,8 +2281,15 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def isCdh332: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 2) == 0
 
   // SparkSession => (Boolean, String)
-
   def ignoreAnsi(issue: String)(spark: SparkSession): (Boolean, String) = {
     (!SQLConf.get.ansiEnabled, s"ANSI mode is not supported in this test: ${issue}")
+  }
+
+  def skipIfAnsiEnabled(issue: String): Unit = {
+    // Initialize SparkSessionHolder.sparkSession to ensure environment variables from SPARK_CONF
+    // are properly loaded before checking ANSI settings
+    SparkSessionHolder.sparkSession
+    val ansiEnabled = SQLConf.get.getConf(SQLConf.ANSI_ENABLED)
+    assume(!ansiEnabled, s"ANSI mode is not supported in this test: ${issue}")
   }
 }
