@@ -1474,7 +1474,8 @@ def test_reduction_with_min_max_by_unique(kudo_enabled):
             "min_by(a, b)", "max_by(a, b)"),
         conf = {kudo_enabled_conf_key: kudo_enabled})
 
-# When the ordering column is not unique this gpu will always return the minimal/maximal value 
+
+# When the ordering column is not unique this gpu will always return the minimal/maximal value
 # while spark's result is non-deterministic. So we need to set the column b and c to be
 # the same to make the result comparable.
 @pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
@@ -2539,3 +2540,21 @@ def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, ag
     # two-stage aggregate should be 2x the number of logical aggregates
     assert aggregate_nodes == 2, "Unexpected SparkPlan: " + plan_str
     assert_gpu_and_cpu_are_equal_collect(run_spark_fn, conf=run_conf)
+
+
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_hash_reduction_bitwise(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            "bit_and(a)",
+            "bit_or(a)",
+            "bit_xor(a)"))
+
+
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_hash_groupby_bitwise(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).groupby('a')
+        .agg(f.bit_and('b'),
+             f.bit_or('b'),
+             f.bit_xor('b')))
