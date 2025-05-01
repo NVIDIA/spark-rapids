@@ -2286,7 +2286,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     // Initialize SparkSessionHolder.sparkSession to ensure environment variables from SPARK_CONF
     // are properly loaded before checking ANSI settings
     SparkSessionHolder.sparkSession
-    val ansiEnabled = SQLConf.get.getConf(SQLConf.ANSI_ENABLED)
-    assume(!ansiEnabled, s"ANSI mode is not supported in this test: ${issue}")
+    val (isNonAnsi, skipReason) = ignoreAnsi(issue)(null)
+    assume(isNonAnsi, skipReason)
   }
 }
