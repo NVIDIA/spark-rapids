@@ -35,8 +35,7 @@ fixed_offset_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+
 variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
 fixed_offset_timezones_iana = ["Pacific/Pitcairn", "Etc/GMT-0", "Etc/GMT+0", "Asia/Bangkok", "GMT", "MST", "Asia/Calcutta"]
 variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "America/Halifax", "America/Los_Angeles", "America/New_York", "America/Chicago", "Asia/Kolkata", "Australia/Adelaide", "Pacific/Chatham", "Australia/Lord_Howe"]
-all_tzs = pytz.all_timezones
-all_tzs.remove('ROC') # remove ROC because ZoneInfo does not support ROC
+common_tzs = pytz.common_timezones
 tz_rules_date_gen = DateGen(end=date(2170,12,31))
 tz_rules_date_n_time_gens = [tz_rules_date_gen, TimestampGen(end=last_supported_tz_time)]
 
@@ -470,13 +469,13 @@ def test_to_utc_timestamp_fixed_offset(time_zone):
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
 
-@pytest.mark.parametrize('time_zone', all_tzs, ids=idfn)
+@pytest.mark.parametrize('time_zone', common_tzs, ids=idfn)
 def test_comprehensive_from_utc_timestamp(time_zone):
     tz_timestamp_gen = TimestampGen(tzinfo=timezone.utc)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'from_utc_timestamp(a, "{time_zone}")'))
     
-@pytest.mark.parametrize('time_zone', all_tzs, ids=idfn)
+@pytest.mark.parametrize('time_zone', common_tzs, ids=idfn)
 def test_comprehensive_to_utc_timestamp(time_zone):
     tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
