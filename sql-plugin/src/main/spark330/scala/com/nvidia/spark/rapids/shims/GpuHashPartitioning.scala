@@ -64,7 +64,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int,
             c.areAllClusterKeysMatched(expressions)
           } else {
             expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
-          }
+          }          
         case _ => false
       }
     }
