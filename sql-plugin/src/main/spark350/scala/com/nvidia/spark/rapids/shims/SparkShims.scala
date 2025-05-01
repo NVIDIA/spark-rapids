@@ -66,7 +66,7 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
               GpuToPrettyString(child)
             }
           }
-      }),
+      }), 
       GpuOverrides.expr[PythonUDAF](
         "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated",

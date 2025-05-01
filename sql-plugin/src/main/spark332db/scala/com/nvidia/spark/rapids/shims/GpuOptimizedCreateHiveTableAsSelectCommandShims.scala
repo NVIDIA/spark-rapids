@@ -139,7 +139,7 @@ case class GpuOptimizedCreateHiveTableAsSelectCommand(
     outputColumnNames: Seq[String],
     mode: SaveMode,
     cpuCmd: CreateHiveTableAsSelectCommand) extends GpuCreateHiveTableAsSelectBase {
-  // Copy from `CreateHiveTableAsSelectCommand.getWritingCommand`,
+  // Copy from `CreateHiveTableAsSelectCommand.getWritingCommand`, 
   // because it is private in Spark
   private def cpuGetWritingCommand(
       tableDesc: CatalogTable,

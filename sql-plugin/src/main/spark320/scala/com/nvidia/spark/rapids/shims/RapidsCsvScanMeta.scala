@@ -58,7 +58,7 @@ class RapidsCsvScanMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ScanMeta[CSVScan](cScan, conf, parent, rule) {
-
+  
   override def tagSelfForGpu(): Unit = {
     GpuCSVScan.tagSupport(this)
     // we are being overly cautious and that Csv does not support this yet

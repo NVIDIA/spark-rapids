@@ -58,7 +58,7 @@ case class GpuDataSource(
     options: Map[String, String] = Map.empty,
     catalogTable: Option[CatalogTable] = None,
     origProvider: Class[_])
-      extends GpuDataSourceBase(sparkSession, className, paths, userSpecifiedSchema,
+      extends GpuDataSourceBase(sparkSession, className, paths, userSpecifiedSchema, 
       partitionColumns, bucketSpec, options, catalogTable, origProvider) {
 
   /**
@@ -146,7 +146,7 @@ case class GpuDataSource(
     // DataWritingCommandExec.
     val qe = sparkSession.sessionState.executePlan(cmd)
     qe.assertCommandExecuted()
-
+  
     // Replace the schema with that of the DataFrame we just wrote out to avoid re-inferring
     copy(userSpecifiedSchema = Some(outputColumns.toStructType.asNullable)).resolveRelation()
   }

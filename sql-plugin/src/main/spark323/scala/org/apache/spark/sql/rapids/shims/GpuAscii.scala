@@ -50,7 +50,7 @@ import com.nvidia.spark.rapids.shims.NullIntolerantShim
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 
-case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes
+case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes 
     with NullIntolerantShim {
 
   override def dataType: DataType = IntegerType
