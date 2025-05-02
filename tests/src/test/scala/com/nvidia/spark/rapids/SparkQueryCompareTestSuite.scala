@@ -153,7 +153,6 @@ object SparkSessionHolder extends Logging {
  */
 trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.withSparkSession
-
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
 
   override def afterAll(): Unit = {
@@ -645,13 +644,16 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
       sortBeforeRepart: Boolean = false,
-      skipCanonicalizationCheck: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+      skipCanonicalizationCheck: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
+      (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       sort=true,
       sortBeforeRepart = sortBeforeRepart,
-      skipCanonicalizationCheck = skipCanonicalizationCheck)(fun)
+      skipCanonicalizationCheck = skipCanonicalizationCheck,
+      assumeCondition = assumeCondition)(fun)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
@@ -2274,4 +2276,17 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def isCdh330: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 0) == 0
 
   def isCdh332: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 2) == 0
+
+  // SparkSession => (Boolean, String)
+  def ignoreAnsi(issue: String)(spark: SparkSession): (Boolean, String) = {
+    (!SQLConf.get.ansiEnabled, s"ANSI mode is not supported in this test: ${issue}")
+  }
+
+  def skipIfAnsiEnabled(issue: String): Unit = {
+    // Initialize SparkSessionHolder.sparkSession to ensure environment variables from SPARK_CONF
+    // are properly loaded before checking ANSI settings
+    SparkSessionHolder.sparkSession
+    val (isNonAnsi, skipReason) = ignoreAnsi(issue)(null)
+    assume(isNonAnsi, skipReason)
+  }
 }
