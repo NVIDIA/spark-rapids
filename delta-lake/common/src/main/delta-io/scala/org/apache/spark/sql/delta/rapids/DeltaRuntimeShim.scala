@@ -62,7 +62,7 @@ object DeltaRuntimeShim {
       "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
     } else if (VersionUtils.cmpSparkVersion(3, 5, 2) > 0 &&
                VersionUtils.cmpSparkVersion(4, 0, 0) < 0) {
-      "org.apache.spark.sql.delta.rapids.delta33x.Delta24xRuntimeShim"
+      "org.apache.spark.sql.delta.rapids.delta33x.Delta33xRuntimeShim"
     } else {
       val sparkVer = ShimLoader.getShimVersion
       throw new IllegalStateException(
