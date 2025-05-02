@@ -34,7 +34,7 @@ abstract class GpuOptimisticTransactionBase(
     snapshot: Snapshot,
     rapidsConf: RapidsConf)
     (implicit clock: Clock)
-    extends OptimisticTransaction(deltaLog, snapshot)(clock)
+    extends OptimisticTransaction(deltaLog, snapshot)
     with DeltaLogging {
 
   /**
