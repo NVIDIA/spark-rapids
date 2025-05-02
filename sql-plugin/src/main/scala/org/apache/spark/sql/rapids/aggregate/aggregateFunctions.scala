@@ -2169,9 +2169,7 @@ class CudfBitXorAgg(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfBitXorAgg"
 }
 
-abstract class GpuBitAggregate extends GpuAggregateFunction {
-  def child: Expression
-
+abstract class GpuBitAggregate(child: Expression) extends GpuAggregateFunction with Serializable {
   override def nullable: Boolean = true
 
   override def dataType: DataType = child.dataType
@@ -2181,7 +2179,7 @@ abstract class GpuBitAggregate extends GpuAggregateFunction {
   protected def cudfBitAgg: CudfAggregate
 
   protected final lazy val outputBuf: AttributeReference =
-    AttributeReference("outputBuf", dataType)()
+    AttributeReference("bitwiseAgg", dataType)()
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, dataType))
@@ -2191,19 +2189,19 @@ abstract class GpuBitAggregate extends GpuAggregateFunction {
   override lazy val evaluateExpression: Expression = outputBuf
 }
 
-case class GpuBitAndAgg(child: Expression) extends GpuBitAggregate {
+case class GpuBitAndAgg(child: Expression) extends GpuBitAggregate(child) {
   override def cudfBitAgg = new CudfBitAndAgg(dataType)
 
   override def prettyName: String = "bit_and"
 }
 
-case class GpuBitOrAgg(child: Expression) extends GpuBitAggregate {
+case class GpuBitOrAgg(child: Expression) extends GpuBitAggregate(child) {
   override def cudfBitAgg = new CudfBitOrAgg(dataType)
 
   override def prettyName: String = "bit_or"
 }
 
-case class GpuBitXorAgg(child: Expression) extends GpuBitAggregate {
+case class GpuBitXorAgg(child: Expression) extends GpuBitAggregate(child) {
   override def cudfBitAgg = new CudfBitXorAgg(dataType)
 
   override def prettyName: String = "bit_xor"
