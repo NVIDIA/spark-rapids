@@ -714,7 +714,7 @@
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-33x</module>
                 <module>iceberg</module>
             </modules>
         </profile>
