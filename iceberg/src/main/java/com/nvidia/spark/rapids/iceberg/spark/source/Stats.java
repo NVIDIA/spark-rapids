@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,23 @@
 
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
+import java.util.Map;
 import java.util.OptionalLong;
 
+import org.apache.spark.sql.connector.expressions.NamedReference;
 import org.apache.spark.sql.connector.read.Statistics;
+import org.apache.spark.sql.connector.read.colstats.ColumnStatistics;
 
 /** Derived from Apache Iceberg's Stats class. */
-public class Stats implements Statistics {
+class Stats implements Statistics {
   private final OptionalLong sizeInBytes;
   private final OptionalLong numRows;
+  private final Map<NamedReference, ColumnStatistics> colstats;
 
-  Stats(long sizeInBytes, long numRows) {
+  Stats(long sizeInBytes, long numRows, Map<NamedReference, ColumnStatistics> colstats) {
     this.sizeInBytes = OptionalLong.of(sizeInBytes);
     this.numRows = OptionalLong.of(numRows);
+    this.colstats = colstats;
   }
 
   @Override
@@ -38,5 +43,10 @@ public class Stats implements Statistics {
   @Override
   public OptionalLong numRows() {
     return numRows;
+  }
+
+  @Override
+  public Map<NamedReference, ColumnStatistics> columnStats() {
+    return colstats;
   }
 }
