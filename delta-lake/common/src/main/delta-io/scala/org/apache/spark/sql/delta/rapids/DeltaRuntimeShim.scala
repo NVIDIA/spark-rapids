@@ -18,7 +18,7 @@ package org.apache.spark.sql.delta.rapids
 
 import scala.util.Try
 
-import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils, VersionUtils}
+import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, ShimReflectionUtils, VersionUtils}
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.sql.SparkSession
@@ -60,8 +60,14 @@ object DeltaRuntimeShim {
         }.getOrElse("org.apache.spark.sql.delta.rapids.delta23x.Delta23xRuntimeShim")
     } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
       "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
+    } else if (VersionUtils.cmpSparkVersion(3, 5, 2) > 0 &&
+               VersionUtils.cmpSparkVersion(4, 0, 0) < 0) {
+      "org.apache.spark.sql.delta.rapids.delta33x.Delta24xRuntimeShim"
     } else {
-      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.4.x")
+      val sparkVer = ShimLoader.getShimVersion
+      throw new IllegalStateException(
+        s"${sparkVer}: No Delta Lake support for this build of Spark"
+      )
     }
   }
 
