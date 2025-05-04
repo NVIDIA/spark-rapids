@@ -86,6 +86,7 @@
                                <source>${spark.rapids.project.basedir}/../delta-lake/common/src/main/scala</source>
                                <source>${spark.rapids.project.basedir}/../delta-lake/common/src/main/delta-io/scala</source>
                                <source>${spark.rapids.project.basedir}/../delta-lake/src/main/delta20x/scala</source>
+                               <source>${spark.rapids.project.basedir}/../delta-lake/src/main/delta24x/scala</source>
                                --><!-- #endif scala-2.12 -->
                             </sources>
                         </configuration>
