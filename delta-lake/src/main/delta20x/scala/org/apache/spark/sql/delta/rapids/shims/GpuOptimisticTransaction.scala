@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids.delta20x
+package org.apache.spark.sql.delta.rapids.shims
 
 import java.net.URI
 
