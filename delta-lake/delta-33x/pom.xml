@@ -75,16 +75,10 @@
                         </goals>
                         <configuration>
                             <sources>
-                                 <!-- #if scala-2.12 -->
-                                 <source>${spark.rapids.project.basedir}/delta-lake/common/src/main/scala</source>
-                                 <source>${spark.rapids.project.basedir}/delta-lake/common/src/main/delta-io/scala</source>
-                                 <source>${spark.rapids.project.basedir}/delta-lake/delta-24x33x</source>
-                                 <!-- #endif scala-2.12 -->
-                                  <!-- #if scala-2.13 --><!--
-                                 <source>${spark.rapids.project.basedir}/../delta-lake/common/src/main/scala</source>
-                                 <source>${spark.rapids.project.basedir}/../delta-lake/common/src/main/delta-io/scala</source>
-                                 <source>${spark.rapids.project.basedir}/../delta-lake/delta-24x33x</source>
-                                 --><!-- #endif scala-2.12 -->                            </sources>
+                                 <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/scala</source>
+                                 <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-io/scala</source>
+                                 <source>${spark.rapids.source.basedir}/delta-lake/src/main/delta24x/scala</source>
+                            </sources>
                         </configuration>
                     </execution>
                 </executions>
