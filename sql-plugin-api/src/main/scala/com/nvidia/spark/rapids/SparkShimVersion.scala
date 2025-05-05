@@ -29,7 +29,7 @@ case class ClouderaShimVersion(major: Int, minor: Int, patch: Int, clouderaVersi
 
 case class AcceldataShimVersion(major: Int, minor: Int, patch: Int, acceldataVersion: String)
   extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch.$acceldataVersion"
+  override def toString(): String = s"$major.$minor.$patch-acceldata-$acceldataVersion"
 }
 
 case class DatabricksShimVersion(
