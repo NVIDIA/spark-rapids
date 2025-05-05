@@ -152,15 +152,18 @@ def test_months_between_runtime_fallback():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, false)'))
 
+@allow_non_gpu(*non_utc_tz_allow)
 def test_months_between_tz_rules():
     time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, false)'))
 
+@allow_non_gpu(*non_utc_tz_allow)
 def test_months_between_first_day():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", false)'))
 
+@allow_non_gpu(*non_utc_tz_allow)
 def test_months_between_last_day():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", false)'))
@@ -181,11 +184,13 @@ def test_months_between_round_tz_rules():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, true)'))
 
+@allow_non_gpu(*non_utc_tz_allow)
 @approximate_float()
 def test_months_between_first_day_round():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", true)'))
 
+@allow_non_gpu(*non_utc_tz_allow)
 @approximate_float()
 def test_months_between_last_day_round():
     assert_gpu_and_cpu_are_equal_collect(
