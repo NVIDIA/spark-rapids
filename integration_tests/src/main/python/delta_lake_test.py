@@ -127,7 +127,7 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable
 
 
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="This test only applies to deletion vectors")
-@allow_non_gpu('FileSourceScanExec')
+@allow_non_gpu('FileSourceScanExec', *delta_meta_allow)
 @delta_lake 
 def test_delta_read_with_deletion_vectors_enabled(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA" 
