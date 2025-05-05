@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -119,9 +119,9 @@ object HostColumnarToGpu extends Logging {
     dataType match {
       case NullType =>
         ColumnarCopyHelper.nullCopy(b, rows)
-      case BooleanType if cv.isInstanceOf[ArrowColumnVector] =>
+      case BooleanType =>
         ColumnarCopyHelper.booleanCopy(cv, b, rows)
-      case ByteType | BooleanType =>
+      case ByteType =>
         ColumnarCopyHelper.byteCopy(cv, b, rows)
       case ShortType =>
         ColumnarCopyHelper.shortCopy(cv, b, rows)
