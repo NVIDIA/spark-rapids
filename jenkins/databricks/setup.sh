@@ -24,7 +24,7 @@ sudo apt-get install -y zip
 # Configure spark environment on Databricks
 export SPARK_HOME=$DB_HOME/spark
 
-SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+SCRIPTPATH="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Workaround to support local spark job
 sudo ln -sf $DB_HOME/jars/ $SPARK_HOME/jars
