@@ -27,7 +27,7 @@
     </parent>
 
     <artifactId>rapids-4-spark-delta-33x_2.12</artifactId>
-    <name>RAPIDS Accelerator for Apache Spark Delta Lake 2.4.x Support</name>
+    <name>RAPIDS Accelerator for Apache Spark Delta Lake 3.3.x Support</name>
     <version>25.06.0-SNAPSHOT</version>
 
     <properties>
