@@ -1610,12 +1610,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val SKIP_AGG_PASS_REDUCTION_RATIO = conf("spark.rapids.sql.agg.skipAggPassReductionRatio")
-    .doc("In non-final aggregation stages, if the previous pass has a row reduction ratio " +
+    .doc("In non-final aggregation stages, if the previous pass has a row retention ratio " +
         "greater than this value, the next aggregation pass will be skipped." +
-        "Setting this to 1 essentially disables this feature.")
+        "Setting this to 1 essentially disables this feature. For Historical reasons it is " +
+        "called skipAggPassReductionRatio, actually skipAggPassRetentionRatio would have " +
+        "been better")
+    .internal()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The ratio value must be in [0, 1].")
-    .createWithDefault(1.0)
+    .createWithDefault(0.85)
 
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
