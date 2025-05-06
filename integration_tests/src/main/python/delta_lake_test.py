@@ -125,6 +125,7 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path),
                                          conf=confs)
 
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12619")
 @allow_non_gpu('FileSourceScanExec')
 @delta_lake 
 def test_delta_read(spark_tmp_path):
