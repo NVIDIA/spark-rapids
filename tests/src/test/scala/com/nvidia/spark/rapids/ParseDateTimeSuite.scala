@@ -252,7 +252,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(!planStr.contains(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key))
   }
 
-  test("parse Now") {
+  test("parse now") {
     skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     def now(spark: SparkSession) = {
       import spark.implicits._
