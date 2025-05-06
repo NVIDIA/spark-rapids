@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
+import java.util.Optional
+
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -39,6 +41,34 @@ case class GpuMd5(child: Expression)
     withResource(HashUtils.normalizeInput(input.getBase)) { normalized =>
       withResource(ColumnVector.md5Hash(normalized)) { fullResult =>
         fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, normalized)
+      }
+    }
+  }
+}
+
+case class GpuSha1(child: Expression)
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+  override def toString: String = s"sha1($child)"
+  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
+  override def dataType: DataType = StringType
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val normalizedStringCV = withResource(HashUtils.normalizeInput(input.getBase))
+    { normalized =>
+      // at the moment sha1 on CuDF doesn't support lists, so have to translate
+      // BinaryType into StringType first before we operate on it
+      withResource(normalized.getChildColumnView(0)) { dataCol =>
+        withResource(new ColumnView(DType.STRING, normalized.getRowCount,
+          Optional.of[java.lang.Long](normalized.getNullCount),
+          dataCol.getData, normalized.getValid, normalized.getOffsets)) { cv =>
+          cv.copyToColumnVector()
+        }
+      }
+    }
+    withResource(normalizedStringCV) { normalizedStringCV => 
+      withResource(ColumnVector.sha1Hash(normalizedStringCV)) { fullResult =>
+        // necessary because cudf treats nulls as "" for hashing
+        fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, normalizedStringCV)
       }
     }
   }
