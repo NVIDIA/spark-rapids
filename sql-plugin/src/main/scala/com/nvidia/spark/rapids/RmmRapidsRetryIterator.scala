@@ -647,7 +647,7 @@ object RmmRapidsRetryIterator extends Logging {
         }
         firstAttempt = false
         if (splitReason != SplitReason.NONE) {
-          preSplit()
+          preSplitLogging()
           attemptIter.split(splitReason)
         }
         splitReason = SplitReason.NONE
@@ -847,7 +847,7 @@ object RmmRapidsRetryIterator extends Logging {
 
   val threadCountBlockedUntilReady: AtomicInteger = new AtomicInteger(0)
 
-  private def preSplit(): Unit = synchronized { // use synchronized to keep neat
+  private def preSplitLogging(): Unit = synchronized { // use synchronized to keep neat
     if (!preSplitPrinted || PRE_SPLIT_PRINT_ALL) {
       log.info(s"Current threadCountBlockedUntilReady pre split: " +
         s"${threadCountBlockedUntilReady.get()}")
