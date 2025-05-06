@@ -983,7 +983,7 @@ class GpuMergeAggregateIterator(
         // It's only based on first batch of first pass agg, so it's an estimate
         val firstPassReductionRatioEstimate = 1.0 * peek.numRows() / localInputRowsCount.value
         if (firstPassReductionRatioEstimate > skipAggPassReductionRatio) {
-          logDebug("Skipping second and third pass aggregation due to " +
+          logInfo("Skipping second and third pass aggregation due to " +
             "too high reduction ratio in first pass: " +
             s"$firstPassReductionRatioEstimate")
           // if so, skip any aggregation, return the origin batch directly
