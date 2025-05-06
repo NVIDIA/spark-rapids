@@ -83,6 +83,7 @@ class GpuParquetReaderPostProcessor(
 private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostProcessor,
     private val batch: LazySpillableColumnarBatch
 ) extends TypeUtil.SchemaVisitor[HandlerResult] with AutoCloseable {
+  batch.allowSpilling()
   private var currentField: NestedField = _
   // This is used to hold the column vectors that are created during the travel of the batch, so
   // that if exception happens, we can close them all at once.
