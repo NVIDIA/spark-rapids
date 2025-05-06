@@ -840,9 +840,8 @@ object RmmRapidsRetryIterator extends Logging {
   val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
   // By default, only print first time to avoid too much log
-  val PRE_SPLIT_PRINT_ALL: Boolean = {
+  val PRE_SPLIT_PRINT_ALL: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.preSplit.printAll")
-  }
   var preSplitPrinted = false
 
   val threadCountBlockedUntilReady: AtomicInteger = new AtomicInteger(0)
