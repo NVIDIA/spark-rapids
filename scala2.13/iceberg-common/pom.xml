@@ -55,6 +55,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
                             <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
                             <artifactSet>
                                 <includes>

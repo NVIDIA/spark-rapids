@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,15 @@ package com.nvidia.spark.rapids.iceberg.parquet;
 
 import java.util.ArrayDeque;
 import java.util.List;
+
+import org.apache.iceberg.parquet.ParquetSchemaUtil;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.GroupType;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.Type;
 import org.apache.iceberg.types.Types;
-import org.apache.parquet.schema.GroupType;
-import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.PrimitiveType;
-import org.apache.parquet.schema.Type;
 
 /**
  * Visitor for traversing a Parquet type with a companion Iceberg type.
@@ -54,7 +56,8 @@ public class TypeWithSchemaVisitor<T> {
 
       // TODO undo suppress warnings after dropping Spark 3.1.x/Parquet 1.10
       @SuppressWarnings("deprecation")
-      org.apache.parquet.schema.OriginalType annotation = group.getOriginalType();
+      org.apache.iceberg.shaded.org.apache.parquet.schema.OriginalType annotation =
+          group.getOriginalType();
 
       if (annotation != null) {
         switch (annotation) {
