@@ -125,6 +125,25 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path),
                                          conf=confs)
 
+@allow_non_gpu('FileSourceScanExec')
+@delta_lake 
+def test_delta_read(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA" 
+    gen_list = [("a", int_gen), ("b", string_gen), ("c", long_gen)]
+    delta_conf = {"spark.rapids.sql.detectDeltaLogQueries": "false"}
+    def create_delta(spark):
+        df = gen_df(spark, gen_list).write.format("delta")
+        if supports_delta_lake_deletion_vectors():
+            df.option("delta.enableDeletionVectors", "true")
+        df.save(data_path)
+
+    def read_delta_sql(data_path):
+        return lambda spark : spark.sql('select * from delta.`{}` where a > 3'.format(data_path))
+
+    with_cpu_session(create_delta)
+    assert_gpu_and_cpu_are_equal_collect(read_delta_sql(data_path), conf=delta_conf)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
