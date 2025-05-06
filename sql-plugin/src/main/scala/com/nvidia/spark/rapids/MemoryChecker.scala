@@ -29,11 +29,11 @@ object MemoryChecker {
     println(s"Available memory: ${getAvailableMemoryBytes} bytes")
   }
 
-  def getAvailableMemoryBytes: Long = {
+  def getAvailableMemoryBytes: Option[Long] = {
     if (isSlurmContainer) {
       getSlurmMemory
     } else if (isDockerContainer) {
-      getCgroupMemory.getOrElse(getHostMemory)
+      getCgroupMemory.orElse(getHostMemory)
     } else {
       getHostMemory
     }
@@ -67,13 +67,27 @@ object MemoryChecker {
     }
   }
 
-  private def getSlurmMemory: Long = {
-    val free = Option(System.getenv("SLURM_MEM_PER_NODE"))
+  private def getSlurmMemory: Option[Long] = {
+    val totalOpt = Option(System.getenv("SLURM_MEM_PER_NODE"))
       .map(_.toLong * 1024 * 1024) // Convert MB to bytes
-      .getOrElse(getHostMemory)
-    val used = getVmRSS.getOrElse(0)
+      .orElse(getHostMemory)
 
-    free - used
+    for {
+      total <- totalOpt
+      used  <- getVmRSS
+    } yield total - used
+  }
+
+  private def readFile(path: String): Option[String] = {
+    try {
+      Some(
+        withResource(Source.fromFile(path)) { source =>
+          source.mkString.trim
+        }
+      )
+    } catch {
+      case _: Exception => None
+    }
   }
 
   private def getCgroupMemory: Option[Long] = {
@@ -97,26 +111,13 @@ object MemoryChecker {
     }
   }
 
-  private def getHostMemory: Long = {
+  private def getHostMemory: Option[Long] = {
     withResource(Source.fromFile("/proc/meminfo")) { source =>
       source.getLines()
       .collectFirst {
         case line if line.startsWith("MemAvailable:") =>
           line.split("\\s+")(1).toLong * 1024 // KB to bytes
       }
-      .getOrElse(throw new RuntimeException("Couldn't read host memory"))
-    }
-  }
-
-  private def readFile(path: String): Option[String] = {
-    try {
-      Some(
-        withResource(Source.fromFile(path)) { source =>
-          source.mkString.trim
-        }
-      )
-    } catch {
-      case _: Exception => None
     }
   }
 }
