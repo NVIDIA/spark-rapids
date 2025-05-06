@@ -20,7 +20,7 @@ import java.util.{Map => JMap}
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar}
+import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar, LazySpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
@@ -70,7 +70,8 @@ class GpuParquetReaderPostProcessor(
       s"File read schema field count ${fileReadSchema.getFieldCount} doesn't match expected " +
         s"columnar batch columns ${originalBatch.numCols()}")
 
-    withRetryNoSplit(GpuColumnVector.incRefCounts(originalBatch)) { batch =>
+    withRetryNoSplit(LazySpillableColumnarBatch(originalBatch,
+      "iceberg post processing")) { batch =>
       withResource(new ColumnarBatchHandler(this, batch)) { handler =>
         TypeUtil.visit(expectedSchema, handler).left.get
       }
@@ -80,13 +81,13 @@ class GpuParquetReaderPostProcessor(
 
 
 private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostProcessor,
-    private val batch: ColumnarBatch
+    private val batch: LazySpillableColumnarBatch
 ) extends TypeUtil.SchemaVisitor[HandlerResult] with AutoCloseable {
   private var currentField: NestedField = _
   // This is used to hold the column vectors that are created during the travel of the batch, so
   // that if exception happens, we can close them all at once.
   private val vectorBuffer: ArrayBuffer[GpuColumnVector] = new ArrayBuffer[GpuColumnVector](
-    batch.numCols())
+    batch.numCols)
 
   override def schema(schema: Schema, structResult: HandlerResult): HandlerResult  = structResult
 
@@ -139,7 +140,7 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     for (i <- 0 until processor.fileReadSchema.getFieldCount) {
       val t = processor.fileReadSchema.getType(i)
       if (t.getId != null && t.getId.intValue == curFieldId) {
-        return doUpCastIfNeeded(batch.column(i).asInstanceOf[GpuColumnVector], fieldType)
+        return doUpCastIfNeeded(batch.getBatch.column(i).asInstanceOf[GpuColumnVector], fieldType)
       }
     }
     if (currentField.isOptional) {
@@ -150,6 +151,7 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
   }
 
   override def close(): Unit = {
+    batch.releaseBatch()
     withResource(vectorBuffer) { _ => }
   }
 }
