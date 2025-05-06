@@ -17,12 +17,12 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
+from dateutil import tz
 from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
 from timezones import all_timezones, fixed_offset_timezones, fixed_offset_timezones_iana, variable_offset_timezones, variable_offset_timezones_iana
-from zoneinfo import ZoneInfo
 
 # Some operations only work in UTC specifically
 non_utc_tz_allow = ['ProjectExec'] if not is_utc() else []
@@ -148,13 +148,13 @@ def test_datediff(data_gen):
 def test_months_between_runtime_fallback():
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    time_zone_gen = TimestampGen(tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
+    time_zone_gen = TimestampGen(tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, false)'))
 
 @allow_non_gpu(*non_utc_tz_allow)
 def test_months_between_tz_rules():
-    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
+    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, false)'))
 
@@ -173,14 +173,14 @@ def test_months_between_last_day():
 def test_months_between_round_runtime_fallback():
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    time_zone_gen = TimestampGen(tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
+    time_zone_gen = TimestampGen(tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, true)'))
 
 @allow_non_gpu(*non_utc_tz_allow)
 @approximate_float()
 def test_months_between_round_tz_rules():
-    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
+    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, true)'))
 
@@ -198,7 +198,7 @@ def test_months_between_last_day_round():
 
 @pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
 def test_hour_tz_rules(time_zone):
-    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('hour(a)'))
 
@@ -206,19 +206,19 @@ def test_hour_tz_rules(time_zone):
 def test_hour_tz_rules_runtime_fallback(time_zone):
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('hour(a)'))
 
 @pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
 def test_hour_fixed_offset(time_zone):
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('hour(a)'))
 
 @pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
 def test_minute_tz_rules(time_zone):
-    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
 
@@ -226,19 +226,19 @@ def test_minute_tz_rules(time_zone):
 def test_minute_tz_rules_runtime_fallback(time_zone):
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
 
 @pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
 def test_minute_fixed_offset(time_zone):
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
 
 @pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
 def test_second_tz_rules(time_zone):
-    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('second(a)'))
 
@@ -246,13 +246,13 @@ def test_second_tz_rules(time_zone):
 def test_second_tz_rules_runtime_fallback(time_zone):
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('second(a)'))
 
 @pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
 def test_second_fixed_offset(time_zone):
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('second(a)'))
 
@@ -450,7 +450,7 @@ def test_unsupported_fallback_from_utc_timestamp():
 
 @pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
 def test_to_utc_timestamp_tz_rules(time_zone):
-    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
@@ -458,13 +458,13 @@ def test_to_utc_timestamp_tz_rules(time_zone):
 def test_to_utc_timestamp_tz_rules_runtime_fallback(time_zone):
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
 @pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
 def test_to_utc_timestamp_fixed_offset(time_zone):
-    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
@@ -477,7 +477,7 @@ def test_comprehensive_from_utc_timestamp(time_zone):
     
 @pytest.mark.parametrize('time_zone', all_timezones, ids=idfn)
 def test_comprehensive_to_utc_timestamp(time_zone):
-    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(time_zone))
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
