@@ -52,7 +52,7 @@
         <dependency>
             <groupId>io.delta</groupId>
             <artifactId>delta-spark_${scala.binary.version}</artifactId>
-            <version>3.3.0</version>
+            <version>${delta33x.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>

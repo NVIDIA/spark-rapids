@@ -850,6 +850,7 @@
     </profiles>
 
     <properties>
+        <delta33x.version>3.3.0</delta33x.version>
         <!-- start dyn.shim properties -->
 	<dyn.shim.excluded.releases></dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
