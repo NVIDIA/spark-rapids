@@ -25,6 +25,8 @@ import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.hadoop.HadoopInputFile;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
+import org.apache.iceberg.spark.SparkReadOptions;
+import org.apache.iceberg.spark.SparkSQLProperties;
 import org.apache.iceberg.util.PropertyUtil;
 
 import org.apache.spark.sql.SparkSession;
@@ -108,12 +110,6 @@ public class SparkReadConf {
   public Long endSnapshotId() {
     return confParser.longConf()
         .option(SparkReadOptions.END_SNAPSHOT_ID)
-        .parseOptional();
-  }
-
-  public String fileScanTaskSetId() {
-    return confParser.stringConf()
-        .option(SparkReadOptions.FILE_SCAN_TASK_SET_ID)
         .parseOptional();
   }
 
@@ -214,9 +210,9 @@ public class SparkReadConf {
    */
   public boolean handleTimestampWithoutZone() {
     return confParser.booleanConf()
-        .option(SparkReadOptions.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
-        .sessionConf(SparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
-        .defaultValue(SparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE_DEFAULT)
+        .option(GpuSparkReadOptions$.MODULE$.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE())
+        .sessionConf(GpuSparkSQLProperties$.MODULE$.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE())
+        .defaultValue(GpuSparkSQLProperties$.MODULE$.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE_DEFAULT())
         .parse();
   }
 
