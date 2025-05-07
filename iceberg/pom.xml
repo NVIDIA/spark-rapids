@@ -34,6 +34,7 @@
     <properties>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
+        <maven.scaladoc.skip>true</maven.scaladoc.skip>
     </properties>
 
     <dependencies>
