@@ -1325,10 +1325,22 @@ object GpuCast {
    * `yyyy-[m]m-[d]dT*`
    */
   def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
+
     // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-    convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+    val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
       convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
         convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
+
+    // handle special dates like "epoch", "now", etc.
+    closeOnExcept(converted) { tsVector =>
+      DateUtils.fetchSpecialDates(DType.TIMESTAMP_DAYS) match {
+        case specialDates if specialDates.nonEmpty =>
+          // `tsVector` will be closed in replaceSpecialDates
+          replaceSpecialDates(sanitizedInput, tsVector, specialDates)
+        case _ =>
+          tsVector
+      }
+    }
   }
 
   def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
