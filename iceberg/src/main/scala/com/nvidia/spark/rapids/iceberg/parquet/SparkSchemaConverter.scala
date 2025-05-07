@@ -17,7 +17,7 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
-import java.util.{ArrayList => JArrayList, List => JList}
+import java.util.{List => JList}
 
 import scala.annotation.nowarn
 
@@ -41,7 +41,7 @@ class SparkSchemaConverter extends TypeWithSchemaVisitor[DataType] {
     : DataType = {
 
     val parquetFields = struct.getFields
-    val fields = Lists.newArrayListWithExpectedSize(fieldTypes.size)
+    val fields: JList[StructField] = Lists.newArrayListWithExpectedSize(fieldTypes.size)
     for (i <- 0 until parquetFields.size) {
       val parquetField = parquetFields.get(i)
       require(!parquetField.isRepetition(ParquetType.Repetition.REPEATED),

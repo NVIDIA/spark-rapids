@@ -29,6 +29,7 @@ import com.nvidia.spark.rapids.parquet.iceberg.shaded.GpuParquetUtils;
 import org.apache.iceberg.parquet.ParquetDictionaryRowGroupFilter;
 import org.apache.iceberg.parquet.ParquetMetricsRowGroupFilter;
 import org.apache.iceberg.parquet.ParquetSchemaUtil;
+import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.BlockMetaData;
@@ -36,7 +37,6 @@ import org.apache.iceberg.shaded.org.apache.parquet.schema.GroupType;
 import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
 import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType;
 import org.apache.iceberg.shaded.org.apache.parquet.schema.Type;
-import org.apache.iceberg.spark.SparkSchemaUtil;
 import scala.collection.Seq;
 
 import com.nvidia.spark.rapids.DateTimeRebaseCorrected$;
