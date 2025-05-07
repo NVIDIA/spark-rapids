@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,12 @@ package org.apache.spark.sql.delta.rapids
 
 import com.nvidia.spark.rapids.{GpuAlias, GpuColumnarToRowExec, GpuExec, GpuProjectExec, GpuRowToColumnarExec, RapidsConf, TargetSize}
 
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, NamedExpression}
-import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction, Snapshot}
+import org.apache.spark.sql.delta.{DeltaLog, Snapshot}
 import org.apache.spark.sql.delta.constraints.{Constraint, DeltaInvariantCheckerExec}
 import org.apache.spark.sql.delta.metering.DeltaLogging
+import org.apache.spark.sql.delta.shims.ShimOptimisticTransaction
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
@@ -31,10 +33,11 @@ import org.apache.spark.util.Clock
 /** Common type from which all open-source Delta Lake implementations derive. */
 abstract class GpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
+    catalogTableOpt: Option[CatalogTable],
     snapshot: Snapshot,
     rapidsConf: RapidsConf)
     (implicit clock: Clock)
-    extends OptimisticTransaction(deltaLog, snapshot)(clock)
+    extends ShimOptimisticTransaction(deltaLog, catalogTableOpt, snapshot)
     with DeltaLogging {
 
   /**
