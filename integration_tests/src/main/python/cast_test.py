@@ -871,11 +871,8 @@ def test_cast_date_integral_and_fp_ansi_off():
 @allow_non_gpu('CollectLimitExec')
 def test_to_pretty_string_for_date_and_test_cast_between_date_string():
     def _query(spark):
-        df = spark.createDataFrame([('2025-01-02',), ('2025-01-03',)], 'str_col string').selectExpr(
-            "CAST(str_col as date)", "CAST(CAST(str_col as date) as string)")
-        df.explain()
         spark.createDataFrame([('2025-01-02',), ('2025-01-03',)], 'str_col string').selectExpr(
-            "CAST(str_col as date)").show()
+            "CAST(str_col as date)", "CAST(CAST(str_col as date) as string)").show()
 
     with_gpu_session(
         lambda spark: _query(spark),
