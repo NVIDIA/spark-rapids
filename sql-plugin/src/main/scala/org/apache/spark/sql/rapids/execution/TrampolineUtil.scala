@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import java.util.concurrent.{ScheduledExecutorService, ThreadPoolExecutor}
+import java.util.concurrent.{ExecutorService, ScheduledExecutorService, ThreadPoolExecutor}
 
 import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
@@ -237,6 +237,10 @@ object TrampolineUtil {
 
   def newDaemonSingleThreadScheduledExecutor(threadName: String): ScheduledExecutorService = {
     ThreadUtils.newDaemonSingleThreadScheduledExecutor(threadName)
+  }
+
+  def newDaemonSingleThreadExecutor(threadName: String): ExecutorService = {
+    ThreadUtils.newDaemonSingleThreadExecutor(threadName)
   }
 
   def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
