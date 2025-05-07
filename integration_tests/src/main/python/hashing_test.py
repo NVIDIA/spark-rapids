@@ -162,3 +162,16 @@ def test_xxhash64_fallback_exceeds_stack_size_map():
         lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
         "ProjectExec",
         {"spark.sql.legacy.allowHashOnMapType": True})
+
+def test_binary_sha1():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, binary_gen).selectExpr('sha1(a)'))
+
+def test_str_sha1():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, string_gen).selectExpr('sha1(a)'))
+
+def test_str_special_characters_sha1():
+    special_string_gen = StringGen().with_special_case('好').with_special_case('吃')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, special_string_gen).selectExpr('sha1(a)'))

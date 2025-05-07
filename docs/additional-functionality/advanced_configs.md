@@ -50,7 +50,6 @@ Name | Description | Default Value | Applicable at
 <a name="shuffle.ucx.activeMessages.forceRndv"></a>spark.rapids.shuffle.ucx.activeMessages.forceRndv|Set to true to force 'rndv' mode for all UCX Active Messages. This should only be required with UCX 1.10.x. UCX 1.11.x deployments should set to false.|false|Startup
 <a name="shuffle.ucx.managementServerHost"></a>spark.rapids.shuffle.ucx.managementServerHost|The host to be used to start the management server|null|Startup
 <a name="shuffle.ucx.useWakeup"></a>spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|true|Startup
-<a name="sql.agg.skipAggPassReductionRatio"></a>spark.rapids.sql.agg.skipAggPassReductionRatio|In non-final aggregation stages, if the previous pass has a row reduction ratio greater than this value, the next aggregation pass will be skipped.Setting this to 1 essentially disables this feature.|1.0|Runtime
 <a name="sql.allowMultipleJars"></a>spark.rapids.sql.allowMultipleJars|Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. Spark will take the first one it finds, so the version may not be expected. Possisble values are ALWAYS: allow all jars, SAME_REVISION: only allow jars with the same revision, NEVER: do not allow multiple jars at all.|SAME_REVISION|Startup
 <a name="sql.castDecimalToFloat.enabled"></a>spark.rapids.sql.castDecimalToFloat.enabled|Casting from decimal to floating point types on the GPU returns results that have tiny difference compared to results returned from CPU.|true|Runtime
 <a name="sql.castFloatToDecimal.enabled"></a>spark.rapids.sql.castFloatToDecimal.enabled|Casting from floating point types to decimal on the GPU returns results that have tiny difference compared to results returned from CPU.|true|Runtime
@@ -151,6 +150,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.window.range.int.enabled"></a>spark.rapids.sql.window.range.int.enabled|When the order-by column of a range based window is int type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the int type order-by column|true|Runtime
 <a name="sql.window.range.long.enabled"></a>spark.rapids.sql.window.range.long.enabled|When the order-by column of a range based window is long type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the long type order-by column|true|Runtime
 <a name="sql.window.range.short.enabled"></a>spark.rapids.sql.window.range.short.enabled|When the order-by column of a range based window is short type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the short type order-by column|false|Runtime
+<a name="timezone.transitionCache.maxYear"></a>spark.rapids.timezone.transitionCache.maxYear|Set the max year for timestamp processing for timezones with transitions such as Daylight Savings. For efficiency reasons, timestamp transitions are stored on the GPU. We store transitions up to some set year. Adding more years will use more memory, every 100 years is roughly 1MB.|2200|Startup
 
 ## Supported GPU Operators and Fine Tuning
 _The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific
@@ -339,6 +339,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|`second`|Returns the second component of the string/timestamp|true|None|
 <a name="sql.expression.SecondsToTimestamp"></a>spark.rapids.sql.expression.SecondsToTimestamp|`timestamp_seconds`|Converts the number of seconds from unix epoch to a timestamp|true|None|
 <a name="sql.expression.Sequence"></a>spark.rapids.sql.expression.Sequence|`sequence`|Sequence|true|None|
+<a name="sql.expression.Sha1"></a>spark.rapids.sql.expression.Sha1|`sha1`, `sha`|Sha1 hash operator|true|None|
 <a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|`shiftleft`|Bitwise shift left (<<)|true|None|
 <a name="sql.expression.ShiftRight"></a>spark.rapids.sql.expression.ShiftRight|`shiftright`|Bitwise shift right (>>)|true|None|
 <a name="sql.expression.ShiftRightUnsigned"></a>spark.rapids.sql.expression.ShiftRightUnsigned|`shiftrightunsigned`|Bitwise unsigned shift right (>>>)|true|None|

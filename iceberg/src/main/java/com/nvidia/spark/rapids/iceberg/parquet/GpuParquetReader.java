@@ -23,14 +23,25 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import com.nvidia.spark.rapids.parquet.iceberg.shaded.CpuCompressionConfig$;
+import com.nvidia.spark.rapids.parquet.iceberg.shaded.ParquetPartitionReader;
+import com.nvidia.spark.rapids.parquet.iceberg.shaded.GpuParquetUtils;
+import org.apache.iceberg.parquet.ParquetDictionaryRowGroupFilter;
+import org.apache.iceberg.parquet.ParquetMetricsRowGroupFilter;
+import org.apache.iceberg.parquet.ParquetSchemaUtil;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.GroupType;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.Type;
+import org.apache.iceberg.spark.SparkSchemaUtil;
 import scala.collection.Seq;
 
 import com.nvidia.spark.rapids.DateTimeRebaseCorrected$;
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.PartitionReaderWithBytesRead;
-import com.nvidia.spark.rapids.parquet.CpuCompressionConfig$;
-import com.nvidia.spark.rapids.parquet.GpuParquetUtils;
-import com.nvidia.spark.rapids.parquet.ParquetPartitionReader;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuIcebergReader;
 import org.apache.hadoop.conf.Configuration;
@@ -47,14 +58,6 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.types.Types;
-import org.apache.parquet.ParquetReadOptions;
-import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.metadata.BlockMetaData;
-import org.apache.parquet.schema.GroupType;
-import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.PrimitiveType;
-import org.apache.parquet.schema.Type;
-import org.apache.parquet.schema.Types.MessageTypeBuilder;
 
 import org.apache.spark.sql.execution.datasources.PartitionedFile;
 import org.apache.spark.sql.types.StructType;
@@ -221,7 +224,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
     @Override
     public Type message(Types.StructType expected, MessageType message, List<Type> fields) {
-      MessageTypeBuilder builder = org.apache.parquet.schema.Types.buildMessage();
+      org.apache.iceberg.shaded.org.apache.parquet.schema.Types.MessageTypeBuilder builder =
+          org.apache.iceberg.shaded.org.apache.parquet.schema.Types.buildMessage();
       List<Type> newFields = filterAndReorder(expected, fields);
       for (Type type : newFields) {
         builder.addField(type);

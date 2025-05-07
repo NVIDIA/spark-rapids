@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
   }
 
   test("doExecuteColumnar returns a columnar batch with a valid numRows") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withGpuSparkSession { spark =>
       val data = mixedDf(spark, numSlices = 1)
       val plan = GpuBringBackToHost(
