@@ -327,7 +327,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     onTaskCompletion(tc)(close())
   }
 
-  private var bufferingFuture : Future[_] = null
+  private var bufferingFuture : Option[Future[_]] = None
 
   protected def tableOperator: SerializedTableOperator[T]
 
@@ -355,12 +355,12 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
           numRowsInBatch = tableOperator.getNumRows(firstTable)
         }
 
-        if (asyncBuffering) {
-          bufferingFuture = bufferExecutor.submit(new Runnable {
+        if (asyncBuffering && iter.hasNext) {
+          bufferingFuture = Option(bufferExecutor.submit(new Runnable {
             override def run(): Unit = {
               bufferNextBatch()
             }
-          })
+          }))
         }
       }
 
@@ -403,20 +403,16 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     // GpuShuffleAsyncCoalesceIterator.
     // Suppose "iter.hasNext" reads in only a header which should be small
     // enough to make this a very lightweight operation.
-    !serializedTables.isEmpty || iter.hasNext
+    bufferingFuture.isDefined || !serializedTables.isEmpty || iter.hasNext
   }
 
   override def next(): CoalescedHostResult = {
     if (!hasNext()) {
       throw new NoSuchElementException("No more host batches to concatenate")
     }
-    if (bufferingFuture == null) {
-      bufferNextBatch()
-    } else {
-      // The async read is running, waiting for the result
-      bufferingFuture.get()
-      bufferingFuture = null
-    }
+    bufferingFuture.map(_.get()).getOrElse(bufferNextBatch())
+    bufferingFuture = None
+
     concatenateTablesInHost()
   }
 
