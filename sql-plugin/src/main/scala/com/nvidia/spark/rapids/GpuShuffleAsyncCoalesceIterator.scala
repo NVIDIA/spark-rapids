@@ -20,11 +20,17 @@ import java.util.concurrent.{Callable, Future}
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.GpuShuffleAsyncCoalesceIterator.asyncShuffleReadPool
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+object GpuShuffleAsyncCoalesceIterator {
+  val asyncShuffleReadPool =
+    TrampolineUtil.newDaemonCachedThreadPool("async shuffle read", 20)
+}
 
 /**
  * Similar as GpuShuffleCoalesceIterator, but pulling in host batches asynchronously, to
@@ -37,14 +43,6 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     asyncReadTimeMetric: GpuMetric = NoopMetric,
     opTimeMetric: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
-  private val readExecutor =
-    TrampolineUtil.newDaemonSingleThreadExecutor("async shuffle read")
-
-  Option(TaskContext.get()).foreach( tc =>
-    // Install a listener to to close the async read thread.
-    tc.addTaskCompletionListener[Unit](_ => readExecutor.shutdown())
-  )
-
   // don't try to call TaskContext.get().taskAttemptId() in the backend thread
   private val taskAttemptID = Option(TaskContext.get()).
     map(_.taskAttemptId().toString).getOrElse("unknown")
@@ -53,7 +51,7 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     // The actual async read, including the host batches read and concatenation in
     // "HostCoalesceIteratorBase.next()".
     override def call(): CoalescedHostResult = {
-      val nvRangeName = s"Task ${taskAttemptID}-Async Read Batch"
+      val nvRangeName = s"Task ${taskAttemptID} - Async Read Batch (Backend)"
       withResource(new NvtxRange(nvRangeName, NvtxColor.BLUE)) { _ =>
         iter.next()
       }
@@ -75,7 +73,7 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     if (!hasNext()) {
       throw new NoSuchElementException("No more batches")
     }
-    val nvRangeName = s"Task ${taskAttemptID}-Batch to GPU"
+    val nvRangeName = s"Task ${taskAttemptID} - Async Read Batch (Frontend)"
     withResource(new NvtxRange(nvRangeName, NvtxColor.BLUE)) { _ =>
       val hostConcatedRet = GpuMetric.ns(asyncReadTimeMetric, opTimeMetric) {
         readFutureOpt.map { readFuture =>
@@ -98,7 +96,7 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
           // No need synchronization here since the async read is already done.
           if (hasNextCB) {
             // Prefetch and concatenate the next one asynchronously.
-            readFutureOpt = Some(readExecutor.submit(readCallable))
+            readFutureOpt = Some(asyncShuffleReadPool.submit(readCallable))
           } else {
             readFutureOpt = None
           }

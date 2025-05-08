@@ -26,7 +26,7 @@ import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
-import com.nvidia.spark.rapids.GpuShuffleCoalesceUtils.bufferExecutor
+import com.nvidia.spark.rapids.GpuShuffleAsyncCoalesceIterator.asyncShuffleReadPool
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -41,7 +41,6 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -118,10 +117,6 @@ object CoalesceReadOption {
 }
 
 object GpuShuffleCoalesceUtils {
-
-  val bufferExecutor =
-    TrampolineUtil.newDaemonCachedThreadPool("bufferNextBatch", 20)
-
   /**
    * Return an iterator that will pull in batches from the input iterator,
    * concatenate them up to the "targetSize" and move the concatenated result
@@ -327,6 +322,10 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     onTaskCompletion(tc)(close())
   }
 
+  // don't try to call TaskContext.get().taskAttemptId() in the backend thread
+  private val taskAttemptID = Option(TaskContext.get()).
+    map(_.taskAttemptId().toString).getOrElse("unknown")
+
   private var bufferingFuture : Option[Future[_]] = None
 
   protected def tableOperator: SerializedTableOperator[T]
@@ -356,9 +355,12 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
         }
 
         if (asyncBuffering && iter.hasNext) {
-          bufferingFuture = Option(bufferExecutor.submit(new Runnable {
+          bufferingFuture = Option(asyncShuffleReadPool.submit(new Runnable {
             override def run(): Unit = {
-              bufferNextBatch()
+              val nvRangeName = s"Task ${taskAttemptID}-Async Buffer Next (Backend)"
+              withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+                bufferNextBatch()
+              }
             }
           }))
         }
@@ -410,10 +412,24 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     if (!hasNext()) {
       throw new NoSuchElementException("No more host batches to concatenate")
     }
-    bufferingFuture.map(_.get()).getOrElse(bufferNextBatch())
+    bufferingFuture.map(f => {
+      val nvRangeName = s"Task ${taskAttemptID} - Async Buffer Next (Frontend)"
+      withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+        f.get()
+      }
+    }).getOrElse({
+      val nvRangeName = s"Task ${taskAttemptID} - Sync Buffer Next (Frontend)"
+      withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+        bufferNextBatch()
+      }
+    }
+    )
     bufferingFuture = None
 
-    concatenateTablesInHost()
+    val nvRangeName = s"Task ${taskAttemptID} - Concat in CPU"
+    withResource(new NvtxRange(nvRangeName, NvtxColor.PURPLE)) { _ =>
+      concatenateTablesInHost()
+    }
   }
 
   private def canAddToBatch(nextTable: T): Boolean = {
