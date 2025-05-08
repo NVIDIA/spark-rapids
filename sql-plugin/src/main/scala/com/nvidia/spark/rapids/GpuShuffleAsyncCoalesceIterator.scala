@@ -45,11 +45,15 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     tc.addTaskCompletionListener[Unit](_ => readExecutor.shutdown())
   )
 
+  // don't try to call TaskContext.get().taskAttemptId() in the backend thread
+  private val taskAttemptID = Option(TaskContext.get()).
+    map(_.taskAttemptId().toString).getOrElse("unknown")
+
   private lazy val readCallable = new Callable[CoalescedHostResult]() {
     // The actual async read, including the host batches read and concatenation in
     // "HostCoalesceIteratorBase.next()".
     override def call(): CoalescedHostResult = {
-      val nvRangeName = s"Task ${TaskContext.get().taskAttemptId()}-Async Read Batch"
+      val nvRangeName = s"Task ${taskAttemptID}-Async Read Batch"
       withResource(new NvtxRange(nvRangeName, NvtxColor.BLUE)) { _ =>
         iter.next()
       }
@@ -71,7 +75,7 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     if (!hasNext()) {
       throw new NoSuchElementException("No more batches")
     }
-    val nvRangeName = s"Task ${TaskContext.get().taskAttemptId()}-Batch to GPU"
+    val nvRangeName = s"Task ${taskAttemptID}-Batch to GPU"
     withResource(new NvtxRange(nvRangeName, NvtxColor.BLUE)) { _ =>
       val hostConcatedRet = GpuMetric.ns(asyncReadTimeMetric, opTimeMetric) {
         readFutureOpt.map { readFuture =>
