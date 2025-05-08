@@ -71,7 +71,8 @@ class GpuParquetReaderPostProcessor(
       s"File read schema field count ${fileReadSchema.getFieldCount} doesn't match expected " +
         s"columnar batch columns ${originalBatch.numCols()}")
 
-    withRetryNoSplit(SpillableColumnarBatch(originalBatch, ACTIVE_ON_DECK_PRIORITY)) {
+    withRetryNoSplit(SpillableColumnarBatch(GpuColumnVector.incRefCounts(originalBatch),
+      ACTIVE_ON_DECK_PRIORITY)) {
       batch =>
       withResource(new ColumnarBatchHandler(this, batch)) { handler =>
         TypeUtil.visit(expectedSchema, handler).left.get
@@ -101,7 +102,7 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     }
     // Ownership has transferred to columnar batch, so it should be cleared
     vectorBuffer.clear()
-    Left(new ColumnarBatch(columns, spillableBatch.numRows()))
+    Left(new ColumnarBatch(columns, batch.numRows()))
   }
 
   override def field(field: Types.NestedField, fieldResult: HandlerResult): HandlerResult = {
@@ -129,7 +130,7 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     // need to check for key presence since associated value could be null
     if (processor.idToConstant.containsKey(curFieldId)) {
       withResource(GpuScalar.from(processor.idToConstant.get(curFieldId), sparkType)) { scalar =>
-        return GpuColumnVector.from(scalar, spillableBatch.numRows(), sparkType)
+        return GpuColumnVector.from(scalar, batch.numRows(), sparkType)
       }
     }
     if (curFieldId == MetadataColumns.ROW_POSITION.fieldId) {
