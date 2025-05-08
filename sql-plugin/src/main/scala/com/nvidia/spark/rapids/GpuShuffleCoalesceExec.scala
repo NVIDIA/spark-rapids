@@ -366,7 +366,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
         }
       }
 
-      withRetryNoSplit(input) { tables =>
+      withRetryNoSplit(input.toSeq) { tables =>
         tableOperator.concatOnHost(tables.toArray)
       }
     }
