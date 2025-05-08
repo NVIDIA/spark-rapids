@@ -1149,17 +1149,17 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //| TimezoneAwareExpression| True              | False by default, True when implemented |
   //| Others                 | False             | N/A (will not be checked)               |
   //+------------------------+-------------------+-----------------------------------------+
-  lazy val needTimeZoneCheck: Boolean = {
+  def needTimeZoneCheck: Boolean = {
     wrapped match {
       // CurrentDate expression will not go through this even it's a `TimeZoneAwareExpression`.
       // It will be treated as literal in Rapids.
       case _: TimeZoneAwareExpression =>
         if (wrapped.isInstanceOf[Cast]) {
           val cast = wrapped.asInstanceOf[Cast]
-          needsTimeZone(cast.child.dataType, cast.dataType)
+          castNeedsTimeZone(cast.child.dataType, cast.dataType)
         } else if(PlanShims.isAnsiCast(wrapped)) {
           val (from, to) = PlanShims.extractAnsiCastTypes(wrapped)
-          needsTimeZone(from, to)
+          castNeedsTimeZone(from, to)
         } else{
           true
         }
@@ -1171,16 +1171,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //    1. Override date related based on https://github.com/apache/spark/pull/40524 merged
   //    2. Existing `needsTimezone` doesn't consider complex types to string which is timezone
   //    related. (incl. struct/map/list to string).
-  private[this] def needsTimeZone(from: DataType, to: DataType): Boolean = (from, to) match {
+  def castNeedsTimeZone(from: DataType, to: DataType): Boolean = (from, to) match {
     case (StringType, DateType) => false
     case (DateType, StringType) => false
-    case (ArrayType(fromType, _), StringType) => needsTimeZone(fromType, to)
+    case (ArrayType(fromType, _), StringType) => castNeedsTimeZone(fromType, to)
     case (MapType(fromKey, fromValue, _), StringType) =>
-      needsTimeZone(fromKey, to) || needsTimeZone(fromValue, to)
+      castNeedsTimeZone(fromKey, to) || castNeedsTimeZone(fromValue, to)
     case (StructType(fromFields), StringType) =>
       fromFields.exists {
         case fromField =>
-          needsTimeZone(fromField.dataType, to)
+          castNeedsTimeZone(fromField.dataType, to)
       }
     // Avoid copying full implementation here. Otherwise needs to create shim for TimestampNTZ
     // since Spark 3.4.0
