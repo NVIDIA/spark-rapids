@@ -20,9 +20,10 @@ import java.util.{Map => JMap}
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar, LazySpillableColumnarBatch}
+import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
 import java.util
 import org.apache.iceberg.{MetadataColumns, Schema}
@@ -70,8 +71,8 @@ class GpuParquetReaderPostProcessor(
       s"File read schema field count ${fileReadSchema.getFieldCount} doesn't match expected " +
         s"columnar batch columns ${originalBatch.numCols()}")
 
-    withRetryNoSplit(LazySpillableColumnarBatch(originalBatch,
-      "iceberg post processing")) { batch =>
+    withRetryNoSplit(SpillableColumnarBatch(originalBatch, ACTIVE_ON_DECK_PRIORITY)) {
+      batch =>
       withResource(new ColumnarBatchHandler(this, batch)) { handler =>
         TypeUtil.visit(expectedSchema, handler).left.get
       }
@@ -81,14 +82,14 @@ class GpuParquetReaderPostProcessor(
 
 
 private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostProcessor,
-    private val batch: LazySpillableColumnarBatch
+    private val spillableBatch: SpillableColumnarBatch
 ) extends TypeUtil.SchemaVisitor[HandlerResult] with AutoCloseable {
-  batch.allowSpilling()
+  private val batch = spillableBatch.getColumnarBatch()
   private var currentField: NestedField = _
   // This is used to hold the column vectors that are created during the travel of the batch, so
   // that if exception happens, we can close them all at once.
-  private val vectorBuffer: ArrayBuffer[GpuColumnVector] = new ArrayBuffer[GpuColumnVector](
-    batch.numCols)
+  private val vectorBuffer = new ArrayBuffer[GpuColumnVector](batch.numCols())
+
 
   override def schema(schema: Schema, structResult: HandlerResult): HandlerResult  = structResult
 
@@ -100,7 +101,7 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     }
     // Ownership has transferred to columnar batch, so it should be cleared
     vectorBuffer.clear()
-    Left(new ColumnarBatch(columns, batch.numRows))
+    Left(new ColumnarBatch(columns, spillableBatch.numRows()))
   }
 
   override def field(field: Types.NestedField, fieldResult: HandlerResult): HandlerResult = {
@@ -128,7 +129,7 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     // need to check for key presence since associated value could be null
     if (processor.idToConstant.containsKey(curFieldId)) {
       withResource(GpuScalar.from(processor.idToConstant.get(curFieldId), sparkType)) { scalar =>
-        return GpuColumnVector.from(scalar, batch.numRows, sparkType)
+        return GpuColumnVector.from(scalar, spillableBatch.numRows(), sparkType)
       }
     }
     if (curFieldId == MetadataColumns.ROW_POSITION.fieldId) {
@@ -141,18 +142,19 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     for (i <- 0 until processor.fileReadSchema.getFieldCount) {
       val t = processor.fileReadSchema.getType(i)
       if (t.getId != null && t.getId.intValue == curFieldId) {
-        return doUpCastIfNeeded(batch.getBatch.column(i).asInstanceOf[GpuColumnVector], fieldType)
+        return doUpCastIfNeeded(batch.column(i).asInstanceOf[GpuColumnVector],
+          fieldType)
       }
     }
     if (currentField.isOptional) {
-      return GpuColumnVector.fromNull(batch.numRows, sparkType)
+      return GpuColumnVector.fromNull(batch.numRows(), sparkType)
     }
 
     throw new IllegalArgumentException("Missing required field: " + currentField.fieldId)
   }
 
   override def close(): Unit = {
-    batch.releaseBatch()
+    batch.close()
     withResource(vectorBuffer) { _ => }
   }
 }
