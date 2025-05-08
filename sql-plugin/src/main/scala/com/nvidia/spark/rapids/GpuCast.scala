@@ -147,8 +147,6 @@ abstract class CastExprMetaBase[INPUT <: UnaryLike[Expression] with TimeZoneAwar
           willNotWorkOnGpu("Casting strings to timestamps is disabled, please set" +
             s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
         }
-      case (_: StringType, _: DateType) =>
-        YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, dt:DecimalType) =>
         if (dt.scale < 0 && !SparkShimImpl.isCastingStringToNegDecimalScaleSupported) {
           willNotWorkOnGpu("RAPIDS doesn't support casting string to decimal for " +
@@ -283,11 +281,6 @@ class CastOptions(
 }
 
 object GpuCast {
-
-  private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
-  private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
-  private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
-
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
 
@@ -542,7 +535,7 @@ object GpuCast {
       case (StringType, FloatType | DoubleType) =>
         CastStrings.toFloat(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
-      case (StringType, BooleanType | DateType) =>
+      case (StringType, BooleanType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
@@ -558,6 +551,12 @@ object GpuCast {
       case (StringType, TimestampType) =>
         // no need to strip, kernel will strip
         castStringToTimestamp(input, ansiMode, options.timeZoneId)
+      case (StringType, DateType) =>
+        if (options.useAnsiStringToDateMode) {
+          castStringToDateAnsi(input, ansiMode)
+        } else {
+          castStringToDate(input)
+        }
       case (StringType, dt: DecimalType) =>
         CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
@@ -1301,43 +1300,24 @@ object GpuCast {
   }
 
   /**
-   * Trims and parses a given UTF8 date string to a corresponding [[Int]] value.
-   * The return type is [[Option]] in order to distinguish between 0 and null. The following
-   * formats are allowed:
-   *
-   * `yyyy`
-   * `yyyy-[m]m`
-   * `yyyy-[m]m-[d]d`
-   * `yyyy-[m]m-[d]d `
-   * `yyyy-[m]m-[d]d *`
-   * `yyyy-[m]m-[d]dT*`
+   * Trims and parses UTF8 date strings to a date column.
+   * Refer to Spark code: SparkDateTimeUtils.stringToDate
+   * `[+-]yyyy[y][y][y]`
+   * `[+-]yyyy[y][y][y]-[m]m`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d `
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d *`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]dT*`
    */
-  def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
-
-    // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-    val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-      convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
-        convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
-
-    // handle special dates like "epoch", "now", etc.
-    closeOnExcept(converted) { tsVector =>
-      DateUtils.fetchSpecialDates(DType.TIMESTAMP_DAYS) match {
-        case specialDates if specialDates.nonEmpty =>
-          // `tsVector` will be closed in replaceSpecialDates
-          replaceSpecialDates(sanitizedInput, tsVector, specialDates)
-        case _ =>
-          tsVector
-      }
-    }
+  def castStringToDate(input: ColumnView): ColumnVector = {
+    CastStrings.toDate(input, /* Ansi */ false)
   }
 
-  def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
-    val result = castStringToDate(input)
-    if (ansiMode) {
-      // When ANSI mode is enabled, we need to throw an exception if any values could not be
-      // converted
-      checkResultForAnsiMode(input, result,
-        "One or more values could not be converted to DateType")
+  def castStringToDateAnsi(input: ColumnView, ansiMode: Boolean): ColumnVector = {
+    val result = CastStrings.toDate(input, ansiMode)
+    if (result == null) {
+      // All the errors of Spark 320, 330, 340, 350 contains "DateTimeException"
+      throw new DateTimeException("DateTimeException")
     } else {
       result
     }
