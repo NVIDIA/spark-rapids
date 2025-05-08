@@ -29,9 +29,15 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * OutputStream that performs writes asynchronously. Writes are scheduled on a background thread
  * and executed in the order they were scheduled. This class is not thread-safe and should only be
  * used by a single thread.
+ *
+ * @param openFn a function that creates an underlying delegate OutputStream
+ * @param trafficController a TrafficController that controls the flow of data to the underlying
+ *                          delegate
+ * @param statsTrackers a sequence of ColumnarWriteTaskStatsTracker
+ * @param writeDelayMs used only for testing. A delay in milliseconds to add before each write
  */
 class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: TrafficController,
-    statsTrackers: Seq[ColumnarWriteTaskStatsTracker])
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker], writeDelayMs: Long = 0L)
   extends OutputStream {
 
   private var closed = false
@@ -93,6 +99,9 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
 
     metrics.numBytesScheduled += bytesToWrite
     executor.submit(() => {
+      if (writeDelayMs > 0) {
+        Thread.sleep(writeDelayMs)
+      }
       throwIfError()
       ensureOpen()
 
@@ -112,7 +121,9 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
   }
 
   override def write(b: Array[Byte]): Unit = {
-    scheduleWrite(() => delegate.write(b), b.length)
+    val copy = new Array[Byte](b.length)
+    System.arraycopy(b, 0, copy, 0, b.length)
+    scheduleWrite(() => delegate.write(copy), copy.length)
   }
 
   /**
@@ -128,7 +139,9 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
    */
   @throws[IOException]
   override def write(b: Array[Byte], off: Int, len: Int): Unit = {
-    scheduleWrite(() => delegate.write(b, off, len), len)
+    val copy = new Array[Byte](len)
+    System.arraycopy(b, off, copy, 0, len)
+    scheduleWrite(() => delegate.write(copy, 0, len), len)
   }
 
   /**
