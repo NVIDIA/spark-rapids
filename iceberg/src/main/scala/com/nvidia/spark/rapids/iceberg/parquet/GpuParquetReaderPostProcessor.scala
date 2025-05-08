@@ -61,19 +61,14 @@ class GpuParquetReaderPostProcessor(
   /**
    * Process columnar batch to match expected schema.
    *
-   * @param originalBatch Columnar batch read from parquet. Note that <b>the caller</b> should take
-   *                      care of managing ownership of it.
+   * @param originalBatch Columnar batch read from parquet.Note that this method will take
+   *                      ownership of this batch, and should not be used anymore.
    * @return Processed columnar batch.
    */
   def process(originalBatch: ColumnarBatch): ColumnarBatch = {
     require(originalBatch != null, "Columnar batch can't be null")
-    require(fileReadSchema.getFieldCount == originalBatch.numCols(),
-      s"File read schema field count ${fileReadSchema.getFieldCount} doesn't match expected " +
-        s"columnar batch columns ${originalBatch.numCols()}")
 
-    withRetryNoSplit(SpillableColumnarBatch(GpuColumnVector.incRefCounts(originalBatch),
-      ACTIVE_ON_DECK_PRIORITY)) {
-      batch =>
+    withRetryNoSplit(SpillableColumnarBatch(originalBatch, ACTIVE_ON_DECK_PRIORITY)) { batch =>
       withResource(new ColumnarBatchHandler(this, batch)) { handler =>
         TypeUtil.visit(expectedSchema, handler).left.get
       }
