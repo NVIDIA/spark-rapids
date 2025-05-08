@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,9 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
         new ToPrettyStringChecks(),
         (toPrettyString, conf, p, r) => {
           new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
+
+            override def needTimeZoneCheck: Boolean = 
+              castNeedsTimeZone(toPrettyString.child.dataType, StringType)
 
             override val toType: StringType.type = StringType
 

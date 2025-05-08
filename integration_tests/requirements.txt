@@ -14,7 +14,8 @@
 pytest
 sre_yield
 pandas
-pyarrow
+pyarrow == 17.0.0 ; python_version == '3.8'
+pyarrow == 19.0.1 ; python_version >= '3.9'
 pytest-xdist >= 2.0.0
 findspark
 fsspec == 2025.3.0

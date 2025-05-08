@@ -26,10 +26,9 @@ import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.GpuScanWrapper;
 import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
-import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
+import com.nvidia.spark.rapids.iceberg.spark.GpuSparkUtil;
+import com.nvidia.spark.rapids.iceberg.spark.GpuSparkUtil$;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
-import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
-import com.nvidia.spark.rapids.iceberg.spark.SparkUtil;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileFormat;
@@ -43,6 +42,8 @@ import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.hadoop.HadoopInputFile;
 import org.apache.iceberg.hadoop.Util;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.spark.Spark3Util;
+import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.util.PropertyUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -145,8 +146,9 @@ abstract class GpuSparkScan extends GpuScanWrapper
   @Override
   public StructType readSchema() {
     if (readSchema == null) {
-      Preconditions.checkArgument(readTimestampWithoutZone || !SparkUtil.hasTimestampWithoutZone(expectedSchema),
-          SparkUtil.TIMESTAMP_WITHOUT_TIMEZONE_ERROR);
+      Preconditions.checkArgument(readTimestampWithoutZone ||
+              !GpuSparkUtil.hasTimestampWithoutZone(expectedSchema),
+          GpuSparkUtil$.MODULE$.TIMESTAMP_WITHOUT_TIMEZONE_ERROR());
       this.readSchema = SparkSchemaUtil.convert(expectedSchema);
     }
     return readSchema;
