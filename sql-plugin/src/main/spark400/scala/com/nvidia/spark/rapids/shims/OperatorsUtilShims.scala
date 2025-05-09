@@ -22,8 +22,6 @@ package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids._
-
 import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive._
 
