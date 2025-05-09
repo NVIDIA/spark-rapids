@@ -18,11 +18,14 @@ package com.nvidia.spark.rapids.io.async
 
 import java.io.{BufferedInputStream, BufferedOutputStream, DataInputStream, File, FileInputStream, FileOutputStream, IOException, OutputStream}
 import java.nio.ByteBuffer
-import java.util.concurrent.Callable
+import java.util.concurrent.{Callable, ExecutorService, Future}
 
+import com.google.common.util.concurrent.ForwardingExecutorService
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
+
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
 
@@ -32,11 +35,52 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
   private val trafficController = new TrafficController(
     new HostMemoryThrottle(bufLen * maxBufCount))
 
-  def openStream(delayMs: Long = 0L): (AsyncOutputStream, String) = {
+  def openStream(writeDelayMs: Long = 0L): (AsyncOutputStream, String) = {
     val file = File.createTempFile("async-write-test", "tmp")
-    (new AsyncOutputStream(() => {
-      new BufferedOutputStream(new FileOutputStream(file))
-    }, trafficController, Seq.empty, delayMs), file.getAbsolutePath)
+    val stream = if (writeDelayMs == 0L) {
+      AsyncOutputStream(() => {
+        new BufferedOutputStream(new FileOutputStream(file))
+      }, trafficController, Seq.empty)
+    } else {
+      val del = TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1)
+      val executor = new ThrottlingExecutor(
+        new ForwardingExecutorService {
+          override def delegate(): ExecutorService = del
+
+          /**
+           * Technically, overriding this method is good enough for the test, but we also override
+           * the other submit methods as well in case we modify our code to use them in the future.
+           */
+          override def submit[T](task: Callable[T]): Future[T] = {
+            super.submit(() => {
+              Thread.sleep(writeDelayMs)
+              task.call()
+            })
+          }
+
+          override def submit(task: Runnable): Future[_] = {
+            super.submit(new Runnable {
+              override def run(): Unit = {
+                Thread.sleep(writeDelayMs)
+                task.run()
+              }
+            })
+          }
+
+          override def submit[T](task: Runnable, result: T): Future[T] = {
+            super.submit(() => {
+              Thread.sleep(writeDelayMs)
+              task.run()
+            }, result)
+          }
+        },
+        trafficController,
+        Seq.empty)
+      new AsyncOutputStream(() => {
+        new BufferedOutputStream(new FileOutputStream(file))
+      }, executor)
+    }
+    (stream, file.getAbsolutePath)
   }
 
   test("open, write, and close") {
@@ -178,7 +222,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   test("write after error") {
-    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
+    val os = AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
 
     // The first call to `write` should succeed
     os.write(buf)
@@ -204,7 +248,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   test("flush after error") {
-    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
+    val os = AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
 
     // The first write should succeed
     os.write(buf)
@@ -221,7 +265,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   test("close after error") {
-    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
+    val os = AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
 
     os.write(buf)
 
