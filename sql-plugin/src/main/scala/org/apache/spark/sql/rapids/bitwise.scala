@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -157,4 +157,23 @@ case class GpuBitwiseNot(child: Expression) extends CudfUnaryExpression with Exp
   override def dataType: DataType = child.dataType
 
   override def toString: String = s"~${child.sql}"
+}
+
+case class GpuBitwiseCount(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+  override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegralType, BooleanType))
+
+  override def dataType: DataType = IntegerType
+
+  override def toString: String = s"bit_count(${child.sql})"
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    if (input.dataType() == LongType || input.dataType() == BooleanType) {
+      input.getBase.bitCount()
+    } else {
+      // For integer type, Spark always evaluates bit_count as if the input is UINT64.
+      withResource(input.getBase.castTo(DType.UINT64)) { castedInput =>
+        castedInput.bitCount()
+      }
+    }
+  }
 }
