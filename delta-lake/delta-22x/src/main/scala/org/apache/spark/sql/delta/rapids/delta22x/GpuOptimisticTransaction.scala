@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids.delta24x
+package org.apache.spark.sql.delta.rapids.delta22x
 
 import java.net.URI
 
@@ -31,14 +31,14 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
+import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
 import org.apache.spark.sql.delta.schema.InvariantViolationException
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.SQLExecution
@@ -110,10 +110,8 @@ class GpuOptimisticTransaction
       val _spark = spark
 
       val statsCollection = new GpuStatisticsCollection {
-        override protected def spark: SparkSession = _spark
-        override val deletionVectorsSupported =
-          DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).protocol
-            .isFeatureSupported(DeletionVectorsTableFeature)
+        override val spark = _spark
+        override val deletionVectorsSupported = false
         override val tableDataSchema = tableSchema
         override val dataSchema = statsDataSchema.toStructType
         override val numIndexedCols = indexedCols
@@ -224,7 +222,7 @@ class GpuOptimisticTransaction
           }.toMap
       }
 
-      val deltaFileFormat = DeltaRuntimeShim.fileFormatFromLog(deltaLog)
+      val deltaFileFormat = deltaLog.fileFormat(metadata)
       val gpuFileFormat = if (deltaFileFormat.getClass == classOf[DeltaParquetFileFormat]) {
         new GpuParquetFileFormat
       } else {
