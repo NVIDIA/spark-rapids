@@ -159,7 +159,7 @@ object HybridExecutionUtils extends PredicateHelper {
    * report error if it is
    */
   private def checkNotRunningCDHorDatabricks(): Unit = {
-    if (VersionUtils.isCloudera || VersionUtils.isDataBricks) {
+    if (VersionUtils.isCloudera || VersionUtils.isDataBricks || VersionUtils.isAcceldata) {
       throw new RuntimeException("Hybrid feature does not support Cloudera/Databricks " +
           "Spark releases, Please disable Hybrid feature by setting " +
           "spark.rapids.sql.parquet.useHybridReader=false")
