@@ -2087,6 +2087,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val SHUFFLE_ASYNC_READ_ENABLED = conf("spark.rapids.shuffle.asyncRead.enabled")
+    .doc("Enable or disable the asynchronous read for Shuffle.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(true)
+
   // ["NEVER", "ALWAYS", "ONFAILURE"]
   private val KudoDebugModes = 
     DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
@@ -3251,6 +3258,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
+
+  lazy val shuffleAsyncReadEnabled: Boolean = get(SHUFFLE_ASYNC_READ_ENABLED)
 
   lazy val shuffleKudoSerializerDebugMode: DumpOption = {
     val mode = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE)
