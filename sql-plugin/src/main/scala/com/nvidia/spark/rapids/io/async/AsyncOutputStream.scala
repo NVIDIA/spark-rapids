@@ -25,20 +25,33 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-/**
- * OutputStream that performs writes asynchronously. Writes are scheduled on a background thread
- * and executed in the order they were scheduled. This class is not thread-safe and should only be
- * used by a single thread.
- */
-class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: TrafficController,
-    statsTrackers: Seq[ColumnarWriteTaskStatsTracker])
+object AsyncOutputStream {
+
+  /**
+   * OutputStream that performs writes asynchronously. Writes are scheduled on a background thread
+   * and executed in the order they were scheduled. This class is not thread-safe and should only be
+   * used by a single thread.
+   *
+   * @param openFn a function that creates an underlying delegate OutputStream
+   * @param trafficController a TrafficController that controls the flow of data to the underlying
+   *                          delegate
+   * @param statsTrackers a sequence of ColumnarWriteTaskStatsTracker
+   */
+  def apply(
+      openFn: Callable[OutputStream],
+      trafficController: TrafficController,
+      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): AsyncOutputStream = {
+    val executor = new ThrottlingExecutor(
+      TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1), trafficController,
+      statsTrackers)
+    new AsyncOutputStream(openFn, executor)
+  }
+}
+
+class AsyncOutputStream(openFn: Callable[OutputStream], executor: ThrottlingExecutor)
   extends OutputStream {
 
   private var closed = false
-
-  private val executor = new ThrottlingExecutor(
-    TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1), trafficController,
-    statsTrackers)
 
   // Open the underlying stream asynchronously as soon as the AsyncOutputStream is constructed,
   // so that the open can be done in parallel with other operations. This could help with
@@ -112,7 +125,9 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
   }
 
   override def write(b: Array[Byte]): Unit = {
-    scheduleWrite(() => delegate.write(b), b.length)
+    val copy = new Array[Byte](b.length)
+    System.arraycopy(b, 0, copy, 0, b.length)
+    scheduleWrite(() => delegate.write(copy), copy.length)
   }
 
   /**
@@ -128,7 +143,9 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
    */
   @throws[IOException]
   override def write(b: Array[Byte], off: Int, len: Int): Unit = {
-    scheduleWrite(() => delegate.write(b, off, len), len)
+    val copy = new Array[Byte](len)
+    System.arraycopy(b, off, copy, 0, len)
+    scheduleWrite(() => delegate.write(copy, 0, len), len)
   }
 
   /**
