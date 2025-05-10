@@ -20,31 +20,51 @@ import java.lang.management.ManagementFactory
 import java.nio.file.{Files, Paths}
 
 import scala.io.Source
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids.Arm.withResource
 
-object MemoryChecker {
+import org.apache.spark.internal.Logging
+
+/**
+ * Utility class that queries the runtime environment to determine how much
+ * system memory is currently available. It does this by trying to figure out
+ * what type of environment it's in (eg. docker, YARN, bare metal, etc.), based
+ * on which it checks corresponding files, env variables, etc. for memory usage
+ * and limits.
+ */
+object MemoryChecker extends Logging {
   def main(args: Array[String]): Unit = {
     println(s"Available memory: ${getAvailableMemoryBytes} bytes")
   }
 
   def getAvailableMemoryBytes: Option[Long] = {
-    if (isSlurmContainer) {
+    logInfo("Trying to detect available CPU memory")
+    val procLimit = if (isSlurmContainer) {
+      logInfo("Slurm environment detected")
       getSlurmMemory
-    } else if (isDockerContainer) {
-      getCgroupMemory.orElse(getHostMemory)
     } else {
-      getHostMemory
+      getCgroupMemory
     }
-  }
 
-  private def isDockerContainer: Boolean = {
-    Files.exists(Paths.get("/.dockerenv")) ||
-      withResource(Source.fromFile("/proc/1/cgroup")) {
-        source => source.getLines().exists(line =>
-        line.contains("docker") || line.contains("kubepods"))
-      }
+    val systemLimit = getHostMemory
+
+    if (procLimit.isEmpty && systemLimit.isEmpty) {
+      logWarning("no process or system memory limits detected")
+      None
+    } else if (procLimit.isEmpty) {
+      logInfo(s"no process limits detected; using system limit of ${systemLimit.get}")
+      systemLimit
+    } else if (systemLimit.isEmpty) {
+      logInfo(s"no system limits detected; using process limit of ${procLimit.get}")
+      procLimit
+    } else {
+      logInfo(s"detected system limit of ${systemLimit.get} and process limit of " +
+        s"${procLimit.get}")
+      val res = Math.min(procLimit.get, systemLimit.get)
+      logInfo(s"using the minimum of $res")
+      Some(res)
+    }
   }
 
   private def isSlurmContainer: Boolean = {
@@ -55,7 +75,7 @@ object MemoryChecker {
     val pid = ManagementFactory.getRuntimeMXBean.getName.split("@").head.toInt
     val statusFile = s"/proc/$pid/status"
 
-    withResource(Source.fromFile(statusFile)) { source =>
+    val result = Try(withResource(Source.fromFile(statusFile)) { source =>
       source.getLines()
         .find(_.startsWith("VmRSS:"))
         .flatMap { line =>
@@ -64,13 +84,19 @@ object MemoryChecker {
             case _ => None
           }
         }
+    })
+    result match {
+      case Success(value) => value
+      case Failure(exception) => {
+        logWarning(s"failed to read $statusFile: $exception")
+        None
+      }
     }
   }
 
   private def getSlurmMemory: Option[Long] = {
     val totalOpt = Option(System.getenv("SLURM_MEM_PER_NODE"))
       .map(_.toLong * 1024 * 1024) // Convert MB to bytes
-      .orElse(getHostMemory)
 
     for {
       total <- totalOpt
@@ -92,10 +118,15 @@ object MemoryChecker {
 
   private def getCgroupMemory: Option[Long] = {
     val (limitPath, usagePath) = getCgroupPaths
+    // The max appears to be 9223372036854710272 in some cases, which would exceed
+    // this otherwise somewhat arbitrary limit. It's not clear exactly what number or
+    // range should be valid but realistically anything above 1PB could just be treated
+    // as "lets try to limit based on host mem instead or not at all"
+    val maxMemLimit = 1L * 1024 * 1024 * 1024 * 1024 * 1024 // 1PB
     for {
       limitStr <- readFile(limitPath)
       usageStr <- readFile(usagePath)
-      if limitStr != "max"
+      if limitStr != "max" && limitStr.toLong < maxMemLimit
       limit = limitStr.toLong
       usage = usageStr.toLong
     } yield limit - usage
@@ -112,12 +143,23 @@ object MemoryChecker {
   }
 
   private def getHostMemory: Option[Long] = {
-    withResource(Source.fromFile("/proc/meminfo")) { source =>
+    val path = "/proc/meminfo"
+    logInfo(s"attempting to read $path")
+    val result = Try(withResource(Source.fromFile(path)) { source =>
       source.getLines()
       .collectFirst {
         case line if line.startsWith("MemAvailable:") =>
           line.split("\\s+")(1).toLong * 1024 // KB to bytes
       }
+    })
+
+    result match {
+      case Success(value) => value
+      case Failure(exception) => {
+        logWarning(s"failed to read $path: $exception")
+        None
+      }
     }
+
   }
 }
