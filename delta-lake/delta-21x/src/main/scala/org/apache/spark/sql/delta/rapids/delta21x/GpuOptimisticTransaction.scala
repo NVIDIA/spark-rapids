@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids.shims
+package org.apache.spark.sql.delta.rapids.delta21x
 
 import java.net.URI
 
@@ -64,7 +64,7 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
 class GpuOptimisticTransaction
     (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
     (implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog, None, snapshot, rapidsConf)(clock) {
+  extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -124,7 +124,7 @@ class GpuOptimisticTransaction
         val statsCollection = new GpuStatisticsCollection {
           override val spark = _spark
           override val deletionVectorsSupported = false
-          override def tableDataSchema: StructType = statsDataSchema.toStructType
+          override val tableDataSchema: StructType = statsDataSchema.toStructType
           override val dataSchema: StructType = tableDataSchema
           override val numIndexedCols: Int = indexedCols
           override val stringPrefixLength: Int = prefixLength
