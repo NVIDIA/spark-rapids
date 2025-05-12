@@ -534,7 +534,6 @@ def test_hash_grpby_pivot(data_gen, conf, kudo_enabled):
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10062')
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_hash_multiple_grpby_pivot(data_gen, conf, kudo_enabled):
     assert_gpu_and_cpu_are_equal_collect(
