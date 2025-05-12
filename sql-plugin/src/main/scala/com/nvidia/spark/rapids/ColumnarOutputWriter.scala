@@ -130,7 +130,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   protected def getOutputStream: OutputStream = {
     if (useAsyncWrite) {
       logWarning("Async output write enabled")
-      new AsyncOutputStream(() => openOutputStream(), trafficController, statsTrackers)
+      AsyncOutputStream(() => openOutputStream(), trafficController, statsTrackers)
     } else {
       openOutputStream()
     }
