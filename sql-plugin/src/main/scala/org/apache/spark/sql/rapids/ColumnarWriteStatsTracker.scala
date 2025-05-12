@@ -62,6 +62,12 @@ trait ColumnarWriteTaskStatsTracker {
   def newBatch(filePath: String, batch: ColumnarBatch): Unit
 
   /**
+   * Process the fact that how many writers are currently opened.
+   * @param numWriters the current number of open writers
+   */
+  def writersNumber(numWriters: Int): Unit
+
+  /**
    * Returns the final statistics computed so far.
    * @param taskCommitTime Time of committing the task.
    * @note This may only be called once. Further use of the object may lead to undefined behavior.
