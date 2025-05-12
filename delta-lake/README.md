@@ -9,16 +9,16 @@ version it supports.
 The following table shows the mapping of Delta Lake versions to their supported Spark version
 and directory contains the corresponding support code.
 
-| Delta Lake Version | Spark Version   | Directory          |
-|--------------------|-----------------|--------------------|
-| 2.0.x              | Spark 3.2.x     | `delta-20x`        |
-| 2.1.x              | Spark 3.3.x     | `delta-21x`        |
-| 2.2.x              | Spark 3.3.x     | `delta-22x`        |
-| 2.3.x              | Spark 3.3.x     | `delta-23x`        |
-| 2.4.x              | Spark 3.4.x     | `delta-24x`        |
-| Databricks 11.3    | Databricks 11.3 | `delta-spark330db` |
-| Databricks 12.2    | Databricks 12.2 | `delta-spark332db` |
-| Databricks 13.3    | Databricks 13.3 | `delta-spark341db` |
+| Delta Lake Version | Spark Version   | Directory              |
+|--------------------|-----------------|------------------------|
+| 2.0.x              | Spark 3.2.x     | `delta-20x`            |
+| 2.1.x              | Spark 3.3.x     | `delta-21x`            |
+| 2.2.x              | Spark 3.3.x     | `delta-22x`            |
+| 2.3.x              | Spark 3.3.x     | `delta-23x`            |
+| 2.4.x              | Spark 3.4.x     | `delta-24x`            |
+| Databricks 12.2    | Databricks 12.2 | `delta-spark332db`     |
+| Databricks 13.3    | Databricks 13.3 | `delta-spark341db`     |
+| Databricks 14.3    | Databricks 14.3 | `delta-spark3510db143` |
 
 Delta Lake is not supported on all Spark versions, and for Spark versions where it is not
 supported the `delta-stub` project is used.
