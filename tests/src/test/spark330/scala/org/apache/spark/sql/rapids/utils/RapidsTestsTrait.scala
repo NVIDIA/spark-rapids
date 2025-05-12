@@ -109,7 +109,6 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         // .config("spark.rapids.sql.test.enabled", "true")
         // .config("spark.rapids.sql.test.allowedNonGpu",
         // "SerializeFromObjectExec,DeserializeToObjectExec,ExternalRDDScanExec")
-        .config("spark.rapids.sql.castStringToTimestamp.enabled", "true")
         .config("spark.rapids.sql.csv.read.decimal.enabled", "true")
         .config("spark.rapids.sql.format.avro.enabled", "true")
         .config("spark.rapids.sql.format.avro.read.enabled", "true")

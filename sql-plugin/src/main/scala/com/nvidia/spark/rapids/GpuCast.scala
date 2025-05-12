@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.time.DateTimeException
+import java.time.{DateTimeException, ZoneId}
 import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
@@ -91,6 +91,7 @@ abstract class CastExprMetaBase[INPUT <: UnaryLike[Expression] with TimeZoneAwar
     (fromType, toType) match {
       case (TimestampType, DateType) => true // this is for to_date(...)
       case (DateType, TimestampType) => true
+      case (StringType, TimestampType) => true
       case _ => false
     }
   }
@@ -1362,7 +1363,8 @@ object GpuCast {
 
   def castStringToTimestamp(input: ColumnView, ansiMode: Boolean, defaultTimeZone: Option[String] = Option.empty[String]): ColumnVector = {
     val tz = defaultTimeZone.getOrElse("Z")
-    withResource(CastStrings.toTimestamp(input, tz, ansiMode)) { result =>
+    val normalizedTZ = ZoneId.of(tz, ZoneId.SHORT_IDS).normalized().toString
+    withResource(CastStrings.toTimestamp(input, normalizedTZ, ansiMode)) { result =>
       if (ansiMode && result == null) {
         throw new RuntimeException("DateTimeException")
       } else {

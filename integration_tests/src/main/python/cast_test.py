@@ -179,61 +179,10 @@ def test_cast_string_date_non_ansi():
 @tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
 def test_cast_string_ts_valid_format_ansi_off(data_gen):
-    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
-    # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
             conf = copy_and_update(ansi_disabled_conf,
-                                   {'spark.rapids.sql.hasExtendedYearValues': False,
-                                    'spark.rapids.sql.castStringToTimestamp.enabled': True}))
-
-
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11556")
-@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1)],
-                         ids=idfn)
-@tz_sensitive_test
-@allow_non_gpu(*non_utc_allow)
-def test_cast_string_ts_valid_format_ansi_on(data_gen):
-    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
-    # This provides values that are valid in all of those formats.
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
-        conf = copy_and_update(ansi_enabled_conf,
-                               {'spark.rapids.sql.hasExtendedYearValues': False,
-                                'spark.rapids.sql.castStringToTimestamp.enabled': True}))
-
-
-@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
-def test_cast_string_date_fallback_ansi_off():
-    """
-    This tests that STRING->DATE conversion is run on CPU, via a fallback.
-    The point of this test is to exercise the fallback, and not to examine any errors in casting.
-    There is no change in behaviour between Apache Spark and the plugin, since they're both
-    exercising the CPU implementation.  Therefore, this needn't be tested with ANSI enabled.
-    """
-    assert_gpu_fallback_collect(
-            # Cast back to String because this goes beyond what python can support for years
-            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(DateType()).cast(StringType())),
-            'Cast',
-            conf=ansi_disabled_conf)
-
-@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
-def test_cast_string_timestamp_fallback():
-    """
-    This tests that STRING->TIMESTAMP conversion is run on CPU, via a fallback.
-    The point of this test is to exercise the fallback, and not to examine any errors in casting.
-    There is no change in behaviour between Apache Spark and the plugin, since they're both
-    exercising the CPU implementation.  Therefore, this needn't be tested with ANSI enabled.
-    """
-    assert_gpu_fallback_collect(
-            # Cast back to String because this goes beyond what python can support for years
-            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(TimestampType()).cast(StringType())),
-            'Cast',
-            conf = copy_and_update(ansi_disabled_conf,
-                                   {'spark.rapids.sql.castStringToTimestamp.enabled': True}))
-
+                                   {'spark.rapids.sql.hasExtendedYearValues': False}))
 
 @disable_ansi_mode  # In ANSI mode, there are restrictions to casting DECIMAL to other types.
                     # ANSI mode behaviour is tested in test_ansi_cast_decimal_to.
@@ -840,8 +789,7 @@ def test_cast_int_to_string_not_UTC():
         lambda spark: unary_op_df(spark, int_gen, 100).selectExpr("a", "CAST(a AS STRING) as str"),
         {"spark.sql.session.timeZone": "+08"})
 
-not_utc_fallback_test_params = [(timestamp_gen, 'STRING'),
-        (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
+not_utc_fallback_test_params = [(timestamp_gen, 'STRING')]
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params, ids=idfn)
@@ -852,6 +800,12 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
         {"spark.sql.session.timeZone": "+08",
          "spark.rapids.sql.castStringToTimestamp.enabled": True})
 
+@pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params, ids=idfn)
+def test_cast_string_to_timestamp_in_non_utc(from_gen, to_type):
+    gen = SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02'])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr("CAST(a AS TIMESTAMP) as casted"),
+        {"spark.sql.session.timeZone": "+08"})
 
 def test_cast_date_integral_and_fp_ansi_off():
     """
@@ -1116,16 +1070,10 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
         pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy[y][y]-mm-dd'),
 
         # has no timezone, 4 years, will run on GPU
-        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss'),
+        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}[ |T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{0,6}Z?', id='yyyy-mm-dd hh:mm:ss'),
 
         # has no timezone, 4-6 years, will run on GPU
-        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-dd hh:mm:ss'),
-
-        # has no timezone, 4 years, 'T' seperator, will run on GPU
-        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-ddThh:mm:ss'),
-
-        # has no timezone, 4-6 years, 'T' seperator, will run on GPU
-        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-ddThh:mm:ss'),
+        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}[ |T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{0,6}Z?', id='yyyy[y][y]-mm-dd hh:mm:ss'),
 
         # CTT is non-DST, will run on GPU
         pytest.param(

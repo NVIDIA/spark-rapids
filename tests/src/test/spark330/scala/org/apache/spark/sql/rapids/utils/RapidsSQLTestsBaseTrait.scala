@@ -168,7 +168,6 @@ object RapidsSQLTestsBaseTrait extends Logging {
       // .set("spark.rapids.sql.test.enabled", "true")
       // .set("spark.rapids.sql.test.allowedNonGpu",
       // "SerializeFromObjectExec,DeserializeToObjectExec,ExternalRDDScanExec")
-      .set("spark.rapids.sql.castStringToTimestamp.enabled", "true")
       .set("spark.rapids.sql.csv.read.decimal.enabled", "true")
       .set("spark.rapids.sql.format.avro.enabled", "true")
       .set("spark.rapids.sql.format.avro.read.enabled", "true")

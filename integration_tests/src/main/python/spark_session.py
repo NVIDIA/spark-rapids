@@ -47,7 +47,6 @@ _default_conf = {
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
     'spark.rapids.sql.castFloatToString.enabled': 'false',
     'spark.rapids.sql.castStringToFloat.enabled': 'false',
-    'spark.rapids.sql.castStringToTimestamp.enabled': 'false',
     'spark.rapids.sql.fast.sample': 'false',
     'spark.rapids.sql.hasExtendedYearValues': 'true',
     'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
