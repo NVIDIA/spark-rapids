@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.lang.management.ManagementFactory
 import java.nio.file.{Files, Paths}
 
-import scala.io.Source
+import scala.io.{BufferedSource, Codec, Source}
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids.Arm.withResource
@@ -71,11 +71,13 @@ object MemoryChecker extends Logging {
     System.getenv("SLURM_JOB_ID") != null
   }
 
+  private def fromUTF8File(path: String): BufferedSource = Source.fromFile(path)(Codec.UTF8)
+
   private def getVmRSS: Option[Int] = {
     val pid = ManagementFactory.getRuntimeMXBean.getName.split("@").head.toInt
     val statusFile = s"/proc/$pid/status"
 
-    val result = Try(withResource(Source.fromFile(statusFile)) { source =>
+    val result = Try(withResource(fromUTF8File(statusFile)) { source =>
       source.getLines()
         .find(_.startsWith("VmRSS:"))
         .flatMap { line =>
@@ -107,7 +109,7 @@ object MemoryChecker extends Logging {
   private def readFile(path: String): Option[String] = {
     try {
       Some(
-        withResource(Source.fromFile(path)) { source =>
+        withResource(fromUTF8File(path)) { source =>
           source.mkString.trim
         }
       )
@@ -145,7 +147,7 @@ object MemoryChecker extends Logging {
   private def getHostMemory: Option[Long] = {
     val path = "/proc/meminfo"
     logInfo(s"attempting to read $path")
-    val result = Try(withResource(Source.fromFile(path)) { source =>
+    val result = Try(withResource(fromUTF8File(path)) { source =>
       source.getLines()
       .collectFirst {
         case line if line.startsWith("MemAvailable:") =>
