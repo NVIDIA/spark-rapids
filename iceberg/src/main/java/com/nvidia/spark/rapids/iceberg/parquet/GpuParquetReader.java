@@ -22,10 +22,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-import com.nvidia.spark.rapids.parquet.iceberg.shaded.CpuCompressionConfig$;
-import com.nvidia.spark.rapids.parquet.iceberg.shaded.ParquetPartitionReader;
-import com.nvidia.spark.rapids.parquet.iceberg.shaded.GpuParquetUtils;
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShadedImplicits;
+import com.nvidia.spark.rapids.parquet.CpuCompressionConfig$;
+import com.nvidia.spark.rapids.parquet.GpuParquetUtils;
+import com.nvidia.spark.rapids.parquet.ParquetPartitionReader;
 import org.apache.iceberg.parquet.ParquetDictionaryRowGroupFilter;
 import org.apache.iceberg.parquet.ParquetMetricsRowGroupFilter;
 import org.apache.iceberg.parquet.ParquetSchemaUtil;
@@ -119,20 +121,27 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       MessageType fileSchema = reader.getFileMetaData().getSchema();
       List<BlockMetaData> filteredRowGroups = filterRowGroups(reader, nameMapping,
           expectedSchema, filter, caseSensitive);
+      List<org.apache.parquet.hadoop.metadata.BlockMetaData> filteredRowGroupsUnshade =
+          filteredRowGroups.stream()
+              .map(block -> new FromIcebergShadedImplicits.BlockMetaDataConverter(block).unshade())
+              .collect(Collectors.toList());
 
       ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ? new ReorderColumns(idToConstant)
           : new ReorderColumnsFallback(idToConstant);
-      MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
+      MessageType fileReadSchema =  (MessageType) TypeWithSchemaVisitor.visit(
           expectedSchema.asStruct(), fileSchema, reorder);
+      org.apache.parquet.schema.MessageType fileReadSchemaUnshaded =
+          new FromIcebergShadedImplicits.MessageTypeConverter(fileReadSchema).unshade();
 
-      Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
-          fileReadSchema, filteredRowGroups, caseSensitive);
+      Seq<org.apache.parquet.hadoop.metadata.BlockMetaData> clippedBlocks =
+          GpuParquetUtils.clipBlocksToSchema(fileReadSchemaUnshaded,
+          filteredRowGroupsUnshade, caseSensitive);
       StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
           expectedSchema.asStruct(), fileReadSchema, new SparkSchemaConverter());
 
       // reuse Parquet scan code to read the raw data from the file
       ParquetPartitionReader parquetPartReader = new ParquetPartitionReader(conf, partFile,
-          new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
+          new Path(input.location()), clippedBlocks, fileReadSchemaUnshaded, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, debugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader,
           maxChunkedReaderMemoryUsageSizeBytes,
