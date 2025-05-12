@@ -17,12 +17,11 @@
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import com.nvidia.spark.rapids.*;
-import com.nvidia.spark.rapids.parquet.*;
+import com.nvidia.spark.rapids.iceberg.parquet.SparkSchemaConverter;
+import com.nvidia.spark.rapids.parquet.iceberg.shaded.*;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
-import com.nvidia.spark.rapids.iceberg.parquet.ParquetSchemaUtil;
-import com.nvidia.spark.rapids.iceberg.parquet.TypeWithSchemaVisitor;
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -31,11 +30,13 @@ import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMapping;
 import org.apache.iceberg.mapping.NameMappingParser;
+import org.apache.iceberg.parquet.ParquetSchemaUtil;
+import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
-import org.apache.parquet.ParquetReadOptions;
-import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.metadata.BlockMetaData;
-import org.apache.parquet.schema.MessageType;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
 import org.apache.spark.TaskContext;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.execution.datasources.PartitionedFile;
@@ -315,7 +316,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
             fileReadSchema, filteredRowGroups, caseSensitive);
         StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
-            updatedSchema.asStruct(), fileReadSchema, new GpuParquetReader.SparkSchemaConverter());
+            updatedSchema.asStruct(), fileReadSchema, new SparkSchemaConverter());
 
         // cache the updated constants
         Map<Integer, ?> updatedConstants =

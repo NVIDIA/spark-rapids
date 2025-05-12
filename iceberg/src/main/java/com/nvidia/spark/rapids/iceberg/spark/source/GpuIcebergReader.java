@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,10 @@ import com.nvidia.spark.rapids.GpuCast;
 import com.nvidia.spark.rapids.GpuColumnVector;
 import com.nvidia.spark.rapids.GpuScalar;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
-import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
