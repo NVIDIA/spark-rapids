@@ -131,7 +131,7 @@ if __name__ == '__main__':
     try:
         # GPU context setup
         initialize_gpu_mem()
+        worker_main(sock_file, outfile)
     except BaseException as e:
         handle_worker_exception(e, outfile)
         sys.exit(-1)
-    worker_main(sock_file, outfile)
