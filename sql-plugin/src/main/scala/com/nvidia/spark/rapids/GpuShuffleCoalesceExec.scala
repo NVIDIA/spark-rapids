@@ -312,17 +312,17 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputRowsMetric: GpuMetric,
     asyncBuffering: Boolean = false
 ) extends Iterator[CoalescedHostResult] with AutoCloseable {
-  private[this] val serializedTables = new util.ArrayDeque[T]
-  private[this] var numTablesInBatch: Int = 0
-  private[this] var numRowsInBatch: Int = 0
-  private[this] var batchByteSize: Long = 0L
+  @volatile private[this] val serializedTables = new util.ArrayDeque[T]
+  @volatile private[this] var numTablesInBatch: Int = 0
+  @volatile private[this] var numRowsInBatch: Int = 0
+  @volatile private[this] var batchByteSize: Long = 0L
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc)(close())
   }
 
-  // don't try to call TaskContext.get().taskAttemptId() in the backend thread
+  // Don't try to call TaskContext.get().taskAttemptId() in the backend thread
   private val taskAttemptID = Option(TaskContext.get()).
     map(_.taskAttemptId().toString).getOrElse("unknown")
 
@@ -341,29 +341,30 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       for (_ <- 0 until numTablesInBatch)
         input += serializedTables.removeFirst()
 
-      {
-        // update the stats for the next batch in progress
-        numTablesInBatch = serializedTables.size
-        batchByteSize = 0
-        numRowsInBatch = 0
-        if (numTablesInBatch > 0) {
-          require(numTablesInBatch == 1,
-            "should only track at most one buffer that is not in a batch")
-          val firstTable = serializedTables.peekFirst()
-          batchByteSize = tableOperator.getDataLen(firstTable)
-          numRowsInBatch = tableOperator.getNumRows(firstTable)
-        }
+      // Update the stats for the next batch in progress.
+      // Note that the modification of these variables will happen before
+      // the modifications in async bufferNextBatch(), we just need to ensure
+      // their visibility to the next thread.
+      numTablesInBatch = serializedTables.size
+      batchByteSize = 0
+      numRowsInBatch = 0
+      if (numTablesInBatch > 0) {
+        require(numTablesInBatch == 1,
+          "should only track at most one buffer that is not in a batch")
+        val firstTable = serializedTables.peekFirst()
+        batchByteSize = tableOperator.getDataLen(firstTable)
+        numRowsInBatch = tableOperator.getNumRows(firstTable)
+      }
 
-        if (asyncBuffering && iter.hasNext) {
-          bufferingFuture = Option(asyncShuffleReadPool.submit(new Runnable {
-            override def run(): Unit = {
-              val nvRangeName = s"Task ${taskAttemptID}-Async Buffer Next (Backend)"
-              withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
-                bufferNextBatch()
-              }
+      if (asyncBuffering && iter.hasNext) {
+        bufferingFuture = Option(asyncShuffleReadPool.submit(new Runnable {
+          override def run(): Unit = {
+            val nvRangeName = s"Task ${taskAttemptID}-Async Buffer Next (Backend)"
+            withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+              bufferNextBatch()
             }
-          }))
-        }
+          }
+        }))
       }
 
       withRetryNoSplit(input.toSeq) { tables =>

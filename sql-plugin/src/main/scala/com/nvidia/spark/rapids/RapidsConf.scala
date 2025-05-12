@@ -2544,10 +2544,37 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     conf("spark.rapids.sql.asyncWrite.maxInFlightHostMemoryBytes")
       .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
         "query output write. Tasks may be blocked if the total host memory bytes in-flight " +
-        "exceeds this value.")
+        "exceeds this value. This config is only valid when " +
+        "spark.rapids.sql.asyncWrite.queryOutput.enabled is true and " +
+        "spark.rapids.sql.asyncIO.maxInFlightHostMemoryBytes is 0")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(2L * 1024 * 1024 * 1024)
+
+  val ASYNC_SHUFFLE_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
+    conf("spark.rapids.shuffle.asyncRead.maxInFlightHostMemoryBytes")
+      .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
+        "shuffle read. Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value. This config is only valid when " +
+        "spark.rapids.shuffle.asyncRead.enabled is true and " +
+        "spark.rapids.sql.asyncIO.maxInFlightHostMemoryBytes is 0")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(2L * 1024 * 1024 * 1024)
+
+  val ASYNC_IO_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
+    conf("spark.rapids.sql.asyncIO.maxInFlightHostMemoryBytes")
+      .doc("Maximum number of host memory bytes per executor that can be in-flight for all async " +
+        "IOs (including shuffle read/write, file read/write, etc." +
+        "This acts like a global budget for all kinds of async IOs. " +
+        "Set this to a value larger than 0 to take effect, and when this is set, " +
+        "other spark.rapids.sql.xxx.maxInFlightHostMemoryBytes, " +
+        "like spark.rapids.sql.asyncWrite.maxInFlightHostMemoryBytes, will be ignored." +
+        "Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value. By default ")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(0L)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -2812,6 +2839,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val asyncWriteMaxInFlightHostMemoryBytes: Long =
     get(ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
+
+  lazy val asyncShuffleReadMaxInFlightHostMemoryBytes: Long =
+    get(ASYNC_SHUFFLE_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
+
+  lazy val asyncIOMaxInFlightHostMemoryBytes: Long =
+    get(ASYNC_IO_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
 
   /**
    * Convert a string value to the injection configuration OomInjection.

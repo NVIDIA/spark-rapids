@@ -135,26 +135,61 @@ class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle
 object TrafficController {
 
   @GuardedBy("this")
-  private var instance: TrafficController = _
+  private var globalInstance: TrafficController = _
+
+  @GuardedBy("this")
+  private var fileWriteInstance: TrafficController = _
+
+  @GuardedBy("this")
+  private var shuffleReadInstance: TrafficController = _
 
   /**
    * Initializes the TrafficController singleton instance.
    * This is called once per executor.
    */
   def initialize(conf: RapidsConf): Unit = synchronized {
-    if (instance == null) {
-      instance = new TrafficController(
-        new HostMemoryThrottle(conf.asyncWriteMaxInFlightHostMemoryBytes))
+    if (conf.asyncIOMaxInFlightHostMemoryBytes != 0L) {
+      if (globalInstance == null) {
+        globalInstance = new TrafficController(
+          new HostMemoryThrottle(conf.asyncIOMaxInFlightHostMemoryBytes))
+      }
+    } else {
+      if (fileWriteInstance == null) {
+        fileWriteInstance = new TrafficController(
+          new HostMemoryThrottle(conf.asyncWriteMaxInFlightHostMemoryBytes))
+      }
+      if (shuffleReadInstance == null) {
+        shuffleReadInstance = new TrafficController(
+          new HostMemoryThrottle(conf.asyncShuffleReadMaxInFlightHostMemoryBytes))
+      }
     }
   }
 
-  def getInstance: TrafficController = synchronized {
-    instance
+  def getFileWriteInstance: TrafficController = synchronized {
+    if (globalInstance != null) {
+      globalInstance
+    } else {
+      fileWriteInstance
+    }
+  }
+
+  def getShuffleReadInstance: TrafficController = synchronized {
+    if (globalInstance != null) {
+      globalInstance
+    } else {
+      shuffleReadInstance
+    }
   }
 
   def shutdown(): Unit = synchronized {
-    if (instance != null) {
-      instance = null
+    if (globalInstance != null) {
+      globalInstance = null
+    }
+    if (fileWriteInstance != null) {
+      fileWriteInstance = null
+    }
+    if (shuffleReadInstance != null) {
+      shuffleReadInstance = null
     }
   }
 }

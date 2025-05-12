@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
+import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -37,8 +37,10 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
   private var closed = false
 
   private val executor = new ThrottlingExecutor(
-    TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1), trafficController,
-    statsTrackers)
+    TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1),
+    trafficController,
+    new StatsUpdaterForWriteFunc(statsTrackers).func
+  )
 
   // Open the underlying stream asynchronously as soon as the AsyncOutputStream is constructed,
   // so that the open can be done in parallel with other operations. This could help with

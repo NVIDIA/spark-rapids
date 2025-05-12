@@ -59,7 +59,8 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     executor = new ThrottlingExecutor(
       Executors.newSingleThreadExecutor(),
       trafficController,
-      Seq(new GpuWriteTaskStatsTracker(new Configuration(), taskMetrics))
+      new StatsUpdaterForWriteFunc(
+        Seq(new GpuWriteTaskStatsTracker(new Configuration(), taskMetrics))).func
     )
   }
 

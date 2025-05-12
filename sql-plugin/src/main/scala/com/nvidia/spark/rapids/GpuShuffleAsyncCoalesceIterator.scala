@@ -21,6 +21,7 @@ import java.util.concurrent.{Callable, Future}
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuShuffleAsyncCoalesceIterator.asyncShuffleReadPool
+import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -29,7 +30,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuShuffleAsyncCoalesceIterator {
   val asyncShuffleReadPool =
-    TrampolineUtil.newDaemonCachedThreadPool("async shuffle read", 20)
+    new ThrottlingExecutor(
+      TrampolineUtil.newDaemonCachedThreadPool("async shuffle read", 20),
+      TrafficController.getShuffleReadInstance,
+      _ => {
+        // This is a no-op for now, but we can add stats collection here in the future.
+      }
+    )
 }
 
 /**
