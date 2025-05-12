@@ -1364,8 +1364,7 @@ object GpuCast {
     val tz = defaultTimeZone.getOrElse("Z")
     withResource(CastStrings.toTimestamp(input, tz, ansiMode)) { result =>
       if (ansiMode && result == null) {
-        throw new RuntimeException("DateTimeException: [CAST_INVALID_INPUT], has invalid input, please check, " +
-          "If necessary set \"spark.sql.ansi.enabled\" to \"false\" to bypass this error")
+        throw new RuntimeException("DateTimeException")
       } else {
         result.incRefCount()
       }

@@ -883,9 +883,9 @@ def test_cast_string_to_timestamp_valid():
     def _gen_df(spark):
         return spark.createDataFrame(
             [
-                ("2023-11-05T03:04:55 +00:00",),
-                ("2023-11-05 03:04:55 +01:02",),
-                ("2023-11-05 03:04:55 +1:02",),
+                ("   2023-11-05T03:04:55 +00:00",),  # leading spaces
+                ("2023-11-05 03:04:55 +01:02   ",),  # tailing spaces
+                ("   2023-11-05 03:04:55 +1:02   ",), # both leading/ tailing spaces
                 ("2023-11-05 03:04:55 -01:2",),
                 ("2023-11-05 03:04:55 +1:2",),
                 ("2023-11-05 03:04:55 +10:59",),
@@ -912,7 +912,7 @@ def test_cast_string_to_timestamp_valid():
                 ("2023-11-05 03:04:55 UTC+10:59:03",),
                 ("2023-11-05 03:04:55 UTC+105903",),
                 ("2023-11-05 03:04:55 UTC+1059",),
-                ("2023-11-05 03:04:55 UTC-10",),
+                ("2023-11-05 03:04:55    UTC-10",), # there are spaces before timezone
                 ("2023-11-05T03:04:55 GMT+00:00",),
                 ("2023-11-05 03:04:55 GMT+01:02",),
                 ("2023-11-05 03:04:55 GMT+1:02",),
@@ -968,115 +968,117 @@ def test_cast_string_to_timestamp_valid():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
 
+_cast_string_to_timestamp_invalid = [
+    # empty after strip
+    ("",),
+    ("  ",),
+
+    # test non leap year and day is 29
+    (" -2025-2-29 ",),
+
+    # non-existence tz, result is invalid, but keeps tz type is other
+    (" 2023-11-05 03:04:55 non-existence-tz ",),
+
+    # invalid month
+    ("-2025-13-1",),
+    ("-2025-99-1",),
+
+    # invalid day
+    ("-2025-01-32",),
+    ("-2025-01-99",),
+
+    # invalid hour
+    ("2000-01-01 24:00:00",),
+    ("2000-01-01 99:00:00",),
+
+    # invalid minute
+    ("2000-01-01 00:60:00",),
+    ("2000-01-01 00:61:00",),
+
+    # invalid second
+    ("2000-01-01 00:00:60",),
+    ("2000-01-01 00:00:61",),
+
+    # invalid date
+    ("x2025",),
+    ("12",),
+    ("123",),
+    ("1234567",),
+    ("2200x",),
+    ("2200-",),
+    ("2200-x",),
+    ("2200-123",),
+    ("2200-12x",),
+    ("2200-01-",),
+    ("2200-01-x",),
+    ("2200-01-11x",),
+    ("2200-01-113",),
+    ("2200-03-25T",),
+    ("2200-03-25 x",),
+    ("2200-03-25Tx",),
+
+    # invalid time
+    ("Tx",),
+    ("T00x",),
+    ("T00:",),
+    ("T00:x",),
+    ("T000:00",),
+    ("T00:022",),
+    ("T00:02:",),
+    ("T00:02:x",),
+    ("T00:02:003",),
+    ("T123",),
+    ("T12345",),
+    ("T00:02:003",),
+
+    # invalid TZs
+    ("2000-01-01 00:00:00 +",),
+    ("2000-01-01 00:00:00 -X",),
+    ("2000-01-01 00:00:00 +07:",),
+    ("2000-01-01 00:00:00 +09:x",),
+    ("2000-01-01 00:00:00 +15:07x",),
+    ("2000-01-01 00:00:00 +15:07:",),
+    ("2000-01-01 00:00:00 +15:07:x",),
+    ("2000-01-01 00:00:00 +15:07:1",),
+    ("2000-01-01 00:00:00 +15:07:12x",),
+    ("2000-01-01 00:00:00 +01x",),
+    ("2000-01-01 00:00:00 +0102x",),
+    ("2000-01-01 00:00:00 +010203x",),
+    ("2000-01-01 00:00:00 +111",),
+    ("2000-01-01 00:00:00 +11111",),
+    ("2000-01-01 00:00:00 +1x",),
+
+    # exceeds the max value 18 hours
+    ("2000-01-01 00:00:00 +180001",),
+    ("2000-01-01 00:00:00 -180001",),
+    ("2000-01-01 00:00:00 -08:1:08",),
+    ("2000-01-01 00:00:00 -8:1:08",),
+
+    # U is invalid tz
+    ("2000-01-01 00:00:00 U",),
+
+    # Result is invalid, although ts is not zero
+    ("2023-11-05 03:04:55 Ux",),
+    ("2023-11-05 03:04:55 UTx",),
+    ("2023-11-05 03:04:55 UTCx",),
+    ("2023-11-05 03:04:55 UT+",),
+    ("2023-11-05 03:04:55 UT-08:1:08",),
+    ("2023-11-05 03:04:55 UT-8:1:08",),
+    ("2023-11-05 03:04:55 Gx",),
+    ("2023-11-05 03:04:55 GMTx",),
+    ("2023-11-05 03:04:55 GMT+",),
+    ("2023-11-05 03:04:55 GMT-08:1:08",),
+    ("2023-11-05 03:04:55 GMT-8:1:08",),
+
+    # invalid year: e.g. abs(year) > 30,000
+    ("300001-01-01",),
+    ("-300001-01-01",),
+]
+
 def test_cast_string_to_timestamp_invalid():
     def _gen_df(spark):
         return spark.createDataFrame(
-            [
-                # empty after strip
-                ("",),
-                ("  ",),
-
-                # test non leap year and day is 29
-                (" -2025-2-29 ",),
-
-                # non-existence tz, result is invalid, but keeps tz type is other
-                (" 2023-11-05 03:04:55 non-existence-tz ",),
-
-                # invalid month
-                ("-2025-13-1",),
-                ("-2025-99-1",),
-
-                # invalid day
-                ("-2025-01-32",),
-                ("-2025-01-99",),
-
-                # invalid hour
-                ("2000-01-01 24:00:00",),
-                ("2000-01-01 99:00:00",),
-
-                # invalid minute
-                ("2000-01-01 00:60:00",),
-                ("2000-01-01 00:61:00",),
-
-                # invalid second
-                ("2000-01-01 00:00:60",),
-                ("2000-01-01 00:00:61",),
-
-                # invalid date
-                ("x2025",),
-                ("12",),
-                ("123",),
-                ("1234567",),
-                ("2200x",),
-                ("2200-",),
-                ("2200-x",),
-                ("2200-123",),
-                ("2200-12x",),
-                ("2200-01-",),
-                ("2200-01-x",),
-                ("2200-01-11x",),
-                ("2200-01-113",),
-                ("2200-03-25T",),
-                ("2200-03-25 x",),
-                ("2200-03-25Tx",),
-
-                # invalid time
-                ("Tx",),
-                ("T00x",),
-                ("T00:",),
-                ("T00:x",),
-                ("T000:00",),
-                ("T00:022",),
-                ("T00:02:",),
-                ("T00:02:x",),
-                ("T00:02:003",),
-                ("T123",),
-                ("T12345",),
-                ("T00:02:003",),
-
-                # invalid TZs
-                ("2000-01-01 00:00:00 +",),
-                ("2000-01-01 00:00:00 -X",),
-                ("2000-01-01 00:00:00 +07:",),
-                ("2000-01-01 00:00:00 +09:x",),
-                ("2000-01-01 00:00:00 +15:07x",),
-                ("2000-01-01 00:00:00 +15:07:",),
-                ("2000-01-01 00:00:00 +15:07:x",),
-                ("2000-01-01 00:00:00 +15:07:1",),
-                ("2000-01-01 00:00:00 +15:07:12x",),
-                ("2000-01-01 00:00:00 +01x",),
-                ("2000-01-01 00:00:00 +0102x",),
-                ("2000-01-01 00:00:00 +010203x",),
-                ("2000-01-01 00:00:00 +111",),
-                ("2000-01-01 00:00:00 +11111",),
-                ("2000-01-01 00:00:00 +1x",),
-
-                # exceeds the max value 18 hours
-                ("2000-01-01 00:00:00 +180001",),
-                ("2000-01-01 00:00:00 -180001",),
-                ("2000-01-01 00:00:00 -08:1:08",),
-                ("2000-01-01 00:00:00 -8:1:08",),
-
-                # U is invalid tz
-                ("2000-01-01 00:00:00 U",),
-
-                # Result is invalid, although ts is not zero
-                ("2023-11-05 03:04:55 Ux",),
-                ("2023-11-05 03:04:55 UTx",),
-                ("2023-11-05 03:04:55 UTCx",),
-                ("2023-11-05 03:04:55 UT+",),
-                ("2023-11-05 03:04:55 UT-08:1:08",),
-                ("2023-11-05 03:04:55 UT-8:1:08",),
-                ("2023-11-05 03:04:55 Gx",),
-                ("2023-11-05 03:04:55 GMTx",),
-                ("2023-11-05 03:04:55 GMT+",),
-                ("2023-11-05 03:04:55 GMT-08:1:08",),
-                ("2023-11-05 03:04:55 GMT-8:1:08",),
-
-                # invalid year: e.g. abs(year) > 30,000
-                ("300001-01-01",),
-                ("-300001-01-01",),
-            ],
+            _cast_string_to_timestamp_invalid,
             'str_col string')
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
@@ -1086,17 +1088,59 @@ def test_cast_string_to_timestamp_invalid():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
 
-@pytest.mark.parametrize('pattern',
-                         [
-                             pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}',       id='yyyy-mm-dd'),
-                             pytest.param(r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss, ts < 2200'), # will use GPU
-                             pytest.param(r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} CTT', id='yyyy-mm-dd hh:mm:ss, ts < 2200, CTT'), # will use GPU
-                             pytest.param(r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST', id='yyyy-mm-dd hh:mm:ss, ts < 2200, PST'), # will use GPU
-                             pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss'),
-                             pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-ddThh:mm:ss'),
-                             pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-dd hh:mm:ss'),
-                             pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-ddThh:mm:ss')
-                         ])
+# for each invalid item, will cause an exception.
+@pytest.mark.parametrize('invalid_item', _cast_string_to_timestamp_invalid)
+def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
+    def _gen_df(spark):
+        return spark.createDataFrame(
+            [invalid_item],
+            'str_col string')
+    def _query(spark):
+        # depends on the timezone info in `GpuTimeZoneDB`, load first
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
+
+    assert_gpu_and_cpu_error(
+        lambda spark: _query(spark).collect(),
+        conf=ansi_enabled_conf,
+        error_message="DateTimeException")
+
+
+@pytest.mark.parametrize(
+    'pattern',
+    [
+        # has no timezone, 4 years, only date, will run on GPU
+        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy-mm-dd'),
+
+        # has no timezone, 4-6 years, only date, will run on GPU
+        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy[y][y]-mm-dd'),
+
+        # has no timezone, 4 years, will run on GPU
+        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-dd hh:mm:ss'),
+
+        # has no timezone, 4-6 years, will run on GPU
+        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-dd hh:mm:ss'),
+
+        # has no timezone, 4 years, 'T' seperator, will run on GPU
+        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy-mm-ddThh:mm:ss'),
+
+        # has no timezone, 4-6 years, 'T' seperator, will run on GPU
+        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}', id='yyyy[y][y]-mm-ddThh:mm:ss'),
+
+        # CTT is non-DST, will run on GPU
+        pytest.param(
+            r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} CTT', id='yyyy-mm-dd hh:mm:ss CTT'),
+
+        # PST is DST, year is less than 2200, run on GPU
+        pytest.param(
+            r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
+            id='yyyy-mm-dd hh:mm:ss PST, ts < 2200'),
+
+        # PST is DST, and year is larger than 2200, run on CPU
+        pytest.param(
+            r'3[0-9]{3,3}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
+            id='yyyy-mm-dd hh:mm:ss PST, ts > 2200')
+    ])
 def test_cast_string_to_timestamp_const_format(pattern):
     gen = [("str_col", StringGen(pattern))]
     def _query(spark):
@@ -1106,4 +1150,3 @@ def test_cast_string_to_timestamp_const_format(pattern):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
-
