@@ -24,7 +24,8 @@ import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.parquet.iceberg.shaded.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShadedImplicits._
+import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -36,8 +37,9 @@ import org.apache.iceberg.mapping.NameMapping
 import org.apache.iceberg.parquet.{ParquetBloomRowGroupFilter, ParquetDictionaryRowGroupFilter, ParquetMetricsRowGroupFilter, ParquetSchemaUtil, TypeWithSchemaVisitor}
 import org.apache.iceberg.shaded.org.apache.parquet.{HadoopReadOptions, ParquetReadOptions}
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
-import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.BlockMetaData
-import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
+import org.apache.parquet.hadoop.metadata.BlockMetaData
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -132,7 +134,8 @@ case class GpuIcebergParquetReaderConf(
 trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   def conf: GpuIcebergParquetReaderConf
 
-  def projectSchema(fileSchema: MessageType, requiredSchema: Schema): (MessageType, MessageType) = {
+  def projectSchema(fileSchema: ShadedMessageType, requiredSchema: Schema):
+  (ShadedMessageType, ShadedMessageType) = {
     val (typeWithIds, fileReadSchema) = if (ParquetSchemaUtil.hasIds(fileSchema)) {
       (fileSchema, ParquetSchemaUtil.pruneColumns(fileSchema, requiredSchema))
     } else if (conf.nameMapping.isDefined) {
@@ -151,9 +154,9 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
 
   def filterRowGroups(reader: ParquetFileReader,
       requiredSchema: Schema,
-      typeWithIds: MessageType,
+      typeWithIds: ShadedMessageType,
       filter: Option[Expression])
-  : Seq[BlockMetaData] = {
+  : Seq[ShadedBlockMetaData] = {
     val blocks = reader.getRowGroups.asScala
 
     filter.map { f =>
@@ -175,10 +178,10 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
     }.getOrElse(blocks)
   }
 
-  def clipBlocksToSchema(fileReadSchema: MessageType,
-      blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
-    GpuParquetUtils.clipBlocksToSchema(fileReadSchema,
-      blocks.asJava,
+  def clipBlocksToSchema(fileReadSchema: ShadedMessageType,
+      blocks: Seq[ShadedBlockMetaData]): Seq[BlockMetaData] = {
+    GpuParquetUtils.clipBlocksToSchema(fileReadSchema.unshade,
+      blocks.map(_.unshade).asJava,
       conf.caseSensitive)
   }
 
@@ -206,7 +209,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       ParquetFileInfoWithBlockMeta(file.path,
         blocks,
         InternalRow.empty, // Iceberg handles partition values but itself
-        fileReadSchema,
+        fileReadSchema.unshade,
         partReaderSparkSchema,
         DateTimeRebaseCorrected,
         DateTimeRebaseCorrected,

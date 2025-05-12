@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.iceberg.parquet
 
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, PartitionReaderWithBytesRead}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.parquet.iceberg.shaded.{CpuCompressionConfig, ParquetPartitionReader}
+import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, ParquetPartitionReader}
 import java.util.{Map => JMap}
 import org.apache.hadoop.fs.Path
 import scala.annotation.tailrec
@@ -130,9 +130,9 @@ private class SingleFileReader(
         false) // useFieldId
 
       val parquetReader = new PartitionReaderWithBytesRead(parquetPartReader)
-      val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet,
+      val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet.schema,
         idToConstant,
-        requiredSchema)
+        conf.expectedSchema)
 
       inited = true
       (parquetReader, postProcessor)

@@ -58,6 +58,7 @@ import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 import scala.collection.Seq;
 import scala.Tuple2;
+import scala.collection.Seq$;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -299,6 +300,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         StructType partitionSchema);
 
     /** The filter function for the Parquet multi-file reader */
+    @SuppressWarnings("unchecked")
     protected FilteredParquetFileInfo filterParquetBlocks(FileScanTask fst,
         String partFilePathString) {
       GpuDeleteFilter deleteFilter = deleteFilter(fst);
@@ -348,7 +350,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             InternalRow.empty(), fileReadSchemUnShaded, partReaderSparkSchema,
             DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
             DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
-            true //  hasInt96Timestamps
+            true, //  hasInt96Timestamps,
+            (Seq<Object>) Seq$.MODULE$.empty() // No extra columns
         );
         return new FilteredParquetFileInfo(parquetBlockMeta, updatedConstants, updatedSchema);
       } catch (IOException e) {
