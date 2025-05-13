@@ -238,8 +238,8 @@ class BasicColumnarWriteJobStatsTracker(
     driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_BYTES_KEY).add(totalNumBytes)
     driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_ROWS_KEY).add(totalNumOutput)
     driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_PARTS_KEY).add(partitionsSet.size)
-    driverSideMetrics(BasicColumnarWriteJobStatsTracker.MAX_WRITERS_NUM_KEY).add(maxNumWriters)
-
+    driverSideMetrics.get(BasicColumnarWriteJobStatsTracker.MAX_WRITERS_NUM_KEY)
+      .foreach(_.add(maxNumWriters))
 
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(sparkContext, executionId,
