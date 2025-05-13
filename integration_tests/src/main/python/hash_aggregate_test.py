@@ -2555,8 +2555,7 @@ def test_hash_reduction_bitwise(data_gen):
 @pytest.mark.parametrize('int_gen', integral_gens, ids=idfn)
 def test_hash_groupby_bitwise(int_gen):
     data_gen = [('a', ByteGen()), ('b', int_gen)]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=1024).groupby('a')
-        .agg(f.bit_and('b'),
-             f.bit_or('b'),
-             f.bit_xor('b')))
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=1024),
+        "hash_agg_table",
+        'select a, bit_and(b), bit_or(b), bit_xor(b) from hash_agg_table group by a')
