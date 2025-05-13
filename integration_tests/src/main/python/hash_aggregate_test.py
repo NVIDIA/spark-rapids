@@ -24,7 +24,7 @@ from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import is_databricks104_or_later, with_cpu_session, is_before_spark_330
+from spark_session import is_databricks104_or_later, with_cpu_session, is_before_spark_330, is_before_spark_350
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -2542,6 +2542,8 @@ def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, ag
     assert_gpu_and_cpu_are_equal_collect(run_spark_fn, conf=run_conf)
 
 
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='bitwise operations are available from Spark 3.5.0')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_hash_reduction_bitwise(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -2552,6 +2554,8 @@ def test_hash_reduction_bitwise(data_gen):
 
 
 @ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='bitwise operations are available from Spark 3.5.0')
 @pytest.mark.parametrize('int_gen', integral_gens, ids=idfn)
 def test_hash_groupby_bitwise(int_gen):
     data_gen = [('a', ByteGen()), ('b', int_gen)]
