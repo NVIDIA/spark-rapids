@@ -24,7 +24,7 @@ import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShadedImplicits._
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
 import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
@@ -180,8 +180,8 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
 
   def clipBlocksToSchema(fileReadSchema: ShadedMessageType,
       blocks: Seq[ShadedBlockMetaData]): Seq[BlockMetaData] = {
-    GpuParquetUtils.clipBlocksToSchema(fileReadSchema.unshade,
-      blocks.map(_.unshade).asJava,
+    GpuParquetUtils.clipBlocksToSchema(unshade(fileReadSchema),
+      blocks.map(unshade).asJava,
       conf.caseSensitive)
   }
 
@@ -209,7 +209,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       ParquetFileInfoWithBlockMeta(file.path,
         blocks,
         InternalRow.empty, // Iceberg handles partition values but itself
-        fileReadSchema.unshade,
+        unshade(fileReadSchema),
         partReaderSparkSchema,
         DateTimeRebaseCorrected,
         DateTimeRebaseCorrected,
