@@ -354,7 +354,9 @@ object GpuShuffledSizedHashJoinExec {
   }
 }
 
-abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] extends GpuJoinExec {
+abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] extends GpuJoinExec
+  with GpuHashJoin
+  with GpuSubPartitionHashJoin {
   import GpuShuffledSizedHashJoinExec._
 
   def left: SparkPlan
@@ -366,6 +368,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
   def cpuLeftKeys: Seq[Expression]
   def cpuRightKeys: Seq[Expression]
   def readOption: CoalesceReadOption
+  var buildSide: GpuBuildSide = GpuBuildRight
 
   protected def createHostHostSizer(
       readOption: CoalesceReadOption): JoinSizer[HOST_BATCH_TYPE]
@@ -404,6 +407,12 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     throw new IllegalStateException(s"${this.getClass} does not support row-based execution")
   }
 
+  private def realTargetBatchSize(): Long = {
+    val configValue = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
+    Math.max(configValue, 10 * 1024)
+  }
+
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val localJoinType = joinType
     val localLeftKeys = leftKeys
@@ -435,21 +444,45 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
             localRightKeys, rightOutput, rightIter,
             localCondition, localGpuBatchSizeBytes, localMetrics)
       }
-      val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
-        if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
-          Iterator.empty
-        } else {
-          doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
-        }
+
+      val forceSubPartitioning = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
+
+      if (forceSubPartitioning.getOrElse(false)) {
+        println("forceSubPartitioning")
+
+        val targetSize = realTargetBatchSize()
+        val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
+
+        buildSide = joinInfo.buildSide
+
+        // For big joins, when the build data can not fit into a single batch.
+        doJoinBySubPartition(joinInfo.buildIter, joinInfo.streamIter, targetSize,
+          numPartitions, localMetrics(NUM_OUTPUT_ROWS), localMetrics(NUM_OUTPUT_BATCHES),
+          localMetrics(OP_TIME), localMetrics(JOIN_TIME))
+        
       } else {
-        doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, partitionNumAmplification, localMetrics)
-      }
-      val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
-      val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
-      joinIterator.map { cb =>
-        numOutputRows += cb.numRows()
-        numOutputBatches += 1
-        cb
+        println("DEBUG: Not using sub-partitioning")
+        println(s"DEBUG: joinInfo.buildSize: ${joinInfo.buildSize}")
+        println(s"DEBUG: localGpuBatchSizeBytes: $localGpuBatchSizeBytes")
+        val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
+          if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
+            println("DEBUG: Using empty join")
+            Iterator.empty
+          } else {
+            println("DEBUG: Using small build join")
+            doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
+          }
+        } else {
+          println("DEBUG: Using big build join")
+          doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, partitionNumAmplification, localMetrics)
+        }
+        val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
+        val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
+        joinIterator.map { cb =>
+          numOutputRows += cb.numRows()
+          numOutputBatches += 1
+          cb
+        }
       }
     }
   }
@@ -771,6 +804,10 @@ case class GpuShuffledSymmetricHashJoinExec(
     extends GpuShuffledSizedHashJoinExec[SpillableHostConcatResult] {
   import GpuShuffledSizedHashJoinExec.JoinSizer
   import GpuShuffledSymmetricHashJoinExec._
+
+  // // This is a placeholder as the actual build side is determined dynamically
+  // // during execution based on the size of the inputs
+  // override def buildSide: GpuBuildSide = GpuBuildRight
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(cpuLeftKeys, cpuRightKeys)
 
