@@ -17,12 +17,22 @@
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import com.nvidia.spark.rapids.*;
-import com.nvidia.spark.rapids.parquet.*;
+import com.nvidia.spark.rapids.iceberg.parquet.SparkSchemaConverter;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
-import com.nvidia.spark.rapids.iceberg.parquet.ParquetSchemaUtil;
-import com.nvidia.spark.rapids.iceberg.parquet.TypeWithSchemaVisitor;
+import static com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded.*;
+
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded;
+import com.nvidia.spark.rapids.parquet.CpuCompressionConfig$;
+import com.nvidia.spark.rapids.parquet.GpuParquetUtils;
+import com.nvidia.spark.rapids.parquet.MultiFileCloudParquetPartitionReader;
+import com.nvidia.spark.rapids.parquet.MultiFileParquetPartitionReader;
+import com.nvidia.spark.rapids.parquet.ParquetDataBlock;
+import com.nvidia.spark.rapids.parquet.ParquetExtraInfo;
+import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta;
+import com.nvidia.spark.rapids.parquet.ParquetSchemaWrapper;
+import com.nvidia.spark.rapids.parquet.ParquetSingleDataBlockMeta;
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -31,11 +41,13 @@ import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMapping;
 import org.apache.iceberg.mapping.NameMappingParser;
+import org.apache.iceberg.parquet.ParquetSchemaUtil;
+import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
-import org.apache.parquet.ParquetReadOptions;
-import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.metadata.BlockMetaData;
-import org.apache.parquet.schema.MessageType;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
 import org.apache.spark.TaskContext;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.execution.datasources.PartitionedFile;
@@ -303,8 +315,14 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       try (ParquetFileReader reader = GpuParquetReader.newReader(inFile, readOptions)) {
         MessageType fileSchema = reader.getFileMetaData().getSchema();
 
+
+
         List<BlockMetaData> filteredRowGroups = GpuParquetReader.filterRowGroups(reader,
             nameMapping, updatedSchema, fst.residual(), caseSensitive);
+        List<org.apache.parquet.hadoop.metadata.BlockMetaData> filteredRowGroupsUnShaded =
+            filteredRowGroups.stream()
+                .map(FromIcebergShaded::unshade)
+                .collect(Collectors.toList());
 
         GpuParquetReader.ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ?
             new GpuParquetReader.ReorderColumns(idToConstant) :
@@ -312,10 +330,13 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
 
         MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
             updatedSchema.asStruct(), fileSchema, reorder);
-        Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
-            fileReadSchema, filteredRowGroups, caseSensitive);
+        org.apache.parquet.schema.MessageType  fileReadSchemUnShaded = unshade(fileSchema);
+
+        Seq<org.apache.parquet.hadoop.metadata.BlockMetaData> clippedBlocks =
+            GpuParquetUtils.clipBlocksToSchema(
+            fileReadSchemUnShaded, filteredRowGroupsUnShaded, caseSensitive);
         StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
-            updatedSchema.asStruct(), fileReadSchema, new GpuParquetReader.SparkSchemaConverter());
+            updatedSchema.asStruct(), fileReadSchema, new SparkSchemaConverter());
 
         // cache the updated constants
         Map<Integer, ?> updatedConstants =
@@ -325,7 +346,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             // The path conversion aligns with that in Rapids multi-files readers.
             // So here should use the file path of a PartitionedFile.
             new Path(new URI(partFilePathString)), clippedBlocks,
-            InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
+            InternalRow.empty(), fileReadSchemUnShaded, partReaderSparkSchema,
             DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
             DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
             true //  hasInt96Timestamps

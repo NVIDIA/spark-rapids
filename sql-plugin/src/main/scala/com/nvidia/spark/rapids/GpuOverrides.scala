@@ -2491,6 +2491,13 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
       }),
+    expr[Sha1] (
+      "Sha1 hash operator",
+      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING,
+        TypeSig.BINARY, TypeSig.BINARY),
+      (a, conf, p, r) => new UnaryExprMeta[Sha1](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuSha1(child)
+      }),
     expr[Upper](
       "String uppercase operator",
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),

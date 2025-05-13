@@ -647,9 +647,7 @@ object RmmRapidsRetryIterator extends Logging {
         }
         firstAttempt = false
         if (splitReason != SplitReason.NONE) {
-          if (BOOKKEEP_MEMORY) {
-            logMemoryBookkeeping()
-          }
+          preSplitLogging()
           attemptIter.split(splitReason)
         }
         splitReason = SplitReason.NONE
@@ -681,6 +679,7 @@ object RmmRapidsRetryIterator extends Logging {
           clearInjectedOOMIfNeeded()
         } catch {
           case ex: Throwable =>
+            log.debug("got a throwable in RmmRapidsRetryIterator.next():", ex)
             // handle a retry as the top-level exception
             val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
             if (topLevelIsSplit) {
@@ -835,50 +834,63 @@ object RmmRapidsRetryIterator extends Logging {
   /**
    * Log memory footprint when GPU OOM or CPU OOM happens.
    */
-
   val BOOKKEEP_MEMORY: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep")
   // track the callstack for each memory allocation, don't enable it unless really needed
   val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
   // By default, only print first time to avoid too much log
-  val BOOKKEEP_MEMORY_PRINT_ALL: Boolean =
-    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.printall")
-  var bookkeepPrinted = false
+  val PRE_SPLIT_PRINT_ALL: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.preSplit.printAll")
+  var preSplitPrinted = false
 
   val threadCountBlockedUntilReady: AtomicInteger = new AtomicInteger(0)
 
-  private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
-    if (!bookkeepPrinted || BOOKKEEP_MEMORY_PRINT_ALL) {
+  private def preSplitLogging(): Unit = synchronized { // use synchronized to keep neat
+    if (!preSplitPrinted || PRE_SPLIT_PRINT_ALL) {
+      log.info(s"Current threadCountBlockedUntilReady pre split: " +
+        s"${threadCountBlockedUntilReady.get()}")
 
-      // print spillable status
-      logInfo(SpillFramework.getHostStoreSpillableSummary)
-      logInfo(SpillFramework.getDeviceStoreSpillableSummary)
-
-      // print host memory bookkeeping
-      logInfo(HostAlloc.getHostAllocBookkeepSummary())
-
-      // print device memory bookkeeping
-      // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
-      // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
-
-      // print stack trace
-      val sb = new StringBuilder("<<Jstack Details>>\n\n")
-      Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
-      => {
-        // Print the thread name and its state
-        sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
-          s"- Thread ID: ${thread.getId}\n")
-        // Print the stack trace for this thread
-        for (element <- stackTrace) {
-          sb.append(s"\tat $element")
-        }
-        sb.append("\n\n")
-      })
-      logInfo(sb.toString())
-
-      bookkeepPrinted = true
+      logSpillFrameworkSummary()
+      if (BOOKKEEP_MEMORY) {
+        logMemoryBookkeeping()
+      }
+      logStacktrace()
+      preSplitPrinted = true
     }
+  }
+
+  private def logSpillFrameworkSummary(): Unit = {
+    // print spillable status
+    logInfo(SpillFramework.getHostStoreSpillableSummary)
+    logInfo(SpillFramework.getDeviceStoreSpillableSummary)
+  }
+
+  // For GPU/CPU SplitAndRetryOOM, we are very interested what each task is doing when one
+  // of the tasks try to split and retry (in the context of WithRetryNoSplit).
+  private def logStacktrace(): Unit = {
+    val sb = new StringBuilder("<<Jstack Details>>\n\n")
+    Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
+    => {
+      // Print the thread name and its state
+      sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
+        s"- Thread ID: ${thread.getId}\n")
+      // Print the stack trace for this thread
+      for (element <- stackTrace) {
+        sb.append(s"\tat $element")
+      }
+      sb.append("\n\n")
+    })
+    logInfo(sb.toString())
+  }
+
+  private def logMemoryBookkeeping(): Unit = { // use synchronized to keep neat
+    // print host memory bookkeeping
+    logInfo(HostAlloc.getHostAllocBookkeepSummary())
+
+    // print device memory bookkeeping
+    // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
+    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
   }
 }
 

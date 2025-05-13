@@ -125,6 +125,30 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path),
                                          conf=confs)
 
+# We are adding this test to make sure we fallback to the CPU when deletion vectors are enabled
+# even if we have set the spark.rapids.sql.detectDeltaLogQueries to false which will force the delta
+# queries on to the GPU
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec', *delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_read_with_deletion_vectors_enabled_with_fallback(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA" 
+    gen_list = [("a", int_gen), ("b", string_gen), ("c", long_gen)]
+    delta_conf = {"spark.rapids.sql.detectDeltaLogQueries": "false"}
+    def create_delta(spark):
+        df = gen_df(spark, gen_list).write.format("delta")
+        df.option("delta.enableDeletionVectors", "true")
+        df.save(data_path)
+        spark.sql("DELETE FROM delta.`{}` WHERE a = 1".format(data_path))
+
+    def read_delta_sql(data_path):
+        return lambda spark : spark.sql('select * from delta.`{}` where a > 3'.format(data_path))
+
+    with_cpu_session(create_delta)
+    assert_gpu_fallback_collect(read_delta_sql(data_path), "FileSourceScanExec", conf=delta_conf)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
