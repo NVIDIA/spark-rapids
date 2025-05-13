@@ -130,7 +130,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
       ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ? new ReorderColumns(idToConstant)
           : new ReorderColumnsFallback(idToConstant);
-      MessageType fileReadSchema =  (MessageType) TypeWithSchemaVisitor.visit(
+      MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
           expectedSchema.asStruct(), fileSchema, reorder);
       org.apache.parquet.schema.MessageType fileReadSchemaUnshaded = unshade(fileReadSchema);
 
