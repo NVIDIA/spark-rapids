@@ -21,7 +21,9 @@ import com.nvidia.spark.rapids.iceberg.parquet.SparkSchemaConverter;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
-import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShadedImplicits;
+import static com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded.*;
+
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded;
 import com.nvidia.spark.rapids.parquet.CpuCompressionConfig$;
 import com.nvidia.spark.rapids.parquet.GpuParquetUtils;
 import com.nvidia.spark.rapids.parquet.MultiFileCloudParquetPartitionReader;
@@ -319,7 +321,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             nameMapping, updatedSchema, fst.residual(), caseSensitive);
         List<org.apache.parquet.hadoop.metadata.BlockMetaData> filteredRowGroupsUnShaded =
             filteredRowGroups.stream()
-                .map(b -> new FromIcebergShadedImplicits.BlockMetaDataConverter(b).unshade())
+                .map(FromIcebergShaded::unshade)
                 .collect(Collectors.toList());
 
         GpuParquetReader.ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ?
@@ -328,8 +330,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
 
         MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
             updatedSchema.asStruct(), fileSchema, reorder);
-        org.apache.parquet.schema.MessageType  fileReadSchemUnShaded =
-            new FromIcebergShadedImplicits.MessageTypeConverter(fileSchema).unshade();
+        org.apache.parquet.schema.MessageType  fileReadSchemUnShaded = unshade(fileSchema);
 
         Seq<org.apache.parquet.hadoop.metadata.BlockMetaData> clippedBlocks =
             GpuParquetUtils.clipBlocksToSchema(
