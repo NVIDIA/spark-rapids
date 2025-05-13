@@ -21,7 +21,7 @@ import scala.collection.immutable.TreeMap
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -45,7 +45,7 @@ class GpuMetricFactory(metricsConf: MetricsLevel, context: SparkContext) {
   private [this] def createInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
     if (level >= metricsConf) {
       // only enable companion metrics (excluding semaphore wait time) for DEBUG_LEVEL
-      WrappedGpuMetric(f, withMetricsExclSemWait = GpuMetric.DEBUG_LEVEL >= metricsConf)
+      WrappedGpuMetric(f, withMetricsHoldSem = GpuMetric.DEBUG_LEVEL >= metricsConf)
     } else {
       NoopMetric
     }
@@ -163,7 +163,7 @@ object GpuMetric extends Logging {
     val companions = input.collect {
       // add the companions
       case (k, w) if w.companionGpuMetric.isDefined =>
-        (k + "_exSemWait", unwrap(w.companionGpuMetric.get))
+        (k + "_withSem", unwrap(w.companionGpuMetric.get))
     }
 
     TreeMap.apply((ret ++ companions).toSeq: _*)
@@ -199,37 +199,93 @@ sealed abstract class GpuMetric extends Serializable {
   private var isTimerActive = false
 
   // For timing GpuMetrics, we additionally create a companion GpuMetric to track elapsed time
-  // excluding semaphore wait time
+  // when GpuSemaphore was being held.
   var companionGpuMetric: Option[GpuMetric] = None
-  private var semWaitTimeWhenActivated = 0L
+  private var semHoldTimeBefore = 0L
+  private var start = 0L
 
   final def tryActivateTimer(): Boolean = {
     if (!isTimerActive) {
       isTimerActive = true
-      semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
+      start = System.nanoTime()
+
+      if (companionGpuMetric.isDefined) {
+        semHoldTimeBefore = GpuTaskMetrics.get.getSemaphoreHoldingTime()
+        val tc = TaskContext.get()
+        require(tc != null, "TaskContext cannot be null")
+        // If the task holds the semaphore when the compute block starts, we need to previously
+        // subtract the semHolding duration which already happened. Because if the held semaphore
+        // is released during the compute block, the entire acquisition block will be added to the
+        // `semaphoreHoldingTime`.
+        //
+        // Consider the timeline and the relevant durations based on the following diagram style:
+        //   Sem.Acq                                 Sem.Rel
+        //      |---------------------------------------| (Full Semaphore Hold Period: Rel - Acq)
+        //                  Compute.Start                         Compute.End
+        //                     |--------------------------------------| (Compute Block Period)
+        //      <-------------->
+        //  pre-block duration (which needs to be subtracted)
+        GpuSemaphore.getLastSemAcqAndRelTime(tc) match {
+          case (acqTime, relTime) if acqTime > relTime && acqTime < start =>
+            semHoldTimeBefore += start - acqTime
+          case _ =>
+        }
+      }
       true
     } else {
       false
     }
   }
 
-  final def deactivateTimer(duration: Long): Unit = {
+  final def deactivateTimer(): Unit = {
     if (isTimerActive) {
       isTimerActive = false
-      companionGpuMetric.foreach(c =>
-        c.add(duration - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)))
-      semWaitTimeWhenActivated = 0L
-      add(duration)
+      val end = System.nanoTime()
+
+      // Here we compute the companion time metric (GpuSemaphore withholding time), which is
+      // composed of two parts (in terms of the computation):
+      // 1. The increment of `semaphoreHoldingTime`, which sums up the total duration of all
+      // released semaphores.
+      // 2. The duration of the onhold semaphore, which happens if the semaphore is not released
+      // when the compute block ends.
+      //
+      // Consider the timeline and the relevant durations based on the following diagram style:
+      // Acq.     Rel.   Acq.        Rel.             Acq.          Rel.
+      //  |--------|      |-----------|                |-------------|
+      //  Compute.Start                                  Compute.End
+      //      |----------------------------------------------| (Compute Block Period)
+      //  <-------->      <----------->                <----->
+      //   incremental semHoldingTime              onHold duration
+      //  <--->
+      //  pre-block duration (which needs to be subtracted)
+      companionGpuMetric.foreach { c =>
+        val semHoldTimeAfter = GpuTaskMetrics.get.getSemaphoreHoldingTime()
+        // computing the duration of the onhold semaphore
+        val tc = TaskContext.get()
+        require(tc != null, "TaskContext cannot be null")
+        val onHoldSemTime = GpuSemaphore.getLastSemAcqAndRelTime(tc) match {
+          case (acqTime, relTime) if acqTime > relTime =>
+            // directly minus acqTime instead of `acqTime max start` because the ahead part has been
+            // subtracted ahead of time (`semHoldTimeBefore`)
+            end - acqTime
+          case _ =>
+            0L
+        }
+        c.add(semHoldTimeAfter - semHoldTimeBefore + onHoldSemTime)
+      }
+
+      add(end - start)
+      start = 0L
+      semHoldTimeBefore = 0L
     }
   }
 
   final def ns[T](f: => T): T = {
     if (tryActivateTimer()) {
-      val start = System.nanoTime()
       try {
         f
       } finally {
-        deactivateTimer(System.nanoTime() - start)
+        deactivateTimer()
       }
     } else {
       f
@@ -244,15 +300,15 @@ object NoopMetric extends GpuMetric {
   override def value: Long = 0
 }
 
-final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsExclSemWait: Boolean = false)
+final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsHoldSem: Boolean = false)
   extends GpuMetric {
 
-  if (withMetricsExclSemWait) {
+  if (withMetricsHoldSem) {
     //  SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private,
     //  so we have to use the string directly
     if (sqlMetric.metricType.toLowerCase.contains("timing")) {
       companionGpuMetric = Some(WrappedGpuMetric.apply(SQLMetrics.createNanoTimingMetric(
-        SparkSession.getActiveSession.get.sparkContext, sqlMetric.name.get + " (excl. SemWait)")))
+        SparkSession.getActiveSession.get.sparkContext, sqlMetric.name.get + " (with Sem.)")))
     }
   }
 

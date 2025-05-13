@@ -91,8 +91,9 @@ trait HostMemoryBuffersWithMetaDataBase {
     _filterTime = filterTime
   }
 
-  def getBufferTime: Long = _bufferTime
   def getFilterTime: Long = _filterTime
+
+  def getBufferTime: Long = _bufferTime
 
   def getBufferTimePct: Double = {
     val totalTime = _filterTime + _bufferTime
@@ -616,16 +617,47 @@ abstract class MultiFileCloudPartitionReaderBase(
       } else {
         if (filesToRead > 0 && !isDone) {
           // Filter time here includes the buffer time as well since those
-          // happen in the same background threads. This is as close to wall
-          // clock as we can get right now without further work.
-          val startTime = System.nanoTime()
-          val fileBufsAndMeta = getNextBuffersAndMeta()
-          val blockedTime = System.nanoTime() - startTime
-          metrics.get(FILTER_TIME).foreach {
-            _ += (blockedTime * fileBufsAndMeta.getFilterTimePct).toLong
+          // happen in the same background threads.
+          // Use `GpuTimeMetric.ns` to compute both wall time and withSemaphore duration. And
+          // use metrics(BUFFER_TIME) to store the incremental BUFFER_TIME + FILTER_TIME. Then,
+          // adjust metrics(BUFFER_TIME) by subtracting the proportion of FILTER_TIME.
+          val (startTime, startSemTime) = metrics.get(BUFFER_TIME).map { m =>
+            (Some(m.value), m.companionGpuMetric.map(v => v.value))
+          }.getOrElse {
+            (None, None)
           }
-          metrics.get(BUFFER_TIME).foreach {
-            _ += (blockedTime * fileBufsAndMeta.getBufferTimePct).toLong
+          val fileBufsAndMeta = metrics.get(BUFFER_TIME) match {
+            case Some(bufTime) =>
+              bufTime.ns {
+                getNextBuffersAndMeta()
+              }
+            case None =>
+              getNextBuffersAndMeta()
+          }
+          val (endTime, endSemTime) = metrics.get(BUFFER_TIME).map { m =>
+            (Some(m.value), m.companionGpuMetric.map(v => v.value))
+          }.getOrElse {
+            (None, None)
+          }
+          // Adjust the filterTime and bufferTime according to percentage, which is based on the
+          // equation: `FilterTimePct + BufferTimePct = 100%`
+          startTime.foreach { st =>
+            require(endTime.isDefined)
+            val et = endTime.get
+            val filterTimePct = fileBufsAndMeta.getFilterTimePct
+            val filterTimeInc = ((et - st) * filterTimePct).toLong
+            metrics(FILTER_TIME).add(filterTimeInc)
+            metrics(BUFFER_TIME).add(-filterTimeInc)
+            // adjust the withSemTime according to `filterTimePct`
+            metrics(FILTER_TIME).companionGpuMetric.foreach { ft =>
+              require(startSemTime.isDefined && endSemTime.isDefined)
+              val semDuration = endSemTime.get - startSemTime.get
+              val filterSemTimeInc = (semDuration * filterTimePct).toLong
+              ft.add(filterSemTimeInc)
+              metrics(BUFFER_TIME).companionGpuMetric.foreach { bt =>
+                bt.add(-filterSemTimeInc)
+              }
+            }
           }
 
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
