@@ -317,8 +317,6 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       try (ParquetFileReader reader = GpuParquetReader.newReader(inFile, readOptions)) {
         MessageType fileSchema = reader.getFileMetaData().getSchema();
 
-
-
         List<BlockMetaData> filteredRowGroups = GpuParquetReader.filterRowGroups(reader,
             nameMapping, updatedSchema, fst.residual(), caseSensitive);
         List<org.apache.parquet.hadoop.metadata.BlockMetaData> filteredRowGroupsUnShaded =
@@ -332,12 +330,11 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
 
         MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
             updatedSchema.asStruct(), fileSchema, reorder);
-        org.apache.parquet.schema.MessageType  fileReadSchemUnShaded =
-            unshade(fileSchema);
+        org.apache.parquet.schema.MessageType  fileReadSchemaUnShaded = unshade(fileSchema);
 
         Seq<org.apache.parquet.hadoop.metadata.BlockMetaData> clippedBlocks =
             GpuParquetUtils.clipBlocksToSchema(
-            fileReadSchemUnShaded, filteredRowGroupsUnShaded, caseSensitive);
+            fileReadSchemaUnShaded, filteredRowGroupsUnShaded, caseSensitive);
         StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
             updatedSchema.asStruct(), fileReadSchema, new SparkSchemaConverter());
 
@@ -349,7 +346,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             // The path conversion aligns with that in Rapids multi-files readers.
             // So here should use the file path of a PartitionedFile.
             new Path(new URI(partFilePathString)), clippedBlocks,
-            InternalRow.empty(), fileReadSchemUnShaded, partReaderSparkSchema,
+            InternalRow.empty(), fileReadSchemaUnShaded, partReaderSparkSchema,
             DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
             DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
             true, //  hasInt96Timestamps,
