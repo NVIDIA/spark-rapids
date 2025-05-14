@@ -291,6 +291,9 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
   PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${SHUFFLE_SPARK_SHIM}.RapidsShuffleManager \
     ./run_pyspark_from_build.sh
 
+  EXPLAIN_ONLY_CPU_SMOKE_TEST=1 \
+    ./run_pyspark_from_build.sh
+
   # As '--packages' only works on the default cuda11 jar, it does not support classifiers
   # refer to issue : https://issues.apache.org/jira/browse/SPARK-20075
   # "$CLASSIFIER" == ''" is usally for the case running by developers,

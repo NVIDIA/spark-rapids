@@ -41,12 +41,7 @@ all_gen = [StringGen(), ByteGen()]
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.parametrize('disable_cuda_devices', [True, False])
-def test_explain_only_sortmerge_join(data_gen, join_type, disable_cuda_devices, monkeypatch):
-    # ensure that explainMode works when no GPU is available
-    if disable_cuda_devices:
-        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
-
+def test_explain_only_sortmerge_join(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type)
