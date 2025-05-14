@@ -210,25 +210,25 @@ sealed abstract class GpuMetric extends Serializable {
       start = System.nanoTime()
 
       if (companionGpuMetric.isDefined) {
-        semHoldTimeBefore = GpuTaskMetrics.get.getSemaphoreHoldingTime()
-        val tc = TaskContext.get()
-        require(tc != null, "TaskContext cannot be null")
-        // If the task holds the semaphore when the compute block starts, we need to previously
-        // subtract the semHolding duration which already happened. Because if the held semaphore
-        // is released during the compute block, the entire acquisition block will be added to the
-        // `semaphoreHoldingTime`.
-        //
-        // Consider the timeline and the relevant durations based on the following diagram style:
-        //   Sem.Acq                                 Sem.Rel
-        //      |---------------------------------------| (Full Semaphore Hold Period: Rel - Acq)
-        //                  Compute.Start                         Compute.End
-        //                     |--------------------------------------| (Compute Block Period)
-        //      <-------------->
-        //  pre-block duration (which needs to be subtracted)
-        GpuSemaphore.getLastSemAcqAndRelTime(tc) match {
-          case (acqTime, relTime) if acqTime > relTime && acqTime < start =>
-            semHoldTimeBefore += start - acqTime
-          case _ =>
+        Option(TaskContext.get()).foreach { tc =>
+          semHoldTimeBefore = GpuTaskMetrics.get.getSemaphoreHoldingTime()
+          // If the task holds the semaphore when the compute block starts, we need to previously
+          // subtract the semHolding duration which already happened. Because if the held semaphore
+          // is released during the compute block, the entire acquisition block will be added to
+          // the `semaphoreHoldingTime`.
+          //
+          // Consider the timeline and the relevant durations based on the following diagram style:
+          //   Sem.Acq                                 Sem.Rel
+          //      |---------------------------------------| (Full Semaphore Hold Period: Rel - Acq)
+          //                  Compute.Start                         Compute.End
+          //                     |--------------------------------------| (Compute Block Period)
+          //      <-------------->
+          //  pre-block duration (which needs to be subtracted)
+          GpuSemaphore.getLastSemAcqAndRelTime(tc) match {
+            case (acqTime, relTime) if acqTime > relTime && acqTime < start =>
+              semHoldTimeBefore += start - acqTime
+            case _ =>
+          }
         }
       }
       true
@@ -259,19 +259,19 @@ sealed abstract class GpuMetric extends Serializable {
       //  <--->
       //  pre-block duration (which needs to be subtracted)
       companionGpuMetric.foreach { c =>
-        val semHoldTimeAfter = GpuTaskMetrics.get.getSemaphoreHoldingTime()
-        // computing the duration of the onhold semaphore
-        val tc = TaskContext.get()
-        require(tc != null, "TaskContext cannot be null")
-        val onHoldSemTime = GpuSemaphore.getLastSemAcqAndRelTime(tc) match {
-          case (acqTime, relTime) if acqTime > relTime =>
-            // directly minus acqTime instead of `acqTime max start` because the ahead part has been
-            // subtracted ahead of time (`semHoldTimeBefore`)
-            end - acqTime
-          case _ =>
-            0L
+        Option(TaskContext.get()).foreach { tc =>
+          val semHoldTimeAfter = GpuTaskMetrics.get.getSemaphoreHoldingTime()
+          // computing the duration of the onhold semaphore
+          val onHoldSemTime = GpuSemaphore.getLastSemAcqAndRelTime(tc) match {
+            case (acqTime, relTime) if acqTime > relTime =>
+              // directly minus acqTime instead of `acqTime max start` because the ahead part has
+              // been subtracted ahead of time (`semHoldTimeBefore`)
+              end - acqTime
+            case _ =>
+              0L
+          }
+          c.add(semHoldTimeAfter - semHoldTimeBefore + onHoldSemTime)
         }
-        c.add(semHoldTimeAfter - semHoldTimeBefore + onHoldSemTime)
       }
 
       add(end - start)
