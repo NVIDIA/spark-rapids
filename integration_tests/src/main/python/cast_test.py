@@ -800,11 +800,10 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
         {"spark.sql.session.timeZone": "+08",
          "spark.rapids.sql.castStringToTimestamp.enabled": True})
 
-@pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params, ids=idfn)
-def test_cast_string_to_timestamp_in_non_utc(from_gen, to_type):
+def test_cast_string_to_timestamp_in_non_utc():
     gen = SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02'])
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr("CAST(a AS TIMESTAMP) as casted"),
+        lambda spark: unary_op_df(spark, gen).selectExpr("CAST(a AS TIMESTAMP) AS casted"),
         {"spark.sql.session.timeZone": "+08"})
 
 def test_cast_date_integral_and_fp_ansi_off():

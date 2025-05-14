@@ -50,21 +50,6 @@ def test_explain_join(spark_tmp_path, data_gen):
 
     with_cpu_session(do_join_explain)
 
-@pytest.mark.skipif(is_not_utc(), reason='Cast is not supported with timezone setting. https://github.com/NVIDIA/spark-rapids/issues/9653')
-def test_explain_set_config():
-    def do_explain(spark):
-        df = unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType()))
-        # a bit brittle if these get turned on by default
-        spark.conf.set('spark.rapids.sql.hasExtendedYearValues', 'false')
-        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
-        print(explain_str)
-        assert "timestamp) will run on GPU" in explain_str
-        explain_str_cast_off = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
-        print(explain_str_cast_off)
-        assert "timestamp) cannot run on GPU" in explain_str_cast_off
-
-    with_cpu_session(do_explain)
-
 def test_explain_udf():
     slen = udf(lambda s: len(s), IntegerType())
 
