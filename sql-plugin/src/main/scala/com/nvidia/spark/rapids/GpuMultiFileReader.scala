@@ -28,7 +28,7 @@ import scala.language.implicitConversions
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableArray, AutoCloseableProducingSeq}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import org.apache.commons.io.IOUtils
@@ -618,14 +618,36 @@ abstract class MultiFileCloudPartitionReaderBase(
           // Filter time here includes the buffer time as well since those
           // happen in the same background threads. This is as close to wall
           // clock as we can get right now without further work.
-          val startTime = System.nanoTime()
-          val fileBufsAndMeta = getNextBuffersAndMeta()
-          val blockedTime = System.nanoTime() - startTime
-          metrics.get(FILTER_TIME).foreach {
-            _ += (blockedTime * fileBufsAndMeta.getFilterTimePct).toLong
-          }
-          metrics.get(BUFFER_TIME).foreach {
-            _ += (blockedTime * fileBufsAndMeta.getBufferTimePct).toLong
+          require(metrics.contains(BUFFER_TIME), "bufferTime should be set")
+          require(metrics.contains(FILTER_TIME), "filterTime should be set")
+
+          val fileBufsAndMeta = if (metrics.contains(BUFFER_TIME_WITH_SEM)) {
+            require(metrics.contains(FILTER_TIME_WITH_SEM),
+              "filterTimeWithSem should be set if bufferTimeWithSem is set")
+            val taskContext = TaskContext.get()
+            require(taskContext != null, "TaskContext should not be null")
+
+            val wallStart = metrics(BUFFER_TIME).value
+            val withSemStart = metrics(BUFFER_TIME_WITH_SEM).value
+            val ret = GpuMetric.withSemaphoreTime(metrics(BUFFER_TIME),
+              metrics(BUFFER_TIME_WITH_SEM), taskContext) {
+              getNextBuffersAndMeta()
+            }
+            val wallInc = metrics(BUFFER_TIME).value - wallStart
+            val withSemInc = metrics(BUFFER_TIME_WITH_SEM).value - withSemStart
+            val pct = ret.getFilterTimePct
+            metrics(FILTER_TIME) += (wallInc * pct).toLong
+            metrics(BUFFER_TIME) += -(wallInc * pct).toLong
+            metrics(FILTER_TIME_WITH_SEM) += (withSemInc * pct).toLong
+            metrics(BUFFER_TIME_WITH_SEM) += -(withSemInc * pct).toLong
+            ret
+          } else {
+            val startTime = System.nanoTime()
+            val ret = getNextBuffersAndMeta()
+            val blockedTime = System.nanoTime() - startTime
+            metrics(FILTER_TIME) += (blockedTime * ret.getFilterTimePct).toLong
+            metrics(BUFFER_TIME) += (blockedTime * ret.getBufferTimePct).toLong
+            ret
           }
 
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)

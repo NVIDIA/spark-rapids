@@ -208,6 +208,14 @@ object GpuSemaphore {
   }
 
   /**
+   * Get the last time this task acquired & released the semaphore, which can be used to track
+   * sophisticated metrics, such as I/O time with GpuSemaphore held.
+   */
+  def getLastSemAcqAndRelTime(context: TaskContext): (Long, Long) = {
+    getInstance.lastSemAcqAndRelTime(context)
+  }
+
+  /**
    * A thread may try to acquire the semaphore without blocking on it. NOTE: A task completion
    * listener will automatically be installed to ensure the semaphore is always released by the
    * time the task completes.
@@ -332,8 +340,8 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
    * If this task holds the GPU semaphore or not.
    */
   private var hasSemaphore = false
-  private var lastAcquired: Long = GpuSemaphore.DEFAULT_PRIORITY
-  private var lastReleased: Long = GpuSemaphore.DEFAULT_PRIORITY
+  @volatile private var lastAcquired: Long = 0L
+  @volatile private var lastReleased: Long = 0L
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
 
@@ -346,6 +354,12 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
   def isHoldingSemaphore: Boolean = synchronized {
     hasSemaphore
   }
+
+  /**
+   * Get the last time this task acquired & released the semaphore for the recording of
+   * sophisticated metrics, such as I/O time with GpuSemaphore held.
+   */
+  def lastAcquireAndReleaseTime: (Long, Long) = (lastAcquired, lastReleased)
 
   /**
    * Get the list of threads currently running on the GPU Semaphore for this task. Be
@@ -497,6 +511,16 @@ private final class GpuSemaphore() extends Logging {
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
+
+  def lastSemAcqAndRelTime(context: TaskContext): (Long, Long) = {
+    val taskAttemptId = context.taskAttemptId()
+    if (!tasks.containsKey(taskAttemptId)) {
+      (0, 0)
+    } else {
+      tasks.get(taskAttemptId).lastAcquireAndReleaseTime
+    }
+  }
+
   private val stageEstimators = {
     val lru = new util.LinkedHashMap[Int, GpuStageMemoryEstimator]() {
       override def removeEldestEntry(entry: Map.Entry[Int, GpuStageMemoryEstimator]): Boolean = {
