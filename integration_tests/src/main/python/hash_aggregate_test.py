@@ -2544,10 +2544,11 @@ def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, ag
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_hash_reduction_bitwise(data_gen):
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: unary_op_df(spark, data_gen, length=5),
-        'hash_agg_table',
-        'select a, bit_and(a), bit_or(a), bit_xor(a) from hash_agg_table')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=5).selectExpr(
+            "bit_and(a)",
+            "bit_or(a)",
+            "bit_xor(a)"))
 
 
 @ignore_order(local=True)
@@ -2556,5 +2557,5 @@ def test_hash_groupby_bitwise(int_gen):
     data_gen = [('a', ByteGen()), ('b', int_gen)]
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=1024),
-        'hash_agg_table',
-        'select a, bit_and(b), bit_or(b), bit_xor(b) from hash_agg_table group by a')
+        "hash_agg_table",
+        "select a, bit_and(b), bit_or(b), bit_xor(b) from hash_agg_table group by a")
