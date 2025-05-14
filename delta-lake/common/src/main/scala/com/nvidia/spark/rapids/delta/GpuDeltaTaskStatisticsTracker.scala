@@ -138,6 +138,8 @@ class GpuDeltaTaskStatisticsTracker(
 
   override def newPartition(partitionValues: InternalRow): Unit = { }
 
+  override def writersNumber(numWriters: Int): Unit = { }
+
   protected def initializeAggBuf(buffer: SpecificInternalRow): InternalRow =
     initializeStats.target(buffer).apply(EmptyRow)
 
