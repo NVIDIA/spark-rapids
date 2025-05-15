@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -37,7 +37,8 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
   private var closed = false
 
   private val executor = new ThrottlingExecutor(
-    TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1),
+    TrampolineUtil.newDaemonCachedThreadPool(
+      "AsyncOutputStream for " + Thread.currentThread().getName, 1, 1),
     trafficController,
     new StatsUpdaterForWriteFunc(statsTrackers).func
   )

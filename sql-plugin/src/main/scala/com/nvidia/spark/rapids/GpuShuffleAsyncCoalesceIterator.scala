@@ -20,7 +20,6 @@ import java.util.concurrent.{Callable, Future}
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuShuffleAsyncCoalesceIterator.asyncShuffleReadPool
 import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
 
 import org.apache.spark.TaskContext
@@ -28,16 +27,6 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuShuffleAsyncCoalesceIterator {
-  val asyncShuffleReadPool =
-    new ThrottlingExecutor(
-      TrampolineUtil.newDaemonCachedThreadPool("async shuffle read", 20),
-      TrafficController.getShuffleReadInstance,
-      _ => {
-        // This is a no-op for now, but we can add stats collection here in the future.
-      }
-    )
-}
 
 /**
  * Similar as GpuShuffleCoalesceIterator, but pulling in host batches asynchronously, to
@@ -45,10 +34,23 @@ object GpuShuffleAsyncCoalesceIterator {
  */
 class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     dataTypes: Array[DataType],
+    targetBatchSize: Long,
     outputBatchesMetric: GpuMetric = NoopMetric,
     outputRowsMetric: GpuMetric = NoopMetric,
     asyncReadTimeMetric: GpuMetric = NoopMetric,
-    opTimeMetric: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+    opTimeMetric: GpuMetric = NoopMetric,
+    readThrottlingMetric: GpuMetric = NoopMetric,
+) extends Iterator[ColumnarBatch] {
+
+  val executor =
+    new ThrottlingExecutor(
+      TrampolineUtil.newDaemonCachedThreadPool(
+        "async shuffle read thread for " + Thread.currentThread().getName, 1, 1),
+      TrafficController.getReadInstance,
+      stat => {
+        readThrottlingMetric.add(stat.accumulatedThrottleTimeNs)
+      }
+    )
 
   // don't try to call TaskContext.get().taskAttemptId() in the backend thread
   private val taskAttemptID = Option(TaskContext.get()).
@@ -103,7 +105,15 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
           // No need synchronization here since the async read is already done.
           if (hasNextCB) {
             // Prefetch and concatenate the next one asynchronously.
-            readFutureOpt = Some(asyncShuffleReadPool.submit(readCallable))
+            readFutureOpt = Some(executor.submit(
+              readCallable,
+              // This is just a estimation, may overestimate.
+              // Why not targetBatchSize * 2 (1 targetBatchSize for prefetch and 1 targetBatchSize
+              // for concatenate) ? Because this executor actually only accounts for
+              // concatenate step, the overhead of prefetch itself will be accounted by
+              // HostCoalesceIteratorBase.executor
+              targetBatchSize
+            ))
           } else {
             readFutureOpt = None
           }

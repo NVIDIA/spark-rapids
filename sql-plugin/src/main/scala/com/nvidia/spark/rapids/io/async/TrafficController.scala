@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,61 +135,50 @@ class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle
 object TrafficController {
 
   @GuardedBy("this")
-  private var globalInstance: TrafficController = _
+  private var writeInstance: TrafficController = _
 
   @GuardedBy("this")
-  private var fileWriteInstance: TrafficController = _
-
-  @GuardedBy("this")
-  private var shuffleReadInstance: TrafficController = _
+  private var readInstance: TrafficController = _
 
   /**
    * Initializes the TrafficController singleton instance.
    * This is called once per executor.
    */
   def initialize(conf: RapidsConf): Unit = synchronized {
-    if (conf.asyncIOMaxInFlightHostMemoryBytes != 0L) {
-      if (globalInstance == null) {
-        globalInstance = new TrafficController(
-          new HostMemoryThrottle(conf.asyncIOMaxInFlightHostMemoryBytes))
-      }
-    } else {
-      if (fileWriteInstance == null) {
-        fileWriteInstance = new TrafficController(
-          new HostMemoryThrottle(conf.asyncWriteMaxInFlightHostMemoryBytes))
-      }
-      if (shuffleReadInstance == null) {
-        shuffleReadInstance = new TrafficController(
-          new HostMemoryThrottle(conf.asyncShuffleReadMaxInFlightHostMemoryBytes))
-      }
+    if (writeInstance == null) {
+      writeInstance = new TrafficController(
+        new HostMemoryThrottle(
+          if (conf.asyncWriteMaxInFlightHostMemoryBytes > 0L) {
+            conf.asyncWriteMaxInFlightHostMemoryBytes
+          } else {
+            Long.MaxValue
+          }))
+    }
+    if (readInstance == null) {
+      readInstance = new TrafficController(
+        new HostMemoryThrottle(
+          if (conf.asyncReadMaxInFlightHostMemoryBytes > 0L) {
+            conf.asyncReadMaxInFlightHostMemoryBytes
+          } else {
+            Long.MaxValue
+          }))
     }
   }
 
-  def getFileWriteInstance: TrafficController = synchronized {
-    if (globalInstance != null) {
-      globalInstance
-    } else {
-      fileWriteInstance
-    }
+  def getWriteInstance: TrafficController = synchronized {
+    writeInstance
   }
 
-  def getShuffleReadInstance: TrafficController = synchronized {
-    if (globalInstance != null) {
-      globalInstance
-    } else {
-      shuffleReadInstance
-    }
+  def getReadInstance: TrafficController = synchronized {
+    readInstance
   }
 
   def shutdown(): Unit = synchronized {
-    if (globalInstance != null) {
-      globalInstance = null
+    if (writeInstance != null) {
+      writeInstance = null
     }
-    if (fileWriteInstance != null) {
-      fileWriteInstance = null
-    }
-    if (shuffleReadInstance != null) {
-      shuffleReadInstance = null
+    if (readInstance != null) {
+      readInstance = null
     }
   }
 }

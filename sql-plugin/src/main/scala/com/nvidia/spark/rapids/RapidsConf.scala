@@ -2087,12 +2087,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
-  val SHUFFLE_ASYNC_READ_ENABLED = conf("spark.rapids.shuffle.asyncRead.enabled")
-    .doc("Enable or disable the asynchronous read for Shuffle.")
+  val SHUFFLE_ASYNC_READ_ENABLED = conf("spark.rapids.sql.asyncRead.shuffle.enabled")
+    .doc("Enable or disable the asynchronous read for Shuffle. If you turn this on you should " +
+      "also consider increasing spark.rapids.sql.asyncRead.maxInFlightHostMemoryBytes so that " +
+      "async threads won't be blocked by the memory limit. If By default this in off now.")
     .internal()
     .startupOnly()
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   // ["NEVER", "ALWAYS", "ONFAILURE"]
   private val KudoDebugModes = 
@@ -2543,38 +2545,34 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
   val ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
     conf("spark.rapids.sql.asyncWrite.maxInFlightHostMemoryBytes")
       .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
-        "query output write. Tasks may be blocked if the total host memory bytes in-flight " +
-        "exceeds this value. This config is only valid when " +
-        "spark.rapids.sql.asyncWrite.queryOutput.enabled is true and " +
-        "spark.rapids.sql.asyncIO.maxInFlightHostMemoryBytes is 0")
+        "write. Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value. Today this config only covers file output write, but in future" +
+        "it may cover other writes like shuffle write as well. If set to <= 0 it means unlimited " +
+        "memory")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(2L * 1024 * 1024 * 1024)
 
-  val ASYNC_SHUFFLE_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
-    conf("spark.rapids.shuffle.asyncRead.maxInFlightHostMemoryBytes")
+  val ASYNC_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
+    conf("spark.rapids.sql.asyncRead.maxInFlightHostMemoryBytes")
       .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
-        "shuffle read. Tasks may be blocked if the total host memory bytes in-flight " +
-        "exceeds this value. This config is only valid when " +
-        "spark.rapids.shuffle.asyncRead.enabled is true and " +
-        "spark.rapids.sql.asyncIO.maxInFlightHostMemoryBytes is 0")
+        "read. Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value. Today this config only covers shuffle read, but in future" +
+        "it may cover other reads like file read as well. If set to <= 0 it means unlimited " +
+        "memory")
       .internal()
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(2L * 1024 * 1024 * 1024)
+      // Why by default set to unlimited? The reasons are:
+      // 1. For async shuffle read (done) or async file read (already there but need to integrate
+      // into this unified throttling), the host memory usage is bounded: N * batchSize * 2, where N
+      // is the number of total task number in executor, and "*2" is for prefetch + concatenation.
+      // 2. Even without asyncRead, today each task is already allowed to use host memory to prepare
+      // its data in CPU before it acquires GPU semaphore. So the host memory usage is already high.
+      // 3. The read in data will be spillable, so it won't have deadly consequences.
+      // 4. We have not yet implemented unified thread priority, so there's deadlock risks if this
+      // value is improperly set.
+      .createWithDefault(-1)
 
-  val ASYNC_IO_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
-    conf("spark.rapids.sql.asyncIO.maxInFlightHostMemoryBytes")
-      .doc("Maximum number of host memory bytes per executor that can be in-flight for all async " +
-        "IOs (including shuffle read/write, file read/write, etc." +
-        "This acts like a global budget for all kinds of async IOs. " +
-        "Set this to a value larger than 0 to take effect, and when this is set, " +
-        "other spark.rapids.sql.xxx.maxInFlightHostMemoryBytes, " +
-        "like spark.rapids.sql.asyncWrite.maxInFlightHostMemoryBytes, will be ignored." +
-        "Tasks may be blocked if the total host memory bytes in-flight " +
-        "exceeds this value. By default ")
-      .internal()
-      .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(0L)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -2840,11 +2838,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val asyncWriteMaxInFlightHostMemoryBytes: Long =
     get(ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
 
-  lazy val asyncShuffleReadMaxInFlightHostMemoryBytes: Long =
-    get(ASYNC_SHUFFLE_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
-
-  lazy val asyncIOMaxInFlightHostMemoryBytes: Long =
-    get(ASYNC_IO_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
+  lazy val asyncReadMaxInFlightHostMemoryBytes: Long =
+    get(ASYNC_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
 
   /**
    * Convert a string value to the injection configuration OomInjection.

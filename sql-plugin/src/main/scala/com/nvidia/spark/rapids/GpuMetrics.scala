@@ -108,6 +108,7 @@ object GpuMetric extends Logging {
   val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
   val COPY_TO_HOST_TIME = "d2hMemCopyTime"
+  val READ_THROTTLING_TIME = "readThrottlingTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -149,6 +150,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
+  val DESCRIPTION_READ_THROTTLING_TIME = "read throttling time"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric

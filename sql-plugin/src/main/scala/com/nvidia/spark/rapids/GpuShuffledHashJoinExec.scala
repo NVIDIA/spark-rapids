@@ -516,4 +516,3 @@ object GpuShuffledHashJoinExec extends Logging {
   }
 }
 
-

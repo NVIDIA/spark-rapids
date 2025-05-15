@@ -26,10 +26,10 @@ import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
-import com.nvidia.spark.rapids.GpuShuffleAsyncCoalesceIterator.asyncShuffleReadPool
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
 import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoHostMergeResultWrapper, KudoSerializer, MergeOptions}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.conf.Configuration
@@ -41,6 +41,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -64,7 +65,8 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     SYNC_READ_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESC_SYNC_READ_TIME),
-    ASYNC_READ_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESC_ASYNC_READ_TIME)
+    ASYNC_READ_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESC_ASYNC_READ_TIME),
+    READ_THROTTLING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_THROTTLING_TIME),
   )
 
   override protected val outputBatchesLevel = MODERATE_LEVEL
@@ -147,6 +149,7 @@ object GpuShuffleCoalesceUtils {
     val outBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
     val outRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
     val opTimeMetric = metricsMap(GpuMetric.OP_TIME)
+    val readThrottlingMetric = metricsMap(GpuMetric.READ_THROTTLING_TIME)
     val hostIter = if (readOption.kudoEnabled) {
       new KudoHostShuffleCoalesceIterator(iter, targetSize, dataTypes, concatTimeMetric,
         inBatchesMetric, inRowsMetric, readOption)
@@ -165,8 +168,9 @@ object GpuShuffleCoalesceUtils {
       hostIter
     }
     if (readOption.useAsync) {
-      new GpuShuffleAsyncCoalesceIterator(maybeBufferedIter, dataTypes, outBatchesMetric,
-        outRowsMetric, metricsMap(ASYNC_READ_TIME), opTimeMetric)
+      new GpuShuffleAsyncCoalesceIterator(maybeBufferedIter, dataTypes, targetSize,
+        outBatchesMetric, outRowsMetric, metricsMap(ASYNC_READ_TIME), opTimeMetric,
+        readThrottlingMetric)
     } else {
       new GpuShuffleCoalesceIterator(maybeBufferedIter, dataTypes, outBatchesMetric,
         outRowsMetric, metricsMap(SYNC_READ_TIME), opTimeMetric)
@@ -312,10 +316,12 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputRowsMetric: GpuMetric,
     asyncBuffering: Boolean = false
 ) extends Iterator[CoalescedHostResult] with AutoCloseable {
-  @volatile private[this] val serializedTables = new util.ArrayDeque[T]
+  private[this] val serializedTables = new util.ArrayDeque[T]
   @volatile private[this] var numTablesInBatch: Int = 0
   @volatile private[this] var numRowsInBatch: Int = 0
   @volatile private[this] var batchByteSize: Long = 0L
+
+  private var executor: Option[ThrottlingExecutor] = None
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
@@ -357,14 +363,26 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       }
 
       if (asyncBuffering && iter.hasNext) {
-        bufferingFuture = Option(asyncShuffleReadPool.submit(new Runnable {
-          override def run(): Unit = {
+        if(executor.isEmpty) {
+          executor =
+            Some(new ThrottlingExecutor(
+              TrampolineUtil.newDaemonCachedThreadPool(
+                "async buffer thread for " + Thread.currentThread().getName, 1, 1),
+              TrafficController.getReadInstance,
+              _ => {
+                // This is a no-op for now, but we can add stats collection here in the future.
+              }
+            ))
+        }
+        bufferingFuture = Option(executor.get.submit(
+          () => {
             val nvRangeName = s"Task ${taskAttemptID}-Async Buffer Next (Backend)"
             withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
               bufferNextBatch()
             }
-          }
-        }))
+          },
+          targetBatchByteSize // This is just a estimation, may overestimate.
+        ))
       }
 
       withRetryNoSplit(input.toSeq) { tables =>
