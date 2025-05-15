@@ -518,23 +518,6 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       metricsMap(JOIN_TIME))
   }
 
-  // /**
-  //  * Perform a join where the build side does not fit in a single GPU batch.
-  //  *
-  //  * @param info join information from the probing phase
-  //  * @param gpuBatchSizeBytes target GPU batch size
-  //  * @param metricsMap metrics to update
-  //  * @param partitionNumAmplification boost number of partitions for build size by this times
-  //  * @return iterator to produce the results of the join
-  //  */
-  // private def doBigBuildJoin(
-  //     info: JoinInfo,
-  //     gpuBatchSizeBytes: Long,
-  //     partitionNumAmplification: Double,
-  //     metricsMap: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
-  //   new BigSizedJoinIterator(info, gpuBatchSizeBytes, partitionNumAmplification, metricsMap)
-  // }
-
   /**
    * Probe for join information when both inputs are coming from host memory (i.e.: both
    * inputs are coming from a shuffle when not using a GPU-centered shuffle manager).
@@ -788,10 +771,6 @@ case class GpuShuffledSymmetricHashJoinExec(
     extends GpuShuffledSizedHashJoinExec[SpillableHostConcatResult] {
   import GpuShuffledSizedHashJoinExec.JoinSizer
   import GpuShuffledSymmetricHashJoinExec._
-
-  // // This is a placeholder as the actual build side is determined dynamically
-  // // during execution based on the size of the inputs
-  // override def buildSide: GpuBuildSide = GpuBuildRight
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(cpuLeftKeys, cpuRightKeys)
 

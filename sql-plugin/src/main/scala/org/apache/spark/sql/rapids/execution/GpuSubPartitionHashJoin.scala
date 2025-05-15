@@ -497,8 +497,7 @@ abstract class BaseSubHashJoinIterator(
 
   // skip empty partition pairs
   private[this] val subPartitionPairIter = new GpuSubPartitionPairIterator(buildIter,
-    boundBuildKeys, streamIter, boundStreamKeys, numPartitions, targetSize, 
-    skipEmptyPairs = false)
+    boundBuildKeys, streamIter, boundStreamKeys, numPartitions, targetSize)
 
   private[this] var joinIter: Option[Iterator[ColumnarBatch]] = None
   private[this] var nextCb: Option[ColumnarBatch] = None
@@ -576,52 +575,17 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
     logInfo(s"$joinType hash join is executed by sub-partitioning " +
       s"in task ${TaskContext.get().taskAttemptId()}")
 
-    // Add debugging info to help diagnose empty results
-    val debugBuiltIter = new Iterator[ColumnarBatch] {
-      var count = 0
-      var rowCount = 0
-      
-      override def hasNext: Boolean = builtIter.hasNext
-      
-      override def next(): ColumnarBatch = {
-        val batch = builtIter.next()
-        count += 1
-        rowCount += batch.numRows()
-        println(s"DEBUG: Build side batch $count with ${batch.numRows()} rows, total rows: $rowCount")
-        batch
-      }
-    }
-    
-    val debugStreamIter = new Iterator[ColumnarBatch] {
-      var count = 0
-      var rowCount = 0
-      
-      override def hasNext: Boolean = streamIter.hasNext
-      
-      override def next(): ColumnarBatch = {
-        val batch = streamIter.next()
-        count += 1
-        rowCount += batch.numRows()
-        println(s"DEBUG: Stream side batch $count with ${batch.numRows()} rows, total rows: $rowCount")
-        batch
-      }
-    }
-
-    new BaseSubHashJoinIterator(debugBuiltIter, boundBuildKeys, debugStreamIter,
+    new BaseSubHashJoinIterator(builtIter, boundBuildKeys, streamIter,
         boundStreamKeys, numPartitions, targetSize, opTime) {
 
       private[this] def canOptimizeOut(pair: PartitionPair): Boolean = {
         val (build, stream) = pair.get
-        println(s"DEBUG: Join pair - build empty: ${build.isEmpty}, stream empty: ${stream.isEmpty}")
-        
-        val result = joinType match {
+        joinType match {
           case _: InnerLike =>
             // For inner join, no need to run if either side is empty
             build.isEmpty || stream.isEmpty
           case _ => false
         }
-        println(s"DEBUG: Optimizing out: $result")
-        result
       }
 
       override def setupJoinIterator(pair: PartitionPair): Option[Iterator[ColumnarBatch]] = {
@@ -630,16 +594,11 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
           None
         } else {
           val (build, stream) = pair.release
-          println(s"DEBUG: Processing join pair - build: ${build.map(_.numRows()).getOrElse(0)} rows, " +
-            s"stream: ${stream.map(_.numRows()).sum} rows in ${stream.size} batches")
-          
           val buildCb = closeOnExcept(stream) { _ =>
             withResource(build) { _ =>
               build.map(_.getColumnarBatch()).getOrElse(GpuColumnVector.emptyBatch(buildSchema))
             }
           }
-          println(s"DEBUG: Build batch for join: ${buildCb.numRows()} rows")
-          
           val streamIter = closeOnExcept(buildCb) { _ =>
             GpuSubPartitionHashJoin.safeIteratorFromSeq(stream).map { spill =>
               withResource(spill)(_.getColumnarBatch())
@@ -648,24 +607,7 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
           // Leverage the original join iterators
           val joinIter = doJoin(buildCb, streamIter, targetSize, 
             numOutputRows, numOutputBatches, opTime, joinTime)
-          
-          // Wrap the join iterator to log output
-          val debugJoinIter = new Iterator[ColumnarBatch] {
-            var count = 0
-            var rowCount = 0
-            
-            override def hasNext: Boolean = joinIter.hasNext
-            
-            override def next(): ColumnarBatch = {
-              val batch = joinIter.next()
-              count += 1
-              rowCount += batch.numRows()
-              println(s"DEBUG: Join output batch $count with ${batch.numRows()} rows, total rows: $rowCount")
-              batch
-            }
-          }
-          
-          Some(debugJoinIter)
+          Some(joinIter)
         }
       }
 
