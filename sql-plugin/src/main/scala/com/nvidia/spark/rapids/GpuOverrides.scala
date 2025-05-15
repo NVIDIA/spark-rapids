@@ -1487,6 +1487,32 @@ object GpuOverrides extends Logging {
         TypeSig.integral + TypeSig.BOOLEAN, TypeSig.integral + TypeSig.BOOLEAN),
       (a, conf, p, r) => new UnaryExprMeta[BitwiseCount](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseCount(child)
+    expr[BitAndAgg](
+      "Returns the bitwise AND of all non-null input values",
+      ExprChecks.reductionAndGroupByAgg(
+        TypeSig.integral, TypeSig.integral,
+        Seq(ParamCheck("input", TypeSig.integral, TypeSig.integral))),
+      (a, conf, p, r) => new AggExprMeta[BitAndAgg](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuBitAndAgg(childExprs.head)
+      }),
+    expr[BitOrAgg](
+      "Returns the bitwise OR of all non-null input values",
+      ExprChecks.reductionAndGroupByAgg(
+        TypeSig.integral, TypeSig.integral,
+        Seq(ParamCheck("input", TypeSig.integral, TypeSig.integral))),
+      (a, conf, p, r) => new AggExprMeta[BitOrAgg](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuBitOrAgg(childExprs.head)
+      }),
+    expr[BitXorAgg](
+      "Returns the bitwise XOR of all non-null input values",
+      ExprChecks.reductionAndGroupByAgg(
+        TypeSig.integral, TypeSig.integral,
+        Seq(ParamCheck("input", TypeSig.integral, TypeSig.integral))),
+      (a, conf, p, r) => new AggExprMeta[BitXorAgg](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuBitXorAgg(childExprs.head)
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
