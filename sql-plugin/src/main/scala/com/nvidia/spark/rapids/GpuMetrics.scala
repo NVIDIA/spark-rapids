@@ -160,8 +160,11 @@ object GpuMetric extends Logging {
    * NOTE: SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private, so we have to use
    * the string directly
    */
-  def isTimeMetric(metric: GpuMetric): Boolean = {
-    unwrap(metric).metricType.toLowerCase.contains("timing")
+  def isTimeMetric(input: GpuMetric): Boolean = input match {
+    case w: WrappedGpuMetric =>
+      w.sqlMetric.metricType.toLowerCase.contains("timing")
+    case _ =>
+      false
   }
 
   def unwrap(input: GpuMetric): SQLMetric = input match {

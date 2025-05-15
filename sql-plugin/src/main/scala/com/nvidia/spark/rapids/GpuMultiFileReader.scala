@@ -618,36 +618,42 @@ abstract class MultiFileCloudPartitionReaderBase(
           // Filter time here includes the buffer time as well since those
           // happen in the same background threads. This is as close to wall
           // clock as we can get right now without further work.
-          require(metrics.contains(BUFFER_TIME), "bufferTime should be set")
-          require(metrics.contains(FILTER_TIME), "filterTime should be set")
+          val bufTime = metrics.getOrElse(BUFFER_TIME, NoopMetric)
+          val filterTime = metrics.getOrElse(FILTER_TIME, NoopMetric)
+          val bufWithSem = metrics.getOrElse(BUFFER_TIME_WITH_SEM, NoopMetric)
+          val filterWithSem = metrics.getOrElse(FILTER_TIME_WITH_SEM, NoopMetric)
 
-          val fileBufsAndMeta = if (metrics.contains(BUFFER_TIME_WITH_SEM)) {
-            require(metrics.contains(FILTER_TIME_WITH_SEM),
-              "filterTimeWithSem should be set if bufferTimeWithSem is set")
-            val taskContext = TaskContext.get()
-            require(taskContext != null, "TaskContext should not be null")
+          val fileBufsAndMeta = {
+            if (GpuMetric.isTimeMetric(bufTime) && GpuMetric.isTimeMetric(filterTime) &&
+              GpuMetric.isTimeMetric(bufWithSem) && GpuMetric.isTimeMetric(filterWithSem)) {
+              // Collect wall clock time and semaphore time. Use metrics of buffer time as a
+              // placeholder to fetch the increments. Then, adjust the buffer time and filter time
+              // according to the percentage (total = buffer time + filter time)
+              val taskContext = TaskContext.get()
+              require(taskContext != null, "TaskContext should not be null")
 
-            val wallStart = metrics(BUFFER_TIME).value
-            val withSemStart = metrics(BUFFER_TIME_WITH_SEM).value
-            val ret = GpuMetric.withSemaphoreTime(metrics(BUFFER_TIME),
-              metrics(BUFFER_TIME_WITH_SEM), taskContext) {
-              getNextBuffersAndMeta()
+              val wallClockStart = bufTime.value
+              val semStart = bufWithSem.value
+              val ret = GpuMetric.withSemaphoreTime(bufTime, bufWithSem, taskContext) {
+                getNextBuffersAndMeta()
+              }
+              val wallClockInc = bufTime.value - wallClockStart
+              val semInc = bufWithSem.value - semStart
+              val pct = ret.getFilterTimePct
+              filterTime += (wallClockInc * pct).toLong
+              bufTime += -(wallClockInc * pct).toLong
+              filterWithSem += (semInc * pct).toLong
+              bufWithSem += -(semInc * pct).toLong
+              ret
+            } else {
+              // Collect wall clock time only
+              val startTime = System.nanoTime()
+              val ret = getNextBuffersAndMeta()
+              val blockedTime = System.nanoTime() - startTime
+              filterTime += (blockedTime * ret.getFilterTimePct).toLong
+              bufTime += (blockedTime * ret.getBufferTimePct).toLong
+              ret
             }
-            val wallInc = metrics(BUFFER_TIME).value - wallStart
-            val withSemInc = metrics(BUFFER_TIME_WITH_SEM).value - withSemStart
-            val pct = ret.getFilterTimePct
-            metrics(FILTER_TIME) += (wallInc * pct).toLong
-            metrics(BUFFER_TIME) += -(wallInc * pct).toLong
-            metrics(FILTER_TIME_WITH_SEM) += (withSemInc * pct).toLong
-            metrics(BUFFER_TIME_WITH_SEM) += -(withSemInc * pct).toLong
-            ret
-          } else {
-            val startTime = System.nanoTime()
-            val ret = getNextBuffersAndMeta()
-            val blockedTime = System.nanoTime() - startTime
-            metrics(FILTER_TIME) += (blockedTime * ret.getFilterTimePct).toLong
-            metrics(BUFFER_TIME) += (blockedTime * ret.getBufferTimePct).toLong
-            ret
           }
 
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
