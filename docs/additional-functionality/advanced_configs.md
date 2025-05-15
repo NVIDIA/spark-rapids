@@ -399,6 +399,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.AggregateExpression"></a>spark.rapids.sql.expression.AggregateExpression| |Aggregate expression|true|None|
 <a name="sql.expression.ApproximatePercentile"></a>spark.rapids.sql.expression.ApproximatePercentile|`approx_percentile`, `percentile_approx`|Approximate percentile|true|This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark|
 <a name="sql.expression.Average"></a>spark.rapids.sql.expression.Average|`avg`, `mean`|Average aggregate operator|true|None|
+<a name="sql.expression.BitAndAgg"></a>spark.rapids.sql.expression.BitAndAgg|`bit_and`|Returns the bitwise AND of all non-null input values|true|None|
+<a name="sql.expression.BitOrAgg"></a>spark.rapids.sql.expression.BitOrAgg|`bit_or`|Returns the bitwise OR of all non-null input values|true|None|
+<a name="sql.expression.BitXorAgg"></a>spark.rapids.sql.expression.BitXorAgg|`bit_xor`|Returns the bitwise XOR of all non-null input values|true|None|
 <a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, not supported in reduction|true|None|
 <a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, not supported in reduction|true|None|
 <a name="sql.expression.Count"></a>spark.rapids.sql.expression.Count|`count`|Count aggregate operator|true|None|
