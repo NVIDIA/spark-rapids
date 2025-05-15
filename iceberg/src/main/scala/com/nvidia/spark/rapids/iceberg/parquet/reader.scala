@@ -34,7 +34,7 @@ import org.apache.iceberg.expressions.Expression
 import org.apache.iceberg.hadoop.HadoopInputFile
 import org.apache.iceberg.io.InputFile
 import org.apache.iceberg.mapping.NameMapping
-import org.apache.iceberg.parquet.{ParquetBloomRowGroupFilter, ParquetDictionaryRowGroupFilter, ParquetMetricsRowGroupFilter, ParquetSchemaUtil, TypeWithSchemaVisitor}
+import org.apache.iceberg.parquet.{GpuParquetIO, ParquetBloomRowGroupFilter, ParquetDictionaryRowGroupFilter, ParquetMetricsRowGroupFilter, ParquetSchemaUtil, TypeWithSchemaVisitor}
 import org.apache.iceberg.shaded.org.apache.parquet.{HadoopReadOptions, ParquetReadOptions}
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
@@ -61,7 +61,7 @@ case class IcebergPartitionedFile(
 
   def newReader: ParquetFileReader = {
     try {
-      ParquetFileReader.open(ParquetIO.file(file), parquetReadOptions)
+      ParquetFileReader.open(GpuParquetIO.file(file), parquetReadOptions)
     } catch {
       case e: IOException =>
         throw new UncheckedIOException(s"Failed to open Parquet file: ${file.location()}", e)

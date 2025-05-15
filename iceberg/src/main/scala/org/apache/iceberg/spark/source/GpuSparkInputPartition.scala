@@ -16,12 +16,33 @@
 
 package org.apache.iceberg.spark.source
 
+import com.nvidia.spark.rapids.RapidsConf
+import org.apache.iceberg.{Schema, SchemaParser}
+
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}
+import org.apache.spark.util.SerializableConfiguration
 
-class GpuSparkInputPartition(val cpuInputPartition: SparkInputPartition) extends
+class GpuSparkInputPartition(val cpuInputPartition: SparkInputPartition,
+    val rapidsConf: RapidsConf,
+    val hadoopConf: Broadcast[SerializableConfiguration],
+    val expectedSchemaStr: String) extends
   InputPartition with HasPartitionKey with Serializable {
-  override def preferredLocations(): Array[String] = cpuInputPartition.preferredLocations()
 
+  override def preferredLocations(): Array[String] = cpuInputPartition.preferredLocations()
   override def partitionKey(): InternalRow = cpuInputPartition.partitionKey()
+
+  lazy val maxChunkedReaderMemoryUsageSizeBytes: Long = {
+    if (rapidsConf.limitChunkedReaderMemoryUsage) {
+      val limitRatio = rapidsConf.chunkedReaderMemoryUsageRatio
+      (limitRatio * rapidsConf.gpuTargetBatchSizeBytes).toLong
+    } else {
+      0L
+    }
+  }
+
+  @transient lazy val expectedSchema: Schema = {
+    SchemaParser.fromJson(expectedSchemaStr)
+  }
 }
