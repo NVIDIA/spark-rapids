@@ -355,8 +355,7 @@ object GpuShuffledSizedHashJoinExec {
 }
 
 abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] extends GpuJoinExec
-  with GpuHashJoin
-  with GpuSubPartitionHashJoin {
+  with GpuHashJoin with GpuSubPartitionHashJoin {
   import GpuShuffledSizedHashJoinExec._
 
   def left: SparkPlan
@@ -445,11 +444,13 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
             localCondition, localGpuBatchSizeBytes, localMetrics)
       }
 
-      val forceSubPartitioning = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
-
-      if (forceSubPartitioning.getOrElse(false)) {
-        println("forceSubPartitioning")
-
+      val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
+        if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
+          Iterator.empty
+        } else {
+          doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
+        }
+      } else {
         val targetSize = realTargetBatchSize()
         val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
 
@@ -459,30 +460,13 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
         doJoinBySubPartition(joinInfo.buildIter, joinInfo.streamIter, targetSize,
           numPartitions, localMetrics(NUM_OUTPUT_ROWS), localMetrics(NUM_OUTPUT_BATCHES),
           localMetrics(OP_TIME), localMetrics(JOIN_TIME))
-        
-      } else {
-        println("DEBUG: Not using sub-partitioning")
-        println(s"DEBUG: joinInfo.buildSize: ${joinInfo.buildSize}")
-        println(s"DEBUG: localGpuBatchSizeBytes: $localGpuBatchSizeBytes")
-        val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
-          if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
-            println("DEBUG: Using empty join")
-            Iterator.empty
-          } else {
-            println("DEBUG: Using small build join")
-            doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
-          }
-        } else {
-          println("DEBUG: Using big build join")
-          doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, partitionNumAmplification, localMetrics)
-        }
-        val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
-        val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
-        joinIterator.map { cb =>
-          numOutputRows += cb.numRows()
-          numOutputBatches += 1
-          cb
-        }
+      }
+      val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
+      val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
+      joinIterator.map { cb =>
+        numOutputRows += cb.numRows()
+        numOutputBatches += 1
+        cb
       }
     }
   }
@@ -534,22 +518,22 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       metricsMap(JOIN_TIME))
   }
 
-  /**
-   * Perform a join where the build side does not fit in a single GPU batch.
-   *
-   * @param info join information from the probing phase
-   * @param gpuBatchSizeBytes target GPU batch size
-   * @param metricsMap metrics to update
-   * @param partitionNumAmplification boost number of partitions for build size by this times
-   * @return iterator to produce the results of the join
-   */
-  private def doBigBuildJoin(
-      info: JoinInfo,
-      gpuBatchSizeBytes: Long,
-      partitionNumAmplification: Double,
-      metricsMap: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
-    new BigSizedJoinIterator(info, gpuBatchSizeBytes, partitionNumAmplification, metricsMap)
-  }
+  // /**
+  //  * Perform a join where the build side does not fit in a single GPU batch.
+  //  *
+  //  * @param info join information from the probing phase
+  //  * @param gpuBatchSizeBytes target GPU batch size
+  //  * @param metricsMap metrics to update
+  //  * @param partitionNumAmplification boost number of partitions for build size by this times
+  //  * @return iterator to produce the results of the join
+  //  */
+  // private def doBigBuildJoin(
+  //     info: JoinInfo,
+  //     gpuBatchSizeBytes: Long,
+  //     partitionNumAmplification: Double,
+  //     metricsMap: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
+  //   new BigSizedJoinIterator(info, gpuBatchSizeBytes, partitionNumAmplification, metricsMap)
+  // }
 
   /**
    * Probe for join information when both inputs are coming from host memory (i.e.: both
@@ -1584,200 +1568,5 @@ class StreamSidePartitioner(
 
   override def close(): Unit = {
     partitions.safeClose()
-  }
-}
-
-/**
- * Iterator that produces the result of a large symmetric join where the build side of the join is
- * too large for a single GPU batch. The prior join input probing phase has sized the build side
- * of the join, so this partitions both the build side and stream side into N+1 partitions, where
- * N is the size of the build side divided by the target GPU batch size.
- *
- * Once the build side is partitioned completely, the partitions are placed into "join groups"
- * where all the build side data of a join group fits in the GPU target batch size. If the input
- * data is skewed, a single build partition could be larger than the target GPU batch size.
- * Currently such oversized partitions are placed in separate join groups consisting just of one
- * partition each in the hopes that there will be enough GPU memory to proceed with the join
- * despite the skew. We will need to revisit this for very large, skewed build side data arriving
- * at a single task.
- *
- * Once the build side join groups are identified, each stream batch is partitioned into the same
- * number of partitions as the build side with the same hash key used for the build side. The
- * partitions from the batch are grouped into join groups matching the partition grouping from
- * the build side, and each join group is processed as a sub-join. Once all the join groups for
- * a stream batch have been processed, the next stream batch is fetched, partitioned, and sub-joins
- * are processed against the build side join groups. Repeat until the stream side is exhausted.
- *
- * @param info join information from input probing phase
- * @param gpuBatchSizeBytes target GPU batch size
- * @param partitionNumAmplification boost number of partitions for build size by this times
- * @param metrics metrics to update
- */
-class BigSizedJoinIterator(
-    info: JoinInfo,
-    gpuBatchSizeBytes: Long,
-    partitionNumAmplification: Double,
-    metrics: Map[String, GpuMetric])
-  extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
-
-  private val buildPartitioner = {
-    val numPartitions =
-      (((info.buildSize / gpuBatchSizeBytes) + 1) * partitionNumAmplification).toLong
-    require(numPartitions <= Int.MaxValue, "too many build partitions")
-    new BuildSidePartitioner(info.joinType, numPartitions.toInt, info.buildIter,
-      info.exprs.buildTypes, info.exprs.boundBuildKeys, gpuBatchSizeBytes, metrics)
-  }
-  use(buildPartitioner)
-
-  private val joinGroups = buildPartitioner.getJoinGroups
-  private var currentJoinGroupIndex = joinGroups.length - 1
-  private val needTracker = info.joinType match {
-    case FullOuter => true
-    case LeftOuter if info.buildSide == GpuBuildLeft => true
-    case RightOuter if info.buildSide == GpuBuildRight => false
-    case _ => false
-  }
-
-  private val streamPartitioner = use(new StreamSidePartitioner(buildPartitioner.numPartitions,
-    buildPartitioner.getEmptyPartitions, info.streamIter, info.exprs.streamTypes,
-    info.exprs.boundStreamKeys, metrics))
-
-  private var subIter: Option[Iterator[ColumnarBatch]] = None
-
-  // Buffer per join group to track build-side rows that have been referenced for outer joins
-  private val buildSideRowTrackers: Array[Option[SpillableColumnarBatch]] = {
-    if (needTracker) {
-      val arr = new Array[Option[SpillableColumnarBatch]](joinGroups.length)
-      arr.indices.foreach { i => arr(i) = None }
-      arr
-    } else {
-      Array.empty
-    }
-  }
-
-  private var isExhausted = joinGroups.isEmpty
-  private val opTime = metrics(OP_TIME)
-  private val joinTime = metrics(JOIN_TIME)
-
-  private lazy val compiledCondition = info.exprs.boundCondition.map { condExpr =>
-    use(opTime.ns(condExpr.convertToAst(info.exprs.numFirstConditionTableColumns).compile()))
-  }
-
-  override def hasNext: Boolean = {
-    if (isExhausted) {
-      false
-    } else if (subIter.exists(_.hasNext)) {
-      true
-    } else {
-      setupNextJoinIterator()
-      val result = subIter.exists(_.hasNext)
-      if (!result) {
-        isExhausted = true
-        close()
-      }
-      result
-    }
-  }
-
-  override def next(): ColumnarBatch = {
-    if (!hasNext) {
-      throw new NoSuchElementException("join batches exhausted")
-    }
-    subIter.get.next()
-  }
-
-  override def close(): Unit = {
-    super.close()
-    buildSideRowTrackers.flatten.safeClose()
-    isExhausted = true
-  }
-
-  private def setupNextJoinIterator(): Unit = {
-    while (!isExhausted && !subIter.exists(_.hasNext)) {
-      if (needTracker) {
-        // save off the build side tracker buffer for the join group just processed
-        subIter match {
-          case Some(streamIter: HashJoinStreamSideIterator) =>
-            assert(buildSideRowTrackers(currentJoinGroupIndex).isEmpty, "unexpected row tracker")
-            buildSideRowTrackers(currentJoinGroupIndex) = streamIter.releaseBuiltSideTracker()
-            streamIter.close()
-          case _ =>
-        }
-      }
-      if (currentJoinGroupIndex >= joinGroups.length - 1) {
-        // try to pull in the next stream batch
-        if (streamPartitioner.hasInputBatches) {
-          streamPartitioner.partitionNextBatch()
-          subIter = Some(moveToNextBuildGroup())
-        } else if (needTracker) {
-          currentJoinGroupIndex = buildSideRowTrackers.indexWhere(_.isDefined)
-          if (currentJoinGroupIndex == -1) {
-            isExhausted = true
-            subIter = None
-          } else {
-            // TODO: Can free the build-side batch in the build partitioner early here since
-            //       this will be the last iterator to use it.
-            // https://github.com/NVIDIA/spark-rapids/issues/10282
-            val tracker = buildSideRowTrackers(currentJoinGroupIndex)
-            buildSideRowTrackers(currentJoinGroupIndex) = None
-            // Setup an iterator to produce the final full outer join batches for the join group.
-            // All stream batches have been consumed, so an empty iterator is used for the stream
-            // side. The condition also doesn't need to be passed since there are no join row pairs
-            // left to evaluate conditionally. The only rows that will be emitted by this are the
-            // build-side rows that never matched rows on the stream side.
-            subIter = Some(new HashOuterJoinIterator(info.joinType,
-              buildPartitioner.getBuildBatch(currentJoinGroupIndex), info.exprs.boundBuildKeys,
-              info.buildStats, tracker, Iterator.empty, info.exprs.boundStreamKeys,
-              info.exprs.streamOutput, None, 0, gpuBatchSizeBytes, info.buildSide,
-              info.exprs.compareNullsEqual, opTime, joinTime))
-          }
-        } else {
-          isExhausted = true
-          subIter = None
-        }
-      } else {
-        subIter = Some(moveToNextBuildGroup())
-      }
-    }
-  }
-
-  private def moveToNextBuildGroup(): Iterator[ColumnarBatch] = {
-    // If we were at the last build group, loop back to the first since we're processing the next
-    // stream batch.
-    currentJoinGroupIndex = (currentJoinGroupIndex + 1) % joinGroups.length
-    val builtBatch = buildPartitioner.getBuildBatch(currentJoinGroupIndex)
-    val group = joinGroups(currentJoinGroupIndex)
-    val streamBatches = streamPartitioner.releasePartitions(group)
-    val lazyStream = new Iterator[LazySpillableColumnarBatch] {
-      onTaskCompletion(streamBatches.safeClose())
-
-      private var i = 0
-
-      override def hasNext: Boolean = i < streamBatches.length
-
-      override def next(): LazySpillableColumnarBatch = {
-        withResource(streamBatches(i)) { spillBatch =>
-          streamBatches(i) = null
-          i += 1
-          withResource(spillBatch.getColumnarBatch()) { batch =>
-            LazySpillableColumnarBatch(batch, "stream_batch")
-          }
-        }
-      }
-    }
-    if (needTracker) {
-      // Build an iterator to perform the stream-side of the outer join for the join group,
-      // tracking which rows are referenced so far. The iterator will own the tracker of build side
-      // rows referenced until we release it after the iterator has produced all of the batches.
-      val buildRowTracker = buildSideRowTrackers(currentJoinGroupIndex)
-      buildSideRowTrackers(currentJoinGroupIndex) = None
-      new HashJoinStreamSideIterator(info.joinType,
-        builtBatch, info.exprs.boundBuildKeys, info.buildStats, buildRowTracker,
-        lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput, compiledCondition,
-        gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
-    } else {
-      GpuShuffledSizedHashJoinExec.createJoinIterator(info, builtBatch, lazyStream,
-        gpuBatchSizeBytes, opTime, joinTime)
-    }
   }
 }

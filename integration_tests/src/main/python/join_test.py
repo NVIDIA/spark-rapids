@@ -1497,6 +1497,44 @@ def test_sized_join(join_type, is_left_host_shuffle, is_right_host_shuffle,
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
 
 @ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["LeftOuter", "RightOuter"], ids=idfn)
+@pytest.mark.parametrize("is_left_host_shuffle", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_right_host_shuffle", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_left_smaller", [False, True], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+def test_sized_join_debug(join_type, is_left_host_shuffle, is_right_host_shuffle,
+                    is_left_smaller, kudo_enabled):
+    join_conf = {
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
+        "spark.rapids.sql.join.useShuffledAsymmetricHashJoin": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "1",
+        "spark.rapids.sql.batchSizeBytes": "1024",
+        kudo_enabled_conf_key: kudo_enabled
+    }
+    left_size, right_size = (2048, 1024) if is_left_smaller else (1024, 2048)
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("key1", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("ints", int_gen),
+            ("key2", RepeatSeqGen([5, 6, 7, None], data_type=LongType())),
+            ("floats", float_gen)], left_size)
+        right_df = gen_df(spark, [
+            ("doubles", double_gen),
+            ("key2", RepeatSeqGen([5, 7, None, 8], data_type=LongType())),
+            ("shorts", short_gen),
+            ("key1", RepeatSeqGen([1, 2, 3, 5, 7, None], data_type=IntegerType()))], right_size)
+        # The symmetric join code handles inputs differently based on whether they are coming from
+        # host memory or GPU memory. Simple joins produce inputs directly from a shuffle which
+        # covers the host memory case. For GPU memory cases, we insert an aggregation to force the
+        # respective join input to be from a prior GPU operation in the same stage.
+        if not is_left_host_shuffle:
+            left_df = left_df.groupBy("key1", "key2").max("ints", "floats")
+        if not is_right_host_shuffle:
+            right_df = right_df.groupBy("key1", "key2").max("doubles", "shorts")
+        return left_df.join(right_df, ["key1", "key2"], join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
+
+@ignore_order(local=True)
 @pytest.mark.parametrize("join_type", ["Inner", "FullOuter", "LeftOuter", "RightOuter"], ids=idfn)
 @pytest.mark.parametrize("is_left_smaller", [False, True], ids=idfn)
 @pytest.mark.parametrize("is_ast_supported", [False, True], ids=idfn)
