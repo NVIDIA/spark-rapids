@@ -52,8 +52,8 @@ case class IcebergPartitionedFile(
     split: Option[(Long, Long)] = None,
     filter: Option[Expression] = None) {
 
-  private lazy val _urlEncodedPath: String = new Path(file.location()).toUri.toString
-  private lazy val _path: Path = new Path(new URI(_urlEncodedPath))
+  lazy val urlEncodedPath: String = new Path(file.location()).toUri.toString
+  lazy val path: Path = new Path(new URI(urlEncodedPath))
 
   def parquetReadOptions: ParquetReadOptions = {
     GpuIcebergParquetReader.buildReaderOptions(file, split)
@@ -82,10 +82,6 @@ case class IcebergPartitionedFile(
           file.getLength)
     }
   }
-
-  def path: Path = _path
-
-  def urlEncodedPath: String = _urlEncodedPath
 
   def start: Long = split.map(_._1).getOrElse(0L)
 
@@ -146,7 +142,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       (typeWithIds, ParquetSchemaUtil.pruneColumnsFallback(typeWithIds, requiredSchema))
     }
 
-    logWarning(s"Doing project schema, parquet file schema:\n$fileSchema " +
+    logDebug(s"Doing project schema, parquet file schema:\n$fileSchema " +
       s"\niceberg required schema:\n$requiredSchema " +
       s"\nfile reade schema:\n$fileReadSchema")
     (typeWithIds, fileReadSchema)

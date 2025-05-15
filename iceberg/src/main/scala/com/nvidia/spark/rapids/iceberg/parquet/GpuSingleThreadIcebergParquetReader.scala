@@ -104,7 +104,7 @@ private class SingleFileReader(
   }
 
   private def open() = {
-    withResource(file.newReader) { reader =>
+    withResource(file.newReader) { _ =>
 
       val filteredParquet = super.filterParquetBlocks(file, conf.expectedSchema)
 

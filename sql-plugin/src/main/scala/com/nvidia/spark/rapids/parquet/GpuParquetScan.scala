@@ -328,7 +328,7 @@ case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[B
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
     dateRebaseMode: DateTimeRebaseMode, timestampRebaseMode: DateTimeRebaseMode,
     hasInt96Timestamps: Boolean,
-    // Row number of the first row in each block.
+    // Row number of the first row in each block considering all rows in blocks.
     // If non-empty, its size should be the same as blocks.size
     blocksFirstRowIndices: Seq[Long] = Seq.empty)
 
