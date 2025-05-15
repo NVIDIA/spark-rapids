@@ -2567,7 +2567,10 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       // into this unified throttling), the host memory usage is bounded: N * batchSize * 2, where N
       // is the number of total task number in executor, and "*2" is for prefetch + concatenation.
       // 2. Even without asyncRead, today each task is already allowed to use host memory to prepare
-      // its data in CPU before it acquires GPU semaphore. So the host memory usage is already high.
+      // its data in CPU before it acquires GPU semaphore. Take shuffle read for example
+      // the host memory usage is already high, actually async shuffle read is adding just a
+      // little more memory pressure (concurrentGpuTasks * batchSize * 2), note concurrentGpuTasks
+      // is typically much smaller than N.
       // 3. The read in data will be spillable, so it won't have deadly consequences.
       // 4. We have not yet implemented unified thread priority, so there's deadlock risks if this
       // value is improperly set.
