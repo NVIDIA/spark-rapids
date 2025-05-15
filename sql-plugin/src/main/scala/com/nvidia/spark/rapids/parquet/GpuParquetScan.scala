@@ -327,7 +327,10 @@ object GpuParquetScan {
 case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
     dateRebaseMode: DateTimeRebaseMode, timestampRebaseMode: DateTimeRebaseMode,
-    hasInt96Timestamps: Boolean)
+    hasInt96Timestamps: Boolean,
+    // Row number of the first row in each block considering all rows in blocks.
+    // If non-empty, its size should be the same as blocks.size
+    blocksFirstRowIndices: Seq[Long] = Seq.empty)
 
 private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
 
@@ -2059,12 +2062,12 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 }
 
 // Parquet schema wrapper
-private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
+case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
   override def isEmpty: Boolean = schema.getFields.isEmpty
 }
 
 // Parquet BlockMetaData wrapper
-private case class ParquetDataBlock(
+case class ParquetDataBlock(
     dataBlock: BlockMetaData,
     compressCfg: CpuCompressionConfig) extends DataBlockBase {
   override def getRowCount: Long = dataBlock.getRowCount
@@ -2080,7 +2083,7 @@ class ParquetExtraInfo(val dateRebaseMode: DateTimeRebaseMode,
     val hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
-private case class ParquetSingleDataBlockMeta(
+case class ParquetSingleDataBlockMeta(
   filePath: Path,
   dataBlock: ParquetDataBlock,
   partitionValues: InternalRow,
