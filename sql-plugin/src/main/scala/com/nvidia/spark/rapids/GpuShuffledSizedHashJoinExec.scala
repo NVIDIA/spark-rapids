@@ -443,7 +443,6 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
             localRightKeys, rightOutput, rightIter,
             localCondition, localGpuBatchSizeBytes, localMetrics)
       }
-
       val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
         if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
           Iterator.empty
