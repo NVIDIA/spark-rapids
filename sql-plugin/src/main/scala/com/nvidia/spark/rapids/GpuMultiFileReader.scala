@@ -626,24 +626,21 @@ abstract class MultiFileCloudPartitionReaderBase(
           val fileBufsAndMeta = {
             if (GpuMetric.isTimeMetric(bufTime) && GpuMetric.isTimeMetric(filterTime) &&
               GpuMetric.isTimeMetric(bufWithSem) && GpuMetric.isTimeMetric(filterWithSem)) {
-              // Collect wall clock time and semaphore time. Use metrics of buffer time as a
-              // placeholder to fetch the increments. Then, adjust the buffer time and filter time
-              // according to the percentage (total = buffer time + filter time)
+              // Collect wall clock time and semaphore time
               val taskContext = TaskContext.get()
               require(taskContext != null, "TaskContext should not be null")
 
-              val wallClockStart = bufTime.value
-              val semStart = bufWithSem.value
-              val ret = GpuMetric.withSemaphoreTime(bufTime, bufWithSem, taskContext) {
+              val wallClockInc = new LocalGpuMetric()
+              val semInc = new LocalGpuMetric()
+              val ret = GpuMetric.withSemaphoreTime(wallClockInc, semInc, taskContext) {
                 getNextBuffersAndMeta()
               }
-              val wallClockInc = bufTime.value - wallClockStart
-              val semInc = bufWithSem.value - semStart
-              val pct = ret.getFilterTimePct
-              filterTime += (wallClockInc * pct).toLong
-              bufTime += -(wallClockInc * pct).toLong
-              filterWithSem += (semInc * pct).toLong
-              bufWithSem += -(semInc * pct).toLong
+              val filterPct = ret.getFilterTimePct
+              val bufferPct = ret.getBufferTimePct
+              filterTime += (wallClockInc.value * filterPct).toLong
+              bufTime += (wallClockInc.value * bufferPct).toLong
+              filterWithSem += (semInc.value * filterPct).toLong
+              bufWithSem += (semInc.value * bufferPct).toLong
               ret
             } else {
               // Collect wall clock time only

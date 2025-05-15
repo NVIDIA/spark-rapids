@@ -227,9 +227,6 @@ object GpuMetric extends Logging {
       wallTime: GpuMetric,
       semTime: GpuMetric,
       ctx: TaskContext)(f: => T): T = {
-    require(GpuMetric.isTimeMetric(wallTime), "wallTime must be a timing metric")
-    require(GpuMetric.isTimeMetric(semTime), "semTime must be a timing metric")
-
     val start = System.nanoTime()
     val semStart = GpuTaskMetrics.get.getSemaphoreHoldingTime
     // Compute the preBlockHead if there exists a partial lead interval. The preBlockHead will
@@ -251,14 +248,14 @@ object GpuMetric extends Logging {
     } finally {
       val end = System.nanoTime()
       val semEnd = GpuTaskMetrics.get.getSemaphoreHoldingTime
-      // Compute the postBlockHead if there exists a partial lag interval. The postBlockHead will
+      // Compute the partial tail if there exists a partial lag interval. The partial tail will
       // be explicitly added in final:
       //                              Sem.Acq           Sem.Rel
       //                                 |-----------------| (Partial Lag Interval)
       //      |--------------------------------------| (Compute Block)
-      //                                 postBlockHead
+      //                                  partialTail
       //                                 <----------->
-      val postBlockHead = GpuSemaphore.getLastSemAcqAndRelTime(ctx) match {
+      val partialTail = GpuSemaphore.getLastSemAcqAndRelTime(ctx) match {
         case (acqTime, relTime) if acqTime > relTime =>
           // directly minus acqTime instead of `acqTime max start` because the ahead part has
           // been subtracted ahead of time (`semHoldTimeBefore`)
@@ -267,7 +264,7 @@ object GpuMetric extends Logging {
           0L
       }
       wallTime.add(System.nanoTime() - start)
-      semTime.add(semEnd - semStart - preBlockHead + postBlockHead)
+      semTime.add(semEnd - semStart - preBlockHead + partialTail)
     }
   }
 
