@@ -2016,7 +2016,7 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
 }
 
 case class GpuReplaceNullmask(
-    input: Expression, 
+    input: Expression,
     mask: Expression) extends GpuExpression with ShimExpression {
 
   override def dataType: DataType = input.dataType
@@ -2083,7 +2083,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   protected val cudfMaxMinByAggregate: CudfAggregate
 
-  private lazy val bufferOrdering: AttributeReference = 
+  private lazy val bufferOrdering: AttributeReference =
     AttributeReference("ordering", orderingExpr.dataType)()
 
   private lazy val bufferValue: AttributeReference =
@@ -2091,7 +2091,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   // Cudf allows only one column as input, so wrap value and ordering columns by
   // a struct before just going into cuDF.
-  private def createStructExpression(order: Expression, value: Expression): Expression = 
+  private def createStructExpression(order: Expression, value: Expression): Expression =
     GpuReplaceNullmask(
       GpuCreateNamedStruct(Seq(
         GpuLiteral(CudfMaxMinBy.KEY_ORDERING, StringType), order,
@@ -2146,4 +2146,63 @@ case class GpuMinBy(valueExpr: Expression, orderingExpr: Expression)
 
   override protected lazy val cudfMaxMinByAggregate: CudfAggregate =
     new CudfMinBy(valueExpr.dataType, orderingExpr.dataType)
+}
+
+class CudfBitAndAgg(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitAnd())
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitAnd()
+  override val name: String = "CudfBitAndAgg"
+}
+
+class CudfBitOrAgg(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitOr())
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitOr()
+  override val name: String = "CudfBitOrAgg"
+}
+
+class CudfBitXorAgg(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitXor())
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitXor()
+  override val name: String = "CudfBitXorAgg"
+}
+
+abstract class GpuBitAggregate(child: Expression) extends GpuAggregateFunction with Serializable {
+  override def nullable: Boolean = true
+
+  override def dataType: DataType = child.dataType
+
+  override def children: Seq[Expression] = Seq(child)
+
+  protected def cudfBitAgg: CudfAggregate
+
+  protected final lazy val outputBuf: AttributeReference =
+    AttributeReference("bitwiseAgg", dataType)()
+
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
+  override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, dataType))
+  override lazy val inputProjection: Seq[Expression] = Seq(child)
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(cudfBitAgg)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(cudfBitAgg)
+  override lazy val evaluateExpression: Expression = outputBuf
+}
+
+case class GpuBitAndAgg(child: Expression) extends GpuBitAggregate(child) {
+  override def cudfBitAgg = new CudfBitAndAgg(dataType)
+
+  override def prettyName: String = "bit_and"
+}
+
+case class GpuBitOrAgg(child: Expression) extends GpuBitAggregate(child) {
+  override def cudfBitAgg = new CudfBitOrAgg(dataType)
+
+  override def prettyName: String = "bit_or"
+}
+
+case class GpuBitXorAgg(child: Expression) extends GpuBitAggregate(child) {
+  override def cudfBitAgg = new CudfBitXorAgg(dataType)
+
+  override def prettyName: String = "bit_xor"
 }
