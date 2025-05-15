@@ -27,10 +27,10 @@ import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
 import java.util
 import org.apache.iceberg.{MetadataColumns, Schema}
-import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType
 import org.apache.iceberg.spark.SparkSchemaUtil
 import org.apache.iceberg.types.{Type, Types, TypeUtil}
 import org.apache.iceberg.types.Types.NestedField
+import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
