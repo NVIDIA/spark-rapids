@@ -714,6 +714,18 @@ Average,S,`avg`; `mean`,None,reduction,input,NA,S,S,S,S,S,S,NA,NA,NA,S,S,NA,NS,N
 Average,S,`avg`; `mean`,None,reduction,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Average,S,`avg`; `mean`,None,window,input,NA,S,S,S,S,S,S,NA,NA,NA,S,S,NA,NS,NA,NA,NA,NA,NS,NS
 Average,S,`avg`; `mean`,None,window,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitAndAgg,S,`bit_and`,None,aggregation,input,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitAndAgg,S,`bit_and`,None,aggregation,result,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitAndAgg,S,`bit_and`,None,reduction,input,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitAndAgg,S,`bit_and`,None,reduction,result,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitOrAgg,S,`bit_or`,None,aggregation,input,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitOrAgg,S,`bit_or`,None,aggregation,result,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitOrAgg,S,`bit_or`,None,reduction,input,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitOrAgg,S,`bit_or`,None,reduction,result,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitXorAgg,S,`bit_xor`,None,aggregation,input,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitXorAgg,S,`bit_xor`,None,aggregation,result,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitXorAgg,S,`bit_xor`,None,reduction,input,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+BitXorAgg,S,`bit_xor`,None,reduction,result,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 BloomFilterAggregate,S, ,None,reduction,child,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 BloomFilterAggregate,S, ,None,reduction,estimatedItems,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 BloomFilterAggregate,S, ,None,reduction,numBits,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA

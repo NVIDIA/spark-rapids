@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetryNoSplit}
@@ -389,7 +389,9 @@ object GpuColumnarToRowExec {
     // Check if the current CUDA device architecture exceeds Pascal.
     // i.e. CUDA compute capability > 6.x.
     // Reference:  https://developer.nvidia.com/cuda-gpus
-    Cuda.getComputeCapabilityMajor > 6
+    //Cuda.getComputeCapabilityMajor > 6
+    // https://github.com/NVIDIA/spark-rapids/issues/10062, at least until we can debug and fix it.
+    false
   }
 
   def makeIteratorFunc(

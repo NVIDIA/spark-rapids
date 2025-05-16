@@ -582,7 +582,6 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
-                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -630,7 +629,6 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
-                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -654,7 +652,6 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
-                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -679,7 +676,6 @@
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg</module>
-                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -704,7 +700,6 @@
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg</module>
-                <module>iceberg-common</module>
             </modules>
         </profile>
         <profile>
@@ -729,7 +724,6 @@
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg</module>
-                <module>iceberg-common</module>
             </modules>
         </profile>
         <!-- #if scala-2.13 -->
@@ -852,7 +846,8 @@
     <properties>
         <delta33x.version>3.3.0</delta33x.version>
         <!-- start dyn.shim properties -->
-	<dyn.shim.excluded.releases></dyn.shim.excluded.releases>
+        <!--  TODO: Will remove 330db from the execluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
+	<dyn.shim.excluded.releases>330db</dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>

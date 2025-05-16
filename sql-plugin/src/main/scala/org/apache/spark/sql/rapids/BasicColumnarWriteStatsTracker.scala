@@ -42,6 +42,7 @@ import org.apache.spark.util.SerializableConfiguration
 case class BasicColumnarWriteTaskStats(
     partitions: Seq[InternalRow],
     numFiles: Int,
+    numWriters: Int,
     numBytes: Long,
     numRows: Long)
     extends WriteTaskStats
@@ -61,6 +62,7 @@ class BasicColumnarWriteTaskStatsTracker(
   private[this] var numSubmittedFiles: Int = 0
   private[this] var numBytes: Long = 0L
   private[this] var numRows: Long = 0L
+  private[this] var maxNumWriters: Int = 0
 
   private[this] val submittedFiles = mutable.HashSet[String]()
 
@@ -159,6 +161,17 @@ class BasicColumnarWriteTaskStatsTracker(
     numRows += batch.numRows()
   }
 
+  /**
+   * Update the number of open writers.
+   * It will be a noop if the given number is not larger than the current one. Since
+   * only the max value is needed. This is designed for the concurrent writers case.
+   */
+  override def writersNumber(numWriters: Int): Unit = {
+    if (numWriters > maxNumWriters) {
+      maxNumWriters = numWriters
+    }
+  }
+
   override def getFinalStats(taskCommitTime: Long): WriteTaskStats = {
 
     // Reports bytesWritten and recordsWritten to the Spark output metrics.
@@ -173,7 +186,7 @@ class BasicColumnarWriteTaskStatsTracker(
         "or files being not immediately visible in the filesystem.")
     }
     taskCommitTimeMetric.foreach(_ += taskCommitTime)
-    BasicColumnarWriteTaskStats(partitions.toSeq, numFiles, numBytes, numRows)
+    BasicColumnarWriteTaskStats(partitions.toSeq, numFiles, maxNumWriters, numBytes, numRows)
   }
 }
 
@@ -206,6 +219,7 @@ class BasicColumnarWriteJobStatsTracker(
     var numFiles: Long = 0L
     var totalNumBytes: Long = 0L
     var totalNumOutput: Long = 0L
+    var maxNumWriters: Long = 0L
 
     val basicStats = stats.map(_.asInstanceOf[BasicColumnarWriteTaskStats])
 
@@ -214,6 +228,9 @@ class BasicColumnarWriteJobStatsTracker(
       numFiles += summary.numFiles
       totalNumBytes += summary.numBytes
       totalNumOutput += summary.numRows
+      if (summary.numWriters > maxNumWriters) {
+        maxNumWriters = summary.numWriters
+      }
     }
 
     driverSideMetrics(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME).add(jobCommitTime)
@@ -221,6 +238,8 @@ class BasicColumnarWriteJobStatsTracker(
     driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_BYTES_KEY).add(totalNumBytes)
     driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_ROWS_KEY).add(totalNumOutput)
     driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_PARTS_KEY).add(partitionsSet.size)
+    driverSideMetrics.get(BasicColumnarWriteJobStatsTracker.MAX_WRITERS_NUM_KEY)
+      .foreach(_.add(maxNumWriters))
 
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(sparkContext, executionId,
@@ -233,6 +252,7 @@ object BasicColumnarWriteJobStatsTracker {
   private val NUM_OUTPUT_BYTES_KEY = "numOutputBytes"
   private val NUM_OUTPUT_ROWS_KEY = "numOutputRows"
   private val NUM_PARTS_KEY = "numParts"
+  private val MAX_WRITERS_NUM_KEY = "maxWritersNumber"
   val TASK_COMMIT_TIME = "taskCommitTime"
   val JOB_COMMIT_TIME = "jobCommitTime"
   /** XAttr key of the data length header added in HADOOP-17414. */
@@ -255,7 +275,9 @@ object BasicColumnarWriteJobStatsTracker {
       TASK_COMMIT_TIME -> metricFactory.createTiming(GpuMetric.ESSENTIAL_LEVEL,
         "task commit time"),
       JOB_COMMIT_TIME -> metricFactory.createTiming(GpuMetric.ESSENTIAL_LEVEL,
-        "job commit time")
+        "job commit time"),
+      MAX_WRITERS_NUM_KEY -> metricFactory.create(GpuMetric.DEBUG_LEVEL,
+        "max writers number")
     )
   }
 }

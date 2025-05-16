@@ -32,7 +32,9 @@ trait GpuBatchScanExecMetrics extends GpuExec {
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
-    FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME)
+    FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
+    BUFFER_TIME_WITH_SEM -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME_WITH_SEM),
+    FILTER_TIME_WITH_SEM -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME_WITH_SEM)
   ) ++ fileCacheMetrics
 
   lazy val fileCacheMetrics: Map[String, GpuMetric] = {
