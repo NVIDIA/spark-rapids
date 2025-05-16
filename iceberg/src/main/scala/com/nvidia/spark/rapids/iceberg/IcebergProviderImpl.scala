@@ -56,8 +56,11 @@ class IcebergProviderImpl extends IcebergProvider {
           }
 
           convertedScan match {
+            case Success(s) =>
+              if (s.hasNestedType) {
+                willNotWorkOnGpu("Iceberg current doesn't support nested types")
+              }
             case Failure(e) => willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
-            case _ =>
           }
         }
 
