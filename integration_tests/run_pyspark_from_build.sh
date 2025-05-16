@@ -428,7 +428,7 @@ else
     elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
         echo "Running explainOnly mode on CPU smoke test..."
         SPARK_SHELL_ARGS_ARR=(
-            --master local-cluster[1,2,1024]
+            --master local[2]
             --jars "${PYSP_TEST_spark_jars}"
             --conf spark.plugins=com.nvidia.spark.SQLPlugin
             --conf spark.deploy.maxExecutorRetries=0
