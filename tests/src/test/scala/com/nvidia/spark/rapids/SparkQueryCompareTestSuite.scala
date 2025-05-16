@@ -1191,7 +1191,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
@@ -1200,6 +1201,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     testConf.set("spark.sql.execution.sortBeforeRepartition", sortBeforeRepart.toString)
     test(qualifiedTestName) {
+      if (assumeCondition != null) {
+        val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = testConf)
+        assume(isAllowed, reason)
+      }
       val (fromCpu, fromGpu) = runOnCpuAndGpu2(dfA, dfB, fun, conf = testConf, repart = repart)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
@@ -2227,6 +2232,11 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
 
   def assumeSpark340orLater: Assertion =
     assume(isSpark340OrLater, "Spark version not 3.4.0+")
+
+  lazy val isSpark400OrLater: Boolean = cmpSparkVersion(4, 0, 0) >= 0
+
+  def assumePriorToSpark400: Assertion =
+    assume(!isSpark400OrLater, "Spark version not before 4.0.0")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getShimVersion

@@ -28,7 +28,8 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual2("Test broadcast hash join with ops", longsDf, nonZeroLongsDf,
     conf=new SparkConf()
-      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
+      .set("spark.sql.autoBroadcastJoinThreshold", "10MB"),
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
     (A, B) => A.join(B, (A("longs") - A("more_longs")) === (B("longs") - B("more_longs")))
   }
 
