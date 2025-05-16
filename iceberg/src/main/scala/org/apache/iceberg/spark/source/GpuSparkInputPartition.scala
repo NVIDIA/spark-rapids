@@ -47,6 +47,9 @@ class GpuSparkInputPartition(val cpuInputPartition: SparkInputPartition,
     }
   }
 
+  val multiThreadReadNumThreads: Int = rapidsConf.multiThreadReadNumThreads
+  val maxNumParquetFilesParallel: Int = rapidsConf.maxNumParquetFilesParallel
+
 
   override def preferredLocations(): Array[String] = cpuInputPartition.preferredLocations()
   override def partitionKey(): InternalRow = cpuInputPartition.partitionKey()

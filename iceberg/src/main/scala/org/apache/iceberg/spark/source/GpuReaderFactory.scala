@@ -71,7 +71,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
 
     if (allParquet) {
       if (isParquetPerFileReadEnabled) {
-        // If per-file read is enabled, we can only use multi-threaded reading.
+        // If per-file read is enabled, we can only use single threaded reading.
         return SingleFile
       }
 
@@ -84,10 +84,10 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
         canUseMultiThread, files, allCloudSchemes)
 
       if (useMultiThread) {
-        MultiThread(partition.rapidsConf.multiThreadReadNumThreads,
-          partition.rapidsConf.maxNumParquetFilesParallel)
+        MultiThread(partition.multiThreadReadNumThreads,
+          partition.maxNumParquetFilesParallel)
       } else {
-        MultiFile(partition.rapidsConf.multiThreadReadNumThreads)
+        MultiFile(partition.multiThreadReadNumThreads)
       }
     } else {
       throw new UnsupportedOperationException("Currently only parquet format is supported")
