@@ -662,7 +662,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     try {
       val nvidiaSmiStdout = new StringBuilder
       val nvidiaSmiStderr = new StringBuilder
-      val cmd = "nvidia-smi".run(
+      val cmd = "nvidia-smi -q".run(
         ProcessLogger(s => nvidiaSmiStdout.append(s + "\n"), s => nvidiaSmiStderr.append(s + "\n")))
       waitForProcess(cmd, 10000) match {
         case Some(exitStatus) =>
