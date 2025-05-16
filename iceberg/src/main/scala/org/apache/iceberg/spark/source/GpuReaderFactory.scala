@@ -59,7 +59,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
 
   private def calcThreadConf(partition: GpuSparkInputPartition): ThreadConf = {
     val scans = partition
-      .cpuInputPartition
+      .cpuPartition
       .taskGroup()
       .asInstanceOf[ScanTaskGroup[ScanTask]]
       .tasks
@@ -67,6 +67,11 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       .map(_.asFileScanTask())
 
     val hasNoDeletes = scans.forall(_.deletes.isEmpty)
+
+    if (!hasNoDeletes) {
+      throw new UnsupportedOperationException("Delete filter is not supported")
+    }
+
     val allParquet = scans.forall(_.file.format == FileFormat.PARQUET)
 
     if (allParquet) {

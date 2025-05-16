@@ -97,6 +97,8 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.xfail(reason="Nested data is not supported in Iceberg yet: "
+                          "https://github.com/NVIDIA/spark-rapids/issues/12298")
 def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     table = spark_tmp_table_factory.get()
@@ -156,7 +158,7 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
     ("uncompressed", None),
     ("snappy", None),
     ("gzip", None),
-    pytest.param(("lz4", "Unsupported compression type"),
+    pytest.param(("lz4", "Unsupported Parquet compression type"),
                  marks=pytest.mark.skipif(is_before_spark_320(),
                                           reason="Hadoop with Spark 3.1.x does not support lz4 by default")),
     ("zstd", None)], ids=idfn)
