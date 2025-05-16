@@ -1069,24 +1069,24 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
         pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy[y][y]-mm-dd'),
 
         # has no timezone, 4 years, will run on GPU
-        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}[ |T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{0,6}Z?', id='yyyy-mm-dd hh:mm:ss'),
+        pytest.param(r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{0,6}Z?', id='yyyy-mm-dd hh:mm:ss'),
 
         # has no timezone, 4-6 years, will run on GPU
-        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}[ |T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{0,6}Z?', id='yyyy[y][y]-mm-dd hh:mm:ss'),
+        pytest.param(r'[0-9]{4,6}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{0,6}Z?', id='yyyy[y][y]-mm-dd hh:mm:ss'),
 
         # CTT is non-DST, will run on GPU
         pytest.param(
-            r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} CTT', id='yyyy-mm-dd hh:mm:ss CTT'),
+            r'[0-9]{4,4}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} CTT', id='yyyy-mm-dd hh:mm:ss CTT'),
 
         # PST is DST, year is less than 2200, run on GPU
         pytest.param(
-            r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
+            r'[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
             id='yyyy-mm-dd hh:mm:ss PST, ts < 2200'),
 
         # PST is DST, and year is larger than 2200, run on CPU
         pytest.param(
-            r'3[0-9]{3,3}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
-            id='yyyy-mm-dd hh:mm:ss PST, ts > 2200')
+            r'3[0-9]{3,3}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
+            id='yyyy-mm-dd[ T]hh:mm:ss PST, ts > 2200')
     ])
 def test_cast_string_to_timestamp_const_format(pattern):
     gen = [("str_col", StringGen(pattern))]
