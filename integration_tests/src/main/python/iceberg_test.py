@@ -67,7 +67,7 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
         df = two_col_df(spark, int_gen, int_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} (a INT, b INT) USING ICEBERG PARTITIONED BY (a) "
-                  "TBLPROPERTIES ('write.distribution-mode', 'range')".format(table))
+                  "TBLPROPERTIES ('write.distribution-mode'='range')".format(table))
         spark.sql("INSERT INTO {} SELECT * FROM {}".format(table, tmpview))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
