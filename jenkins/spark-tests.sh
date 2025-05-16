@@ -227,6 +227,10 @@ run_iceberg_tests() {
  if [[ "IS_SPARK_35X" -ne "1" ]]; then
    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
  else
+   # Latest iceberg has some updates which may increase memory usage, such as fanout writer,
+   # metadata cache. Disabling them may slow down the tests, so we increase memory here.
+   env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
+    PYSP_TEST_spark_driver_memory="6G" \
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
