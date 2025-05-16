@@ -172,17 +172,15 @@ def test_cast_string_date_non_ansi():
 
 
 @pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
-                                      StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
-                                      StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
+                                      StringGen(date_start_1_1_1 + '[ T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen(date_start_1_1_1 + '[ T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
                                       ],
                         ids=idfn)
 @tz_sensitive_test
-@allow_non_gpu(*non_utc_allow)
-def test_cast_string_ts_valid_format_ansi_off(data_gen):
+def test_cast_string_to_timestamp_valid_format_ansi_off(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
-            conf = copy_and_update(ansi_disabled_conf,
-                                   {'spark.rapids.sql.hasExtendedYearValues': False}))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr("cast(a as timestamp)"),
+            conf = ansi_disabled_conf)
 
 @disable_ansi_mode  # In ANSI mode, there are restrictions to casting DECIMAL to other types.
                     # ANSI mode behaviour is tested in test_ansi_cast_decimal_to.
