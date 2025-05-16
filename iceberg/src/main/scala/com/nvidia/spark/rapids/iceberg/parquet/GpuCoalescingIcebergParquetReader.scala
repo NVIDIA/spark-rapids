@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.iceberg.parquet
 
 import java.util.{Map => JMap}
 
-import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, SingleDataBlockInfo}
+import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, GpuColumnVector, SingleDataBlockInfo}
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, MultiFileParquetPartitionReader, ParquetDataBlock, ParquetExtraInfo, ParquetSchemaWrapper, ParquetSingleDataBlockMeta}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -101,7 +101,7 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
         extraInfo
           .asInstanceOf[IcebergParquetExtraInfo]
           .postProcessor
-          .process(batch)
+          .process(GpuColumnVector.incRefCounts(batch))
       }
     }
   }

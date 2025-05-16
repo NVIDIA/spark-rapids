@@ -150,9 +150,10 @@ private class SingleFileColumnarBatchIterator(val targetPath: String,
     if (!hasNext) {
       throw new NoSuchElementException("No more elements")
     }
-    withResource(lastBatch.get) { batch =>
+    try {
+      postProcessors.get(targetPath).process(lastBatch.get)
+    } finally {
       lastBatchHolder(0) = None
-      postProcessors.get(targetPath).process(batch)
     }
   }
 }

@@ -98,9 +98,7 @@ private class SingleFileReader(
   override def hasNext: Boolean = reader.next()
 
   override def next(): ColumnarBatch = {
-    withResource(reader.get()) { batch =>
-      postProcessor.process(batch)
-    }
+    postProcessor.process(reader.get())
   }
 
   private def open() = {
