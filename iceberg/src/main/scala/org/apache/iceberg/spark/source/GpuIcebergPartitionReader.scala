@@ -43,13 +43,14 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
     private val threadConf: ThreadConf,
     private val metrics: Map[String, GpuMetric],
 ) extends PartitionReader[ColumnarBatch] {
+  private var inited = false
+  
   private lazy val table = task.cpuPartition.table()
   private lazy val fileIO = table.io()
   private lazy val conf = newConf()
   private lazy val (_, tasks) = collectFiles()
   private lazy val reader: GpuIcebergParquetReader = createDataFileParquetReader()
 
-  private var inited = false
 
   override def close(): Unit = {
     if (inited) {
