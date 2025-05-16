@@ -79,11 +79,11 @@ class GpuMultiThreadIcebergParquetReader(
   }
 
   private def createParquetReader() = {
-    val sparkPartitionedFile = files.map(_.sparkPartitionedFile).toArray
+    val sparkPartitionedFiles = files.map(_.sparkPartitionedFile).toArray
 
     inited = true
     new MultiFileCloudParquetPartitionReader(conf.conf,
-      sparkPartitionedFile,
+      sparkPartitionedFiles,
       this.filterBlock,
       conf.caseSensitive,
       conf.parquetDebugDumpPrefix,
@@ -138,11 +138,7 @@ private class SingleFileColumnarBatchIterator(val targetPath: String,
   override def hasNext: Boolean = if (lastBatch.isEmpty) {
     if (inner.next()) {
       lastBatchHolder(0) = Some(inner.get())
-      if (InputFileUtils.getCurInputFilePath() != targetPath) {
-        false
-      } else {
-        true
-      }
+      InputFileUtils.getCurInputFilePath() == targetPath
     } else {
       false
     }

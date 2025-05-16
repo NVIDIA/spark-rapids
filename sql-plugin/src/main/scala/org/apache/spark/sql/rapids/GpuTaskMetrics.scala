@@ -342,6 +342,8 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
+  def getSemaphoreHoldingTime: Long = semaphoreHoldingTime.value.value
+
   def addSemaphoreHoldingTime(duration: Long): Unit = semaphoreHoldingTime.add(duration)
 
   def getSemWaitTime(): Long = semWaitTimeNs.value.value
