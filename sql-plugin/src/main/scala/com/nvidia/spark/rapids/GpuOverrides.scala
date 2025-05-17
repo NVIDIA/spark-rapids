@@ -1487,6 +1487,7 @@ object GpuOverrides extends Logging {
         TypeSig.integral + TypeSig.BOOLEAN, TypeSig.integral + TypeSig.BOOLEAN),
       (a, conf, p, r) => new UnaryExprMeta[BitwiseCount](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseCount(child)
+      }),
     expr[BitAndAgg](
       "Returns the bitwise AND of all non-null input values",
       ExprChecks.reductionAndGroupByAgg(
