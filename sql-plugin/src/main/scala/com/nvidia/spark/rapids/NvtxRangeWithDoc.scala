@@ -61,7 +61,7 @@ object NvtxRegistry {
     "Rapids Shuffle Manager (multi threaded) reading")
 
   val WAITING_FOR_WRITES: NvtxId = NvtxId("WaitingForWrites", NvtxColor.PURPLE,
-    "Rapids Shuffle Manager is waiting for any queued writes to finish before " +
+    "Rapids Shuffle Manager (multi threaded) is waiting for any queued writes to finish before " +
       "finalizing the map output writer")
 
   val COMMIT_SHUFFLE: NvtxId = NvtxId("CommitShuffle", NvtxColor.RED,
