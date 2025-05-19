@@ -1361,7 +1361,10 @@ object GpuCast {
     }
   }
 
-  private def castStringToTimestamp(input: ColumnView, ansiMode: Boolean, defaultTimeZone: Option[String] = Option.empty[String]): ColumnVector = {
+  private def castStringToTimestamp(
+      input: ColumnView,
+      ansiMode: Boolean,
+      defaultTimeZone: Option[String] = Option.empty[String]): ColumnVector = {
     val tz = defaultTimeZone.getOrElse("Z")
     val normalizedTZ = ZoneId.of(tz, ZoneId.SHORT_IDS).normalized().toString
     closeOnExcept(CastStrings.toTimestamp(input, normalizedTZ, ansiMode)) { result =>
