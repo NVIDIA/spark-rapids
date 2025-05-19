@@ -81,7 +81,7 @@ object NvtxRegistry {
     "Rapids Shuffle Manager (ucx) writing")
 
   val GET_MAP_SIZES_BY_EXEC_ID: NvtxId = NvtxId("getMapSizesByExecId", NvtxColor.CYAN,
-    "internal Spark API for retrieving size and location of shuffle map output blocks")
+    "Call to internal Spark API for retrieving size and location of shuffle map output blocks")
 
   def init(): Unit = {
     register(ACQUIRE_GPU)
