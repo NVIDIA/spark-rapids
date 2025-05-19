@@ -532,7 +532,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Checks if the current GPU architecture is supported by the
       // spark-rapids-jni and cuDF libraries.
       // Note: We allow this check to be skipped for off-chance cases.
-      if (!conf.skipGpuArchCheck) {
+      if (!conf.skipGpuArchCheck && conf.isSqlExecuteOnGPU) {
         RapidsPluginUtils.validateGpuArchitecture()
       }
 
