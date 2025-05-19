@@ -72,8 +72,7 @@ object NvtxRegistry {
     NvtxColor.CYAN, "Calling next on the MT shuffle reader iterator")
 
   val BATCH_WAIT: NvtxId = NvtxId("BatchWait", NvtxColor.CYAN,
-    "RapidsShuffleThreadedBlockIterator (within the Shuffle Reader) is waiting for the next " +
-      "block to finish reading")
+    "Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding")
 
   val QUEUE_FETCHED: NvtxId = NvtxId("queueFetched", NvtxColor.YELLOW, "MT shuffle manager is " +
     "using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results")
