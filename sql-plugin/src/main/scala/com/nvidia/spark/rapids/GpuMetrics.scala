@@ -193,12 +193,15 @@ object GpuMetric extends Logging {
   }
 
   def ns[T](metrics: GpuMetric*)(f: => T): T = {
+    val initedMetrics = metrics.map(m => (m, m.tryActivateTimer()))
     val start = System.nanoTime()
     try {
       f
     } finally {
       val taken = System.nanoTime() - start
-      metrics.foreach(_.add(taken))
+      initedMetrics.foreach { case (m, isTrack) =>
+        if (isTrack) m.deactivateTimer(taken)
+      }
     }
   }
 
