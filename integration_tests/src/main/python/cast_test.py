@@ -173,7 +173,10 @@ def test_cast_string_date_non_ansi():
 
 @pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
                                       StringGen(date_start_1_1_1 + '[ T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
-                                      StringGen(date_start_1_1_1 + '[ T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
+                                      StringGen(date_start_1_1_1 + '[ T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?'),
+                                      # year < 2200, this is testing running on GPU when default TZ is DST
+                                      # The above 3 gens have more possibilities to have year > 2200
+                                      StringGen('[0-2][0-1][0-9]{2,2}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}'),
                                       ],
                         ids=idfn)
 @tz_sensitive_test
