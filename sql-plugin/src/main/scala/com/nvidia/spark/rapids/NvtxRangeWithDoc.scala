@@ -69,7 +69,7 @@ object NvtxRegistry {
       "(shuffle_[map_id]_0) in the commit phase")
 
   val PARALLEL_DESERIALIZER_ITERATOR_NEXT: NvtxId = NvtxId("ParallelDeserializerIterator.next",
-    NvtxColor.CYAN, "calling next on the MT shuffle reader iterator")
+    NvtxColor.CYAN, "Calling next on the MT shuffle reader iterator")
 
   val BATCH_WAIT: NvtxId = NvtxId("BatchWait", NvtxColor.CYAN,
     "RapidsShuffleThreadedBlockIterator (within the Shuffle Reader) is waiting for the next " +
