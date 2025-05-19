@@ -18,10 +18,21 @@ package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import com.nvidia.spark.rapids.*;
 import com.nvidia.spark.rapids.iceberg.parquet.SparkSchemaConverter;
-import com.nvidia.spark.rapids.parquet.iceberg.shaded.*;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
+import static com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded.*;
+
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded;
+import com.nvidia.spark.rapids.parquet.CpuCompressionConfig$;
+import com.nvidia.spark.rapids.parquet.GpuParquetUtils;
+import com.nvidia.spark.rapids.parquet.MultiFileCloudParquetPartitionReader;
+import com.nvidia.spark.rapids.parquet.MultiFileParquetPartitionReader;
+import com.nvidia.spark.rapids.parquet.ParquetDataBlock;
+import com.nvidia.spark.rapids.parquet.ParquetExtraInfo;
+import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta;
+import com.nvidia.spark.rapids.parquet.ParquetSchemaWrapper;
+import com.nvidia.spark.rapids.parquet.ParquetSingleDataBlockMeta;
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -49,6 +60,7 @@ import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 import scala.collection.Seq;
 import scala.Tuple2;
+import scala.collection.Seq$;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -290,6 +302,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         StructType partitionSchema);
 
     /** The filter function for the Parquet multi-file reader */
+    @SuppressWarnings("unchecked")
     protected FilteredParquetFileInfo filterParquetBlocks(FileScanTask fst,
         String partFilePathString) {
       GpuDeleteFilter deleteFilter = deleteFilter(fst);
@@ -306,6 +319,10 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
 
         List<BlockMetaData> filteredRowGroups = GpuParquetReader.filterRowGroups(reader,
             nameMapping, updatedSchema, fst.residual(), caseSensitive);
+        List<org.apache.parquet.hadoop.metadata.BlockMetaData> filteredRowGroupsUnShaded =
+            filteredRowGroups.stream()
+                .map(FromIcebergShaded::unshade)
+                .collect(Collectors.toList());
 
         GpuParquetReader.ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ?
             new GpuParquetReader.ReorderColumns(idToConstant) :
@@ -313,8 +330,11 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
 
         MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
             updatedSchema.asStruct(), fileSchema, reorder);
-        Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
-            fileReadSchema, filteredRowGroups, caseSensitive);
+        org.apache.parquet.schema.MessageType  fileReadSchemaUnShaded = unshade(fileSchema);
+
+        Seq<org.apache.parquet.hadoop.metadata.BlockMetaData> clippedBlocks =
+            GpuParquetUtils.clipBlocksToSchema(
+            fileReadSchemaUnShaded, filteredRowGroupsUnShaded, caseSensitive);
         StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
             updatedSchema.asStruct(), fileReadSchema, new SparkSchemaConverter());
 
@@ -326,10 +346,11 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             // The path conversion aligns with that in Rapids multi-files readers.
             // So here should use the file path of a PartitionedFile.
             new Path(new URI(partFilePathString)), clippedBlocks,
-            InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
+            InternalRow.empty(), fileReadSchemaUnShaded, partReaderSparkSchema,
             DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
             DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
-            true //  hasInt96Timestamps
+            true, //  hasInt96Timestamps,
+            (Seq<Object>) Seq$.MODULE$.empty() // No extra columns
         );
         return new FilteredParquetFileInfo(parquetBlockMeta, updatedConstants, updatedSchema);
       } catch (IOException e) {

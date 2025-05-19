@@ -17,13 +17,15 @@
 package com.nvidia.spark.rapids
 
 import java.util
-import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
+import java.util.Map
+import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxUniqueRange}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -47,6 +49,135 @@ case object SemaphoreAcquired extends TryAcquireResult
  *                        Note that this can change very quickly.
  */
 case class AcquireFailed(numWaitingTasks: Int) extends TryAcquireResult
+
+private object GpuTaskMemoryEstimator {
+  private val TIME_WINDOW: Double = TimeUnit.MILLISECONDS.toNanos(100).toDouble
+}
+
+class GpuTaskMemoryEstimator(val stageId: Int,
+                             val taskId: Long,
+                             val defaultEstimate: Long,
+                             val allowDynamicUpdate: Boolean) {
+  import GpuTaskMemoryEstimator._
+
+  private val startTimeNanos: Long = System.nanoTime()
+  private var totalTimeLost: Long = 0
+  private var maxMemory: Long = 0
+
+  def update(timeLost: Long, memory: Long): Unit = {
+    // timeLost and maxMemory are not reset when they are read
+    totalTimeLost = timeLost
+    // Taking a max here, just to be cautious, but it should be a noop
+    maxMemory = math.max(memory, maxMemory)
+  }
+
+  def estimate(): Long = {
+    if (!allowDynamicUpdate) {
+      return defaultEstimate
+    }
+    if (maxMemory > defaultEstimate) {
+      maxMemory
+    } else {
+      // Combine the default estimate and the current measured
+      // amount proportionally based on how long we have been running
+      // up to a given max time window
+      val currentTime = System.nanoTime()
+      val diff = currentTime - startTimeNanos - totalTimeLost
+      val activePctOfWindow = math.max(math.min(diff / TIME_WINDOW, 1.0), 0.0)
+      val pctForDefault = 1.0 - activePctOfWindow
+      (defaultEstimate * pctForDefault).toLong + (activePctOfWindow * maxMemory).toLong
+    }
+  }
+}
+
+class StatEstimator(minEntries:Int, defaultValue: Double) {
+  require(minEntries > 0, "Minimum entries must be positive")
+  private val values = ArrayBuffer.empty[Double]
+
+  def add(value: Double): Unit = {
+    values += value
+    // We have a maximum of 200 entries, so we don't use too much
+    // memory for very large stages
+    if (values.length > 200) {
+      values.remove(0, values.length - 200)
+    }
+  }
+
+  def percentile(p: Double, others: ArrayBuffer[Double]): Double = {
+    require(p >= 0 && p <= 1, "Percentile must be between 0-1")
+
+    if (values.isEmpty && others.isEmpty) return defaultValue
+
+    val combined = values ++ others
+    while (combined.length < minEntries) {
+      combined += defaultValue
+    }
+    val padded = combined.sorted
+
+    val n = padded.size
+    val pos = p * (n + 1)
+
+    pos match {
+      case _ if pos < 1 => padded.head
+      case _ if pos >= n => padded.last
+      case _ =>
+        val k = math.floor(pos).toInt
+        val lower = padded(k - 1)
+        val upper = padded(k)
+        val fraction = pos - k
+        lower + fraction * (upper - lower)
+    }
+  }
+}
+
+class GpuStageMemoryEstimator(val stageId: Int, 
+                              private val defaultEstimate: Long, 
+                              val allowDynamicUpdate: Boolean) {
+  private val stats = new StatEstimator(4, defaultEstimate.toDouble)
+  private val activeTasks = new util.HashMap[Long, GpuTaskMemoryEstimator]()
+
+  override def toString: String = synchronized {
+    s"Stage $stageId Estimator ${activeTasks.keySet()}"
+  }
+
+  def addTaskIfNeeded(taskId: Long): Unit = synchronized {
+    activeTasks.computeIfAbsent(taskId: Long, _ => {
+      val newDefaultEstimate = estimate()
+      new GpuTaskMemoryEstimator(stageId, taskId, newDefaultEstimate, allowDynamicUpdate)
+    })
+  }
+
+  def taskDone(taskId: Long): Unit = synchronized {
+    val estimator = activeTasks.remove(taskId)
+    if (estimator != null) {
+      val maxMemory = RmmSpark.getMaxGpuTaskMemory(taskId)
+      if (maxMemory > 0) {
+        stats.add(maxMemory.toDouble)
+      }
+    }
+  }
+
+  private def updateEstimates(): Unit = synchronized {
+    activeTasks.forEach( (taskId, estimator) => {
+      val maxMemory = RmmSpark.getMaxGpuTaskMemory(taskId)
+      val timeLost = RmmSpark.getTotalBlockedOrLostTime(taskId)
+      estimator.update(timeLost, maxMemory)
+    })
+  }
+
+  def estimate(): Long = synchronized {
+    if (!allowDynamicUpdate) {
+      return defaultEstimate
+    }
+
+    updateEstimates()
+    val active = ArrayBuffer.empty[Double]
+    activeTasks.values().forEach(estimator => {
+      active += estimator.estimate().toDouble
+    })
+    stats.percentile(0.8, active).toLong
+  }
+}
 
 object GpuSemaphore {
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
@@ -74,6 +205,14 @@ object GpuSemaphore {
       throw new IllegalStateException("already initialized")
     }
     instance = new GpuSemaphore()
+  }
+
+  /**
+   * Get the last time this task acquired & released the semaphore, which can be used to track
+   * sophisticated metrics, such as I/O time with GpuSemaphore held.
+   */
+  def getLastSemAcqAndRelTime(context: TaskContext): (Long, Long) = {
+    getInstance.lastSemAcqAndRelTime(context)
   }
 
   /**
@@ -132,19 +271,34 @@ object GpuSemaphore {
     }
   }
 
-  private val MAX_PERMITS = 1000
-  val DEFAULT_PRIORITY = 0L
+  val DEFAULT_PRIORITY: Long = 0L
 
-  def computeNumPermits(conf: SQLConf): Int = {
-    val concurrentStr = conf.getConfString(RapidsConf.CONCURRENT_GPU_TASKS.key, null)
-    val concurrentInt = Option(concurrentStr)
-      .map(ConfHelper.toInteger(_, RapidsConf.CONCURRENT_GPU_TASKS.key))
-      .getOrElse(RapidsConf.CONCURRENT_GPU_TASKS.defaultValue)
-    // concurrentInt <= 0 is the same as 1 (fail to the safest value)
-    // concurrentInt > MAX_PERMITS becomes the same as MAX_PERMITS
-    // (who has more than 1000 threads anyways).
-    val permits = MAX_PERMITS / math.min(math.max(concurrentInt, 1), MAX_PERMITS)
-    math.max(permits, 1)
+  // For now we are going to have one permit for each 32 MiB of GPU memory.
+  private val PERMIT_MEMORY_SIZE: Long = 32L * 1024 * 1024
+
+  def memToPermits(memory: Long): Long = math.max(1, memory / PERMIT_MEMORY_SIZE)
+
+  def memToPermitsWithMax(memory: Long): Long = math.min(computeMaxPermits(), memToPermits(memory))
+
+  private def computeMaxPermits(): Long = memToPermits(GpuDeviceManager.getMemorySize)
+
+  private def isDynamicEnabled(conf: SQLConf): Boolean = {
+    val dynamicStr = conf.getConfString(RapidsConf.DYNAMIC_CONCURRENT_GPU_TASKS.key, null)
+    Option(dynamicStr)
+      .map(ConfHelper.toBoolean(_, RapidsConf.DYNAMIC_CONCURRENT_GPU_TASKS.key))
+      .getOrElse(RapidsConf.DYNAMIC_CONCURRENT_GPU_TASKS.defaultValue)
+  }
+
+  private def computeDefaultMemory(conf: SQLConf): Long = {
+    val totalMemory = GpuDeviceManager.getMemorySize
+    val concurrentInt: Integer = RapidsConf.CONCURRENT_GPU_TASKS.get(conf).getOrElse {
+      val batchBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+      math.max(1, math.min(4, totalMemory / (4 * batchBytes))).toInt
+    }
+
+    // Just to be cautious we are going to ask for at least 1 byte as the default
+    // This should never happen in practice, but we want to be safe
+    math.max(totalMemory / math.max(concurrentInt, 1), 1)
   }
 }
 
@@ -163,7 +317,8 @@ object GpuSemaphore {
  * this is considered to be okay as there are other mechanisms in place, and it should be rather
  * rare.
  */
-private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long) extends Logging {
+private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
+                                      memoryEstimator: GpuStageMemoryEstimator) extends Logging {
   /**
    * This holds threads that are not on the GPU yet. Most of the time they are
    * blocked waiting for the semaphore to let them on, but it may hold one
@@ -179,14 +334,14 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
    * should be very few in here at a time.
    */
   private val activeThreads = new util.LinkedHashSet[Thread]()
-  private lazy val numPermits = GpuSemaphore.computeNumPermits(SQLConf.get)
+  private var permitsUsed: Long = 0;
   private lazy val trackSemaphore = RapidsConf.TRACE_TASK_GPU_OWNERSHIP.get(SQLConf.get)
   /**
    * If this task holds the GPU semaphore or not.
    */
   private var hasSemaphore = false
-  private var lastAcquired: Long = GpuSemaphore.DEFAULT_PRIORITY
-  private var lastReleased: Long = GpuSemaphore.DEFAULT_PRIORITY
+  @volatile private var lastAcquired: Long = 0L
+  @volatile private var lastReleased: Long = 0L
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
 
@@ -199,6 +354,12 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
   def isHoldingSemaphore: Boolean = synchronized {
     hasSemaphore
   }
+
+  /**
+   * Get the last time this task acquired & released the semaphore for the recording of
+   * sophisticated metrics, such as I/O time with GpuSemaphore held.
+   */
+  def lastAcquireAndReleaseTime: (Long, Long) = (lastAcquired, lastReleased)
 
   /**
    * Get the list of threads currently running on the GPU Semaphore for this task. Be
@@ -258,8 +419,11 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
         if (!done && shouldBlockOnSemaphore) {
           // We cannot be in a synchronized block and wait on the semaphore
           // so we have to release it and grab it again afterwards.
-          semaphore.acquire(numPermits, lastReleased, taskAttemptId)
+          val used = semaphore.acquire(() => 
+              GpuSemaphore.memToPermitsWithMax(memoryEstimator.estimate()),
+              lastReleased, taskAttemptId)
           synchronized {
+            permitsUsed = used
             // We now own the semaphore so we need to wake up all of the other tasks that are
             // waiting.
             hasSemaphore = true
@@ -291,7 +455,8 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
     }
   }
 
-  def tryAcquire(semaphore: GpuBackingSemaphore, taskAttemptId: Long): Boolean = synchronized {
+  def tryAcquire(semaphore: GpuBackingSemaphore,
+                 taskAttemptId: Long): Boolean = synchronized {
     val t = Thread.currentThread()
     if (hasSemaphore) {
       activeThreads.add(t)
@@ -299,11 +464,13 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
     } else {
       if (blockedThreads.size() == 0) {
         // No other threads for this task are waiting, so we might be able to grab this directly
+        val numPermits = GpuSemaphore.memToPermitsWithMax(memoryEstimator.estimate())
         val ret = semaphore.tryAcquire(numPermits, lastReleased, taskAttemptId)
         if (ret) {
           hasSemaphore = true
           lastAcquired = System.nanoTime()
           activeThreads.add(t)
+          permitsUsed = numPermits
           // no need to notify because there are no other threads and we are holding the lock
           // to ensure that.
         }
@@ -318,7 +485,7 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
     val t = Thread.currentThread()
     activeThreads.remove(t)
     if (hasSemaphore) {
-      semaphore.release(numPermits)
+      semaphore.release(permitsUsed)
       hasSemaphore = false
       lastReleased = System.nanoTime()
       GpuTaskMetrics.get.addSemaphoreHoldingTime(lastReleased - lastAcquired)
@@ -338,22 +505,52 @@ private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
-  private val semaphore = new GpuBackingSemaphore(MAX_PERMITS, GpuSemaphore.DEFAULT_PRIORITY)
+  private val semaphore = new GpuBackingSemaphore(computeMaxPermits(),
+    GpuSemaphore.DEFAULT_PRIORITY)
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
+  def lastSemAcqAndRelTime(context: TaskContext): (Long, Long) = {
+    val taskAttemptId = context.taskAttemptId()
+    if (!tasks.containsKey(taskAttemptId)) {
+      (0, 0)
+    } else {
+      tasks.get(taskAttemptId).lastAcquireAndReleaseTime
+    }
+  }
+
+  private val stageEstimators = {
+    val lru = new util.LinkedHashMap[Int, GpuStageMemoryEstimator]() {
+      override def removeEldestEntry(entry: Map.Entry[Int, GpuStageMemoryEstimator]): Boolean = {
+        // We don't get a callback when a stage completes, and in theory if there is a retry
+        // a stage might run again. So for now we are going to keep around at most
+        // 100 stages. This should be a small amount of memory because there is a limit
+        // on the number of active tasks. But it should be enough most of the time.
+        size > 100
+      }
+    }
+    util.Collections.synchronizedMap(lru)
+  }
+
   def tryAcquire(context: TaskContext): TryAcquireResult = {
     // Make sure that the thread/task is registered before we try and block
     TaskRegistryTracker.registerThreadForRetry()
     val taskAttemptId = context.taskAttemptId()
+    val stageId = context.stageId()
+    val stageEstimate = stageEstimators.computeIfAbsent(stageId, _ => {
+      new GpuStageMemoryEstimator(stageId, 
+        computeDefaultMemory(SQLConf.get),
+        isDynamicEnabled(SQLConf.get))
+    })
     val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
       onTaskCompletion(context, completeTask)
-      new SemaphoreTaskInfo(context.stageId(), taskAttemptId)
+      new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate)
     })
     if (taskInfo.tryAcquire(semaphore, taskAttemptId)) {
       GpuDeviceManager.initializeFromTask()
+      stageEstimate.addTaskIfNeeded(taskAttemptId)
       SemaphoreAcquired
     } else {
       // We need to get the number of tasks that are still waiting
@@ -371,13 +568,20 @@ private final class GpuSemaphore() extends Logging {
     // Make sure that the thread/task is registered before we try and block
     TaskRegistryTracker.registerThreadForRetry()
     GpuTaskMetrics.get.semWaitTime {
+      val stageId = context.stageId()
+      val stageEstimate = stageEstimators.computeIfAbsent(stageId, _ => {
+        new GpuStageMemoryEstimator(stageId,
+          computeDefaultMemory(SQLConf.get),
+          isDynamicEnabled(SQLConf.get))
+      })
       val taskAttemptId = context.taskAttemptId()
       val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
         onTaskCompletion(context, completeTask)
-        new SemaphoreTaskInfo(context.stageId(), taskAttemptId)
+        new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate)
       })
       taskInfo.blockUntilReady(semaphore)
       GpuDeviceManager.initializeFromTask()
+      stageEstimate.addTaskIfNeeded(taskAttemptId)
     }
   }
 
@@ -385,6 +589,7 @@ private final class GpuSemaphore() extends Logging {
     NvtxRegistry.RELEASE_GPU {
       val taskAttemptId = context.taskAttemptId()
       GpuTaskMetrics.get.updateRetry(taskAttemptId)
+      GpuTaskMetrics.get.updateFootprint(taskAttemptId)
       val taskInfo = tasks.get(taskAttemptId)
       if (taskInfo != null) {
         taskInfo.releaseSemaphore(semaphore)
@@ -396,11 +601,16 @@ private final class GpuSemaphore() extends Logging {
     val taskAttemptId = context.taskAttemptId()
     GpuTaskMetrics.get.updateRetry(taskAttemptId)
     GpuTaskMetrics.get.updateMaxMemory(taskAttemptId)
+    GpuTaskMetrics.get.updateFootprint(taskAttemptId)
     val refs = tasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")
     }
     refs.releaseSemaphore(semaphore)
+    val estimator = stageEstimators.get(refs.stageId)
+    if (estimator != null) {
+      estimator.taskDone(refs.taskAttemptId)
+    }
   }
 
   def dumpActiveStackTracesToLog(): Unit = {
