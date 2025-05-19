@@ -79,7 +79,7 @@ object NvtxRegistry {
     "using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results")
 
   val RAPIDS_CACHING_WRITER_WRITE: NvtxId = NvtxId("RapidsCachingWriter.write", NvtxColor.CYAN,
-    "Rapids Caching Writer writing")
+    "Rapids Shuffle Manager (ucx) writing")
 
   val GET_MAP_SIZES_BY_EXEC_ID: NvtxId = NvtxId("getMapSizesByExecId", NvtxColor.CYAN,
     "internal Spark API for retrieving size and location of shuffle map output blocks")
