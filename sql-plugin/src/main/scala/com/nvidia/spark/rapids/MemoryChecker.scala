@@ -107,6 +107,7 @@ object MemoryChecker extends Logging {
   }
 
   private def readFile(path: String): Option[String] = {
+    logInfo(s"attempting to read $path")
     try {
       Some(
         withResource(fromUTF8File(path)) { source =>

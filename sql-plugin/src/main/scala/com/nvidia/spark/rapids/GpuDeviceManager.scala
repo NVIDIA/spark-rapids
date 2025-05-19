@@ -433,9 +433,7 @@ object GpuDeviceManager extends Logging {
       val executorOverhead = conf.executorOverhead
       val confPinnedSize = conf.pinnedPoolSize
       val confLimit = conf.offHeapLimit
-      // TODO the min limit size of overhead + 1 GiB is arbitrary and we should have some
-      ///  better tests to see what an ideal value really should be.
-      val minMemoryLimit = totalOverhead + (1024 * 1024 * 1024)
+      val minMemoryLimit = 4 * 1024 * 1024 * 1024
       val pysparkOverhead = conf.pysparkOverhead
       val heapSize = conf.heapSize
       val deviceCount: Int = Cuda.getDeviceCount()
@@ -444,6 +442,7 @@ object GpuDeviceManager extends Logging {
         if (executorOverhead.isEmpty) {
           logWarning(s"${RapidsConf.EXECUTOR_OVERHEAD_SIZE} is not set")
         }
+        logInfo(s"using configured ${RapidsConf.OFF_HEAP_LIMIT_SIZE} of ${confLimit.get}")
         confLimit.get
       } else {
         // in case we cannot query the host for available memory due to environmental
@@ -453,27 +452,31 @@ object GpuDeviceManager extends Logging {
           deviceCount).toLong
         if (executorOverhead.isDefined) {
           val basedOnConfiguredOverhead = (.9 * (executorOverhead.get - pysparkOverhead)).toLong
+          logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
+            s"a memory limit from .9 * (${RapidsConf.EXECUTOR_OVERHEAD_SIZE} - " +
+            s"${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = .9 * (${executorOverhead.get} - " +
+            s"$pysparkOverhead) = $basedOnConfiguredOverhead")
           if (basedOnConfiguredOverhead < minMemoryLimit) {
-            logWarning("how to set our off heap limit and we guess based on overhead, " +
-              "which is also too low.")
+            logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
+              s"$minMemoryLimit; using the latter")
             if (minMemoryLimit > basedOnHostMemory) {
-              logWarning("Yell more about how the host memory does not look like it can " +
-                "support what we want.")
+              logWarning(s"the amount of available memory detected on the host is " +
+                s"$basedOnHostMemory, which is less than the minimum")
             }
             minMemoryLimit
           } else {
-            logWarning("Yell about how to set our off heap limit and explain that we " +
-              "used the memoryOverhead to set our limit")
             basedOnConfiguredOverhead
           }
         } else {
+          logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we used " +
+            s"memory limit derived from .8 * (estimated available host memory - " +
+            s"${RapidsConf.HEAP_SIZE} - ${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = " +
+            s".8 * ($availableHostMemory - $heapSize - $pysparkOverhead) = $basedOnHostMemory")
           if (basedOnHostMemory < minMemoryLimit) {
-            logWarning("Yell about how to set our off heap limit and explain that they " +
-              "are running with a setup that is way too small/etc")
+            logWarning(s"the memory limit based on host memory of $basedOnHostMemory " +
+              s"is less than the minimum of $minMemoryLimit; using the latter")
             minMemoryLimit
           } else {
-            logWarning("Yell about how to set our off heap limit and explain how we came " +
-              "up with what we are using.")
             basedOnHostMemory
           }
         }
