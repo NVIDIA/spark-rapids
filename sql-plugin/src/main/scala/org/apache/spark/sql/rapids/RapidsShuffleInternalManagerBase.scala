@@ -599,8 +599,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   private val shuffleReadTimeNs = sqlMetrics.get(METRIC_SHUFFLE_READ_TIME)
   private val dataReadSize = sqlMetrics.get(METRIC_DATA_READ_SIZE)
 
-  private var shuffleReadRange: NvtxId = NvtxRegistry.THREADED_READER_READ
-  shuffleReadRange.push()
+  private var shuffleReadRange: NvtxId = NvtxRegistry.THREADED_READER_READ.push()
 
   private def closeShuffleReadRange(): Unit = {
     if (shuffleReadRange != null) {

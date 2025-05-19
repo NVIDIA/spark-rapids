@@ -23,7 +23,10 @@ import scala.collection.mutable
 sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
   def help(): Unit = println(s"$name|$doc")
 
-  def push(): Unit = NvtxRange.pushRange(name, color)
+  def push(): NvtxId = {
+    NvtxRange.pushRange(name, color)
+    this
+  }
 
   def pop(): Unit = NvtxRange.popRange()
 
