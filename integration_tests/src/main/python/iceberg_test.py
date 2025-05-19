@@ -28,8 +28,7 @@ iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
                      MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
 iceberg_primitive_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                               string_gen, boolean_gen, date_gen, timestamp_gen, binary_gen,
-                               decimal_gens]]
+                               string_gen, boolean_gen, date_gen, timestamp_gen, binary_gen] + decimal_gens]
 
 iceberg_gens_list = [
     [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
