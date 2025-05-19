@@ -51,7 +51,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
         val threadConf = calcThreadConf(gpuPartition)
         new GpuIcebergPartitionReader(gpuPartition, threadConf, metrics)
       case _ =>
-        throw new IllegalArgumentException(s"Unsupprted partition type: ${partition.getClass}")
+        throw new IllegalArgumentException(s"Unsupported partition type: ${partition.getClass}")
     }
   }
 
