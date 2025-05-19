@@ -55,7 +55,7 @@ object NvtxRegistry {
     "Releasing the GPU semaphore")
 
   val THREADED_WRITER_WRITE: NvtxId = NvtxId("ThreadedWriter.write", NvtxColor.RED,
-    "Multithreaded (MT) Shuffle Manager writing")
+    "Rapids Shuffle Manager (multi threaded) writing")
 
   val THREADED_READER_READ: NvtxId = NvtxId("ThreadedReader.read", NvtxColor.PURPLE,
     "Multithreaded (MT) Shuffle Manager reading")
