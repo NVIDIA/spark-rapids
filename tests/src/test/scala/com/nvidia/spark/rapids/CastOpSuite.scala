@@ -222,7 +222,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(SQLConf.ANSI_ENABLED.key, ansiModeBoolString)
       .set(RapidsConf.EXPLAIN.key, "ALL")
       .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
       // Tests that this is not true for are skipped in 3.2.0+
       .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
@@ -268,7 +267,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
         .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")

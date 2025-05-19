@@ -45,7 +45,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
-    .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
   def generateOutOfRangeTimestampsDF(
       lowerValue: Long,

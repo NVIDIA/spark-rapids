@@ -1361,7 +1361,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToTimestamp(
+  def castStringToTimestamp(
       input: ColumnView,
       ansiMode: Boolean,
       defaultTimeZone: Option[String] = Option.empty[String]): ColumnVector = {
