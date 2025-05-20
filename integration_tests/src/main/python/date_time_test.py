@@ -706,7 +706,7 @@ def test_formats_for_legacy_mode_other_formats_runtime_fallback():
 def test_formats_for_legacy_mode_other_formats_tz_rules():
     format = "yyyyMMdd HH:mm:ss"
     # Test years after 1900, before 2200 see https://github.com/NVIDIA/spark-rapids/issues/6840
-    gen = StringGen('(19[0-9]{2}|[2[0-1][0-9]{2})([0-9]{4}) [0-9]{2}:[0-9]{2}:[0-9]{2}')
+    gen = StringGen('(19[0-9]{2}|2[0-1][0-9]{2})([0-9]{4}) [0-9]{2}:[0-9]{2}:[0-9]{2}')
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",

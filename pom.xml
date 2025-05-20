@@ -845,7 +845,8 @@
 
     <properties>
         <!-- start dyn.shim properties -->
-	<dyn.shim.excluded.releases></dyn.shim.excluded.releases>
+        <!--  TODO: Will remove 330db from the execluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
+	<dyn.shim.excluded.releases>330db</dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>

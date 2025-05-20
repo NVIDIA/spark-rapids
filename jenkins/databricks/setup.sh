@@ -40,7 +40,7 @@ fi
 
 # Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
 export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
-# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
+# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB12.2
 PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 [[ $(printf "%s\n" "3.9" "$PYTHON_VERSION" | sort -V | head -n1) = "3.9" ]] && IS_PY39_OR_LATER=1 || IS_PY39_OR_LATER=0
 # Install if python pip does not exist.
