@@ -240,16 +240,14 @@ def test_division(data_gen):
                 f.col('b') / f.lit(None).cast(data_type),
                 f.col('a') / f.col('b')))
 
-# @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4, 1), DecimalGen(5, 0), DecimalGen(5, 1), DecimalGen(10, 5)], ids=idfn)
-# @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(10, 5)], ids=idfn)
-@pytest.mark.parametrize('lhs', [int_gen], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4, 1), DecimalGen(5, 0), DecimalGen(5, 1), DecimalGen(10, 5)], ids=idfn)
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
 @disable_ansi_mode
-def test_division_mixed1(lhs, rhs):
+def test_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : debug_df(two_col_df(spark, lhs, rhs, length=20).select(
+            lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a'), f.col('b'),
-                f.col('a') / f.col('b'))))
+                f.col('a') / f.col('b')))
 
 # Spark has some problems with some decimal operations where it can try to generate a type that is invalid (scale > precision) which results in an error
 # instead of increasing the precision. So we have a second test that deals with a few of these use cases
@@ -258,7 +256,7 @@ def test_division_mixed1(lhs, rhs):
 @disable_ansi_mode
 def test_division_mixed_larger_dec(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, lhs, rhs, length=20).select(
+            lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a'), f.col('b'),
                 f.col('a') / f.col('b')))
 
@@ -302,7 +300,7 @@ def test_int_division(data_gen):
 @disable_ansi_mode
 def test_int_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, lhs, rhs, length=20).selectExpr(
+            lambda spark : two_col_df(spark, lhs, rhs).selectExpr(
                 'a DIV b'))
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)

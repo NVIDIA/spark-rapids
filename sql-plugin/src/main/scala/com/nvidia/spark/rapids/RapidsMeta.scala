@@ -1062,11 +1062,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
     rule: DataFromReplacementRule)
   extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
 
-  System.out.println("BaseExprMeta expr: " + expr)
-  System.out.println("BaseExprMeta expr.dataType: " + expr.dataType)
-  System.out.println("BaseExprMeta expr.children: " + expr.children)
-  System.out.println("BaseExprMeta expr.getClass: " + expr.getClass)
-
   private val cannotBeAstReasons: mutable.Set[String] = mutable.Set.empty
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
