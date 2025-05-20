@@ -22,16 +22,17 @@ import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
 import java.nio.file.StandardOpenOption
 import java.util
 import java.util.UUID
-import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
+import java.util.concurrent.ArrayBlockingQueue
 
 import scala.collection.mutable
 
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer, GpuCompressedColumnVector, GpuDeviceManager, HostAlloc, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, RapidsConf, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer, GpuCompressedColumnVector, GpuDeviceManager, HashedPriorityQueue, HostAlloc, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, RapidsConf, RapidsHostColumnVector}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.internal.HostByteBufferIterator
+import com.nvidia.spark.rapids.jni.TaskPriority
 import org.apache.commons.io.IOUtils
 
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
@@ -161,6 +162,10 @@ trait StoreHandle extends AutoCloseable {
    * This is used to resolve races between closing a handle and spilling.
    */
   private[spill] var closed: Boolean = false
+
+  val taskId: Option[Long] = Option(TaskContext.get()).map( tc => tc.taskAttemptId())
+
+  val taskPriority: Long = taskId.map(TaskPriority.getTaskPriority).getOrElse(Long.MaxValue)
 }
 
 trait SpillableHandle extends StoreHandle with Logging {
@@ -1205,31 +1210,48 @@ class DiskHandle private(
   }
 }
 
-trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
-  protected val handles = new ConcurrentHashMap[T, java.lang.Boolean]()
+object HandleComparator extends util.Comparator[StoreHandle] {
 
-  def numHandles: Int = {
+  override def compare(t1: StoreHandle, t2: StoreHandle): Int = {
+    // TODO do this better in the future
+    java.lang.Long.compare(t1.taskPriority, t2.taskPriority)
+  }
+}
+
+trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
+  protected lazy val handles = new HashedPriorityQueue[T](HandleComparator)
+
+  def numHandles: Int = synchronized {
     handles.size()
   }
 
-  def track(handle: T): Unit = {
+  def track(handle: T): Unit = synchronized {
     doTrack(handle)
   }
 
-  def remove(handle: T): Unit = {
+  def remove(handle: T): Unit = synchronized {
     doRemove(handle)
   }
 
-  protected def doTrack(handle: T): Boolean = {
-    handles.put(handle, true) == null
+  def isEmpty: Boolean = synchronized {
+    handles.isEmpty
   }
 
-  protected def doRemove(handle: T): Boolean = {
-    handles.remove(handle) != null
+  protected def doTrack(handle: T): Boolean = synchronized {
+    if (handles.contains(handle)) {
+      false
+    } else {
+      handles.offer(handle)
+      true
+    }
   }
 
-  override def close(): Unit = {
-    handles.forEach((handle, _ )=> {
+  protected def doRemove(handle: T): Boolean = synchronized {
+    handles.remove(handle)
+  }
+
+  override def close(): Unit = synchronized {
+    handles.forEach(handle => {
       handle.close()
     })
     handles.clear()
@@ -1289,7 +1311,9 @@ trait SpillableStore[T <: SpillableHandle]
   private def makeSpillPlan(spillNeeded: Long): SpillPlan = {
     val plan = new SpillPlan()
     var amountToSpill = 0L
-    val allHandles = handles.keySet().iterator()
+    val allHandles = synchronized {
+      handles.priorityIterator()
+    }
     // two threads could be here trying to spill and creating a list of spillables
     while (allHandles.hasNext && amountToSpill < spillNeeded) {
       val handle = allHandles.next()
@@ -1329,13 +1353,15 @@ trait SpillableStore[T <: SpillableHandle]
     var spillableHandleCount = 0L
     var spillableHandleBytes = 0L
     var totalHandleBytes = 0L
-    handles.forEach((handle, _) => {
-      totalHandleBytes += handle.approxSizeInBytes
-      if (handle.spillable) {
-        spillableHandleCount += 1
-        spillableHandleBytes += handle.approxSizeInBytes
-      }
-    })
+    synchronized {
+      handles.forEach(handle => {
+        totalHandleBytes += handle.approxSizeInBytes
+        if (handle.spillable) {
+          spillableHandleCount += 1
+          spillableHandleBytes += handle.approxSizeInBytes
+        }
+      })
+    }
     s"SpillableStore: ${this.getClass.getSimpleName}, " +
       s"Total Handles: $numHandles, " +
       s"Spillable Handles: $spillableHandleCount, " +
@@ -1393,7 +1419,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       var canFit = true
       val handleSize = handle.approxSizeInBytes
       var amountSpilled = 0L
-      val hadHandlesToSpill = !handles.isEmpty
+      val hadHandlesToSpill = !isEmpty
       while (canFit && !tracked && numRetries < 5) {
         // if we are trying to add a handle larger than our limit
         if (maxSize.get < handleSize) {
