@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -139,10 +139,12 @@ abstract class GpuOptimisticTransactionBase
       spark: SparkSession,
       physicalPlan: SparkPlan,
       partitionSchema: StructType,
-      isOptimize: Boolean): SparkPlan = {
+      isOptimize: Boolean,
+      writeOptions: Option[DeltaOptions]): SparkPlan = {
     val optimizeWriteEnabled = !isOptimize &&
         spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_ENABLED)
-            .orElse(DeltaConfigs.OPTIMIZE_WRITE.fromMetaData(metadata)).getOrElse(false)
+            .orElse(DeltaConfigs.OPTIMIZE_WRITE.fromMetaData(metadata))
+            .orElse(writeOptions.flatMap(_.optimizeWrite)).getOrElse(false)
     if (optimizeWriteEnabled) {
       val planWithoutTopRepartition =
         DeltaShufflePartitionsUtil.removeTopRepartition(physicalPlan)
