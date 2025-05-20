@@ -204,7 +204,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[ArrayExcept],
     classOf[ArrayExists],
     classOf[ArrayForAll],
-    classOf[ArrayIntersect],
     classOf[ArrayMax],
     classOf[ArrayMin],
     classOf[ArrayPosition],

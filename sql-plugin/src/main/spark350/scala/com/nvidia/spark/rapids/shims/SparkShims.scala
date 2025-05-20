@@ -59,6 +59,9 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
         (toPrettyString, conf, p, r) => {
           new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
 
+            override def needTimeZoneCheck: Boolean = 
+              castNeedsTimeZone(toPrettyString.child.dataType, StringType)
+
             override val toType: StringType.type = StringType
 
             override def convertToGpu(child: Expression): GpuExpression = {

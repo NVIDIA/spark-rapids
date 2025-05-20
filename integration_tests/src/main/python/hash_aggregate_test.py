@@ -534,7 +534,6 @@ def test_hash_grpby_pivot(data_gen, conf, kudo_enabled):
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10062')
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_hash_multiple_grpby_pivot(data_gen, conf, kudo_enabled):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1474,7 +1473,8 @@ def test_reduction_with_min_max_by_unique(kudo_enabled):
             "min_by(a, b)", "max_by(a, b)"),
         conf = {kudo_enabled_conf_key: kudo_enabled})
 
-# When the ordering column is not unique this gpu will always return the minimal/maximal value 
+
+# When the ordering column is not unique this gpu will always return the minimal/maximal value
 # while spark's result is non-deterministic. So we need to set the column b and c to be
 # the same to make the result comparable.
 @pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
@@ -2539,3 +2539,22 @@ def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, ag
     # two-stage aggregate should be 2x the number of logical aggregates
     assert aggregate_nodes == 2, "Unexpected SparkPlan: " + plan_str
     assert_gpu_and_cpu_are_equal_collect(run_spark_fn, conf=run_conf)
+
+
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_hash_reduction_bitwise(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=5).selectExpr(
+            "bit_and(a)",
+            "bit_or(a)",
+            "bit_xor(a)"))
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('int_gen', integral_gens, ids=idfn)
+def test_hash_groupby_bitwise(int_gen):
+    data_gen = [('a', ByteGen()), ('b', int_gen)]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=1024),
+        "hash_agg_table",
+        "select a, bit_and(b), bit_or(b), bit_xor(b) from hash_agg_table group by a")

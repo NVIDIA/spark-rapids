@@ -16,7 +16,11 @@
 ##
 
 import os
+import sys
+import traceback
+from typing import IO, Optional
 from pyspark.worker import local_connect_and_auth, main as worker_main
+from pyspark.serializers import write_int, write_with_length, SpecialLengths
 
 
 def initialize_gpu_mem():
@@ -67,10 +71,54 @@ def initialize_gpu_mem():
         pass
 
 
-if __name__ == '__main__':
-    # GPU context setup
-    initialize_gpu_mem()
+def handle_worker_exception(
+        e: BaseException, outfile: IO, hide_traceback: Optional[bool] = None
+) -> None:
+    """
+    Copied over from pyspark/util.py.
 
+    Handles exception for Python worker which writes SpecialLengths.PYTHON_EXCEPTION_THROWN (-2)
+    and exception traceback info to outfile. JVM could then read from the outfile and perform
+    exception handling there.
+
+    Parameters
+    ----------
+    e : BaseException
+        Exception handled
+    outfile : IO
+        IO object to write the exception info
+    hide_traceback : bool, optional
+        Whether to hide the traceback in the output.
+        By default, hides the traceback if environment variable SPARK_HIDE_TRACEBACK is set.
+    """
+
+    if hide_traceback is None:
+        hide_traceback = bool(os.environ.get("SPARK_HIDE_TRACEBACK", False))
+
+    def format_exception() -> str:
+        if hide_traceback:
+            return "".join(traceback.format_exception_only(type(e), e))
+        if os.environ.get("SPARK_SIMPLIFIED_TRACEBACK", False):
+            tb = try_simplify_traceback(sys.exc_info()[-1])  # type: ignore[arg-type]
+            if tb is not None:
+                e.__cause__ = None
+                return "".join(traceback.format_exception(type(e), e, tb))
+        return traceback.format_exc()
+
+    try:
+        exc_info = format_exception()
+        write_int(SpecialLengths.PYTHON_EXCEPTION_THROWN, outfile)
+        write_with_length(exc_info.encode("utf-8"), outfile)
+    except IOError:
+        # JVM close the socket
+        pass
+    except BaseException:
+        # Write the error to stderr if it happened while serializing
+        print("PySpark worker failed with exception:", file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
+
+
+if __name__ == '__main__':
     # Code below is all copied from Pyspark/worker.py
     java_port = int(os.environ["PYTHON_WORKER_FACTORY_PORT"])
     auth_secret = os.environ["PYTHON_WORKER_FACTORY_SECRET"]
@@ -80,4 +128,10 @@ if __name__ == '__main__':
     # with that in `pyspark/daemon.py`.
     buffer_size = int(os.environ.get("SPARK_BUFFER_SIZE", 65536))
     outfile = os.fdopen(os.dup(sock.fileno()), "wb", buffer_size)
-    worker_main(sock_file, outfile)
+    try:
+        # GPU context setup
+        initialize_gpu_mem()
+        worker_main(sock_file, outfile)
+    except BaseException as e:
+        handle_worker_exception(e, outfile)
+        sys.exit(-1)

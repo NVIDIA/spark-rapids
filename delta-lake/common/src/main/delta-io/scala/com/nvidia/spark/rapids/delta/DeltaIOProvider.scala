@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.delta
 
 import java.lang.reflect.Field
 
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.Try
 
@@ -39,6 +39,8 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelation}
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
+
 
 /**
  * Implements the DeltaProvider interface for open source delta.io Delta Lake.
@@ -68,6 +70,17 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     catalogClass == classOf[DeltaCatalog]
   }
 
+
+  // Cheap shims via method overload
+  @scala.annotation.nowarn("msg=method writeOptionsFromExec in class DeltaIOProvider is never used")
+  private def writeOptionsFromExec(cisMap: CaseInsensitiveStringMap): Map[String, String] = {
+    cisMap.asCaseSensitiveMap.asScala.toMap
+  }
+  @scala.annotation.nowarn("msg=method writeOptionsFromExec in class DeltaIOProvider is never used")
+  private def writeOptionsFromExec(asIsMap: Map[String, String]): Map[String, String] = {
+    asIsMap.toMap
+  }
+
   override def tagForGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): Unit = {
@@ -78,7 +91,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     }
     checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+      writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
   override def tagForGpu(
@@ -91,7 +104,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     }
     checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+      writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
   private case class DeltaWriteV1Config(
@@ -272,7 +285,7 @@ class DeltaCreatableRelationProviderMeta(
     }
     val path = saveCmd.options.get("path")
     if (path.isDefined) {
-      val deltaLog = DeltaLog.forTable(SparkSession.active, path.get, saveCmd.options)
+      val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
       RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
         saveCmd.options, SparkSession.active)
     } else {

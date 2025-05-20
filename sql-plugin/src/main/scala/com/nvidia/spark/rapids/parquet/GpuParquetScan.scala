@@ -327,7 +327,10 @@ object GpuParquetScan {
 case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
     dateRebaseMode: DateTimeRebaseMode, timestampRebaseMode: DateTimeRebaseMode,
-    hasInt96Timestamps: Boolean)
+    hasInt96Timestamps: Boolean,
+    // Row number of the first row in each block considering all rows in blocks.
+    // If non-empty, its size should be the same as blocks.size
+    blocksFirstRowIndices: Seq[Long] = Seq.empty)
 
 private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
 
@@ -1415,18 +1418,14 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 
   protected def calculateParquetOutputSize(
       currentChunkedBlocks: Seq[BlockMetaData],
-      schema: MessageType,
-      handleCoalesceFiles: Boolean): Long = {
+      schema: MessageType): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
     val headerSize: Long = PARQUET_META_SIZE
     val blocksSize = ParquetPartitionReader.computeOutputSize(currentChunkedBlocks, compressCfg)
     val footerSize = calculateParquetFooterSize(currentChunkedBlocks, schema)
-    val extraMemory = if (handleCoalesceFiles) {
-      val numCols = currentChunkedBlocks.head.getColumns().size()
-      calculateExtraMemoryForParquetFooter(numCols, currentChunkedBlocks.size)
-    } else {
-      0
-    }
+    // There are always cases where the size of the offsets might change.
+    val numCols = currentChunkedBlocks.head.getColumns().size()
+    val extraMemory = calculateExtraMemoryForParquetFooter(numCols, currentChunkedBlocks.size)
     headerSize + blocksSize + footerSize + extraMemory
   }
 
@@ -1908,7 +1907,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       clippedSchema: MessageType,
       filePath: Path): (SpillableHostBuffer, Seq[BlockMetaData]) = {
     withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
-      val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema, false)
+      val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema)
       val outHostBuf = withRetryNoSplit[HostMemoryBuffer] {
         HostMemoryBuffer.allocate(estTotalSize)
       }
@@ -1926,7 +1925,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         // check we didn't go over memory
         if (out.getPos > estTotalSize) {
-          throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is to " +
+          throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is too " +
               s"small, actual written: ${out.getPos}")
         }
         (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
@@ -2063,12 +2062,12 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 }
 
 // Parquet schema wrapper
-private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
+case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
   override def isEmpty: Boolean = schema.getFields.isEmpty
 }
 
 // Parquet BlockMetaData wrapper
-private case class ParquetDataBlock(
+case class ParquetDataBlock(
     dataBlock: BlockMetaData,
     compressCfg: CpuCompressionConfig) extends DataBlockBase {
   override def getRowCount: Long = dataBlock.getRowCount
@@ -2084,7 +2083,7 @@ class ParquetExtraInfo(val dateRebaseMode: DateTimeRebaseMode,
     val hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
-private case class ParquetSingleDataBlockMeta(
+case class ParquetSingleDataBlockMeta(
   filePath: Path,
   dataBlock: ParquetDataBlock,
   partitionValues: InternalRow,
@@ -2215,7 +2214,7 @@ class MultiFileParquetPartitionReader(
     // multiple files they will not pass the checks as they are.
     val blockStartOffset = ParquetPartitionReader.PARQUET_MAGIC.length
     val updatedBlocks = computeBlockMetaData(allBlocks, blockStartOffset)
-    calculateParquetOutputSize(updatedBlocks, batchContext.schema, true)
+    calculateParquetOutputSize(updatedBlocks, batchContext.schema)
   }
 
   override def getBatchRunner(

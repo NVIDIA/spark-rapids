@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
-import com.nvidia.spark.rapids.iceberg.spark.source.GpuSparkBatchQueryScan
+import org.apache.iceberg.spark.source.GpuSparkBatchQueryScan
 
 import org.apache.spark.sql.connector.read.Scan
 
@@ -29,9 +29,8 @@ class IcebergProviderImpl extends IcebergProvider {
     val cpuIcebergScanClass = ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)
     Seq(new ScanRule[Scan](
       (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
-        private lazy val convertedScan: Try[GpuSparkBatchQueryScan] = Try {
-          GpuSparkBatchQueryScan.fromCpu(a, this.conf)
-        }
+        private lazy val convertedScan: Try[GpuSparkBatchQueryScan] = GpuSparkBatchQueryScan
+          .tryConvert(a, conf)
 
         override def supportsRuntimeFilters: Boolean = true
 
