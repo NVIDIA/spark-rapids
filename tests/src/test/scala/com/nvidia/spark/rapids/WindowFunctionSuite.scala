@@ -88,8 +88,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
                 "row_num", "count_all")
     }
 
-  testSparkResultsAreEqual("[Window] [ROWS] [-2, 3] ", windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+  testSparkResultsAreEqual("[Window] [ROWS] [-2, 3] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
                            .orderBy("uid", "dateLong", "dollars")
                            .rowsBetween(-2, 3)
@@ -97,8 +96,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowAggregationTesterForDecimal(rowsWindow)
   }
 
-  testSparkResultsAreEqual("[Window] [ROWS] [-2, CURRENT ROW] ", windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+  testSparkResultsAreEqual("[Window] [ROWS] [-2, CURRENT ROW] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(-2, 0)
@@ -106,8 +104,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowAggregationTesterForDecimal(rowsWindow, scale = 1)
   }
 
-  testSparkResultsAreEqual("[Window] [ROWS] [-2, UNBOUNDED FOLLOWING] ", windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+  testSparkResultsAreEqual("[Window] [ROWS] [-2, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(-2, Window.unboundedFollowing)
@@ -115,8 +112,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowAggregationTesterForDecimal(rowsWindow, scale = 2)
   }
 
-  testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, 3] ", windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+  testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, 3] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(0, 3)
@@ -124,8 +120,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowAggregationTesterForDecimal(rowsWindow, scale = 3)
   }
 
-  testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, CURRENT ROW] ", windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+  testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, CURRENT ROW] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(0, 0)
@@ -133,16 +128,14 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, UNBOUNDED FOLLOWING] ",
-      windowTestDfOrc,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+      windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(0, Window.unboundedFollowing)
     windowAggregationTesterForDecimal(rowsWindow, scale = 5)
   }
 
-  testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, 3] ", windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+  testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, 3] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(Window.unboundedPreceding, 3)
@@ -152,8 +145,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] ",
       windowTestDfOrc,
-      new SparkConf().set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true"),
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      new SparkConf().set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(Window.unboundedPreceding, 0)
@@ -163,8 +155,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [NO PART]",
     windowTestDfOrc,
-    new SparkConf().set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true"),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    new SparkConf().set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")) {
     val rowsWindow = Window
         .orderBy("uid", "dateLong", "dollars")
         .rowsBetween(Window.unboundedPreceding, 0)
@@ -173,8 +164,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [ROW_NUMBER]",
-      windowTestDfOrc,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+      windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(Window.unboundedPreceding, 0)
@@ -184,8 +174,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual(
     "[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [ROW_NUMBER] [WITHOUT PARTITIONBY]",
-    windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+    windowTestDfOrc) {
     val rowsWindow = Window.orderBy("uid", "dateLong", "dollars")
       .rowsBetween(Window.unboundedPreceding, 0)
     rowNumberAggregationTester(rowsWindow)
@@ -193,8 +182,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, UNBOUNDED FOLLOWING] ",
-      windowTestDfOrc,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+      windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
                            .orderBy("uid", "dateLong", "dollars")
                            .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
@@ -202,8 +190,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowAggregationTesterForDecimal(rowsWindow)
   }
 
-  testSparkResultsAreEqual("[Window] [ROWS] [Unspecified ordering] ", windowTestDfOrc,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+  testSparkResultsAreEqual("[Window] [ROWS] [Unspecified ordering] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
                            .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
     windowAggregationTester(rowsWindow)
@@ -229,8 +216,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     }
 
   testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [-2 DAYS, 3 DAYS] ", windowTestDfOrc,
-    skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -243,8 +229,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [DESC] [-2 DAYS, 3 DAYS] ", windowTestDfOrc,
-    skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -257,8 +242,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [-2 DAYS, CURRENT ROW] ", windowTestDfOrc,
-    skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -271,8 +255,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [DESC] [-2 DAYS, CURRENT ROW] ", windowTestDfOrc,
-    skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -285,8 +268,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [CURRENT ROW, 3 DAYS] ", windowTestDfOrc,
-    skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -299,8 +281,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [DESC] [CURRENT ROW, 3 DAYS] ", windowTestDfOrc,
-    skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -313,8 +294,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [ ASC] [CURRENT ROW, CURRENT ROW] ",
-      windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -327,8 +307,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [DESC] [CURRENT ROW, CURRENT ROW] ",
-      windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -341,8 +320,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Integral Type]",
-    windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -356,8 +334,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Short Type]", windowTestDfOrc,
       new SparkConf().set("spark.rapids.sql.window.range.short.enabled", "true"),
-      skipCanonicalizationCheck = skipRangeCanon,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -370,8 +347,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Long Type]",
-    windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -385,8 +361,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Byte Type]", windowTestDfOrc,
       new SparkConf().set("spark.rapids.sql.window.range.byte.enabled", "true"),
-      skipCanonicalizationCheck = skipRangeCanon,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -399,8 +374,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Date Type]",
-    windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon) {
 
     val windowClause =
       """
@@ -413,8 +387,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("[Window] [MIXED WINDOW SPECS] ",
-      windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      windowTestDfOrc, skipCanonicalizationCheck = skipRangeCanon) {
     (df : DataFrame) => {
       df.createOrReplaceTempView("mytable")
       // scalastyle:off line.size.limit

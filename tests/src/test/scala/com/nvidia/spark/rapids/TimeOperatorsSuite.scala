@@ -64,7 +64,7 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
 
   testBothCpuGpuExpectedException[RuntimeException](
     "Test timestamp_micros from long near Long.minValue: long overflow",
-    e => if (ShimLoader.getSparkVersion.startsWith("4.")) {
+    e => if (isSpark400OrLater) {
            e.getMessage.contains("EXPRESSION_DECODING_FAILED")
          } else {
            e.getMessage.contains("ArithmeticException")

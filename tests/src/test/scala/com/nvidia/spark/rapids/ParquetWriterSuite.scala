@@ -239,7 +239,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old dates in EXCEPTION mode",
-    if (ShimLoader.getSparkVersion.startsWith("4.")) {
+    if (isSpark400OrLater) {
       classOf[org.apache.spark.sql.AnalysisException]
     } else {
       SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
@@ -257,7 +257,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps millis in EXCEPTION mode",
-    if (ShimLoader.getSparkVersion.startsWith("4.")) {
+    if (isSpark400OrLater) {
       classOf[org.apache.spark.sql.AnalysisException]
     } else {
       SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
@@ -276,7 +276,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps in EXCEPTION mode",
-    if (ShimLoader.getSparkVersion.startsWith("4.")) {
+    if (isSpark400OrLater) {
       classOf[org.apache.spark.sql.AnalysisException]
     } else {
       SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass

@@ -481,8 +481,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       comparisonFunc = comparisonFunc)
   }
 
-  testSparkResultsAreEqual("Test cast from long", longsDf,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")) {
+  testSparkResultsAreEqual("Test cast from long", longsDf) {
     frame => frame.select(
       col("longs").cast(IntegerType),
       col("longs").cast(LongType),
@@ -497,8 +496,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from float", mixedFloatDf,
-      conf = sparkConf,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+      conf = sparkConf) {
     frame => frame.select(
       col("floats").cast(IntegerType),
       col("floats").cast(LongType),
@@ -512,8 +510,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from double", doubleWithNansDf,
-      conf = sparkConf,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
+      conf = sparkConf) {
     frame => frame.select(
       col("doubles").cast(IntegerType),
       col("doubles").cast(LongType),
@@ -538,8 +535,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("bools").cast(DoubleType))
   }
 
-  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")) {
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
     frame => frame.select(
       col("date"),
       col("date").cast(BooleanType),
@@ -553,8 +549,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(TimestampType))
    }
 
-  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12715")) {
+  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))
   }
 
@@ -589,7 +584,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
         "ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12714"))(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12714")
     // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
     assumePriorToSpark400
     val oldtz = TimeZone.getDefault
@@ -610,8 +604,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from strings to int", doublesAsStrings,
-    conf = sparkConf,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/11552")) {
+    conf = sparkConf) {
     frame => frame.select(
       col("c0").cast(LongType),
       col("c0").cast(IntegerType),
@@ -632,8 +625,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test bad cast from strings to floats", invalidFloatStringsDf,
-    conf = sparkConf, maxFloatDiff = 0.0001,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/11552")) {
+    conf = sparkConf, maxFloatDiff = 0.0001) {
     frame =>frame.select(
       col("c0").cast(DoubleType),
       col("c0").cast(FloatType),
@@ -887,9 +879,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
       // Catch out of range exception when AnsiMode is on
       assert(
         exceptionContains(
-          if (ShimLoader.getSparkVersion.startsWith("4.")) {
-          // For Spark 4.0+, catch the SparkArithmeticException by class name since
-          // it is a private class and cannot be caught using intercept[SparkArithmeticException]
+          if (isSpark400OrLater) {
+            // For Spark 4.0+, catch the SparkArithmeticException by class name since
+            // it is a private class and cannot be caught using intercept[SparkArithmeticException]
             try {
               nonOverflowCase(dataType, generator, precision, scale)
               new Exception("Expected an arithmetic exception but none was thrown")
