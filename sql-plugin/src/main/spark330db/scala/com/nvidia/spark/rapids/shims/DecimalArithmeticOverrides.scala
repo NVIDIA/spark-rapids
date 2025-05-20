@@ -85,11 +85,21 @@ object DecimalArithmeticOverrides {
         ExprChecks.binaryProject(
           TypeSig.DOUBLE + TypeSig.DECIMAL_128,
           TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-          ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-              TypeSig.DOUBLE + TypeSig.DECIMAL_128),
-          ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-              TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
+          ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_64,
+              TypeSig.DOUBLE + TypeSig.DECIMAL_64),
+          ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_64,
+              TypeSig.DOUBLE + TypeSig.DECIMAL_64)),
         (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
+          System.out.println("DecimalArithmeticOverrides expr[Divide]")
+          System.out.println("a.dataType: " + a.dataType)
+          System.out.println("a.left: " + a.left)
+          System.out.println("a.right: " + a.right)
+          System.out.println("a.children: " + a.children)
+          System.out.println("a.getClass: " + a.getClass)
+          System.out.println("a.left.dataType: " + a.left.dataType)
+          System.out.println("a.right.dataType: " + a.right.dataType)
+          System.out.println("a" + a)
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             a.dataType match {
               case d: DecimalType =>

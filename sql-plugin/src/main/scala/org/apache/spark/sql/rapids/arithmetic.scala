@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -854,6 +854,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
   }
 
   def regularDivide(batch: ColumnarBatch): GpuColumnVector = {
+    System.out.println("GpuDecimalDivideBase regularDivide")
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       GpuCast.doCast(
         lhs.getBase,
@@ -885,6 +886,8 @@ trait GpuDecimalDivideBase extends GpuExpression {
   }
 
   def longDivide(batch: ColumnarBatch): GpuColumnVector = {
+    System.out.println("GpuDecimalDivideBase longDivide")
+
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
     }
@@ -923,6 +926,16 @@ trait GpuDecimalDivideBase extends GpuExpression {
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    System.out.println("GpuDecimalDivideBase , isLongDivision: " + useLongDivision)
+    System.out.println(s"lhs dataType: ${left.dataType}, " +
+      s"rhs dataType: ${right.dataType}")
+    System.out.println(s"lhsType: ${lhsType}, " +
+      s"rhsType: ${rhsType}")
+    System.out.println("decimalType: " + decimalType)
+    System.out.println("dataType: " + dataType)
+    System.out.println("decimalType.precision: " + decimalType.precision  )
+    System.out.println("decimalType.scale: " + decimalType.scale)
+    System.out.println("MAX_LONG_DIGITS: " + Decimal.MAX_LONG_DIGITS)
     if (useLongDivision) {
       longDivide(batch)
     } else {

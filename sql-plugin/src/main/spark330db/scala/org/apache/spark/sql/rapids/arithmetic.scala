@@ -414,6 +414,13 @@ case class GpuDecimalDivide(
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
   override def inputType: AbstractDataType = DecimalType
 
+  System.out.println("GpuDecimalDivide symbol: " + symbol)
+  // System.out.println("GpuDecimalDivide left: " + left.dataType + " right: " + right.dataType)
+  // System.out.println("GpuDecimalDivide dataType: " + dataType)
+  // System.out.println("GpuDecimalDivide allowPrecisionLoss: " + allowPrecisionLoss)
+  // System.out.println("GpuDecimalDivide failOnError: " + failOnError)
+
+
   override def symbol: String = "/"
 
   // We aren't using this
@@ -429,6 +436,7 @@ case class GpuDecimalDivide(
   // Result Scale:     max(6, s1 + p2 + 1)
   // scalastyle:on
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    System.out.println("GpuDecimalDivide resultDecimalType")
     if (allowPrecisionLoss) {
       val intDig = p1 - s1 + s2
       val scale = max(DecimalType.MINIMUM_ADJUSTED_SCALE, s1 + p2 + 1)
