@@ -19,7 +19,8 @@ package org.apache.iceberg.spark.source
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriterFactory, PhysicalWriteInfo, WriterCommitMessage}
 
 abstract class GpuBaseBatchWrite(write: GpuSparkWrite) extends BatchWrite {
-  override def createBatchWriterFactory(physicalWriteInfo: PhysicalWriteInfo): DataWriterFactory = ???
+  override def createBatchWriterFactory(physicalWriteInfo: PhysicalWriteInfo): DataWriterFactory
+  = ???
 
   override def abort(writerCommitMessages: Array[WriterCommitMessage]): Unit =
     write.abort(writerCommitMessages)

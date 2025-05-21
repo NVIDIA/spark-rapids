@@ -16,43 +16,74 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids.SpillableColumnarBatch
-import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetWriter
-import org.apache.iceberg.{FileFormat, PartitionSpec, Schema, StructLike, Table}
+import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetWriter, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetAppender
+import org.apache.iceberg.{FileFormat, MetricsConfig, PartitionSpec, SerializableTable, SortOrder, StructLike}
 import org.apache.iceberg.deletes.{EqualityDeleteWriter, PositionDeleteWriter}
 import org.apache.iceberg.encryption.EncryptedOutputFile
 import org.apache.iceberg.io.{DataWriter, FileWriterFactory}
 
-import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.execution.datasources.GpuWriteFiles
+import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.SerializableConfiguration
 
-class GpuSparkFileWriterFactory(val table: Table,
+class GpuSparkFileWriterFactory(val table: SerializableTable,
     val dataFileFormat: FileFormat,
-    val dataSchema: Schema,
     val dataSparkType: StructType,
     val dataSortOrder: SortOrder,
     val deleteFileFormat: FileFormat,
-    val eqFieldIds: Array[Int],
-    val eqDeletRowSchema: Schema,
-    val eqDeleteSortOrder: SortOrder,
-    val posDeleteRowSchema: Schema,
-    val posDeleteSparkType: StructType,
-    val writeProperties: Map[String, String]) extends
-  FileWriterFactory[SpillableColumnarBatch] {
-
+    val columnarOutputWriterFactory: ColumnarOutputWriterFactory,
+    val hadoopConf: SerializableConfiguration,
+) extends FileWriterFactory[SpillableColumnarBatch] with Serializable {
   require(dataFileFormat == FileFormat.PARQUET,
     s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $dataFileFormat")
   require(deleteFileFormat == FileFormat.PARQUET,
     s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $deleteFileFormat")
 
-  private val appenderFactory =
+  private lazy val jobStatsTracker = GpuWriteJobStatsTracker(
+          serializableHadoopConf = hadoopConf,
+          basicMetrics = GpuWriteJobStatsTracker.basicMetrics,
+          taskMetrics = GpuWriteJobStatsTracker.taskMetrics)
 
-  override def newDataWriter(encryptedOutputFile: EncryptedOutputFile, partitionSpec: PartitionSpec, structLike: StructLike): DataWriter[SpillableColumnarBatch] = ???
+  override def newDataWriter(file: EncryptedOutputFile,
+      partitionSpec: PartitionSpec,
+      partition: StructLike): DataWriter[SpillableColumnarBatch] = {
+    val location = file.encryptingOutputFile().location()
+    new DataWriter[SpillableColumnarBatch](
+      createAppender(location),
+      dataFileFormat,
+      location,
+      partitionSpec,
+      partition,
+      file.keyMetadata(),
+      dataSortOrder)
+  }
 
-  override def newEqualityDeleteWriter(encryptedOutputFile: EncryptedOutputFile, partitionSpec: PartitionSpec, structLike: StructLike): EqualityDeleteWriter[SpillableColumnarBatch] = ???
+  override def newEqualityDeleteWriter(encryptedOutputFile: EncryptedOutputFile,
+      partitionSpec: PartitionSpec, structLike: StructLike):
+  EqualityDeleteWriter[SpillableColumnarBatch] = throw new IllegalStateException(
+    "Spark row level deletion should not produce equality delete files")
 
-  override def newPositionDeleteWriter(encryptedOutputFile: EncryptedOutputFile, partitionSpec: PartitionSpec, structLike: StructLike): PositionDeleteWriter[SpillableColumnarBatch] = ???
+  override def newPositionDeleteWriter(encryptedOutputFile: EncryptedOutputFile,
+      partitionSpec: PartitionSpec,
+      structLike: StructLike): PositionDeleteWriter[SpillableColumnarBatch] =
+    throw new UnsupportedOperationException("Spark row level deletion should not produce position" +
+      " delete files")
 
-  private def createAppender(): GpuIcebergParquetWriter = {
+  private def createAppender(path: String): GpuIcebergParquetAppender = {
+    val gpuWriter =  columnarOutputWriterFactory.newInstance(
+      path = path,
+      dataSchema = dataSparkType,
+      context = GpuWriteFiles.getHadoopTaskAttemptContext(hadoopConf),
+      statsTrackers = Seq(jobStatsTracker.newTaskInstance()),
+      debugOutputPath = None
+    ).asInstanceOf[GpuParquetWriter]
+
+    new GpuIcebergParquetAppender(
+      gpuWriter,
+      metricsConfig = MetricsConfig.forTable(table),
+      fileIO = table.io()
+    )
   }
 }

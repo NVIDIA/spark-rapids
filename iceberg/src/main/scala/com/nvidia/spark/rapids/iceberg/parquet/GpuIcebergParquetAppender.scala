@@ -10,7 +10,7 @@ import org.apache.iceberg.io.{FileAppender, FileIO}
 import org.apache.iceberg.parquet.ParquetUtil
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.ParquetMetadata
 
-class GpuIcebergParquetWriter(
+class GpuIcebergParquetAppender(
     val inner: GpuParquetWriter,
     val metricsConfig: MetricsConfig,
     val fileIO: FileIO) extends FileAppender[SpillableColumnarBatch] {

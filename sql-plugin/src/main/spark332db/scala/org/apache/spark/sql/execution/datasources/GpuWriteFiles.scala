@@ -37,6 +37,7 @@ import java.util.Date
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import org.apache.hadoop.mapreduce.{TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
 
 import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
@@ -51,6 +52,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.{GpuFileFormatWriter, GpuWriteJobDescription}
 import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 
 /**
  * The write files spec holds all information of [[V1WriteCommand]] if its provider is
@@ -195,5 +197,29 @@ object GpuWriteFiles {
     p.collectFirst {
       case w: GpuWriteFilesExec => w
     }
+  }
+
+  def getHadoopTaskAttemptContext(serializedHadoopConf: SerializableConfiguration)
+  : TaskAttemptContext = {
+    val tc = TaskContext.get()
+    if (tc == null) {
+      throw new IllegalStateException("TaskContext is not available")
+    }
+
+    val hadoopConf = serializedHadoopConf.value
+
+    val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
+    val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, tc.stageId())
+    val taskId = new TaskID(jobId, TaskType.MAP, tc.partitionId())
+    val taskAttemptId = new TaskAttemptID(taskId, tc.attemptNumber())
+
+
+    hadoopConf.set("mapreduce.job.id", jobId.toString)
+    hadoopConf.set("mapreduce.task.id",  taskAttemptId.getTaskID.toString)
+    hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
+    hadoopConf.setBoolean("mapreduce.task.ismap", true)
+    hadoopConf.setInt("mapreduce.task.partition", 0)
+
+    tc.asInstanceOf[TaskAttemptContext]
   }
 }
