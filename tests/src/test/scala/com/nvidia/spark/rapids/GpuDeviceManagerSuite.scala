@@ -26,7 +26,11 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object TestMemoryChecker extends MemoryChecker {
-  override def getAvailableMemoryBytes: Option[Long] = None
+  private var availMemBytes: Option[Long] = None
+
+  override def getAvailableMemoryBytes: Option[Long] = availMemBytes
+
+  def setAvailableMemoryBytes(b: Option[Long]): Unit = availMemBytes = b
 }
 
 class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
@@ -92,12 +96,94 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     val rapidsConf = new RapidsConf(sparkConf)
     val (pinnedSize, nonPinnedSize) =
       GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
-      TestMemoryChecker)
+        TestMemoryChecker)
 
     // 4GB minMemoryLimit - 15MB totalOverhead
     val expectedNonPinned = (4L * 1024 * 1024 * 1024) - (15L * 1024 * 1024)
 
     assertResult(0)(pinnedSize)
     assertResult(expectedNonPinned)(nonPinnedSize)
+  }
+
+  test("RMM get memory limits zero config with host mem") {
+    val pySparkOverhead = (2L * 1024 * 1024 * 1024).toString
+    val sparkConf = new SparkConf()
+      .set("spark.executor.pyspark.memory", pySparkOverhead)
+    val rapidsConf = new RapidsConf(sparkConf)
+    val hostBytes = 16L * 1024 * 1024 * 1024 // 16GB
+    TestMemoryChecker.setAvailableMemoryBytes(Some(hostBytes))
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+        TestMemoryChecker)
+    TestMemoryChecker.setAvailableMemoryBytes(None)
+
+    // .8 * (16GB minMemoryLimit - 1GB heapSize - 2GB pyspark) - 15MB totalOverhead
+    val expectedNonPinned = (.8 * ((16L - 3L) * 1024 * 1024 * 1024)).toLong - (15L * 1024 * 1024)
+
+    assertResult(0)(pinnedSize)
+    assertResult(expectedNonPinned)(nonPinnedSize)
+  }
+
+  test("RMM get memory limits off heap configured") {
+    val sparkConf = new SparkConf()
+    val rapidsConf = new RapidsConf(Map(
+      RapidsConf.OFF_HEAP_LIMIT_SIZE.key -> "16g"
+    ))
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      TestMemoryChecker)
+
+    // 16GB minMemoryLimit - 15MB totalOverhead
+    val expectedNonPinned = (16L * 1024 * 1024 * 1024) - (15L * 1024 * 1024)
+
+    assertResult(0)(pinnedSize)
+    assertResult(expectedNonPinned)(nonPinnedSize)
+  }
+
+  test("RMM get memory limits memoryOverhead configured") {
+    val sparkOverhead = (8L * 1024 * 1024 * 1024).toString
+    val sparkConf = new SparkConf()
+      .set("spark.executor.memoryOverhead", sparkOverhead)
+    val rapidsConf = new RapidsConf(sparkConf)
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+        TestMemoryChecker)
+
+    // .9 * (8GB sparkOverhead) - 15MB totalOverhead
+    val expectedNonPinned = (.9 * (8L * 1024 * 1024 * 1024)).toLong - (15L * 1024 * 1024)
+
+    assertResult(0)(pinnedSize)
+    assertResult(expectedNonPinned)(nonPinnedSize)
+  }
+
+  test("RMM get memory limits pinned config only") {
+    val sparkConf = new SparkConf()
+    val rapidsConf = new RapidsConf(Map(
+      RapidsConf.PINNED_POOL_SIZE.key -> "2gb"))
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+        TestMemoryChecker)
+
+    val expectedPinned = 2L * 1024 * 1024 * 1024 // 2GB
+    // 4GB minMemoryLimit - 15MB totalOverhead - pinned
+    val expectedNonPinned = (4L * 1024 * 1024 * 1024) - (15L * 1024 * 1024) - expectedPinned
+
+    assertResult(expectedPinned)(pinnedSize)
+    assertResult(expectedNonPinned)(nonPinnedSize)
+  }
+
+  test("RMM get memory limits pinned config above memLimit") {
+    val sparkConf = new SparkConf()
+    val rapidsConf = new RapidsConf(Map(
+      RapidsConf.PINNED_POOL_SIZE.key -> "8gb"))
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+        TestMemoryChecker)
+
+    // 4GB minMemoryLimit - 15MB totalOverhead
+    val expectedPinned = (4L * 1024 * 1024 * 1024) - (15L * 1024 * 1024)
+
+    assertResult(expectedPinned)(pinnedSize)
+    assertResult(0)(nonPinnedSize)
   }
 }
