@@ -480,14 +480,14 @@ object GpuDeviceManager extends Logging {
       // in case we cannot query the host for available memory due to environmental
       // constraints, we can fall back to minMemoryLimit via saying there's no available
       lazy val availableHostMemory = memCheck.getAvailableMemoryBytes.getOrElse(0L)
-      lazy val basedOnHostMemory = (.8 * (availableHostMemory - heapSize - pysparkOverhead) /
-        deviceCount).toLong
+      val hostMemUsageFraction = .8
+      lazy val basedOnHostMemory = (hostMemUsageFraction * (availableHostMemory - heapSize
+        - pysparkOverhead) / deviceCount).toLong
       if (executorOverhead.isDefined) {
-        val basedOnConfiguredOverhead = (.9 * (executorOverhead.get - pysparkOverhead)).toLong
+        val basedOnConfiguredOverhead = (executorOverhead.get - pysparkOverhead).toLong
         logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
-          s"a memory limit from .9 * ($executorOverheadKey - " +
-          s"$pysparkOverheadKey) = .9 * (${executorOverhead.get} - " +
-          s"$pysparkOverhead) = $basedOnConfiguredOverhead")
+          s"a memory limit from ($executorOverheadKey - " + s"$pysparkOverheadKey) = " +
+          s"(${executorOverhead.get} - $pysparkOverhead) = $basedOnConfiguredOverhead")
         if (basedOnConfiguredOverhead < minMemoryLimit) {
           logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
             s"$minMemoryLimit; using the latter")

@@ -149,8 +149,8 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
       GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
         TestMemoryChecker)
 
-    // .9 * (8GB sparkOverhead) - 15MB totalOverhead
-    val expectedNonPinned = (.9 * (8L * 1024 * 1024 * 1024)).toLong - (15L * 1024 * 1024)
+    // 8GB sparkOverhead - 15MB totalOverhead
+    val expectedNonPinned = (8L * 1024 * 1024 * 1024).toLong - (15L * 1024 * 1024)
 
     assertResult(0)(pinnedSize)
     assertResult(expectedNonPinned)(nonPinnedSize)

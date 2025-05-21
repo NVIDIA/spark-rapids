@@ -77,7 +77,7 @@ object MemoryCheckerImpl extends MemoryChecker with Logging {
 
   private def fromUTF8File(path: String): BufferedSource = Source.fromFile(path)(Codec.UTF8)
 
-  private def getVmRSS: Option[Int] = {
+  private def getVmRSS: Option[Long] = {
     val pid = ManagementFactory.getRuntimeMXBean.getName.split("@").head.toInt
     val statusFile = s"/proc/$pid/status"
 
@@ -86,7 +86,7 @@ object MemoryCheckerImpl extends MemoryChecker with Logging {
         .find(_.startsWith("VmRSS:"))
         .flatMap { line =>
           line.split("\\s+") match {
-            case Array(_, value, _*) => Try(value.toInt).toOption
+            case Array(_, value, _*) => Try(value.toLong).toOption
             case _ => None
           }
         }
@@ -154,10 +154,8 @@ object MemoryCheckerImpl extends MemoryChecker with Logging {
     logInfo(s"attempting to read $path")
     val result = Try(withResource(fromUTF8File(path)) { source =>
       source.getLines()
-      .collectFirst {
-        case line if line.startsWith("MemAvailable:") =>
-          line.split("\\s+")(1).toLong * 1024 // KB to bytes
-      }
+        .find(_.startsWith("MemAvailable:"))
+        .map(_.split("\\s+")(1).toLong * 1024) // KB to bytes
     })
 
     result match {
