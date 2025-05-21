@@ -16,10 +16,43 @@
 
 package org.apache.iceberg.spark.source
 
-import ai.rapids.cudf.PartitionedTable
+import com.nvidia.spark.rapids.SpillableColumnarBatch
+import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetWriter
+import org.apache.iceberg.{FileFormat, PartitionSpec, Schema, StructLike, Table}
+import org.apache.iceberg.deletes.{EqualityDeleteWriter, PositionDeleteWriter}
+import org.apache.iceberg.encryption.EncryptedOutputFile
+import org.apache.iceberg.io.{DataWriter, FileWriterFactory}
 
-case class TablePartition(partition: Int, table: PartitionedTable)
+import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.types.StructType
 
+class GpuSparkFileWriterFactory(val table: Table,
+    val dataFileFormat: FileFormat,
+    val dataSchema: Schema,
+    val dataSparkType: StructType,
+    val dataSortOrder: SortOrder,
+    val deleteFileFormat: FileFormat,
+    val eqFieldIds: Array[Int],
+    val eqDeletRowSchema: Schema,
+    val eqDeleteSortOrder: SortOrder,
+    val posDeleteRowSchema: Schema,
+    val posDeleteSparkType: StructType,
+    val writeProperties: Map[String, String]) extends
+  FileWriterFactory[SpillableColumnarBatch] {
 
-class GpuSparkFileWriterFactory {
+  require(dataFileFormat == FileFormat.PARQUET,
+    s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $dataFileFormat")
+  require(deleteFileFormat == FileFormat.PARQUET,
+    s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $deleteFileFormat")
+
+  private val appenderFactory =
+
+  override def newDataWriter(encryptedOutputFile: EncryptedOutputFile, partitionSpec: PartitionSpec, structLike: StructLike): DataWriter[SpillableColumnarBatch] = ???
+
+  override def newEqualityDeleteWriter(encryptedOutputFile: EncryptedOutputFile, partitionSpec: PartitionSpec, structLike: StructLike): EqualityDeleteWriter[SpillableColumnarBatch] = ???
+
+  override def newPositionDeleteWriter(encryptedOutputFile: EncryptedOutputFile, partitionSpec: PartitionSpec, structLike: StructLike): PositionDeleteWriter[SpillableColumnarBatch] = ???
+
+  private def createAppender(): GpuIcebergParquetWriter = {
+  }
 }
