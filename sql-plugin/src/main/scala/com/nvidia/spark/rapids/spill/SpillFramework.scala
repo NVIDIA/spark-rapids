@@ -38,7 +38,7 @@ import org.apache.commons.io.IOUtils
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
-import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
+import org.apache.spark.sql.rapids.execution.{SerializedHostTableUtils, TrampolineUtil}
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -441,6 +441,7 @@ class SpillableHostBufferHandle private (
                   }
                 }
               }
+              TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
               var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
               synchronized {
                 spilling = false
@@ -1091,6 +1092,7 @@ class SpillableHostColumnarBatchHandle private (
                 val columns = RapidsHostColumnVector.extractBases(cb)
                 JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
               }
+              TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
               var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
               synchronized {
                 spilling = false
@@ -1551,6 +1553,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
           len,
           stream)
         copied += len
+        TrampolineUtil.incTaskMetricsMemoryBytesSpilled(len)
       }
     }
 
@@ -1613,6 +1616,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       require(handle != null, "Called build too many times")
       require(copied == handle.sizeInBytes,
         s"Expected ${handle.sizeInBytes} B but copied $copied B instead")
+      TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
       handle.setDisk(diskHandleBuilder.build)
       val res = handle
       handle = null
@@ -1759,11 +1763,13 @@ object DiskHandleStore {
       closed = true
     }
 
+    def size: Long = fc.position() - startPos
+
     def build: DiskHandle =
       DiskHandle(
         blockId,
         startPos,
-        fc.position() - startPos)
+        size)
   }
 
   def makeBuilder: DiskHandleBuilder = {
