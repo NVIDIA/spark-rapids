@@ -24,7 +24,7 @@ import hudson.model.Result
 import hudson.model.Run
 import jenkins.model.CauseOfInterruption.UserInterruption
 
-@Library('blossom-lib')
+@Library('blossom-lib@yinqing/fix_sync_workspace')
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
@@ -37,8 +37,6 @@ def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
-def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
-    'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
 // The path where the CI_PART1 job shares rapids plugin built tars with the CI_PART job
 def plugin_built_dir = "dbfs:/cicd/$BUILD_TAG"
 
@@ -78,6 +76,7 @@ pipeline {
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CLASSIFIER = 'cuda11'
+        TMP_WORKSPACE = "/tmp/${BUILD_TAG}"
     }
 
     stages {
@@ -193,19 +192,22 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         script {
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') { // step only timeout for test run
-                                    try {
-                                        sh "$PREMERGE_SCRIPT mvn_verify"
-                                        step([$class                : 'JacocoPublisher',
-                                              execPattern           : '**/target/jacoco.exec',
-                                              classPattern          : 'target/jacoco_classes/',
-                                              sourceInclusionPattern: '**/*.java,**/*.scala',
-                                              sourcePattern         : sourcePattern
-                                        ])
-                                    } finally {
-                                        common.publishPytestResult(this, "${STAGE_NAME}")
-                                        common.printJVMCoreDumps(this)
+                                    def sourcePattern = '${TMP_WORKSPACE}/shuffle-plugin/src/main/scala/,${TMP_WORKSPACE}/udf-compiler/src/main/scala/,' +
+                                                        '${TMP_WORKSPACE}/sql-plugin/src/main/java/,${TMP_WORKSPACE}/sql-plugin/src/main/scala/'
+                                    common.syncWorkspace(this, env.CUSTOM_WORKSPACE, env.TMP_WORKSPACE) {
+                                        try {
+                                            sh "cd $TMP_WORKSPACE && WORKSPACE=$TMP_WORKSPACE $PREMERGE_SCRIPT mvn_verify"
+                                            step([$class                : 'JacocoPublisher',
+                                                  execPattern           : '${TMP_WORKSPACE}/**/target/jacoco.exec',
+                                                  classPattern          : '${TMP_WORKSPACE}/target/jacoco_classes/',
+                                                  sourceInclusionPattern: '${TMP_WORKSPACE}/**/*.java,${TMP_WORKSPACE}/**/*.scala',
+                                                  sourcePattern         : sourcePattern
+                                            ])
+                                        } finally {
+                                            common.publishPytestResult(this, "${STAGE_NAME}", env.TMP_WORKSPACE)
+                                            common.printJVMCoreDumps(this, env.TMP_WORKSPACE)
+                                        }
                                     }
-                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
@@ -231,13 +233,14 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                             unstash "source_tree"
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') {
-                                    try {
-                                        sh "$PREMERGE_SCRIPT ci_2"
-                                    } finally {
-                                        common.publishPytestResult(this, "${STAGE_NAME}")
-                                        common.printJVMCoreDumps(this)
+                                    common.syncWorkspace(this, env.CUSTOM_WORKSPACE, env.TMP_WORKSPACE) {
+                                        try {
+                                            sh "cd $TMP_WORKSPACE && WORKSPACE=$TMP_WORKSPACE $PREMERGE_SCRIPT ci_2"
+                                        } finally {
+                                            common.publishPytestResult(this, "${STAGE_NAME}", env.TMP_WORKSPACE)
+                                            common.printJVMCoreDumps(this, env.TMP_WORKSPACE)
+                                        }
                                     }
-                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
@@ -263,13 +266,14 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                             unstash "source_tree"
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') {
-                                    try {
-                                        sh "$PREMERGE_SCRIPT ci_scala213"
-                                    } finally {
-                                        common.publishPytestResult(this, "${STAGE_NAME}")
-                                        common.printJVMCoreDumps(this)
+                                    common.syncWorkspace(this, env.CUSTOM_WORKSPACE, env.TMP_WORKSPACE) {
+                                        try {
+                                            sh "cd $TMP_WORKSPACE && WORKSPACE=$TMP_WORKSPACE $PREMERGE_SCRIPT ci_scala213"
+                                        } finally {
+                                            common.publishPytestResult(this, "${STAGE_NAME}", env.TMP_WORKSPACE)
+                                            common.printJVMCoreDumps(this, env.TMP_WORKSPACE)
+                                        }
                                     }
-                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
