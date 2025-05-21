@@ -31,6 +31,7 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
 
   private var inited = false
   private lazy val reader = createParquetReader()
+  private var curPostProcessor: GpuParquetReaderPostProcessor = _
 
   override def close(): Unit = {
     if (inited) {
@@ -40,7 +41,11 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
 
   override def hasNext: Boolean = reader.next()
 
-  override def next(): ColumnarBatch = reader.get()
+  override def next(): ColumnarBatch = {
+    require(curPostProcessor != null,
+      "The post processor should not be null when calling next()")
+    curPostProcessor.process(reader.get())
+  }
 
   private def createParquetReader() = {
     val clippedBlocks = files.map(f => (f, super.filterParquetBlocks(f, conf.expectedSchema)))
@@ -98,10 +103,11 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
 
       override def finalizeOutputBatch(batch: ColumnarBatch,
           extraInfo: ExtraInfo): ColumnarBatch = {
-        extraInfo
+        GpuCoalescingIcebergParquetReader.this.curPostProcessor = extraInfo
           .asInstanceOf[IcebergParquetExtraInfo]
           .postProcessor
-          .process(GpuColumnVector.incRefCounts(batch))
+
+        GpuColumnVector.incRefCounts(batch)
       }
     }
   }
