@@ -912,6 +912,14 @@ def test_cast_string_to_timestamp_valid():
                 ("T01:02:03",),
                 ("T1:2:3",),
                 ("T01:02:03 UTC",),
+                ("1:2",),
+                ("1:02",),
+                ("01:2",),
+                ("01:02",),
+                ("1:2:3",),
+                ("01:02:03",),
+                ("01:02:03.123456",),
+                ("1:2:3.123456",),
             ],
             'str_col string')
     def _query(spark):
@@ -1026,6 +1034,12 @@ _cast_string_to_timestamp_invalid = [
     # invalid year: e.g. abs(year) > 30,000
     ("300001-01-01",),
     ("-300001-01-01",),
+
+    # invalid just time
+    ("+00:00:00",),
+    ("-00:00:00",),
+    ("+T00:00:00",),
+    ("-T00:00:00",),
 ]
 
 def test_cast_string_to_timestamp_invalid():
