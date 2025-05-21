@@ -23,7 +23,7 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 
-class PrioritySemaphore[T](val maxPermits: Long, val priorityForNonStarted: T)
+class PrioritySemaphore[T](val maxPermits: Long)
   (implicit ordering: Ordering[T]) {
   // This lock is used to generate condition variables, which affords us the flexibility to notify
   // specific threads at a time. If we use the regular synchronized pattern, we have to either
@@ -32,8 +32,11 @@ class PrioritySemaphore[T](val maxPermits: Long, val priorityForNonStarted: T)
   private val lock = new ReentrantLock()
   private var occupiedSlots: Long = 0
 
-  private case class ThreadInfo(priority: T, condition: Condition,
-                                computeNumPermits: () => Long, taskId: Long) {
+  private case class ThreadInfo(priority: T,
+                                condition: Condition,
+                                computeNumPermits: () => Long,
+                                wasOnGpuBefore: () => Boolean,
+                                taskId: Long) {
     var signaled: Boolean = false
     var permitsUsed: Long = 0
   }
@@ -47,13 +50,16 @@ class PrioritySemaphore[T](val maxPermits: Long, val priorityForNonStarted: T)
   private val waitingQueue: PriorityQueue[ThreadInfo] =
     new PriorityQueue[ThreadInfo](priorityComp)
 
-  def tryAcquire(numPermits: Long, priority: T, taskAttemptId: Long): Boolean = {
+  def tryAcquire(numPermits: Long,
+                 priority: T,
+                 wasOnGpuBefore: () => Boolean,
+                 taskAttemptId: Long): Boolean = {
     lock.lock()
     try {
       if (waitingQueue.size() > 0 &&
         priorityComp.compare(
           waitingQueue.peek(),
-          ThreadInfo(priority, null, () => numPermits, taskAttemptId)
+          ThreadInfo(priority, null, () => numPermits, wasOnGpuBefore, taskAttemptId)
         ) < 0) {
         false
       } else if (!canAcquire(numPermits)) {
@@ -67,19 +73,20 @@ class PrioritySemaphore[T](val maxPermits: Long, val priorityForNonStarted: T)
     }
   }
 
-  def acquire(computePermits: () => Long, priority: T, taskAttemptId: Long): Long = {
+  def acquire(computePermits: () => Long, wasOnGpuBefore: () => Boolean,
+              priority: T, taskAttemptId: Long): Long = {
     lock.lock()
     try {
       val numPermitsNow = computePermits()
-      if (!tryAcquire(numPermitsNow, priority, taskAttemptId)) {
+      if (!tryAcquire(numPermitsNow, priority, wasOnGpuBefore, taskAttemptId)) {
         val condition = lock.newCondition()
-        val info = ThreadInfo(priority, condition, computePermits, taskAttemptId)
+        val info = ThreadInfo(priority, condition, computePermits, wasOnGpuBefore, taskAttemptId)
         try {
           waitingQueue.add(info)
           // only count tasks that had held semaphore before,
           // so they're very likely to have remaining data on GPU
           GpuTaskMetrics.get.recordOnGpuTasksWaitingNumber(
-            waitingQueue.iterator().asScala.count(_.priority != priorityForNonStarted))
+            waitingQueue.iterator().asScala.count(_.wasOnGpuBefore()))
 
           while (!info.signaled) {
             info.condition.await()
