@@ -798,8 +798,7 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, from_gen).selectExpr("CAST(a AS {}) as casted".format(to_type)),
         "Cast",
-        {"spark.sql.session.timeZone": "+08",
-         "spark.rapids.sql.castStringToTimestamp.enabled": True})
+        {"spark.sql.session.timeZone": "+08"})
 
 def test_cast_string_to_timestamp_in_non_utc():
     gen = SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02'])

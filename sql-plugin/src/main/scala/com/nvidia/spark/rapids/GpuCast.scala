@@ -143,7 +143,10 @@ abstract class CastExprMetaBase[INPUT <: UnaryLike[Expression] with TimeZoneAwar
             "while CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this " +
             s"operation on the GPU, set ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
       case (_: StringType, _: TimestampType) =>
-        // do not fall back, fully support
+        if (!conf.isCastStringToTimestampEnabled) {
+          willNotWorkOnGpu("Casting strings to timestamps is disabled, please set" +
+            s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+        }
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, dt:DecimalType) =>

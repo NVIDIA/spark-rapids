@@ -81,6 +81,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
@@ -131,6 +132,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
       .set(RapidsConf.OPTIMIZER_DEFAULT_CPU_OPERATOR_COST.key, "0")
       .set(RapidsConf.OPTIMIZER_DEFAULT_GPU_OPERATOR_COST.key, "0")
@@ -191,6 +193,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set("spark.rapids.sql.optimizer.gpu.exec.LocalTableScanExec", "0.8")
       .set("spark.rapids.sql.optimizer.cpu.exec.SortExec", "1.0")
       .set("spark.rapids.sql.optimizer.gpu.exec.SortExec", "0.8")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
@@ -245,6 +248,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(TRANSITION_TO_CPU_COST, "0.3")
       .set(TRANSITION_TO_GPU_COST, "0.3")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec," +
             "Alias,Cast,LessThan,ShuffleExchangeExec,RangePartitioning,RoundRobinPartitioning")
@@ -290,6 +294,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set("spark.rapids.sql.optimizer.gpu.exec.LocalTableScanExec", "0.8")
       .set("spark.rapids.sql.optimizer.cpu.exec.SortExec", "1.0")
       .set("spark.rapids.sql.optimizer.gpu.exec.SortExec", "0.8")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec," +
             "Alias,Cast,LessThan,ShuffleExchangeExec,RangePartitioning,RoundRobinPartitioning")
@@ -326,6 +331,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     logError("Avoid move to GPU for trivial projection, AQE on")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
             "Alias,Cast,LessThan,ShuffleExchangeExec,RoundRobinPartitioning")
@@ -358,6 +364,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set(TRANSITION_TO_CPU_COST, "0.1")
       .set(TRANSITION_TO_GPU_COST, "0.1")
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
         "Alias,Cast,LessThan,ShuffleExchangeExec,RoundRobinPartitioning")
@@ -400,6 +407,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     logError("Avoid move to GPU for shuffle, AQE on")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
             "Alias,Cast,LessThan,ShuffleExchangeExec,RoundRobinPartitioning")
@@ -420,6 +428,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     logError("Avoid move to GPU for shuffle, AQE off")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.OPTIMIZER_DEFAULT_CPU_OPERATOR_COST.key, "0")
       .set(RapidsConf.OPTIMIZER_DEFAULT_GPU_OPERATOR_COST.key, "0")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
