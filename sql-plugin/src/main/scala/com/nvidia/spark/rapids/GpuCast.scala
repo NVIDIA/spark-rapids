@@ -1372,7 +1372,7 @@ object GpuCast {
     val normalizedTZ = ZoneId.of(tz, ZoneId.SHORT_IDS).normalized().toString
     closeOnExcept(CastStrings.toTimestamp(input, normalizedTZ, ansiMode)) { result =>
       if (ansiMode && result == null) {
-        throw new RuntimeException("DateTimeException")
+        throw new DateTimeException("One or more values is not a valid timestamp")
       } else {
         result
       }
