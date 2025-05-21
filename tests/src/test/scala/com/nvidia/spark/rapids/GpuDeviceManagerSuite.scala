@@ -25,6 +25,10 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
+object TestMemoryChecker extends MemoryChecker {
+  override def getAvailableMemoryBytes: Option[Long] = None
+}
+
 class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
 
   before {
@@ -83,12 +87,17 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     }
   }
 
-  test("RMM get pinned pool and off heap limits") {
-    val rapidsConf = new RapidsConf(Map(
-      RapidsConf.RMM_ALLOC_RESERVE.key -> "0",
-      RapidsConf.RMM_ALLOC_FRACTION.key -> "0.3",
-      RapidsConf.RMM_ALLOC_MAX_FRACTION.key -> "0.3"))
+  test("RMM get memory limits zero config") {
     val sparkConf = new SparkConf()
-    println(GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf))
+    val rapidsConf = new RapidsConf(sparkConf)
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      TestMemoryChecker)
+
+    // 4GB minMemoryLimit - 15MB totalOverhead
+    val expectedNonPinned = (4L * 1024 * 1024 * 1024) - (15L * 1024 * 1024)
+
+    assertResult(0)(pinnedSize)
+    assertResult(expectedNonPinned)(nonPinnedSize)
   }
 }

@@ -458,7 +458,7 @@ object GpuDeviceManager extends Logging {
     // This min limit of 4GB is somewhat arbitrary, but based on some testing which showed
     // that the previous minimum of 15 MB * num cores was too little for certain benchmark
     // queries to complete, whereas this limit was sufficient.
-    val minMemoryLimit = 4 * 1024 * 1024 * 1024
+    val minMemoryLimit = 4L * 1024 * 1024 * 1024
 
     val deviceCount: Int = Cuda.getDeviceCount()
 
