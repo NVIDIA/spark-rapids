@@ -26,6 +26,10 @@ import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.internal.Logging
 
+trait MemoryChecker {
+  def getAvailableMemoryBytes: Option[Long]
+}
+
 /**
  * Utility class that queries the runtime environment to determine how much
  * system memory is currently available. It does this by trying to figure out
@@ -33,7 +37,7 @@ import org.apache.spark.internal.Logging
  * on which it checks corresponding files, env variables, etc. for memory usage
  * and limits.
  */
-object MemoryChecker extends Logging {
+object MemoryCheckerImpl extends MemoryChecker with Logging {
   def main(args: Array[String]): Unit = {
     println(s"Available memory: ${getAvailableMemoryBytes} bytes")
   }

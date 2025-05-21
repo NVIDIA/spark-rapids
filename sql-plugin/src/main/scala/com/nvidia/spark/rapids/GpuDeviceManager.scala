@@ -431,83 +431,7 @@ object GpuDeviceManager extends Logging {
   }
 
   private def initializePinnedPoolAndOffHeapLimits(gpuId: Int, conf: RapidsConf): Unit = {
-    val setCuioDefaultResource = conf.pinnedPoolCuioDefault
-    val (pinnedSize, nonPinnedLimit) = {
-      val perTaskOverhead = conf.perTaskOverhead
-      val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
-      val executorOverhead = conf.executorOverhead
-      val confPinnedSize = conf.pinnedPoolSize
-      val confLimit = conf.offHeapLimit
-      // This min limit of 4GB is somewhat arbitrary, but based on some testing which showed
-      // that the previous minimum of 15 MB * num cores was too little for certain benchmark
-      // queries to complete, whereas this limit was sufficient.
-      val minMemoryLimit = 4 * 1024 * 1024 * 1024
-      val pysparkOverhead = conf.pysparkOverhead
-      val heapSize = conf.heapSize
-      val deviceCount: Int = Cuda.getDeviceCount()
-
-      val memoryLimit = if (confLimit.isDefined) {
-        if (executorOverhead.isEmpty) {
-          logWarning(s"${RapidsConf.EXECUTOR_OVERHEAD_SIZE} is not set")
-        }
-        logInfo(s"using configured ${RapidsConf.OFF_HEAP_LIMIT_SIZE} of ${confLimit.get}")
-        confLimit.get
-      } else {
-        // in case we cannot query the host for available memory due to environmental
-        // constraints, we can fall back to minMemoryLimit via saying there's no available
-        lazy val availableHostMemory = MemoryChecker.getAvailableMemoryBytes.getOrElse(0L)
-        lazy val basedOnHostMemory = (.8 * (availableHostMemory - heapSize - pysparkOverhead) /
-          deviceCount).toLong
-        if (executorOverhead.isDefined) {
-          val basedOnConfiguredOverhead = (.9 * (executorOverhead.get - pysparkOverhead)).toLong
-          logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
-            s"a memory limit from .9 * (${RapidsConf.EXECUTOR_OVERHEAD_SIZE} - " +
-            s"${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = .9 * (${executorOverhead.get} - " +
-            s"$pysparkOverhead) = $basedOnConfiguredOverhead")
-          if (basedOnConfiguredOverhead < minMemoryLimit) {
-            logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
-              s"$minMemoryLimit; using the latter")
-            if (minMemoryLimit > basedOnHostMemory) {
-              logWarning(s"the amount of available memory detected on the host is " +
-                s"$basedOnHostMemory, which is less than the minimum")
-            }
-            minMemoryLimit
-          } else {
-            basedOnConfiguredOverhead
-          }
-        } else {
-          logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we used " +
-            s"memory limit derived from .8 * (estimated available host memory - " +
-            s"${RapidsConf.HEAP_SIZE} - ${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = " +
-            s".8 * ($availableHostMemory - $heapSize - $pysparkOverhead) = $basedOnHostMemory")
-          if (basedOnHostMemory < minMemoryLimit) {
-            logWarning(s"the memory limit based on host memory of $basedOnHostMemory " +
-              s"is less than the minimum of $minMemoryLimit; using the latter")
-            minMemoryLimit
-          } else {
-            basedOnHostMemory
-          }
-        }
-      }
-
-      // Now we need to know the pinned vs non-pinned limits
-      val pinnedLimit = if (confPinnedSize + totalOverhead <= memoryLimit) {
-        confPinnedSize
-      } else {
-        val ret = memoryLimit - totalOverhead
-        logWarning(s"The configured pinned memory ${confPinnedSize / 1024 / 1024.0} MiB " +
-            s"plus the overhead ${totalOverhead / 1024 / 1024.0} MiB " +
-            s"is larger than the off heap limit ${memoryLimit / 1024 / 1024.0} MiB " +
-            s"dropping pinned memory to ${ret / 1024 / 1024.0} MiB")
-        ret
-      }
-      val nonPinnedLimit = memoryLimit - totalOverhead - pinnedLimit
-      logWarning(s"Off Heap Host Memory configured to be " +
-          s"${pinnedLimit / 1024 / 1024.0} MiB pinned, " +
-          s"${nonPinnedLimit / 1024 / 1024.0} MiB non-pinned, and " +
-          s"${totalOverhead / 1024 / 1024.0} MiB of untracked overhead.")
-      (pinnedLimit, nonPinnedLimit)
-    }
+    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(conf)
     // disable the cuDF provided default pinned pool for now
     if (!PinnedMemoryPool.configureDefaultCudfPinnedPoolSize(0L)) {
       // This is OK in tests because they don't unload/reload our shared
@@ -516,10 +440,90 @@ object GpuDeviceManager extends Logging {
     }
     if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
       logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
-      PinnedMemoryPool.initialize(pinnedSize, gpuId, setCuioDefaultResource)
+      PinnedMemoryPool.initialize(pinnedSize, gpuId, conf.pinnedPoolCuioDefault)
     }
     // Host memory limits must be set after the pinned memory pool is initialized
     HostAlloc.initialize(nonPinnedLimit)
+  }
+
+  // visible for testing
+  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf,
+                                            memCheck: MemoryChecker =
+                                            MemoryCheckerImpl): (Long, Long) = {
+    val perTaskOverhead = conf.perTaskOverhead
+    val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
+    val executorOverhead = conf.executorOverhead
+    val confPinnedSize = conf.pinnedPoolSize
+    val confLimit = conf.offHeapLimit
+    // This min limit of 4GB is somewhat arbitrary, but based on some testing which showed
+    // that the previous minimum of 15 MB * num cores was too little for certain benchmark
+    // queries to complete, whereas this limit was sufficient.
+    val minMemoryLimit = 4 * 1024 * 1024 * 1024
+    val pysparkOverhead = conf.pysparkOverhead
+    val heapSize = conf.heapSize
+    val deviceCount: Int = Cuda.getDeviceCount()
+
+    val memoryLimit = if (confLimit.isDefined) {
+      if (executorOverhead.isEmpty) {
+        logWarning(s"${RapidsConf.EXECUTOR_OVERHEAD_SIZE} is not set")
+      }
+      logInfo(s"using configured ${RapidsConf.OFF_HEAP_LIMIT_SIZE} of ${confLimit.get}")
+      confLimit.get
+    } else {
+      // in case we cannot query the host for available memory due to environmental
+      // constraints, we can fall back to minMemoryLimit via saying there's no available
+      lazy val availableHostMemory = memCheck.getAvailableMemoryBytes.getOrElse(0L)
+      lazy val basedOnHostMemory = (.8 * (availableHostMemory - heapSize - pysparkOverhead) /
+        deviceCount).toLong
+      if (executorOverhead.isDefined) {
+        val basedOnConfiguredOverhead = (.9 * (executorOverhead.get - pysparkOverhead)).toLong
+        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
+          s"a memory limit from .9 * (${RapidsConf.EXECUTOR_OVERHEAD_SIZE} - " +
+          s"${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = .9 * (${executorOverhead.get} - " +
+          s"$pysparkOverhead) = $basedOnConfiguredOverhead")
+        if (basedOnConfiguredOverhead < minMemoryLimit) {
+          logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
+            s"$minMemoryLimit; using the latter")
+          if (minMemoryLimit > basedOnHostMemory) {
+            logWarning(s"the amount of available memory detected on the host is " +
+              s"$basedOnHostMemory, which is less than the minimum")
+          }
+          minMemoryLimit
+        } else {
+          basedOnConfiguredOverhead
+        }
+      } else {
+        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we used " +
+          s"memory limit derived from .8 * (estimated available host memory - " +
+          s"${RapidsConf.HEAP_SIZE} - ${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = " +
+          s".8 * ($availableHostMemory - $heapSize - $pysparkOverhead) = $basedOnHostMemory")
+        if (basedOnHostMemory < minMemoryLimit) {
+          logWarning(s"the memory limit based on host memory of $basedOnHostMemory " +
+            s"is less than the minimum of $minMemoryLimit; using the latter")
+          minMemoryLimit
+        } else {
+          basedOnHostMemory
+        }
+      }
+    }
+
+    // Now we need to know the pinned vs non-pinned limits
+    val pinnedLimit = if (confPinnedSize + totalOverhead <= memoryLimit) {
+      confPinnedSize
+    } else {
+      val ret = memoryLimit - totalOverhead
+      logWarning(s"The configured pinned memory ${confPinnedSize / 1024 / 1024.0} MiB " +
+          s"plus the overhead ${totalOverhead / 1024 / 1024.0} MiB " +
+          s"is larger than the off heap limit ${memoryLimit / 1024 / 1024.0} MiB " +
+          s"dropping pinned memory to ${ret / 1024 / 1024.0} MiB")
+      ret
+    }
+    val nonPinnedLimit = memoryLimit - totalOverhead - pinnedLimit
+    logWarning(s"Off Heap Host Memory configured to be " +
+        s"${pinnedLimit / 1024 / 1024.0} MiB pinned, " +
+        s"${nonPinnedLimit / 1024 / 1024.0} MiB non-pinned, and " +
+        s"${totalOverhead / 1024 / 1024.0} MiB of untracked overhead.")
+    (pinnedLimit, nonPinnedLimit)
   }
 
   /**
