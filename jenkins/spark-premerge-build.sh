@@ -27,7 +27,7 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
+CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda12'}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
 MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CLASSIFIER"
