@@ -24,10 +24,11 @@ import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids.Arm.withResource
 
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 
 trait MemoryChecker {
-  def getAvailableMemoryBytes: Option[Long]
+  def getAvailableMemoryBytes(rapidsConf: RapidsConf): Option[Long]
 }
 
 /**
@@ -39,16 +40,17 @@ trait MemoryChecker {
  */
 object MemoryCheckerImpl extends MemoryChecker with Logging {
   def main(args: Array[String]): Unit = {
-    println(s"Available memory: ${getAvailableMemoryBytes} bytes")
+    val conf = new RapidsConf(new SparkConf())
+    println(s"Available memory: ${getAvailableMemoryBytes(conf)} bytes")
   }
 
-  def getAvailableMemoryBytes: Option[Long] = {
+  def getAvailableMemoryBytes(rapidsConf: RapidsConf): Option[Long] = {
     logInfo("Trying to detect available CPU memory")
     val procLimit = if (isSlurmContainer) {
       logInfo("Slurm environment detected")
       getSlurmMemory
     } else {
-      getCgroupMemory
+      getCgroupMemory(rapidsConf)
     }
 
     val systemLimit = getHostMemory
@@ -123,8 +125,8 @@ object MemoryCheckerImpl extends MemoryChecker with Logging {
     }
   }
 
-  private def getCgroupMemory: Option[Long] = {
-    val (limitPath, usagePath) = getCgroupPaths
+  private def getCgroupMemory(rapidsConf: RapidsConf): Option[Long] = {
+    val (limitPath, usagePath) = getCgroupPaths(rapidsConf)
     // The max appears to be 9223372036854710272 in some cases, which would exceed
     // this otherwise somewhat arbitrary limit. It's not clear exactly what number or
     // range should be valid but realistically anything above 1PB could just be treated
@@ -139,7 +141,18 @@ object MemoryCheckerImpl extends MemoryChecker with Logging {
     } yield limit - usage
   }
 
-  private def getCgroupPaths: (String, String) = {
+  private def getCgroupPaths(rapidsConf: RapidsConf): (String, String) = {
+    val (defaultLimitPath, defaultUsagePath) = detectCgroupPaths
+    val confLimitPath = rapidsConf.cgroupsMemoryLimitPath
+    val confUsagePath = rapidsConf.cgroupsMemoryUsagePath
+
+    val limitPath = confLimitPath.getOrElse(defaultLimitPath)
+    val usagePath = confUsagePath.getOrElse(defaultUsagePath)
+
+    (limitPath, usagePath)
+  }
+
+  private def detectCgroupPaths: (String, String) = {
     val v2Limit = "/sys/fs/cgroup/memory.max"
     if (Files.exists(Paths.get(v2Limit))) {
       (v2Limit, "/sys/fs/cgroup/memory.current")

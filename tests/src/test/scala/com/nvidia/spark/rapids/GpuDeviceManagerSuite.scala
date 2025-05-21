@@ -28,7 +28,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 object TestMemoryChecker extends MemoryChecker {
   private var availMemBytes: Option[Long] = None
 
-  override def getAvailableMemoryBytes: Option[Long] = availMemBytes
+  override def getAvailableMemoryBytes(rapidsConf: RapidsConf): Option[Long] = availMemBytes
 
   def setAvailableMemoryBytes(b: Option[Long]): Unit = availMemBytes = b
 }

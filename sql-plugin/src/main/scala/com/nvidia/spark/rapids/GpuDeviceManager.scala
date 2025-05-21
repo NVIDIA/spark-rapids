@@ -479,7 +479,7 @@ object GpuDeviceManager extends Logging {
     } else {
       // in case we cannot query the host for available memory due to environmental
       // constraints, we can fall back to minMemoryLimit via saying there's no available
-      lazy val availableHostMemory = memCheck.getAvailableMemoryBytes.getOrElse(0L)
+      lazy val availableHostMemory = memCheck.getAvailableMemoryBytes(conf).getOrElse(0L)
       val hostMemUsageFraction = .8
       lazy val basedOnHostMemory = (hostMemUsageFraction * (availableHostMemory - heapSize
         - pysparkOverhead) / deviceCount).toLong
