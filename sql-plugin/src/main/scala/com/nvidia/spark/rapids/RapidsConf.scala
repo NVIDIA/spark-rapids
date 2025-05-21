@@ -374,24 +374,6 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(15L * 1024 * 1024) // 15 MiB
 
-  val EXECUTOR_OVERHEAD_SIZE = conf("spark.executor.memoryOverhead")
-    .startupOnly()
-    .internal()
-    .bytesConf(ByteUnit.BYTE)
-    .createOptional
-
-  val PYSPARK_OVERHEAD_SIZE = conf("spark.executor.pyspark.memory")
-    .startupOnly()
-    .internal()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(0)
-
-  val HEAP_SIZE = conf("spark.executor.memory")
-    .startupOnly()
-    .internal()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(1L * 1024 * 1024 * 1024) // 1GB
-
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
@@ -2818,12 +2800,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val offHeapLimit: Option[Long] = get(OFF_HEAP_LIMIT_SIZE)
 
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
-
-  lazy val executorOverhead: Option[Long] = get(EXECUTOR_OVERHEAD_SIZE)
-
-  lazy val pysparkOverhead: Long = get(PYSPARK_OVERHEAD_SIZE)
-
-  lazy val heapSize: Long = get(HEAP_SIZE)
 
   lazy val concurrentGpuTasks: Option[Integer] = get(CONCURRENT_GPU_TASKS)
 

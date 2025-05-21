@@ -20,7 +20,8 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.BeforeAndAfter
 import org.scalatest.funsuite.AnyFunSuite
-import org.apache.spark.{SparkConf, SparkEnv}
+
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
@@ -87,6 +88,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
       RapidsConf.RMM_ALLOC_RESERVE.key -> "0",
       RapidsConf.RMM_ALLOC_FRACTION.key -> "0.3",
       RapidsConf.RMM_ALLOC_MAX_FRACTION.key -> "0.3"))
-    println(GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf))
+    val sparkConf = new SparkConf()
+    println(GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf))
   }
 }

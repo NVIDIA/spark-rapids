@@ -25,7 +25,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.spill.SpillFramework
 
-import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
 import org.apache.spark.sql.internal.SQLConf
@@ -430,8 +430,9 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def initializePinnedPoolAndOffHeapLimits(gpuId: Int, conf: RapidsConf): Unit = {
-    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(conf)
+  private def initializePinnedPoolAndOffHeapLimits(gpuId: Int, conf: RapidsConf,
+                                                   sparkConf: SparkConf): Unit = {
+    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(conf, sparkConf)
     // disable the cuDF provided default pinned pool for now
     if (!PinnedMemoryPool.configureDefaultCudfPinnedPoolSize(0L)) {
       // This is OK in tests because they don't unload/reload our shared
@@ -447,25 +448,31 @@ object GpuDeviceManager extends Logging {
   }
 
   // visible for testing
-  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf,
+  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf, sparkConf: SparkConf,
                                             memCheck: MemoryChecker =
                                             MemoryCheckerImpl): (Long, Long) = {
     val perTaskOverhead = conf.perTaskOverhead
     val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
-    val executorOverhead = conf.executorOverhead
     val confPinnedSize = conf.pinnedPoolSize
     val confLimit = conf.offHeapLimit
     // This min limit of 4GB is somewhat arbitrary, but based on some testing which showed
     // that the previous minimum of 15 MB * num cores was too little for certain benchmark
     // queries to complete, whereas this limit was sufficient.
     val minMemoryLimit = 4 * 1024 * 1024 * 1024
-    val pysparkOverhead = conf.pysparkOverhead
-    val heapSize = conf.heapSize
+
     val deviceCount: Int = Cuda.getDeviceCount()
+
+    val executorOverheadKey = "spark.executor.memoryOverhead"
+    val pysparkOverheadKey = "spark.executor.pyspark.memory"
+    val heapSizeKey = "spark.executor.memory"
+
+    val executorOverhead = sparkConf.getOption(executorOverheadKey).map(_.toLong)
+    val pysparkOverhead = sparkConf.getLong(pysparkOverheadKey, 0)
+    val heapSize = sparkConf.getLong(heapSizeKey, 1024 * 1024 * 1024)
 
     val memoryLimit = if (confLimit.isDefined) {
       if (executorOverhead.isEmpty) {
-        logWarning(s"${RapidsConf.EXECUTOR_OVERHEAD_SIZE} is not set")
+        logWarning(s"$executorOverheadKey is not set")
       }
       logInfo(s"using configured ${RapidsConf.OFF_HEAP_LIMIT_SIZE} of ${confLimit.get}")
       confLimit.get
@@ -478,8 +485,8 @@ object GpuDeviceManager extends Logging {
       if (executorOverhead.isDefined) {
         val basedOnConfiguredOverhead = (.9 * (executorOverhead.get - pysparkOverhead)).toLong
         logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
-          s"a memory limit from .9 * (${RapidsConf.EXECUTOR_OVERHEAD_SIZE} - " +
-          s"${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = .9 * (${executorOverhead.get} - " +
+          s"a memory limit from .9 * ($executorOverheadKey - " +
+          s"$pysparkOverheadKey) = .9 * (${executorOverhead.get} - " +
           s"$pysparkOverhead) = $basedOnConfiguredOverhead")
         if (basedOnConfiguredOverhead < minMemoryLimit) {
           logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
@@ -495,7 +502,7 @@ object GpuDeviceManager extends Logging {
       } else {
         logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we used " +
           s"memory limit derived from .8 * (estimated available host memory - " +
-          s"${RapidsConf.HEAP_SIZE} - ${RapidsConf.PYSPARK_OVERHEAD_SIZE}) = " +
+          s"$heapSizeKey - $pysparkOverheadKey) = " +
           s".8 * ($availableHostMemory - $heapSize - $pysparkOverhead) = $basedOnHostMemory")
         if (basedOnHostMemory < minMemoryLimit) {
           logWarning(s"the memory limit based on host memory of $basedOnHostMemory " +
@@ -544,8 +551,9 @@ object GpuDeviceManager extends Logging {
             "Cannot initialize memory due to previous shutdown failing")
         } else if (singletonMemoryInitialized == Uninitialized) {
           val gpu = gpuId.getOrElse(findGpuAndAcquire())
-          val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
-          initializePinnedPoolAndOffHeapLimits(gpu, conf)
+          val sparkConf = SparkEnv.get.conf
+          val conf = rapidsConf.getOrElse(new RapidsConf(sparkConf))
+          initializePinnedPoolAndOffHeapLimits(gpu, conf, sparkConf)
           initializeRmmGpuPool(gpu, conf)
           // we want to initialize this last because we want to take advantage
           // of pinned memory if it is configured
