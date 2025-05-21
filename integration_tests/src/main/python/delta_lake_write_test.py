@@ -869,11 +869,11 @@ def do_test_optimize_write(spark_tmp_path, aqe_enabled, do_write, num_chunks):
     confs=copy_and_update(delta_writes_enabled_conf, {
         "spark.sql.adaptive.enabled" : str(aqe_enabled)
     })
-    data_path = spark_tmp_path + "/DELTA_DATA1"
+    data_path = os.path.join(spark_tmp_path, "DELTA_DATA1")
     do_write(confs, data_path, is_optimize_write=False)
     opmetrics = get_last_operation_metrics(data_path + "/GPU")
     assert int(opmetrics["numFiles"]) == num_chunks
-    data_path = spark_tmp_path + "/DELTA_DATA2"
+    data_path = os.path.join(spark_tmp_path, "DELTA_DATA2")
     do_write(confs, data_path, is_optimize_write=True)
     opmetrics = get_last_operation_metrics(data_path + "/GPU")
     assert int(opmetrics["numFiles"]) == 1
