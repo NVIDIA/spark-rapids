@@ -42,9 +42,10 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
   override def hasNext: Boolean = reader.next()
 
   override def next(): ColumnarBatch = {
+    val batch = reader.get()
     require(curPostProcessor != null,
       "The post processor should not be null when calling next()")
-    curPostProcessor.process(reader.get())
+    curPostProcessor.process(batch)
   }
 
   private def createParquetReader() = {
