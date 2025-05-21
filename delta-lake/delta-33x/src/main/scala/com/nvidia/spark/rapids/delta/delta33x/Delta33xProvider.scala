@@ -21,16 +21,34 @@ import com.nvidia.spark.rapids.{GpuReadParquetFileFormat, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
+import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
+import org.apache.spark.sql.delta.catalog.DeltaCatalog
+import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
 object Delta33xProvider extends DeltaIOProvider {
+
+  override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = {
+    Map.empty[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]]
+  }
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
+      val requiredSchema = meta.wrapped.requiredSchema
+      if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
+        meta.willNotWorkOnGpu(
+          s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
+      }
+      if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
+        meta.willNotWorkOnGpu(
+          s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported")
+      }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
@@ -38,20 +56,40 @@ object Delta33xProvider extends DeltaIOProvider {
   }
 
   override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
-    val cpuFormat = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    GpuDelta33xParquetFileFormat(cpuFormat.protocol, cpuFormat.metadata,
-      tablePath = cpuFormat.tablePath)
+    val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
+    GpuDelta33xParquetFileFormat(fmt.protocol, fmt.metadata, fmt.nullableRowTrackingFields,
+      fmt.optimizationsEnabled, fmt.tablePath, fmt.isCDCRead)
   }
 
-  def convertToGpu(cpuExec: AtomicReplaceTableAsSelectExec, meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
-    throw new UnsupportedOperationException("We don't support AtomicReplaceTableAsSelectExec")
+  override def convertToGpu(
+    cpuExec: AtomicCreateTableAsSelectExec,
+    meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+
+    val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
+    GpuAtomicCreateTableAsSelectExec(
+      DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.query,
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.ifNotExists)
   }
 
-  def convertToGpu(cpuExec: AtomicCreateTableAsSelectExec, meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
-    throw new UnsupportedOperationException("We don't support AtomicReplaceTableAsSelectExec")
-  }
-  def getRunnableCommandRules: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] = {
-    throw new UnsupportedOperationException("We don't support AtomicReplaceTableAsSelectExec")
+  override def convertToGpu(
+    cpuExec: AtomicReplaceTableAsSelectExec,
+    meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
+
+    val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
+    GpuAtomicReplaceTableAsSelectExec(
+      DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.query,
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.orCreate,
+      cpuExec.invalidateCache)
   }
 
 }

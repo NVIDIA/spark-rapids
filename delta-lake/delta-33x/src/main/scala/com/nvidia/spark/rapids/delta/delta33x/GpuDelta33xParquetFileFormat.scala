@@ -24,12 +24,11 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.delta.{DeltaColumnMapping, DeltaColumnMappingMode, IdMapping, NameMapping, TypeWidening}
-import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{MetadataBuilder, StructType}
@@ -143,13 +142,5 @@ case class GpuDelta33xParquetFileFormat(
 
     // We should never come here as we should have fallen back to the CPU
     throw new IllegalStateException("We don't support reading deletion vectors on the GPU")
-  }
-}
-
-object GpuDelta33xParquetFileFormat {
-  def convertToGpu(relation: HadoopFsRelation): GpuDelta33xParquetFileFormat = {
-    val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    GpuDelta33xParquetFileFormat(fmt.protocol, fmt.metadata, fmt.nullableRowTrackingFields,
-      fmt.optimizationsEnabled, fmt.tablePath, fmt.isCDCRead)
   }
 }
