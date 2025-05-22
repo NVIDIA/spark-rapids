@@ -98,44 +98,39 @@ private class SingleFileReader(
   override def hasNext: Boolean = reader.next()
 
   override def next(): ColumnarBatch = {
-    withResource(reader.get()) { batch =>
-      postProcessor.process(batch)
-    }
+    postProcessor.process(reader.get())
   }
 
   private def open() = {
-    withResource(file.newReader) { _ =>
+    val filteredParquet = super.filterParquetBlocks(file, conf.expectedSchema)
 
-      val filteredParquet = super.filterParquetBlocks(file, conf.expectedSchema)
+    val parquetPartReader = new ParquetPartitionReader(conf.conf,
+      file.sparkPartitionedFile,
+      new Path(file.file.location()),
+      filteredParquet.blocks,
+      filteredParquet.schema,
+      conf.caseSensitive,
+      filteredParquet.readSchema,
+      conf.parquetDebugDumpPrefix,
+      conf.parquetDebugDumpAlways,
+      conf.maxBatchSizeRows,
+      conf.maxBatchSizeBytes,
+      conf.targetBatchSizeBytes,
+      conf.useChunkedReader,
+      conf.maxChunkedReaderMemoryUsageSizeBytes,
+      CpuCompressionConfig.disabled(),
+      conf.metrics,
+      DateTimeRebaseCorrected, // dateRebaseMode
+      DateTimeRebaseCorrected, // timestampRebaseMode
+      true, // hasInt96Timestamps
+      false) // useFieldId
 
-      val parquetPartReader = new ParquetPartitionReader(conf.conf,
-        file.sparkPartitionedFile,
-        new Path(file.file.location()),
-        filteredParquet.blocks,
-        filteredParquet.schema,
-        conf.caseSensitive,
-        filteredParquet.readSchema,
-        conf.parquetDebugDumpPrefix,
-        conf.parquetDebugDumpAlways,
-        conf.maxBatchSizeRows,
-        conf.maxBatchSizeBytes,
-        conf.targetBatchSizeBytes,
-        conf.useChunkedReader,
-        conf.maxChunkedReaderMemoryUsageSizeBytes,
-        CpuCompressionConfig.disabled(),
-        conf.metrics,
-        DateTimeRebaseCorrected, // dateRebaseMode
-        DateTimeRebaseCorrected, // timestampRebaseMode
-        true, // hasInt96Timestamps
-        false) // useFieldId
+    val parquetReader = new PartitionReaderWithBytesRead(parquetPartReader)
+    val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet.schema,
+      idToConstant,
+      conf.expectedSchema)
 
-      val parquetReader = new PartitionReaderWithBytesRead(parquetPartReader)
-      val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet.schema,
-        idToConstant,
-        conf.expectedSchema)
-
-      inited = true
-      (parquetReader, postProcessor)
-    }
+    inited = true
+    (parquetReader, postProcessor)
   }
 }

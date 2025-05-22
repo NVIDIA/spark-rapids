@@ -162,6 +162,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Cast from string to timestamp") {
+    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
+    assumePriorToSpark400
     testCastStringTo(DataTypes.TimestampType,
       timestampsAsStringsSeq(castStringToTimestamp = true, validOnly = false))
   }
@@ -262,6 +264,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Test all supported casts with in-range values") {
+    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
+    assumePriorToSpark400
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
@@ -573,9 +577,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual(
-    "Test cast from timestamp", timestampDatesMsecParquet)(timestampCastFn)
+    "Test cast from timestamp", timestampDatesMsecParquet,
+      assumeCondition = _ => (!isSpark400OrLater,
+        "Spark version not before 4.0.0, " +
+        "non-ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12019," +
+        "ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12714"))(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
+    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
+    assumePriorToSpark400
     val oldtz = TimeZone.getDefault
     try {
       TimeZone.setDefault(TimeZone.getTimeZone("Etc/UTC-0"))
@@ -869,9 +879,21 @@ class CastOpSuite extends GpuExpressionTestSuite {
       // Catch out of range exception when AnsiMode is on
       assert(
         exceptionContains(
-        intercept[org.apache.spark.SparkException] {
-          nonOverflowCase(dataType, generator, precision, scale)
-        },
+          if (isSpark400OrLater) {
+            // For Spark 4.0+, catch the SparkArithmeticException by class name since
+            // it is a private class and cannot be caught using intercept[SparkArithmeticException]
+            try {
+              nonOverflowCase(dataType, generator, precision, scale)
+              new Exception("Expected an arithmetic exception but none was thrown")
+            } catch {
+              case e: Exception if e.getClass.getName.endsWith("SparkArithmeticException") =>
+                e
+            }
+          } else {
+            intercept[org.apache.spark.SparkException] {
+              nonOverflowCase(dataType, generator, precision, scale)
+            }
+          },
         GpuCast.OVERFLOW_MESSAGE)
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
