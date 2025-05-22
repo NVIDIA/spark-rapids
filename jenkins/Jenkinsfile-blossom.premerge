@@ -195,7 +195,6 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') { // step only timeout for test run
                                     try {
-                                        error "test sync dir"
                                         common.pvcM2Cache(this, PVC_MOUNT_PATH)
                                         sh "$PREMERGE_SCRIPT mvn_verify"
                                         step([$class                : 'JacocoPublisher',
@@ -236,7 +235,6 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') {
                                     try {
-                                        error "test sync dir"
                                         common.pvcM2Cache(this, PVC_MOUNT_PATH)
                                         sh "$PREMERGE_SCRIPT ci_2"
                                     } catch(e) {
@@ -271,7 +269,6 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') {
                                     try {
-                                        error "test sync dir"
                                         common.pvcM2Cache(this, PVC_MOUNT_PATH)
                                         sh "$PREMERGE_SCRIPT ci_scala213"
                                     } catch(e) {
