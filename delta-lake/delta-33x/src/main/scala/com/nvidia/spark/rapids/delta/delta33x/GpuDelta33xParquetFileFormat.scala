@@ -21,16 +21,18 @@ import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.internal.MDC
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.delta.{DeltaColumnMapping, DeltaColumnMappingMode, IdMapping, NameMapping, TypeWidening}
+import org.apache.spark.sql.delta.{DeltaColumnMapping, DeltaColumnMappingMode, IdMapping, NameMapping, NoMapping, TypeWidening}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
+import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{MetadataBuilder, StructType}
 
 case class GpuDelta33xParquetFileFormat(
@@ -88,6 +90,42 @@ case class GpuDelta33xParquetFileFormat(
     } else schema
   }
 
+  /**
+   * Helper method copied from Apache Spark
+   * sql/catalyst/src/main/scala/org/apache/spark/sql/connector/catalog/CatalogV2Implicits.scala
+   */
+  private def quoteIfNeeded(part: String): String = {
+    if (part.matches("[a-zA-Z0-9_]+") && !part.matches("\\d+")) {
+      part
+    } else {
+      s"`${part.replace("`", "``")}`"
+    }
+  }
+
+  /**
+   * Prepares filters so that they can be pushed down into the Parquet reader.
+   *
+   * If column mapping is enabled, then logical column names in the filters will be replaced with
+   * their corresponding physical column names. This is necessary as the Parquet files will use
+   * physical column names, and the requested schema pushed down in the Parquet reader will also use
+   * physical column names.
+   */
+  private def prepareFiltersForRead(filters: Seq[Filter]): Seq[Filter] = {
+    if (!optimizationsEnabled) {
+      Seq.empty
+    } else if (columnMappingMode != NoMapping) {
+      val physicalNameMap = DeltaColumnMapping.getLogicalNameToPhysicalNameMap(referenceSchema)
+        .map {
+          case (logicalName, physicalName) =>
+            (logicalName.map(quoteIfNeeded).mkString("."),
+            physicalName.map(quoteIfNeeded).mkString("."))
+          }
+      filters.flatMap(translateFilterForColumnMapping(_, physicalNameMap))
+    } else {
+      filters
+    }
+  }
+
   override def isSplitable(sparkSession: SparkSession,
      options: Map[String, String],
      path: Path): Boolean = optimizationsEnabled
@@ -115,7 +153,7 @@ case class GpuDelta33xParquetFileFormat(
       prepareSchemaForRead(dataSchema),
       prepareSchemaForRead(partitionSchema),
       prepareSchemaForRead(requiredSchema),
-      filters,
+      prepareFiltersForRead(filters),
       options,
       hadoopConf,
       metrics)
@@ -142,5 +180,69 @@ case class GpuDelta33xParquetFileFormat(
 
     // We should never come here as we should have fallen back to the CPU
     throw new IllegalStateException("We don't support reading deletion vectors on the GPU")
+  }
+
+  /**
+   * Translates the filter to use physical column names instead of logical column names.
+   * This is needed when the column mapping mode is set to `NameMapping` or `IdMapping`
+   * to match the requested schema that's passed to the [[ParquetFileFormat]].
+   */
+  private def translateFilterForColumnMapping(
+     filter: Filter,
+     physicalNameMap: Map[String, String]): Option[Filter] = {
+    object PhysicalAttribute {
+      def unapply(attribute: String): Option[String] = {
+        physicalNameMap.get(attribute)
+      }
+    }
+
+    filter match {
+      case EqualTo(PhysicalAttribute(physicalAttribute), value) =>
+        Some(EqualTo(physicalAttribute, value))
+      case EqualNullSafe(PhysicalAttribute(physicalAttribute), value) =>
+        Some(EqualNullSafe(physicalAttribute, value))
+      case GreaterThan(PhysicalAttribute(physicalAttribute), value) =>
+        Some(GreaterThan(physicalAttribute, value))
+      case GreaterThanOrEqual(PhysicalAttribute(physicalAttribute), value) =>
+        Some(GreaterThanOrEqual(physicalAttribute, value))
+      case LessThan(PhysicalAttribute(physicalAttribute), value) =>
+        Some(LessThan(physicalAttribute, value))
+      case LessThanOrEqual(PhysicalAttribute(physicalAttribute), value) =>
+        Some(LessThanOrEqual(physicalAttribute, value))
+      case In(PhysicalAttribute(physicalAttribute), values) =>
+        Some(In(physicalAttribute, values))
+      case IsNull(PhysicalAttribute(physicalAttribute)) =>
+        Some(IsNull(physicalAttribute))
+      case IsNotNull(PhysicalAttribute(physicalAttribute)) =>
+        Some(IsNotNull(physicalAttribute))
+      case And(left, right) =>
+        val newLeft = translateFilterForColumnMapping(left, physicalNameMap)
+        val newRight = translateFilterForColumnMapping(right, physicalNameMap)
+        (newLeft, newRight) match {
+          case (Some(l), Some(r)) => Some(And(l, r))
+          case (Some(l), None) => Some(l)
+          case (_, _) => newRight
+        }
+      case Or(left, right) =>
+        val newLeft = translateFilterForColumnMapping(left, physicalNameMap)
+        val newRight = translateFilterForColumnMapping(right, physicalNameMap)
+        (newLeft, newRight) match {
+          case (Some(l), Some(r)) => Some(Or(l, r))
+          case (_, _) => None
+        }
+      case Not(child) =>
+        translateFilterForColumnMapping(child, physicalNameMap).map(Not)
+      case StringStartsWith(PhysicalAttribute(physicalAttribute), value) =>
+        Some(StringStartsWith(physicalAttribute, value))
+      case StringEndsWith(PhysicalAttribute(physicalAttribute), value) =>
+        Some(StringEndsWith(physicalAttribute, value))
+      case StringContains(PhysicalAttribute(physicalAttribute), value) =>
+        Some(StringContains(physicalAttribute, value))
+      case AlwaysTrue() => Some(AlwaysTrue())
+      case AlwaysFalse() => Some(AlwaysFalse())
+      case _ =>
+        logError(s"Failed to translate filter ${MDC(DeltaLogKeys.FILTER, filter)}")
+        None
+    }
   }
 }
