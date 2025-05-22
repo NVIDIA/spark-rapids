@@ -20,8 +20,8 @@ import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, PartitionReaderWithByte
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, ParquetPartitionReader}
-import org.apache.hadoop.fs.Path
 import java.util.{Map => JMap}
+import org.apache.hadoop.fs.Path
 import scala.annotation.tailrec
 
 import org.apache.spark.sql.rapids.InputFileUtils
