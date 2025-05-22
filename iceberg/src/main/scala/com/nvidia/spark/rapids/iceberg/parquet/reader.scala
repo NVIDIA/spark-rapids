@@ -172,6 +172,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
             bloomFilter.shouldRead(typeWithIds, rowGroup, reader.getBloomFilterDataReader(rowGroup))
       }
     }.getOrElse(blocks)
+      .toSeq
   }
 
   def clipBlocksToSchema(fileReadSchema: ShadedMessageType,

@@ -36,5 +36,5 @@ abstract class GpuSparkPartitioningAwareScan[T <: PartitionScanTask](
 
   override def groupingKeyType(): Types.StructType = cpuScan.groupingKeyType()
 
-  override def taskGroups(): Seq[_ <: ScanTaskGroup[_]] = cpuScan.taskGroups().asScala
+  override def taskGroups(): Seq[_ <: ScanTaskGroup[_]] = cpuScan.taskGroups().asScala.toSeq
 }
