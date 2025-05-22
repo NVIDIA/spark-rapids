@@ -48,6 +48,29 @@ class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
   }
 }
 
+/**
+ *  NvtxId with option to pass one or more nano timing metric(s) that are updated upon close
+ *  by the amount of time spent in the range
+ */
+object NvtxIdWithMetrics {
+
+  def apply[V](nvtxId: NvtxId, metrics: GpuMetric*)(block: => V): V = {
+    val needTracks = metrics.map(_.tryActivateTimer())
+    val start = System.nanoTime()
+
+    try {
+      nvtxId.apply(block)
+    } finally {
+      val time = System.nanoTime() - start
+      metrics.toSeq.zip(needTracks).foreach { pair =>
+        if (pair._2) {
+          pair._1.deactivateTimer(time)
+        }
+      }
+    }
+  }
+}
+
 class MetricRange(val metrics: GpuMetric*) extends AutoCloseable {
   val needTracks = metrics.map(_.tryActivateTimer())
   private val start = System.nanoTime()

@@ -245,6 +245,15 @@ case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
   override def children: Seq[Expression] = gpuOrder
 }
 
+object OpNameNvtxMap {
+  private val map = Map(
+    "GpuCoalesceBatches: collect" -> NvtxRegistry.GPU_COALESCE_BATCHES_COLLECT,
+    "build batch: collect" -> NvtxRegistry.BUILD_BATCH_COLLECT
+  )
+
+  def get(opName: String) = map.getOrElse(opName, NvtxRegistry.INVALID)
+}
+
 abstract class AbstractGpuCoalesceIterator(
     inputIter: Iterator[ColumnarBatch],
     goal: CoalesceSizeGoal,
@@ -257,7 +266,8 @@ abstract class AbstractGpuCoalesceIterator(
     opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Logging {
 
-  private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
+  private val iter = new CollectTimeIterator(
+    OpNameNvtxMap.get(s"$opName: collect"), inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
 
