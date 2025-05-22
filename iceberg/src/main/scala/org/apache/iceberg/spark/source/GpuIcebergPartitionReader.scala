@@ -16,7 +16,6 @@
 
 package org.apache.iceberg.spark.source
 
-import java.nio.ByteBuffer
 import java.util.{Map => JMap}
 
 import scala.collection.JavaConverters._
@@ -24,20 +23,14 @@ import scala.collection.JavaConverters._
 import com.nvidia.spark.rapids.GpuMetric
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuCoalescingIcebergParquetReader, GpuIcebergParquetReader, GpuIcebergParquetReaderConf, GpuMultiThreadIcebergParquetReader, GpuSingleThreadIcebergParquetReader, IcebergPartitionedFile, MultiFile, MultiThread, SingleFile, ThreadConf}
-import org.apache.avro.generic.GenericData
-import org.apache.avro.util.Utf8
-import org.apache.iceberg.{FileFormat, FileScanTask, MetadataColumns, Partitioning, ScanTask, ScanTaskGroup, Schema, StructLike, Table, TableProperties}
+import org.apache.iceberg.{FileFormat, FileScanTask, MetadataColumns, Partitioning, ScanTask, ScanTaskGroup, Schema, Table, TableProperties}
 import org.apache.iceberg.encryption.EncryptedFiles
 import org.apache.iceberg.mapping.NameMappingParser
-import org.apache.iceberg.types.{Type, Types}
-import org.apache.iceberg.types.Type.TypeID
-import org.apache.iceberg.util.{ByteBuffers, PartitionUtil}
+import org.apache.iceberg.types.Types
+import org.apache.iceberg.util.PartitionUtil
 
-import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.connector.read.PartitionReader
-import org.apache.spark.sql.types.Decimal
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 
 class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
@@ -159,57 +152,14 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
 }
 
 private object GpuIcebergPartitionReader {
-  def constantsMap(task: FileScanTask, readSchema: Schema, table: Table): JMap[Integer, _] = {
+  private def constantsMap(task: FileScanTask, readSchema: Schema, table: Table): JMap[Integer, _]
+  = {
     if (readSchema.findField(MetadataColumns.PARTITION_COLUMN_ID) != null) {
       val partitionType: Types.StructType = Partitioning.partitionType(table)
-      PartitionUtil.constantsMap(task, partitionType, convertConstant)
+      PartitionUtil.constantsMap(task, partitionType, BaseReader.convertConstant)
     }
     else {
-      PartitionUtil.constantsMap(task, convertConstant)
-    }
-  }
-
-  private def convertConstant(`type`: Type, value: AnyRef): AnyRef = {
-    if (value == null) {
-      return null
-    }
-    `type`.typeId match {
-      case TypeID.DECIMAL =>
-        Decimal.apply(value.asInstanceOf[java.math.BigDecimal])
-      case TypeID.STRING =>
-        value match {
-          case utf8: Utf8 =>
-            UTF8String.fromBytes(utf8.getBytes, 0, utf8.getByteLength)
-          case _ =>
-            UTF8String.fromString(value.toString)
-        }
-      case TypeID.FIXED =>
-        value match {
-          case v: Array[Byte] => v
-          case fixed: GenericData.Fixed => fixed.bytes
-          case b => ByteBuffers.toByteArray(b.asInstanceOf[ByteBuffer])
-        }
-      case TypeID.BINARY =>
-        ByteBuffers.toByteArray(value.asInstanceOf[ByteBuffer])
-      case TypeID.STRUCT =>
-        val structType: Types.StructType = `type`.asInstanceOf[Types.StructType]
-        if (structType.fields.isEmpty) {
-          return new GenericInternalRow(Array.empty[Any])
-        }
-        val struct: StructLike = value.asInstanceOf[StructLike]
-
-        val values = structType.fields()
-          .asScala
-          .zipWithIndex
-          .map {
-            case (field, index) =>
-              val fieldType: Type = field.`type`
-              val value = struct.get(index, fieldType.typeId.javaClass).asInstanceOf[AnyRef]
-              convertConstant(fieldType, value).asInstanceOf[Any]
-          }
-          .toArray
-        new GenericInternalRow(values)
-      case _ => value
+      PartitionUtil.constantsMap(task, BaseReader.convertConstant)
     }
   }
 }

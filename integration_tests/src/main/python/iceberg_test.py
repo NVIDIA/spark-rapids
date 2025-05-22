@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
 from marks import allow_non_gpu, iceberg, ignore_order
-from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, \
+from spark_session import is_databricks_runtime, with_cpu_session, \
     with_gpu_session, is_spark_35x
 
 iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
@@ -26,6 +26,9 @@ iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
                      MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
                      MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
                      MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+
+iceberg_primitive_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                               string_gen, boolean_gen, date_gen, timestamp_gen, binary_gen] + decimal_gens]
 
 iceberg_gens_list = [
     [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -57,7 +60,7 @@ def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320() or is_databricks_runtime(),
+@pytest.mark.skipif(is_databricks_runtime(),
                     reason="AQE+DPP not supported until Spark 3.2.0+ and AQE+DPP not supported on Databricks")
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
@@ -95,11 +98,28 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize("data_gens", iceberg_primitive_gens_list, ids=idfn)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, reader_type):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = gen_df(spark, gen_list)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG AS SELECT * FROM {}".format(table, tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT * FROM {}".format(table)),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 # TODO: Add support for nested data type: https://github.com/NVIDIA/spark-rapids/issues/12298
 @pytest.mark.allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
-def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, reader_type):
+def test_iceberg_parquet_read_round_trip_all_types(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -158,9 +178,7 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
     ("uncompressed", None),
     ("snappy", None),
     ("gzip", None),
-    pytest.param(("lz4", "Unsupported Parquet compression type"),
-                 marks=pytest.mark.skipif(is_before_spark_320(),
-                                          reason="Hadoop with Spark 3.1.x does not support lz4 by default")),
+    pytest.param(("lz4", "Unsupported Parquet compression type")),
     ("zstd", None)], ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_info, reader_type):
@@ -299,7 +317,6 @@ def test_iceberg_read_metadata_count(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.skipif(is_before_spark_320(), reason="Spark 3.1.x has a catalog bug precluding scope prefix in table names")
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
@@ -323,7 +340,6 @@ def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.skipif(is_before_spark_320(), reason="Spark 3.1.x has a catalog bug precluding scope prefix in table names")
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
@@ -542,7 +558,6 @@ def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 @iceberg
-@pytest.mark.skipif(is_before_spark_320(), reason="merge-on-read not supported on Spark 3.1.x")
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
