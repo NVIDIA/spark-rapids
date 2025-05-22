@@ -18,20 +18,38 @@ package org.apache.iceberg.spark.source
 
 import java.util.Objects
 
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
+import org.apache.iceberg.{Schema, SchemaParser}
+
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReaderFactory}
+import org.apache.spark.util.SerializableConfiguration
 
 class GpuSparkBatch(
     val cpuBatch: SparkBatch,
     val parentScan: GpuSparkScan,
 ) extends Batch  {
   override def createReaderFactory(): PartitionReaderFactory = {
-    throw new UnsupportedOperationException(
-      "GpuSparkBatch does not support createReaderFactory()")
+    new GpuReaderFactory(
+      parentScan.metrics,
+      parentScan.rapidsConf,
+      parentScan.queryUsesInputFile)
   }
 
   override def planInputPartitions(): Array[InputPartition] = {
+    val expectedSchema = FieldUtils.readField(cpuBatch, "expectedSchema", true)
+      .asInstanceOf[Schema]
+    val expectedSchemaString = SchemaParser.toJson(expectedSchema)
+
+    val sparkContext = SparkSession.getActiveSession.get.sparkContext
+    val hadoopConf = sparkContext.broadcast(
+      new SerializableConfiguration(sparkContext.hadoopConfiguration))
+
     cpuBatch.planInputPartitions().map { partition =>
-      new GpuSparkInputPartition(partition.asInstanceOf[SparkInputPartition])
+      new GpuSparkInputPartition(partition.asInstanceOf[SparkInputPartition],
+        parentScan.rapidsConf,
+        hadoopConf,
+        expectedSchemaString)
     }
   }
 

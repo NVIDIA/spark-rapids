@@ -16,12 +16,45 @@
 
 package org.apache.iceberg.spark.source
 
+import com.nvidia.spark.rapids.RapidsConf
+import org.apache.iceberg.{Schema, SchemaParser}
+
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}
+import org.apache.spark.util.SerializableConfiguration
 
-class GpuSparkInputPartition(val cpuInputPartition: SparkInputPartition) extends
+class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
+    rapidsConf: RapidsConf,
+    val hadoopConf: Broadcast[SerializableConfiguration],
+    val expectedSchemaStr: String) extends
   InputPartition with HasPartitionKey with Serializable {
-  override def preferredLocations(): Array[String] = cpuInputPartition.preferredLocations()
 
-  override def partitionKey(): InternalRow = cpuInputPartition.partitionKey()
+  val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
+  val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
+  val gpuTargetBatchSizeBytes: Long = rapidsConf.gpuTargetBatchSizeBytes
+  val maxGpuColumnSizeBytes: Long = rapidsConf.maxGpuColumnSizeBytes
+  val chunkedReaderEnabled: Boolean = rapidsConf.chunkedReaderEnabled
+  val parquetDebugDumpPrefix: Option[String] = rapidsConf.parquetDebugDumpPrefix
+  val parquetDebugDumpAlways: Boolean = rapidsConf.parquetDebugDumpAlways
+
+  val maxChunkedReaderMemoryUsageSizeBytes: Long = {
+    if (rapidsConf.limitChunkedReaderMemoryUsage) {
+      val limitRatio = rapidsConf.chunkedReaderMemoryUsageRatio
+      (limitRatio * rapidsConf.gpuTargetBatchSizeBytes).toLong
+    } else {
+      0L
+    }
+  }
+
+  val multiThreadReadNumThreads: Int = rapidsConf.multiThreadReadNumThreads
+  val maxNumParquetFilesParallel: Int = rapidsConf.maxNumParquetFilesParallel
+
+
+  override def preferredLocations(): Array[String] = cpuPartition.preferredLocations()
+  override def partitionKey(): InternalRow = cpuPartition.partitionKey()
+
+  @transient lazy val expectedSchema: Schema = {
+    SchemaParser.fromJson(expectedSchemaStr)
+  }
 }

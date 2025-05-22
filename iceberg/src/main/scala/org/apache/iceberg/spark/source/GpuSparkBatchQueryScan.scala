@@ -43,6 +43,12 @@ class GpuSparkBatchQueryScan(
     .asScala
     .toList
 
+  def hasNestedType: Boolean = {
+    cpuScan.expectedSchema().asStruct().fields().asScala.exists { field =>
+      field.`type`().isNestedType
+    }
+  }
+
   override def filterAttributes(): Array[NamedReference] = cpuScan.filterAttributes()
 
   override def filter(predicates: Array[Predicate]): Unit = cpuScan.filter(predicates)
