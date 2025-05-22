@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
+import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.resource.ResourceInformation
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
@@ -468,7 +469,7 @@ object GpuDeviceManager extends Logging {
 
     val executorOverhead = sparkConf.getOption(executorOverheadKey).map(_.toLong)
     val pysparkOverhead = sparkConf.getLong(pysparkOverheadKey, 0)
-    val heapSize = sparkConf.getLong(heapSizeKey, 1024 * 1024 * 1024)
+    val heapSize = ConfHelper.byteFromString(sparkConf.get(heapSizeKey, "1g"), ByteUnit.BYTE)
 
     val memoryLimit = if (confLimit.isDefined) {
       if (executorOverhead.isEmpty) {

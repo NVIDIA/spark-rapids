@@ -186,4 +186,24 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(expectedPinned)(pinnedSize)
     assertResult(0)(nonPinnedSize)
   }
+
+  test("RMM get memory limits zero config with host mem with heap size set") {
+    val pySparkOverhead = (2L * 1024 * 1024 * 1024).toString
+    val sparkConf = new SparkConf()
+      .set("spark.executor.pyspark.memory", pySparkOverhead)
+      .set("spark.executor.memory", "2g")
+    val rapidsConf = new RapidsConf(sparkConf)
+    val hostBytes = 16L * 1024 * 1024 * 1024 // 16GB
+    TestMemoryChecker.setAvailableMemoryBytes(Some(hostBytes))
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+        TestMemoryChecker)
+    TestMemoryChecker.setAvailableMemoryBytes(None)
+
+    // .8 * (16GB minMemoryLimit - 2GB heapSize - 2GB pyspark) - 15MB totalOverhead
+    val expectedNonPinned = (.8 * ((16L - 4L) * 1024 * 1024 * 1024)).toLong - (15L * 1024 * 1024)
+
+    assertResult(0)(pinnedSize)
+    assertResult(expectedNonPinned)(nonPinnedSize)
+  }
 }
