@@ -192,6 +192,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
 
                     steps {
                         script {
+                            unstash "source_tree"
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') { // step only timeout for test run
                                     try {
