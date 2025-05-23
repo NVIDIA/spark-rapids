@@ -21,8 +21,9 @@ from spark_session import *
 from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import math
+import pytz
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
@@ -838,9 +839,9 @@ def test_cast_string_to_timestamp_valid():
             [
                 ("   2023-11-05T03:04:55 +00:00",),  # leading spaces
                 ("2023-11-05 03:04:55 +01:02   ",),  # tailing spaces
-                ("   2023-11-05 03:04:55 +1:02   ",), # both leading/ tailing spaces
-                ("2023-11-05 03:04:55 -01:2",),
-                ("2023-11-05 03:04:55 +1:2",),
+                ("   2023-11-05 03:04:55 +01:02   ",), # both leading/ tailing spaces
+                ("2023-11-05 03:04:55 -01:02",),
+                ("2023-11-05 03:04:55 +01:02",),
                 ("2023-11-05 03:04:55 +10:59",),
                 ("2023-11-05 03:04:55 +10:59:03",),
                 ("2023-11-05 03:04:55 +105903",),
@@ -848,9 +849,9 @@ def test_cast_string_to_timestamp_valid():
                 ("2023-11-05 03:04:55 +10",),
                 ("2023-11-05T03:04:55 UT+00:00",),
                 ("2023-11-05 03:04:55 UT+01:02",),
-                ("2023-11-05 03:04:55 UT+1:02",),
-                ("2023-11-05 03:04:55 UT+01:2",),
-                ("2023-11-05 03:04:55 UT+1:2",),
+                ("2023-11-05 03:04:55 UT+01:02",),
+                ("2023-11-05 03:04:55 UT+01:02",),
+                ("2023-11-05 03:04:55 UT+01:02",),
                 ("2023-11-05 03:04:55 UT+10:59",),
                 ("2023-11-05 03:04:55 UT-10:59:03",),
                 ("2023-11-05 03:04:55 UT+105903",),
@@ -858,9 +859,9 @@ def test_cast_string_to_timestamp_valid():
                 ("2023-11-05 03:04:55 UT+10",),
                 ("2023-11-05T03:04:55 UTC+00:00",),
                 ("2023-11-05 03:04:55 UTC+01:02",),
-                ("2023-11-05 03:04:55 UTC+1:02",),
-                ("2023-11-05 03:04:55 UTC+01:2",),
-                ("2023-11-05 03:04:55 UTC+1:2",),
+                ("2023-11-05 03:04:55 UTC+01:02",),
+                ("2023-11-05 03:04:55 UTC+01:02",),
+                ("2023-11-05 03:04:55 UTC+01:02",),
                 ("2023-11-05 03:04:55 UTC+10:59",),
                 ("2023-11-05 03:04:55 UTC+10:59:03",),
                 ("2023-11-05 03:04:55 UTC+105903",),
@@ -868,9 +869,9 @@ def test_cast_string_to_timestamp_valid():
                 ("2023-11-05 03:04:55    UTC-10",), # there are spaces before timezone
                 ("2023-11-05T03:04:55 GMT+00:00",),
                 ("2023-11-05 03:04:55 GMT+01:02",),
-                ("2023-11-05 03:04:55 GMT+1:02",),
-                ("2023-11-05 03:04:55 GMT-01:2",),
-                ("2023-11-05 03:04:55 GMT+1:2",),
+                ("2023-11-05 03:04:55 GMT+01:02",),
+                ("2023-11-05 03:04:55 GMT-01:02",),
+                ("2023-11-05 03:04:55 GMT+01:02",),
                 ("2023-11-05 03:04:55 GMT+10:59",),
                 ("2023-11-05 03:04:55 GMT+10:59:03",),
                 ("2023-11-05 03:04:55 GMT+105903",),
@@ -885,15 +886,6 @@ def test_cast_string_to_timestamp_valid():
                 ("2023-11-05",),
                 ("2023-11",),
                 ("2023",),
-                ("T23:17:50.201567 CTT",),
-                ("T23:17:50.201567 JST",),
-                ("T23:17:50.201567 PST",),
-                ("T23:17:50 CTT",),
-                ("T23:17:50 JST",),
-                ("T23:17:50 PST",),
-                ("T23:17:50",),
-                ("T23:17:50",),
-                ("T23:17:50",),
                 ("12345",),
                 ("2023-1-1",),
                 ("2023-1-01",),
@@ -903,6 +895,71 @@ def test_cast_string_to_timestamp_valid():
                 ("2023-01-01 00:00:00Z",),
                 ("2023-01-01 00:00:00 Z",),
                 ("2023-01-01 00:00:00 GMT0",),
+            ],
+            'str_col string')
+    def _query(spark):
+        # depends on the timezone info in `GpuTimeZoneDB`, load first
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: _query(spark))
+
+
+#
+# Only Test Spark 321 and 321+
+# Spark 320 has bugs and Spark321 fixed, GPU is conformed to Spark321+
+# Refer to issue https://github.com/NVIDIA/spark-rapids-jni/issues/3347
+#
+@pytest.mark.skipif(is_before_spark_321(),
+                    reason='Spark 320 has some bugs in casting from string to timestamp, '
+                           'Spark 321 fixed and GPU is consistent with Spark 321 and 321+')
+def test_cast_string_to_timestamp_valid_skip_Spark320():
+    def _gen_df(spark):
+        return spark.createDataFrame(
+            [
+                ("   2023-11-05 03:04:55 +1:02   ",),  # both leading/ tailing spaces
+                ("2023-11-05 03:04:55 -01:2",),
+                ("2023-11-05 03:04:55 +1:2",),
+                ("2023-11-05 03:04:55 UT+1:02",),
+                ("2023-11-05 03:04:55 UT+01:2",),
+                ("2023-11-05 03:04:55 UT+1:2",),
+                ("2023-11-05 03:04:55 UTC+1:02",),
+                ("2023-11-05 03:04:55 UTC+01:2",),
+                ("2023-11-05 03:04:55 UTC+1:2",),
+                ("2023-11-05 03:04:55 GMT+1:02",),
+                ("2023-11-05 03:04:55 GMT-01:2",),
+                ("2023-11-05 03:04:55 GMT+1:2",),
+            ],
+            'str_col string')
+
+    def _query(spark):
+        # depends on the timezone info in `GpuTimeZoneDB`, load first
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: _query(spark))
+
+
+def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
+    # For the just time strings, will get current date to fill the missing date.
+    # E.g.: "T00:00:00" will be "2025-05-23T00:00:00"
+    # This test case is sensitive to the current date, and may cause diff between CPU and GPU
+    # E.g.: CPU get date: 2025-05-23 and GPU runs later and the date becomes 2025-05-24
+    # The following code checks the date is the same in 5 minutes, and assumes this case will
+    # finish in 5 minutes.
+    current_time = datetime.now()
+    current_day = current_time.date().day
+    day_of_five_minutes_later = (current_time + timedelta(minutes=5)).date().day
+    if current_day != day_of_five_minutes_later:
+        return
+
+    def _gen_df(spark):
+        return spark.createDataFrame(
+            [
+                ("T23:17:50",),
+                ("T23:17:50",),
+                ("T23:17:50",),
                 (" \r\n\tT23:17:50 \r\n\t",),
                 ("T00",),
                 ("T1:2",),
@@ -922,12 +979,50 @@ def test_cast_string_to_timestamp_valid():
                 ("1:2:3.123456",),
             ],
             'str_col string')
+
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
         spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
+
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: _query(spark))
+
+
+def test_cast_string_to_timestamp_valid_just_time_with_timezone():
+    # For the just time strings, will get current date to fill the missing date.
+    # E.g.: "T00:00:00" will be "2025-05-23T00:00:00"
+    # This test case is sensitive to the current date, and may cause diff between CPU and GPU
+    # E.g.: CPU get date: 2025-05-23 and GPU runs later and the date becomes 2025-05-24
+    # The following code checks the date is the same in 5 minutes, and assumes this case will
+    # finish in 5 minutes.
+    pst_tz = pytz.timezone('America/Los_Angeles')
+    current_time = datetime.now(pst_tz)
+    current_day = current_time.date().day
+    day_of_five_minutes_later = (current_time + timedelta(minutes=5)).date().day
+    if current_day != day_of_five_minutes_later:
+        return
+
+    def _gen_df(spark):
+        return spark.createDataFrame(
+            [
+                # PST = America/Los_Angeles
+                ("T23:17:50.201567 PST",),
+                ("T23:17:50.201567 PST",),
+                ("T23:17:50.201567 PST",),
+                ("T23:17:50 PST",),
+                ("T23:17:50 PST",),
+                ("T23:17:50 PST",),
+            ],
+            'str_col string')
+
+    def _query(spark):
+        # depends on the timezone info in `GpuTimeZoneDB`, load first
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
+
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
+
 
 _cast_string_to_timestamp_invalid = [
     # empty after strip
