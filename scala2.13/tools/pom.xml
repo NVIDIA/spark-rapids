@@ -129,22 +129,6 @@
                         <version>${project.version}</version>
                         <classifier>${spark.version.classifier}</classifier>
                     </dependency>
-                    <dependency>
-                        <groupId>org.apache.spark</groupId>
-                        <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                        <version>${spark.version}</version>
-                        <exclusions>
-                            <exclusion>
-                                <groupId>org.apache.curator</groupId>
-                                <artifactId>curator-recipes</artifactId>
-                            </exclusion>
-                        </exclusions>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.apache.spark</groupId>
-                        <artifactId>spark-avro_${scala.binary.version}</artifactId>
-                        <version>${spark.version}</version>
-                    </dependency>
                 </dependencies>
             </plugin>
         </plugins>
