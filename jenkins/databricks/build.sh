@@ -136,9 +136,8 @@ install_dependencies()
 {
     local depsPomXml="$(mktemp /tmp/install-databricks-deps-XXXXXX-pom.xml)"
 
-    python jenkins/databricks/install_deps.py "${BASE_SPARK_VERSION}" "${SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}" "${SCALA_VERSION}" "${M2DIR}" "${JARDIR}" "${depsPomXml}"
-
-    $MVN_CMD -f ${depsPomXml} initialize
+    python $HOME/spark-rapids/build/spark-home-deps.py --csp=db > "${depsPomXml}"
+    sed -e '/<DBR_DEPS\/>/{r'${depsPomXml} -e 'd}' shim-deps/databricks/pom-template.xml > shim-deps/databricks/pom.xml
     echo "Done with installation of Databricks dependencies, removing ${depsPomXml}"
     rm ${depsPomXml}
 }
