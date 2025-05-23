@@ -22,13 +22,10 @@ import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
-import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
-import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
 object Delta33xProvider extends DeltaIOProvider {
 
@@ -64,32 +61,13 @@ object Delta33xProvider extends DeltaIOProvider {
   override def convertToGpu(
     cpuExec: AtomicCreateTableAsSelectExec,
     meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
-
-    val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
-    GpuAtomicCreateTableAsSelectExec(
-      DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.query,
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.ifNotExists)
+    throw new UnsupportedOperationException("Not implemented")
   }
 
   override def convertToGpu(
     cpuExec: AtomicReplaceTableAsSelectExec,
     meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
-
-    val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
-    GpuAtomicReplaceTableAsSelectExec(
-      DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.query,
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.orCreate,
-      cpuExec.invalidateCache)
+    throw new UnsupportedOperationException("Not implemented")
   }
 
 }
