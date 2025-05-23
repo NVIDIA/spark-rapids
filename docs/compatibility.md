@@ -753,6 +753,32 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 | `"tomorrow"`          | Yes               |
 | `"yesterday"`         | Yes               |
 
+### String to Timestamp
+For Spark321 and Spark321+, GPU is conformed to Spark.
+For Spark320, it has bugs and GPU fixed, e.g.:
+
+Spark 320:
+```
+>>> spark.sql("select cast('2025-01-01 00:00:00 +1:2' as timestamp)").show()
++-------------------------------------------+
+|CAST(2025-01-01 00:00:00 +1:2 AS TIMESTAMP)|
++-------------------------------------------+
+|                                       null|
++-------------------------------------------+
+```
+
+GPU for Spark320:
+```
+>>> spark.sql("select cast('2025-01-01 00:00:00 +1:2' as timestamp)").show()
++-------------------------------------------+
+|CAST(2025-01-01 00:00:00 +1:2 AS TIMESTAMP)|
++-------------------------------------------+
+|                        2025-01-01 06:58:00|
++-------------------------------------------+
+```
+
+Note: Spark321 and Spark321 fixed the above bug, and GPU is conformed to Spark321 and Spark321+.
+
 ### Constant Folding
 
 ConstantFolding is an operator optimization rule in Catalyst that replaces expressions that can
