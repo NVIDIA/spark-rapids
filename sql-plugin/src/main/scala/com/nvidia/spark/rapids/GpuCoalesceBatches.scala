@@ -251,7 +251,7 @@ object OpNameNvtxMap {
     "build batch: collect" -> NvtxRegistry.BUILD_BATCH_COLLECT
   )
 
-  def get(opName: String) = map.getOrElse(opName, NvtxRegistry.INVALID)
+  def get(opName: String): Option[NvtxId] = map.get(opName)
 }
 
 abstract class AbstractGpuCoalesceIterator(
@@ -267,7 +267,8 @@ abstract class AbstractGpuCoalesceIterator(
     opName: String) extends Iterator[ColumnarBatch] with Logging {
 
   private val iter = new CollectTimeIterator(
-    OpNameNvtxMap.get(s"$opName: collect"), inputIter, streamTime)
+    OpNameNvtxMap.get(s"$opName: collect").getOrElse(NvtxRegistry.GPU_COALESCE_ITERATOR),
+    inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
 
