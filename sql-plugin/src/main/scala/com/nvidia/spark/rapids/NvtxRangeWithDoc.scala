@@ -23,12 +23,19 @@ import scala.collection.mutable
 sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
   def help(): Unit = println(s"$name|$doc")
 
+  def push(): NvtxId = {
+    NvtxRange.pushRange(name, color)
+    this
+  }
+
+  def pop(): Unit = NvtxRange.popRange()
+
   def apply[V](block: => V): V = {
     try {
-      NvtxRange.pushRange(name, color)
+      push()
       block
     } finally {
-      NvtxRange.popRange()
+      pop()
     }
   }
 }
@@ -50,9 +57,47 @@ object NvtxRegistry {
   val RELEASE_GPU: NvtxId = NvtxId("Release GPU", NvtxColor.RED,
     "Releasing the GPU semaphore")
 
+  val THREADED_WRITER_WRITE: NvtxId = NvtxId("ThreadedWriter.write", NvtxColor.RED,
+    "Rapids Shuffle Manager (multi threaded) writing")
+
+  val THREADED_READER_READ: NvtxId = NvtxId("ThreadedReader.read", NvtxColor.PURPLE,
+    "Rapids Shuffle Manager (multi threaded) reading")
+
+  val WAITING_FOR_WRITES: NvtxId = NvtxId("WaitingForWrites", NvtxColor.PURPLE,
+    "Rapids Shuffle Manager (multi threaded) is waiting for any queued writes to finish before " +
+      "finalizing the map output writer")
+
+  val COMMIT_SHUFFLE: NvtxId = NvtxId("CommitShuffle", NvtxColor.RED,
+    "After all temporary shuffle writes are done, produce a single file " +
+      "(shuffle_[map_id]_0) in the commit phase")
+
+  val PARALLEL_DESERIALIZER_ITERATOR_NEXT: NvtxId = NvtxId("ParallelDeserializerIterator.next",
+    NvtxColor.CYAN, "Calling next on the MT shuffle reader iterator")
+
+  val BATCH_WAIT: NvtxId = NvtxId("BatchWait", NvtxColor.CYAN,
+    "Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding")
+
+  val QUEUE_FETCHED: NvtxId = NvtxId("queueFetched", NvtxColor.YELLOW, "MT shuffle manager is " +
+    "using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results")
+
+  val RAPIDS_CACHING_WRITER_WRITE: NvtxId = NvtxId("RapidsCachingWriter.write", NvtxColor.CYAN,
+    "Rapids Shuffle Manager (ucx) writing")
+
+  val GET_MAP_SIZES_BY_EXEC_ID: NvtxId = NvtxId("getMapSizesByExecId", NvtxColor.CYAN,
+    "Call to internal Spark API for retrieving size and location of shuffle map output blocks")
+
   def init(): Unit = {
     register(ACQUIRE_GPU)
     register(RELEASE_GPU)
+    register(THREADED_WRITER_WRITE)
+    register(THREADED_READER_READ)
+    register(WAITING_FOR_WRITES)
+    register(COMMIT_SHUFFLE)
+    register(PARALLEL_DESERIALIZER_ITERATOR_NEXT)
+    register(BATCH_WAIT)
+    register(QUEUE_FETCHED)
+    register(RAPIDS_CACHING_WRITER_WRITE)
+    register(GET_MAP_SIZES_BY_EXEC_ID)
   }
 }
 

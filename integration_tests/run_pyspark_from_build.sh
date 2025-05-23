@@ -392,6 +392,7 @@ else
     fi
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
+    EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
     if [[ "${SPARK_SHELL_SMOKE_TEST}" != "0" ]]; then
         echo "Running spark-shell smoke test..."
         SPARK_SHELL_ARGS_ARR=(
@@ -424,6 +425,20 @@ else
             "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
             | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
         echo "SUCCESS spark-shell smoke test"
+    elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
+        echo "Running explainOnly mode on CPU smoke test..."
+        SPARK_SHELL_ARGS_ARR=(
+            --master local[2]
+            --jars "${PYSP_TEST_spark_jars}"
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --conf spark.deploy.maxExecutorRetries=0
+            --conf spark.rapids.sql.mode=explainOnly
+        )
+        output=$(<<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+            CUDA_VISIBLE_DEVICES="" "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1)
+        grep 'WARN RapidsPluginUtils: RAPIDS Accelerator is in explain only mode' <<< "$output"
+        grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])' <<< "$output"
+        echo "SUCCESS explainOnly mode on CPU smoke test"
     elif ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"

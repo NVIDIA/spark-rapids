@@ -1374,13 +1374,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryAstExprMeta[Rint](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRint(child)
       }),
-    expr[BitwiseNot](
-      "Returns the bitwise NOT of the operands",
-      ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral),
-      (a, conf, p, r) => new UnaryAstExprMeta[BitwiseNot](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
-      }),
     expr[AtLeastNNonNulls](
       "Checks if number of non null/Nan values is greater than a given value",
       ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
@@ -1479,6 +1472,21 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[BitwiseXor](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseXor(lhs, rhs)
+      }),
+    expr[BitwiseNot](
+      "Returns the bitwise NOT of the operands",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral),
+      (a, conf, p, r) => new UnaryAstExprMeta[BitwiseNot](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
+      }),
+    expr[BitwiseCount](
+      "Returns the number of bits that are set in the input as unsigned 64-bit integer",
+      ExprChecks.unaryProject(
+        TypeSig.INT, TypeSig.INT,
+        TypeSig.integral + TypeSig.BOOLEAN, TypeSig.integral + TypeSig.BOOLEAN),
+      (a, conf, p, r) => new UnaryExprMeta[BitwiseCount](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseCount(child)
       }),
     expr[BitAndAgg](
       "Returns the bitwise AND of all non-null input values",

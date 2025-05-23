@@ -887,9 +887,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
       // Catch out of range exception when AnsiMode is on
       assert(
         exceptionContains(
-          if (ShimLoader.getSparkVersion.startsWith("4.")) {
-          // For Spark 4.0+, catch the SparkArithmeticException by class name since
-          // it is a private class and cannot be caught using intercept[SparkArithmeticException]
+          if (isSpark400OrLater) {
+            // For Spark 4.0+, catch the SparkArithmeticException by class name since
+            // it is a private class and cannot be caught using intercept[SparkArithmeticException]
             try {
               nonOverflowCase(dataType, generator, precision, scale)
               new Exception("Expected an arithmetic exception but none was thrown")

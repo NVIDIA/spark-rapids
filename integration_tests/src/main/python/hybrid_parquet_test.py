@@ -406,9 +406,8 @@ condition_list = [
     "(sort_array(array_int_1) == array_int_1)",
     "(size(array_int_1) == 1)",
     # Array[Int], Array[Int]:
-    # ArrayExcept,ArrayIntersect,ArraysZip
+    # ArrayExcept,ArraysZip
     "(array_except(array_int_1, array_int_2) == array_int_1)",
-    "(array_intersect(array_int_1, array_int_2) == array_int_1)",
     "(arrays_zip(array_int_1, array_int_2) == " + 
     "array(struct(1 as array_int_1, 1 as array_int_2), struct(2 as array_int_1, 2 as array_int_2)))",
     # Array[Array[Int]]:
