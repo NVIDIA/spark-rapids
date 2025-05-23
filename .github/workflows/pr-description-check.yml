@@ -16,17 +16,14 @@
 name: pr description check
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, edited, reopened]
 
 jobs:
   pr-description-check:
     runs-on: ubuntu-latest
     permissions:
-      checks: write
       statuses: write
-      pull-requests: write
-      contents: read  
     if: "!contains(github.event.pull_request.title, '[bot]')"
     steps:
       - name: pr-desciption-check
