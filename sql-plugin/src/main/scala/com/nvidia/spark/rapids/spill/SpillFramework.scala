@@ -163,14 +163,13 @@ trait StoreHandle extends AutoCloseable {
    */
   private[spill] var closed: Boolean = false
 
-  lazy val taskId: Option[Long] = Option(TaskContext.get()).map( tc => tc.taskAttemptId())
-  var tp: Long = taskId.map(TaskPriority.getTaskPriority).getOrElse(Long.MaxValue)
+  lazy val taskId: Option[Long] = Option(TaskContext.get()).map(tc => tc.taskAttemptId())
 
-  def setTaskPriority(newTp: Long): Unit = {
-    tp = newTp
-  }
-
-  def taskPriority: Long = tp
+  /**
+   * Be very careful that you set this before it is added into the Store, or that
+   * the store knows to update the priority internally after this is set.
+   */
+  var taskPriority: Long = taskId.map(TaskPriority.getTaskPriority).getOrElse(Long.MaxValue)
 }
 
 trait SpillableHandle extends StoreHandle with Logging {
@@ -329,8 +328,10 @@ object SpillableHostBufferHandle extends Logging {
   }
 
   private[spill] def createHostHandleWithPacker(
-      chunkedPacker: ChunkedPacker): SpillableHostBufferHandle = {
+      chunkedPacker: ChunkedPacker,
+      taskPriority: Long): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(chunkedPacker.getTotalContiguousSize)
+    handle.taskPriority = taskPriority
     withResource(
       SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
       while (chunkedPacker.hasNext) {
@@ -346,8 +347,10 @@ object SpillableHostBufferHandle extends Logging {
   }
 
   private[spill] def createHostHandleFromDeviceBuff(
-      buff: DeviceMemoryBuffer): SpillableHostBufferHandle = {
+      buff: DeviceMemoryBuffer,
+      taskPriority: Long): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(buff.getLength)
+    handle.taskPriority = taskPriority
     withResource(
       SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
       builder.copyNext(buff, buff.getLength, Cuda.DEFAULT_STREAM)
@@ -447,7 +450,7 @@ class SpillableHostBufferHandle private (
                 }
               }
               TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
-              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
+              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
               synchronized {
                 spilling = false
                 if (closed) {
@@ -524,7 +527,8 @@ object SpillableDeviceBufferHandle {
 
   def apply(dmb: DeviceMemoryBuffer, overrideTaskPriority: Long): SpillableDeviceBufferHandle = {
     val handle = new SpillableDeviceBufferHandle(dmb.getLength, dev = Some(dmb))
-    handle.setTaskPriority(overrideTaskPriority)
+    // Must be set before adding into the deviceStore
+    handle.taskPriority = overrideTaskPriority
     SpillFramework.stores.deviceStore.track(handle)
     handle
   }
@@ -609,7 +613,7 @@ class SpillableDeviceBufferHandle private (
             // the spill IO is non-blocking as it won't impact dev or host directly
             // instead we "atomically" swap the buffers below once they are ready
             var stagingHost: Option[SpillableHostBufferHandle] =
-              Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
+              Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf, taskPriority))
             synchronized {
               spilling = false
               if (closed) {
@@ -717,7 +721,8 @@ class SpillableColumnarBatchHandle private (
           withChunkedPacker(dev.get) { chunkedPacker =>
             meta = Some(chunkedPacker.getPackedMeta)
             var staging: Option[SpillableHostBufferHandle] =
-              Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
+              Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker,
+                taskPriority))
             synchronized {
               spilling = false
               if (closed) {
@@ -869,7 +874,7 @@ class SpillableColumnarBatchFromBufferHandle private (
             meta = Some(cvFromBuffer.getTableMeta)
             var staging: Option[SpillableHostBufferHandle] =
               Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-                cvFromBuffer.getBuffer))
+                cvFromBuffer.getBuffer, taskPriority))
             synchronized {
               spilling = false
               if (closed) {
@@ -985,7 +990,7 @@ class SpillableCompressedColumnarBatchHandle private (
             meta = Some(cvFromBuffer.getTableMeta)
             var staging: Option[SpillableHostBufferHandle] =
               Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-                cvFromBuffer.getTableBuffer))
+                cvFromBuffer.getTableBuffer, taskPriority))
             synchronized {
               spilling = false
               if (closed) {
@@ -1105,7 +1110,7 @@ class SpillableHostColumnarBatchHandle private (
                 JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
               }
               TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
-              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
+              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
               synchronized {
                 spilling = false
                 if (closed) {
@@ -1140,6 +1145,17 @@ object DiskHandle {
             diskSizeInBytes: Long): DiskHandle = {
     val handle = new DiskHandle(
       blockId, offset, diskSizeInBytes)
+    SpillFramework.stores.diskStore.track(handle)
+    handle
+  }
+
+  def apply(blockId: BlockId,
+            offset: Long,
+            diskSizeInBytes: Long,
+            taskPriority: Long): DiskHandle = {
+    val handle = new DiskHandle(
+      blockId, offset, diskSizeInBytes)
+    handle.taskPriority = taskPriority
     SpillFramework.stores.diskStore.track(handle)
     handle
   }
@@ -1781,6 +1797,9 @@ object DiskHandleStore {
         blockId,
         startPos,
         size)
+
+    def build(taskPriority: Long): DiskHandle =
+      DiskHandle(blockId, startPos, size, taskPriority)
   }
 
   def makeBuilder: DiskHandleBuilder = {
