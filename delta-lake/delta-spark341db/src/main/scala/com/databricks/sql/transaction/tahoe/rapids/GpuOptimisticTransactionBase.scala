@@ -28,6 +28,7 @@ import com.databricks.sql.transaction.tahoe.files.TahoeBatchFileIndex
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaWriteUtils
 
 import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, NamedExpression}
@@ -142,9 +143,7 @@ abstract class GpuOptimisticTransactionBase
       isOptimize: Boolean,
       writeOptions: Option[DeltaOptions]): SparkPlan = {
     val optimizeWriteEnabled = !isOptimize &&
-        spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_ENABLED)
-            .orElse(DeltaConfigs.OPTIMIZE_WRITE.fromMetaData(metadata))
-            .orElse(writeOptions.flatMap(_.optimizeWrite)).getOrElse(false)
+      DeltaWriteUtils.shouldOptimizeWrite(writeOptions, spark.sessionState.conf, metadata)
     if (optimizeWriteEnabled) {
       val planWithoutTopRepartition =
         DeltaShufflePartitionsUtil.removeTopRepartition(physicalPlan)
