@@ -107,7 +107,7 @@ class ShuffleBufferCatalog extends Logging {
       val tableMeta = MetaUtils.buildTableMeta(bufferId.tableId, contigTable)
       val buff = contigTable.getBuffer
       buff.incRefCount()
-      val handle = SpillableDeviceBufferHandle(buff)
+      val handle = SpillableDeviceBufferHandle(buff, initialSpillPriority)
       trackCachedHandle(bufferId, handle, tableMeta)
     }
   }
@@ -132,7 +132,7 @@ class ShuffleBufferCatalog extends Logging {
       tableMeta.bufferMeta().mutateId(bufferId.tableId)
       val buff = compressed.getTableBuffer
       buff.incRefCount()
-      val handle = SpillableDeviceBufferHandle(buff)
+      val handle = SpillableDeviceBufferHandle(buff, initialSpillPriority)
       trackCachedHandle(bufferId, handle, tableMeta)
     }
   }

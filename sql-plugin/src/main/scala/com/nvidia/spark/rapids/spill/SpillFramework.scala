@@ -521,6 +521,13 @@ object SpillableDeviceBufferHandle {
     SpillFramework.stores.deviceStore.track(handle)
     handle
   }
+
+  def apply(dmb: DeviceMemoryBuffer, overrideTaskPriority: Long): SpillableDeviceBufferHandle = {
+    val handle = new SpillableDeviceBufferHandle(dmb.getLength, dev = Some(dmb))
+    handle.setTaskPriority(overrideTaskPriority)
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
 }
 
 class SpillableDeviceBufferHandle private (
