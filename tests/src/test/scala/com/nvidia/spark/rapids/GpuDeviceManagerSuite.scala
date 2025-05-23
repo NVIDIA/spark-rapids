@@ -94,7 +94,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     }
   }
 
-  test("RMM get memory limits zero config") {
+  test("get host memory limits zero config") {
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(sparkConf)
     val (pinnedSize, nonPinnedSize) =
@@ -109,7 +109,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(expectedNonPinned)(nonPinnedSize)
   }
 
-  test("RMM get memory limits zero config with host mem") {
+  test("get host memory limits zero config with host mem") {
     val pySparkOverheadStr = "2g"
     val sparkOffHeapSizeStr = "1g"
     val sparkConf = new SparkConf()
@@ -135,7 +135,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(expectedNonPinned)(nonPinnedSize)
   }
 
-  test("RMM get memory limits off heap configured") {
+  test("get host memory limits off heap configured") {
     val offHeapLimitStr = "16g"
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
@@ -153,7 +153,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(expectedNonPinned)(nonPinnedSize)
   }
 
-  test("RMM get memory limits memoryOverhead configured") {
+  test("get host memory limits memoryOverhead configured") {
     val sparkOffHeapSizeStr = "1g"
     val sparkOverheadStr = "8g"
     val sparkConf = new SparkConf()
@@ -174,7 +174,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(expectedNonPinned)(nonPinnedSize)
   }
 
-  test("RMM get memory limits pinned config only") {
+  test("get host memory limits pinned config only") {
     val pinnedSizeStr = "2g"
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
@@ -192,7 +192,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(expectedNonPinned)(nonPinnedSize)
   }
 
-  test("RMM get memory limits pinned config above memLimit") {
+  test("get host memory limits pinned config above memLimit") {
     val pinnedSizeStr = "8g"
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
@@ -209,7 +209,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(0)(nonPinnedSize)
   }
 
-  test("RMM get memory limits zero config with host mem with heap size set") {
+  test("get host memory limits zero config with host mem with heap size set") {
     val pySparkOverheadStr = "2g"
     val heapSizeStr = "2g"
     val sparkConf = new SparkConf()
