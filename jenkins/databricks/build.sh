@@ -29,15 +29,6 @@
 #       `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/build.sh`
 # - Build without dependency installation:
 #       `BASE_SPARK_VERSION=3.2.1 SKIP_DEP_INSTALL=1 ./jenkins/databricks/build.sh`
-# To add support of new runtime:
-#   1. Review `install_deps.py` to make sure that the prefix of the jar files is set
-#      correctly. If not, then add a new if-else block to set the variables as necessary.
-#   2. The jar files and their artifacts are defined in `install_deps.py`.
-#      You may need to add another conditional block because some runtimes may require special
-#      handling.
-#      For example, "3.1.2" had different patterns for a few JARs (i.e., HIVE).
-#   3. If you had to go beyond the above steps to support the new runtime, then update the
-#      instructions accordingly.
 
 set -ex
 
