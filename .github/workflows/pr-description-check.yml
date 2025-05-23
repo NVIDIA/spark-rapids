@@ -23,8 +23,9 @@ jobs:
   pr-description-check:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read
+      checks: write
       statuses: write
+      pull-requests: read
       contents: read  
     if: "!contains(github.event.pull_request.title, '[bot]')"
     steps:
