@@ -1227,7 +1227,6 @@ class DiskHandle private(
 object HandleComparator extends util.Comparator[StoreHandle] {
 
   override def compare(t1: StoreHandle, t2: StoreHandle): Int = {
-    // TODO do this better in the future
     java.lang.Long.compare(t1.taskPriority, t2.taskPriority)
   }
 }
