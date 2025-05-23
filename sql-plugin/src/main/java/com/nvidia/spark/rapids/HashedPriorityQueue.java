@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@ import java.util.Iterator;
  *
  * <p>The iterator <strong>does NOT</strong> return elements in priority
  * order.
+ *
+ * <p>If you want an ordered iterator you need to call priorityIterator.
  */
 public final class HashedPriorityQueue<T> extends AbstractQueue<T> {
   private static final int DEFAULT_INITIAL_HEAP_SIZE = 16;

@@ -163,9 +163,14 @@ trait StoreHandle extends AutoCloseable {
    */
   private[spill] var closed: Boolean = false
 
-  val taskId: Option[Long] = Option(TaskContext.get()).map( tc => tc.taskAttemptId())
+  lazy val taskId: Option[Long] = Option(TaskContext.get()).map( tc => tc.taskAttemptId())
+  var tp: Long = taskId.map(TaskPriority.getTaskPriority).getOrElse(Long.MaxValue)
 
-  val taskPriority: Long = taskId.map(TaskPriority.getTaskPriority).getOrElse(Long.MaxValue)
+  def setTaskPriority(newTp: Long): Unit = {
+    tp = newTp
+  }
+
+  def taskPriority: Long = tp
 }
 
 trait SpillableHandle extends StoreHandle with Logging {
