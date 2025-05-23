@@ -25,7 +25,7 @@ jobs:
     permissions:
       checks: write
       statuses: write
-      pull-requests: read
+      pull-requests: write
       contents: read  
     if: "!contains(github.event.pull_request.title, '[bot]')"
     steps:
