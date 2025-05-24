@@ -29,8 +29,9 @@ object DeltaWriteUtils {
    *  - Through SQL configuration
    *  - Through the table parameter
    *
-   * This function is migrated over from [[org.aapche.spark.sql.delta.files.TransactionalWrite]]
-   * in Apache Spark and slightly modified.
+   * This logic is copied from
+   * https://github.com/delta-io/delta/blob/1b35c5dc5e041c192863ef1493e0b0262ef2e822/spark/src/main/scala/org/apache/spark/sql/delta/files/TransactionalWrite.scala#L547-L560
+   * and slightly modified.
    */
   def shouldOptimizeWrite(writeOptions: Option[DeltaOptions], sessionConf: SQLConf,
                           metadata: Metadata): Boolean = {
