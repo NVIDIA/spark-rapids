@@ -23,6 +23,7 @@ import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import org.apache.spark.sql.internal.SQLConf
 
 object DeltaWriteUtils {
+  // scalastyle:off line.size.limit
   /**
    * Optimized writes can be enabled/disabled through the following order:
    *  - Through DataFrameWriter options
@@ -33,6 +34,7 @@ object DeltaWriteUtils {
    * https://github.com/delta-io/delta/blob/1b35c5dc5e041c192863ef1493e0b0262ef2e822/spark/src/main/scala/org/apache/spark/sql/delta/files/TransactionalWrite.scala#L547-L560
    * and slightly modified.
    */
+  // scalastyle:on line.size.limit
   def shouldOptimizeWrite(writeOptions: Option[DeltaOptions], sessionConf: SQLConf,
                           metadata: Metadata): Boolean = {
     writeOptions.flatMap(_.optimizeWrite)
