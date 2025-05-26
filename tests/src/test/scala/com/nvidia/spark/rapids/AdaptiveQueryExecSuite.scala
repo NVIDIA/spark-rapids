@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{OperatorsUtilShims, SparkShimImpl}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -102,7 +102,7 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
       val shuffleExchanges =
-          PlanUtils.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+          OperatorsUtilShims.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
               .map(_.asInstanceOf[ShuffleQueryStageExec])
       assert(shuffleExchanges.length === 2)
       val stats = shuffleExchanges.map(_.getRuntimeStatistics)
@@ -428,8 +428,10 @@ class AdaptiveQueryExecSuite
         s"Expected to capture exactly one plan: ${capturedPlans.mkString("\n")}")
       val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(capturedPlans.head)
 
-      val transition = executedPlan
-          .asInstanceOf[GpuColumnarToRowExec]
+      // find the first occurrence (last node) of GpuColumnarToRowExec in the plan 
+      // and assert the metrics
+      val transition = OperatorsUtilShims.findOperators(
+        executedPlan, _.isInstanceOf[GpuColumnarToRowExec]).head.asInstanceOf[GpuColumnarToRowExec]
 
       // because we are calling collect, AvoidAdaptiveTransitionToRow will not bypass
       // GpuColumnarToRowExec so we should see accurate metrics
@@ -603,12 +605,15 @@ class AdaptiveQueryExecSuite
   test("SPARK-35585: Support propagate empty relation through project/filter") {
     logError("SPARK-35585: Support propagate empty relation through project/filter")
     assumeSpark320orLater
-
+    // There is difference in Spark plans between 3.2.x-3.5.x and 4.0+
+    // Spark 4.0+ has EmptyRelationExec, but 3.2.x-3.5.x has LocalTableScanExec as the
+    // root node of the plan.
+    // Issue to support EmptyRelationExec:https://github.com/NVIDIA/spark-rapids/issues/11100
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-          "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
+          "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning,EmptyRelationExec")
 
     withGpuSparkSession(spark => {
       testData(spark)
@@ -616,13 +621,21 @@ class AdaptiveQueryExecSuite
       val (plan1, adaptivePlan1) = runAdaptiveAndVerifyResult(spark,
         "SELECT key FROM testData WHERE key = 0 ORDER BY key, value")
       assert(findTopLevelSort(plan1).size == 1)
-      assert(stripAQEPlan(adaptivePlan1).isInstanceOf[LocalTableScanExec])
+      // Check for either LocalTableScanExec (pre-4.0) or EmptyRelationExec (4.0+)
+      val strippedPlan1 = stripAQEPlan(adaptivePlan1)
+      assert(strippedPlan1.isInstanceOf[LocalTableScanExec] ||
+            strippedPlan1.getClass.getSimpleName.equals("EmptyRelationExec"),
+            s"Expected empty relation plan, but got: ${strippedPlan1}")
 
       val (plan2, adaptivePlan2) = runAdaptiveAndVerifyResult(spark,
         "SELECT key FROM (SELECT * FROM testData WHERE value = 'no_match' ORDER BY key)" +
             " WHERE key > rand()")
       assert(findTopLevelSort(plan2).size == 1)
-      assert(stripAQEPlan(adaptivePlan2).isInstanceOf[LocalTableScanExec])
+      // Check for either LocalTableScanExec (pre-4.0) or EmptyRelationExec (4.0+)
+      val strippedPlan2 = stripAQEPlan(adaptivePlan2)
+      assert(strippedPlan2.isInstanceOf[LocalTableScanExec] ||
+            strippedPlan2.getClass.getSimpleName.equals("EmptyRelationExec"),
+            s"Expected empty relation plan, but got: ${strippedPlan2}")
     }, conf)
   }
 
