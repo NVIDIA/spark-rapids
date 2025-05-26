@@ -55,7 +55,7 @@ class AddEqDeletes extends UDF3[String, String, String, Unit] with Logging {
    * @param dataFile  Parquet file path with contains equation deletes and partition values.
    */
   override def call(warehouse: String, tableName: String, dataFile: String): Unit = {
-    logWarning(s"Adding eq-deletes to $tableName from $dataFile")
+    logDebug(s"Adding eq-deletes to $tableName from $dataFile")
     val catalog = new HadoopCatalog()
     catalog.setConf(new Configuration())
     catalog.initialize("spark_catalog", Map(CatalogProperties.WAREHOUSE_LOCATION -> warehouse)
@@ -63,7 +63,7 @@ class AddEqDeletes extends UDF3[String, String, String, Unit] with Logging {
 
     val table = catalog.loadTable(TableIdentifier.parse(tableName))
     val parquetFileInfo = getParquetFileInfo(table, dataFile)
-    logWarning("Parquet file info:\n" + parquetFileInfo)
+    logDebug("Parquet file info:\n" + parquetFileInfo)
 
     val parquetReader = {
       Parquet.read(table.io().newInputFile(dataFile))
@@ -146,7 +146,7 @@ object AddEqDeletes extends Logging {
 
     val tableSchema = table.schema
     withResource(icebergPartitionedFile.newReader) { reader =>
-      logWarning(s"Reading eq delete parquet file $parquetFile, " +
+      logDebug(s"Reading eq delete parquet file $parquetFile, " +
         s"schema:\n${reader.getFileMetaData.getSchema}")
       val colNames = reader
         .getFileMetaData
