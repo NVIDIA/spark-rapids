@@ -263,7 +263,7 @@ class GpuDeleteFilter(
       .groupBy(_._1)
       .mapValues(_.map(_._2))
       .map({
-        case (eqIds, eqDeletes) => loadEqDeleteContext(eqDeletes, eqIds.map(_.toInt))
+        case (eqIds, eqDeletes) => loadEqDeleteContext(eqDeletes, eqIds.map(_.toInt).toSeq)
       })
       .toSeq
   }
