@@ -160,6 +160,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
       .set("spark.executor.memoryOverhead", sparkOverheadStr)
       .set("spark.memory.offHeap.enabled", "true")
       .set("spark.memory.offHeap.size", sparkOffHeapSizeStr)
+      .set("spark.executor.pyspark.memory", "1g") // should be ignored here
     val rapidsConf = new RapidsConf(sparkConf)
     val (pinnedSize, nonPinnedSize) =
       GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
