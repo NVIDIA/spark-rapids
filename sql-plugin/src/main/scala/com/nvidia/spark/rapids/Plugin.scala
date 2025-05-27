@@ -31,9 +31,10 @@ import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, M
 import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.io.async.TrafficController
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -531,7 +532,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Checks if the current GPU architecture is supported by the
       // spark-rapids-jni and cuDF libraries.
       // Note: We allow this check to be skipped for off-chance cases.
-      if (!conf.skipGpuArchCheck) {
+      if (!conf.skipGpuArchCheck && conf.isSqlExecuteOnGPU) {
         RapidsPluginUtils.validateGpuArchitecture()
       }
 
@@ -662,7 +663,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     try {
       val nvidiaSmiStdout = new StringBuilder
       val nvidiaSmiStderr = new StringBuilder
-      val cmd = "nvidia-smi".run(
+      val cmd = "nvidia-smi -q".run(
         ProcessLogger(s => nvidiaSmiStdout.append(s + "\n"), s => nvidiaSmiStderr.append(s + "\n")))
       waitForProcess(cmd, 10000) match {
         case Some(exitStatus) =>
@@ -721,7 +722,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def onTaskStart(): Unit = {
-    startTaskNvtx(TaskContext.get)
+    val tc = TaskContext.get
+    startTaskNvtx(tc)
+    // Set the priority for the task as soon as it is launched
+    TaskPriority.getTaskPriority(tc.taskAttemptId())
+    onTaskCompletion(tc, tc => {
+      TaskPriority.taskDone(tc.taskAttemptId())
+    })
     extraExecutorPlugins.foreach(_.onTaskStart())
     ProfilerOnExecutor.onTaskStart()
     // Make sure that the thread/task is registered before we try and block

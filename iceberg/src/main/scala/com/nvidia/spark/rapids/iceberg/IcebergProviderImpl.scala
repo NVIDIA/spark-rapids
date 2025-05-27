@@ -30,7 +30,7 @@ class IcebergProviderImpl extends IcebergProvider {
     Seq(new ScanRule[Scan](
       (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
         private lazy val convertedScan: Try[GpuSparkBatchQueryScan] = GpuSparkBatchQueryScan
-          .tryConvert(a, conf)
+          .tryConvert(a, this.conf)
 
         override def supportsRuntimeFilters: Boolean = true
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.NvtxRegistry
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
@@ -295,165 +295,163 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   }
 
   private def write(records: TimeTrackingIterator): Unit = {
-    withResource(new NvtxRange("ThreadedWriter.write", NvtxColor.RED)) { _ =>
-      withResource(new NvtxRange("compute", NvtxColor.GREEN)) { _ =>
-        // Timestamp when the main processing begins
-        val processingStart: Long = System.nanoTime()
-        val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
-          shuffleId,
-          mapId,
-          numPartitions)
-        try {
-          var openTimeNs = 0L
-          val partLengths = if (!records.hasNext) {
-            commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
-          } else {
-            // per reduce partition id
-            // open all the writers ahead of time (Spark does this already)
-            val openStartTime = System.nanoTime()
-            (0 until numPartitions).map { i =>
-              val (blockId, file) = blockManager.diskBlockManager.createTempShuffleBlock()
-              val writer: DiskBlockObjectWriter = blockManager.getDiskWriter(
-                blockId, file, serializer, fileBufferSize, writeMetrics)
-              setChecksumIfNeeded(writer, i) // spark3.2.0+
+    NvtxRegistry.THREADED_WRITER_WRITE {
+      // Timestamp when the main processing begins
+      val processingStart: Long = System.nanoTime()
+      val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
+        shuffleId,
+        mapId,
+        numPartitions)
+      try {
+        var openTimeNs = 0L
+        val partLengths = if (!records.hasNext) {
+          commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
+        } else {
+          // per reduce partition id
+          // open all the writers ahead of time (Spark does this already)
+          val openStartTime = System.nanoTime()
+          (0 until numPartitions).map { i =>
+            val (blockId, file) = blockManager.diskBlockManager.createTempShuffleBlock()
+            val writer: DiskBlockObjectWriter = blockManager.getDiskWriter(
+              blockId, file, serializer, fileBufferSize, writeMetrics)
+            setChecksumIfNeeded(writer, i) // spark3.2.0+
 
-              // Places writer objects at round robin slot numbers apriori
-              // this choice is for simplicity but likely needs to change so that
-              // we can handle skew better
-              val slotNum = RapidsShuffleInternalManagerBase.getNextWriterSlot
-              diskBlockObjectWriters.put(i, (slotNum, writer))
-            }
-            openTimeNs = System.nanoTime() - openStartTime
-
-            // we call write on every writer for every record in parallel
-            val writeFutures = new mutable.Queue[Future[Unit]]
-            // Accumulated record write time as if they were sequential
-            val recordWriteTime: AtomicLong = new AtomicLong(0L)
-            // Time spent waiting on the limiter
-            var waitTimeOnLimiterNs: Long = 0L
-            // Time spent computing ColumnarBatch sizes
-            var batchSizeComputeTimeNs: Long = 0L
-
-            try {
-              while (records.hasNext) {
-                // get the record
-                val record = records.next()
-                val key = record._1
-                val value = record._2
-                val reducePartitionId: Int = partitioner.getPartition(key)
-                val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
-
-                if (numWriterThreads == 1) {
-                  val recordWriteTimeStart = System.nanoTime()
-                  myWriter.write(key, value)
-                  recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
-                } else {
-                  // we close batches actively in the `records` iterator as we get the next batch
-                  // this makes sure it is kept alive while a task is able to handle it.
-                  val sizeComputeStart = System.nanoTime()
-                  val (cb, size) = value match {
-                    case columnarBatch: ColumnarBatch =>
-                      (SlicedGpuColumnVector.incRefCount(columnarBatch),
-                        SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
-                    case _ =>
-                      (null, 0L)
-                  }
-                  val waitOnLimiterStart = System.nanoTime()
-                  batchSizeComputeTimeNs += waitOnLimiterStart - sizeComputeStart
-                  limiter.acquireOrBlock(size)
-                  waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
-                  writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
-                    withResource(cb) { _ =>
-                      try {
-                        val recordWriteTimeStart = System.nanoTime()
-                        myWriter.write(key, value)
-                        recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
-                      } finally {
-                        limiter.release(size)
-                      }
-                    }
-                  })
-                }
-              }
-            } finally {
-              // This is in a finally block so that if there is an exception queueing
-              // futures, that we will have waited for any queued write future before we call
-              // .abort on the map output writer (we had test failures otherwise)
-              withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
-                try {
-                  while (writeFutures.nonEmpty) {
-                    try {
-                      writeFutures.dequeue().get()
-                    } catch {
-                      case ee: ExecutionException =>
-                        // this exception is a wrapper for the underlying exception
-                        // i.e. `IOException`. The ShuffleWriter.write interface says
-                        // it can throw these.
-                        throw ee.getCause
-                    }
-                  }
-                } finally {
-                  // cancel all pending futures (only in case of error will we cancel)
-                  writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
-                }
-              }
-            }
-
-            // writeTimeNs is an approximation of the amount of time we spent in
-            // DiskBlockObjectWriter.write, which involves serializing records and writing them
-            // on disk. As we use multiple threads for writing, writeTimeNs is
-            // estimated by 'the total amount of time it took to finish processing the entire logic
-            // above' minus 'the amount of time it took to do anything expensive other than the
-            // serialization and the write. The latter involves computations in upstream execs,
-            // ColumnarBatch size estimation, and the time blocked on the limiter.
-            val writeTimeNs = (System.nanoTime() - processingStart) -
-              records.getIterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
-
-            val combineTimeStart = System.nanoTime()
-            val pl = writePartitionedData(mapOutputWriter)
-            val combineTimeNs = System.nanoTime() - combineTimeStart
-
-            // add openTime which is also done by Spark, and we are counting
-            // in the ioTime later
-            writeMetrics.incWriteTime(openTimeNs)
-
-            // At this point, Spark has timed the amount of time it took to write
-            // to disk (the IO, per write). But note that when we look at the
-            // multi threaded case, this metric is now no longer task-time.
-            // Users need to look at "rs. shuffle write time" (shuffleWriteTimeMetric),
-            // which does its own calculation at the task-thread level.
-            // We use ioTimeNs, however, to get an approximation of serialization time.
-            val ioTimeNs =
-              writeMetrics.asInstanceOf[ThreadSafeShuffleWriteMetricsReporter].getWriteTime
-
-            // serializationTime is the time spent compressing/encoding batches that wasn't
-            // counted in the ioTime
-            val totalPerRecordWriteTime = recordWriteTime.get() + ioTimeNs
-            val ioRatio = (ioTimeNs.toDouble/totalPerRecordWriteTime)
-            val serializationRatio = 1.0 - ioRatio
-
-            // update metrics, note that we expect them to be relative to the task
-            ioTimeMetric.foreach(_ += (ioRatio * writeTimeNs).toLong)
-            serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
-            // we add all three here because this metric is meant to show the time
-            // we are blocked on writes
-            shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
-            shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
-            pl
+            // Places writer objects at round robin slot numbers apriori
+            // this choice is for simplicity but likely needs to change so that
+            // we can handle skew better
+            val slotNum = RapidsShuffleInternalManagerBase.getNextWriterSlot
+            diskBlockObjectWriters.put(i, (slotNum, writer))
           }
-          myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
-        } catch {
-          // taken directly from BypassMergeSortShuffleWriter
-          case e: Exception =>
-            try {
-              mapOutputWriter.abort(e)
-            } catch {
-              case e2: Exception =>
-                logError("Failed to abort the writer after failing to write map output.", e2);
-                e.addSuppressed(e2);
+          openTimeNs = System.nanoTime() - openStartTime
+
+          // we call write on every writer for every record in parallel
+          val writeFutures = new mutable.Queue[Future[Unit]]
+          // Accumulated record write time as if they were sequential
+          val recordWriteTime: AtomicLong = new AtomicLong(0L)
+          // Time spent waiting on the limiter
+          var waitTimeOnLimiterNs: Long = 0L
+          // Time spent computing ColumnarBatch sizes
+          var batchSizeComputeTimeNs: Long = 0L
+
+          try {
+            while (records.hasNext) {
+              // get the record
+              val record = records.next()
+              val key = record._1
+              val value = record._2
+              val reducePartitionId: Int = partitioner.getPartition(key)
+              val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
+
+              if (numWriterThreads == 1) {
+                val recordWriteTimeStart = System.nanoTime()
+                myWriter.write(key, value)
+                recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+              } else {
+                // we close batches actively in the `records` iterator as we get the next batch
+                // this makes sure it is kept alive while a task is able to handle it.
+                val sizeComputeStart = System.nanoTime()
+                val (cb, size) = value match {
+                  case columnarBatch: ColumnarBatch =>
+                    (SlicedGpuColumnVector.incRefCount(columnarBatch),
+                      SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
+                  case _ =>
+                    (null, 0L)
+                }
+                val waitOnLimiterStart = System.nanoTime()
+                batchSizeComputeTimeNs += waitOnLimiterStart - sizeComputeStart
+                limiter.acquireOrBlock(size)
+                waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
+                writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
+                  withResource(cb) { _ =>
+                    try {
+                      val recordWriteTimeStart = System.nanoTime()
+                      myWriter.write(key, value)
+                      recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+                    } finally {
+                      limiter.release(size)
+                    }
+                  }
+                })
+              }
             }
-            throw e
+          } finally {
+            // This is in a finally block so that if there is an exception queueing
+            // futures, that we will have waited for any queued write future before we call
+            // .abort on the map output writer (we had test failures otherwise)
+            NvtxRegistry.WAITING_FOR_WRITES {
+              try {
+                while (writeFutures.nonEmpty) {
+                  try {
+                    writeFutures.dequeue().get()
+                  } catch {
+                    case ee: ExecutionException =>
+                      // this exception is a wrapper for the underlying exception
+                      // i.e. `IOException`. The ShuffleWriter.write interface says
+                      // it can throw these.
+                      throw ee.getCause
+                  }
+                }
+              } finally {
+                // cancel all pending futures (only in case of error will we cancel)
+                writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
+              }
+            }
+          }
+
+          // writeTimeNs is an approximation of the amount of time we spent in
+          // DiskBlockObjectWriter.write, which involves serializing records and writing them
+          // on disk. As we use multiple threads for writing, writeTimeNs is
+          // estimated by 'the total amount of time it took to finish processing the entire logic
+          // above' minus 'the amount of time it took to do anything expensive other than the
+          // serialization and the write. The latter involves computations in upstream execs,
+          // ColumnarBatch size estimation, and the time blocked on the limiter.
+          val writeTimeNs = (System.nanoTime() - processingStart) -
+            records.getIterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
+
+          val combineTimeStart = System.nanoTime()
+          val pl = writePartitionedData(mapOutputWriter)
+          val combineTimeNs = System.nanoTime() - combineTimeStart
+
+          // add openTime which is also done by Spark, and we are counting
+          // in the ioTime later
+          writeMetrics.incWriteTime(openTimeNs)
+
+          // At this point, Spark has timed the amount of time it took to write
+          // to disk (the IO, per write). But note that when we look at the
+          // multi threaded case, this metric is now no longer task-time.
+          // Users need to look at "rs. shuffle write time" (shuffleWriteTimeMetric),
+          // which does its own calculation at the task-thread level.
+          // We use ioTimeNs, however, to get an approximation of serialization time.
+          val ioTimeNs =
+            writeMetrics.asInstanceOf[ThreadSafeShuffleWriteMetricsReporter].getWriteTime
+
+          // serializationTime is the time spent compressing/encoding batches that wasn't
+          // counted in the ioTime
+          val totalPerRecordWriteTime = recordWriteTime.get() + ioTimeNs
+          val ioRatio = (ioTimeNs.toDouble/totalPerRecordWriteTime)
+          val serializationRatio = 1.0 - ioRatio
+
+          // update metrics, note that we expect them to be relative to the task
+          ioTimeMetric.foreach(_ += (ioRatio * writeTimeNs).toLong)
+          serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
+          // we add all three here because this metric is meant to show the time
+          // we are blocked on writes
+          shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
+          shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
+          pl
         }
+        myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
+      } catch {
+        // taken directly from BypassMergeSortShuffleWriter
+        case e: Exception =>
+          try {
+            mapOutputWriter.abort(e)
+          } catch {
+            case e2: Exception =>
+              logError("Failed to abort the writer after failing to write map output.", e2);
+              e.addSuppressed(e2);
+          }
+          throw e
       }
     }
   }
@@ -461,7 +459,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   def writePartitionedData(mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
     // after all temporary shuffle writes are done, we need to produce a single
     // file (shuffle_[map_id]_0) which is done during this commit phase
-    withResource(new NvtxRange("CommitShuffle", NvtxColor.RED)) { _ =>
+    NvtxRegistry.COMMIT_SHUFFLE {
       // per reduce partition
       val segments = (0 until numPartitions).map {
         reducePartitionId =>
@@ -601,12 +599,11 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   private val shuffleReadTimeNs = sqlMetrics.get(METRIC_SHUFFLE_READ_TIME)
   private val dataReadSize = sqlMetrics.get(METRIC_DATA_READ_SIZE)
 
-  private var shuffleReadRange: NvtxRange =
-    new NvtxRange("ThreadedReader.read", NvtxColor.PURPLE)
+  private var shuffleReadRange: NvtxId = NvtxRegistry.THREADED_READER_READ.push()
 
   private def closeShuffleReadRange(): Unit = {
     if (shuffleReadRange != null) {
-      shuffleReadRange.close()
+      shuffleReadRange.pop()
       shuffleReadRange = null
     }
   }
@@ -813,7 +810,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
     override def next(): (Any, Any) = {
       require(hasNext, "called next on an empty iterator")
-      withResource(new NvtxRange("ParallelDeserializerIterator.next", NvtxColor.CYAN)) { _ =>
+      NvtxRegistry.PARALLEL_DESERIALIZER_ITERATOR_NEXT {
         val result = if (fallbackIter != null) {
           fallbackIter.next()
         } else {
@@ -822,7 +819,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           popFetchedIfAvailable()
           waitTime = 0L
           if (futures.nonEmpty) {
-            withResource(new NvtxRange("BatchWait", NvtxColor.CYAN)) { _ =>
+            NvtxRegistry.BATCH_WAIT {
               waitTimeStart = System.nanoTime()
               val pending = futures.dequeue().get // wait for one future
               waitTime += System.nanoTime() - waitTimeStart
@@ -919,7 +916,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         }
       } else {
         if (fetcherIterator.hasNext) {
-          withResource(new NvtxRange("queueFetched", NvtxColor.YELLOW)) { _ =>
+          NvtxRegistry.QUEUE_FETCHED {
             // `resultCount` is exposed from the fetcher iterator and if non-zero,
             // it means that there are pending results that need to be handled.
             // We max with 1, because there could be a race condition where
@@ -1060,8 +1057,7 @@ class RapidsCachingWriter[K, V](
   override def write(records: Iterator[Product2[K, V]]): Unit = {
     // NOTE: This MUST NOT CLOSE the incoming batches because they are
     //       closed by the input iterator generated by GpuShuffleExchangeExec
-    val nvtxRange = new NvtxRange("RapidsCachingWriter.write", NvtxColor.CYAN)
-    try {
+    NvtxRegistry.RAPIDS_CACHING_WRITER_WRITE {
       var bytesWritten: Long = 0L
       var recordsWritten: Long = 0L
       records.foreach { p =>
@@ -1119,8 +1115,6 @@ class RapidsCachingWriter[K, V](
       }
       metricsReporter.incBytesWritten(bytesWritten)
       metricsReporter.incRecordsWritten(recordsWritten)
-    } finally {
-      nvtxRange.close()
     }
   }
 
@@ -1395,12 +1389,9 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
               + s"dependency ${gpuHandle.dependency.keyOrdering.get}, this is not supported.")
         }
 
-        val nvtxRange = new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)
-        val blocksByAddress = try {
+        val blocksByAddress = NvtxRegistry.GET_MAP_SIZES_BY_EXEC_ID {
           SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(gpuHandle.shuffleId,
             startMapIndex, endMapIndex, startPartition, endPartition)
-        } finally {
-          nvtxRange.close()
         }
 
         new RapidsCachingReader(rapidsConf, localBlockManagerId,

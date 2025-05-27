@@ -21,6 +21,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.CombineConf
+import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, MultiFileCloudParquetPartitionReader}
 
 import org.apache.spark.sql.connector.read.PartitionReader
@@ -32,6 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuMultiThreadIcebergParquetReader(
     val files: Seq[IcebergPartitionedFile],
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
+    val deleteFilterProvider: IcebergPartitionedFile => Option[GpuDeleteFilter],
     override val conf: GpuIcebergParquetReaderConf) extends GpuIcebergParquetReader {
   private val pathToFile = files.map(f => f.urlEncodedPath -> f).toMap
   private val postProcessors: ConcurrentMap[String, GpuParquetReaderPostProcessor] =
@@ -71,9 +73,12 @@ class GpuMultiThreadIcebergParquetReader(
       if (fileIterator.hasNext) {
         val file = fileIterator.next()
         val filePath = file.urlEncodedPath
+        val gpuDeleteFilter = deleteFilterProvider(file)
         val fileDataIterator = new SingleFileColumnarBatchIterator(filePath,
           lastBatchHolder, reader, postProcessors)
-        curDataIterator = fileDataIterator
+        curDataIterator = gpuDeleteFilter
+          .map(_.filterAndDelete(fileDataIterator))
+          .getOrElse(fileDataIterator)
       }
     }
   }
@@ -112,13 +117,14 @@ class GpuMultiThreadIcebergParquetReader(
   private def filterBlock(f: PartitionedFile) = {
     val path = f.filePath.toString()
     val icebergFile = pathToFile(path)
+    val deleteFilter = deleteFilterProvider(icebergFile)
 
-    val requiredSchema = conf.expectedSchema
+    val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
 
     val filteredParquet = super.filterParquetBlocks(icebergFile, requiredSchema)
 
     val postProcessor = new GpuParquetReaderPostProcessor(
-      filteredParquet.schema,
+      filteredParquet,
       constantsProvider(icebergFile),
       requiredSchema)
 
