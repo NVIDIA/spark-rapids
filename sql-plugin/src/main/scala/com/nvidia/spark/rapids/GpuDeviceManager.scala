@@ -504,7 +504,7 @@ object GpuDeviceManager extends Logging {
             s"$minMemoryLimit; using the latter")
           if (minMemoryLimit > basedOnHostMemory) {
             logWarning(s"the amount of available memory detected on the host is " +
-              s"$basedOnHostMemory, which is less than the minimum")
+              s"$basedOnHostMemory, which is less than the minimum $minMemoryLimit")
           }
           minMemoryLimit
         } else {
