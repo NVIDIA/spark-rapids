@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{ScanRule, ShimLoaderTemp}
+import com.nvidia.spark.rapids.{ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, VersionUtils}
 
 import org.apache.spark.sql.connector.read.Scan
 
@@ -29,4 +29,13 @@ object IcebergProvider {
   def apply(): IcebergProvider = ShimLoaderTemp.newIcebergProvider()
 
   val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
+
+  def isSupportedSparkVersion(): Boolean = {
+    ShimLoader.getShimVersion match {
+      case _: SparkShimVersion =>
+        VersionUtils.cmpSparkVersion(3, 5, 0) >= 0 &&
+        VersionUtils.cmpSparkVersion(4, 0, 0) < 0
+      case _ => false
+    }
+  }
 }
