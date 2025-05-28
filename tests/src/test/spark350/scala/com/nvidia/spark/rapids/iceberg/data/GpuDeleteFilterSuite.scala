@@ -428,6 +428,7 @@ private object TestGpuDeleteLoader {
       NestedField.optional(11, "fixed", Types.FixedType.ofLength(10)),
       NestedField.optional(12, "decimal32", Types.DecimalType.of(7, 3)),
       NestedField.optional(13, "decimal64", Types.DecimalType.of(12, 3)),
+      NestedField.optional(14, "decimal128", Types.DecimalType.of(38, 3)),
     )
   }
 

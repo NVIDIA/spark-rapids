@@ -264,6 +264,8 @@ object ColumnDataGen {
           DType.create(DTypeEnum.DECIMAL32, -scale)
         } else if (precision <= DType.DECIMAL64_MAX_PRECISION) {
           DType.create(DTypeEnum.DECIMAL64, -scale)
+        } else if (precision <= DType.DECIMAL128_MAX_PRECISION) {
+          DType.create(DTypeEnum.DECIMAL128, -scale)
         } else {
           throw new UnsupportedOperationException(
             s"Unsupported precision $precision, scale $scale for decimal type")
