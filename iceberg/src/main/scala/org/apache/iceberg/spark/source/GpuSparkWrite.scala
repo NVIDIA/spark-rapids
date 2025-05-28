@@ -16,16 +16,19 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids.GpuWrite
+import com.nvidia.spark.rapids.{GpuWrite, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
-import org.apache.iceberg.{FileFormat, PartitionSpec, Table}
-import org.apache.iceberg.io.{FileIO, OutputFileFactory, RollingDataWriter}
+import org.apache.iceberg.{FileFormat, PartitionSpec, Schema, Table}
+import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
+import org.apache.spark.sql.catalyst.plans.physical.ClusteredDistribution
 import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionAndOrdering  {
@@ -66,7 +69,7 @@ class GpuUnpartitionedDataWriter(
     val spec: PartitionSpec,
     val targetFileSize: Long)
   extends DataWriter[ColumnarBatch] {
-  private val delegate = new RollingDataWriter[ColumnarBatch](
+  private val delegate = new RollingDataWriter[SpillableColumnarBatch](
     fileWriterFactory,
     fileFactory,
     io,
@@ -75,13 +78,15 @@ class GpuUnpartitionedDataWriter(
     null)
 
 
-  override def write(t: ColumnarBatch): Unit = delegate.write(t)
+  override def write(t: ColumnarBatch): Unit = delegate.write(SpillableColumnarBatch(t,
+    ACTIVE_ON_DECK_PRIORITY))
 
   override def commit(): WriterCommitMessage = {
     close()
 
     val result = delegate.result()
     val taskCommit = new TaskCommit(result.dataFiles().toArray(new Array(0)))
+    taskCommit.reportOutputMetrics()
     taskCommit
   }
 
@@ -97,5 +102,44 @@ class GpuUnpartitionedDataWriter(
   }
 }
 
-class GpuPartitionedDataWriter extends DataWriter[ColumnarBatch] {
+class GpuPartitionedDataWriter(
+    val writerFactory: GpuSparkFileWriterFactory,
+    val fileFactory: OutputFileFactory,
+    val io: FileIO,
+    val spec: PartitionSpec,
+    val dataSchema: Schema,
+    val dataSparkType: StructType,
+    val targetFileSize: Long,
+    val fanoutEnabled: Boolean,
+) extends DataWriter[ColumnarBatch] {
+
+  private val delegate: PartitioningWriter[SpillableColumnarBatch, DataWriteResult] =
+    if (fanoutEnabled) {
+    new FanoutDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io, targetFileSize)
+  } else {
+    new ClusteredDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io, targetFileSize)
+  }
+
+  override def write(record: ColumnarBatch): Unit = ???
+
+  override def commit(): WriterCommitMessage = {
+    close()
+
+    val result = delegate.result()
+    val taskCommit = new TaskCommit(result.dataFiles().toArray(new Array(0)))
+    taskCommit.reportOutputMetrics()
+    taskCommit
+  }
+
+  override def abort(): Unit = {
+    close()
+
+    val result = delegate.result()
+    SparkCleanupUtil.deleteTaskFiles(io, result.dataFiles())
+  }
+
+  override def close(): Unit = {
+    delegate.close()
+  }
 }
+
