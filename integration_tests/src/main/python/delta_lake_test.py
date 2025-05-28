@@ -74,7 +74,7 @@ def test_delta_merge_query(spark_tmp_table_factory):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_read(spark_tmp_path, use_cdf):
+def test_delta_scan_read(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
