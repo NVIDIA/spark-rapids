@@ -27,7 +27,7 @@ package com.nvidia.spark.rapids.iceberg.data
 import scala.collection.JavaConverters._
 import scala.language.reflectiveCalls
 
-import ai.rapids.cudf.{HostColumnVector, HostColumnVectorCore}
+import ai.rapids.cudf.{DType, HostColumnVector, HostColumnVectorCore}
 import com.nvidia.spark.rapids.{GpuColumnVector, LazySpillableColumnarBatch, NoopMetric, RapidsConf}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME}
@@ -127,7 +127,7 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
               val data: Array[AnyRef] = f.eqDelColIndices
                 .head
                 .map(hostVecs(_))
-                .map(HOST_COL_GET_ELEMENT.invoke(_, Integer.valueOf(i)).asInstanceOf[AnyRef])
+                .map(valueOf(_, Integer.valueOf(i)))
                 .toArray[AnyRef]
               val inEqDeleteSet = f.eqDelValueSets.head.exists(_.sameElements(data))
               val isDeleted = hostVecs(isDeletedColIdx).getBoolean(i)
@@ -201,8 +201,7 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
             val eqDeleteDeleted = f.eqDelColIndices.zip(f.eqDelValueSets).exists {
               case (colIndices, valueSet) =>
                 val data = colIndices.map { idx =>
-                  HOST_COL_GET_ELEMENT.invoke(hostVecs(idx),
-                    Integer.valueOf(i)).asInstanceOf[AnyRef]
+                  valueOf(hostVecs(idx), Integer.valueOf(i))
                 }
                 valueSet.exists(_.sameElements(data))
             }
@@ -246,8 +245,7 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
             val eqDeleteDeleted = f.eqDelColIndices.zip(f.eqDelValueSets).exists {
               case (colIndices, valueSet) =>
                 val data = colIndices.map { idx =>
-                  HOST_COL_GET_ELEMENT.invoke(hostVecs(idx),
-                    Integer.valueOf(i)).asInstanceOf[AnyRef]
+                  valueOf(hostVecs(idx), Integer.valueOf(i))
                 }
                 valueSet.exists(_.sameElements(data))
             }
@@ -291,8 +289,7 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
 
             for ((colIndices, valueSet) <- f.eqDelColIndices.zip(f.eqDelValueSets)) {
               val data = colIndices.map { idx =>
-                HOST_COL_GET_ELEMENT.invoke(hostVecs(idx),
-                  Integer.valueOf(i)).asInstanceOf[AnyRef]
+                valueOf(hostVecs(idx), Integer.valueOf(i))
               }
               assert(!valueSet.exists(_.sameElements(data)),
                 s"Row ${data.mkString(",", "[", "]")} should be deleted by eq deletes")
@@ -327,8 +324,7 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
 
             for ((colIndices, valueSet) <- f.eqDelColIndices.zip(f.eqDelValueSets)) {
               val data = colIndices.map { idx =>
-                HOST_COL_GET_ELEMENT.invoke(hostVecs(idx),
-                  Integer.valueOf(i)).asInstanceOf[AnyRef]
+                valueOf(hostVecs(idx), Integer.valueOf(i))
               }
               assert(!valueSet.exists(_.sameElements(data)),
                 s"Row ${data.mkString(",", "[", "]")} should be deleted by eq deletes")
@@ -407,7 +403,14 @@ private object TestGpuDeleteLoader {
   val TABLE_SCHEMA: Schema = tableSchema()
   val TABLE_SPARK_TYPE: StructType = toSparkType(TABLE_SCHEMA)
 
-  val HOST_COL_GET_ELEMENT: DynMethods.UnboundMethod = DynMethods
+  def valueOf(col: HostColumnVectorCore, rowIdx: Int): AnyRef = {
+    col.getType.getTypeId match {
+      case DType.DTypeEnum.DECIMAL128 => col.getBigDecimal(rowIdx)
+      case _ => HOST_COL_GET_ELEMENT.invoke(col, rowIdx)
+    }
+  }
+
+  private val HOST_COL_GET_ELEMENT: DynMethods.UnboundMethod = DynMethods
     .builder("getElement")
     .hiddenImpl(classOf[HostColumnVectorCore], classOf[Int])
     .buildChecked()
@@ -428,6 +431,7 @@ private object TestGpuDeleteLoader {
       NestedField.optional(11, "fixed", Types.FixedType.ofLength(10)),
       NestedField.optional(12, "decimal32", Types.DecimalType.of(7, 3)),
       NestedField.optional(13, "decimal64", Types.DecimalType.of(12, 3)),
+      NestedField.optional(14, "decimal128", Types.DecimalType.of(38, 3)),
     )
   }
 
