@@ -38,6 +38,7 @@ import ai.rapids.cudf.HostColumnVector.{BasicType, ListType}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.iceberg.ColumnDataGen.newRandom
 import org.apache.iceberg.{MetadataColumns, Schema}
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.types.{Type, Types}
@@ -185,51 +186,54 @@ class ConstantDataGen[A <: AnyRef : ClassTag](val value: A, toHostVec: Array[A] 
 
 object ColumnDataGen {
   private val SEED = 1742356520L
-  val RANDOM = new Random(SEED)
   val POOL_SIZE = 300
 
-  def boolean(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[JBoolean] =
+  private[iceberg] def newRandom: Random = {
+    new Random(SEED)
+  }
+
+  def boolean(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[JBoolean] =
     new RandomPooledDataGen[JBoolean](random, poolSize,
       _.nextBoolean(),
       HostColumnVector.fromBoxedBooleans(_: _*))
 
-  def int(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[JInt] =
+  def int(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[JInt] =
     new RandomPooledDataGen[JInt](random, poolSize,
       _.nextInt(),
       HostColumnVector.fromBoxedInts(_: _*))
 
-  def long(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[JLong] =
+  def long(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[JLong] =
     new RandomPooledDataGen[JLong](random, poolSize,
       _.nextLong(),
       HostColumnVector.fromBoxedLongs(_: _*))
 
 
-  def float(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[JFloat] =
+  def float(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[JFloat] =
     new RandomPooledDataGen[JFloat](random, poolSize,
       _.nextFloat(),
       HostColumnVector.fromBoxedFloats(_: _*))
 
-  def double(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[JDouble] =
+  def double(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[JDouble] =
     new RandomPooledDataGen[JDouble](random, poolSize,
       _.nextDouble(),
       HostColumnVector.fromBoxedDoubles(_: _*))
 
-  def string(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[String] =
+  def string(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[String] =
     new RandomPooledDataGen[String](random, poolSize,
       _.nextString(10),
       HostColumnVector.fromStrings(_: _*))
 
-  def date(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[JInt] =
+  def date(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[JInt] =
     new RandomPooledDataGen[JInt](random, poolSize,
       _.nextInt(1000000),
       HostColumnVector.timestampDaysFromBoxedInts(_: _*))
 
-  def timestamp(random: Random = RANDOM, poolSize: Int = POOL_SIZE): ColumnDataGen[JLong] =
+  def timestamp(random: Random, poolSize: Int = POOL_SIZE): ColumnDataGen[JLong] =
     new RandomPooledDataGen[JLong](random, poolSize,
       r => Math.abs(r.nextLong()),
       HostColumnVector.timestampMicroSecondsFromBoxedLongs(_: _*))
 
-  def binary(random: Random = RANDOM, poolSize: Int = POOL_SIZE, typeLen: Option[Int] = None)
+  def binary(random: Random, poolSize: Int = POOL_SIZE, typeLen: Option[Int] = None)
   : ColumnDataGen[JList[Byte]] =
     new RandomPooledDataGen[JList[Byte]](random, poolSize,
       r => {
@@ -241,7 +245,7 @@ object ColumnDataGen {
       HostColumnVector.fromLists(new ListType(true, new BasicType(false, DType.UINT8)),
         _: _*))
 
-  def decimal(random: Random = RANDOM, poolSize: Int = POOL_SIZE, precision: Int, scale: Int)
+  def decimal(random: Random, poolSize: Int = POOL_SIZE, precision: Int, scale: Int)
   : ColumnDataGen[JBigDecimal] =
     new RandomPooledDataGen[JBigDecimal](random, poolSize,
       r => {
@@ -260,6 +264,8 @@ object ColumnDataGen {
           DType.create(DTypeEnum.DECIMAL32, -scale)
         } else if (precision <= DType.DECIMAL64_MAX_PRECISION) {
           DType.create(DTypeEnum.DECIMAL64, -scale)
+        } else if (precision <= DType.DECIMAL128_MAX_PRECISION) {
+          DType.create(DTypeEnum.DECIMAL128, -scale)
         } else {
           throw new UnsupportedOperationException(
             s"Unsupported precision $precision, scale $scale for decimal type")
@@ -278,7 +284,7 @@ object ColumnDataGen {
 }
 
 class PooledTableGen(val schema: Schema,
-    private val random: Random = ColumnDataGen.RANDOM,
+    private val random: Random = newRandom,
     private val poolSize: Int = ColumnDataGen.POOL_SIZE) {
 
   private val filePathDataGen = new FilePathDataGen(PooledTableGen.PooledFilePaths.head)
@@ -330,7 +336,7 @@ class PooledTableGen(val schema: Schema,
       columnDataGens(idx)
         .asInstanceOf[RandomPooledDataGen[_ <: AnyRef]]
         .poolValue(size, addNull)
-    }
+    }.toArray
 
     require(columns.map(_.length).distinct.length == 1, "All columns must have the same length")
 
@@ -338,7 +344,7 @@ class PooledTableGen(val schema: Schema,
       .head
       .indices
       .map { i =>
-        columns.map(_(i)).toArray
+        columns.map(_(i))
       }
   }
 
