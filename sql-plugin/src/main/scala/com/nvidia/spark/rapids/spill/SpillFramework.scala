@@ -1808,6 +1808,11 @@ object SpillFramework extends Logging {
 
     val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
       // Disable the limit because it is handled by the RapidsHostMemoryStore
+      if (rapidsConf.hostSpillStorageSize == -1) {
+        logWarning(s"both ${RapidsConf.OFF_HEAP_LIMIT_ENABLED} and " +
+          s"${RapidsConf.HOST_SPILL_STORAGE_SIZE} are set; using " +
+          s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} and ignoring ${RapidsConf.HOST_SPILL_STORAGE_SIZE}")
+      }
       None
     } else if (rapidsConf.hostSpillStorageSize == -1) {
       // + 1 GiB by default to match backwards compatibility

@@ -354,7 +354,7 @@ object RapidsConf {
       // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
       .internal()
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
       .doc("The maximum amount of off heap memory that the plugin will use. " +
@@ -524,7 +524,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
-        "memory pools.")
+        "memory pools. This config is deprecated in favor of " +
+        "spark.rapids.memory.host.offHeapLimit.enabled/" +
+        "spark.rapids.memory.host.offHeapLimit.size, which will take precedence if set.")
     .startupOnly()
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
