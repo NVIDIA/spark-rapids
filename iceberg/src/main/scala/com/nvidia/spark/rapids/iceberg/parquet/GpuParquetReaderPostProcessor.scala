@@ -178,6 +178,9 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
    * for the first record batch with 40 rows, we generate row positions as 0-40. And for the
    * second record batch with 30 rows, we generate row positions as 40-50, 100-120.
    *
+   * We could completely remove this method if cudf supports generating row position, tracked
+   * [[https://github.com/rapidsai/cudf/issues/18981 here]].
+   *
    * @param numRows Number of rows in the current record batch.
    * @return Column vector containing row positions.
    */
