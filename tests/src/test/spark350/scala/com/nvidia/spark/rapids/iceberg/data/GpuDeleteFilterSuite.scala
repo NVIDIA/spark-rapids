@@ -406,7 +406,7 @@ private object TestGpuDeleteLoader {
   def valueOf(col: HostColumnVectorCore, rowIdx: Int): AnyRef = {
     col.getType.getTypeId match {
       case DType.DTypeEnum.DECIMAL128 => col.getBigDecimal(rowIdx)
-      case _ => HOST_COL_GET_ELEMENT.invoke(col, rowIdx)
+      case _ => HOST_COL_GET_ELEMENT.invoke(col, rowIdx).asInstanceOf[AnyRef]
     }
   }
 
