@@ -169,6 +169,18 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
     throw new IllegalArgumentException("Missing required field: " + currentField.fieldId)
   }
 
+  /** Generates row positions column for the current record batch.
+   *
+   * This method calculates the row positions based on each block's row count and the first row
+   * indices of each block. Let's say we have a parquet file with 3 blocks, and each block has 50
+   * rows, then for each block first row index will be 0, 50, 100 respectively. And we only
+   * process the first block and the 3rd block, since the 2nd block has been filtered out. Then
+   * for the first record batch with 40 rows, we generate row positions as 0-40. And for the
+   * second record batch with 30 rows, we generate row positions as 40-50, 100-120.
+   *
+   * @param numRows Number of rows in the current record batch.
+   * @return Column vector containing row positions.
+   */
   private def processRowPos(numRows: Int): GpuColumnVector = {
     val rowPoses = new Array[Long](numRows)
     var curBlockRowCount = processor.parquetInfo.blocks(processor.curBlockIndex).getRowCount
