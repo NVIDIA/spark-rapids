@@ -70,4 +70,14 @@ object Delta33xProvider extends DeltaIOProvider {
     throw new UnsupportedOperationException("Not implemented")
   }
 
+  override def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec,
+    meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    meta.willNotWorkOnGpu("Delta write is not supported at the moment")
+  }
+
+  override def tagForGpu(cpuExec: AtomicReplaceTableAsSelectExec,
+    meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
+    meta.willNotWorkOnGpu("Delta write is not supported at the moment")
+  }
+
 }
