@@ -404,6 +404,9 @@ private object TestGpuDeleteLoader {
   val TABLE_SPARK_TYPE: StructType = toSparkType(TABLE_SCHEMA)
 
   def valueOf(col: HostColumnVectorCore, rowIdx: Int): AnyRef = {
+    if (col.isNull(rowIdx)) {
+      return null
+    }
     col.getType.getTypeId match {
       case DType.DTypeEnum.DECIMAL128 => col.getBigDecimal(rowIdx).asInstanceOf[AnyRef]
       case _ => HOST_COL_GET_ELEMENT.invoke(col, Integer.valueOf(rowIdx)).asInstanceOf[AnyRef]
