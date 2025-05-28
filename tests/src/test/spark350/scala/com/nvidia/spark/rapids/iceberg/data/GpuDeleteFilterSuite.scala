@@ -72,15 +72,14 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
     val deleteLoader = new TestGpuDeleteLoader(tableGen, 57, deletedRows)
     val deleteFilter = gpuDeleteFilterOf(tableSchema, deleteFiles, Some(deleteLoader))
     val generatedInputData = {
-      val batch1 = () => tableGen.toColumnarBatch(NUM_ROWS)
-      val batch2 = () => tableGen.toColumnarBatch(NUM_ROWS)
-      val batch3 = () => {
+      val batch1 = tableGen.toColumnarBatch(NUM_ROWS)
+      val batch2 = tableGen.toColumnarBatch(NUM_ROWS)
+      val batch3 = {
         tableGen.resetFilePath(PooledTableGen.PooledFilePaths(1))
         tableGen.toColumnarBatch(NUM_ROWS)
       }
       Seq(batch1, batch2, batch3)
         .iterator
-        .map(_())
     }
     val eqFieldIdSets = deleteFiles
       .filter(_.content() == FileContent.EQUALITY_DELETES)
