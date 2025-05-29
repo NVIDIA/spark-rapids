@@ -54,6 +54,7 @@ class GpuPartitioner(val spec: PartitionSpec, val schema: Schema) {
         val partitionedTable = GpuColumnVector.from(input).partition(partitionMapCv,
           toIntExact(partitionMapCv.getRowCount))
         withResource(partitionedTable) { _ =>
+
         }
       }
     }
