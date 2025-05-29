@@ -40,6 +40,14 @@ ARG UCX_VER
 ARG ARCH=amd64
 ARG UCX_ARCH=x86_64
 
+# ubuntu22
+RUN sed -i -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+           -e 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' \
+           /etc/apt/sources.list
+# ubuntu24+
+RUN find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i \
+           -e "s|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
+           -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" {} +
 # Install jdk-8, jdk-11, jdk-17, maven, docker image
 RUN apt-get update -y && \
     apt-get install -y software-properties-common rsync
