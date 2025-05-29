@@ -53,7 +53,7 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
       .flatMap {
         case (file, info) =>
           val postProcessor = new GpuParquetReaderPostProcessor(
-            info.schema,
+            info,
             constantsProvider(file),
             conf.expectedSchema)
 

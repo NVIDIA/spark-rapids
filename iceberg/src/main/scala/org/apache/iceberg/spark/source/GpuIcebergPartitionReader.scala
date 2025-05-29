@@ -21,6 +21,7 @@ import java.util.{Map => JMap}
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuCoalescingIcebergParquetReader, GpuIcebergParquetReader, GpuIcebergParquetReaderConf, GpuMultiThreadIcebergParquetReader, GpuSingleThreadIcebergParquetReader, IcebergPartitionedFile, MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, FileScanTask, MetadataColumns, Partitioning, ScanTask, ScanTaskGroup, Schema, Table, TableProperties}
 import org.apache.iceberg.encryption.EncryptedFiles
@@ -41,7 +42,18 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
   private lazy val table = task.cpuPartition.table()
   private lazy val fileIO = table.io()
   private lazy val conf = newConf()
-  private lazy val (_, tasks) = collectFiles()
+  private lazy val (inputFiles, tasks) = collectFiles()
+  private lazy val gpuDeleteFiterMap: Map[IcebergPartitionedFile, Option[GpuDeleteFilter]] =
+    tasks.map {
+      case (file, task) =>
+        val filter = if (task.deletes().asScala.nonEmpty) {
+          Some(new GpuDeleteFilter(table.schema(),
+            inputFiles, conf, task.deletes().asScala.toSeq))
+        } else {
+          None
+        }
+        file -> filter
+    }
   private lazy val reader: GpuIcebergParquetReader = createDataFileParquetReader()
 
 
@@ -70,9 +82,9 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
 
     threadConf match {
       case SingleFile =>
-        new GpuSingleThreadIcebergParquetReader(files, constantsMap, conf)
+        new GpuSingleThreadIcebergParquetReader(files, constantsMap, gpuDeleteFiterMap, conf)
       case MultiThread(_, _) =>
-        new GpuMultiThreadIcebergParquetReader(files, constantsMap, conf)
+        new GpuMultiThreadIcebergParquetReader(files, constantsMap, gpuDeleteFiterMap, conf)
       case MultiFile(_) =>
         new GpuCoalescingIcebergParquetReader(files, constantsMap, conf)
     }
@@ -133,7 +145,8 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
 
   private def constantsMap(icebergFile: IcebergPartitionedFile): java.util.Map[Integer, _] = {
     val task = tasks(icebergFile)
-    val requiredSchema = conf.expectedSchema
+    val filter = gpuDeleteFiterMap(icebergFile)
+    val requiredSchema = filter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
     GpuIcebergPartitionReader.constantsMap(task, requiredSchema, table)
   }
 }
