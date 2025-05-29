@@ -16,7 +16,7 @@ import os
 import tempfile
 from itertools import combinations
 from types import MappingProxyType
-from typing import Callable
+from typing import Callable, List, Dict, Optional
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import FloatType, DoubleType, NullType, BinaryType
@@ -37,6 +37,7 @@ iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
+
 def can_be_eq_delete_col(data_gen: DataGen) -> bool:
     return (not isinstance(data_gen.data_type, FloatType) and
             not isinstance(data_gen.data_type, DoubleType) and
@@ -45,18 +46,19 @@ def can_be_eq_delete_col(data_gen: DataGen) -> bool:
             # loader, we should remove this after the bug is fixed.
             not isinstance(data_gen.data_type, BinaryType))
 
-def eq_column_combinations(all_columns: list[str],
-                           all_types: list[DataGen],
-                           n: int = 3) -> list[list[str]]:
+def _eq_column_combinations(all_columns: List[str],
+                           all_types: List[DataGen],
+                           n: int) -> List[List[str]]:
     # In primitive types, float, double can't be used in eq deletes
     cols = [col for (col, data_gen) in list(zip(all_columns, all_types))
             if can_be_eq_delete_col(data_gen)]
     return list(combinations(cols, n))
 
+all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 3)
 
 def setup_base_iceberg_table(spark_tmp_table_factory,
-                             seed: int | None = None,
-                             table_prop: dict[str, str] | None = None) -> str:
+                             seed: Optional[int] = None,
+                             table_prop: Optional[Dict[str, str]] = None) -> str:
 
     gen_list = list(zip(iceberg_base_table_cols, iceberg_gens_list))
     table_name = spark_tmp_table_factory.get()
@@ -81,7 +83,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
     return table_name
 
 
-def _add_eq_deletes(spark: SparkSession, eq_delete_cols: list[str], row_count: int, table_name: str,
+def _add_eq_deletes(spark: SparkSession, eq_delete_cols: List[str], row_count: int, table_name: str,
                     spark_tmp_path):
     for eq_delete_col in eq_delete_cols:
         assert can_be_eq_delete_col(iceberg_table_gen[eq_delete_col]), \

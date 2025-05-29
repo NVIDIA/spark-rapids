@@ -16,9 +16,10 @@ import tempfile
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from iceberg import iceberg_gens_list, iceberg_base_table_cols, rapids_reader_types, \
-    eq_column_combinations, setup_base_iceberg_table, _add_eq_deletes, _change_table
-from marks import iceberg, ignore_order, inject_oom
+from iceberg import rapids_reader_types, \
+    setup_base_iceberg_table, _add_eq_deletes, _change_table, \
+    all_eq_column_combinations
+from marks import iceberg, ignore_order
 from spark_session import is_spark_35x, with_gpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
@@ -29,7 +30,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize('eq_delete_cols',
-                         eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list),
+                         all_eq_column_combinations,
                          ids=lambda x: str(x))
 def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
                                eq_delete_cols):
