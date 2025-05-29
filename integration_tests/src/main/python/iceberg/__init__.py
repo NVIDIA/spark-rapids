@@ -37,6 +37,7 @@ iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
+
 def can_be_eq_delete_col(data_gen: DataGen) -> bool:
     return (not isinstance(data_gen.data_type, FloatType) and
             not isinstance(data_gen.data_type, DoubleType) and
@@ -45,7 +46,7 @@ def can_be_eq_delete_col(data_gen: DataGen) -> bool:
             # loader, we should remove this after the bug is fixed.
             not isinstance(data_gen.data_type, BinaryType))
 
-def eq_column_combinations(all_columns: list[str],
+def _eq_column_combinations(all_columns: list[str],
                            all_types: list[DataGen],
                            n: int = 3) -> list[list[str]]:
     # In primitive types, float, double can't be used in eq deletes
@@ -53,6 +54,7 @@ def eq_column_combinations(all_columns: list[str],
             if can_be_eq_delete_col(data_gen)]
     return list(combinations(cols, n))
 
+all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list)
 
 def setup_base_iceberg_table(spark_tmp_table_factory,
                              seed: int | None = None,
