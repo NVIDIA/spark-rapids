@@ -79,7 +79,6 @@ class SparkSchemaConverter extends TypeWithSchemaVisitor[DataType] {
   @nowarn("cat=deprecation")
   override def primitive(iPrimitive: Type.PrimitiveType, primitiveType: PrimitiveType): DataType = {
     // If up-casts are needed, load as the pre-cast Spark type, and this will be up-cast in
-    // GpuIcebergReader.
     iPrimitive.typeId match {
       case TypeID.LONG =>
         if (primitiveType.getPrimitiveTypeName == PrimitiveType.PrimitiveTypeName.INT32) {

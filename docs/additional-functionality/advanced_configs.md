@@ -206,6 +206,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Bin"></a>spark.rapids.sql.expression.Bin|`bin`|Returns the string representation of the long value `expr` represented in binary|true|None|
 <a name="sql.expression.BitLength"></a>spark.rapids.sql.expression.BitLength|`bit_length`|The bit length of string data|true|None|
 <a name="sql.expression.BitwiseAnd"></a>spark.rapids.sql.expression.BitwiseAnd|`&`|Returns the bitwise AND of the operands|true|None|
+<a name="sql.expression.BitwiseCount"></a>spark.rapids.sql.expression.BitwiseCount|`bit_count`|Returns the number of bits that are set in the input as unsigned 64-bit integer|true|None|
 <a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|`~`|Returns the bitwise NOT of the operands|true|None|
 <a name="sql.expression.BitwiseOr"></a>spark.rapids.sql.expression.BitwiseOr|`\|`|Returns the bitwise OR of the operands|true|None|
 <a name="sql.expression.BitwiseXor"></a>spark.rapids.sql.expression.BitwiseXor|`^`|Returns the bitwise XOR of the operands|true|None|

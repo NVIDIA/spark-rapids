@@ -204,7 +204,7 @@ class GpuOptimisticTransaction(
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
       val optimizedPlan =
-        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize)
+        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize, writeOptions)
       val planWithInvariants = addInvariantChecks(optimizedPlan, constraints)
       val physicalPlan = convertToGpu(planWithInvariants)
 

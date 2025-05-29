@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.iceberg.parquet
 
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, PartitionReaderWithBytesRead}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, ParquetPartitionReader}
 import java.util.{Map => JMap}
 import org.apache.hadoop.fs.Path
@@ -29,9 +30,11 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuSingleThreadIcebergParquetReader(
     val files: Seq[IcebergPartitionedFile],
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
+    val gpuDeleteProvider: IcebergPartitionedFile => Option[GpuDeleteFilter],
     override val conf: GpuIcebergParquetReaderConf) extends GpuIcebergParquetReader  {
 
   private val taskIterator = files.iterator
+  private var gpuDeleteFilter: Option[GpuDeleteFilter] = _
   private var parquetIterator: SingleFileReader = _
   private var dataIterator: Iterator[ColumnarBatch] = _
 
@@ -56,8 +59,11 @@ class GpuSingleThreadIcebergParquetReader(
       if (taskIterator.hasNext) {
         val file = taskIterator.next()
 
-        parquetIterator = new SingleFileReader(file, constantsProvider(file), conf)
-        dataIterator = parquetIterator
+        gpuDeleteFilter = gpuDeleteProvider(file)
+        parquetIterator = new SingleFileReader(file, constantsProvider(file), gpuDeleteFilter, conf)
+        dataIterator = gpuDeleteFilter
+          .map(_.filterAndDelete(parquetIterator))
+          .getOrElse(parquetIterator)
         // update the current file for Spark's filename() function
         InputFileUtils.setInputFileBlock(file.path.toString, file.start, file.length)
       }
@@ -65,6 +71,9 @@ class GpuSingleThreadIcebergParquetReader(
       if (!parquetIterator.hasNext) {
         withResource(parquetIterator) { _ =>
           parquetIterator = null
+          withResource(gpuDeleteFilter) { _ =>
+            gpuDeleteFilter = None
+          }
         }
         ensureParquetReader()
       }
@@ -75,6 +84,9 @@ class GpuSingleThreadIcebergParquetReader(
     if (parquetIterator != null) {
       withResource(parquetIterator) { _ =>
         parquetIterator = null
+        withResource(gpuDeleteFilter) { _ =>
+          gpuDeleteFilter = None
+        }
       }
     }
   }
@@ -83,6 +95,7 @@ class GpuSingleThreadIcebergParquetReader(
 private class SingleFileReader(
     val file: IcebergPartitionedFile,
     val idToConstant: JMap[Integer, _],
+    val deleteFilter: Option[GpuDeleteFilter],
     override val conf: GpuIcebergParquetReaderConf)
   extends GpuIcebergParquetReader {
 
@@ -98,44 +111,41 @@ private class SingleFileReader(
   override def hasNext: Boolean = reader.next()
 
   override def next(): ColumnarBatch = {
-    withResource(reader.get()) { batch =>
-      postProcessor.process(batch)
-    }
+    postProcessor.process(reader.get())
   }
 
   private def open() = {
-    withResource(file.newReader) { _ =>
+    val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
 
-      val filteredParquet = super.filterParquetBlocks(file, conf.expectedSchema)
+    val filteredParquet = super.filterParquetBlocks(file, requiredSchema)
 
-      val parquetPartReader = new ParquetPartitionReader(conf.conf,
-        file.sparkPartitionedFile,
-        new Path(file.file.location()),
-        filteredParquet.blocks,
-        filteredParquet.schema,
-        conf.caseSensitive,
-        filteredParquet.readSchema,
-        conf.parquetDebugDumpPrefix,
-        conf.parquetDebugDumpAlways,
-        conf.maxBatchSizeRows,
-        conf.maxBatchSizeBytes,
-        conf.targetBatchSizeBytes,
-        conf.useChunkedReader,
-        conf.maxChunkedReaderMemoryUsageSizeBytes,
-        CpuCompressionConfig.disabled(),
-        conf.metrics,
-        DateTimeRebaseCorrected, // dateRebaseMode
-        DateTimeRebaseCorrected, // timestampRebaseMode
-        true, // hasInt96Timestamps
-        false) // useFieldId
+    val parquetPartReader = new ParquetPartitionReader(conf.conf,
+      file.sparkPartitionedFile,
+      new Path(file.file.location()),
+      filteredParquet.blocks,
+      filteredParquet.schema,
+      conf.caseSensitive,
+      filteredParquet.readSchema,
+      conf.parquetDebugDumpPrefix,
+      conf.parquetDebugDumpAlways,
+      conf.maxBatchSizeRows,
+      conf.maxBatchSizeBytes,
+      conf.targetBatchSizeBytes,
+      conf.useChunkedReader,
+      conf.maxChunkedReaderMemoryUsageSizeBytes,
+      CpuCompressionConfig.disabled(),
+      conf.metrics,
+      DateTimeRebaseCorrected, // dateRebaseMode
+      DateTimeRebaseCorrected, // timestampRebaseMode
+      true, // hasInt96Timestamps
+      false) // useFieldId
 
-      val parquetReader = new PartitionReaderWithBytesRead(parquetPartReader)
-      val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet.schema,
-        idToConstant,
-        conf.expectedSchema)
+    val parquetReader = new PartitionReaderWithBytesRead(parquetPartReader)
+    val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet,
+      idToConstant,
+      requiredSchema)
 
-      inited = true
-      (parquetReader, postProcessor)
-    }
+    inited = true
+    (parquetReader, postProcessor)
   }
 }

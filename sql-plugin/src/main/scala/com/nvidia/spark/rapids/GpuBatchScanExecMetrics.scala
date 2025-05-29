@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.parquet.GpuParquetScan
 
 import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.execution.metric.SQLMetrics
 
 trait GpuBatchScanExecMetrics extends GpuExec {
   import GpuMetric._
@@ -34,8 +35,10 @@ trait GpuBatchScanExecMetrics extends GpuExec {
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
     BUFFER_TIME_WITH_SEM -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME_WITH_SEM),
-    FILTER_TIME_WITH_SEM -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME_WITH_SEM)
-  ) ++ fileCacheMetrics
+    FILTER_TIME_WITH_SEM -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME_WITH_SEM),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+  ) ++ fileCacheMetrics ++ scanCustomMetrics
 
   lazy val fileCacheMetrics: Map[String, GpuMetric] = {
     // File cache only supported on Parquet files for now.
@@ -43,5 +46,11 @@ trait GpuBatchScanExecMetrics extends GpuExec {
       case _: GpuParquetScan | _: GpuOrcScan => createFileCacheMetrics()
       case _ => Map.empty
     }
+  }
+
+  private lazy val scanCustomMetrics: Map[String, GpuMetric] = {
+    scan.supportedCustomMetrics().map { metric =>
+      metric.name() -> WrappedGpuMetric(SQLMetrics.createV2CustomMetric(sparkContext, metric))
+    }.toMap
   }
 }

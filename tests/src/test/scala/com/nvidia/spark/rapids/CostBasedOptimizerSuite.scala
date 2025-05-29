@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.shims.OperatorsUtilShims
 import org.scalactic.Tolerance
 import org.scalatest.BeforeAndAfter
 
@@ -348,10 +349,13 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       val df: DataFrame = createQuery(spark)
       df.collect()
 
-      // assert that the top-level projection stayed on the CPU
-      df.queryExecution.executedPlan.asInstanceOf[AdaptiveSparkPlanExec]
-          .executedPlan.asInstanceOf[WholeStageCodegenExec]
-          .child.asInstanceOf[ProjectExec]
+      val cpuProjects = OperatorsUtilShims.findOperators(df.queryExecution.executedPlan,
+        _.isInstanceOf[ProjectExec])
+      val gpuProjects = OperatorsUtilShims.findOperators(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuProjectExec])
+      // Assert that the top-level projection stayed on the CPU
+      assert(cpuProjects.nonEmpty, "No CPU ProjectExec found in the plan")
+      assert(gpuProjects.isEmpty, "Found GPU ProjectExec in the plan when it should be on CPU")
 
       df
     }, conf)
@@ -459,7 +463,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set("spark.rapids.sql.optimizer.gpu.exec.GpuCustomShuffleReaderExec", "99999999")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
-            "RoundRobinPartitioning,HashPartitioning")
+            "RoundRobinPartitioning,HashPartitioning,EmptyRelationExec")
 
     withGpuSparkSession(spark => {
       val df1: DataFrame = createQuery(spark).alias("l")
@@ -479,7 +483,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
-            "HashPartitioning")
+            "HashPartitioning,EmptyRelationExec")
 
     val plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
       new ListBuffer[SparkPlanMeta[SparkPlan]]()
@@ -526,7 +530,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
-            "RoundRobinPartitioning")
+            "RoundRobinPartitioning,EmptyRelationExec")
 
     val plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
       new ListBuffer[SparkPlanMeta[SparkPlan]]()

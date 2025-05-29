@@ -25,7 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxUniqueRange}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.jni.{RmmSpark, TaskPriority}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -271,8 +271,6 @@ object GpuSemaphore {
     }
   }
 
-  val DEFAULT_PRIORITY: Long = 0L
-
   // For now we are going to have one permit for each 32 MiB of GPU memory.
   private val PERMIT_MEMORY_SIZE: Long = 32L * 1024 * 1024
 
@@ -421,7 +419,8 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
           // so we have to release it and grab it again afterwards.
           val used = semaphore.acquire(() => 
               GpuSemaphore.memToPermitsWithMax(memoryEstimator.estimate()),
-              lastReleased, taskAttemptId)
+            () => lastAcquired > 0,
+            TaskPriority.getTaskPriority(taskAttemptId), taskAttemptId)
           synchronized {
             permitsUsed = used
             // We now own the semaphore so we need to wake up all of the other tasks that are
@@ -465,7 +464,10 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
       if (blockedThreads.size() == 0) {
         // No other threads for this task are waiting, so we might be able to grab this directly
         val numPermits = GpuSemaphore.memToPermitsWithMax(memoryEstimator.estimate())
-        val ret = semaphore.tryAcquire(numPermits, lastReleased, taskAttemptId)
+        val ret = semaphore.tryAcquire(numPermits,
+          TaskPriority.getTaskPriority(taskAttemptId),
+          () => lastAcquired > 0,
+          taskAttemptId)
         if (ret) {
           hasSemaphore = true
           lastAcquired = System.nanoTime()
@@ -505,8 +507,7 @@ private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
-  private val semaphore = new GpuBackingSemaphore(computeMaxPermits(),
-    GpuSemaphore.DEFAULT_PRIORITY)
+  private val semaphore = new GpuBackingSemaphore(computeMaxPermits())
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.

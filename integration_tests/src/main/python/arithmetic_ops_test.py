@@ -824,6 +824,12 @@ def test_bit_not(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('~a'))
 
+
+@pytest.mark.parametrize('data_gen', integral_gens + boolean_gens, ids=idfn)
+def test_bit_count(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('bit_count(a)'))
+
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_radians(data_gen):
@@ -1438,4 +1444,3 @@ def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
     # not we want for this test.
     conf_no_ansi = {"spark.sql.ansi.enabled": "false"}
     assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
-
