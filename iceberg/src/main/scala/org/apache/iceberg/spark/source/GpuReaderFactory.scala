@@ -68,10 +68,6 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
 
     val hasNoDeletes = scans.forall(_.deletes.isEmpty)
 
-    if (!hasNoDeletes) {
-      throw new UnsupportedOperationException("Delete filter is not supported")
-    }
-
     val allParquet = scans.forall(_.file.format == FileFormat.PARQUET)
 
     if (allParquet) {

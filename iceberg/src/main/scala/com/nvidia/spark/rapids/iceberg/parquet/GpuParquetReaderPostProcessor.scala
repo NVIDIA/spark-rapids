@@ -20,11 +20,13 @@ import java.util.{Map => JMap}
 
 import scala.collection.mutable.ArrayBuffer
 
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
 import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar, SpillableColumnarBatch}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
+import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
 import java.util
 import org.apache.iceberg.{MetadataColumns, Schema}
 import org.apache.iceberg.spark.SparkSchemaUtil
@@ -32,7 +34,7 @@ import org.apache.iceberg.types.{Type, Types, TypeUtil}
 import org.apache.iceberg.types.Types.NestedField
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, LongType, StringType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /** Processes columnar batch after reading from parquet file.
@@ -45,18 +47,27 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  * For details of schema evolution, please refer to
  * [[https://iceberg.apache.org/spec/#schema-evolution iceberg spec]].
  *
- * @param fileReadSchema Schema passed to actual parquet reader.
+ * @param parquetInfo    Parquet file info with block metadata.
  * @param idToConstant   Constant fields.
  * @param expectedSchema Iceberg schema required by reader.
  */
 class GpuParquetReaderPostProcessor(
-    private[parquet] val fileReadSchema: MessageType,
+    private[parquet] val parquetInfo: ParquetFileInfoWithBlockMeta,
     private[parquet] val idToConstant: JMap[Integer, _],
     private[parquet] val expectedSchema: Schema
 ) {
-  require(fileReadSchema != null, "fileReadSchema cannot be null")
+  require(parquetInfo != null, "parquetInfo cannot be null")
+  require(parquetInfo.blocks.size == parquetInfo.blocksFirstRowIndices.size,
+    s"Parquet info block count ${parquetInfo.blocks.size} not matching parquet info block first " +
+      s"row index count ${parquetInfo.blocksFirstRowIndices.size}")
   require(idToConstant != null, "idToConstant cannot be null")
   require(expectedSchema != null, "expectedSchema cannot be null")
+
+  private[parquet] val fileReadSchema: MessageType = parquetInfo.schema
+  private[parquet] val filePath: String = parquetInfo.filePath.toString
+  private[parquet] var processedBlockRowCounts = 0L
+  private[parquet] var processedRowCount = 0L
+  private[parquet] var curBlockIndex = 0
 
   /**
    * Process columnar batch to match expected schema.
@@ -128,9 +139,17 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
         return GpuColumnVector.from(scalar, batch.numRows(), sparkType)
       }
     }
-    if (curFieldId == MetadataColumns.ROW_POSITION.fieldId) {
-      throw new UnsupportedOperationException("ROW_POSITION meta column is not supported yet")
+
+    if (curFieldId == MetadataColumns.FILE_PATH.fieldId) {
+      withResource(GpuScalar.from(processor.filePath, StringType)) { scalar =>
+        return GpuColumnVector.from(scalar, batch.numRows, StringType)
+      }
     }
+
+    if (curFieldId == MetadataColumns.ROW_POSITION.fieldId) {
+      return processRowPos(batch.numRows)
+    }
+
     if (curFieldId == MetadataColumns.IS_DELETED.fieldId) {
       throw new UnsupportedOperationException("IS_DELETED meta column is not supported yet")
     }
@@ -142,11 +161,56 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
           fieldType)
       }
     }
+
     if (currentField.isOptional) {
       return GpuColumnVector.fromNull(batch.numRows(), sparkType)
     }
 
     throw new IllegalArgumentException("Missing required field: " + currentField.fieldId)
+  }
+
+  /** Generates row positions column for the current record batch.
+   *
+   * This method calculates the row positions based on each block's row count and the first row
+   * indices of each block. Let's say we have a parquet file with 3 blocks, and each block has 50
+   * rows, then for each block first row index will be 0, 50, 100 respectively. And we only
+   * process the first block and the 3rd block, since the 2nd block has been filtered out. Then
+   * for the first record batch with 40 rows, we generate row positions as 0-40. And for the
+   * second record batch with 30 rows, we generate row positions as 40-50, 100-120.
+   *
+   * We could completely remove this method if cudf supports generating row position, tracked
+   * [[https://github.com/rapidsai/cudf/issues/18981 here]].
+   *
+   * @param numRows Number of rows in the current record batch.
+   * @return Column vector containing row positions.
+   */
+  private def processRowPos(numRows: Int): GpuColumnVector = {
+    val rowPoses = new Array[Long](numRows)
+    var curBlockRowCount = processor.parquetInfo.blocks(processor.curBlockIndex).getRowCount
+    var curBlockRowStart = processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+    var curBlockRowEnd = curBlockRowStart + curBlockRowCount
+    var curRowPos = curBlockRowStart + processor.processedRowCount -
+      processor.processedBlockRowCounts
+    for (i <- 0 until numRows) {
+      if (curRowPos >= curBlockRowEnd) {
+        // switch to next block
+        processor.curBlockIndex += 1
+        processor.processedBlockRowCounts += curBlockRowCount
+        curRowPos = processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+
+        curBlockRowCount = processor.parquetInfo.blocks(processor.curBlockIndex).getRowCount
+        curBlockRowStart = processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+        curBlockRowEnd = curBlockRowStart + curBlockRowCount
+      }
+
+      rowPoses(i) = curRowPos
+      curRowPos += 1
+      processor.processedRowCount += 1
+    }
+
+    closeOnExcept(CudfColumnVector.fromLongs(rowPoses: _*)) { rowPosesCV =>
+      GpuColumnVector.fromChecked(rowPosesCV, LongType)
+    }
   }
 
   override def close(): Unit = {
