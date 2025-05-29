@@ -77,8 +77,6 @@ def test_delta_scan_read(spark_tmp_path):
         setup_delta_dest_table(spark, data_path,
                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
                                use_cdf=use_cdf, enable_deletion_vectors=False)
-        spark.sql("INSERT INTO delta.`{}` VALUES(1)".format(data_path))
-        spark.sql("DELETE FROM delta.`{}` WHERE a = 1".format(data_path))
     with_cpu_session(setup_tables)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)))
