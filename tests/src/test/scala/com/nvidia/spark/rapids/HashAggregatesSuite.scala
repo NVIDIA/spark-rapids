@@ -106,11 +106,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     incompat: Boolean = false,
     execsAllowedNonGpu: Seq[String] = Seq.empty,
     sortBeforeRepart: Boolean = false,
-<<<<<<< HEAD
-    assumeCondition: SparkSession => (Boolean, String) = null)
-=======
     assumeCondition: SparkSession => (Boolean, String))
->>>>>>> 703cd8512... hash aggregate fixes
     (fun: DataFrame => DataFrame)
     (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
