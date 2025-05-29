@@ -895,28 +895,6 @@ def test_cast_string_to_timestamp_valid():
                 ("2023-01-01 00:00:00Z",),
                 ("2023-01-01 00:00:00 Z",),
                 ("2023-01-01 00:00:00 GMT0",),
-            ],
-            'str_col string')
-    def _query(spark):
-        # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
-        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: _query(spark))
-
-
-#
-# Only Test Spark 321 and 321+
-# Spark 320 has bugs and Spark321 fixed, GPU is conformed to Spark321+
-# Refer to issue https://github.com/NVIDIA/spark-rapids-jni/issues/3347
-#
-@pytest.mark.skipif(is_before_spark_321(),
-                    reason='Spark 320 has some bugs in casting from string to timestamp, '
-                           'Spark 321 fixed and GPU is consistent with Spark 321 and 321+')
-def test_cast_string_to_timestamp_valid_skip_Spark320():
-    def _gen_df(spark):
-        return spark.createDataFrame(
-            [
                 ("   2023-11-05 03:04:55 +1:02   ",),  # both leading/ tailing spaces
                 ("2023-11-05 03:04:55 -01:2",),
                 ("2023-11-05 03:04:55 +1:2",),
@@ -931,15 +909,12 @@ def test_cast_string_to_timestamp_valid_skip_Spark320():
                 ("2023-11-05 03:04:55 GMT+1:2",),
             ],
             'str_col string')
-
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
         spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
-
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
-
 
 def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
     # For the just time strings, will get current date to fill the missing date.
