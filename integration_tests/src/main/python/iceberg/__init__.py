@@ -16,7 +16,7 @@ import os
 import tempfile
 from itertools import combinations
 from types import MappingProxyType
-from typing import Callable
+from typing import Callable, List
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import FloatType, DoubleType, NullType, BinaryType
@@ -46,9 +46,9 @@ def can_be_eq_delete_col(data_gen: DataGen) -> bool:
             # loader, we should remove this after the bug is fixed.
             not isinstance(data_gen.data_type, BinaryType))
 
-def _eq_column_combinations(all_columns: list[str],
-                           all_types: list[DataGen],
-                           n: int) -> list[list[str]]:
+def _eq_column_combinations(all_columns: List[str],
+                           all_types: List[DataGen],
+                           n: int) -> List[List[str]]:
     # In primitive types, float, double can't be used in eq deletes
     cols = [col for (col, data_gen) in list(zip(all_columns, all_types))
             if can_be_eq_delete_col(data_gen)]
