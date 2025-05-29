@@ -21,6 +21,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
@@ -73,7 +74,7 @@ case class GpuAtomicCreateTableAsSelectExec(
     val stagedTable = catalog.stageCreate(
       ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
       partitioning.toArray, properties.asJava)
-    writeToTable(catalog, stagedTable, writeOptions, ident, query)
+    writeToTable(catalog, stagedTable, writeOptions, ident, query, overwrite = false)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =

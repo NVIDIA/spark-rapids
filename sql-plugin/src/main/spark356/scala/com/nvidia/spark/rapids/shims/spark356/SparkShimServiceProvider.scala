@@ -15,15 +15,15 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "355"}
+{"spark": "356"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark356
 
 import com.nvidia.spark.rapids.SparkShimVersion
 
 object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 5, 5)
-  val VERSIONNAMES = Seq(s"$VERSION")
+  val VERSION = SparkShimVersion(3, 5, 6)
+  val VERSIONNAMES = Seq(s"$VERSION-SNAPSHOT")
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {

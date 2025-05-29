@@ -15,7 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "355"}
+{"spark": "356"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark356
 
@@ -24,7 +24,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
   test("spark shims version") {
-    assert(ShimLoader.getShimVersion === SparkShimVersion(3, 5, 5))
+    assert(ShimLoader.getShimVersion === SparkShimVersion(3, 5, 6))
   }
 
   test("shuffle manager class") {
