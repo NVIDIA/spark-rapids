@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,5 +31,5 @@ buildvers = project.getProperty("dyn.shim.buildver")
 
 sys.path.append("{}/build/".format(spark_rapids_source_basedir))
 from get_buildvers import _get_buildvers
-value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log)
+value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log, isShimplify=True)
 project.setProperty("included_buildvers", value)
