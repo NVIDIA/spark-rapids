@@ -15,12 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
+{"spark": "356"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
@@ -30,36 +25,32 @@ import com.nvidia.spark.rapids.GpuExec
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec}
-import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog, Table, TableCatalog}
+import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.execution.datasources.v2.V2CreateTableAsSelectBaseExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * GPU version of AtomicReplaceTableAsSelectExec.
+ * GPU version of AtomicCreateTableAsSelectExec.
  *
- * Physical plan node for v2 replace table as select when the catalog supports staging
- * table replacement.
+ * Physical plan node for v2 create table as select, when the catalog is determined to support
+ * staging table creation.
  *
  * A new table will be created using the schema of the query, and rows from the query are appended.
- * If the table exists, its contents and schema should be replaced with the schema and the contents
- * of the query. This implementation is atomic. The table replacement is staged, and the commit
- * operation at the end should perform the replacement of the table's metadata and contents. If the
- * write fails, the table is instructed to roll back staged changes and any previously written table
- * is left untouched.
+ * The CTAS operation is atomic. The creation of the table is staged and the commit of the write
+ * should bundle the commitment of the metadata and the table contents in a single unit. If the
+ * write fails, the table is instructed to roll back all staged changes.
  */
-case class GpuAtomicReplaceTableAsSelectExec(
+case class GpuAtomicCreateTableAsSelectExec(
     catalog: StagingTableCatalog,
     ident: Identifier,
     partitioning: Seq[Transform],
     query: LogicalPlan,
     tableSpec: TableSpec,
     writeOptions: Map[String, String],
-    orCreate: Boolean,
-    invalidateCache: (TableCatalog, Table, Identifier) => Unit)
+    ifNotExists: Boolean)
   extends V2CreateTableAsSelectBaseExec with GpuExec {
 
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
@@ -67,26 +58,17 @@ case class GpuAtomicReplaceTableAsSelectExec(
   override def supportsColumnar: Boolean = false
 
   override protected def run(): Seq[InternalRow] = {
-    val columns = getV2Columns(query.schema, catalog.useNullableQuerySchema)
     if (catalog.tableExists(ident)) {
-      val table = catalog.loadTable(ident)
-      invalidateCache(catalog, table, ident)
-    }
-    val staged = if (orCreate) {
-      catalog.stageCreateOrReplace(
-        ident, columns, partitioning.toArray, properties.asJava)
-    } else if (catalog.tableExists(ident)) {
-      try {
-        catalog.stageReplace(
-          ident, columns, partitioning.toArray, properties.asJava)
-      } catch {
-        case e: NoSuchTableException =>
-          throw QueryCompilationErrors.cannotReplaceMissingTableError(ident, Some(e))
+      if (ifNotExists) {
+        return Nil
       }
-    } else {
-      throw QueryCompilationErrors.cannotReplaceMissingTableError(ident)
+
+      throw QueryCompilationErrors.tableAlreadyExistsError(ident)
     }
-    writeToTable(catalog, staged, writeOptions, ident, query)
+    val stagedTable = catalog.stageCreate(
+      ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
+      partitioning.toArray, properties.asJava)
+    writeToTable(catalog, stagedTable, writeOptions, ident, query, overwrite = false)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =
