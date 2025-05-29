@@ -968,7 +968,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)
       (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
 
@@ -976,6 +977,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         maxFloatDiff, sortBeforeRepart)
     test(qualifiedTestName) {
+      if (assumeCondition != null) {
+        val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = testConf)
+        assume(isAllowed, reason)
+      }
       val (fromCpu, cpuPlan, fromGpu, gpuPlan) = runOnCpuAndGpuWithCapture(df, fun,
         conf = testConf,
         repart = repart)
