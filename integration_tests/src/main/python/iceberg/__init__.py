@@ -16,7 +16,7 @@ import os
 import tempfile
 from itertools import combinations
 from types import MappingProxyType
-from typing import Callable, List
+from typing import Callable, List, Dict, Optional
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import FloatType, DoubleType, NullType, BinaryType
@@ -57,8 +57,8 @@ def _eq_column_combinations(all_columns: List[str],
 all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 3)
 
 def setup_base_iceberg_table(spark_tmp_table_factory,
-                             seed: int | None = None,
-                             table_prop: dict[str, str] | None = None) -> str:
+                             seed: Optional[int] = None,
+                             table_prop: Optional[Dict[str, str]] = None) -> str:
 
     gen_list = list(zip(iceberg_base_table_cols, iceberg_gens_list))
     table_name = spark_tmp_table_factory.get()
@@ -83,7 +83,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
     return table_name
 
 
-def _add_eq_deletes(spark: SparkSession, eq_delete_cols: list[str], row_count: int, table_name: str,
+def _add_eq_deletes(spark: SparkSession, eq_delete_cols: List[str], row_count: int, table_name: str,
                     spark_tmp_path):
     for eq_delete_col in eq_delete_cols:
         assert can_be_eq_delete_col(iceberg_table_gen[eq_delete_col]), \
