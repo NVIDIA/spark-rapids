@@ -16,20 +16,22 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids.{GpuWrite, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuWrite, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
+import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{FileFormat, PartitionSpec, Schema, Table}
 import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
-import org.apache.spark.sql.catalyst.plans.physical.ClusteredDistribution
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 
 class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionAndOrdering  {
   private val table: Table = FieldUtils.readField(cpu, "table", true).asInstanceOf[Table]
@@ -57,9 +59,52 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
   override def requiredDistribution(): Distribution = cpu.requiredDistribution()
 
   override def requiredOrdering(): Array[SortOrder] = cpu.requiredOrdering()
+
+  private[source] def createDataWriterFactory: DataWriterFactory = {
+
+  }
 }
 
-class GpuWriterFactory extends DataWriterFactory {
+class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
+    val queryId: String,
+    val format: FileFormat,
+    val outputSpecId: Int,
+    val targetFileSize: Long,
+    val writeSchema: Schema,
+    val dsSchema: StructType,
+    val useFanout: Boolean,
+    val props: Map[String, String],
+    val outputWriterFactory: ColumnarOutputWriterFactory,
+    val hadoopConf: SerializableConfiguration,
+) extends DataWriterFactory {
+  override def createWriter(partitionId: Int, taskId: Long): DataWriter[ColumnarBatch] = {
+    val table = tableBroadcast.value
+    val spec = table.specs().get(outputSpecId)
+    val io = table.io()
+    val operationId = s"$queryId-0"
+    val outputFileFactory = OutputFileFactory
+      .builderFor(table, partitionId, taskId)
+      .format(format)
+      .operationId(operationId)
+      .build()
+
+    val writerFactory = new GpuSparkFileWriterFactory(
+      table,
+      format,
+      dsSchema,
+      null,
+      format,
+      outputWriterFactory,
+      hadoopConf
+    )
+
+    if (spec.isUnpartitioned) {
+      new GpuUnpartitionedDataWriter(writerFactory, outputFileFactory, io, spec, targetFileSize)
+    } else {
+      new GpuPartitionedDataWriter(writerFactory, outputFileFactory, io, spec, writeSchema,
+        dsSchema, targetFileSize, useFanout)
+    }
+  }
 }
 
 class GpuUnpartitionedDataWriter(
@@ -120,7 +165,15 @@ class GpuPartitionedDataWriter(
     new ClusteredDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io, targetFileSize)
   }
 
-  override def write(record: ColumnarBatch): Unit = ???
+  private val partitioner = new GpuIcebergPartitioner(spec, dataSchema, dataSparkType)
+
+  override def write(record: ColumnarBatch): Unit = {
+    partitioner.partition(record)
+      .foreach { batch =>
+        delegate.write(SpillableColumnarBatch(batch.batch, ACTIVE_ON_DECK_PRIORITY),
+          spec, batch.partition)
+      }
+  }
 
   override def commit(): WriterCommitMessage = {
     close()

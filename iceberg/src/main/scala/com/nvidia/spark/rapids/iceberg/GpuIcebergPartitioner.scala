@@ -18,24 +18,29 @@ package com.nvidia.spark.rapids.iceberg
 
 import java.lang.Math.toIntExact
 
-import ai.rapids.cudf.{CloseableArray, DType, HostColumnVector, Scalar, Table, ColumnVector => CudfColumnVector}
+import scala.collection.JavaConverters._
+
+import ai.rapids.cudf.{CloseableArray,  ColumnVector => CudfColumnVector, DType, Scalar, Table}
 import ai.rapids.cudf.Table.DuplicateKeepOption
-import com.nvidia.spark.rapids.{GpuColumnVector, ShimReflectionUtils}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.{GpuColumnVector, RapidsHostColumnVector, ShimReflectionUtils}
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner.toRows
 import com.nvidia.spark.rapids.jni.Hash
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.MethodUtils
 import org.apache.iceberg.{PartitionSpec, Schema, StructLike}
+import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
 import org.apache.iceberg.transforms.Transform
-import scala.collection.JavaConverters._
-
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
-import org.apache.iceberg.spark.SparkStructLike
 import org.apache.iceberg.types.Types
 
-import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
+import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-class GpuPartitioner(val spec: PartitionSpec, val schema: Schema) {
+class GpuIcebergPartitioner(val spec: PartitionSpec, val schema: Schema,
+    val dataSparkType: StructType) {
+  private val sparkType: Array[DataType] = dataSparkType.fields.map(_.dataType)
+  private val partitionSparkType: StructType = GpuTypeToSparkType.toSparkType(spec.partitionType())
 
   private val fieldTransforms: Seq[FieldTransform] = spec.fields()
     .asScala
@@ -52,6 +57,9 @@ class GpuPartitioner(val spec: PartitionSpec, val schema: Schema) {
     val distinctPartitionValues = partitionValues
       .dropDuplicates(keyCols, DuplicateKeepOption.KEEP_FIRST, true)
 
+    val hostDistPartValues = toRows(spec.partitionType(), partitionSparkType,
+      distinctPartitionValues)
+
     val numPartitions = toIntExact(distinctPartitionValues.getRowCount)
 
     withResource(partitionValues
@@ -62,16 +70,19 @@ class GpuPartitioner(val spec: PartitionSpec, val schema: Schema) {
         withResource(partitionedTable) { _ =>
           val partitionOffset = partitionedTable.getPartitions :+ numRows
 
-          (0 until numPartitions).map { partitionIdx =>
+          (0 until numPartitions).flatMap { partitionIdx =>
             val partitionRows = partitionOffset(partitionIdx + 1) - partitionOffset(partitionIdx)
             if (partitionRows > 0) {
               withResource(Scalar.fromInt(partitionOffset(partitionIdx))) { startRow =>
                 withResource(CudfColumnVector.sequence(startRow, partitionRows)) { gatherMap =>
                   withResource(partitionedTable.getTable.gather(gatherMap)) { table =>
-
+                    Some(ColumnarBatchWithPartition(GpuColumnVector.from(table, sparkType),
+                      hostDistPartValues(partitionIdx)))
                   }
                 }
               }
+            } else {
+              None
             }
           }
         }
@@ -83,10 +94,10 @@ class GpuPartitioner(val spec: PartitionSpec, val schema: Schema) {
 case class ColumnarBatchWithPartition(batch: ColumnarBatch, partition: StructLike)
 
 private case class FieldTransform(fieldPos: Int, transform: Transform[_, _]) {
-  require(GpuPartitioner.isBucketTransform(transform),
+  require(GpuIcebergPartitioner.isBucketTransform(transform),
     s"Currently only bucket transform is supported, but got $transform")
 
-  private val numBuckets = GpuPartitioner.getNumBuckets(transform)
+  private val numBuckets = GpuIcebergPartitioner.getNumBuckets(transform)
 
   def transform(input: ColumnarBatch): CudfColumnVector = {
     val cv = input.column(fieldPos)
@@ -99,7 +110,7 @@ private case class FieldTransform(fieldPos: Int, transform: Transform[_, _]) {
   }
 }
 
-object GpuPartitioner {
+object GpuIcebergPartitioner {
   private val bucketTransformClass = ShimReflectionUtils
     .loadClass("org.apache.iceberg.transforms.Bucket")
 
@@ -112,23 +123,28 @@ object GpuPartitioner {
       .asInstanceOf[java.lang.Integer]
   }
 
-  def toRows(typ: Types.StructType, table: Table): Array[SparkStructLike] = {
+  def toRows(icebergType: Types.StructType, sparkType: StructType,
+      table: Table): Array[SparkStructLike] = {
     val numCols = table.getNumberOfColumns
-    val numRows = toIntExact(table.getRowCount)
 
-    withResource(new CloseableArray[HostColumnVector](numCols)) { hostColArrays =>
+    withResource(new CloseableArray[ColumnVector](numCols)) { hostColArrays =>
       for (i <- 0 until numCols) {
-        hostColArrays.set(i, table.getColumn(i).copyToHost())
+        hostColArrays.set(i, new RapidsHostColumnVector(sparkType(i).dataType,
+          table.getColumn(i).copyToHost()))
       }
 
-      val rows = new Array[SparkStructLike](numRows)
-      for (rowIdx <- 0 until numRows) {
-        val rowValues = new Array[AnyRef](numCols)
-        for (colIdx <- 0 until numCols) {
-          rowValues(colIdx) = hostColArrays.get(colIdx).get
-        }
+      withResource(new ColumnarBatch(hostColArrays.release())) { hostBatch =>
+        hostBatch.rowIterator()
+          .asScala
+          .map(internalRow => {
+            val rowValues = new Array[Any](numCols)
+            for (colIdx <- 0 until numCols) {
+              rowValues(colIdx) = internalRow.get(colIdx, sparkType.fields(colIdx).dataType)
+            }
+            val row = new GenericRowWithSchema(rowValues, sparkType)
+            new SparkStructLike(icebergType).wrap(row)
+          }).toArray
       }
-
     }
   }
 }

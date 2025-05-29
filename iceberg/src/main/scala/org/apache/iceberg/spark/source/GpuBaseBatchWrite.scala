@@ -20,7 +20,7 @@ import org.apache.spark.sql.connector.write.{BatchWrite, DataWriterFactory, Phys
 
 abstract class GpuBaseBatchWrite(write: GpuSparkWrite) extends BatchWrite {
   override def createBatchWriterFactory(physicalWriteInfo: PhysicalWriteInfo): DataWriterFactory
-  = ???
+  = new GpuWriterFactory()
 
   override def abort(writerCommitMessages: Array[WriterCommitMessage]): Unit =
     write.abort(writerCommitMessages)

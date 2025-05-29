@@ -18,7 +18,7 @@ package org.apache.iceberg.spark.source
 
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetWriter, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetAppender
-import org.apache.iceberg.{FileFormat, MetricsConfig, PartitionSpec, SerializableTable, SortOrder, StructLike}
+import org.apache.iceberg.{FileFormat, MetricsConfig, PartitionSpec, SortOrder, StructLike, Table}
 import org.apache.iceberg.deletes.{EqualityDeleteWriter, PositionDeleteWriter}
 import org.apache.iceberg.encryption.EncryptedOutputFile
 import org.apache.iceberg.io.{DataWriter, FileWriterFactory}
@@ -28,7 +28,7 @@ import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 
-class GpuSparkFileWriterFactory(val table: SerializableTable,
+class GpuSparkFileWriterFactory(val table: Table,
     val dataFileFormat: FileFormat,
     val dataSparkType: StructType,
     val dataSortOrder: SortOrder,
