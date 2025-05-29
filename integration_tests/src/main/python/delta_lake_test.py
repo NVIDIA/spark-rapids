@@ -68,6 +68,19 @@ def test_delta_merge_query(spark_tmp_table_factory):
     result = with_cpu_session(lambda spark: spark.sql("SELECT * FROM t1 ORDER BY c0").collect(), conf=_conf)
     assert [Row(c0='a', c1=40), Row(c0='b', c1=20), Row(c0='c', c1=30)] == result
 
+@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+def test_delta_scan_read(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                               use_cdf=use_cdf, enable_deletion_vectors=False)
+    with_cpu_session(setup_tables)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)))
+
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
