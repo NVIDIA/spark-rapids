@@ -48,13 +48,13 @@ def can_be_eq_delete_col(data_gen: DataGen) -> bool:
 
 def _eq_column_combinations(all_columns: list[str],
                            all_types: list[DataGen],
-                           n: int = 3) -> list[list[str]]:
+                           n: int) -> list[list[str]]:
     # In primitive types, float, double can't be used in eq deletes
     cols = [col for (col, data_gen) in list(zip(all_columns, all_types))
             if can_be_eq_delete_col(data_gen)]
     return list(combinations(cols, n))
 
-all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list)
+all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 3)
 
 def setup_base_iceberg_table(spark_tmp_table_factory,
                              seed: int | None = None,
