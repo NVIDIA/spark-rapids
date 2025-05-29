@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.SparkShimVersion
 
 object SparkShimServiceProvider {
   val VERSION = SparkShimVersion(3, 5, 6)
-  val VERSIONNAMES = Seq(s"$VERSION-SNAPSHOT")
+  val VERSIONNAMES = Seq(s"$VERSION")
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
