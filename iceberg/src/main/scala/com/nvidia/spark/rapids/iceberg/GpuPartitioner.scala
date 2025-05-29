@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.iceberg
 
 import java.lang.Math.toIntExact
 
-import ai.rapids.cudf.{CloseableArray, DType, Scalar, Table, ColumnVector => CudfColumnVector}
+import ai.rapids.cudf.{CloseableArray, DType, HostColumnVector, Scalar, Table, ColumnVector => CudfColumnVector}
 import ai.rapids.cudf.Table.DuplicateKeepOption
 import com.nvidia.spark.rapids.{GpuColumnVector, ShimReflectionUtils}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -29,7 +29,10 @@ import org.apache.iceberg.transforms.Transform
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import org.apache.iceberg.spark.SparkStructLike
+import org.apache.iceberg.types.Types
 
+import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuPartitioner(val spec: PartitionSpec, val schema: Schema) {
@@ -42,19 +45,35 @@ class GpuPartitioner(val spec: PartitionSpec, val schema: Schema) {
   val keyCols: Array[Int] = (0 until spec.fields().size()).toArray
 
   def partition(input: ColumnarBatch): Seq[ColumnarBatchWithPartition] = {
-    val partitionTransformValues = new Table(
+    val numRows = input.numRows()
+    val partitionValues = new Table(
       fieldTransforms.safeMap(_.transform(input)).toArray:_*)
 
-    val distinctPartitionTransformValues = partitionTransformValues
+    val distinctPartitionValues = partitionValues
       .dropDuplicates(keyCols, DuplicateKeepOption.KEEP_FIRST, true)
 
-    withResource(partitionTransformValues
-      .leftDistinctJoinGatherMap(distinctPartitionTransformValues, true)) { partitionMap =>
+    val numPartitions = toIntExact(distinctPartitionValues.getRowCount)
+
+    withResource(partitionValues
+      .leftDistinctJoinGatherMap(distinctPartitionValues, true)) { partitionMap =>
       withResource(partitionMap.toColumnView(0, input.numRows())) { partitionMapCv =>
         val partitionedTable = GpuColumnVector.from(input).partition(partitionMapCv,
           toIntExact(partitionMapCv.getRowCount))
         withResource(partitionedTable) { _ =>
+          val partitionOffset = partitionedTable.getPartitions :+ numRows
 
+          (0 until numPartitions).map { partitionIdx =>
+            val partitionRows = partitionOffset(partitionIdx + 1) - partitionOffset(partitionIdx)
+            if (partitionRows > 0) {
+              withResource(Scalar.fromInt(partitionOffset(partitionIdx))) { startRow =>
+                withResource(CudfColumnVector.sequence(startRow, partitionRows)) { gatherMap =>
+                  withResource(partitionedTable.getTable.gather(gatherMap)) { table =>
+
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -91,5 +110,25 @@ object GpuPartitioner {
   def getNumBuckets(transform: Transform[_, _]): Int = {
     MethodUtils.invokeMethod(transform, "numBuckets")
       .asInstanceOf[java.lang.Integer]
+  }
+
+  def toRows(typ: Types.StructType, table: Table): Array[SparkStructLike] = {
+    val numCols = table.getNumberOfColumns
+    val numRows = toIntExact(table.getRowCount)
+
+    withResource(new CloseableArray[HostColumnVector](numCols)) { hostColArrays =>
+      for (i <- 0 until numCols) {
+        hostColArrays.set(i, table.getColumn(i).copyToHost())
+      }
+
+      val rows = new Array[SparkStructLike](numRows)
+      for (rowIdx <- 0 until numRows) {
+        val rowValues = new Array[AnyRef](numCols)
+        for (colIdx <- 0 until numCols) {
+          rowValues(colIdx) = hostColArrays.get(colIdx).get
+        }
+      }
+
+    }
   }
 }
