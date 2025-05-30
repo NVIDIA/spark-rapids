@@ -68,6 +68,7 @@ def test_delta_merge_query(spark_tmp_table_factory):
     result = with_cpu_session(lambda spark: spark.sql("SELECT * FROM t1 ORDER BY c0").collect(), conf=_conf)
     assert [Row(c0='a', c1=40), Row(c0='b', c1=20), Row(c0='c', c1=30)] == result
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/12808")
 @allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
