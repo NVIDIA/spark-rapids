@@ -964,7 +964,7 @@ def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
 
 
 # Spark 400 and DB35 can not handle pattern: left spaces + Thh:mm:ss, refer to the bug link
-@pytest.mark.skipif(is_spark_400_or_later() or is_databricks_version_or_later(3.5),
+@pytest.mark.skipif(is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
                     reason="https://github.com/NVIDIA/spark-rapids-jni/issues/3401")
 def test_cast_string_to_timestamp_for_just_time_spaces_leading():
     def _gen_df(spark):
