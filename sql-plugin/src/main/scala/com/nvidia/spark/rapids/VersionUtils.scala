@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.jni.{Version => VersionForJni, Platform => PlatformForJni}
+
 object VersionUtils {
 
   lazy val isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
@@ -42,5 +44,21 @@ object VersionUtils {
     val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
     val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
     sparkFullVersion.compareTo(fullVersion)
+  }
+
+  /**
+   * Get the version used by JNI interface
+   * Must use `com.nvidia.spark.rapids.jni.Version` in the JNI interface
+   */
+  def getVersionForJni: VersionForJni = {
+    val sparkShimVersion = ShimLoader.getShimVersion
+    sparkShimVersion match {
+      case SparkShimVersion(a, b, c) =>
+        new VersionForJni(PlatformForJni.SPARK, a, b, c)
+      case DatabricksShimVersion(a, b, c, _) =>
+        new VersionForJni(PlatformForJni.DATABRICKS, a, b, c)
+      case ClouderaShimVersion(a, b, c, _) =>
+        new VersionForJni(PlatformForJni.CLOUDERA, a, b, c)
+    }
   }
 }
