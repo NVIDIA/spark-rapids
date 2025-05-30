@@ -22,9 +22,10 @@ import scala.concurrent.Future
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.io.async.DummySyncProducer
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
-import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency, TaskContext}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -360,50 +361,82 @@ object GpuShuffleExchangeExecBase {
     } else {
       rdd
     }
-    val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
-    // Inject debugging subMetrics, such as D2HTime before SliceOnCpu
-    // The injected metrics will be serialized as the members of GpuPartitioning
-    partitioner match {
-      case pt: GpuPartitioning => pt.setupDebugMetrics(metrics)
-      case _ =>
+
+    val partitioner = {
+      val pt = getPartitioner(newRdd, outputAttributes, newPartitioning)
+      // Inject debugging subMetrics, such as D2HTime before SliceOnCpu
+      // The injected metrics will be serialized as the members of GpuPartitioning
+      pt.setupDebugMetrics(metrics)
+      pt
     }
     val partitionTime: GpuMetric = metrics(METRIC_SHUFFLE_PARTITION_TIME)
-    def getPartitioned: ColumnarBatch => Any = {
-      batch => partitionTime.ns {
-        partitioner.columnarEvalAny(batch)
+
+    def getPartitioned(iter: Iterator[ColumnarBatch]): Iterator[Any] = {
+      // filter out empty batches
+      val nonEmptyIter: Iterator[ColumnarBatch] = new FilterEmptyBatchIterator(iter)
+
+      if (partitioner.usesGPUShuffle) {
+        // Partition the batches on the GPU. Everything is done on the GPU, so only one stage.
+        nonEmptyIter.map { batch =>
+          partitionTime.ns {
+            partitioner.columnarEvalAny(batch)
+          }
+        }
+      } else {
+        // Divide the GPU processing and subsequent shuffle write (which is executed on the CPU)
+        // into two stages.
+        // stage 1. compute the partition on the GPU and copy to the host
+        val partedHostIter = nonEmptyIter.map {
+          case batch if batch.numCols() == 0 =>
+            Left(Array(batch).zipWithIndex)
+          case batch =>
+            partitionTime.ns {
+              val partBatchOnDevice = partitioner.doPartition(batch)
+              Right(partitioner.copyToHost(partBatchOnDevice))
+            }
+        }
+        // TODO: replace DummySyncProducer with AsyncCachedIterator, and enable AsyncShuffleWrite
+        // Currently, we place DummySyncProducer here to refactor the partitioning logic in the
+        // manner of soft connection between DevicePartitioner and HostShuffleWriter, which fits
+        // AsyncCachedIterator.
+        val asyncCachedIter = new DummySyncProducer(partedHostIter)
+        // stage 2. slice the batches on the CPU as the preparation for the shuffle write
+        asyncCachedIter.map {
+          case Left(partResult) =>
+            // TODO: the real workflow of AsyncShuffleWrite does not release the semaphore
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            partResult
+          case Right(partBatch) =>
+            // TODO: the real workflow of AsyncShuffleWrite does not release the semaphore
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            partitioner.sliceOnHost(partBatch)
+        }
       }
     }
+
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       newRdd.mapPartitions { iter =>
-        val getParts = getPartitioned
+        val partedIter = getPartitioned(iter)
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
+
           private def partNextBatch(): Unit = {
             if (partitioned != null) {
               partitioned.map(_._1).safeClose()
               partitioned = null
               at = 0
             }
-            if (iter.hasNext) {
-              var batch = iter.next()
-              while (batch.numRows == 0 && iter.hasNext) {
-                batch.close()
-                batch = iter.next()
-              }
+            if (partedIter.hasNext) {
               // Get a non-empty batch or the last batch. So still need to
               // check if it is empty for the later case.
-              if (batch.numRows > 0) {
-                partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-                partitioned.foreach(batches => {
-                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                })
-                metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-                at = 0
-              } else {
-                batch.close()
-              }
+              partitioned = partedIter.next().asInstanceOf[GpuPartitioning.Result]
+              partitioned.foreach(batches => {
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+              })
+              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+              at = 0
             }
           }
 
@@ -468,6 +501,33 @@ object GpuShuffleExchangeExecBase {
       case rrp: GpuRoundRobinPartitioning =>
         GpuBindReferences.bindReference(rrp, outputAttributes)
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
+    }
+  }
+
+  // An iterator which filters out empty batches
+  private class FilterEmptyBatchIterator(
+      base: Iterator[ColumnarBatch]) extends Iterator[ColumnarBatch] {
+    private var deck: ColumnarBatch = _
+
+    private def nextBatch(): Unit = {
+      while (deck == null && base.hasNext) {
+        base.next() match {
+          case b if b.numRows() > 0 => deck = b
+          case b => b.close()
+        }
+      }
+    }
+
+    override def hasNext: Boolean = {
+      nextBatch()
+      deck != null
+    }
+
+    override def next(): ColumnarBatch = {
+      nextBatch()
+      val ret = deck
+      deck = null
+      ret
     }
   }
 }

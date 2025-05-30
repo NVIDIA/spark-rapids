@@ -17,6 +17,7 @@
 package org.apache.spark.rapids.hybrid
 
 import com.nvidia.spark.rapids.{CoalesceSizeGoal, GpuMetric}
+import com.nvidia.spark.rapids.io.async.{AsyncCacheIteratorImpl, DummySyncProducer}
 
 import org.apache.spark.{InterruptibleIterator, Partition, TaskContext}
 import org.apache.spark.rdd.RDD
@@ -45,17 +46,17 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
     val coalesceConverter = new CoalesceConvertIterator(
       hybridScanIter, coalesceGoal.targetSizeBytes.toInt, schema, metrics)
 
-    val hostProducer: RapidsHostBatchProducer = if (preloadedCapacity > 0) {
-      // prefetches the result of ParquetScan via an asynchronous producer
-      require(metrics.contains("preloadWaitTime"),
-        "the specific metric for preloadWaitTime has not been setup")
-      new PrefetchHostBatchProducer(context.taskAttemptId(),
-        coalesceConverter,
-        preloadedCapacity,
-        metrics("preloadWaitTime"))
-    } else {
-      // bypasses via a synchronous producer which changes nothing
-      new SyncHostBatchProducer(coalesceConverter)
+    val hostProducer: CoalesceConvertIterator.HostBatchProducer = {
+      if (preloadedCapacity > 0) {
+        // prefetches the result of ParquetScan via an asynchronous producer
+        require(metrics.contains("preloadWaitTime"),
+          "the specific metric for preloadWaitTime has not been setup")
+        new AsyncCacheIteratorImpl(coalesceConverter,
+          preloadedCapacity, metrics.get("preloadWaitTime"))
+      } else {
+        // bypasses via a synchronous producer which changes nothing
+        new DummySyncProducer(coalesceConverter)
+      }
     }
 
     val deviceIter = CoalesceConvertIterator.hostToDevice(hostProducer, outputAttr, metrics)

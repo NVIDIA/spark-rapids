@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, GpuSemaphore, NvtxWi
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter, HybridHostRetryAllocator, RapidsHostColumn}
+import com.nvidia.spark.rapids.io.async.AsyncCachedIterator
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -142,10 +143,13 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
 }
 
 object CoalesceConvertIterator extends Logging {
+
+  type HostBatchProducer = AsyncCachedIterator[Array[RapidsHostColumn]]
+
   /**
-   * Consumes the RapidsHostBatchProducer and converts the HostColumnVectors to Device ones.
+   * Consumes the HostBatchProducer and converts the HostColumnVectors to Device ones.
    */
-  def hostToDevice(hostProducer: RapidsHostBatchProducer,
+  def hostToDevice(hostProducer: HostBatchProducer,
                    outputAttr: Seq[Attribute],
                    metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
     new Iterator[ColumnarBatch] {
@@ -182,7 +186,7 @@ object CoalesceConvertIterator extends Logging {
         }
         // Finally, take the ownership of the next host batch, which might awake the asynchronous
         // producer if the producer thread was stuck by the full lock.
-        val hostColumns = hostProducer.takeNext
+        val hostColumns = hostProducer.takeNext()
         val rowCount = hostColumns.head.vector.getRowCount.toInt
 
         // 2. Transferring Stage
