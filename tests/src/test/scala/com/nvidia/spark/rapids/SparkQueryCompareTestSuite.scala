@@ -683,7 +683,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
       sortBeforeRepart: Boolean = false,
-      assumeCondition: SparkSession => (Boolean, String) = null)(fun: DataFrame => DataFrame): Unit = {
+      assumeCondition: SparkSession => (Boolean, String) = null)
+      (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
