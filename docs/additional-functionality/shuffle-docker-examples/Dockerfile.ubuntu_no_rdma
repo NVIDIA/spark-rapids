@@ -44,6 +44,7 @@ RUN sed -i -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubu
 RUN find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i \
            -e "s|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
            -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" {} +
+
 RUN apt update
 RUN apt-get install -y wget bzip2
 RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
