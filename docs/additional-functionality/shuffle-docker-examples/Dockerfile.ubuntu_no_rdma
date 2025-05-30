@@ -36,6 +36,8 @@ ARG UCX_CUDA_VER
 ARG UBUNTU_VER
 ARG UCX_ARCH
 
+# https repo require install ca-certificates first
+RUN apt-get update && apt-get install -y ca-certificates
 # ubuntu22
 RUN sed -i -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
            -e 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' \
@@ -45,7 +47,7 @@ RUN find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i \
            -e "s|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
            -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" {} +
 
-RUN apt update
+RUN apt-get update
 RUN apt-get install -y wget bzip2
 RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
   wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
