@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -364,6 +364,7 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
                                  " from {}) tmp".format(dim_table) +
                                  " ON f.hr = tmp.hr AND f.dt = tmp.dt WHERE tmp.ts < CURRENT_TIMESTAMP"),
         conf=dict(_dpp_conf + [('spark.sql.adaptive.enabled', aqe_enabled),
+                               ("spark.rapids.sql.castStringToTimestamp.enabled", "true"),
                                ("spark.rapids.sql.hasExtendedYearValues", "false")]))
 
 
