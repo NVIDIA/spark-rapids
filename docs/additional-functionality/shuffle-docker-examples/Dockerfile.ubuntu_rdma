@@ -55,10 +55,7 @@ RUN sed -i -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubu
 RUN find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i \
            -e "s|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
            -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" {} +
-RUN apt-get update && apt-get install -y gnupg2
-# https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
-RUN CUDA_UBUNTU_VER=`echo "$UBUNTU_VER"| sed -s 's/\.//'` && \
-  apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$CUDA_UBUNTU_VER/x86_64/3bf863cc.pub
+RUN apt-get update
 
 # hack to get tzdata to install
 RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata
