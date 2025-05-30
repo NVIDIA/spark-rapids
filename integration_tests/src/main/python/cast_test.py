@@ -970,8 +970,8 @@ def test_cast_string_to_timestamp_for_just_time_spaces_leading():
     def _gen_df(spark):
         return spark.createDataFrame(
             [
-                " \r\n\tT23:17:50 \r\n\t",
-                " \r\n\tT23:17:50",
+                (" \r\n\tT23:17:50 \r\n\t",),
+                (" \r\n\tT23:17:50",),
             ],
             'str_col string')
 
