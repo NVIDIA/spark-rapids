@@ -45,7 +45,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
-    .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
   def generateOutOfRangeTimestampsDF(
       lowerValue: Long,
@@ -536,9 +535,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   test("ANSI mode: cast string to timestamp with parse error") {
     // Copied from Spark CastSuite
 
-    // All of the dates/timestamps here fail no matter what version of Spark used
-    val newConf = sparkConf.set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
-
+    // All the dates/timestamps here fail no matter what version of Spark used
     def checkCastWithParseError(str: String): Unit = {
       val exception = intercept[SparkException] {
         withGpuSparkSession(spark => {
@@ -551,7 +548,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
           val result = df.collect()
           result.foreach(println)
 
-        }, newConf)
+        }, sparkConf)
       }
       assert(exception.getCause.isInstanceOf[DateTimeException])
     }
@@ -564,6 +561,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     checkCastWithParseError("2015.03.18")
     checkCastWithParseError("20150318")
     checkCastWithParseError("2015-031-8")
+    // 70 is not a valid minute: [0, 59]
     checkCastWithParseError("2015-03-18T12:03:17-0:70")
   }
 
