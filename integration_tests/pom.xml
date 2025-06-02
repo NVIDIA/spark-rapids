@@ -59,16 +59,6 @@
             <classifier>${jni.classifier}</classifier>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <version>${spark.test.version}</version>
-        </dependency>
-        <dependency>
-            <!-- for hive udf test cases -->
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-hive_${scala.binary.version}</artifactId>
-        </dependency>
         <!-- https://mvnrepository.com/artifact/com.github.scopt/scopt -->
         <dependency>
             <groupId>com.github.scopt</groupId>
@@ -156,11 +146,6 @@
                         <configuration>
                             <useBaseVersion>true</useBaseVersion>
                             <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.apache.spark</groupId>
-                                    <artifactId>spark-avro_${scala.binary.version}</artifactId>
-                                    <version>${spark.version}</version>
-                                </artifactItem>
                                 <artifactItem>
                                     <groupId>org.apache.parquet</groupId>
                                     <artifactId>parquet-hadoop</artifactId>
