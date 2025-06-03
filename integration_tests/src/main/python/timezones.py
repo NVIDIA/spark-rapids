@@ -11,11 +11,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from conftest import spark_jvm
+
 fixed_offset_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
 variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
 fixed_offset_timezones_iana = ["Pacific/Pitcairn", "Etc/GMT-0", "Etc/GMT+0", "Asia/Bangkok", "GMT", "MST", "Asia/Calcutta"]
 variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "America/Halifax", "America/Los_Angeles", "America/New_York", "America/Chicago", "Asia/Kolkata", "Australia/Adelaide", "Pacific/Chatham", "Australia/Lord_Howe"]
-all_timezones = [
+
+# Some timezones are not supported in newer JVMs
+# Use this function to detect if current JVM version support the specified timezone.
+def jvm_supports_timezone(timezone):
+    # if it's short ID, return true, e.g.:
+    if spark_jvm().java.time.ZoneId.SHORT_IDS.containsKey(timezone):
+        return True
+
+    try:
+        spark_jvm().java.time.ZoneId.of(timezone)
+        return True
+    except Exception as e:
+        assert "Unknown time-zone ID" in str(e) # assert it's ont other error.
+        print("JVM does not support timezone: " + timezone)
+        return False
+
+_all_timezones = [
     "Africa/Abidjan",
     "Africa/Accra",
     "Africa/Addis_Ababa",
@@ -612,3 +630,6 @@ all_timezones = [
     "WET",
     "Zulu",
 ]
+
+# filter out timezones current JVM does not support.
+all_timezones = [tz for tz in _all_timezones if jvm_supports_timezone(tz)]
