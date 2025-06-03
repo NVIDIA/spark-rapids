@@ -22,16 +22,8 @@ variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "Am
 # Use this function to detect if current JVM version support the specified timezone.
 def jvm_supports_timezone(timezone):
     # if it's a short ID JVM already knows, it definitely supports.
-    if spark_jvm().java.time.ZoneId.SHORT_IDS.containsKey(timezone):
-        return True
-
-    try:
-        spark_jvm().java.time.ZoneId.of(timezone)
-        return True
-    except Exception as e:
-        assert "Unknown time-zone ID" in str(e) # assert it's ont other error.
-        print("JVM does not support timezone: " + timezone)
-        return False
+    return (spark_jvm().java.time.ZoneId.SHORT_IDS.containsKey(timezone)
+            or spark_jvm().java.time.ZoneId.getAvailableZoneIds().contains(timezone))
 
 _all_timezones = [
     "Africa/Abidjan",
