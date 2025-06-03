@@ -56,7 +56,7 @@
             <directory>${spark.rapids.source.basedir}/integration_tests/src/main/python</directory>
             <outputDirectory>integration_tests/src/main/python</outputDirectory>
             <includes>
-                <include>*.py</include>
+                <include>**/*.py</include>
             </includes>
         </fileSet>
         <fileSet>
