@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
 #
@@ -24,7 +25,6 @@
 # <Priority (P1 or P?)> <COMMIT-HASH> <COMMIT-MSG>
 # in this the COMMIT-HASH and COMMIT-MSG are the original sha1 and commit message from spark commit
 
-#!/bin/bash
 
 set -ex
 
