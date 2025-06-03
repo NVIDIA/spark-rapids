@@ -16,7 +16,7 @@ import tempfile
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from src.main.python import rapids_reader_types, \
+from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
     all_eq_column_combinations
 from marks import iceberg, ignore_order
