@@ -21,7 +21,7 @@ variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "Am
 # Some timezones are not supported in newer JVMs
 # Use this function to detect if current JVM version support the specified timezone.
 def jvm_supports_timezone(timezone):
-    # if it's short ID, return true, e.g.:
+    # if it's a short ID JVM already knows, it definitely supports.
     if spark_jvm().java.time.ZoneId.SHORT_IDS.containsKey(timezone):
         return True
 
