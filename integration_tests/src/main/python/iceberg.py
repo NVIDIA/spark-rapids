@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# This file provides some utility methods for iceberg tests.
+
 import os
 import tempfile
 from itertools import combinations

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-pytest == 8.3.4
+pytest
 sre_yield
 pandas
 pyarrow == 17.0.0 ; python_version == '3.8'
