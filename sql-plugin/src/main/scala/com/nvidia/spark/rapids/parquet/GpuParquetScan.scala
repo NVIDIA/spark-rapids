@@ -1129,13 +1129,19 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
+    val reader = new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
       metrics, partitionSchema, numThreads, maxNumFileProcessed, ignoreMissingFiles,
       ignoreCorruptFiles, readUseFieldId, queryUsesInputFile, keepReadsInOrderFromConf,
       combineConf)
+    // NOTE: Initialize must happen after the initialization of the reader, to ensure everything
+    // inside the reader being fully initialized.
+    if (conf.getBoolean("rapids.sql.scan.prefetch", false)) {
+      reader.eagerPrefetchInit()
+    }
+    reader
   }
 
   private def filterBlocksForCoalescingReader(

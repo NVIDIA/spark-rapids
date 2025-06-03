@@ -688,6 +688,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .createWithDefault(10000)
 
+  val BUCKET_JOIN_IO_PREFETCH =
+    conf("spark.rapids.sql.join.bucket.IOPrefetch")
+      .doc("Enable I/O prefetch of the upstream bucket scans if there is a SizedHashJoin " +
+        "in downstream. Please notice the prefetch will only take affect with " +
+        "MultiFileCloudPartitionReader")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
           "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
@@ -2776,6 +2785,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     get(USE_SHUFFLED_ASYMMETRIC_HASH_JOIN)
 
   lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
+
+  lazy val bucketJoinIoPrefetch: Boolean = get(BUCKET_JOIN_IO_PREFETCH)
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
 

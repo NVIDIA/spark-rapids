@@ -399,7 +399,6 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       throw new IllegalArgumentException(s"unsupported join type: $x")
   }
 
-
   override def doExecute(): RDD[InternalRow] = {
     throw new IllegalStateException(s"${this.getClass} does not support row-based execution")
   }
@@ -751,6 +750,9 @@ object GpuShuffledSymmetricHashJoinExec {
  * @param right plan for the right table
  * @param isGpuShuffle whether the shuffle is GPU-centric (e.g.: UCX-based)
  * @param gpuBatchSizeBytes target GPU batch size
+ * @param partitionNumAmplification amplify the number of partitions for the build side
+ * @param readOption options encloses KUDO related configs
+ * @param isSkewJoin whether is skew join or not
  * @param cpuLeftKeys original CPU expressions for the left join keys
  * @param cpuRightKeys original CPU expressions for the right join keys
  */
@@ -1060,6 +1062,9 @@ object GpuShuffledAsymmetricHashJoinExec {
  * @param right plan for the right table
  * @param isGpuShuffle whether the shuffle is GPU-centric (e.g.: UCX-based)
  * @param gpuBatchSizeBytes target GPU batch size
+ * @param partitionNumAmplification amplify the number of partitions for the build side
+ * @param readOption options encloses KUDO related configs
+ * @param isSkewJoin whether is skew join or not
  * @param cpuLeftKeys original CPU expressions for the left join keys
  * @param cpuRightKeys original CPU expressions for the right join keys
  */

@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
 import java.util.concurrent.{Callable, ConcurrentLinkedQueue, ExecutorCompletionService, Future, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -118,27 +119,26 @@ trait MultiFileReaderFunctions {
 // Singleton thread pool used across all tasks for multifile reading.
 // Please note that the TaskContext is not set in these threads and should not be used.
 object MultiFileReaderThreadPool extends Logging {
-  private var threadPool: Option[ThreadPoolExecutor] = None
 
-  private def initThreadPool(
-      numThreadsFromConf: Int,
-      keepAliveSeconds: Int = 60): ThreadPoolExecutor = synchronized {
-    if (threadPool.isEmpty) {
-      val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
+  // Use ThreadLocal to keep thread specific. The singleton is guarded by the lazy variable.
+  private val numThreadsLocal: ThreadLocal[Int] = new ThreadLocal[Int]
 
-      if (numThreadsFromConf != numThreads) {
-        logWarning(s"Configuring the file reader thread pool with a max of $numThreads " +
-            s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
-      }
-
-      val threadPoolExecutor =
-        TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", numThreads,
-          keepAliveSeconds)
-      threadPoolExecutor.allowCoreThreadTimeOut(true)
-      logDebug(s"Using $numThreads for the multithreaded reader thread pool")
-      threadPool = Some(threadPoolExecutor)
+  private lazy val threadPool: ThreadPoolExecutor = {
+    val numCores = GpuDeviceManager.getNumCores
+    val numThreads = numThreadsLocal.get() match {
+      case num if num < numCores =>
+        logWarning(s"Configuring the file reader thread pool with a max of $num " +
+          s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numCores")
+        numCores
+      case num =>
+        num
     }
-    threadPool.get
+
+    val threadPoolExecutor =
+      TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", numThreads)
+    threadPoolExecutor.allowCoreThreadTimeOut(true)
+    logDebug(s"Using $numThreads for the multithreaded reader thread pool")
+    threadPoolExecutor
   }
 
   /**
@@ -147,9 +147,8 @@ object MultiFileReaderThreadPool extends Logging {
    *       if it is not the right size compared to the number of cores available.
    */
   def getOrCreateThreadPool(numThreadsFromConf: Int): ThreadPoolExecutor = {
-    threadPool.getOrElse {
-      initThreadPool(numThreadsFromConf)
-    }
+    numThreadsLocal.set(numThreadsFromConf)
+    threadPool
   }
 }
 
@@ -342,7 +341,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
   protected var combineLeftOverFiles: Option[Array[HostMemoryBuffersWithMetaDataBase]] = None
-  private var isInitted = false
+  private val isInit: AtomicBoolean = new AtomicBoolean(false)
   private val tasks = new ConcurrentLinkedQueue[Future[HostMemoryBuffersWithMetaDataBase]]()
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
@@ -352,7 +351,22 @@ abstract class MultiFileCloudPartitionReaderBase(
   // like in the case of a limit call and we don't read all files
   private var fcs: ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase] = null
 
-  private def initAndStartReaders(): Unit = {
+  // If I/O eager prefetch is enabled, submit async reading tasks eagerly instead of triggering
+  // async reading tasks when the first batch is requested.
+  // TODO: manage the priority of the read tasks, on-demand tasks should have the highest priority
+  def eagerPrefetchInit(): Unit = {
+    val ctx = TaskContext.get()
+    require(ctx != null, "MultiFileCloudPartitionReader should work as a part of Spark task")
+    val numTasks = initAndStartReaders()
+    logInfo(s"[${ctx.taskAttemptId()}] submit $numTasks async tasks eagerly for prefetch")
+  }
+
+  private def initAndStartReaders(): Int = {
+    // apply CAS to make sure we only init once
+    if (!isInit.compareAndSet(false, true)) {
+      return 0
+    }
+
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, inputFiles.length)
     val tc = TaskContext.get
@@ -390,8 +404,8 @@ abstract class MultiFileCloudPartitionReaderBase(
       val file = inputFiles(i)
       tasksToRun.enqueue(getBatchRunner(tc, file, conf, filters))
     }
-    isInitted = true
     filesToRead = inputFiles.length
+    limit
   }
 
   // Each format should implement combineHMBs and canUseCombine if they support combining
@@ -595,9 +609,9 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   override def next(): Boolean = {
     withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
-      if (!isInitted) {
-        initAndStartReaders()
-      }
+      // submit async tasks if it is not done
+      initAndStartReaders()
+
       if (batchIter.hasNext) {
         // leave early we have something more to be read
         return true

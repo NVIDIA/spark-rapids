@@ -190,7 +190,9 @@ trait SparkShims {
 
   def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = plan
 
-  def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = plan
+  def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
+    BucketJoinTwoSidesPrefetch(plan)
+  }
 
   /**
    * Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107

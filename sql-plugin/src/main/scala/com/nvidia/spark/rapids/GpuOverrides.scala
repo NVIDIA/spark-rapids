@@ -4891,6 +4891,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         updatedPlan = HybridExecutionUtils.tryToApplyHybridScanRules(updatedPlan, conf)
         updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
         updatedPlan = applyOverrides(updatedPlan, conf)
+
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
