@@ -209,7 +209,7 @@ run_delta_lake_tests() {
   else
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
-      if [[ "$v" = "3.3.0" ]]; then
+      if [[ "$v" == "3.3.0" ]]; then
         DELTA_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
       else 
         DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
