@@ -66,7 +66,7 @@ def _fixup_operation_metrics(opm):
     # between CPU and GPU.
     metrics_to_remove = ["executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs",
                          "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted",
-                         "numTargetBytesUpdated", "numTargetBytesRemoved"]
+                         "numTargetBytesUpdated", "numTargetBytesRemoved", "materializeSourceTimeMs"]
     for k in metrics_to_remove:
         opm.pop(k, None)
 
