@@ -86,25 +86,9 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
 /** A case class to pack some options. */
 case class CoalesceReadOption private(
-  kudoEnabled: Boolean, 
-  kudoDebugMode: DumpOption, 
-  kudoDebugDumpPrefix: Option[String],
-  debugStageId: Option[Int],
-  debugTaskId: Option[Long])
+  kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String])
 
 object CoalesceReadOption {
-  
-  private def captureTaskContextIfNeeded(dumpOption: DumpOption, dumpPrefix: Option[String]): (Option[Int], Option[Long]) = {
-    // Only capture TaskContext info when debug mode is enabled and prefix is defined
-    if (dumpOption != DumpOption.Never && dumpPrefix.isDefined) {
-      Option(TaskContext.get()) match {
-        case Some(tc) => (Some(tc.stageId()), Some(tc.taskAttemptId()))
-        case None => (None, None)
-      }
-    } else {
-      (None, None)
-    }
-  }
   
   def apply(conf: SQLConf): CoalesceReadOption = {
     val dumpOption = RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.get(conf) match {
@@ -112,28 +96,15 @@ object CoalesceReadOption {
       case "ALWAYS" => DumpOption.Always
       case "ONFAILURE" => DumpOption.OnFailure
     }
-    val dumpPrefix = RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf)
-    val (stageId, taskId) = captureTaskContextIfNeeded(dumpOption, dumpPrefix)
-    
-    CoalesceReadOption(
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
+    CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
       dumpOption,
-      dumpPrefix,
-      stageId,
-      taskId)
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf))
   }
 
   def apply(conf: RapidsConf): CoalesceReadOption = {
-    val dumpOption = conf.shuffleKudoSerializerDebugMode
-    val dumpPrefix = conf.shuffleKudoSerializerDebugDumpPrefix
-    val (stageId, taskId) = captureTaskContextIfNeeded(dumpOption, dumpPrefix)
-    
-    CoalesceReadOption(
-      conf.shuffleKudoSerializerEnabled,
-      dumpOption,
-      dumpPrefix,
-      stageId,
-      taskId)
+    CoalesceReadOption(conf.shuffleKudoSerializerEnabled,
+      conf.shuffleKudoSerializerDebugMode,
+      conf.shuffleKudoSerializerDebugDumpPrefix)
   }
 }
 
@@ -258,7 +229,8 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
   override def close(): Unit = {}
 }
 
-class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOption)
+class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOption,
+    stageId: Int, taskId: Long)
   extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
 
@@ -274,7 +246,6 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     val dumpOption = readOption.kudoDebugMode
     val dumpPrefix = readOption.kudoDebugDumpPrefix
     if (dumpOption != DumpOption.Never && dumpPrefix.isDefined) {
-      val (stageId, taskId) = (readOption.debugStageId.getOrElse(0), readOption.debugTaskId.getOrElse(0L))
       val updatedPrefix = s"${dumpPrefix.get}_stage_${stageId}_task_${taskId}"
       lazy val (out, path) = createTempFile(new Configuration(), updatedPrefix, ".bin")
       new MergeOptions(dumpOption, () => out, path.toString)
@@ -419,13 +390,20 @@ class KudoHostShuffleCoalesceIterator(
     readOption: CoalesceReadOption
     )
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize, metricsMap) {
+  
+  // Capture TaskContext info during RDD execution when it's available
+  private val (stageId, taskId) = Option(TaskContext.get()) match {
+    case Some(tc) => (tc.stageId(), tc.taskAttemptId())
+    case None => (0, 0L) // Fallback for tests or when TaskContext unavailable
+  }
+  
   override protected def tableOperator = {
     val kudoSer = if (dataTypes.nonEmpty) {
       Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
     } else {
       None
     }
-    new KudoTableOperator(kudoSer, readOption)
+    new KudoTableOperator(kudoSer, readOption, stageId, taskId)
   }
 }
 
