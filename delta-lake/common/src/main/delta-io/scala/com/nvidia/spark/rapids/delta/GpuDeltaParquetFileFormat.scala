@@ -36,6 +36,11 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
   val columnMappingMode: DeltaColumnMappingMode
   val referenceSchema: StructType
 
+  /**
+   * prepareSchema must only be used for parquet read.
+   * It removes "PARQUET_FIELD_ID_METADATA_KEY" for name mapping mode which address columns by
+   * physical name instead of id.
+   */
   def prepareSchema(inputSchema: StructType): StructType = {
     val schema = DeltaColumnMapping.createPhysicalSchema(
       inputSchema, referenceSchema, columnMappingMode)
