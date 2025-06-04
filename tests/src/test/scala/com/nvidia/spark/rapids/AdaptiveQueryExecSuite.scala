@@ -498,6 +498,7 @@ class AdaptiveQueryExecSuite
   }
 
   test("Change merge join to broadcast join without local shuffle reader") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/11552")
     logError("Change merge join to broadcast join without local shuffle reader")
 
     val conf = new SparkConf()

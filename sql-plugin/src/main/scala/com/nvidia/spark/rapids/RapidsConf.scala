@@ -963,11 +963,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
-    .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
-      "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
-      "documentation for more details.")
+    .doc("When set to false, this disables casting from string to timestamp on the GPU.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val HAS_EXTENDED_YEAR_VALUES = conf("spark.rapids.sql.hasExtendedYearValues")
       .doc("Spark 3.2.0+ extended parsing of years in dates and " +
