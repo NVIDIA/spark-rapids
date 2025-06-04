@@ -17,12 +17,15 @@
 package org.apache.spark.rapids.hybrid
 
 import java.util.concurrent.locks.ReentrantLock
+
 import scala.collection.mutable
+
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.{GpuMetric, NvtxWithMetrics}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.hybrid.RapidsHostColumn
 import com.nvidia.spark.rapids.jni.RmmSpark
+
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
