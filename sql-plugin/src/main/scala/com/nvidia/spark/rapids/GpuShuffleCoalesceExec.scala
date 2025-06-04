@@ -86,24 +86,55 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
 /** A case class to pack some options. Now it has only one, but may have more in the future */
 case class CoalesceReadOption private(
-  kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String])
+  kudoEnabled: Boolean, 
+  kudoDebugMode: DumpOption, 
+  kudoDebugDumpPrefix: Option[String],
+  // Only captured when debug mode is enabled
+  debugStageId: Option[Int],
+  debugTaskId: Option[Long])
 
 object CoalesceReadOption {
+  
+  private def captureTaskContextIfNeeded(dumpOption: DumpOption, dumpPrefix: Option[String]): (Option[Int], Option[Long]) = {
+    // Only capture TaskContext info when debug mode is enabled and prefix is defined
+    if (dumpOption != DumpOption.Never && dumpPrefix.isDefined) {
+      Option(TaskContext.get()) match {
+        case Some(tc) => (Some(tc.stageId()), Some(tc.taskAttemptId()))
+        case None => (None, None)
+      }
+    } else {
+      (None, None)
+    }
+  }
+  
   def apply(conf: SQLConf): CoalesceReadOption = {
     val dumpOption = RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.get(conf) match {
       case "NEVER" => DumpOption.Never
       case "ALWAYS" => DumpOption.Always
       case "ONFAILURE" => DumpOption.OnFailure
     }
-    CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
+    val dumpPrefix = RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf)
+    val (stageId, taskId) = captureTaskContextIfNeeded(dumpOption, dumpPrefix)
+    
+    CoalesceReadOption(
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
       dumpOption,
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf))
+      dumpPrefix,
+      stageId,
+      taskId)
   }
 
   def apply(conf: RapidsConf): CoalesceReadOption = {
-    CoalesceReadOption(conf.shuffleKudoSerializerEnabled,
-      conf.shuffleKudoSerializerDebugMode,
-      conf.shuffleKudoSerializerDebugDumpPrefix)
+    val dumpOption = conf.shuffleKudoSerializerDebugMode
+    val dumpPrefix = conf.shuffleKudoSerializerDebugDumpPrefix
+    val (stageId, taskId) = captureTaskContextIfNeeded(dumpOption, dumpPrefix)
+    
+    CoalesceReadOption(
+      conf.shuffleKudoSerializerEnabled,
+      dumpOption,
+      dumpPrefix,
+      stageId,
+      taskId)
   }
 }
 
@@ -244,9 +275,8 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     val dumpOption = readOption.kudoDebugMode
     val dumpPrefix = readOption.kudoDebugDumpPrefix
     if (dumpOption != DumpOption.Never && dumpPrefix.isDefined) {
-      lazy val stageId = TaskContext.get().stageId()
-      lazy val taskId = TaskContext.get().taskAttemptId()
-      lazy val updatedPrefix = s"${dumpPrefix.get}_stage_${stageId}_task_${taskId}"
+      val (stageId, taskId) = (readOption.debugStageId.getOrElse(0), readOption.debugTaskId.getOrElse(0L))
+      val updatedPrefix = s"${dumpPrefix.get}_stage_${stageId}_task_${taskId}"
       lazy val (out, path) = createTempFile(new Configuration(), updatedPrefix, ".bin")
       new MergeOptions(dumpOption, () => out, path.toString)
     } else {
