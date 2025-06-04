@@ -964,7 +964,7 @@
         <spark354.version>3.5.4</spark354.version>
         <spark355.version>3.5.5</spark355.version>
         <spark356.version>3.5.6</spark356.version>
-        <spark400.version>4.0.1-SNAPSHOT</spark400.version>
+        <spark400.version>4.0.0</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
         <scala.plugin.version>4.9.2</scala.plugin.version>
