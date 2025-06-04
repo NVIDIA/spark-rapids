@@ -66,7 +66,7 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
   override lazy val hashFunc: GpuHashExpression =
     GpuHashPartitioningBase.toHashExpr(hashMode, expressions)
 
-  def partitionInternalAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
+  override def doPartition(batch: ColumnarBatch): DevicePartedBatch = {
     val types = GpuColumnVector.extractTypes(batch)
     val partedTable = hashPartitionAndClose(batch, numPartitions, "Calculate part")
     withResource(partedTable) { partedTable =>
@@ -76,20 +76,17 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
         case (index, sparkType) =>
           GpuColumnVector.from(tp.getColumn(index).incRefCount(), sparkType)
       }
-      (parts, columns.toArray)
+      DevicePartedBatch.create(parts, columns.toArray)
     }
   }
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     //  We are doing this here because the cudf partition command is at this level
     withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
-      val numRows = batch.numRows
-      val (partitionIndexes, partitionColumns) = {
-        withResource(new NvtxRange("partition", NvtxColor.BLUE)) { _ =>
-          partitionInternalAndClose(batch)
-        }
+      val partedBatch = withResource(new NvtxRange("partition", NvtxColor.BLUE)) { _ =>
+        doPartition(batch)
       }
-      sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
+      sliceInternalGpuOrCpuAndClose(partedBatch)
     }
   }
 

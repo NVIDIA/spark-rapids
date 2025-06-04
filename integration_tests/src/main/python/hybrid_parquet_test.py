@@ -82,8 +82,9 @@ parquet_gens_fallback_lists = [
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('gen_rows', [20, 100, 512, 1024, 4096], ids=idfn)
+@pytest.mark.parametrize('preloaded_batches', [0, 100], ids=idfn)
 @hybrid_test
-def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows):
+def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows, preloaded_batches):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -97,6 +98,7 @@ def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows):
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+            'spark.rapids.sql.hybrid.parquet.numPreloadedBatches': preloaded_batches,
         })
 
 

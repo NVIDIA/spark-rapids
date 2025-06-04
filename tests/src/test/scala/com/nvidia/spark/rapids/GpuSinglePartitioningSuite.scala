@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ class GpuSinglePartitioningSuite extends AnyFunSuite {
             // partition will consume batch, so increment refcounts enabling withResource to close
             GpuColumnVector.extractBases(batch).foreach(_.incRefCount())
             val result =
-              partitioner.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+              partitioner.columnarEvalAny(batch).asInstanceOf[GpuPartitioning.Result]
             try {
               assertResult(1)(result.length)
               assertResult(0)(result.head._2)

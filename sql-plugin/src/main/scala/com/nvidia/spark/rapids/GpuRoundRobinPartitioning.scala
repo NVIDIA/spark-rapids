@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,24 +77,20 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     }
   }
 
+  override def doPartition(batch: ColumnarBatch): DevicePartedBatch = {
+    withResource(new NvtxRange("partition", NvtxColor.BLUE)) { _ =>
+      val (index, columns) = partitionInternalWithClose(batch)
+      DevicePartedBatch.create(index, columns)
+    }
+  }
+
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (batch.numCols() <= 0) {
       return Array(batch).zipWithIndex
     }
-    val totalRange = new NvtxRange("Round Robin partition", NvtxColor.PURPLE)
-    try {
-      val numRows = batch.numRows
-      val (partitionIndexes, partitionColumns) = {
-        val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
-        try {
-          partitionInternalWithClose(batch)
-        } finally {
-          partitionRange.close()
-        }
-      }
-      sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
-    } finally {
-      totalRange.close()
+    withResource(new NvtxRange("Round Robin partition", NvtxColor.PURPLE)) { _ =>
+      val partedBatch = doPartition(batch)
+      sliceInternalGpuOrCpuAndClose(partedBatch)
     }
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -224,16 +224,18 @@ case class GpuRangePartitioner(
     }
   }
 
-  override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    if (rangeBounds.nonEmpty) {
-      val (parts, partitionColumns) = computeBoundsAndCloseWithRetry(batch)
-      sliceInternalGpuOrCpuAndClose(partitionColumns.head.getRowCount.toInt,
-        parts, partitionColumns)
-    } else {
+  override def doPartition(batch: ColumnarBatch): DevicePartedBatch = {
+    if (rangeBounds.isEmpty) {
       // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
       // slice will produce.
-      sliceInternalGpuOrCpuAndClose(batch.numRows, Array(0),
-        GpuColumnVector.extractColumns(batch))
+      DevicePartedBatch.create(Array(0), GpuColumnVector.extractColumns(batch))
+    } else {
+      val (parts, partitionColumns) = computeBoundsAndCloseWithRetry(batch)
+      DevicePartedBatch.create(parts, partitionColumns)
     }
+  }
+
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    sliceInternalGpuOrCpuAndClose(doPartition(batch))
   }
 }
