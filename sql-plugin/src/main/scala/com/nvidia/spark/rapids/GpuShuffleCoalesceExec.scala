@@ -89,7 +89,6 @@ case class CoalesceReadOption private(
   kudoEnabled: Boolean, 
   kudoDebugMode: DumpOption, 
   kudoDebugDumpPrefix: Option[String],
-  // Only captured when debug mode is enabled
   debugStageId: Option[Int],
   debugTaskId: Option[Long])
 
