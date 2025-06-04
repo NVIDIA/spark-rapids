@@ -31,5 +31,5 @@ buildvers = project.getProperty("dyn.shim.buildver")
 
 sys.path.append("{}/build/".format(spark_rapids_source_basedir))
 from get_buildvers import _get_buildvers
-value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log, isShimplify=True)
+value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log, ignore_excluded_shims=True)
 project.setProperty("included_buildvers", value)

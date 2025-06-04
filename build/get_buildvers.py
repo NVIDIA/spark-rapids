@@ -16,7 +16,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 
-def _get_buildvers(buildvers, pom_file, logger=None, isShimplify=False):
+def _get_buildvers(buildvers, pom_file, logger=None, ignore_excluded_shims=False):
     pom = ET.parse(pom_file)
     ns = {"pom": "http://maven.apache.org/POM/4.0.0"}
     releases = []
@@ -33,7 +33,7 @@ def _get_buildvers(buildvers, pom_file, logger=None, isShimplify=False):
             snapshots.append(release)
         else:
             no_snapshots.append(release)
-    if (not isShimplify):
+    if (not ignore_excluded_shims):
         excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns)
         if excluded_shims is not None and excluded_shims.text:
             for removed_shim in [x.strip() for x in excluded_shims.text.split(",")]:
