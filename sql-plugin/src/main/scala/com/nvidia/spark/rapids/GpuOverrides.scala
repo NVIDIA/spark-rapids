@@ -1374,13 +1374,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryAstExprMeta[Rint](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRint(child)
       }),
-    expr[BitwiseNot](
-      "Returns the bitwise NOT of the operands",
-      ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral),
-      (a, conf, p, r) => new UnaryAstExprMeta[BitwiseNot](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
-      }),
     expr[AtLeastNNonNulls](
       "Checks if number of non null/Nan values is greater than a given value",
       ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
@@ -1479,6 +1472,48 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[BitwiseXor](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseXor(lhs, rhs)
+      }),
+    expr[BitwiseNot](
+      "Returns the bitwise NOT of the operands",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral),
+      (a, conf, p, r) => new UnaryAstExprMeta[BitwiseNot](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
+      }),
+    expr[BitwiseCount](
+      "Returns the number of bits that are set in the input as unsigned 64-bit integer",
+      ExprChecks.unaryProject(
+        TypeSig.INT, TypeSig.INT,
+        TypeSig.integral + TypeSig.BOOLEAN, TypeSig.integral + TypeSig.BOOLEAN),
+      (a, conf, p, r) => new UnaryExprMeta[BitwiseCount](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseCount(child)
+      }),
+    expr[BitAndAgg](
+      "Returns the bitwise AND of all non-null input values",
+      ExprChecks.reductionAndGroupByAgg(
+        TypeSig.integral, TypeSig.integral,
+        Seq(ParamCheck("input", TypeSig.integral, TypeSig.integral))),
+      (a, conf, p, r) => new AggExprMeta[BitAndAgg](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuBitAndAgg(childExprs.head)
+      }),
+    expr[BitOrAgg](
+      "Returns the bitwise OR of all non-null input values",
+      ExprChecks.reductionAndGroupByAgg(
+        TypeSig.integral, TypeSig.integral,
+        Seq(ParamCheck("input", TypeSig.integral, TypeSig.integral))),
+      (a, conf, p, r) => new AggExprMeta[BitOrAgg](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuBitOrAgg(childExprs.head)
+      }),
+    expr[BitXorAgg](
+      "Returns the bitwise XOR of all non-null input values",
+      ExprChecks.reductionAndGroupByAgg(
+        TypeSig.integral, TypeSig.integral,
+        Seq(ParamCheck("input", TypeSig.integral, TypeSig.integral))),
+      (a, conf, p, r) => new AggExprMeta[BitXorAgg](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuBitXorAgg(childExprs.head)
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
@@ -2483,6 +2518,13 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
       }),
+    expr[Sha1] (
+      "Sha1 hash operator",
+      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING,
+        TypeSig.BINARY, TypeSig.BINARY),
+      (a, conf, p, r) => new UnaryExprMeta[Sha1](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuSha1(child)
+      }),
     expr[Upper](
       "String uppercase operator",
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
@@ -2749,6 +2791,14 @@ object GpuOverrides extends Logging {
         override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
+    expr[ArrayDistinct](
+      "Removes duplicate values from the array",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable)),
+      GpuArrayDistinctMeta),
     expr[Flatten](
       "Creates a single array from an array of arrays",
       ExprChecks.unaryProject(
@@ -3217,30 +3267,16 @@ object GpuOverrides extends Logging {
             spark = TypeSig.STRING),
           ParamCheck(
             name = "from_base",
-            cudf = TypeSig.integral
-              .withAllLit()
-              .withInitialTypesPsNote("only values 10 and 16 are supported"),
-            spark = TypeSig.integral),
+            cudf = TypeSig.INT,
+            spark = TypeSig.INT),
           ParamCheck(
             name = "to_base",
-            cudf = TypeSig.integral
-              .withAllLit()
-              .withInitialTypesPsNote("only values 10 and 16 are supported"),
-            spark = TypeSig.integral)),
+            cudf = TypeSig.INT,
+            spark = TypeSig.INT)),
         sparkOutputSig = TypeSig.STRING),
-        (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
-          new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)
-    ).disabledByDefault(
-      """GPU implementation is incomplete. We currently only support from/to_base values
-         |of 10 and 16. We fall back on CPU if the signed conversion is signalled via
-         |a negative to_base.
-         |GPU implementation does not check for an 64-bit signed/unsigned int overflow when
-         |performing the conversion to return `FFFFFFFFFFFFFFFF` or `18446744073709551615` or
-         |to throw an error in the ANSI mode.
-         |It is safe to enable if the overflow is not possible or detected externally.
-         |For instance decimal strings not longer than 18 characters / hexadecimal strings
-         |not longer than 15 characters disregarding the sign cannot cause an overflow.
-         """.stripMargin.replaceAll("\n", " ")),
+      (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
+        new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)
+    ),
     expr[FormatNumber](
       "Formats the number x like '#,###,###.##', rounded to d decimal places.",
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,

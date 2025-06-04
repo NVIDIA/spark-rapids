@@ -17,7 +17,6 @@
 package org.apache.spark.sql.hive.rapids
 
 import java.net.URI
-import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
@@ -26,7 +25,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
@@ -177,7 +176,9 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
-    "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time")
+    BUFFER_TIME_WITH_SEM -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME_WITH_SEM),
+    FILTER_TIME_WITH_SEM -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME_WITH_SEM),
+    SCAN_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_SCAN_TIME)
   )
 
   private lazy val driverMetrics: mutable.HashMap[String, Long] = mutable.HashMap.empty
@@ -359,16 +360,16 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val scanTime = gpuLongMetric("scanTime")
+    val scanTime = gpuLongMetric(SCAN_TIME)
     inputRDD.mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
         override def hasNext: Boolean = {
           // The `FileScanRDD` returns an iterator which scans the file during the `hasNext` call.
-          val startNs = System.nanoTime()
-          val res = batches.hasNext
-          scanTime += NANOSECONDS.toMillis(System.nanoTime() - startNs)
-          res
+          scanTime.ns {
+            val res = batches.hasNext
+            res
+          }
         }
 
         override def next(): ColumnarBatch = {

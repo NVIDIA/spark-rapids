@@ -162,6 +162,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Cast from string to timestamp") {
+    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
+    assumePriorToSpark400
     testCastStringTo(DataTypes.TimestampType,
       timestampsAsStringsSeq(castStringToTimestamp = true, validOnly = false))
   }
@@ -222,7 +224,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(SQLConf.ANSI_ENABLED.key, ansiModeBoolString)
       .set(RapidsConf.EXPLAIN.key, "ALL")
       .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
       // Tests that this is not true for are skipped in 3.2.0+
       .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
@@ -262,13 +263,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Test all supported casts with in-range values") {
+    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
+    assumePriorToSpark400
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
         .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
@@ -477,7 +479,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       comparisonFunc = comparisonFunc)
   }
 
-  testSparkResultsAreEqual("Test cast from long", longsDf) {
+  testSparkResultsAreEqual("Test cast from long", longsDf,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")) {
     frame => frame.select(
       col("longs").cast(IntegerType),
       col("longs").cast(LongType),
@@ -492,7 +495,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from float", mixedFloatDf,
-      conf = sparkConf) {
+      conf = sparkConf,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
     frame => frame.select(
       col("floats").cast(IntegerType),
       col("floats").cast(LongType),
@@ -506,7 +510,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from double", doubleWithNansDf,
-      conf = sparkConf) {
+      conf = sparkConf,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
     frame => frame.select(
       col("doubles").cast(IntegerType),
       col("doubles").cast(LongType),
@@ -531,7 +536,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("bools").cast(DoubleType))
   }
 
-  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")) {
     frame => frame.select(
       col("date"),
       col("date").cast(BooleanType),
@@ -545,7 +551,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(TimestampType))
    }
 
-  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
+  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12715")) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))
   }
 
@@ -573,9 +580,16 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual(
-    "Test cast from timestamp", timestampDatesMsecParquet)(timestampCastFn)
+    "Test cast from timestamp", timestampDatesMsecParquet,
+      assumeCondition = _ => (!isSpark400OrLater,
+        "Spark version not before 4.0.0, " +
+        "non-ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12019," +
+        "ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12714"))(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12714")
+    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
+    assumePriorToSpark400
     val oldtz = TimeZone.getDefault
     try {
       TimeZone.setDefault(TimeZone.getTimeZone("Etc/UTC-0"))
@@ -594,7 +608,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from strings to int", doublesAsStrings,
-    conf = sparkConf) {
+    conf = sparkConf,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/11552")) {
     frame => frame.select(
       col("c0").cast(LongType),
       col("c0").cast(IntegerType),
@@ -615,7 +630,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test bad cast from strings to floats", invalidFloatStringsDf,
-    conf = sparkConf, maxFloatDiff = 0.0001) {
+    conf = sparkConf, maxFloatDiff = 0.0001,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/11552")) {
     frame =>frame.select(
       col("c0").cast(DoubleType),
       col("c0").cast(FloatType),
@@ -869,9 +885,21 @@ class CastOpSuite extends GpuExpressionTestSuite {
       // Catch out of range exception when AnsiMode is on
       assert(
         exceptionContains(
-        intercept[org.apache.spark.SparkException] {
-          nonOverflowCase(dataType, generator, precision, scale)
-        },
+          if (isSpark400OrLater) {
+            // For Spark 4.0+, catch the SparkArithmeticException by class name since
+            // it is a private class and cannot be caught using intercept[SparkArithmeticException]
+            try {
+              nonOverflowCase(dataType, generator, precision, scale)
+              new Exception("Expected an arithmetic exception but none was thrown")
+            } catch {
+              case e: Exception if e.getClass.getName.endsWith("SparkArithmeticException") =>
+                e
+            }
+          } else {
+            intercept[org.apache.spark.SparkException] {
+              nonOverflowCase(dataType, generator, precision, scale)
+            }
+          },
         GpuCast.OVERFLOW_MESSAGE)
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)

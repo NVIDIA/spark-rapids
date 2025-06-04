@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,12 +31,14 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("pi()")
   }
 
-  testSparkResultsAreEqual("Test md5", mixedDfWithNulls) {
+  testSparkResultsAreEqual("Test md5", mixedDfWithNulls,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("md5(strings)", "md5(cast(ints as string))",
       "md5(cast(longs as binary))")
   }
 
-  testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls) {
+  testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("hash(longs, 1, null, 'stock string', ints, strings)")
   }
 }

@@ -87,6 +87,10 @@ public class TimeoutSparkListener extends SparkListener {
     if (sparkContext != null) {
       sparkContext.sc().cancelJob(jobId, message);
     }
+    LOG.error(message + ". Shutting down the Driver JVM; xdist worker will stop as well per " +
+"https://github.com/NVIDIA/spark-rapids/pull/12455. Pending tests will be re-executed " +
+"in the replacement worker");
+    System.exit(timeoutSeconds);
   }
 
   public void onJobStart(SparkListenerJobStart jobStart) {

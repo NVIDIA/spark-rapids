@@ -18,17 +18,17 @@ package org.apache.spark.sql.rapids
 
 import java.io.{FileNotFoundException, IOException, OutputStream}
 import java.net.URI
-import java.util.concurrent.{Callable, TimeUnit}
+import java.util.concurrent.{Callable}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 
-import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{AvroOptions => CudfAvroOptions,HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, SCAN_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -261,41 +261,38 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val clippedBlocks = ArrayBuffer[AvroSingleDataBlockInfo]()
     val mapPathHeader = LinkedHashMap[Path, Header]()
     val filterHandler = AvroFileFilterHandler(conf, options)
-    val startTime = System.nanoTime()
-    files.foreach { file =>
-      val singleFileInfo = try {
-        filterHandler.filterBlocks(file)
-      } catch {
-        case e: FileNotFoundException if ignoreMissingFiles =>
-          logWarning(s"Skipped missing file: ${file.filePath}", e)
-          AvroBlockMeta(null, 0L, Seq.empty)
-        // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
-        case e: FileNotFoundException if !ignoreMissingFiles => throw e
-        case e @(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-          logWarning(
-            s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-          AvroBlockMeta(null, 0L, Seq.empty)
+
+    metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
+      metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
+        files.foreach { file =>
+          val singleFileInfo = try {
+            filterHandler.filterBlocks(file)
+          } catch {
+            case e: FileNotFoundException if ignoreMissingFiles =>
+              logWarning(s"Skipped missing file: ${file.filePath}", e)
+              AvroBlockMeta(null, 0L, Seq.empty)
+            // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
+            case e: FileNotFoundException if !ignoreMissingFiles => throw e
+            case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+              logWarning(
+                s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
+              AvroBlockMeta(null, 0L, Seq.empty)
+          }
+          val fPath = new Path(new URI(file.filePath.toString()))
+          clippedBlocks ++= singleFileInfo.blocks.map(block =>
+            AvroSingleDataBlockInfo(
+              fPath,
+              AvroDataBlock(block),
+              file.partitionValues,
+              AvroSchemaWrapper(SchemaConverters.toAvroType(readDataSchema)),
+              readDataSchema,
+              AvroExtraInfo()))
+          if (singleFileInfo.blocks.nonEmpty) {
+            // No need to check the header since it can not be null when blocks is not empty here.
+            mapPathHeader.put(fPath, singleFileInfo.header)
+          }
+        }
       }
-      val fPath = new Path(new URI(file.filePath.toString()))
-      clippedBlocks ++= singleFileInfo.blocks.map(block =>
-        AvroSingleDataBlockInfo(
-            fPath,
-            AvroDataBlock(block),
-            file.partitionValues,
-            AvroSchemaWrapper(SchemaConverters.toAvroType(readDataSchema)),
-            readDataSchema,
-            AvroExtraInfo()))
-      if (singleFileInfo.blocks.nonEmpty) {
-        // No need to check the header since it can not be null when blocks is not empty here.
-        mapPathHeader.put(fPath, singleFileInfo.header)
-      }
-    }
-    val filterTime = System.nanoTime() - startTime
-    metrics.get(FILTER_TIME).foreach {
-      _ += filterTime
-    }
-    metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,

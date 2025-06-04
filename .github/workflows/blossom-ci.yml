@@ -75,7 +75,6 @@ jobs:
         github.actor == 'pxLi'  ||
         github.actor == 'SurajAralihalli' ||
         github.actor == 'jihoonson' ||
-        github.actor == 'ustcfy' ||
         github.actor == 'knoguchi22' ||
         github.actor == 'warrickhe'
       )

@@ -38,6 +38,8 @@ fi
 export WORKSPACE=${WORKSPACE:-$(pwd)}
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
+## DEV_MODE: if true, copy M2DIR to SHIM_M2DIR for dev CI job
+export DEV_MODE=${DEV_MODE:-'false'}
 
 function mvnEval {
     $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease320 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
@@ -103,6 +105,12 @@ function build_shim() {
     mkdir -p "${SHIM_WORKSPACE}"
     cp -r "${WORKSPACE}/" "${CODE_PATH}"
   fi
+
+  # update SHIM_M2DIR for dev CI job
+  if [[ "$DEV_MODE" == "true" ]]; then
+    SHIM_M2DIR=${CODE_PATH}/.m2
+  fi
+  
   cd "${CODE_PATH}"
   echo "Workspace at ${CODE_PATH}..."
 

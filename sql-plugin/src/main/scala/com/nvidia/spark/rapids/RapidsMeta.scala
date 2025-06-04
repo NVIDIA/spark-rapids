@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 import java.time.ZoneId
 import scala.collection.mutable
@@ -1111,26 +1110,19 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = conf.isFoldableNonLitAllowed
 
-  // There are 4 levels of timezone check in GPU plan tag phase:
+  // There are 2 levels of timezone check in GPU plan tag phase:
   //    Level 1: Check whether an expression is related to timezone. This is achieved by
   //        [[needTimeZoneCheck]] below.
   //    Level 2: Check related expression has been implemented with timezone. There is a
   //        toggle flag [[isTimeZoneSupported]] for this. If false, fallback to UTC-only check as
   //        before. If yes, move to next level check. When we add timezone support for a related
   //        function. [[isTimeZoneSupported]] should be override as true.
-  //    Level 3: Check whether the desired timezone is supported by Gpu kernel.
   def checkExprForTimezone(): Unit = {
     // Level 1 check
     if (!needTimeZoneCheck) return
 
     // Level 2 check
     if (!isTimeZoneSupported) return checkUTCTimezone(this, getZoneId())
-
-    // Level 3 check
-    val zoneId = getZoneId()
-    if (!GpuTimeZoneDB.isSupportedTimeZone(zoneId)) {
-      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(zoneId.toString))
-    }
   }
 
   protected def getZoneId(): ZoneId = {
@@ -1157,17 +1149,17 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //| TimezoneAwareExpression| True              | False by default, True when implemented |
   //| Others                 | False             | N/A (will not be checked)               |
   //+------------------------+-------------------+-----------------------------------------+
-  lazy val needTimeZoneCheck: Boolean = {
+  def needTimeZoneCheck: Boolean = {
     wrapped match {
       // CurrentDate expression will not go through this even it's a `TimeZoneAwareExpression`.
       // It will be treated as literal in Rapids.
       case _: TimeZoneAwareExpression =>
         if (wrapped.isInstanceOf[Cast]) {
           val cast = wrapped.asInstanceOf[Cast]
-          needsTimeZone(cast.child.dataType, cast.dataType)
+          castNeedsTimeZone(cast.child.dataType, cast.dataType)
         } else if(PlanShims.isAnsiCast(wrapped)) {
           val (from, to) = PlanShims.extractAnsiCastTypes(wrapped)
-          needsTimeZone(from, to)
+          castNeedsTimeZone(from, to)
         } else{
           true
         }
@@ -1179,16 +1171,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //    1. Override date related based on https://github.com/apache/spark/pull/40524 merged
   //    2. Existing `needsTimezone` doesn't consider complex types to string which is timezone
   //    related. (incl. struct/map/list to string).
-  private[this] def needsTimeZone(from: DataType, to: DataType): Boolean = (from, to) match {
+  def castNeedsTimeZone(from: DataType, to: DataType): Boolean = (from, to) match {
     case (StringType, DateType) => false
     case (DateType, StringType) => false
-    case (ArrayType(fromType, _), StringType) => needsTimeZone(fromType, to)
+    case (ArrayType(fromType, _), StringType) => castNeedsTimeZone(fromType, to)
     case (MapType(fromKey, fromValue, _), StringType) =>
-      needsTimeZone(fromKey, to) || needsTimeZone(fromValue, to)
+      castNeedsTimeZone(fromKey, to) || castNeedsTimeZone(fromValue, to)
     case (StructType(fromFields), StringType) =>
       fromFields.exists {
         case fromField =>
-          needsTimeZone(fromField.dataType, to)
+          castNeedsTimeZone(fromField.dataType, to)
       }
     // Avoid copying full implementation here. Otherwise needs to create shim for TimestampNTZ
     // since Spark 3.4.0

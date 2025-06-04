@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.text.SimpleDateFormat
-import java.time.DateTimeException
+import java.time.{DateTimeException, ZoneId}
 import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
@@ -92,6 +91,7 @@ abstract class CastExprMetaBase[INPUT <: UnaryLike[Expression] with TimeZoneAwar
     (fromType, toType) match {
       case (TimestampType, DateType) => true // this is for to_date(...)
       case (DateType, TimestampType) => true
+      case (StringType, TimestampType) => true
       case _ => false
     }
   }
@@ -144,12 +144,9 @@ abstract class CastExprMetaBase[INPUT <: UnaryLike[Expression] with TimeZoneAwar
             s"operation on the GPU, set ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
       case (_: StringType, _: TimestampType) =>
         if (!conf.isCastStringToTimestampEnabled) {
-          willNotWorkOnGpu("the GPU only supports a subset of formats " +
-              "when casting strings to timestamps. Refer to the CAST documentation " +
-              "for more details. To enable this operation on the GPU, set" +
-              s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+          willNotWorkOnGpu("Casting strings to timestamps is disabled, please set" +
+            s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
         }
-        YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, dt:DecimalType) =>
@@ -291,14 +288,6 @@ object GpuCast {
   private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
   private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
 
-  private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_FULL =
-    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
-  private val TIMESTAMP_REGEX_NO_DATE =
-    "\\A[T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
-
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
 
@@ -306,8 +295,6 @@ object GpuCast {
     "required range"
 
   val OVERFLOW_MESSAGE: String = "overflow occurred"
-
-  val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
   def doCast(
       input: ColumnView,
@@ -555,7 +542,7 @@ object GpuCast {
       case (StringType, FloatType | DoubleType) =>
         CastStrings.toFloat(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
-      case (StringType, BooleanType | DateType | TimestampType) =>
+      case (StringType, BooleanType | DateType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
@@ -566,10 +553,11 @@ object GpuCast {
               } else {
                 castStringToDate(trimmed)
               }
-            case TimestampType =>
-              castStringToTimestamp(trimmed, ansiMode)
           }
         }
+      case (StringType, TimestampType) =>
+        // no need to strip, kernel will strip
+        castStringToTimestamp(input, ansiMode, options.timeZoneId)
       case (StringType, dt: DecimalType) =>
         CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
@@ -1376,111 +1364,18 @@ object GpuCast {
     }
   }
 
-  /** This method does not close the `input` ColumnVector. */
-  private def convertTimestampOr(
-      input: ColumnVector,
-      regex: String,
-      cudfFormat: String,
-      orElse: ColumnVector): ColumnVector = {
-
-    withResource(orElse) { orElse =>
-      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
-      val isValidTimestamp = withResource(input.matchesRe(prog)) { isMatch =>
-        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-          isMatch.and(isTimestamp)
-        }
-      }
-      withResource(isValidTimestamp) { isValidTimestamp =>
-        withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-          isValidTimestamp.ifElse(asDays, orElse)
-        }
-      }
-    }
-  }
-
-  /** This method does not close the `input` ColumnVector. */
-  private def convertFullTimestampOr(
-      input: ColumnVector,
-      orElse: ColumnVector): ColumnVector = {
-
-    val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
-    val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
-    val cudfFormat3 = "%Y-%m-%d %H:%M:%S"
-    val cudfFormat4 = "%Y-%m-%dT%H:%M:%S"
-
-    withResource(orElse) { orElse =>
-
-      // valid dates must match the regex and either of the cuDF formats
-      val isCudfMatch = Seq(
-        cudfFormat2,
-        cudfFormat3,
-        cudfFormat4
-      ).foldLeft(input.isTimestamp(cudfFormat1)) { (isTimestamp, nextFormat) =>
-        withResource(isTimestamp) { _ =>
-          withResource(input.isTimestamp(nextFormat)) { nextIsTimeStamp =>
-            isTimestamp.or(nextIsTimeStamp)
-          }
-        }
-      }
-
-      val isValidTimestamp = withResource(isCudfMatch) { _ =>
-        val prog = new RegexProgram(TIMESTAMP_REGEX_FULL, CaptureGroups.NON_CAPTURE)
-        withResource(input.matchesRe(prog)) { isRegexMatch =>
-          isCudfMatch.and(isRegexMatch)
-        }
-      }
-
-      // we only need to parse with one of the cuDF formats because the parsing code ignores
-      // the ' ' or 'T' between the date and time components
-      withResource(isValidTimestamp) { _ =>
-        withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
-          isValidTimestamp.ifElse(asDays, orElse)
-        }
-      }
-    }
-  }
-
-  def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
-
-    // special timestamps
-    val today = DateUtils.currentDate()
-    val todayStr = new SimpleDateFormat("yyyy-MM-dd")
-        .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
-
-    var sanitizedInput = input.incRefCount()
-
-    // prepend today's date to timestamp formats without dates
-    sanitizedInput = withResource(sanitizedInput) { _ =>
-      val prog = new RegexProgram(TIMESTAMP_REGEX_NO_DATE)
-      sanitizedInput.stringReplaceWithBackrefs(prog, s"${todayStr}T\\1")
-    }
-
-    withResource(sanitizedInput) { sanitizedInput =>
-      // convert dates that are in valid timestamp formats
-      val converted =
-        convertFullTimestampOr(sanitizedInput,
-          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
-
-      // handle special dates like "epoch", "now", etc.
-      val finalResult = closeOnExcept(converted) { tsVector =>
-        DateUtils.fetchSpecialDates(DType.TIMESTAMP_MICROSECONDS) match {
-          case specialDates if specialDates.nonEmpty =>
-            // `tsVector` will be closed in replaceSpecialDates.
-            replaceSpecialDates(sanitizedInput, tsVector, specialDates)
-          case _ =>
-            tsVector
-        }
-      }
-
-      if (ansiMode) {
-        // When ANSI mode is enabled, we need to throw an exception if any values could not be
-        // converted
-        checkResultForAnsiMode(input, finalResult,
-          "One or more values could not be converted to TimestampType")
+  def castStringToTimestamp(
+      input: ColumnView,
+      ansiMode: Boolean,
+      defaultTimeZone: Option[String] = Option.empty[String]): ColumnVector = {
+    val tz = defaultTimeZone.getOrElse("Z")
+    val normalizedTZ = ZoneId.of(tz, ZoneId.SHORT_IDS).normalized().toString
+    val isSpark320 = VersionUtils.cmpSparkVersion(3, 2, 0) == 0
+    closeOnExcept(CastStrings.toTimestamp(input, normalizedTZ, ansiMode, isSpark320)) { result =>
+      if (ansiMode && result == null) {
+        throw new DateTimeException("One or more values is not a valid timestamp")
       } else {
-        finalResult
+        result
       }
     }
   }

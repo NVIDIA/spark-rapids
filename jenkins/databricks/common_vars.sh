@@ -28,10 +28,10 @@ SPARK_VER=${SPARK_VER:-$(< /databricks/spark/VERSION)}
 # notebooks but not when running Spark manually.
 #
 # At the OS level the DBR version can be obtailed via
-# 1. DATABRICKS_RUNTIME_VERSION environment set by Databricks, e.g., 11.3
-# 2. File at /databricks/DBR_VERSION created by Databricks, e.g., 11.3
+# 1. DATABRICKS_RUNTIME_VERSION environment set by Databricks, e.g., 12.2
+# 2. File at /databricks/DBR_VERSION created by Databricks, e.g., 12.2
 # 3. The value for Spark conf in file /databricks/common/conf/deploy.conf created by Databricks,
-#    e.g. 11.3.x-gpu-ml-scala2.12
+#    e.g. 12.2.x-gpu-ml-scala2.12
 #
 # For cases 1 and 2 append '.' for version matching in 3XYdb SparkShimServiceProvider
 #
@@ -76,7 +76,7 @@ fi
 
 # Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
 export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
-# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
+# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB12.2
 PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 # Set the path of python site-packages, packages were installed here by 'jenkins/databricks/setup.sh'.
 PYTHON_SITE_PACKAGES=${PYTHON_SITE_PACKAGES:-"$HOME/.local/lib/${PYTHON_VERSION}/site-packages"}

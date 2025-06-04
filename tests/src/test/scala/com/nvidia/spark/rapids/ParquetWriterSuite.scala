@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -239,7 +239,11 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old dates in EXCEPTION mode",
-    SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
+    if (isSpark400OrLater) {
+      classOf[org.apache.spark.sql.AnalysisException]
+    } else {
+      SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
+    },
     oldDatesDf,
     new SparkConf().set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")) {
     val tempFile = File.createTempFile("oldDates", "parquet")
@@ -253,7 +257,11 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps millis in EXCEPTION mode",
-    SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
+    if (isSpark400OrLater) {
+      classOf[org.apache.spark.sql.AnalysisException]
+    } else {
+      SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
+    },
     oldTsDf,
     new SparkConf()
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")
@@ -268,7 +276,11 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps in EXCEPTION mode",
-    SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
+    if (isSpark400OrLater) {
+      classOf[org.apache.spark.sql.AnalysisException]
+    } else {
+      SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
+    },
     oldTsDf,
     new SparkConf()
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")

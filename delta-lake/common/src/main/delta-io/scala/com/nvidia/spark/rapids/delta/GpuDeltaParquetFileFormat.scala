@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{GpuMetric, GpuParquetMultiFilePartitionReaderFactory, GpuReadParquetFileFormat}
+import com.nvidia.spark.rapids.{GpuMetric, GpuReadParquetFileFormat}
+import com.nvidia.spark.rapids.parquet.GpuParquetMultiFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast

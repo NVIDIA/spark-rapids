@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.delta
 import java.net.URI
 
 import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
-import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat.{DeletionVectorDescriptorWithFilterType, IS_ROW_DELETED_COLUMN_NAME}
+import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat.DeletionVectorDescriptorWithFilterType
 import com.nvidia.spark.rapids.{GpuMetric, RapidsConf, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
@@ -107,9 +107,9 @@ object GpuDeltaParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     val requiredSchema = meta.wrapped.requiredSchema
-    if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
+    if (requiredSchema.exists(_.name.startsWith("_databricks_internal"))) {
       meta.willNotWorkOnGpu(
-        s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
+        s"reading metadata columns starting with prefix _databricks_internal is not supported")
     }
     if (format.hasDeletionVectorMap) {
       meta.willNotWorkOnGpu("deletion vectors are not supported")
