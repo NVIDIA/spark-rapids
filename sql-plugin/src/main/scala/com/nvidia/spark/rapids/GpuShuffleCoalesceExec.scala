@@ -394,7 +394,10 @@ class KudoHostShuffleCoalesceIterator(
   // Capture TaskContext info during RDD execution when it's available
   private val (stageId, taskId) = Option(TaskContext.get()) match {
     case Some(tc) => (tc.stageId(), tc.taskAttemptId())
-    case None => (0, 0L) // Fallback for tests or when TaskContext unavailable
+    case None => 
+      // Generate UUID-based values for unique naming when TaskContext unavailable
+      val uuid = java.util.UUID.randomUUID()
+      (uuid.hashCode(), uuid.getLeastSignificantBits())
   }
   
   override protected def tableOperator = {
