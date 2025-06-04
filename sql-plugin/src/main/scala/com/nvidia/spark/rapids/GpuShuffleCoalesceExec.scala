@@ -89,7 +89,6 @@ case class CoalesceReadOption private(
   kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String])
 
 object CoalesceReadOption {
-  
   def apply(conf: SQLConf): CoalesceReadOption = {
     val dumpOption = RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.get(conf) match {
       case "NEVER" => DumpOption.Never
