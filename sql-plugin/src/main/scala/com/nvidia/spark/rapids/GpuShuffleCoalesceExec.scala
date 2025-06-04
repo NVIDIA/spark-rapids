@@ -84,7 +84,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   }
 }
 
-/** A case class to pack some options. Now it has only one, but may have more in the future */
+/** A case class to pack some options. */
 case class CoalesceReadOption private(
   kudoEnabled: Boolean, 
   kudoDebugMode: DumpOption, 
