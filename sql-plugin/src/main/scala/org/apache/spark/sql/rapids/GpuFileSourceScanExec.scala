@@ -131,7 +131,7 @@ case class GpuFileSourceScanExec(
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
-      partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+        partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
     logDebug(s"File listing took: ${System.nanoTime() - startTime}")
     setFilesNumAndSizeMetric(pds, true)
     val timeTakenMs = NANOSECONDS.toMillis(
@@ -372,8 +372,8 @@ case class GpuFileSourceScanExec(
 
   /** Helper for computing total number and size of files in selected partitions. */
   private def setFilesNumAndSizeMetric(
-    partitions: Seq[PartitionDirectory],
-    static: Boolean): Unit = {
+      partitions: Seq[PartitionDirectory],
+      static: Boolean): Unit = {
     val filesNum = partitions.map(_.files.size.toLong).sum
     val filesSize = partitions.map(_.files.map(_.getLen).sum).sum
     if (!static || !partitionFilters.exists(isDynamicPruningFilter)) {
@@ -471,17 +471,17 @@ case class GpuFileSourceScanExec(
    * The algorithm is pretty simple: each RDD partition being returned should include all the files
    * with the same bucket id from all the given Hive partitions.
    *
-   * @param bucketSpec         the bucketing spec.
-   * @param readFile           an optional function to read each (part of a) file. Used
-   *                           when not using the small file optimization.
+   * @param bucketSpec the bucketing spec.
+   * @param readFile an optional function to read each (part of a) file. Used
+   *                 when not using the small file optimization.
    * @param selectedPartitions Hive-style partition that are part of the read.
-   * @param fsRelation         [[HadoopFsRelation]] associated with the read.
+   * @param fsRelation [[HadoopFsRelation]] associated with the read.
    */
   private def createBucketedReadRDD(
-    bucketSpec: BucketSpec,
-    readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
-    selectedPartitions: Array[PartitionDirectory],
-    fsRelation: HadoopFsRelation): RDD[InternalRow] = {
+      bucketSpec: BucketSpec,
+      readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
+      selectedPartitions: Array[PartitionDirectory],
+      fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
 
     val partitionedFiles = FilePartitionShims.getPartitions(selectedPartitions)
@@ -522,13 +522,13 @@ case class GpuFileSourceScanExec(
    * Create an RDD for non-bucketed reads.
    * The bucketed variant of this function is [[createBucketedReadRDD]].
    *
-   * @param readFile   an optional function to read each (part of a) file. Used when
-   *                   not using the small file optimization.
+   * @param readFile an optional function to read each (part of a) file. Used when
+   *                 not using the small file optimization.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
    */
   private def createNonBucketedReadRDD(
-    readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
-    fsRelation: HadoopFsRelation): RDD[InternalRow] = {
+      readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
+      fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     val partitions = StaticPartitionShims.getStaticPartitions(fsRelation).getOrElse {
       val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
       val maxSplitBytes =
@@ -545,8 +545,8 @@ case class GpuFileSourceScanExec(
   }
 
   private def getFinalRDD(
-    readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
-    partitions: Seq[FilePartition]): RDD[InternalRow] = {
+      readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
+      partitions: Seq[FilePartition]): RDD[InternalRow] = {
 
     // Prune the partition values for each partition
     val prunedPartitions = requiredPartitionSchema.map { partSchema =>
