@@ -72,11 +72,10 @@ case class GpuDelta33xParquetFileFormat(
   }
 
   /**
-   * prepareSchemaForRead must only be used for parquet read.
-   * It removes "PARQUET_FIELD_ID_METADATA_KEY" for name mapping mode which address columns by
-   * physical name instead of id.
+   * This function is overridden as Delta 3.3 has an extra `PARQUET_FIELD_NESTED_IDS_METADATA_KEY`
+   * key to remove from the metadata, which does not exist in earlier versions.
    */
-  def prepareSchemaForRead(inputSchema: StructType): StructType = {
+  override def prepareSchema(inputSchema: StructType): StructType = {
     val schema = DeltaColumnMapping.createPhysicalSchema(
       inputSchema, referenceSchema, columnMappingMode)
     if (columnMappingMode == NameMapping) {
@@ -150,9 +149,9 @@ case class GpuDelta33xParquetFileFormat(
 
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
-      prepareSchemaForRead(dataSchema),
-      prepareSchemaForRead(partitionSchema),
-      prepareSchemaForRead(requiredSchema),
+      dataSchema,
+      partitionSchema,
+      requiredSchema,
       prepareFiltersForRead(filters),
       options,
       hadoopConf,
