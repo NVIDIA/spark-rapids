@@ -123,14 +123,14 @@ object MultiFileReaderThreadPool extends Logging {
   private var threadPool: Option[ThreadPoolExecutor] = None
 
   private def initThreadPool(
-    numThreadsFromConf: Int,
-    keepAliveSeconds: Int = 60): ThreadPoolExecutor = synchronized {
+      numThreadsFromConf: Int,
+      keepAliveSeconds: Int = 60): ThreadPoolExecutor = synchronized {
     if (threadPool.isEmpty) {
       val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
 
       if (numThreadsFromConf != numThreads) {
         logWarning(s"Configuring the file reader thread pool with a max of $numThreads " +
-          s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
+            s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
       }
 
       val threadPoolExecutor =
