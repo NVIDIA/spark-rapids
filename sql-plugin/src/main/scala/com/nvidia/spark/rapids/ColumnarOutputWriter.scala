@@ -146,8 +146,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   def handleBuffer(buffer: HostMemoryBuffer, len: Long): Unit =
     buffers += Tuple2(buffer, len)
 
-  def writeBufferedData(): Unit = {
+  def writeBufferedData(): Long = {
+    val start = System.nanoTime()
     ColumnarOutputWriter.writeBufferedData(buffers, tempBuffer, outputStream)
+    System.nanoTime() - start
   }
 
   def dropBufferedData(): Unit = buffers.dequeueAll {
@@ -158,13 +160,15 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private[this] def updateStatistics(
       writeStartTime: Long,
-      gpuTime: Long): Unit = {
+      gpuTime: Long,
+      writeIOTime: Long): Unit = {
     // Update statistics
     val writeTime = System.nanoTime - writeStartTime - gpuTime
     statsTrackers.foreach {
       case gpuTracker: GpuWriteTaskStatsTracker =>
         gpuTracker.addWriteTime(writeTime)
         gpuTracker.addGpuTime(gpuTime)
+        gpuTracker.addWriteIOTime(writeIOTime)
       case _ =>
     }
   }
@@ -220,8 +224,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       GpuSemaphore.releaseIfNecessary(TaskContext.get)
     }
 
-    writeBufferedData()
-    updateStatistics(writeStartTime, gpuTime)
+    val ioTime = writeBufferedData()
+    updateStatistics(writeStartTime, gpuTime, ioTime)
     spillableBatch.numRows()
   }
 
