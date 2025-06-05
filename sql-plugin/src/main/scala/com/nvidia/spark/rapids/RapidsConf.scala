@@ -972,7 +972,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
-    .doc("When set to false, disable casting from string to timestamp on the GPU.")
+    .doc("When set to false, this disables casting from string to timestamp on the GPU.")
     .booleanConf
     .createWithDefault(true)
 

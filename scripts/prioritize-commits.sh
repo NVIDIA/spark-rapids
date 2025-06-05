@@ -1,5 +1,6 @@
+#!/bin/bash
 #
-# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +25,6 @@
 # <Priority (P1 or P?)> <COMMIT-HASH> <COMMIT-MSG>
 # in this the COMMIT-HASH and COMMIT-MSG are the original sha1 and commit message from spark commit
 
-#!/bin/bash
 
 set -ex
 
