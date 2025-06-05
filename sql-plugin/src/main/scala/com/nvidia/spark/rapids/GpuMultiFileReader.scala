@@ -119,26 +119,28 @@ trait MultiFileReaderFunctions {
 // Singleton thread pool used across all tasks for multifile reading.
 // Please note that the TaskContext is not set in these threads and should not be used.
 object MultiFileReaderThreadPool extends Logging {
+  @volatile
+  private var threadPool: Option[ThreadPoolExecutor] = None
 
-  // Use ThreadLocal to keep thread specific. The singleton is guarded by the lazy variable.
-  private val numThreadsLocal: ThreadLocal[Int] = new ThreadLocal[Int]
+  private def initThreadPool(
+    numThreadsFromConf: Int,
+    keepAliveSeconds: Int = 60): ThreadPoolExecutor = synchronized {
+    if (threadPool.isEmpty) {
+      val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
 
-  private lazy val threadPool: ThreadPoolExecutor = {
-    val numCores = GpuDeviceManager.getNumCores
-    val numThreads = numThreadsLocal.get() match {
-      case num if num < numCores =>
-        logWarning(s"Configuring the file reader thread pool with a max of $num " +
-          s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numCores")
-        numCores
-      case num =>
-        num
+      if (numThreadsFromConf != numThreads) {
+        logWarning(s"Configuring the file reader thread pool with a max of $numThreads " +
+          s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
+      }
+
+      val threadPoolExecutor =
+        TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", numThreads,
+          keepAliveSeconds)
+      threadPoolExecutor.allowCoreThreadTimeOut(true)
+      logDebug(s"Using $numThreads for the multithreaded reader thread pool")
+      threadPool = Some(threadPoolExecutor)
     }
-
-    val threadPoolExecutor =
-      TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", numThreads)
-    threadPoolExecutor.allowCoreThreadTimeOut(true)
-    logDebug(s"Using $numThreads for the multithreaded reader thread pool")
-    threadPoolExecutor
+    threadPool.get
   }
 
   /**
@@ -147,8 +149,9 @@ object MultiFileReaderThreadPool extends Logging {
    *       if it is not the right size compared to the number of cores available.
    */
   def getOrCreateThreadPool(numThreadsFromConf: Int): ThreadPoolExecutor = {
-    numThreadsLocal.set(numThreadsFromConf)
-    threadPool
+    threadPool.getOrElse {
+      initThreadPool(numThreadsFromConf)
+    }
   }
 }
 
