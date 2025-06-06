@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.{Version => VersionForJni, SparkPlatformType => PlatformForJni}
+import com.nvidia.spark.rapids.jni.{SparkPlatformType => PlatformForJni, Version => VersionForJni}
 
 object VersionUtils {
 
