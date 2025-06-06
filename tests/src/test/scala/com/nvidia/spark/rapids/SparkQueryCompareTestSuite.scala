@@ -567,7 +567,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       conf: SparkConf = new SparkConf(),
       sort: Boolean = false,
       repart: Integer = 1,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
@@ -575,7 +576,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       sort=sort,
       maxFloatDiff=maxFloatDiff,
       incompat=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)
   }
 
   def ALLOW_NON_GPU_testSparkResultsAreEqual(
@@ -627,7 +629,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       execsAllowedNonGpu: Seq[String],
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)
       (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     testSparkResultsAreEqualWithCapture(testName, df,
@@ -635,7 +638,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       execsAllowedNonGpu=execsAllowedNonGpu,
       repart=repart,
       sort=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)(validateCapturedPlans)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqual(
@@ -661,14 +665,16 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       df: SparkSession => DataFrame,
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)
       (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     testSparkResultsAreEqualWithCapture(testName, df,
       conf=conf,
       repart=repart,
       sort=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)(validateCapturedPlans)
   }
 
   def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
@@ -676,13 +682,16 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       df: SparkSession => DataFrame,
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
+      (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       incompat=true,
       sort=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)
   }
 
   /**
