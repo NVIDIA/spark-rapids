@@ -450,8 +450,8 @@ object GpuDeviceManager extends Logging {
 
   // visible for testing
   def getPinnedPoolAndOffHeapLimits(conf: RapidsConf, sparkConf: SparkConf,
-                                            memCheck: MemoryChecker =
-                                            MemoryCheckerImpl): (Long, Long) = {
+      memCheck: MemoryChecker =
+      MemoryCheckerImpl): (Long, Long) = {
     val perTaskOverhead = conf.perTaskOverhead
     val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
     val confPinnedSize = conf.pinnedPoolSize
