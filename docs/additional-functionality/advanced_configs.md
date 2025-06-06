@@ -180,6 +180,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Add"></a>spark.rapids.sql.expression.Add|`+`|Addition|true|None|
 <a name="sql.expression.Alias"></a>spark.rapids.sql.expression.Alias| |Gives a column a name|true|None|
 <a name="sql.expression.And"></a>spark.rapids.sql.expression.And|`and`|Logical AND|true|None|
+<a name="sql.expression.AnsiCast"></a>spark.rapids.sql.expression.AnsiCast| |Convert a column of one type of data into another type|true|None|
 <a name="sql.expression.ArrayContains"></a>spark.rapids.sql.expression.ArrayContains|`array_contains`|Returns a boolean if the array contains the passed in key|true|None|
 <a name="sql.expression.ArrayDistinct"></a>spark.rapids.sql.expression.ArrayDistinct|`array_distinct`|Removes duplicate values from the array|true|None|
 <a name="sql.expression.ArrayExcept"></a>spark.rapids.sql.expression.ArrayExcept|`array_except`|Returns an array of the elements in array1 but not in array2, without duplicates|true|This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+|
@@ -211,13 +212,12 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|`~`|Returns the bitwise NOT of the operands|true|None|
 <a name="sql.expression.BitwiseOr"></a>spark.rapids.sql.expression.BitwiseOr|`\|`|Returns the bitwise OR of the operands|true|None|
 <a name="sql.expression.BitwiseXor"></a>spark.rapids.sql.expression.BitwiseXor|`^`|Returns the bitwise XOR of the operands|true|None|
-<a name="sql.expression.BloomFilterMightContain"></a>spark.rapids.sql.expression.BloomFilterMightContain| |Bloom filter query|true|None|
 <a name="sql.expression.BoundReference"></a>spark.rapids.sql.expression.BoundReference| |Reference to a bound variable|true|None|
 <a name="sql.expression.CaseWhen"></a>spark.rapids.sql.expression.CaseWhen|`when`|CASE WHEN expression|true|None|
 <a name="sql.expression.Cast"></a>spark.rapids.sql.expression.Cast|`bigint`, `binary`, `boolean`, `cast`, `date`, `decimal`, `double`, `float`, `int`, `smallint`, `string`, `timestamp`, `tinyint`|Convert a column of one type of data into another type|true|None|
 <a name="sql.expression.Cbrt"></a>spark.rapids.sql.expression.Cbrt|`cbrt`|Cube root|true|None|
-<a name="sql.expression.Ceil"></a>spark.rapids.sql.expression.Ceil| |Ceiling of a number|true|None|
-<a name="sql.expression.CheckOverflowInTableInsert"></a>spark.rapids.sql.expression.CheckOverflowInTableInsert| |Casting a numeric value as another numeric type in store assignment|true|None|
+<a name="sql.expression.Ceil"></a>spark.rapids.sql.expression.Ceil|`ceil`, `ceiling`|Ceiling of a number|true|None|
+<a name="sql.expression.CheckOverflow"></a>spark.rapids.sql.expression.CheckOverflow| |CheckOverflow after arithmetic operations between DecimalType data|true|None|
 <a name="sql.expression.Coalesce"></a>spark.rapids.sql.expression.Coalesce|`coalesce`|Returns the first non-null argument if exists. Otherwise, null|true|None|
 <a name="sql.expression.Concat"></a>spark.rapids.sql.expression.Concat|`concat`|List/String concatenate|true|None|
 <a name="sql.expression.ConcatWs"></a>spark.rapids.sql.expression.ConcatWs|`concat_ws`|Concatenates multiple input strings or array of strings into a single string using a given separator|true|None|
@@ -230,9 +230,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.CreateMap"></a>spark.rapids.sql.expression.CreateMap|`map`|Create a map|true|None|
 <a name="sql.expression.CreateNamedStruct"></a>spark.rapids.sql.expression.CreateNamedStruct|`named_struct`, `struct`|Creates a struct with the given field names and values|true|None|
 <a name="sql.expression.CurrentRow$"></a>spark.rapids.sql.expression.CurrentRow$| |Special boundary for a window frame, indicating stopping at the current row|true|None|
-<a name="sql.expression.DateAdd"></a>spark.rapids.sql.expression.DateAdd|`date_add`, `dateadd`|Returns the date that is num_days after start_date|true|None|
+<a name="sql.expression.DateAdd"></a>spark.rapids.sql.expression.DateAdd|`date_add`|Returns the date that is num_days after start_date|true|None|
 <a name="sql.expression.DateAddInterval"></a>spark.rapids.sql.expression.DateAddInterval| |Adds interval to date|true|None|
-<a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|`date_diff`, `datediff`|Returns the number of days from startDate to endDate|true|None|
+<a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|`datediff`|Returns the number of days from startDate to endDate|true|None|
 <a name="sql.expression.DateFormatClass"></a>spark.rapids.sql.expression.DateFormatClass|`date_format`|Converts timestamp to a value of string in the format specified by the date format|true|None|
 <a name="sql.expression.DateSub"></a>spark.rapids.sql.expression.DateSub|`date_sub`|Returns the date that is num_days before start_date|true|None|
 <a name="sql.expression.DayOfMonth"></a>spark.rapids.sql.expression.DayOfMonth|`day`, `dayofmonth`|Returns the day of the month from a date or timestamp|true|None|
@@ -240,19 +240,16 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.DayOfYear"></a>spark.rapids.sql.expression.DayOfYear|`dayofyear`|Returns the day of the year from a date or timestamp|true|None|
 <a name="sql.expression.DenseRank"></a>spark.rapids.sql.expression.DenseRank|`dense_rank`|Window function that returns the dense rank value within the aggregation window|true|None|
 <a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|`/`|Division|true|None|
-<a name="sql.expression.DivideDTInterval"></a>spark.rapids.sql.expression.DivideDTInterval| |Day-time interval * operator|true|None|
-<a name="sql.expression.DivideYMInterval"></a>spark.rapids.sql.expression.DivideYMInterval| |Year-month interval * operator|true|None|
 <a name="sql.expression.DynamicPruningExpression"></a>spark.rapids.sql.expression.DynamicPruningExpression| |Dynamic pruning expression marker|true|None|
 <a name="sql.expression.ElementAt"></a>spark.rapids.sql.expression.ElementAt|`element_at`|Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map.|true|None|
-<a name="sql.expression.Empty2Null"></a>spark.rapids.sql.expression.Empty2Null| |Converts the empty string to null for writing data|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith| |Ends with|true|None|
 <a name="sql.expression.EqualNullSafe"></a>spark.rapids.sql.expression.EqualNullSafe|`<=>`|Check if the values are equal including nulls <=>|true|None|
 <a name="sql.expression.EqualTo"></a>spark.rapids.sql.expression.EqualTo|`==`, `=`|Check if the values are equal|true|None|
 <a name="sql.expression.Exp"></a>spark.rapids.sql.expression.Exp|`exp`|Euler's number e raised to a power|true|None|
-<a name="sql.expression.Explode"></a>spark.rapids.sql.expression.Explode| |Given an input array produces a sequence of rows for each value in the array|true|None|
+<a name="sql.expression.Explode"></a>spark.rapids.sql.expression.Explode|`explode_outer`, `explode`|Given an input array produces a sequence of rows for each value in the array|true|None|
 <a name="sql.expression.Expm1"></a>spark.rapids.sql.expression.Expm1|`expm1`|Euler's number e raised to a power minus 1|true|None|
 <a name="sql.expression.Flatten"></a>spark.rapids.sql.expression.Flatten|`flatten`|Creates a single array from an array of arrays|true|None|
-<a name="sql.expression.Floor"></a>spark.rapids.sql.expression.Floor| |Floor of a number|true|None|
+<a name="sql.expression.Floor"></a>spark.rapids.sql.expression.Floor|`floor`|Floor of a number|true|None|
 <a name="sql.expression.FormatNumber"></a>spark.rapids.sql.expression.FormatNumber|`format_number`|Formats the number x like '#,###,###.##', rounded to d decimal places.|true|None|
 <a name="sql.expression.FromUTCTimestamp"></a>spark.rapids.sql.expression.FromUTCTimestamp|`from_utc_timestamp`|Render the input UTC timestamp in the input timezone|true|None|
 <a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|`from_unixtime`|Get the string from a unix timestamp|true|None|
@@ -283,13 +280,12 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.JsonTuple"></a>spark.rapids.sql.expression.JsonTuple|`json_tuple`|Returns a tuple like the function get_json_object, but it takes multiple names. All the input parameters and output column types are string.|true|None|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized| |Tag to prevent redundant normalization|true|None|
 <a name="sql.expression.KnownNotNull"></a>spark.rapids.sql.expression.KnownNotNull| |Tag an expression as known to not be null|true|None|
-<a name="sql.expression.KnownNullable"></a>spark.rapids.sql.expression.KnownNullable| |Tags the expression as being nullable|true|None|
 <a name="sql.expression.Lag"></a>spark.rapids.sql.expression.Lag|`lag`|Window function that returns N entries behind this one|true|None|
 <a name="sql.expression.LambdaFunction"></a>spark.rapids.sql.expression.LambdaFunction| |Holds a higher order SQL function|true|None|
 <a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|`last_day`|Returns the last day of the month which the date belongs to|true|None|
 <a name="sql.expression.Lead"></a>spark.rapids.sql.expression.Lead|`lead`|Window function that returns N entries ahead of this one|true|None|
 <a name="sql.expression.Least"></a>spark.rapids.sql.expression.Least|`least`|Returns the least value of all parameters, skipping null values|true|None|
-<a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|`char_length`, `character_length`, `len`, `length`|String character length or binary byte length|true|None|
+<a name="sql.expression.Length"></a>spark.rapids.sql.expression.Length|`char_length`, `character_length`, `length`|String character length or binary byte length|true|None|
 <a name="sql.expression.LessThan"></a>spark.rapids.sql.expression.LessThan|`<`|< operator|true|None|
 <a name="sql.expression.LessThanOrEqual"></a>spark.rapids.sql.expression.LessThanOrEqual|`<=`|<= operator|true|None|
 <a name="sql.expression.Like"></a>spark.rapids.sql.expression.Like|`like`|Like|true|None|
@@ -315,8 +311,6 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Month"></a>spark.rapids.sql.expression.Month|`month`|Returns the month from a date or timestamp|true|None|
 <a name="sql.expression.MonthsBetween"></a>spark.rapids.sql.expression.MonthsBetween|`months_between`|If `timestamp1` is later than `timestamp2`, then the result is positive. If `timestamp1` and `timestamp2` are on the same day of month, or both are the last day of month, time of day will be ignored. Otherwise, the difference is calculated based on 31 days per month, and rounded to 8 digits unless roundOff=false.|true|None|
 <a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|`*`|Multiplication|true|None|
-<a name="sql.expression.MultiplyDTInterval"></a>spark.rapids.sql.expression.MultiplyDTInterval| |Day-time interval * number|true|None|
-<a name="sql.expression.MultiplyYMInterval"></a>spark.rapids.sql.expression.MultiplyYMInterval| |Year-month interval * number|true|None|
 <a name="sql.expression.Murmur3Hash"></a>spark.rapids.sql.expression.Murmur3Hash|`hash`|Murmur3 hash operator|true|None|
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|
 <a name="sql.expression.NamedLambdaVariable"></a>spark.rapids.sql.expression.NamedLambdaVariable| |A parameter to a higher order SQL function|true|None|
@@ -330,7 +324,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.PosExplode"></a>spark.rapids.sql.expression.PosExplode|`posexplode_outer`, `posexplode`|Given an input array produces a sequence of rows for each value in the array|true|None|
 <a name="sql.expression.Pow"></a>spark.rapids.sql.expression.Pow|`pow`, `power`|lhs ^ rhs|true|None|
 <a name="sql.expression.PreciseTimestampConversion"></a>spark.rapids.sql.expression.PreciseTimestampConversion| |Expression used internally to convert the TimestampType to Long and back without losing precision, i.e. in microseconds. Used in time windowing|true|None|
-<a name="sql.expression.PythonUDAF"></a>spark.rapids.sql.expression.PythonUDAF| |UDF run in an external python process. Does not actually run on the GPU, but the transfer of data to/from it can be accelerated|true|None|
+<a name="sql.expression.PromotePrecision"></a>spark.rapids.sql.expression.PromotePrecision| |PromotePrecision before arithmetic operations between DecimalType data|true|None|
 <a name="sql.expression.PythonUDF"></a>spark.rapids.sql.expression.PythonUDF| |UDF run in an external python process. Does not actually run on the GPU, but the transfer of data to/from it can be accelerated|true|None|
 <a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|`quarter`|Returns the quarter of the year for date, in the range 1 to 4|true|None|
 <a name="sql.expression.RLike"></a>spark.rapids.sql.expression.RLike|`regexp_like`, `regexp`, `rlike`|Regular expression version of Like|true|None|
@@ -345,8 +339,6 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Reverse"></a>spark.rapids.sql.expression.Reverse|`reverse`|Returns a reversed string or an array with reverse order of elements|true|None|
 <a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|`rint`|Rounds up a double value to the nearest double equal to an integer|true|None|
 <a name="sql.expression.Round"></a>spark.rapids.sql.expression.Round|`round`|Round an expression to d decimal places using HALF_UP rounding mode|true|None|
-<a name="sql.expression.RoundCeil"></a>spark.rapids.sql.expression.RoundCeil| |Computes the ceiling of the given expression to d decimal places|true|None|
-<a name="sql.expression.RoundFloor"></a>spark.rapids.sql.expression.RoundFloor| |Computes the floor of the given expression to d decimal places|true|None|
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|`row_number`|Window function that returns the index for the row within the aggregation window|true|None|
 <a name="sql.expression.ScalaUDF"></a>spark.rapids.sql.expression.ScalaUDF| |User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface to get better performance.|true|None|
 <a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|`second`|Returns the second component of the string/timestamp|true|None|
@@ -369,9 +361,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Stack"></a>spark.rapids.sql.expression.Stack|`stack`|Separates expr1, ..., exprk into n rows.|true|None|
 <a name="sql.expression.StartsWith"></a>spark.rapids.sql.expression.StartsWith| |Starts with|true|None|
 <a name="sql.expression.StringInstr"></a>spark.rapids.sql.expression.StringInstr|`instr`|Instr string operator|true|None|
-<a name="sql.expression.StringLPad"></a>spark.rapids.sql.expression.StringLPad| |Pad a string on the left|true|None|
+<a name="sql.expression.StringLPad"></a>spark.rapids.sql.expression.StringLPad|`lpad`|Pad a string on the left|true|None|
 <a name="sql.expression.StringLocate"></a>spark.rapids.sql.expression.StringLocate|`locate`, `position`|Substring search operator|true|None|
-<a name="sql.expression.StringRPad"></a>spark.rapids.sql.expression.StringRPad| |Pad a string on the right|true|None|
+<a name="sql.expression.StringRPad"></a>spark.rapids.sql.expression.StringRPad|`rpad`|Pad a string on the right|true|None|
 <a name="sql.expression.StringRepeat"></a>spark.rapids.sql.expression.StringRepeat|`repeat`|StringRepeat operator that repeats the given strings with numbers of times given by repeatTimes|true|None|
 <a name="sql.expression.StringReplace"></a>spark.rapids.sql.expression.StringReplace|`replace`|StringReplace operator|true|None|
 <a name="sql.expression.StringSplit"></a>spark.rapids.sql.expression.StringSplit|`split`|Splits `str` around occurrences that match `regex`|true|None|
@@ -388,7 +380,6 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Tanh"></a>spark.rapids.sql.expression.Tanh|`tanh`|Hyperbolic tangent|true|None|
 <a name="sql.expression.TimeAdd"></a>spark.rapids.sql.expression.TimeAdd| |Adds interval to timestamp|true|None|
 <a name="sql.expression.ToDegrees"></a>spark.rapids.sql.expression.ToDegrees|`degrees`|Converts radians to degrees|true|None|
-<a name="sql.expression.ToPrettyString"></a>spark.rapids.sql.expression.ToPrettyString| |An internal expressions which is used to generate pretty string for all kinds of values|true|None|
 <a name="sql.expression.ToRadians"></a>spark.rapids.sql.expression.ToRadians|`radians`|Converts degrees to radians|true|None|
 <a name="sql.expression.ToUTCTimestamp"></a>spark.rapids.sql.expression.ToUTCTimestamp|`to_utc_timestamp`|Render the input timestamp in UTC|true|None|
 <a name="sql.expression.ToUnixTimestamp"></a>spark.rapids.sql.expression.ToUnixTimestamp|`to_unix_timestamp`|Returns the UNIX timestamp of the given time|true|None|
@@ -414,8 +405,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.BitAndAgg"></a>spark.rapids.sql.expression.BitAndAgg|`bit_and`|Returns the bitwise AND of all non-null input values|true|None|
 <a name="sql.expression.BitOrAgg"></a>spark.rapids.sql.expression.BitOrAgg|`bit_or`|Returns the bitwise OR of all non-null input values|true|None|
 <a name="sql.expression.BitXorAgg"></a>spark.rapids.sql.expression.BitXorAgg|`bit_xor`|Returns the bitwise XOR of all non-null input values|true|None|
-<a name="sql.expression.BloomFilterAggregate"></a>spark.rapids.sql.expression.BloomFilterAggregate| |Bloom filter build|true|None|
-<a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`array_agg`, `collect_list`|Collect a list of non-unique elements, not supported in reduction|true|None|
+<a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, not supported in reduction|true|None|
 <a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, not supported in reduction|true|None|
 <a name="sql.expression.Count"></a>spark.rapids.sql.expression.Count|`count`|Count aggregate operator|true|None|
 <a name="sql.expression.First"></a>spark.rapids.sql.expression.First|`first_value`, `first`|first aggregate operator|true|None|
@@ -433,7 +423,6 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.VariancePop"></a>spark.rapids.sql.expression.VariancePop|`var_pop`|Aggregation computing population variance|true|None|
 <a name="sql.expression.VarianceSamp"></a>spark.rapids.sql.expression.VarianceSamp|`var_samp`, `variance`|Aggregation computing sample variance|true|None|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero| |Normalize NaN and zero|true|None|
-<a name="sql.expression.InSubqueryExec"></a>spark.rapids.sql.expression.InSubqueryExec| |Evaluates to true if values are in a subquery's result set|true|None|
 <a name="sql.expression.ScalarSubquery"></a>spark.rapids.sql.expression.ScalarSubquery| |Subquery that will return only one row and one column|true|None|
 <a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance|true|None|
 <a name="sql.expression.HiveSimpleUDF"></a>spark.rapids.sql.expression.HiveSimpleUDF| |Hive UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance|true|None|
@@ -455,16 +444,15 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.SampleExec"></a>spark.rapids.sql.exec.SampleExec|The backend for the sample operator|true|None|
 <a name="sql.exec.SortExec"></a>spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
 <a name="sql.exec.SubqueryBroadcastExec"></a>spark.rapids.sql.exec.SubqueryBroadcastExec|Plan to collect and transform the broadcast key values|true|None|
-<a name="sql.exec.TakeOrderedAndProjectExec"></a>spark.rapids.sql.exec.TakeOrderedAndProjectExec|Take the first limit elements after offset as defined by the sortOrder, and do projection if needed|true|None|
+<a name="sql.exec.TakeOrderedAndProjectExec"></a>spark.rapids.sql.exec.TakeOrderedAndProjectExec|Take the first limit elements as defined by the sortOrder, and do projection if needed|true|None|
 <a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
 <a name="sql.exec.AQEShuffleReadExec"></a>spark.rapids.sql.exec.AQEShuffleReadExec|A wrapper of shuffle query stage|true|None|
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
 <a name="sql.exec.ObjectHashAggregateExec"></a>spark.rapids.sql.exec.ObjectHashAggregateExec|The backend for hash based aggregations supporting TypedImperativeAggregate functions|true|None|
 <a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
-<a name="sql.exec.InMemoryTableScanExec"></a>spark.rapids.sql.exec.InMemoryTableScanExec|Implementation of InMemoryTableScanExec to use GPU accelerated caching|false|This is disabled by default because there could be complications when using it with AQE with Spark-3.5.0 and Spark-3.5.1. For more details please check https://github.com/NVIDIA/spark-rapids/issues/10603|
+<a name="sql.exec.InMemoryTableScanExec"></a>spark.rapids.sql.exec.InMemoryTableScanExec|Implementation of InMemoryTableScanExec to use GPU accelerated caching|true|None|
 <a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
 <a name="sql.exec.ExecutedCommandExec"></a>spark.rapids.sql.exec.ExecutedCommandExec|Eagerly executed commands|true|None|
-<a name="sql.exec.WriteFilesExec"></a>spark.rapids.sql.exec.WriteFilesExec|v1 write files|true|None|
 <a name="sql.exec.AppendDataExecV1"></a>spark.rapids.sql.exec.AppendDataExecV1|Append data into a datasource V2 table using the V1 write interface|true|None|
 <a name="sql.exec.AtomicCreateTableAsSelectExec"></a>spark.rapids.sql.exec.AtomicCreateTableAsSelectExec|Create table as select for datasource V2 tables that support staging table creation|true|None|
 <a name="sql.exec.AtomicReplaceTableAsSelectExec"></a>spark.rapids.sql.exec.AtomicReplaceTableAsSelectExec|Replace table as select for datasource V2 tables that support staging table creation|true|None|
@@ -482,10 +470,8 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.FlatMapCoGroupsInPandasExec"></a>spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec|The backend for CoGrouped Aggregation Pandas UDF. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.|false|This is disabled by default because Performance is not ideal with many small groups|
 <a name="sql.exec.FlatMapGroupsInPandasExec"></a>spark.rapids.sql.exec.FlatMapGroupsInPandasExec|The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.|true|None|
 <a name="sql.exec.MapInPandasExec"></a>spark.rapids.sql.exec.MapInPandasExec|The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.|true|None|
-<a name="sql.exec.PythonMapInArrowExec"></a>spark.rapids.sql.exec.PythonMapInArrowExec|The backend for Map Arrow Iterator UDF. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.|true|None|
 <a name="sql.exec.WindowInPandasExec"></a>spark.rapids.sql.exec.WindowInPandasExec|The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled. For now it only supports row based window frame.|false|This is disabled by default because it only supports row based frame for now|
 <a name="sql.exec.WindowExec"></a>spark.rapids.sql.exec.WindowExec|Window-operator backend|true|None|
-<a name="sql.exec.WindowGroupLimitExec"></a>spark.rapids.sql.exec.WindowGroupLimitExec|Apply group-limits for row groups destined for rank-based window functions like row_number(), rank(), and dense_rank()|true|None|
 <a name="sql.exec.HiveTableScanExec"></a>spark.rapids.sql.exec.HiveTableScanExec|Scan Exec to read Hive delimited text tables|true|None|
 
 ### Commands
@@ -502,6 +488,7 @@ Name | Description | Default Value | Notes
 <a name="sql.input.JsonScan"></a>spark.rapids.sql.input.JsonScan|Json parsing|true|None|
 <a name="sql.input.OrcScan"></a>spark.rapids.sql.input.OrcScan|ORC parsing|true|None|
 <a name="sql.input.ParquetScan"></a>spark.rapids.sql.input.ParquetScan|Parquet parsing|true|None|
+<a name="sql.input.AvroScan"></a>spark.rapids.sql.input.AvroScan|Avro parsing|true|None|
 
 ### Partitioning
 
