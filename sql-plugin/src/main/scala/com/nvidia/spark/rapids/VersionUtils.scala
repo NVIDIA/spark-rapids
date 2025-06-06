@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.{Version => VersionForJni, Platform => PlatformForJni}
+import com.nvidia.spark.rapids.jni.{Version => VersionForJni, SparkPlatformType => PlatformForJni}
 
 object VersionUtils {
 
@@ -54,7 +54,7 @@ object VersionUtils {
     val sparkShimVersion = ShimLoader.getShimVersion
     sparkShimVersion match {
       case SparkShimVersion(a, b, c) =>
-        new VersionForJni(PlatformForJni.SPARK, a, b, c)
+        new VersionForJni(PlatformForJni.VANILLA_SPARK, a, b, c)
       case DatabricksShimVersion(a, b, c, _) =>
         new VersionForJni(PlatformForJni.DATABRICKS, a, b, c)
       case ClouderaShimVersion(a, b, c, _) =>
