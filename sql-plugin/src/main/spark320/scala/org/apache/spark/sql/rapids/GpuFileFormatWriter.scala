@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -226,13 +226,14 @@ object GpuFileFormatWriter extends Logging {
           }
           // TODO: Using a GPU ordering as a CPU ordering here. Should be OK for now since we do not
           //       support bucket expressions yet and the rest should be simple attributes.
+          val sortTrackers = statsTrackers.filter(_.isInstanceOf[GpuWriteJobStatsTracker])
           val sort = GpuSortExec(
             orderingExpr,
             global = false,
             child = empty2NullPlan,
             sortType = sortType
-          )(orderingExpr).executeColumnar()
-          (sort, None)
+          )(orderingExpr, Some(sortTrackers.asInstanceOf[Seq[GpuWriteJobStatsTracker]]))
+          (sort.executeColumnar(), None)
         }
       }
 

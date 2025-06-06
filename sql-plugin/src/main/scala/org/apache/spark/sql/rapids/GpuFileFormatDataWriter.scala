@@ -763,9 +763,15 @@ class GpuDynamicPartitionDataConcurrentWriter(
           withResource(pendingBatches.dequeue())(_.getColumnarBatch())
         }
       }
+      val (sortMetric, sortOpTime) =
+        statsTrackers.find(_.isInstanceOf[GpuWriteTaskStatsTracker]).map { tc =>
+          val tt = tc.asInstanceOf[GpuWriteTaskStatsTracker]
+          (tt.sortTime, tt.sortOpTime)
+        }.getOrElse((NoopMetric, NoopMetric))
+
       val sortIter = GpuOutOfCoreSortIterator(pendingCbsIter ++ iterator,
         new GpuSorter(spec.sortOrder, spec.output), GpuSortExec.targetSize(spec.batchSize),
-        NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+        sortOpTime, sortMetric, NoopMetric, NoopMetric)
       while (sortIter.hasNext) {
         // write with sort-based sequential writer
         super.write(sortIter.next())
