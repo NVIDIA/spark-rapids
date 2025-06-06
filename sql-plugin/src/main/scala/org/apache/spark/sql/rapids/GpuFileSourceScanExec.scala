@@ -77,6 +77,7 @@ case class GpuFileSourceScanExec(
     queryUsesInputFile: Boolean = false,
     requiredPartitionSchema: Option[StructType] = None)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
+
   import GpuMetric._
 
   override val output: Seq[Attribute] = requiredPartitionSchema.map { requiredPartSchema =>
@@ -107,6 +108,10 @@ case class GpuFileSourceScanExec(
   }
 
   private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
+
+  private var prefetchEagerly = false
+
+  def applyEagerPrefetch(): Unit = prefetchEagerly = true
 
   /**
    * Send the driver-side metrics. Before calling this function, selectedPartitions has
@@ -254,6 +259,7 @@ case class GpuFileSourceScanExec(
 
   override lazy val metadata: Map[String, String] = {
     def seqToString(seq: Seq[Any]) = seq.mkString("[", ", ", "]")
+
     val location = relation.location
     val locationDesc =
       location.getClass.getSimpleName +
@@ -266,13 +272,12 @@ case class GpuFileSourceScanExec(
         "PartitionFilters" -> seqToString(partitionFilters),
         "PushedFilters" -> seqToString(pushedDownFilters),
         "DataFilters" -> seqToString(dataFilters),
-        "Location" -> locationDesc)
-
-
+        "Location" -> locationDesc,
+        "Eager_IO_Prefetch" -> prefetchEagerly.toString)
 
     relation.bucketSpec.map { spec =>
       val bucketedKey = "Bucketed"
-      if (bucketedScan){
+      if (bucketedScan) {
         val numSelectedBuckets = optionalBucketSet.map { b =>
           b.cardinality()
         } getOrElse {
@@ -282,7 +287,7 @@ case class GpuFileSourceScanExec(
         metadata ++ Map(
           bucketedKey -> "true",
           "SelectedBucketsCount" -> (s"$numSelectedBuckets out of ${spec.numBuckets}" +
-            optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)"}.getOrElse("")))
+            optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)" }.getOrElse("")))
       } else if (!relation.sparkSession.sessionState.conf.bucketingEnabled) {
         metadata + (bucketedKey -> "false (disabled by configuration)")
       } else if (disableBucketedScan) {
@@ -588,6 +593,9 @@ case class GpuFileSourceScanExec(
     // here we are making an optimization to read more then 1 file at a time on the CPU side
     // if they are small files before sending it down to the GPU
     val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
+    if (prefetchEagerly) {
+      hadoopConf.setBoolean("rapids.sql.scan.prefetch", prefetchEagerly)
+    }
     val broadcastedHadoopConf =
       relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
     gpuFormat.createMultiFileReaderFactory(
@@ -616,7 +624,6 @@ case class GpuFileSourceScanExec(
       None,
       queryUsesInputFile)(rapidsConf)
   }
-
 }
 
 object GpuFileSourceScanExec {
