@@ -754,38 +754,10 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 | `"yesterday"`         | Yes               |
 
 ### String to Timestamp
-
-To allow casts from string to timestamp on the GPU, enable the configuration property
-[`spark.rapids.sql.castStringToTimestamp.enabled`](additional-functionality/advanced_configs.md#sql.castStringToTimestamp.enabled).
-
-Casting from string to timestamp currently has the following limitations.
-
-| Format or Pattern                                                   | Supported on GPU? |
-| ------------------------------------------------------------------- | ------------------|
-| `"yyyy"`                                                            | Yes               |
-| `"yyyy-[M]M"`                                                       | Yes               |
-| `"yyyy-[M]M "`                                                      | Yes               |
-| `"yyyy-[M]M-[d]d"`                                                  | Yes               |
-| `"yyyy-[M]M-[d]d "`                                                 | Yes               |
-| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [\[1\]](#Footnote1)       |
-| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | Partial [\[1\]](#Footnote1)       |
-| `"epoch"`                                                           | Yes               |
-| `"now"`                                                             | Yes               |
-| `"today"`                                                           | Yes               |
-| `"tomorrow"`                                                        | Yes               |
-| `"yesterday"`                                                       | Yes               |
-
-- <a name="Footnote1"></a>[1] Leap seconds are not supported. If a zone_id is provided then only
- timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
-
-Spark is very lenient when casting from string to timestamp because all date and time components
-are optional, meaning that input values such as `T`, `T2`, `:`, `::`, `1:`, `:1`, and `::1`
-are considered valid timestamps. The GPU will treat these values as invalid and cast them to null
-values.
+GPU Aligns to Spark except a known case which is actually a Spark bug.
+Spark 35x supports the following case(spaces + Thh:mm:ss) while Spark 400 does not:
+cast('      T00:00:00' as timestamp)
+For more details, refer to [bug link](https://github.com/NVIDIA/spark-rapids-jni/issues/3401)
 
 ### Constant Folding
 

@@ -1078,14 +1078,14 @@ class RapidsCachingWriter[K, V](
               catalog.addContiguousTable(
                 blockId,
                 contigTable,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_TASK_PRIORITY)
             case c: GpuCompressedColumnVector =>
               partSize = c.getTableBuffer.getLength
               uncompressedMetric += c.getTableMeta.bufferMeta().uncompressedSize()
               catalog.addCompressedBatch(
                 blockId,
                 batch,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_TASK_PRIORITY)
             case c =>
               throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }

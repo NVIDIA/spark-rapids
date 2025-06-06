@@ -468,16 +468,27 @@ def test_to_utc_timestamp_fixed_offset(time_zone):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
-
+# test from_utc_timestamp
+# If `end_timestamp` is 2200 year, then generated timestamps are < 2200 year, will use GPU to compute both DST and non-DST timezones.
+# If it has any generated timestamp is > 2200 year and timezone is DST, then `fallback` to CPU.
+# The `fallback` means GPU operator invokes CPU to compute, not really fallback to CPU.
 @pytest.mark.parametrize('time_zone', all_timezones, ids=idfn)
-def test_comprehensive_from_utc_timestamp(time_zone):
-    tz_timestamp_gen = TimestampGen(tzinfo=timezone.utc)
+@pytest.mark.parametrize('end_timestamp', [last_supported_tz_time, None], ids=idfn)
+def test_comprehensive_from_utc_timestamp(time_zone, end_timestamp):
+    # if end = None, will use the default value
+    tz_timestamp_gen = TimestampGen(end = end_timestamp, tzinfo=timezone.utc)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'from_utc_timestamp(a, "{time_zone}")'))
-    
+
+# test to_utc_timestamp
+# If `end_timestamp` is 2200 year, then generated timestamps are < 2200 year, will use GPU to compute both DST and non-DST timezones.
+# If it has any generated timestamp is > 2200 year and timezone is DST, then `fallback` to CPU.
+# The `fallback` means GPU operator invokes CPU to compute, not really fallback to CPU.
 @pytest.mark.parametrize('time_zone', all_timezones, ids=idfn)
-def test_comprehensive_to_utc_timestamp(time_zone):
-    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
+@pytest.mark.parametrize('end_timestamp', [last_supported_tz_time, None], ids=idfn)
+def test_comprehensive_to_utc_timestamp(time_zone, end_timestamp):
+    # if end = None, will use the default value
+    tz_timestamp_gen = TimestampGen(end=end_timestamp, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 

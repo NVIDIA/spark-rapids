@@ -647,6 +647,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -667,14 +668,14 @@
                 <spark.version>${spark353.version}</spark.version>
                 <spark.test.version>${spark353.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-33x</module>
+                <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
             </modules>
         </profile>
@@ -691,14 +692,14 @@
                 <spark.version>${spark354.version}</spark.version>
                 <spark.test.version>${spark354.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-33x</module>
+                <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
             </modules>
         </profile>
@@ -715,6 +716,30 @@
                 <spark.version>${spark355.version}</spark.version>
                 <spark.test.version>${spark355.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+                <module>iceberg</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release356</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>356</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>356</buildver>
+                <spark.version>${spark356.version}</spark.version>
+                <spark.test.version>${spark356.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
@@ -726,7 +751,7 @@
                 <module>iceberg</module>
             </modules>
         </profile>
-        <!-- #if scala-2.13 -->
+	<!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
             <activation>
@@ -938,6 +963,7 @@
         <spark353.version>3.5.3</spark353.version>
         <spark354.version>3.5.4</spark354.version>
         <spark355.version>3.5.5</spark355.version>
+        <spark356.version>3.5.6</spark356.version>
         <spark400.version>4.0.1-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->

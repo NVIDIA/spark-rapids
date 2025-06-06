@@ -57,7 +57,8 @@ object ExternalSource extends Logging {
   lazy val avroProvider = ShimLoaderTemp.newAvroProvider()
 
   private lazy val hasIcebergJar = {
-    Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
+    IcebergProvider.isSupportedSparkVersion() &&
+      Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
         Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
   }
 

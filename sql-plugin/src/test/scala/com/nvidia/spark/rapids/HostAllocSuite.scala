@@ -347,18 +347,27 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   }
 
   override def afterAll(): Unit = {
-    SpillFramework.shutdown()
-    PinnedMemoryPool.shutdown()
-    Rmm.shutdown()
-    RmmSpark.clearEventHandler()
-    if (rmmWasInitialized) {
-      // put RMM back for other tests to use
-      Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    try {
+      SpillFramework.shutdown()
+      PinnedMemoryPool.shutdown()
+      Rmm.shutdown()
+      RmmSpark.clearEventHandler()
+      if (rmmWasInitialized) {
+        // put RMM back for other tests to use
+        Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+      }
+      // less than 1 GiB, see more background at:
+      // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
+      PinnedMemoryPool.initialize(500 * 1024 * 1024)
+      HostAlloc.initialize(-1)
+    } catch {
+      case t: Throwable =>
+        // if the exception does not have a message set, then scalatest fails in
+        // ways that make it so you do not see the exception at all.
+        System.err.println(t)
+        t.printStackTrace(System.err)
+        throw t
     }
-    // less than 1 GiB, see more background at:
-    // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
-    PinnedMemoryPool.initialize(500 * 1024 * 1024)
-    HostAlloc.initialize(-1)
   }
 
   test("simple pinned tryAlloc") {
