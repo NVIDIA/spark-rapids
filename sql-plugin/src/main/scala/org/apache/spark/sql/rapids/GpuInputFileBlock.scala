@@ -57,6 +57,8 @@ object InputFileUtils {
   }
 
   def getCurInputFilePath(): String = InputFileBlockHolder.getInputFilePath.toString
+  def getCurInputFileStartOffset: Long = InputFileBlockHolder.getStartOffset
+  def getCurInputFileLength: Long = InputFileBlockHolder.getLength
 }
 
 /**
