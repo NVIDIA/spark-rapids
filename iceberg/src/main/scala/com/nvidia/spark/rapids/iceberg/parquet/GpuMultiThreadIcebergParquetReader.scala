@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.iceberg.parquet
 import java.util.{Map => JMap}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 
+import scala.collection.mutable
+
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.CombineConf
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
@@ -35,9 +37,10 @@ class GpuMultiThreadIcebergParquetReader(
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
     val deleteFilterProvider: IcebergPartitionedFile => Option[GpuDeleteFilter],
     override val conf: GpuIcebergParquetReaderConf) extends GpuIcebergParquetReader {
-  private val pathToFile = files.map(f => f.urlEncodedPath -> f).toMap
-  private val postProcessors: ConcurrentMap[String, GpuParquetReaderPostProcessor] =
-    new ConcurrentHashMap[String, GpuParquetReaderPostProcessor](files.size)
+  private val pathToFile = files.groupBy(_.urlEncodedPath).mapValues(_.toSeq)
+  private val postProcessors: ConcurrentMap[IcebergPartitionedFile, GpuParquetReaderPostProcessor]
+  = new ConcurrentHashMap[IcebergPartitionedFile, GpuParquetReaderPostProcessor](files.size)
+
 
   private var inited = false
   private lazy val reader = createParquetReader()
@@ -116,7 +119,10 @@ class GpuMultiThreadIcebergParquetReader(
 
   private def filterBlock(f: PartitionedFile) = {
     val path = f.filePath.toString()
-    val icebergFile = pathToFile(path)
+    val icebergFiles = pathToFile(path).filter(p => p.sparkPartitionedFile == f)
+    require(icebergFiles.length == 1, s"Expected 1 iceberg partition file, but found " +
+      s"${icebergFiles.length} for $f")
+    val icebergFile = icebergFiles.head
     val deleteFilter = deleteFilterProvider(icebergFile)
 
     val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
@@ -128,7 +134,8 @@ class GpuMultiThreadIcebergParquetReader(
       constantsProvider(icebergFile),
       requiredSchema)
 
-    postProcessors.put(path, postProcessor)
+    val old = postProcessors.put(icebergFile, postProcessor)
+    require(old == null, "Existing parquet file")
     filteredParquet
   }
 }
@@ -136,7 +143,7 @@ class GpuMultiThreadIcebergParquetReader(
 private class SingleFileColumnarBatchIterator(val targetPath: String,
     lastBatchHolder: Array[Option[ColumnarBatch]],
     inner: PartitionReader[ColumnarBatch],
-    postProcessors: ConcurrentMap[String, GpuParquetReaderPostProcessor])
+    postProcessors: ConcurrentMap[IcebergPartitionedFile, GpuParquetReaderPostProcessor])
     extends Iterator[ColumnarBatch]  {
 
   private def lastBatch: Option[ColumnarBatch] = lastBatchHolder(0)
