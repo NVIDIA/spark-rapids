@@ -19,7 +19,7 @@
 # Changes made by NVIDIA CORPORATION & AFFILIATES enabling rapids Python or otherwise documented as
 # NVIDIA-proprietary are not a contribution and subject to the following terms and conditions:
 #
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
