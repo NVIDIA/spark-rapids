@@ -21,15 +21,9 @@ package org.apache.spark.sql.nvidia
 
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.classic.ColumnNodeToExpressionConverter
-import org.apache.spark.sql.classic.ExpressionUtils.column
+import org.apache.spark.sql.classic.{ColumnNodeToExpressionConverter, ExpressionUtils}
 
 object DFUDFShims {
-  def columnToExpr(c: Column): Expression = {
-    // Use ColumnNodeToExpressionConverter to convert the Column's node to an Expression
-    val expr = ColumnNodeToExpressionConverter(c.node)
-    expr
-  }
-
-  def exprToColumn(e: Expression): Column = column(e)
+  def columnToExpr(c: Column): Expression = ColumnNodeToExpressionConverter(c.node)
+  def exprToColumn(e: Expression): Column = ExpressionUtils.column(e)
 }
