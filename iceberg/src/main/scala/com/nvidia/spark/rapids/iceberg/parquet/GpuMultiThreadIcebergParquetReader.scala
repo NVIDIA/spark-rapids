@@ -19,8 +19,6 @@ package com.nvidia.spark.rapids.iceberg.parquet
 import java.util.{Map => JMap}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 
-import scala.collection.mutable
-
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.CombineConf
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
