@@ -516,10 +516,11 @@ object GpuDeviceManager extends Logging {
           }
         } else {
           logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we used " +
-            s"memory limit derived from $hostMemUsageFraction * (estimated available " +
-            s"host memory - $heapSizeKey - $pysparkOverheadKey - $sparkOffHeapSizeKey) = " +
-            s"$hostMemUsageFraction * ($availableHostMemory - $heapSize - $pysparkOverhead " +
-            s"- $sparkOffHeapSize) = $basedOnHostMemory")
+            s"memory limit derived from ($hostMemUsageFraction * (estimated available " +
+            s"host memory / device count) - $heapSizeKey - $pysparkOverheadKey - " +
+            s"$sparkOffHeapSizeKey) = ($hostMemUsageFraction * ($availableHostMemory / " +
+            s"$deviceCount) - $heapSize - $pysparkOverhead - $sparkOffHeapSize) = " +
+            s"$basedOnHostMemory")
           if (basedOnHostMemory < minMemoryLimit) {
             logWarning(s"the memory limit, $basedOnHostMemory, based on the available " +
               s"host memory of $availableHostMemory, is less than the minimum of " +
