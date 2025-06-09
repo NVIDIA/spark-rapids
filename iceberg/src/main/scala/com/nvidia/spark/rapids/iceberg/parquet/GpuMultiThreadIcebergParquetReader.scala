@@ -151,13 +151,10 @@ private class SingleFileColumnarBatchIterator(val file: IcebergPartitionedFile,
     if (inner.next()) {
       lastBatchHolder(0) = Some(inner.get())
 
-      val curPartitionFile = PartitionedFileUtilsShim.newPartitionedFile(
-        InternalRow.empty,
-        InputFileUtils.getCurInputFilePath(),
-        InputFileUtils.getCurInputFileStartOffset,
-        InputFileUtils.getCurInputFileLength)
-
-      file.sparkPartitionedFile == curPartitionFile
+      // Current file partition
+      InputFileUtils.getCurInputFilePath() == file.urlEncodedPath &&
+        InputFileUtils.getCurInputFileStartOffset == file.start &&
+        InputFileUtils.getCurInputFileLength == file.length
     } else {
       false
     }
