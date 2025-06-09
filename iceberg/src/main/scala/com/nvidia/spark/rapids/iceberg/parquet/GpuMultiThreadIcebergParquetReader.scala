@@ -116,7 +116,7 @@ class GpuMultiThreadIcebergParquetReader(
 
   private def filterBlock(f: PartitionedFile) = {
     val path = f.filePath.toString()
-    val icebergFiles = pathToFile(path).filter(p => p.sparkPartitionedFile == f)
+    val icebergFiles = pathToFile(path).filter(p => p.isSame(f))
     require(icebergFiles.length == 1, s"Expected 1 iceberg partition file, but found " +
       s"${icebergFiles.length} for $f")
     val icebergFile = icebergFiles.head
