@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFi
 import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
 import scala.collection.JavaConverters._
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.connector.read.PartitionReader
@@ -31,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean) extends PartitionReaderFactory {
+    queryUsesInputFile: Boolean) extends PartitionReaderFactory with Logging {
 
   private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
   private val isParquetPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled
@@ -71,8 +72,11 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
     val allParquet = scans.forall(_.file.format == FileFormat.PARQUET)
 
     if (allParquet) {
-      if (isParquetPerFileReadEnabled) {
+      if (isParquetPerFileReadEnabled || !hasNoDeletes) {
         // If per-file read is enabled, we can only use single threaded reading.
+        if (!hasNoDeletes) {
+          logWarning("Multithread iceberg parquet reader disabled with deletions")
+        }
         return SingleFile
       }
 
