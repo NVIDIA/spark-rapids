@@ -21,6 +21,7 @@ from conftest import is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime
+from src.main.python.spark_session import with_gpu_session
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
 pytestmark = [pytest.mark.nightly_resource_consuming_test, pytest.mark.premerge_ci_1]
@@ -28,7 +29,8 @@ pytestmark = [pytest.mark.nightly_resource_consuming_test, pytest.mark.premerge_
 all_non_sized_join_types = ['LeftSemi', 'LeftAnti', 'Cross']
 all_symmetric_sized_join_types = ['Inner', 'FullOuter']
 all_asymmetric_sized_join_types = ['LeftOuter', 'RightOuter']
-all_join_types = all_non_sized_join_types + all_symmetric_sized_join_types + all_asymmetric_sized_join_types
+all_sized_join_types = all_symmetric_sized_join_types + all_asymmetric_sized_join_types
+all_join_types = all_non_sized_join_types + all_sized_join_types
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
@@ -885,6 +887,46 @@ def test_join_bucketed_table(repartition, spark_tmp_table_factory, kudo_enabled)
         'spark.sql.autoBroadcastJoinThreshold': '-1',
         kudo_enabled_conf_key: kudo_enabled
     })
+
+
+@ignore_order
+@pytest.mark.parametrize('join_type', all_sized_join_types, ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', [False, True], ids=idfn)
+@pytest.mark.parametrize('format', ['parquet', 'orc'], ids=idfn)
+def test_bucket_join_io_precache(spark_tmp_table_factory, join_type, aqe_enabled, format):
+    left_table = spark_tmp_table_factory.get()
+    right_table = spark_tmp_table_factory.get()
+
+    def prepare_data(spark):
+        left, right = create_df(spark, IntegerGen(nullable=False), 500, 400)
+        left.write.bucketBy(4, 'a').sortBy('a')\
+            .format(format).mode('overwrite')\
+            .saveAsTable(left_table)
+        right.write.bucketBy(4, 'r_a').sortBy('r_a')\
+            .format(format).mode('overwrite')\
+            .saveAsTable(right_table)
+    with_cpu_session(prepare_data)
+
+    def do_join(spark):
+        left = spark.table(left_table)
+        right = spark.table(right_table)
+        return left.join(right, left.a == right.r_a, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={
+        'spark.sql.autoBroadcastJoinThreshold': '-1',
+        'spark.sql.sources.useV1SourceList': format,
+        'spark.sql.adaptive.enabled': aqe_enabled})
+
+    def do_join_check_prefetch(spark):
+        left = spark.table(left_table)
+        right = spark.table(right_table)
+        df = left.join(right, left.a == right.r_a, join_type)
+        df.collect()
+        plan_str = str(df._jdf.queryExecution().executedPlan())
+        assert 'Eager_IO_Prefetch' in plan_str
+    with_gpu_session(do_join_check_prefetch, conf={
+        'spark.sql.autoBroadcastJoinThreshold': '-1',
+        'spark.sql.sources.useV1SourceList': format,
+        'spark.sql.adaptive.enabled': aqe_enabled})
 
 # Because we disable ShuffleExchangeExec in some cases we need to allow it to not be on the GPU
 # and we do the result sorting in python to avoid that shuffle also being off the GPU
