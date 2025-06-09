@@ -72,8 +72,10 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
     val allParquet = scans.forall(_.file.format == FileFormat.PARQUET)
 
     if (allParquet) {
+      // If per-file read is enabled, we can only use single threaded reading.
+      // We also disable multi-thread reader when there exists deletions, as a quick workaround for
+      // https://github.com/NVIDIA/spark-rapids/issues/12885
       if (isParquetPerFileReadEnabled || !hasNoDeletes) {
-        // If per-file read is enabled, we can only use single threaded reading.
         if (!hasNoDeletes) {
           logWarning("Multithread iceberg parquet reader disabled with deletions")
         }
