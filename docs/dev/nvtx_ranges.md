@@ -20,13 +20,22 @@ See [nvtx_profiling.md](https://nvidia.github.io/spark-rapids/docs/dev/nvtx_prof
 Name | Description
 -----|-------------
 getMapSizesByExecId|Call to internal Spark API for retrieving size and location of shuffle map output blocks
-Release GPU|Releasing the GPU semaphore
+probe right|Probing the right side of a join input iterator to get the data size for preparing the join
+fetch join stream|stream iterator time for GpuShuffleSizeHashJoinExec
+shuffled join stream|GpuShuffledHashJoinExec op is preparing build batches for join
 Acquire GPU|Time waiting for GPU semaphore to be acquired
-ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
+Release GPU|Releasing the GPU semaphore
+GpuCoalesceBatches: collect|GPU combining of small batches post-kernel processing
+broadcast join stream|GpuBroadcastHashJoinExec.getBroadcastBuiltBatchAndStreamIter -  Gets the ColumnarBatch for the build side and the stream iterator by acquiring the GPU only after first stream batch has been streamed to GPU.
 CommitShuffle|After all temporary shuffle writes are done, produce a single file (shuffle_[map_id]_0) in the commit phase
+ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
 queueFetched|MT shuffle manager is using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results
 WaitingForWrites|Rapids Shuffle Manager (multi threaded) is waiting for any queued writes to finish before finalizing the map output writer
-ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
+AbstractGpuCoalesceIterator|Default range for a code path in the AbstractGpuCoalesceIterator for an op which is not explicitly documented in its own range
 ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
-RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing
+ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
+hash join build|
+probe left|Probing the left side of a join input iterator to get the data size for preparing the join
+build batch: collect|Perform a join where the build side fits in a single GPU batch
 BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
+RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing
