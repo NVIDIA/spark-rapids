@@ -55,8 +55,10 @@ object VersionUtils {
     sparkShimVersion match {
       case SparkShimVersion(a, b, c) =>
         new VersionForJni(PlatformForJni.VANILLA_SPARK, a, b, c)
-      case DatabricksShimVersion(a, b, c, _) =>
-        new VersionForJni(PlatformForJni.DATABRICKS, a, b, c)
+      case DatabricksShimVersion(_, _, _, dbVer) =>
+        val major = dbVer.split("\\.")(0).toInt
+        val minor = dbVer.split("\\.")(1).toInt
+        new VersionForJni(PlatformForJni.DATABRICKS, major, minor, 0)
       case ClouderaShimVersion(a, b, c, _) =>
         new VersionForJni(PlatformForJni.CLOUDERA, a, b, c)
     }
