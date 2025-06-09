@@ -54,9 +54,12 @@ def assert_collect(do_merge, read_delta_path, data_path, conf):
     gpu_result = with_gpu_session(lambda spark: do_merge(spark, gpu_path), conf=conf)
     assert_equal(cpu_result, gpu_result)
 
+# This method is used for making sure ExecutedCommand fallsback for Spark 3.5.3
+# It's defined as a global function because it's used by multiple tests.
 def assert_fallback(fallback_class):
     def do_assert(do_merge, read_delta_path, data_path, conf):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path, fallback_class, conf = conf)
+        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12879")
     return do_assert
 
 def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
