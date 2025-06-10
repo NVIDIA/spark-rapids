@@ -82,7 +82,6 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/12885')
 def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type):
     # We use a fixed seed here to ensure that data deletion vector has been generated
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
