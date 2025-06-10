@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
       // ORC encryption is only allowed in 3.2+
       val isValidTestForSparkVersion = ShimLoader.getShimVersion match {
         case SparkShimVersion(major, minor, _) => major == 3 && minor != 1
-        case DatabricksShimVersion(major, minor, _, _) => major == 3 && minor != 1
+        case DatabricksShimVersion(major, minor, _, _, _) => major == 3 && minor != 1
         case ClouderaShimVersion(major, minor, _, _) => major == 3 && minor != 1
         case _ => true
       }

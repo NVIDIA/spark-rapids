@@ -26,7 +26,7 @@ import org.apache.spark.SparkEnv
 object SparkShimServiceProvider {
   // DB version should conform to "major.minor" and has no patch version.
   // Refer to VersionUtils.getVersionForJni
-  val VERSION = DatabricksShimVersion(3, 5, 0, "14.3")
+  val VERSION = DatabricksShimVersion(3, 5, 0, 14, 3)
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
