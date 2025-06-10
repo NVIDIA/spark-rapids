@@ -18,7 +18,8 @@ from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
-from marks import ignore_order, allow_non_gpu
+from spark_session import is_spark_400_or_later
+from marks import ignore_order, allow_non_gpu, disable_ansi_mode
 from spark_session import with_cpu_session, is_databricks113_or_later, is_before_spark_330, is_databricks_version_or_later
 
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
@@ -31,12 +32,12 @@ def create_skew_df(spark, length):
     mid = length / 2
     left = root.select(
         when(col('id') < mid / 2, mid).
-            otherwise('id').alias("key1"),
+            otherwise(col('id')).alias("key1"),
         col('id').alias("value1")
     )
     right = root.select(
         when(col('id') < mid, mid).
-            otherwise('id').alias("key2"),
+            otherwise(col('id')).alias("key2"),
         col('id').alias("value2")
     )
     return left, right
@@ -57,6 +58,8 @@ def test_aqe_skew_join():
 # Test the computeStats(...) implementation in GpuDataSourceScanExec
 @ignore_order(local=True)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_aqe_join_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -74,6 +77,8 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
 # Test the computeStats(...) implementation in GpuBatchScanExec
 @ignore_order(local=True)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
     # force v2 source for parquet to use BatchScanExec
     conf = copy_and_update(_adaptive_conf, {
@@ -198,6 +203,7 @@ db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later(
 # theoretically show up in other Spark distributions
 @ignore_order(local=True)
 @allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow, *not_utc_aqe_allow)
+@pytest.mark.skipif(is_spark_400_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11100")
 @pytest.mark.parametrize('join', joins, ids=idfn)
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'

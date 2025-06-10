@@ -20,7 +20,7 @@ from data_gen import *
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
-from marks import incompat, allow_non_gpu, ignore_order
+from marks import incompat, allow_non_gpu, ignore_order, disable_ansi_mode
 import pyspark.mllib.linalg as mllib
 import pyspark.ml.linalg as ml
 
@@ -36,6 +36,8 @@ decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_passing_gpuExpr_as_Expr(enable_vectorized_conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, string_gen)
@@ -65,6 +67,8 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_join(data_gen, enable_vectorized_conf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -92,6 +96,8 @@ def test_cached_join_filter(data_gen, enable_vectorized_conf):
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_expand_exec(data_gen, enable_vectorized_conf):
     def op_df(spark, length=2048):
         cached = gen_df(spark, StructGen([
@@ -169,6 +175,8 @@ non_utc_orc_save_table_allow = ['DataWritingCommandExec', 'WriteFilesExec'] if i
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
 @allow_non_gpu("SortExec", "ShuffleExchangeExec", "RangePartitioning", *non_utc_orc_save_table_allow)
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA'
     def read_parquet_cached(data_path):
@@ -197,6 +205,8 @@ def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
                                                      ['child1',
                                                       StructGen([['child0', IntegerGen()]])]]))] + _cache_single_array_gens_no_null + all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
     def func(spark):
         df = unary_op_df(spark, data_gen)
@@ -222,6 +232,8 @@ def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
                                         # i.e. 'extract(years from d) will actually convert the
                                         # entire interval to year
                                         ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
+# https://github.com/NVIDIA/spark-rapids/issues/12700
+@disable_ansi_mode
 def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     def with_cache(cache):
         select_expr_df, select_expr_project = select_expr
@@ -281,6 +293,8 @@ def function_to_test_on_df(with_x_session, df_gen, func_on_df, test_conf):
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @pytest.mark.parametrize('batch_size', [{"spark.rapids.sql.batchSizeBytes": "100"}, {}], ids=idfn)
 @ignore_order
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_count(data_gen, with_x_session, enable_vectorized_conf, batch_size):
     test_conf = copy_and_update(enable_vectorized_conf, batch_size)
     generate_data_and_test_func_on_cached_df(with_x_session, lambda df: df.count(), data_gen, test_conf)
@@ -296,6 +310,8 @@ def test_cache_count(data_gen, with_x_session, enable_vectorized_conf, batch_siz
 # add that case to the `allowed` list. As of now there is no way for us to limit the scope of allow_non_gpu based on a
 # condition therefore we must allow it in all cases
 @allow_non_gpu('ColumnarToRowExec')
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_multi_batch(data_gen, with_x_session, enable_vectorized_conf, batch_size):
     test_conf = copy_and_update(enable_vectorized_conf, batch_size)
     generate_data_and_test_func_on_cached_df(with_x_session, lambda df: df.collect(), data_gen, test_conf)
@@ -310,6 +326,8 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
 
     assert_gpu_and_cpu_are_equal_collect(helper)
 
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_udt():
     def fun(spark):
         df = spark.sparkContext.parallelize([
@@ -327,6 +345,8 @@ def test_cache_udt():
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Spark3.3.0')
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order(local=True)
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_cache_daytimeinterval(enable_vectorized_conf):
     def test_func(spark):
         df = two_col_df(spark, DayTimeIntervalGen(), int_gen)
@@ -353,10 +373,14 @@ def test_aqe_cache_join(data_gen):
 # to be pushed to the query plan which can cause ArrayIndexOutOfBoundsException
 @ignore_order
 @allow_non_gpu("InMemoryTableScanExec", "ProjectExec", "ColumnarToRowExec")
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_inmem_cache_count():
     conf={"spark.sql.session.timeZone": "America/Los_Angeles"}
     function_to_test_on_df(with_gpu_session, lambda spark: unary_op_df(spark, int_gen).selectExpr("cast(a as timestamp)"), lambda df: df.count(), test_conf=conf)
 
 @pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
+# https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode
 def test_batch_no_cols(with_x_session):
     function_to_test_on_df(with_x_session, lambda spark: unary_op_df(spark, int_gen).drop("a"), lambda df: df.count(), test_conf={})
