@@ -182,7 +182,7 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.orc(data_path))
     assert_gpu_fallback_collect(
-            lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
+            lambda spark : reader(spark).select(f.col('*'), f.col('_c2'), f.col('_c3')),
             'FileSourceScanExec',
             conf={disable_conf: 'false',
                 "spark.sql.sources.useV1SourceList": "orc"})
