@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,8 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
       "Test CSV count chunked by rows",
       intsFromCsv,
       conf = new SparkConf()
-          .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
+          .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1"),
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frameCount
   }
 
@@ -46,7 +47,8 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
       "Test CSV count chunked by bytes",
       intsFromCsv,
       conf = new SparkConf()
-          .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0")) {
+          .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0"),
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frameCount
   }
 

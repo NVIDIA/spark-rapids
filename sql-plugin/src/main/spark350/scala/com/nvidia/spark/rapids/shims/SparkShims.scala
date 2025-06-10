@@ -21,6 +21,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -58,6 +59,9 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
         new ToPrettyStringChecks(),
         (toPrettyString, conf, p, r) => {
           new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
+
+            override def needTimeZoneCheck: Boolean = 
+              castNeedsTimeZone(toPrettyString.child.dataType, StringType)
 
             override val toType: StringType.type = StringType
 

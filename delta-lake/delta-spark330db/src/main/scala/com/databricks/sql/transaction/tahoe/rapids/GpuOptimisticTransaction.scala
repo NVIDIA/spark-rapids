@@ -32,7 +32,7 @@ import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
-import com.nvidia.spark.rapids.shims.ParquetFieldIdShims
+import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
@@ -203,7 +203,7 @@ class GpuOptimisticTransaction(
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
       val optimizedPlan =
-        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize)
+        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize, writeOptions)
       val planWithInvariants = addInvariantChecks(optimizedPlan, constraints)
       val physicalPlan = convertToGpu(planWithInvariants)
 

@@ -20,16 +20,16 @@
 #
 # Arguments:
 #       CUDA_VER=[11.X.Y,12.X.Y]
-#       UBUNTU_VER=[20.04,22.0.4]
-#       UCX_VER=1.18.0
+#       UBUNTU_VER=[22.04,24.04]
+#       UCX_VER=1.18.1
 #       TARGETPLATFORM=[linux/amd64,linux/arm64]
 #       ARCH=[amd64,arm64]
 #       UCX_ARCH=[x86_64,aarch64]
 ###
 
-ARG CUDA_VER=11.8.0
-ARG UBUNTU_VER=20.04
-ARG UCX_VER=1.18.0
+ARG CUDA_VER=12.0.1
+ARG UBUNTU_VER=22.04
+ARG UCX_VER=1.18.1
 ARG TARGETPLATFORM=linux/amd64
 # multi-platform build with: docker buildx build --platform linux/arm64,linux/amd64 <ARGS> on either amd64 or arm64 host
 # check available official arm-based docker images at https://hub.docker.com/r/nvidia/cuda/tags (OS/ARCH)
@@ -40,6 +40,14 @@ ARG UCX_VER
 ARG ARCH=amd64
 ARG UCX_ARCH=x86_64
 
+# ubuntu22
+RUN sed -i -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+           -e 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' \
+           /etc/apt/sources.list
+# ubuntu24+
+RUN find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i \
+           -e "s|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
+           -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" {} +
 # Install jdk-8, jdk-11, jdk-17, maven, docker image
 RUN apt-get update -y && \
     apt-get install -y software-properties-common rsync
@@ -48,28 +56,28 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
-    openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk python3.9 python3.9-distutils python3-setuptools \
-    tzdata git zip unzip wget parallel \
+    openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk \
+    python3 python3-pip python3-venv python3-setuptools \
+    tzdata git zip unzip bzip2 wget parallel \
     inetutils-ping expect wget libnuma1 libgomp1 locales
 
-# apt python3-pip would install pip for OS default python3 version only
-# like for ubuntu 18.04, it would only install pip for python3.6
-# so we install pip for specific python version explicitly
-RUN wget https://bootstrap.pypa.io/get-pip.py && python3.9 get-pip.py
+# avoid global environment conflicts since python 3.12+
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install requests pre-commit pytest-order
+
+COPY integration_tests/requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
 
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-${ARCH}
-
-RUN ln -sfn /usr/bin/python3.9 /usr/bin/python
-RUN ln -sfn /usr/bin/python3.9 /usr/bin/python3
-RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order fastparquet==2024.5.0
 
 RUN UCX_CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f1` && \
     mkdir -p /tmp/ucx && \
     cd /tmp/ucx && \
     wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5-cuda${UCX_CUDA_VER}-${UCX_ARCH}.tar.bz2 && \
     tar -xvf *.bz2 && \
-    dpkg -i *.deb && \
+    apt install -y /tmp/ucx/*.deb && \
     rm -rf /tmp/ucx
 
 # export JAVA_HOME for mvn option 'source-javadoc'

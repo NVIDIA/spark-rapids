@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,17 +13,18 @@
 # limitations under the License.
 
 import pytest
+import random
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, \
     assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, \
     assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_databricks_runtime
+from conftest import is_databricks_runtime, get_datagen_seed
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later, is_before_spark_340
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -850,40 +851,6 @@ def test_like_complex_escape():
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 
-@pytest.mark.parametrize('from_base,pattern',
-                         [
-                             pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
-                             pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16')
-                         ])
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9784')
-# to_base can be positive and negative
-@pytest.mark.parametrize('to_base', [10, 16], ids=['to_plus10', 'to_plus16'])
-def test_conv_dec_to_from_hex(from_base, to_base, pattern):
-    # before 3.2 leading space are deem the string non-numeric and the result is 0
-    if not is_before_spark_320:
-        pattern = r' ?' + pattern
-    gen = mk_str_gen(pattern)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base)),
-        conf={'spark.rapids.sql.expression.Conv': True}
-    )
-
-@pytest.mark.parametrize('from_base,to_base,expected_err_msg_prefix',
-                         [
-                             pytest.param(10, 15, '15 is not a supported target radix', id='to_base_unsupported'),
-                             pytest.param(11, 16, '11 is not a supported source radix', id='from_base_unsupported'),
-                             pytest.param(9, 17, 'both 9 and 17 are not a supported radix', id='both_base_unsupported')
-                         ])
-def test_conv_unsupported_base(from_base, to_base, expected_err_msg_prefix):
-    def do_conv(spark):
-        gen = StringGen()
-        df = unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base))
-        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
-        unsupported_base_str = f'{expected_err_msg_prefix}, only literal 10 or 16 are supported for source and target radixes'
-        assert unsupported_base_str in explain_str
-
-    with_cpu_session(do_conv)
-
 format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0),
                                       DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5),
                                       DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10),
@@ -939,3 +906,150 @@ def test_format_number_float_value():
         lambda spark: unary_op_df(spark, data_gen).selectExpr('format_number(a, 5)').collect())))
     for cpu, gpu in zip(cpu_results, gpu_results):
         assert math.isclose(cpu, gpu, rel_tol=1e-7) or math.isclose(cpu, gpu, abs_tol=1.1e-5)
+
+# valid base range is [2, 36], to_base can be negative, out of range results nulls
+# When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
+@pytest.mark.parametrize('from_base,pattern',
+                         [
+                             pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
+                             pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16'),
+                             pytest.param(36, r'-?[0-9a-zA-Z]{1,15}', id='from_36')
+                         ])
+@pytest.mark.parametrize('to_base', [2, 10, 16, 21, 36, -2, -10, -16, -29, -33], ids=idfn)
+def test_conv_with_more_valid_values(from_base, to_base, pattern):
+    gen = [("str_col", mk_str_gen(pattern))]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        f"select " +
+        f"conv('', 3, 35), " + # corner case: empty string
+        f"conv(str_col, {from_base}, {to_base}), " +
+        f"conv(null, {from_base}, {to_base}), " +
+        f"conv(str_col, null,  {to_base}), " +
+        f"conv(str_col, {from_base}, null), " +
+        f"conv(' 101010FFCC', {from_base}, {to_base}) from tab")
+
+# valid base range is [2, 36], to_base can be negative, out of range results nulls
+# When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
+def test_conv_with_more_invalid_values():
+    gen = [
+        ("str_col", mk_str_gen(r'-?[0-9a-zA-Z]{1,15}')),
+        ("from_col", IntegerGen(min_val=0, max_val=38)), # will generate invalid base: 0, 1, 37, 38
+        ("to_col", IntegerGen(min_val=-38, max_val=38))] # will generate invalid base: 37, -37 ...
+    data_gen_seed = get_datagen_seed()
+    r = random.Random(data_gen_seed)
+    # here use [0, 38] to test invalid from bases: 0, 1, 37 and 38
+    from_base_scalar = r.randint(0, 38)
+    # here use [-38, 38] to test invalid to bases: 0, 1, 37, 38, -1, -37, -38
+    to_base_scalar = r.randint(-38, 38)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        f"select " +
+        f"conv('1112222', 2, 10), " + # Spark will fold with constant value
+        f"conv(str_col, from_col, to_col), " +
+        f"conv(str_col, 0, 36), " + # fixed invalid from base: 0
+        f"conv(str_col, 1, 36), " + # fixed invalid from base: 1
+        f"conv(str_col, 2, -37), " + # fixed invalid to base: -37
+        f"conv(str_col, 5, 38), " + # fixed invalid to base: 38
+        f"conv(str_col, from_col, {to_base_scalar}), " +
+        f"conv(str_col, {from_base_scalar}, to_col), " +
+        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " +
+        f"conv(null, from_col, to_col), " +
+        f"conv(str_col, null, to_col), " +
+        f"conv(str_col, from_col, null), " +
+        f"conv(' 101010FFCC', from_col, to_col), " +
+        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " +
+        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " +
+        f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab")
+
+# valid base range is [2, 36], to_base can be negative, out of range results nulls
+# When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
+def test_conv_ansi_on():
+    gen = [
+        ("str_col", mk_str_gen(r'[0-9a-zA-Z]{1,8}')), # make sure no overflow
+        # here use 38 to test invalid bases: 0, 1, 37 and 38
+        ("from_col", IntegerGen(min_val=0, max_val=38)),
+        ("to_col", IntegerGen(min_val=-38, max_val=38))]
+    data_gen_seed = get_datagen_seed()
+    r = random.Random(data_gen_seed)
+    from_base_scalar = r.randint(0, 38)
+    to_base_scalar = r.randint(-38, 38)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        f"select " +
+        f"conv(str_col, from_col, to_col), " +
+        f"conv(str_col, from_col, {to_base_scalar}), " +
+        f"conv(str_col, {from_base_scalar}, to_col), " +
+        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " +
+        f"conv(' 101010FFCC', from_col, to_col), " +
+        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " +
+        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " +
+        f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab",
+        conf = {"spark.sql.ansi.enabled": True})
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=idfn)
+@pytest.mark.parametrize('overflow_value, from_base, to_base', [
+    ('184467440737095515991', 10, 15),
+    ('184467440737095515991', 10, -15),
+    ('9223372036854775807', 36, -2),
+    ('9223372036854775807', 36, -2)], ids=idfn)
+def test_conv_overflow(ansi_enabled, overflow_value, from_base, to_base):
+    ansi_conf = {"spark.sql.ansi.enabled": ansi_enabled}
+    def _gen(spark):
+        return spark.createDataFrame([(overflow_value,), ], 'str_col string')
+    if (not is_before_spark_340()) and ansi_enabled:
+        # For Sparks >= 340 and ansi mode is on, throw exception
+        error = "Overflow in function conv()"
+        assert_gpu_and_cpu_error(
+            lambda spark: _gen(spark).selectExpr(
+                f"conv(str_col, {from_base}, {to_base})").collect(),
+            conf=ansi_conf,
+            error_message=error)
+    else:
+        # Result in NULL
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: _gen(spark).selectExpr(f"conv(str_col, {from_base}, {to_base})"),
+            conf=ansi_conf)
+
+# This is to test negative to_base or input is negative long
+def test_conv_negative_to_base_negative_value():
+    def _query_conv(spark):
+        data = [
+            ('-18446744073709551599', 10, 16),
+            ('-15', 10, 16),
+            ('18446744073709551599', 10, -16)]
+        schema = StructType([
+            StructField("str_col", StringType()),
+            StructField("from_base", IntegerType()),
+            StructField("to_base", IntegerType())])
+        return spark.createDataFrame(data, schema).selectExpr("conv(str_col, from_base, to_base)")
+    assert_gpu_and_cpu_are_equal_collect(_query_conv)
+
+def test_conv_other_types():
+    gen = [
+        ("input_int_col", IntegerGen()),
+        ("from_col", IntegerGen(min_val=0, max_val=38)),
+        ("to_col", IntegerGen(min_val=-38, max_val=38)),
+        ("from_col_byte", ByteGen(min_val=0, max_val=38)),
+        ("to_col_long", LongGen(min_val=-38, max_val=38)),
+    ]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        "select " +
+        "conv(input_int_col, from_col, to_col), " +
+        "conv(input_int_col, from_col_byte, to_col), " +
+        "conv(input_int_col, from_col, to_col_long)" +
+        "from tab")
+
+def test_conv_with_str_cv_all_nulls():
+    def _gen_all_null_string(spark):
+        data = [(None,), (None,), (None,), (None,)] # all null values
+        schema = StructType([StructField("str_cv", StringType())])
+        return spark.createDataFrame(data, schema)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: _gen_all_null_string(spark),
+        "tab",
+        f"select conv(str_cv, 3, 5) from tab")

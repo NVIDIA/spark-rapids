@@ -80,7 +80,7 @@ object CudfIncompatibleCodepoints {
                                   List(),
 
                                   // java 17, unicode 13
-                                  List(42952, 42954, 42998))
+                                  List(411, 612, 42952, 42954, 42998))
 
   val lowercaseIncompatible = Array[List[Int]](
                                   // Java 8 / unicode 6.2

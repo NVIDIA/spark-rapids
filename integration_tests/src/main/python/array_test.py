@@ -845,6 +845,22 @@ def test_flatten_array(data_gen):
         lambda spark: unary_op_df(spark, data_gen).selectExpr('flatten(a)')
     )
 
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in no_neg_zero_all_basic_gens+\
+                                      nested_array_gens_sample+single_level_array_gens_no_null], ids=idfn)
+def test_array_distinct_no_neg_zero(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('array_distinct(a)')
+    )
+
+@pytest.mark.xfail
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in [float_gen, double_gen]], ids=idfn)
+def test_array_distinct_neg_zero(data_gen):
+    # separate -0.0 case, because Spark itself is inconsistent, see https://issues.apache.org/jira/browse/SPARK-51475
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('array_distinct(a)')
+    )
+
+
 # No NULL keys are allowed
 data_gen = [IntegerGen(nullable=False), StringGen(nullable=False),
             StructGen(nullable=False,children=[('a',IntegerGen())]), DateGen(nullable=False),

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -256,24 +256,24 @@ class CudfMergeM2 extends CudfAggregate {
           withResource(hcv.getChildColumnView(0)) { partialN =>
             withResource(hcv.getChildColumnView(1)) { partialMean =>
               withResource(hcv.getChildColumnView(2)) { partialM2 =>
-                var mergeN: Integer = 0
+                var mergeN: Double = 0
                 var mergeMean: Double = 0.0
                 var mergeM2: Double = 0.0
 
                 for (i <- 0 until partialN.getRowCount.toInt) {
-                  val n = partialN.getInt(i)
+                  val n = partialN.getDouble(i)
                   if (n > 0) {
                     val mean = partialMean.getDouble(i)
                     val m2 = partialM2.getDouble(i)
                     val delta = mean - mergeMean
                     val newN = n + mergeN
-                    mergeM2 += m2 + delta * delta * n.toDouble * mergeN.toDouble / newN.toDouble
-                    mergeMean = (mergeMean * mergeN.toDouble + mean * n.toDouble) / newN.toDouble
+                    mergeM2 += m2 + delta * delta * n * mergeN / newN
+                    mergeMean = (mergeMean * mergeN + mean * n) / newN
                     mergeN = newN
                   }
                 }
 
-                withResource(ColumnVector.fromInts(mergeN)) { cvMergeN =>
+                withResource(ColumnVector.fromDoubles(mergeN)) { cvMergeN =>
                   withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
                     withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
                       Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
@@ -292,7 +292,7 @@ class CudfMergeM2 extends CudfAggregate {
   override val name: String = "CudfMergeM2"
   override val dataType: DataType =
     StructType(
-      StructField("n", IntegerType, nullable = false) ::
+      StructField("n", DoubleType, nullable = false) ::
         StructField("avg", DoubleType, nullable = true) ::
         StructField("m2", DoubleType, nullable = true) :: Nil)
 }
@@ -1877,7 +1877,7 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   // In the future, when we make CudfM2 aggregate outputs all the buffers at once,
   // we need to make sure that bufferN is a LongType.
   //
-  // Note that avg and m2 output from libcudf's M2 aggregate are nullable while Spark's
+  // Note that our avg and m2 outputs are nullable while Spark's
   // corresponding buffers require them to be non-nullable.
   // As such, we need to convert those nulls into Double(0.0) in the postUpdate step.
   // This will not affect the outcome of the merge step.
@@ -1898,16 +1898,9 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
     bufferN :: bufferAvg :: bufferM2 :: Nil
 
   // Before merging we have 3 columns and we need to combine them into a structs column.
-  // This is because we are going to do the merging using libcudf's native MERGE_M2 aggregate,
-  // which only accepts one column in the input.
-  //
-  // We cast `n` to be an Integer, as that's what MERGE_M2 expects. Note that Spark keeps
-  // `n` as Double thus we also need to cast `n` back to Double after merging.
-  // In the future, we need to rewrite CudfMergeM2 such that it accepts `n` in Double type and
-  // also output `n` in Double type.
   override lazy val preMerge: Seq[Expression] = {
     val childrenWithNames =
-      GpuLiteral("n", StringType) :: GpuCast(bufferN, IntegerType) ::
+      GpuLiteral("n", StringType) :: bufferN ::
         GpuLiteral("avg", StringType) :: bufferAvg ::
         GpuLiteral("m2", StringType) :: bufferM2 :: Nil
     GpuCreateNamedStruct(childrenWithNames) :: Nil
@@ -1917,14 +1910,12 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeM2)
 
   // The postMerge step needs to extract 3 columns (n, avg, m2) from the structs column
-  // output from the merge step. Note that the first one is casted to Double to match with Spark.
-  //
-  // In the future, when rewriting CudfMergeM2, we will need to output it in Double type.
+  // output from the merge step.
   override lazy val postMerge: Seq[Expression] = Seq(
-    GpuCast(GpuGetStructField(mergeM2.attr, 0), DoubleType),
-    GpuCoalesce(Seq(GpuCast(GpuGetStructField(mergeM2.attr, 1), DoubleType),
+    GpuGetStructField(mergeM2.attr, 0),
+    GpuCoalesce(Seq(GpuGetStructField(mergeM2.attr, 1),
       GpuLiteral(0.0, DoubleType))),
-    GpuCoalesce(Seq(GpuCast(GpuGetStructField(mergeM2.attr, 2), DoubleType),
+    GpuCoalesce(Seq(GpuGetStructField(mergeM2.attr, 2),
       GpuLiteral(0.0, DoubleType))))
 }
 
@@ -2025,7 +2016,7 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
 }
 
 case class GpuReplaceNullmask(
-    input: Expression, 
+    input: Expression,
     mask: Expression) extends GpuExpression with ShimExpression {
 
   override def dataType: DataType = input.dataType
@@ -2092,7 +2083,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   protected val cudfMaxMinByAggregate: CudfAggregate
 
-  private lazy val bufferOrdering: AttributeReference = 
+  private lazy val bufferOrdering: AttributeReference =
     AttributeReference("ordering", orderingExpr.dataType)()
 
   private lazy val bufferValue: AttributeReference =
@@ -2100,7 +2091,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   // Cudf allows only one column as input, so wrap value and ordering columns by
   // a struct before just going into cuDF.
-  private def createStructExpression(order: Expression, value: Expression): Expression = 
+  private def createStructExpression(order: Expression, value: Expression): Expression =
     GpuReplaceNullmask(
       GpuCreateNamedStruct(Seq(
         GpuLiteral(CudfMaxMinBy.KEY_ORDERING, StringType), order,
@@ -2155,4 +2146,63 @@ case class GpuMinBy(valueExpr: Expression, orderingExpr: Expression)
 
   override protected lazy val cudfMaxMinByAggregate: CudfAggregate =
     new CudfMinBy(valueExpr.dataType, orderingExpr.dataType)
+}
+
+class CudfBitAndAgg(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitAnd())
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitAnd()
+  override val name: String = "CudfBitAndAgg"
+}
+
+class CudfBitOrAgg(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitOr())
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitOr()
+  override val name: String = "CudfBitOrAgg"
+}
+
+class CudfBitXorAgg(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitXor())
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitXor()
+  override val name: String = "CudfBitXorAgg"
+}
+
+abstract class GpuBitAggregate(child: Expression) extends GpuAggregateFunction with Serializable {
+  override def nullable: Boolean = true
+
+  override def dataType: DataType = child.dataType
+
+  override def children: Seq[Expression] = Seq(child)
+
+  protected def cudfBitAgg: CudfAggregate
+
+  protected final lazy val outputBuf: AttributeReference =
+    AttributeReference("bitwiseAgg", dataType)()
+
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
+  override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, dataType))
+  override lazy val inputProjection: Seq[Expression] = Seq(child)
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(cudfBitAgg)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(cudfBitAgg)
+  override lazy val evaluateExpression: Expression = outputBuf
+}
+
+case class GpuBitAndAgg(child: Expression) extends GpuBitAggregate(child) {
+  override def cudfBitAgg = new CudfBitAndAgg(dataType)
+
+  override def prettyName: String = "bit_and"
+}
+
+case class GpuBitOrAgg(child: Expression) extends GpuBitAggregate(child) {
+  override def cudfBitAgg = new CudfBitOrAgg(dataType)
+
+  override def prettyName: String = "bit_or"
+}
+
+case class GpuBitXorAgg(child: Expression) extends GpuBitAggregate(child) {
+  override def cudfBitAgg = new CudfBitXorAgg(dataType)
+
+  override def prettyName: String = "bit_xor"
 }

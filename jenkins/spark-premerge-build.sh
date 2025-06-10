@@ -252,13 +252,6 @@ nvidia-smi
 
 PREMERGE_PROFILES="-Ppre-merge"
 
-# If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
-# Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
-M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
-if [ -s "$M2_CACHE_TAR" ] ; then
-    tar xf $M2_CACHE_TAR -C ~/
-fi
-
 case $BUILD_TYPE in
 
     all)

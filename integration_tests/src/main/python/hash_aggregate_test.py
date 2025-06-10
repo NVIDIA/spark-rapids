@@ -534,7 +534,6 @@ def test_hash_grpby_pivot(data_gen, conf, kudo_enabled):
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10062')
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_hash_multiple_grpby_pivot(data_gen, conf, kudo_enabled):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1474,7 +1473,8 @@ def test_reduction_with_min_max_by_unique(kudo_enabled):
             "min_by(a, b)", "max_by(a, b)"),
         conf = {kudo_enabled_conf_key: kudo_enabled})
 
-# When the ordering column is not unique this gpu will always return the minimal/maximal value 
+
+# When the ordering column is not unique this gpu will always return the minimal/maximal value
 # while spark's result is non-deterministic. So we need to set the column b and c to be
 # the same to make the result comparable.
 @pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
@@ -2453,3 +2453,108 @@ def test_group_by_binary(gen):
         lambda spark: gen_df(spark, gen_list),
         "tab",
         "select c_binary, sum(c_int) from tab group by c_binary")
+
+def local_aggregate_gen(spark, bucketed_table, group_key):
+    df = spark.table(bucketed_table).filter(f.length('str_val') > 1).groupBy(group_key)
+    return df.agg(
+        f.sum(f.col('int_val') * 2),
+        f.max(f.col('int_val') * f.col('int_val')),
+        f.min(f.col('int_val') + f.col('normal_key')))
+
+def local_aggregate_gen_with_filter(spark, bucketed_table, group_key):
+    return spark.sql(f"""SELECT
+            {group_key},
+            SUM(int_val * 2) FILTER (WHERE int_val > 1) AS sum_filtered,
+            MAX(int_val * int_val) AS max_square,
+            MIN(int_val + normal_key) FILTER (WHERE normal_key > 0) AS min_sum
+        FROM {bucketed_table}
+        WHERE LENGTH(str_val) > 1
+        GROUP BY {group_key}
+        """)
+
+# collect_list is a ImperativeAggregate, Spark will create ObjectHashAggregateExec because of it
+def local_object_hash_aggregate_gen(spark, bucketed_table, group_key):
+    return spark.sql(f"""
+        SELECT {group_key}, EXPLODE(collect_lst)
+        FROM (
+            SELECT {group_key},
+                COLLECT_LIST(str_val) FILTER (WHERE LENGTH(str_val) <= 5) AS collect_lst
+            FROM {bucketed_table}
+            WHERE int_val > 1
+            GROUP BY {group_key}
+        )""")
+
+hash_agg_conf = {"spark.rapids.sql.foldLocalAggregate.enabled": 'true',
+                 "spark.sql.test.forceApplySortAggregate": 'false'}
+sort_agg_conf = {"spark.rapids.sql.foldLocalAggregate.enabled": 'true',
+                 "spark.sql.test.forceApplySortAggregate": 'true'}
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(), reason="This rule is not applied onto Databricks shims")
+@pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("agg_conf", [hash_agg_conf, sort_agg_conf], ids=idfn)
+@pytest.mark.parametrize("agg_transform_fn",
+                         [local_aggregate_gen,
+                          local_aggregate_gen_with_filter,
+                          local_object_hash_aggregate_gen],
+                         ids=['local_agg_gen', 'local_agg_gen_filter', 'local_object_hash_agg_gen'])
+def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, agg_transform_fn):
+    # --- Create bucketed table ---
+    bucketed_table = spark_tmp_table_factory.get()
+
+    def write_bucket_table(spark):
+        df = gen_df(spark, [('bucket_key', LongGen(nullable=False)),
+                            ('normal_key', LongGen(nullable=False)),
+                            ('str_val', StringGen(pattern="(.|\n){1,10}")),
+                            ('int_val', int_gen),
+                            ('long_val', long_gen)])
+        return df.write.bucketBy(8, "bucket_key").format('parquet').mode("overwrite") \
+            .saveAsTable(bucketed_table)
+
+    with_cpu_session(write_bucket_table)
+
+    run_conf = agg_conf.copy()
+    run_conf.update({"spark.sql.adaptive.enabled": aqe_enabled})
+
+    def run_and_capture_plan(spark, get_df_function):
+        df = get_df_function(spark)
+        # execute the plan so that the final adaptive plan is available when AQE is on
+        df.collect()
+        return str(df._jdf.queryExecution().executedPlan())
+
+    # case 1: can apply because the group key matches the bucket key
+    run_spark_fn = lambda spark: agg_transform_fn(spark, bucketed_table, 'bucket_key')
+    plan_str = with_gpu_session(
+        lambda spark: run_and_capture_plan(spark, run_spark_fn), conf=run_conf)
+    aggregate_nodes = plan_str.count("GpuHashAggregate (")
+    # two-stage aggregate should be folded into one
+    assert aggregate_nodes == 1, "Unexpected SparkPlan: " + plan_str
+    assert_gpu_and_cpu_are_equal_collect(run_spark_fn, conf=run_conf)
+
+    # case 2: cannot apply because shuffle is being injected
+    run_spark_fn = lambda spark: agg_transform_fn(spark, bucketed_table, 'normal_key')
+    plan_str = with_gpu_session(
+        lambda spark: run_and_capture_plan(spark, run_spark_fn), conf=run_conf)
+    aggregate_nodes = plan_str.count("GpuHashAggregate (")
+    # two-stage aggregate should be 2x the number of logical aggregates
+    assert aggregate_nodes == 2, "Unexpected SparkPlan: " + plan_str
+    assert_gpu_and_cpu_are_equal_collect(run_spark_fn, conf=run_conf)
+
+
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_hash_reduction_bitwise(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=5).selectExpr(
+            "bit_and(a)",
+            "bit_or(a)",
+            "bit_xor(a)"))
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('int_gen', integral_gens, ids=idfn)
+def test_hash_groupby_bitwise(int_gen):
+    data_gen = [('a', ByteGen()), ('b', int_gen)]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=1024),
+        "hash_agg_table",
+        "select a, bit_and(b), bit_or(b), bit_xor(b) from hash_agg_table group by a")

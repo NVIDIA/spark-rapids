@@ -21,13 +21,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
-        <version>25.04.0</version>
+        <version>25.06.0</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-tests_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests</name>
     <description>RAPIDS plugin for Apache Spark integration tests</description>
-    <version>25.04.0</version>
+    <version>25.06.0</version>
 
     <properties>
         <rapids.module>tests</rapids.module>
@@ -171,5 +171,56 @@
                 </dependency>
             </dependencies>
         </profile>
+        <!-- #if scala-2.13 --><!--
+        <profile>
+            <id>release400</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.scalatest</groupId>
+                        <artifactId>scalatest-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>test</id>
+                                <phase>none</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>test-ansi-off</id>
+                                <configuration>
+                                    <environmentVariables>
+                                        <SPARK_CONF>spark.sql.ansi.enabled=false</SPARK_CONF>
+                                    </environmentVariables>
+                                </configuration>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>test-ansi-on</id>
+                                <configuration>
+                                    <environmentVariables>
+                                        <SPARK_CONF>spark.sql.ansi.enabled=true</SPARK_CONF>
+                                    </environmentVariables>
+                                </configuration>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                            </execution>                            
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        --><!-- #endif scala-2.13 -->
+
     </profiles>
 </project>

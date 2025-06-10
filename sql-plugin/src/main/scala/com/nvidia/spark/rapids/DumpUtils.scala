@@ -24,6 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.kudo.KudoSerializer
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 
@@ -33,10 +34,11 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 object DumpUtils extends Logging {
   /**
    * Debug utility to dump a host memory buffer to a file.
-   * @param conf Hadoop configuration
-   * @param data buffer containing data to dump to a file
+   *
+   * @param conf   Hadoop configuration
+   * @param data   buffer containing data to dump to a file
    * @param offset starting offset in the buffer of the data
-   * @param len size of the data in bytes
+   * @param len    size of the data in bytes
    * @param prefix prefix for a path to write the data
    * @param suffix suffix for a path to write the data
    * @return Hadoop path for where the data was written or null on error
@@ -109,13 +111,34 @@ object DumpUtils extends Logging {
    *
    * @param columnarBatch The columnar batch to be dumped, should be GPU columnar batch. It
    *                      should be closed by caller.
-   * @param outputStream Will be closed after writing.
+   * @param outputStream  Will be closed after writing.
+   * @param kudoSerializer Optional. Only required when the batch contains a
+   *                       KudoSerializedTableColumn.
    */
-  def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream): Unit = {
+  def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream,
+      kudoSerializer: Option[KudoSerializer] = None)
+  : Unit = {
     closeOnExcept(outputStream) { _ =>
-      withResource(GpuColumnVector.from(columnarBatch)) { table =>
-        withResource(new ParquetDumper(outputStream, table)) { dumper =>
-          dumper.writeTable(table)
+      // For batches from a shuffle node, convert the SerializedTableColumn or
+      // KudoSerializedTableColumn to a table first
+      val table = if (columnarBatch.numCols() == 1) {
+        columnarBatch.column(0) match {
+          case serializedCol: SerializedTableColumn =>
+            deserializeSerializedTableColumn(serializedCol)
+          case kudoCol: KudoSerializedTableColumn =>
+            require(kudoSerializer.isDefined,
+              "KudoSerializer must be provided when handling KudoSerializedTableColumn")
+            deserializeKudoSerializedTableColumn(kudoSerializer.get, kudoCol)
+          case _ =>
+            GpuColumnVector.from(columnarBatch)
+        }
+      } else {
+        GpuColumnVector.from(columnarBatch)
+      }
+
+      withResource(table) { t =>
+        withResource(new ParquetDumper(outputStream, t)) { dumper =>
+          dumper.writeTable(t)
         }
       }
     }
@@ -165,7 +188,38 @@ object DumpUtils extends Logging {
     }
     path
   }
+
+  /**
+   * Deserialize a SerializedTableColumn back to a Table
+   */
+  private def deserializeSerializedTableColumn(column: SerializedTableColumn): Table = {
+    import ai.rapids.cudf.JCudfSerialization
+    val header = column.header
+    val buffer = column.hostBuffer
+    if (buffer == null || header == null) {
+      throw new IllegalArgumentException("Cannot deserialize from null header or buffer")
+    }
+
+    withResource(JCudfSerialization.unpackHostColumnVectors(header, buffer)) { hostColumns =>
+      withResource(hostColumns.map(_.copyToDevice())) { deviceColumns =>
+        new Table(deviceColumns: _*)
+      }
+    }
+  }
+
+  /**
+   * Deserialize a KudoSerializedTableColumn back to a Table
+   */
+  private def deserializeKudoSerializedTableColumn(kudoSerializer: KudoSerializer,
+      column: KudoSerializedTableColumn): Table
+  = {
+    withResource(column.spillableKudoTable.makeKudoTable) { kudoTable =>
+      kudoSerializer.mergeToTable(Array(kudoTable))
+    }
+  }
+
 }
+
 
 // parquet dumper
 class ParquetDumper(private val outputStream: OutputStream, table: Table) extends HostBufferConsumer
