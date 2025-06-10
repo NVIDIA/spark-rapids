@@ -749,6 +749,12 @@ object GpuOverrides extends Logging {
    * @param meta agg expression meta
    */
   def checkAndTagAnsiAgg(checkType: Option[DataType], meta: AggExprMeta[_]): Unit = {
+    if (meta.expr.isInstanceOf[Count]) {
+      // Spark Count agg returns Long and does not check Ansi mode and overflow,
+      // so it's safe to ignore Ansi check for Count.
+      return
+    }
+
     val failOnError = SQLConf.get.ansiEnabled
     if (failOnError) {
       if (checkType.isDefined) {
