@@ -34,7 +34,7 @@ WaitingForWrites|Rapids Shuffle Manager (multi threaded) is waiting for any queu
 AbstractGpuCoalesceIterator|Default range for a code path in the AbstractGpuCoalesceIterator for an op which is not explicitly documented in its own range
 ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
 ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
-hash join build|
+hash join build|Return multiple batches as the build side data for the following sub-partitioning join
 probe left|Probing the left side of a join input iterator to get the data size for preparing the join
 build batch: collect|Perform a join where the build side fits in a single GPU batch
 BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding

@@ -100,7 +100,7 @@ object NvtxRegistry {
     "GpuShuffledHashJoinExec op is preparing build batches for join")
 
   val HASH_JOIN_BUILD: NvtxId = NvtxId("hash join build", NvtxColor.BLUE,
-    "")
+    "Return multiple batches as the build side data for the following sub-partitioning join")
 
   val PROBE_LEFT: NvtxId = NvtxId("probe left", NvtxColor.BLUE,
     "Probing the left side of a join input iterator to get the data size for preparing the join")
