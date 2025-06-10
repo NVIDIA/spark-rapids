@@ -294,7 +294,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     onTaskCompletion(tc)(close())
   }
 
-  protected def tableOperator: SerializedTableOperator[T]
+  protected val tableOperator: SerializedTableOperator[T]
 
   override def close(): Unit = {
     serializedTables.forEach(_.close())
@@ -378,7 +378,7 @@ class HostShuffleCoalesceIterator(
     targetBatchSize: Long,
     metricsMap: Map[String, GpuMetric])
   extends HostCoalesceIteratorBase[SerializedTableColumn](iter, targetBatchSize, metricsMap) {
-  override protected def tableOperator = new JCudfTableOperator
+  override protected val tableOperator = new JCudfTableOperator
 }
 
 class KudoHostShuffleCoalesceIterator(
@@ -389,14 +389,14 @@ class KudoHostShuffleCoalesceIterator(
     readOption: CoalesceReadOption
     )
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize, metricsMap) {
-  
+
   // Capture TaskContext info during RDD execution when it's available
   private val taskIdentifier = Option(TaskContext.get()) match {
     case Some(tc) => s"stage_${tc.stageId()}_task_${tc.taskAttemptId()}"
     case None => java.util.UUID.randomUUID().toString
   }
-  
-  override protected def tableOperator = {
+
+  override protected val tableOperator = {
     val kudoSer = if (dataTypes.nonEmpty) {
       Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
     } else {
