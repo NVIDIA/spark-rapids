@@ -136,7 +136,7 @@ be set to either `STDERR` or `STDOUT` to see everything that is happening with t
 ```
 
 The format of this is not really documented anywhere, but it uses the
-[logging_resource_adaptor](https://github.com/rapidsai/rmm/blob/main/include/rmm/mr/device/logging_resource_adaptor.hpp)
+[logging_resource_adaptor](https://github.com/rapidsai/rmm/blob/main/cpp/include/rmm/mr/device/logging_resource_adaptor.hpp)
 to log when an allocation succeeded or failed and when memory was freed. The current format
 appears to be.
 
