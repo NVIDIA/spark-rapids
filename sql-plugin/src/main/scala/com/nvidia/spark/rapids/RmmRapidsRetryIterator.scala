@@ -591,7 +591,7 @@ object RmmRapidsRetryIterator extends Logging {
   // we can just use a cached value, in order to save the cost of creating new RapidsConf, which
   // is quite expensive when we're constantly invoking RmmRapidsRetryIterator in a long loop, e.g.
   // KudoSerializedBatchIterator.
-  private val injectMode = Option(SQLConf.get).map(new RapidsConf(_).testRetryOOMInjectionMode)
+  private lazy val injectMode = Option(SQLConf.get).map(new RapidsConf(_).testRetryOOMInjectionMode)
 
   /**
    * RmmRapidsRetryIterator exposes an iterator that can retry work,
