@@ -87,6 +87,12 @@ case class IcebergPartitionedFile(
 
   def length: Long = split.map(_._2).getOrElse(file.getLength)
 
+  def isSame(p: PartitionedFile) = {
+    this.urlEncodedPath == p.filePath.urlEncoded &&
+      this.start == p.start &&
+      this.length == p.length
+  }
+
   override def hashCode(): Int = {
     Objects.hash(urlEncodedPath, split)
   }
