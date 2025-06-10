@@ -95,10 +95,14 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* Support sha1
+* Support functions that have time zones with daylight savings transitions 
+* Support Spark Connect for Spark 3.5.6+ (Spark Connect is supported for Spark 3.4-3.5.5 if the plugin jar is built with a single shim)
+* Support for Iceberg 1.6.1 on Spark 3.5.x for read with deletions
+* Support array_distinct
 * Support bit_count
-* Support group by and reduction on bitwise functions
-* Support GPUScan for iceberg
+* Support bitwise aggregate functions (bit_and, bit_or and bit_xor) in groupby and reduction
+* Support conv
+* Support sha1
 * Introduce more metrics for troubleshooting (max writers number, memory bookkeepings)
 * Fix a GPU Out-of-memory bug when spark.speculation is on
 * Fix a get_json_object bug when encounter some special pattern path
