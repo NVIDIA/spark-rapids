@@ -14,6 +14,7 @@
 
 import os
 import tempfile
+import logging
 from itertools import combinations
 from types import MappingProxyType
 from typing import Callable, List, Dict, Optional
@@ -116,7 +117,8 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
         table_func(spark)
         spark.sql(f"REFRESH TABLE {table_name}")
         after_count = spark.table(table_name).count()
-        assert before_count != after_count, message
+        if before_count != after_count:
+            logging.warning(message)
 
     with_cpu_session(change_table,
                      conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",

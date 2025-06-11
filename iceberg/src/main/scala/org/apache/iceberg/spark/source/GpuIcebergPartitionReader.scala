@@ -21,6 +21,7 @@ import java.util.{Map => JMap}
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.MapUtil.toMapStrict
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuCoalescingIcebergParquetReader, GpuIcebergParquetReader, GpuIcebergParquetReaderConf, GpuMultiThreadIcebergParquetReader, GpuSingleThreadIcebergParquetReader, IcebergPartitionedFile, MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, FileScanTask, MetadataColumns, Partitioning, ScanTask, ScanTaskGroup, Schema, Table, TableProperties}
@@ -109,14 +110,14 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
       .map(f => f.location() -> f)
       .toMap
 
-    val taskMap = tasks.map(t => {
+    val taskMap = toMapStrict(tasks.map(t => {
       val file = inputFiles(t.file().path().toString)
       val icebergFile = IcebergPartitionedFile(file,
         Some((t.start(), t.length())),
         Some(t.residual()))
 
       icebergFile -> t
-    }).toMap
+    }))
 
     (inputFiles, taskMap)
   }
