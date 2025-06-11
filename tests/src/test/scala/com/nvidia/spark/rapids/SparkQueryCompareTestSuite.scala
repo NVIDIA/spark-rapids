@@ -29,7 +29,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
 import org.apache.spark.sql.internal.SQLConf
@@ -203,6 +203,33 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
     withSparkSession(c, f)
+  }
+
+  def withGpuHiveSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
+    // Force a new session for Hive since catalogImplementation is a static config
+    TrampolineUtil.cleanupAnyExistingSession()
+    val spark = SparkSession.builder()
+      .master("local[1]")
+      .config(conf)
+      .config(RapidsConf.SQL_ENABLED.key, "true")
+      .config(RapidsConf.TEST_CONF.key, "true")
+      .config(RapidsConf.EXPLAIN.key, "ALL")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.sql.catalogImplementation", "hive")
+      .config("spark.sql.hive.convertMetastoreParquet", "false")
+      .config("spark.sql.queryExecutionListeners",
+        "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
+      .config("spark.eventLog.enabled","true")
+      .config("spark.eventLog.dir","/opt/spark/spark-events")
+      .appName("rapids spark plugin Hive related tests")
+      .getOrCreate()
+    try {
+      f(spark)
+    } finally {
+      spark.stop()
+      SparkSession.clearActiveSession()
+      SparkSession.clearDefaultSession()
+    }
   }
 
   def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {

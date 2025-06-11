@@ -18,8 +18,11 @@ package com.nvidia.spark.rapids
 
 import java.net.URI
 
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
+import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
@@ -113,15 +116,28 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
     extends ShimUnaryExecNode with GpuExec {
   override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
-  private lazy val sideEffectResult: Seq[ColumnarBatch] =
-    cmd.runColumnar(sparkSession, child)
+  private lazy val sideEffectResult: Seq[ColumnarBatch] = {
+    // Dump LoRE meta info if needed
+    dumpLoreMetaInfo()
+    // Execute the command with LoRE dumping if needed
+    val childWithDumping = dumpLoreRDD(child)
+    cmd.runColumnar(sparkSession, childWithDumping)
+  }
 
   override def output: Seq[Attribute] = cmd.output
 
   override def nodeName: String = "Execute " + cmd.nodeName
 
   // override the default one, otherwise the `cmd.nodeName` will appear twice from simpleString
-  override def argString(maxFields: Int): String = cmd.argString(maxFields)
+  override def argString(maxFields: Int): String = {
+    val baseArgs = cmd.argString(maxFields)
+    val loreArgs = loreArgsString
+    if (loreArgs.nonEmpty) {
+      s"$baseArgs $loreArgs"
+    } else {
+      baseArgs
+    }
+  }
 
   override def executeCollect(): Array[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")
@@ -147,4 +163,52 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
     } else {
       Seq(null)
     }
+
+  // LoRE support methods
+  protected def loreArgsString: String = {
+    val loreIdStr = loreIdOf(this).map(id => s"[loreId=$id]")
+    val lorePathStr = getTagValue(LORE_DUMP_PATH_TAG).map(path => s"[lorePath=$path]")
+    val loreRDDInfoStr = getTagValue(LORE_DUMP_RDD_TAG).map(info => s"[loreRDDInfo=$info]")
+
+    List(loreIdStr, lorePathStr, loreRDDInfoStr).flatten.mkString(" ")
+  }
+
+  private def dumpLoreMetaInfo(): Unit = {
+    getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
+      GpuLore.dumpPlan(this, new Path(rootPath))
+    }
+  }
+
+  private def dumpLoreRDD(inputChild: SparkPlan): SparkPlan = {
+    getTagValue(LORE_DUMP_RDD_TAG).map { info =>
+      // Create a new exec that wraps the child with LoRE dumping capability
+      new GpuDataWritingCommandChildWithLoreDump(inputChild, info)
+    }.getOrElse(inputChild)
+  }
+}
+
+/**
+ * A wrapper execution node that adds LoRE dumping capability to the child of
+ * a data writing command.
+ */
+case class GpuDataWritingCommandChildWithLoreDump(
+    child: SparkPlan,
+    loreDumpInfo: com.nvidia.spark.rapids.lore.LoreDumpRDDInfo)
+    extends ShimUnaryExecNode with GpuExec {
+
+  override def output: Seq[Attribute] = child.output
+
+  override protected def doExecute(): RDD[InternalRow] = {
+    throw new UnsupportedOperationException(
+      s"${getClass.getCanonicalName} does not support row-based execution")
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val childRDD = child.executeColumnar()
+    val rdd = new GpuLoreDumpRDD(loreDumpInfo, childRDD)
+    rdd.saveMeta()
+    rdd
+  }
+
+  override def nodeName: String = s"LoreDump(${child.nodeName})"
 }

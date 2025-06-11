@@ -213,6 +213,100 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  test("GpuInsertIntoHiveTable with LoRE dump and replay") {
+    /*
+    This test is different from previous ones as it's a HiveInsert operation.
+    It will produce 0 output rows while writing data to a Hive Table.
+    So the validation should be comparing the Hive Table content between the first run and the replay run.
+     */
+    try {
+      val loreDumpIds = "5[*]"
+      val loreId = OutputLoreId.parse(loreDumpIds).head._1
+
+      // First execution - capture the original data written to Hive table
+      val originalDataCount = 100
+      withGpuHiveSparkSession { spark =>
+        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreDumpIds)
+        // Clean up any existing table and its associated directory
+        spark.sql("DROP TABLE IF EXISTS test_hive_table")
+        spark.sql("""
+          CREATE TABLE test_hive_table (
+            id INT,
+            name STRING
+          )
+          STORED AS textfile
+        """)
+
+        // Create test data and insert into Hive table - this should trigger LoRE dumping
+        val df = spark.range(0, originalDataCount, 1, 10)
+          .selectExpr("id as id", "concat('name_', id) as name")
+        df.write
+          .mode("overwrite")
+          .insertInto("test_hive_table")
+      }
+      // Second execution - replay the LoRE dumped operation
+      var replayDataCount = 0L
+      withGpuHiveSparkSession { spark =>
+        // Clean up and recreate table for replay
+        spark.sql("DROP TABLE IF EXISTS test_hive_table")
+        spark.sql("""
+          CREATE TABLE test_hive_table (
+            id INT,
+            name STRING
+          )
+          STORED AS textfile
+        """)
+        // Execute the LoRE replay
+        GpuColumnarToRowExec(GpuLore.restoreGpuExec(
+          new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"),
+          spark))
+          .executeCollect()
+        // Read the data written by replay and count it
+        replayDataCount = spark.sql("SELECT * FROM test_hive_table").count()
+      }
+      assert(originalDataCount == replayDataCount,
+        s"Original data count ($originalDataCount) != Replay data count ($replayDataCount)")
+    } finally {
+      // Clean up warehouse directory to avoid conflicts in future test runs
+      val possiblePaths = Seq(
+        "tests/spark-warehouse/test_hive_table",
+        "spark-warehouse/test_hive_table"
+      )
+      possiblePaths.foreach { pathStr =>
+        val warehouseDir = new java.io.File(pathStr)
+        if (warehouseDir.exists()) {
+          import java.nio.file.{Files, Paths}
+          import java.util.Comparator
+          try {
+            Files.walk(Paths.get(warehouseDir.getPath))
+              .sorted(Comparator.reverseOrder())
+              .forEach(Files.deleteIfExists(_))
+          } catch {
+            case _: Exception => // Ignore cleanup failures
+          }
+        }
+      }
+      // Clean up Hive-generated files and directories
+      val derbyLog = new java.io.File("derby.log")
+      if (derbyLog.exists()) {
+        derbyLog.delete()
+      }
+      val metadataDb = new java.io.File("metastore_db")
+      if (metadataDb.exists() && metadataDb.isDirectory) {
+        import java.nio.file.{Files, Paths}
+        import java.util.Comparator
+        try {
+          Files.walk(Paths.get("metastore_db"))
+            .sorted(Comparator.reverseOrder())
+            .forEach(Files.deleteIfExists(_))
+        } catch {
+          case _: Exception => // Ignore cleanup failures
+        }
+      }
+    }
+  }
+
   private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {
     val loreId = OutputLoreId.parse(loreDumpIds).head._1
     withGpuSparkSession { spark =>
