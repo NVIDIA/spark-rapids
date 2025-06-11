@@ -2217,7 +2217,7 @@ object GpuOverrides extends Logging {
       (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
 
         // Spark Count agg returns Long and does not check Ansi mode and overflow
-        def needsAnsiCheck: Boolean = false
+        override def needsAnsiCheck: Boolean = false
 
         override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
