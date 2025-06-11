@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ case class DatabricksShimVersion(
     major: Int,
     minor: Int,
     patch: Int,
-    dbMajor: Int,
-    dbMinor: Int) extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-databricks$dbMajor.$dbMinor"
+    dbver: String = "") extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch-databricks$dbver"
 }

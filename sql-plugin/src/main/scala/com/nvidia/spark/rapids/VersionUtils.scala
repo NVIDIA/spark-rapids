@@ -38,7 +38,7 @@ object VersionUtils {
     val sparkShimVersion = ShimLoader.getShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
-      case DatabricksShimVersion(a, b, c, _, _) => (a, b, c)
+      case DatabricksShimVersion(a, b, c, _) => (a, b, c)
       case ClouderaShimVersion(a, b, c, _) => (a, b, c)
     }
     val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
@@ -55,8 +55,10 @@ object VersionUtils {
     sparkShimVersion match {
       case SparkShimVersion(a, b, c) =>
         new VersionForJni(PlatformForJni.VANILLA_SPARK, a, b, c)
-      case DatabricksShimVersion(_, _, _, dbMajor, dbMinor) =>
-        new VersionForJni(PlatformForJni.DATABRICKS, dbMajor, dbMinor, 0)
+      case DatabricksShimVersion(_, _, _, dbVer) =>
+        val major = dbVer.split("\\.")(0).toInt
+        val minor = dbVer.split("\\.")(1).toInt
+        new VersionForJni(PlatformForJni.DATABRICKS, major, minor, 0)
       case ClouderaShimVersion(a, b, c, _) =>
         new VersionForJni(PlatformForJni.CLOUDERA, a, b, c)
       case other =>
