@@ -77,25 +77,21 @@ def test_cast_nested(data_gen, to_type):
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
 
-# @pytest.mark.parametrize('pattern',
-#                          [
-#                              pytest.param(r'[+-][0-9]{4}', id='yyyy'),
-#                              # pytest.param(r'[+-][0-9]{4,7}', id='yyyy[y][y][y]'),  # 7 digits year is invalid
-#                              pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}', id='yyyy-m[m]'),
-#                              # pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}', id='yyyy[y][y][y]-m[m]'),
-#                              # 7 digits year is invalid
-#                              pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy-m[m]-d[d]'),
-#                              # pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy[y][y][y]-m[m]-d[d]'),
-#                              # 7 digits year is invalid
-#                              pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}-[0-9]{1,2} tailing_has_no_effect',
-#                                           id='yyyy-m[m]-d[d]'),
-#                              # pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}-[0-9]{1,2}T_tailing_has_no_effect',
-#                              #              id='yyyy[y][y][y]-m[m]-d[d]'),  # 7 digits year is invalid
-#                          ])
-def test_cast_string_date_ansi_off_using_regexp():
-    # Cast date to int because this goes beyond what python can support for years
+# Spark date type allows 7 digits years
+@pytest.mark.parametrize('pattern',
+                         [
+                             pytest.param(r'[+-][0-9]{4}', id='yyyy'),
+                             pytest.param(r'[+-][0-9]{4,7}', id='yyyy[y][y][y]'),
+                             pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}', id='yyyy-m[m]'),
+                             pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}', id='yyyy[y][y][y]-m[m]'),
+                             pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy-m[m]-d[d]'),
+                             pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy[y][y][y]-m[m]-d[d]'),
+                             pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}-[0-9]{1,2} tailing_has_no_effect', id='yyyy-m[m]-d[d] ...'),
+                             pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}-[0-9]{1,2}T_tailing_has_no_effect', id='yyyy[y][y][y]-m[m]-d[d]T...'),
+                         ])
+def test_cast_string_date_ansi_off_using_regexp(pattern):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, StringGen(date_start_1_1_1)).selectExpr("cast(a as date)"),
+        lambda spark: unary_op_df(spark, StringGen(pattern)).selectExpr("cast(a as date)"),
         conf=ansi_disabled_conf)
 
 
@@ -105,10 +101,10 @@ invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conf
                                  '1970-01-01A',
                                  '2022-02-29',  # nonexistent day
                                  '200-1-1',  # 200 not conform to 'YYYY'
-                                 '2001-13-1',  # nonexistent day
+                                 '2001-13-1',  # nonexistent month
                                  '2001-1-32',  # nonexistent day
                                  'not numbers',
-                                 '666666666'
+                                 '666666666' # year has more than 7 digits.
                                  ]
 valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
                                '1970-1-01', ' 1970-10-5 ', ' 2001-10-16 ',  # 'yyyy-[M]M-[d]d' after trim
