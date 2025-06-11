@@ -26,7 +26,7 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{CastStrings, DecimalUtils, GpuTimeZoneDB}
-import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, NullIntolerantShim, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, NullIntolerantShim, SparkShimImpl}
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -35,7 +35,6 @@ import org.apache.spark.sql.catalyst.trees.UnaryLike
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
@@ -1277,26 +1276,6 @@ object GpuCast {
         }
       }
     }
-  }
-
-  private def checkResultForAnsiMode(input: ColumnVector, result: ColumnVector,
-      errMessage: String): ColumnVector = {
-    closeOnExcept(result) { _ =>
-      val notConverted = withResource(input.isNotNull()) { inputNotNull =>
-        withResource(result.isNull()) { resultIsNull =>
-          inputNotNull.and(resultIsNull)
-        }
-      }
-      val notConvertedAny = withResource(notConverted) {
-        _.any()
-      }
-      withResource(notConvertedAny) { _ =>
-        if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
-          throw new DateTimeException(errMessage)
-        }
-      }
-    }
-    result
   }
 
   /**
