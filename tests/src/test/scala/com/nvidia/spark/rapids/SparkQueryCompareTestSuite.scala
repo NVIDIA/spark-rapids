@@ -219,9 +219,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       .config("spark.sql.hive.convertMetastoreParquet", "false")
       .config("spark.sql.queryExecutionListeners",
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
-      .config("spark.eventLog.enabled","true")
-      .config("spark.eventLog.dir","/opt/spark/spark-events")
-      .appName("rapids spark plugin Hive related tests")
+      .appName("Spark Rapids plugin Hive related tests")
       .getOrCreate()
     try {
       f(spark)

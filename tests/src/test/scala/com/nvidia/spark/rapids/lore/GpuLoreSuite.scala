@@ -217,8 +217,9 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     /*
     This test is different from previous ones as it's a HiveInsert operation.
     It will produce 0 output rows while writing data to a Hive Table.
-    So the validation should be comparing the Hive Table content between the first run and the replay run.
-     */
+    So the validation should be comparing the Hive Table content between the first run and the
+    replay run.
+    */
     try {
       val loreDumpIds = "5[*]"
       val loreId = OutputLoreId.parse(loreDumpIds).head._1
