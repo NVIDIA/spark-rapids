@@ -53,6 +53,7 @@ The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Ho
 	Supported Dataproc versions (Debian/Ubuntu/Rocky):
 		GCP Dataproc 2.1
 		GCP Dataproc 2.2
+		GCP Dataproc 2.3
 
 	Supported Dataproc Serverless versions:
 		Spark runtime 1.1 LTS
