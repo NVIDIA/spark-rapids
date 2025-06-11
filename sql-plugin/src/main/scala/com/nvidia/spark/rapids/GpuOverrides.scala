@@ -749,12 +749,6 @@ object GpuOverrides extends Logging {
    * @param meta agg expression meta
    */
   def checkAndTagAnsiAgg(checkType: Option[DataType], meta: AggExprMeta[_]): Unit = {
-    if (meta.expr.isInstanceOf[Count]) {
-      // Spark Count agg returns Long and does not check Ansi mode and overflow,
-      // so it's safe to ignore Ansi check for Count.
-      return
-    }
-
     val failOnError = SQLConf.get.ansiEnabled
     if (failOnError) {
       if (checkType.isDefined) {
@@ -2221,6 +2215,10 @@ object GpuOverrides extends Logging {
         repeatingParamCheck = Some(RepeatingParamCheck(
           "input", TypeSig.all, TypeSig.all))),
       (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
+
+        // Spark Count agg returns Long and does not check Ansi mode and overflow
+        def needsAnsiCheck: Boolean = false
+
         override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
             willNotWorkOnGpu("count of multiple columns not supported")
