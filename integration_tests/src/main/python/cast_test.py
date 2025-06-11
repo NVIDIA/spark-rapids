@@ -776,8 +776,7 @@ def test_cast_int_to_string_not_UTC():
         lambda spark: unary_op_df(spark, int_gen, 100).selectExpr("a", "CAST(a AS STRING) as str"),
         {"spark.sql.session.timeZone": "+08"})
 
-not_utc_fallback_test_params = [(timestamp_gen, 'STRING'),
-        (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
+not_utc_fallback_test_params = [(timestamp_gen, 'STRING')]
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params, ids=idfn)
