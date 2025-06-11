@@ -35,6 +35,7 @@ import org.apache.spark.util.Clock
  * @note This class is instantiated via reflection from DeltaProbeImpl
  */
 class Delta33xRuntimeShim extends DeltaRuntimeShim {
+
   override def getDeltaProvider: DeltaProvider = Delta33xProvider
 
   override def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot = {
@@ -57,7 +58,7 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
      log: DeltaLog,
      conf: RapidsConf,
      clock: Clock): GpuOptimisticTransactionBase = {
-    throw new UnsupportedOperationException("Not implemented")
+    new GpuOptimisticTransaction(log, conf)(clock)
   }
 
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimizeWriteExchange.scala
  * in the Delta Lake project at https://github.com/delta-io/delta
@@ -25,7 +25,6 @@ package org.apache.spark.sql.rapids.delta
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 
-import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 
@@ -35,6 +34,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, ShufflePartitionSpec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.{SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}

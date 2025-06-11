@@ -25,8 +25,6 @@ package org.apache.spark.sql.rapids.delta
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 
-import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
-import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -34,13 +32,11 @@ import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
-import org.apache.spark.sql.execution.{CoalescedPartitionSpec, ShufflePartitionSpec, SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.exchange.Exchange
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RoundRobinPartitioning, UnknownPartitioning}
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
+import org.apache.spark.sql.execution.{CoalescedPartitionSpec, ShuffledRowRDD, ShufflePartitionSpec, SparkPlan, SQLExecution, UnsafeRowSerializer}
+import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric.{SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, ShuffledBatchRDD}
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.createAdditionalExchangeMetrics
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
 
 /**
@@ -51,10 +47,9 @@ import org.apache.spark.util.ThreadUtils
  * @param partitioning Partitioning to use data exchange.
  * @param child Input plan of write job.
  */
-case class GpuOptimizeWriteExchangeExec(
-    partitioning: GpuPartitioning,
-    override val child: SparkPlan) extends Exchange with GpuExec {
-  import GpuMetric._
+case class OptimizeWriteExchangeExec(
+    partitioning: Partitioning,
+    override val child: SparkPlan) extends Exchange {
 
   // Use 150% of target file size hint config considering parquet compression.
   // Still the result file can be smaller/larger than the config due to data skew or
@@ -71,29 +66,15 @@ case class GpuOptimizeWriteExchangeExec(
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   private[sql] lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
-
-  override lazy val additionalMetrics : Map[String, GpuMetric] = {
-    createAdditionalExchangeMetrics(this) ++
-      GpuMetric.wrap(readMetrics) ++
-      GpuMetric.wrap(writeMetrics)
-  }
-
-  override lazy val allMetrics: Map[String, GpuMetric] = {
-    Map(
-      PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
-      NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
-      NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
-      NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
-    ) ++ additionalMetrics
-  }
+  override lazy val metrics = Map(
+    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
+    "numPartitions" -> SQLMetrics.createMetric(sparkContext, "number of partitions")
+  ) ++ readMetrics ++ writeMetrics
 
   private lazy val serializer: Serializer =
-    new GpuColumnarBatchSerializer(allMetrics,
-      child.output.map(_.dataType).toArray,
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf),
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED.get(child.conf))
+    new UnsafeRowSerializer(child.output.size, longMetric("dataSize"))
 
-  @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
+  @transient lazy val inputRDD: RDD[InternalRow] = child.execute()
 
   @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
     if (inputRDD.getNumPartitions == 0) {
@@ -104,18 +85,13 @@ case class GpuOptimizeWriteExchangeExec(
   }
 
 
-  @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
-    val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
+  @transient lazy val shuffleDependency: ShuffleDependency[Int, InternalRow, InternalRow] = {
+    val dep = ShuffleExchangeExec.prepareShuffleDependency(
       inputRDD,
       child.output,
       partitioning,
-      child.output.map(_.dataType).toArray,
       serializer,
-      useGPUShuffle=partitioning.usesGPUShuffle,
-      useMultiThreadedShuffle=partitioning.usesMultiThreadedShuffle,
-      metrics=allMetrics,
-      writeMetrics=writeMetrics,
-      additionalMetrics=additionalMetrics)
+      writeMetrics)
     metrics("numPartitions").set(dep.partitioner.numPartitions)
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(
@@ -124,22 +100,18 @@ case class GpuOptimizeWriteExchangeExec(
   }
 
   override protected def doExecute(): RDD[InternalRow] = {
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
-  }
-
-  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // Collect execution statistics, these will be used to adjust/decide how to split files
     val stats = ThreadUtils.awaitResult(mapOutputStatisticsFuture, Duration.Inf)
     if (stats == null) {
-      new ShuffledBatchRDD(shuffleDependency, metrics)
+      new ShuffledRowRDD(shuffleDependency, readMetrics)
     } else {
       try {
         val partitionSpecs = Some(rebalancePartitions(stats))
-        new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
+        new ShuffledRowRDD(shuffleDependency, readMetrics, partitionSpecs.get.toArray)
       } catch {
         case e: Throwable =>
           logWarning("Failed to apply OptimizeWrite.", e)
-          new ShuffledBatchRDD(shuffleDependency, metrics)
+          new ShuffledRowRDD(shuffleDependency, readMetrics)
       }
     }
   }
@@ -154,7 +126,7 @@ case class GpuOptimizeWriteExchangeExec(
     val bytesByPartitionId = stats.bytesByPartitionId
     val targetPartitionSize = (binSize * PARQUET_COMPRESSION_RATIO).toLong
 
-    val splitPartitions = if (partitioning.isInstanceOf[GpuRoundRobinPartitioning]) {
+    val splitPartitions = if (partitioning.isInstanceOf[RoundRobinPartitioning]) {
       DeltaShufflePartitionsUtil.splitSizeListByTargetSize(
         bytesByPartitionId,
         targetPartitionSize,
@@ -203,8 +175,7 @@ case class GpuOptimizeWriteExchangeExec(
     }.toList
   }
 
-  override protected def withNewChildInternal(
-      newChild: SparkPlan): GpuOptimizeWriteExchangeExec = {
+  override protected def withNewChildInternal(newChild: SparkPlan): OptimizeWriteExchangeExec = {
     copy(child = newChild)
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.delta
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.delta.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
+import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
@@ -55,24 +55,24 @@ object RapidsDeltaUtils {
       }
     }
 
-    val optimizeWriteEnabled = {
-      val deltaOptions = new DeltaOptions(options, sqlConf)
-      deltaOptions.optimizeWrite.orElse {
-        getSQLConf("spark.databricks.delta.optimizeWrite.enabled").map(_.toBoolean).orElse {
-          deltaLog.flatMap { log =>
-            val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(log).metadata
-            DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(metadata).orElse {
-              metadata.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
-                getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
-              }.map(_.toBoolean)
-            }
-          }
-        }
-      }.getOrElse(false)
-    }
-    if (optimizeWriteEnabled) {
-      meta.willNotWorkOnGpu("optimized write of Delta Lake tables is not supported")
-    }
+//    val optimizeWriteEnabled = {
+//      val deltaOptions = new DeltaOptions(options, sqlConf)
+//      deltaOptions.optimizeWrite.orElse {
+//        getSQLConf("spark.databricks.delta.optimizeWrite.enabled").map(_.toBoolean).orElse {
+//          deltaLog.flatMap { log =>
+//            val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(log).metadata
+//            DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(metadata).orElse {
+//              metadata.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
+//                getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
+//              }.map(_.toBoolean)
+//            }
+//          }
+//        }
+//      }.getOrElse(false)
+//    }
+//    if (optimizeWriteEnabled) {
+//      meta.willNotWorkOnGpu("optimized write of Delta Lake tables is not supported")
+//    }
 
     val autoCompactEnabled =
       getSQLConf("spark.databricks.delta.autoCompact.enabled").orElse {
