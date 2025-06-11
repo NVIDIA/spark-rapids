@@ -91,7 +91,7 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
 
 def do_test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
                                               use_cdf, enable_deletion_vectors, partition_columns, num_slices, compare_logs,
-                                              conf, assert_func):
+                                              conf, assert_func=assert_collect):
     src_range, dest_range = table_ranges
     src_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), src_range), num_slices)
     dest_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), dest_range), num_slices)
@@ -104,7 +104,7 @@ def do_test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_fa
 
 def do_test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
                                           use_cdf, enable_deletion_vectors, partition_columns, num_slices, compare_logs,
-                                          conf, assert_func):
+                                          conf, assert_func=assert_collect):
     src_range, dest_range = table_ranges
     src_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), src_range), num_slices)
     dest_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), dest_range), num_slices)
@@ -116,7 +116,7 @@ def do_test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factor
 
 
 def do_test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
-                                        num_slices, compare_logs, conf, assert_func):
+                                        num_slices, compare_logs, conf, assert_func=assert_collect):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
@@ -128,7 +128,7 @@ def do_test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory,
 
 
 def do_test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
-                                              merge_sql, num_slices, compare_logs, conf, assert_func):
+                                              merge_sql, num_slices, compare_logs, conf, assert_func=assert_collect):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
@@ -139,7 +139,7 @@ def do_test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_fa
 
 def do_test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path,
                                                                 spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
-                                                                num_slices, compare_logs, conf, assert_func):
+                                                                num_slices, compare_logs, conf, assert_func=assert_collect):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), range(100)), string_gen, seed=1, num_slices=num_slices)
@@ -151,7 +151,7 @@ def do_test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path,
 
 
 def do_test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
-                                                conf, assert_func):
+                                                conf, assert_func=assert_collect):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: spark.range(10).withColumn("x", f.col("id") + 1) \
         .select(f.col("id"), (f.col("x") + 1).alias("x")) \
