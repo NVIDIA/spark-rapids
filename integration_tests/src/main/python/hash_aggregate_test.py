@@ -2226,16 +2226,14 @@ def test_avg_fallback_when_ansi_enabled(data_gen, kudo_enabled):
 
 
 @ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression',
-  'HashPartitioning', 'ShuffleExchangeExec', 'Count', 'Literal')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_count_fallback_when_ansi_enabled(data_gen, kudo_enabled):
+def test_count_when_ansi_enabled(data_gen, kudo_enabled):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
         return df.groupBy('a').agg(f.count("b"), f.count("*"))
 
-    assert_gpu_fallback_collect(do_it, 'Count',
+    assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true', kudo_enabled_conf_key: kudo_enabled})
 
 @ignore_order(local=True)
