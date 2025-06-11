@@ -61,9 +61,9 @@ object VersionUtils {
         new VersionForJni(PlatformForJni.DATABRICKS, major, minor, 0)
       case ClouderaShimVersion(a, b, c, _) =>
         new VersionForJni(PlatformForJni.CLOUDERA, a, b, c)
-      case other =>
-        // For other customer shim type, do not support
-        throw new IllegalStateException(s"Can not recognize shim version class: ${other.getClass}")
+      case _ =>
+        // unknown platform
+        new VersionForJni(PlatformForJni.UNKNOWN, 0, 0, 0)
     }
   }
 }
