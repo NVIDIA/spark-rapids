@@ -41,7 +41,7 @@ class DefaultDeleteLoader(
   def loadDeletes(deletes: Seq[DeleteFile],
       schema: Schema,
       sparkTypes: Array[DataType]): LazySpillableColumnarBatch = {
-    val files = deletes.map(f => IcebergPartitionedFile(inputFiles(f.path().toString)))
+    val files = deletes.map(f => IcebergPartitionedFile(inputFiles(f.location())))
     withResource(createReader(schema, files)) { reader =>
       withResource(new ArrayBuffer[ColumnarBatch]()) { batches =>
         while (reader.hasNext) {

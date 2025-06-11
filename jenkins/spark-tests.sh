@@ -213,8 +213,8 @@ run_delta_lake_tests() {
 }
 
 run_iceberg_tests() {
-  # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
-  ICEBERG_VERSION=1.6.1
+  # Currently we only support Iceberg 1.7.2 for Spark 3.5.x
+  ICEBERG_VERSION=1.7.2
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
   IS_SPARK_35X=0
