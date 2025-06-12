@@ -227,6 +227,7 @@ run_iceberg_tests() {
  if [[ "IS_SPARK_35X" -ne "1" ]]; then
    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
  else
+   echo "!!! Running iceberg test with local fs catalog"
    # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
    # Disabling them may slow down the tests, so we increase memory here.
    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
@@ -238,6 +239,41 @@ run_iceberg_tests() {
       PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
  fi
+}
+
+run_iceberg_s3tables_test() {
+ # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
+   ICEBERG_VERSION=1.6.1
+   # get the major/minor version of Spark
+   ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
+   IS_SPARK_35X=0
+   # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
+   if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
+     IS_SPARK_35X=1
+   fi
+
+  # RAPIDS-iceberg only support Spark 3.5.x yet
+  if [[ "IS_SPARK_35X" -ne "1" ]]; then
+    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
+  else
+    echo "!!! Running iceberg test with s3table catalog"
+
+    JARS="org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,\
+    software.amazon.s3tables:s3-tables-catalog-for-iceberg-runtime:0.1.6"
+
+     # create table bucket
+     # create namespace
+     ICEBERG_TEST_S3TABLES_NAMESPACE="test_namespace" \
+     env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
+         PYSP_TEST_spark_driver_memory="6G" \
+         PYSP_TEST_spark_jars_packages="$JARS" \
+         PYSP_TEST_spark_hadoop_fs_s3_impl="org.apache.hadoop.fs.s3a.S3AFileSystem" \
+         PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+         PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
+         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="arn:aws:s3tables:us-west-2:503960270539:bucket/iceberg-it-test-1" \
+         ./run_pyspark_from_build.sh -m iceberg --iceberg
+  fi
 }
 
 run_avro_tests() {

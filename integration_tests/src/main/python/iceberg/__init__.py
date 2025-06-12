@@ -62,7 +62,8 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
                              table_prop: Optional[Dict[str, str]] = None) -> str:
 
     gen_list = list(zip(iceberg_base_table_cols, iceberg_gens_list))
-    table_name = spark_tmp_table_factory.get()
+    ns = setup_namespace(spark_tmp_table_factory)
+    table_name = f"{ns}.{spark_tmp_table_factory.get()}"
     tmp_view_name = spark_tmp_table_factory.get()
 
     if table_prop is None:
@@ -122,4 +123,17 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
 
     with_cpu_session(change_table,
                      conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
-                             "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
+                         "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
+
+def get_iceberg_s3tables_ns() -> Optional[str]:
+    return os.getenv('ICEBERG_TEST_S3TABLES_NAMESPACE')
+
+def is_s3tables_catalog() -> bool:
+    return get_iceberg_s3tables_ns() is not None
+
+def setup_namespace(spark_tmp_table_factory):
+    ns = get_iceberg_s3tables_ns()
+    if ns is None:
+        return spark_tmp_table_factory.get()
+    else:
+        return ns

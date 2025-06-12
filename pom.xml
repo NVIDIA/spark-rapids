@@ -875,6 +875,7 @@
 	<dyn.shim.excluded.releases>330db</dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
+<!--        <spark.rapids.source.basedir>/Users/rayliu/Workspace/spark-rapids</spark.rapids.source.basedir>-->
         <rapids.module>.</rapids.module>
         <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
         <allowConventionalDistJar>false</allowConventionalDistJar>
