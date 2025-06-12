@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.net.URI
 
-import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpWrapper}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
@@ -182,33 +182,9 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   private def dumpLoreRDD(inputChild: SparkPlan): SparkPlan = {
     getTagValue(LORE_DUMP_RDD_TAG).map { info =>
       // Create a new exec that wraps the child with LoRE dumping capability
-      new GpuDataWritingCommandChildWithLoreDump(inputChild, info)
+      GpuLoreDumpWrapper(inputChild, info)
     }.getOrElse(inputChild)
   }
 }
 
-/**
- * A wrapper execution node that adds LoRE dumping capability to the child of
- * a data writing command.
- */
-case class GpuDataWritingCommandChildWithLoreDump(
-    child: SparkPlan,
-    loreDumpInfo: com.nvidia.spark.rapids.lore.LoreDumpRDDInfo)
-    extends ShimUnaryExecNode with GpuExec {
 
-  override def output: Seq[Attribute] = child.output
-
-  override protected def doExecute(): RDD[InternalRow] = {
-    throw new UnsupportedOperationException(
-      s"${getClass.getCanonicalName} does not support row-based execution")
-  }
-
-  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val childRDD = child.executeColumnar()
-    val rdd = new GpuLoreDumpRDD(loreDumpInfo, childRDD)
-    rdd.saveMeta()
-    rdd
-  }
-
-  override def nodeName: String = s"LoreDump(${child.nodeName})"
-}
