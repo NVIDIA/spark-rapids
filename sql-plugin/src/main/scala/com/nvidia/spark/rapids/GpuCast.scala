@@ -535,27 +535,12 @@ object GpuCast {
         CastStrings.toFloat(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, BooleanType) =>
-        withResource(input.strip()) { trimmed =>
-          toDataType match {
-            case BooleanType =>
-              castStringToBool(trimmed, ansiMode)
-            case DateType =>
-              if (options.useAnsiStringToDateMode) {
-                castStringToDateAnsi(trimmed, ansiMode)
-              } else {
-                castStringToDate(trimmed)
-              }
-          }
-        }
+        withResource(input.strip()) { trimmed => castStringToBool(trimmed, ansiMode) }
       case (StringType, TimestampType) =>
         // no need to strip, kernel will strip
         castStringToTimestamp(input, ansiMode, options.timeZoneId)
       case (StringType, DateType) =>
-        if (options.useAnsiStringToDateMode) {
-          castStringToDateAnsi(input, ansiMode)
-        } else {
-          castStringToDate(input)
-        }
+        castStringToDateAnsi(input, options.useAnsiStringToDateMode)
       case (StringType, dt: DecimalType) =>
         CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
@@ -1281,6 +1266,30 @@ object GpuCast {
   /**
    * Trims and parses UTF8 date strings to a date column.
    * Refer to Spark code: SparkDateTimeUtils.stringToDate
+   * If it's Ansi mode and has any invalid value, throws exception.
+   * Allowed date string formats:
+   * `[+-]yyyy[y][y][y]`
+   * `[+-]yyyy[y][y][y]-[m]m`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d `
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d *`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]dT*`
+   */
+  def castStringToDateAnsi(input: ColumnView, ansiMode: Boolean): ColumnVector = {
+    // if Ansi mode and has any invalid value, gets null
+    val result = CastStrings.toDate(input, ansiMode)
+    if (result == null) {
+      // All the errors of Spark 32x, 33x, 34x, 35x contains "DateTimeException"
+      throw new DateTimeException("DateTimeException")
+    } else {
+      result
+    }
+  }
+
+  /**
+   * Trims and parses UTF8 date strings to a date column.
+   * Refer to Spark code: SparkDateTimeUtils.stringToDate
+   * Allowed date string formats:
    * `[+-]yyyy[y][y][y]`
    * `[+-]yyyy[y][y][y]-[m]m`
    * `[+-]yyyy[y][y][y]-[m]m-[d]d`
@@ -1289,17 +1298,7 @@ object GpuCast {
    * `[+-]yyyy[y][y][y]-[m]m-[d]dT*`
    */
   def castStringToDate(input: ColumnView): ColumnVector = {
-    CastStrings.toDate(input, /* Ansi */ false)
-  }
-
-  def castStringToDateAnsi(input: ColumnView, ansiMode: Boolean): ColumnVector = {
-    val result = CastStrings.toDate(input, ansiMode)
-    if (result == null) {
-      // All the errors of Spark 320, 330, 340, 350 contains "DateTimeException"
-      throw new DateTimeException("DateTimeException")
-    } else {
-      result
-    }
+    castStringToDateAnsi(input, ansiMode = false)
   }
 
   /** This method does not close the `input` ColumnVector. */
