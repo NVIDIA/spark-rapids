@@ -535,18 +535,7 @@ object GpuCast {
         CastStrings.toFloat(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, BooleanType) =>
-        withResource(input.strip()) { trimmed =>
-          toDataType match {
-            case BooleanType =>
-              castStringToBool(trimmed, ansiMode)
-            case DateType =>
-              if (options.useAnsiStringToDateMode) {
-                castStringToDateAnsi(trimmed, ansiMode)
-              } else {
-                castStringToDate(trimmed)
-              }
-          }
-        }
+        withResource(input.strip()) { trimmed => castStringToBool(trimmed, ansiMode) }
       case (StringType, TimestampType) =>
         // no need to strip, kernel will strip
         castStringToTimestamp(input, ansiMode, options.timeZoneId)
@@ -1281,6 +1270,7 @@ object GpuCast {
   /**
    * Trims and parses UTF8 date strings to a date column.
    * Refer to Spark code: SparkDateTimeUtils.stringToDate
+   * Allowed date string formats:
    * `[+-]yyyy[y][y][y]`
    * `[+-]yyyy[y][y][y]-[m]m`
    * `[+-]yyyy[y][y][y]-[m]m-[d]d`
@@ -1292,10 +1282,22 @@ object GpuCast {
     CastStrings.toDate(input, /* Ansi */ false)
   }
 
+  /**
+   * Trims and parses UTF8 date strings to a date column.
+   * Refer to Spark code: SparkDateTimeUtils.stringToDate
+   * If it's Ansi mode and has any invalid value, throws exception.
+   * Allowed date string formats:
+   * `[+-]yyyy[y][y][y]`
+   * `[+-]yyyy[y][y][y]-[m]m`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d `
+   * `[+-]yyyy[y][y][y]-[m]m-[d]d *`
+   * `[+-]yyyy[y][y][y]-[m]m-[d]dT*`
+   */
   def castStringToDateAnsi(input: ColumnView, ansiMode: Boolean): ColumnVector = {
     val result = CastStrings.toDate(input, ansiMode)
-    if (result == null) {
-      // All the errors of Spark 320, 330, 340, 350 contains "DateTimeException"
+    if (ansiMode && result == null) {
+      // All the errors of Spark 32x, 33x, 34x, 35x contains "DateTimeException"
       throw new DateTimeException("DateTimeException")
     } else {
       result

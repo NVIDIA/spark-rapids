@@ -91,7 +91,8 @@ def test_cast_nested(data_gen, to_type):
                          ])
 def test_cast_string_date_ansi_off_using_regexp(pattern):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, StringGen(pattern)).selectExpr("cast(a as date)"),
+        # cast date to int to avoid out of range in Python
+        lambda spark: unary_op_df(spark, StringGen(pattern)).selectExpr("cast(cast(a as date) as int)"),
         conf=ansi_disabled_conf)
 
 
