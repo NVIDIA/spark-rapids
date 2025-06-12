@@ -1405,7 +1405,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
 
   // Set to false if the aggregate doesn't overflow and therefore
   // shouldn't error
-  val needsAnsiCheck: Boolean = true
+  def needsAnsiCheck: Boolean = true
 
   // The type to use to determine whether the aggregate could overflow.
   // Set to None, if we should fallback for all types
