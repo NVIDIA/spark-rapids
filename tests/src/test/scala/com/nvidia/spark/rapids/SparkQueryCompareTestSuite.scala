@@ -29,7 +29,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
 import org.apache.spark.sql.internal.SQLConf
@@ -208,7 +208,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def withGpuHiveSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     // Force a new session for Hive since catalogImplementation is a static config
     TrampolineUtil.cleanupAnyExistingSession()
-    val spark = SparkSession.builder()
+    val spark = getBuilder()
       .master("local[1]")
       .config(conf)
       .config(RapidsConf.SQL_ENABLED.key, "true")
@@ -221,13 +221,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .appName("Spark Rapids plugin Hive related tests")
       .getOrCreate()
-    try {
-      f(spark)
-    } finally {
-      spark.stop()
-      SparkSession.clearActiveSession()
-      SparkSession.clearDefaultSession()
-    }
+    f(spark)
   }
 
   def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
