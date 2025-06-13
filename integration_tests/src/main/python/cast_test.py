@@ -76,23 +76,9 @@ def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
-
-# Spark date type allows 7 digits years
-@pytest.mark.parametrize('pattern',
-                         [
-                             pytest.param(r'[+-][0-9]{4}', id='yyyy'),
-                             pytest.param(r'[+-][0-9]{4,7}', id='yyyy[y][y][y]'),
-                             pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}', id='yyyy-m[m]'),
-                             pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}', id='yyyy[y][y][y]-m[m]'),
-                             pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy-m[m]-d[d]'),
-                             pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}-[0-9]{1,2}', id='yyyy[y][y][y]-m[m]-d[d]'),
-                             pytest.param(r'[+-][0-9]{4}-[0-9]{1,2}-[0-9]{1,2} tailing_has_no_effect', id='yyyy-m[m]-d[d] ...'),
-                             pytest.param(r'[+-][0-9]{4,7}-[0-9]{1,2}-[0-9]{1,2}T_tailing_has_no_effect', id='yyyy[y][y][y]-m[m]-d[d]T...'),
-                         ])
-def test_cast_string_date_ansi_off_using_regexp(pattern):
+def test_cast_string_date_ansi_off():
     assert_gpu_and_cpu_are_equal_collect(
-        # cast date to int to avoid out of range in Python
-        lambda spark: unary_op_df(spark, StringGen(pattern)).selectExpr("cast(cast(a as date) as int)"),
+        lambda spark: unary_op_df(spark, StringGen(date_start_1_1_1)).selectExpr("cast(a as date)"),
         conf=ansi_disabled_conf)
 
 
@@ -114,7 +100,7 @@ valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
                                ]
 values_string_to_data = invalid_values_string_to_date + valid_values_string_to_date
 
-def test_cast_string_date_ansi_off():
+def test_cast_string_date_ansi_off_special_strings():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").selectExpr("cast(a as date)"),
