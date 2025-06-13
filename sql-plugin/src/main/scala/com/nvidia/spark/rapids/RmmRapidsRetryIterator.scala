@@ -679,7 +679,7 @@ object RmmRapidsRetryIterator extends Logging {
           clearInjectedOOMIfNeeded()
         } catch {
           case ex: Throwable =>
-            log.debug("got a throwable in RmmRapidsRetryIterator.next():", ex)
+            log.info("got a throwable in RmmRapidsRetryIterator.next():", ex)
             // handle a retry as the top-level exception
             val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
             if (topLevelIsSplit) {
