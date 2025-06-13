@@ -16,12 +16,13 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
-import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, RunnableCommandRule}
+import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuOverrides, RunnableCommandRule}
 import com.nvidia.spark.rapids.{GpuReadParquetFileFormat, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
+import org.apache.spark.sql.delta.commands.MergeIntoCommand
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
@@ -31,7 +32,12 @@ object Delta33xProvider extends DeltaIOProvider {
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
-    Map.empty[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]]
+    Seq(
+      GpuOverrides.runnableCmd[MergeIntoCommand](
+          "Merge of a source query/table into a Delta Lake table",
+          (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
+        .disabledByDefault("Delta Lake merge support is experimental")
+    ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {

@@ -366,6 +366,20 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createOptional // The default
 
+  val CGROUPS_MEMORY_LIMIT_PATH = conf("spark.rapids.cgroups.memory.limit.path")
+    .doc("The filepath of the local file on host that stores the memory limit " +
+      "for the process. If omitted, attempts to detect the file from common locations.")
+    .startupOnly()
+    .stringConf
+    .createOptional
+
+  val CGROUPS_MEMORY_USAGE_PATH = conf("spark.rapids.cgroups.memory.usage.path")
+    .doc("The filepath of the local file on host that stores the memory usage " +
+      "for the process. If omitted, attempts to detect the file from common locations.")
+    .startupOnly()
+    .stringConf
+    .createOptional
+
   val TASK_OVERHEAD_SIZE = conf("spark.rapids.memory.host.taskOverhead.size")
       .doc("The amount of off heap memory reserved per task for overhead activities " +
           "like C++ heap/stack and a few other small things that are hard to control for.")
@@ -510,7 +524,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
-        "memory pools.")
+        "memory pools. This config is deprecated in favor of " +
+        "spark.rapids.memory.host.offHeapLimit.enabled/" +
+        "spark.rapids.memory.host.offHeapLimit.size, which will take precedence if set.")
     .startupOnly()
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
@@ -2807,6 +2823,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val offHeapLimitEnabled: Boolean = get(OFF_HEAP_LIMIT_ENABLED)
 
   lazy val offHeapLimit: Option[Long] = get(OFF_HEAP_LIMIT_SIZE)
+
+  lazy val cgroupsMemoryLimitPath: Option[String] = get(CGROUPS_MEMORY_LIMIT_PATH)
+
+  lazy val cgroupsMemoryUsagePath: Option[String] = get(CGROUPS_MEMORY_USAGE_PATH)
 
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 

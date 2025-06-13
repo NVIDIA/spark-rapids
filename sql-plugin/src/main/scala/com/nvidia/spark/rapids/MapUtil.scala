@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,21 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "400"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.nvidia
+package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.Column
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.classic.{ColumnNodeToExpressionConverter, ExpressionUtils}
+object MapUtil {
 
-object DFUDFShims {
-  def columnToExpr(c: Column): Expression = ColumnNodeToExpressionConverter(c.node)
-  def exprToColumn(e: Expression): Column = ExpressionUtils.column(e)
+  /** Converts an iterable of (k, v) pairs to a map, but checks for duplicates of keys.
+   */
+  def toMapStrict[K, V](values: Iterable[(K, V)]): Map[K, V] = {
+    val mutableMap = collection.mutable.Map.empty[K, V]
+    values.foreach { case (key, value) =>
+      if (mutableMap.contains(key)) {
+        throw new IllegalArgumentException(s"Duplicate key found: $key")
+      } else {
+        mutableMap += (key -> value)
+      }
+    }
+    mutableMap.toMap
+  }
 }
