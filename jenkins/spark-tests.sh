@@ -184,6 +184,7 @@ run_delta_lake_tests() {
   SPARK_32X_PATTERN="(3\.2\.[0-9])"
   SPARK_33X_PATTERN="(3\.3\.[0-9])"
   SPARK_34X_PATTERN="(3\.4\.[0-9])"
+  SPARK_35X_PATTERN="(3\.5\.[0-9])"
 
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
@@ -199,12 +200,26 @@ run_delta_lake_tests() {
     DELTA_LAKE_VERSIONS="2.4.0"
   fi
 
+  if [[ $SPARK_VER =~ $SPARK_35X_PATTERN ]]; then
+    # We don't want the Delta Lake tests to run in DEFAULT mode for Spark 3.5.3 as 
+    # there are expected failures that may cause other pipelines to be blocked
+    if [[ $TEST_MODE == "DEFAULT" ]]; then
+      return 
+    fi
+    DELTA_LAKE_VERSIONS="3.3.0"
+  fi
+
   if [ -z "$DELTA_LAKE_VERSIONS" ]; then
     echo "Skipping Delta Lake tests. $SPARK_VER"
   else
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
-      PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$v" \
+      if [[ "$v" == "3.3.0" ]]; then
+        DELTA_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
+      else 
+        DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
+      fi 
+      PYSP_TEST_spark_jars_packages=${DELTA_JAR} \
         PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
         ./run_pyspark_from_build.sh -m delta_lake --delta_lake
