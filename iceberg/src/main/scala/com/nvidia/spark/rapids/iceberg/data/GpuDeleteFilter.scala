@@ -111,8 +111,8 @@ class GpuDeleteFilter(
    * input schema.
    * 2. This method will delete the rows that are marked as deleted.
    *
-   * @param input Input column batches, which will be closed by after this method returns.
-   * @return Ouput column batches with rows deleted based on the filter result.
+   * @param input Input column batches, which will be closed after this method returns.
+   * @return Output column batches with rows deleted based on the filter result.
    */
   def filterAndDelete(input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
     val dropMask = Array.fill[Boolean](filterOutputSparkDataTypes.length)(false)
