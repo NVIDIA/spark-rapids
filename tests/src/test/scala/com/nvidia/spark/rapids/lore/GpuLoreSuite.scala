@@ -23,6 +23,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.execution.SQLExecution
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   test("Aggregate") {
@@ -249,6 +250,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       // Second execution - replay the LoRE dumped operation
       var replayDataCount = 0L
       withGpuHiveSparkSession { spark =>
+        spark.conf.unset(RapidsConf.LORE_DUMP_PATH.key)
+        spark.conf.unset(RapidsConf.LORE_DUMP_IDS.key)
         // Clean up and recreate table for replay
         spark.sql("DROP TABLE IF EXISTS test_hive_table")
         spark.sql("""
@@ -259,10 +262,21 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
           STORED AS textfile
         """)
         // Execute the LoRE replay
-        GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-          new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"),
-          spark))
-          .executeCollect()
+        // LoRE replay is not a fully-completed Query execution, but partial,
+        // no query executionId is set. Mean while,
+        // HiveInsertInto will trigger GpuFileFormatWriter, which will check the executionId,
+        // if the executionId is not set, it will throw an exception.
+        // So we need to set a valid executionId here.
+        val executionId = 9999L
+        spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, executionId.toString)
+        try {
+          GpuColumnarToRowExec(GpuLore.restoreGpuExec(
+            new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"),
+            spark))
+            .executeCollect()
+        } finally {
+          spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, null)
+        }
         // Read the data written by replay and count it
         replayDataCount = spark.sql("SELECT * FROM test_hive_table").count()
       }

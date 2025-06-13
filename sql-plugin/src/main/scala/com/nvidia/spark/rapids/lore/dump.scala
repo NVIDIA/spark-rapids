@@ -22,9 +22,9 @@ import com.nvidia.spark.rapids.jni.kudo.KudoSerializer
 import com.nvidia.spark.rapids.lore.GpuLore.pathOfChild
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.{Partition, SparkContext, TaskContext}
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -127,10 +127,10 @@ class SimpleRDD(_sc: SparkContext, data: Broadcast[Any], schema: StructType) ext
  * This can be used by any execution context that needs to wrap a child plan with LoRE
  * dumping functionality, not just data writing commands.
  */
-case class GpuLoreDumpWrapper(
+case class GpuLoreDumpExec(
     child: SparkPlan,
     loreDumpInfo: LoreDumpRDDInfo)
-    extends ShimUnaryExecNode with GpuExec {
+    extends ShimUnaryExecNode with GpuExec with Logging {
 
   override def output: Seq[Attribute] = child.output
 
@@ -140,11 +140,18 @@ case class GpuLoreDumpWrapper(
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val childRDD = child.executeColumnar()
-    val rdd = new GpuLoreDumpRDD(loreDumpInfo, childRDD)
-    rdd.saveMeta()
-    rdd
+    child match {
+      case gpuExec: GpuExec =>
+        val childRDD = gpuExec.executeColumnar()
+        val rdd = new GpuLoreDumpRDD(loreDumpInfo, childRDD)
+        rdd.saveMeta()
+        rdd
+      case _ =>
+        logInfo(s"LoRE dump not supported for child of type ${child.getClass.getSimpleName}, " +
+          s"falling back to regular execution")
+        child.executeColumnar()
+    }
   }
 
-  override def nodeName: String = s"LoreDump(${child.nodeName})"
+  override def nodeName: String = s"GpuLoreDumpExec(${child.nodeName})"
 }

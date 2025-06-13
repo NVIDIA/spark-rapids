@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.net.URI
 
-import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpWrapper}
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpExec}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
@@ -182,7 +182,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   private def dumpLoreRDD(inputChild: SparkPlan): SparkPlan = {
     getTagValue(LORE_DUMP_RDD_TAG).map { info =>
       // Create a new exec that wraps the child with LoRE dumping capability
-      GpuLoreDumpWrapper(inputChild, info)
+      GpuLoreDumpExec(inputChild, info)
     }.getOrElse(inputChild)
   }
 }
