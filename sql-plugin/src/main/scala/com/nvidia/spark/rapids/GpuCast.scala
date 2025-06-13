@@ -1331,8 +1331,10 @@ object GpuCast {
       defaultTimeZone: Option[String] = Option.empty[String]): ColumnVector = {
     val tz = defaultTimeZone.getOrElse("Z")
     val normalizedTZ = ZoneId.of(tz, ZoneId.SHORT_IDS).normalized().toString
-    val isSpark320 = VersionUtils.cmpSparkVersion(3, 2, 0) == 0
-    closeOnExcept(CastStrings.toTimestamp(input, normalizedTZ, ansiMode, isSpark320)) { result =>
+    val versionForJni = VersionUtils.getVersionForJni
+    // There are different behaviors between Spark versions/platforms.
+    // The kernel will handle the different behaviors between Spark versions/platforms.
+    closeOnExcept(CastStrings.toTimestamp(input, normalizedTZ, ansiMode, versionForJni)) { result =>
       if (ansiMode && result == null) {
         throw new DateTimeException("One or more values is not a valid timestamp")
       } else {
