@@ -226,11 +226,15 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       val loreDumpIds = "5[*]"
       val loreId = OutputLoreId.parse(loreDumpIds).head._1
 
-      // First execution - capture the original data written to Hive table
-      val originalDataCount = 100
+      // Use a single SparkSession for both operations
       withGpuHiveSparkSession { spark =>
+        // First execution - capture the original data written to Hive table
+        val originalDataCount = 100
+        
+        // Configure LORE for the first execution
         spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
         spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreDumpIds)
+        
         // Clean up any existing table and its associated directory
         spark.sql("DROP TABLE IF EXISTS test_hive_table")
         spark.sql("""
@@ -247,12 +251,11 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         df.write
           .mode("overwrite")
           .insertInto("test_hive_table")
-      }
-      // Second execution - replay the LoRE dumped operation
-      var replayDataCount = 0L
-      withGpuHiveSparkSession { spark =>
+        
+        // Disable LORE for the replay phase
         spark.conf.unset(RapidsConf.LORE_DUMP_PATH.key)
         spark.conf.unset(RapidsConf.LORE_DUMP_IDS.key)
+        
         // Clean up and recreate table for replay
         spark.sql("DROP TABLE IF EXISTS test_hive_table")
         spark.sql("""
@@ -262,6 +265,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
           )
           STORED AS textfile
         """)
+        
         // Execute the LoRE replay
         // LoRE replay is not a fully-completed Query execution, but partial,
         // no query executionId is set. Mean while,
@@ -278,11 +282,14 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         } finally {
           spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, null)
         }
+        
         // Read the data written by replay and count it
-        replayDataCount = spark.sql("SELECT * FROM test_hive_table").count()
+        val replayDataCount = spark.sql("SELECT * FROM test_hive_table").count()
+        
+        // Verify the results
+        assert(originalDataCount == replayDataCount,
+          s"Original data count ($originalDataCount) != Replay data count ($replayDataCount)")
       }
-      assert(originalDataCount == replayDataCount,
-        s"Original data count ($originalDataCount) != Replay data count ($replayDataCount)")
     } finally {
       // Clean up warehouse directory to avoid conflicts in future test runs
       val possiblePaths = Seq(
