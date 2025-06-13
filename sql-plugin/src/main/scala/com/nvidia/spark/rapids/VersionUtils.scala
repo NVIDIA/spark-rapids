@@ -18,7 +18,9 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.jni.{SparkPlatformType => PlatformForJni, Version => VersionForJni}
 
-object VersionUtils {
+import org.apache.spark.internal.Logging
+
+object VersionUtils extends Logging {
 
   lazy val isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
 
@@ -61,8 +63,18 @@ object VersionUtils {
         new VersionForJni(PlatformForJni.DATABRICKS, major, minor, 0)
       case ClouderaShimVersion(a, b, c, _) =>
         new VersionForJni(PlatformForJni.CLOUDERA, a, b, c)
-      case _ =>
-        // unknown platform
+      case unknown =>
+        // Unknown platform, customer specific platform.
+        // All the platforms in this code base is listed above: Spark, Databricks and Cloudera
+        // Please append the related operators into the below warning.
+        logWarning(s"Unknown Spark platform type: ${unknown.getClass.getName}.  Some GPU " +
+          s"operators like cast string to timestamp need to known the Spark " +
+          s"platform/version, if the Spark platform is unknown, the GPU operator will use " +
+          s"the default behavior, please make sure the default behavior is expected. Currently " +
+          s"the related operator is: \n" +
+          "    1. Cast string to timestamp \n")
+
+        // Return unknown type
         new VersionForJni(PlatformForJni.UNKNOWN, 0, 0, 0)
     }
   }
