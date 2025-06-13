@@ -22,6 +22,10 @@ import org.apache.spark.sql.delta.DeltaLog
 import org.apache.spark.sql.internal.SQLConf
 
 trait DeltaConfigChecker {
+  /**
+   * Check delta configurations if they are compatible with the Rapids Accelerator.
+   * The `meta` will be marked if incompatible configurations are found.
+   */
   def checkIncompatibleConfs(
       meta: RapidsMeta[_, _, _],
       deltaLog: Option[DeltaLog],
