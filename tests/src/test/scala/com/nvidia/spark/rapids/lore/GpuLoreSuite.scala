@@ -22,8 +22,9 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.execution.SQLExecution
+import org.apache.spark.sql.internal.SQLConf
+
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   test("Aggregate") {
