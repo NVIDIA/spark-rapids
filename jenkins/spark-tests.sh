@@ -259,11 +259,25 @@ run_iceberg_s3tables_test() {
     echo "!!! Running iceberg test with s3table catalog"
 
     JARS="org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,\
-    software.amazon.s3tables:s3-tables-catalog-for-iceberg-runtime:0.1.6"
+    software.amazon.s3tables:s3-tables-catalog-for-iceberg-runtime:0.1.6,\
+    software.amazon.awssdk:apache-client:2.29.26,\
+    software.amazon.awssdk:aws-core:2.29.26,\
+    software.amazon.awssdk:dynamodb:2.29.26,\
+    software.amazon.awssdk:glue:2.29.26,\
+    software.amazon.awssdk:http-client-spi:2.29.26,\
+    software.amazon.awssdk:kms:2.29.26,\
+    software.amazon.awssdk:s3:2.29.26,\
+    software.amazon.awssdk:sdk-core:2.29.26,\
+    software.amazon.awssdk:sts:2.29.26,\
+    software.amazon.awssdk:url-connection-client:2.29.26,\
+    software.amazon.awssdk:s3tables:2.29.26,\
+    org.apache.hadoop:hadoop-aws:3.3.4,\
+    com.amazonaws:aws-java-sdk-bundle:1.12.709"
 
+     # aws configure
      # create table bucket
      # create namespace
-     ICEBERG_TEST_S3TABLES_NAMESPACE="test_namespace" \
+     ICEBERG_TEST_S3TABLES_NAMESPACE="<namespace name>" \
      env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
          PYSP_TEST_spark_driver_memory="6G" \
          PYSP_TEST_spark_jars_packages="$JARS" \
@@ -271,8 +285,12 @@ run_iceberg_s3tables_test() {
          PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
          PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
-         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="arn:aws:s3tables:us-west-2:503960270539:bucket/iceberg-it-test-1" \
+         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="<bucket arn>" \
          ./run_pyspark_from_build.sh -m iceberg --iceberg
+
+     # drop all tables in namespace
+     # drop namespace
+     # drop table bucket
   fi
 }
 
