@@ -884,6 +884,8 @@ def test_cast_string_to_timestamp_valid():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
 
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
 def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
     # For the just time strings, will get current date to fill the missing date.
     # E.g.: "T00:00:00" will be "2025-05-23T00:00:00"
@@ -1081,6 +1083,8 @@ _cast_string_to_timestamp_invalid = [
     ("-T00:00:00",),
 ]
 
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
 def test_cast_string_to_timestamp_invalid():
     def _gen_df(spark):
         return spark.createDataFrame(
@@ -1111,7 +1115,8 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
         conf=ansi_enabled_conf,
         error_message="DateTimeException")
 
-
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
 @pytest.mark.parametrize(
     'pattern',
     [
