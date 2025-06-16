@@ -476,6 +476,12 @@ properly without it. These tests assume Iceberg is not configured and are disabl
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
 
+To run iceberg tests against aws s3tables catalog, we need to setup two things:
+1. Run `aws configure` to setup aws credentials
+2. Add environment `ICEBERG_TEST_S3TABLES_NAMESPACE`
+
+For a more detailed example, please refer to `jenkins/s3tables/iceberg-s3tables-test.sh`
+
 ### Enabling Delta Lake tests
 
 Some tests require that Delta Lake has been configured in the Spark environment and cannot run
@@ -490,6 +496,7 @@ These tests can be enabled by adding the `--large_data_test` option to the comma
 ### Enabling Pyarrow tests
 Some tests require that Pyarrow is installed. By default, these tests are disabled.
 These tests can be enabled by adding the `--pyarrow_test` option to the command.
+
 
 ## Writing tests
 
