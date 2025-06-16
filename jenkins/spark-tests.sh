@@ -242,7 +242,6 @@ run_iceberg_tests() {
  if [[ "IS_SPARK_35X" -ne "1" ]]; then
    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
  else
-   echo "!!! Running iceberg test with local fs catalog"
    # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
    # Disabling them may slow down the tests, so we increase memory here.
    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
@@ -255,7 +254,6 @@ run_iceberg_tests() {
       ./run_pyspark_from_build.sh -m iceberg --iceberg
  fi
 }
-
 
 run_avro_tests() {
   # Workaround to avoid appending avro jar file by '--jars',

@@ -129,10 +129,3 @@ run_iceberg_s3tables_test
 
 destroy_table_bucket "$BUCKET_ARN"
 
-
-
-
-
-
-
-
