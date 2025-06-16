@@ -109,8 +109,8 @@ destroy_table_bucket() {
                       --table-bucket-arn ${bucket_arn} \
                       --region ${AWS_REGION} \
                       --namespace ${NAMESPACE_NAME} \
-                      --no-paginate "
-  table_names=$(list_table_cmd | jq -r '.tables.[].name')
+                      --no-paginate"
+  table_names=$($list_table_cmd | jq -r '.tables.[].name')
   while IFS=$'\n' read -r table_name; do
     echo " Deleting table: ${table_name}"
     aws s3table delete-table \
