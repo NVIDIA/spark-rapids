@@ -17,7 +17,7 @@
 package org.apache.spark.sql.delta.rapids.delta21x
 
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.{Delta20xConfigChecker, DeltaConfigChecker, DeltaProvider}
 import com.nvidia.spark.rapids.delta.delta21x.Delta21xProvider
 
 import org.apache.spark.sql.SparkSession

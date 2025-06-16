@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.delta
 import org.apache.spark.sql.delta.{DeltaConfigs, DeltaOptions}
 import org.apache.spark.sql.delta.actions.Metadata
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-
 import org.apache.spark.sql.internal.SQLConf
 
 object DeltaWriteUtils {
