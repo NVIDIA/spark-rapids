@@ -107,7 +107,7 @@ def _add_eq_deletes(spark: SparkSession, eq_delete_cols: List[str], row_count: i
     parquet_files = [f for f in os.listdir(temp_dir) if f.endswith(".parquet")]
     assert len(parquet_files) == 1, "Only one delete parquet file should be created"
     delete_parquet_file_path = os.path.join(temp_dir, parquet_files[0])
-    spark.sql(f"select add_eq_deletes('{spark_warehouse_dir}', 'default.{table_name}', "
+    spark.sql(f"select add_eq_deletes('{spark_warehouse_dir}', '{table_name}', "
               f"'{delete_parquet_file_path}')").collect()
     spark.sql(f"REFRESH TABLE {table_name}")
 
