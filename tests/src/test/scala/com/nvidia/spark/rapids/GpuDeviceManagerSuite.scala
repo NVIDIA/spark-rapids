@@ -129,7 +129,13 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
       .set("spark.memory.offHeap.enabled", "true")
       .set("spark.memory.offHeap.size", sparkOffHeapSizeStr)
     val rapidsConf = new RapidsConf(sparkConf)
-    val availableHostMem = toBytes("16g")
+    val deviceCount = Cuda.getDeviceCount
+    val availableHostMemPerDevice = toBytes("16g")
+    // We provide more mem if there are more devices so that the
+    // final limit calculates to the same value, so that we hit
+    // the same code path regardless of num devices and don't have
+    // to worry about eg. minMemoryLimit which is covered separately
+    val availableHostMem = availableHostMemPerDevice * deviceCount
     TestMemoryChecker.setAvailableMemoryBytes(Some(availableHostMem))
     val (pinnedSize, nonPinnedSize) =
       GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
@@ -140,7 +146,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     val pySparkOverhead = toBytes(pySparkOverheadStr)
     val sparkOffHeapSize = toBytes(sparkOffHeapSizeStr)
     val totalOverhead = toBytes("15m") // default
-    val expectedNonPinned = (.8 * (availableHostMem - heapSize - pySparkOverhead -
+    val expectedNonPinned = (.8 * (availableHostMemPerDevice - heapSize - pySparkOverhead -
       sparkOffHeapSize)).toLong - totalOverhead
 
     assertResult(0)(pinnedSize)
@@ -228,7 +234,9 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
       .set("spark.executor.pyspark.memory", pySparkOverheadStr)
       .set("spark.executor.memory", heapSizeStr)
     val rapidsConf = new RapidsConf(sparkConf)
-    val hostBytes = toBytes("16g")
+    val deviceCount = Cuda.getDeviceCount
+    val hostBytesPerDevice = toBytes("16g")
+    val hostBytes = hostBytesPerDevice * deviceCount
     TestMemoryChecker.setAvailableMemoryBytes(Some(hostBytes))
     val (pinnedSize, nonPinnedSize) =
       GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
@@ -238,7 +246,8 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     val pySparkOverhead = toBytes(pySparkOverheadStr)
     val heapSize = toBytes(heapSizeStr)
     val totalOverhead = toBytes("15m") // default
-    val expectedNonPinned = (.8 * (hostBytes - heapSize - pySparkOverhead)).toLong - totalOverhead
+    val expectedNonPinned = (.8 * (hostBytesPerDevice - heapSize - pySparkOverhead)).toLong -
+      totalOverhead
 
     assertResult(0)(pinnedSize)
     assertResult(expectedNonPinned)(nonPinnedSize)
