@@ -37,4 +37,3 @@ target/
 cufile.log
 cudf_log.txt
 build/*.class
-.mvn
