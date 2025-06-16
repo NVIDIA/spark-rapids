@@ -47,6 +47,7 @@ create_s3tables_namespace() {
            --region ${AWS_REGION} \
            --namespace ${NAMESPACE_NAME}"
   echo "Creating namespace ${NAMESPACE_NAME} in bucket ${bucket_arn}"
+  $CMD
 }
 
 
@@ -83,9 +84,6 @@ run_iceberg_s3tables_test() {
     org.apache.hadoop:hadoop-aws:3.3.4,\
     com.amazonaws:aws-java-sdk-bundle:1.12.709"
 
-     # aws configure
-     # create table bucket
-     # create namespace
      ICEBERG_TEST_S3TABLES_NAMESPACE="${NAMESPACE_NAME}" \
      env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
          PYSP_TEST_spark_driver_memory="6G" \
@@ -96,10 +94,6 @@ run_iceberg_s3tables_test() {
          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
          PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="$1" \
          ./run_pyspark_from_build.sh -m iceberg --iceberg
-
-     # drop all tables in namespace
-     # drop namespace
-     # drop table bucket
   fi
 }
 
