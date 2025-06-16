@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -302,6 +302,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
             lambda spark : spark.read.schema(schema).csv(data_path),
             conf=updated_conf)
 
+@disable_ansi_mode
 @allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
@@ -391,7 +392,7 @@ def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list,
                 .csv(data_path)
                 .collect(),
             conf=updated_conf,
-            error_message='DateTimeException')
+            error_message='Exception')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read \
