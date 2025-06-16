@@ -86,7 +86,7 @@ run_iceberg_s3tables_test() {
      # aws configure
      # create table bucket
      # create namespace
-     ICEBERG_TEST_S3TABLES_NAMESPACE="<namespace name>" \
+     ICEBERG_TEST_S3TABLES_NAMESPACE="${NAMESPACE_NAME}" \
      env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
          PYSP_TEST_spark_driver_memory="6G" \
          PYSP_TEST_spark_jars_packages="$JARS" \
@@ -94,7 +94,7 @@ run_iceberg_s3tables_test() {
          PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
          PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
-         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="<bucket arn>" \
+         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="$1" \
          ./run_pyspark_from_build.sh -m iceberg --iceberg
 
      # drop all tables in namespace
@@ -125,7 +125,7 @@ BUCKET_ARN=$(create_s3tables_bucket "$BUCKET_NAME")
 
 create_s3tables_namespace "$BUCKET_ARN"
 
-run_iceberg_s3tables_test
+run_iceberg_s3tables_test "$BUCKET_ARN"
 
 destroy_table_bucket "$BUCKET_ARN"
 
