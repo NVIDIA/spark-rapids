@@ -540,11 +540,7 @@ object GpuCast {
         // no need to strip, kernel will strip
         castStringToTimestamp(input, ansiMode, options.timeZoneId)
       case (StringType, DateType) =>
-        if (options.useAnsiStringToDateMode) {
-          castStringToDate(input, ansiMode)
-        } else {
-          castStringToDate(input, ansiMode = false)
-        }
+        castStringToDate(input, options.useAnsiStringToDateMode && ansiMode)
       case (StringType, dt: DecimalType) =>
         CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
