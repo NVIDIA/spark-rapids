@@ -2289,6 +2289,9 @@ object GpuOverrides extends Logging {
           checkAndTagFloatAgg(inputDataType, this.conf, this)
         }
 
+        // TODO need to verify that this works for window operations too...
+        override def needsAnsiCheck: Boolean = false
+
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuSum(childExprs.head, a.dataType)
       }),

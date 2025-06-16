@@ -43,22 +43,6 @@ class CudfCount(override val dataType: DataType) extends CudfAggregate {
 }
 
 class CudfSum(override val dataType: DataType) extends CudfAggregate {
-  // Up to 3.1.1, analyzed plan widened the input column type before applying
-  // aggregation. Thus even though we did not explicitly pass the output column type
-  // we did not run into integer overflow issues:
-  //
-  // == Analyzed Logical Plan ==
-  // sum(shorts): bigint
-  // Aggregate [sum(cast(shorts#77 as bigint)) AS sum(shorts)#94L]
-  //
-  // In Spark's main branch (3.2.0-SNAPSHOT as of this comment), analyzed logical plan
-  // no longer applies the cast to the input column such that the output column type has to
-  // be passed explicitly into aggregation
-  //
-  // == Analyzed Logical Plan ==
-  // sum(shorts): bigint
-  // Aggregate [sum(shorts#33) AS sum(shorts)#50L]
-  //
   @transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
   override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
@@ -882,22 +866,33 @@ abstract class GpuSum(
         with GpuAggregateWindowFunction
         with GpuRunningWindowFunction
         with Serializable {
+
+  val internalSumDataType: DataType = resultType
+
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, resultType))
 
-  // we need to cast to `resultType` here, since Spark is not widening types
-  // as done before Spark 3.2.0. See CudfSum for more info.
-  override lazy val inputProjection: Seq[Expression] = Seq(GpuCast(child, resultType))
+  override lazy val inputProjection: Seq[Expression] =
+    Seq(GpuCast(child, internalSumDataType, ansiMode = failOnErrorOverride))
 
-  protected lazy val updateSum: CudfAggregate = new CudfSum(resultType)
+  protected lazy val updateSum: CudfAggregate = new CudfSum(internalSumDataType)
 
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateSum)
 
+  override lazy val postUpdate: Seq[Expression] =
+    Seq(GpuCast(updateAggregates.head.attr, resultType, ansiMode = failOnErrorOverride))
+
   // output of GpuSum
-  protected lazy val sum: AttributeReference = AttributeReference("sum", resultType)()
+  protected lazy val sum: AttributeReference = AttributeReference("sum", internalSumDataType)()
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = sum :: Nil
 
-  protected lazy val mergeSum: CudfAggregate = new CudfSum(resultType)
+  override lazy val preMerge: Seq[Expression] =
+    Seq(GpuCast(sum, internalSumDataType, ansiMode = failOnErrorOverride))
+
+  protected lazy val mergeSum: CudfAggregate = new CudfSum(internalSumDataType)
+
+  override lazy val postMerge: Seq[Expression] =
+    Seq(GpuCast(mergeSum.attr, resultType, ansiMode = failOnErrorOverride))
 
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeSum)
 
@@ -912,11 +907,9 @@ abstract class GpuSum(
     TypeUtilsShims.checkForNumericExpr(child.dataType, "function gpu sum")
 
   // GENERAL WINDOW FUNCTION
-  // Spark 3.2.0+ stopped casting the input data to the output type before the sum operation
-  // This fixes that.
   override lazy val windowInputProjection: Seq[Expression] = {
-    if (child.dataType != resultType) {
-      Seq(GpuCast(child, resultType))
+    if (child.dataType != internalSumDataType) {
+      Seq(GpuCast(child, internalSumDataType, ansiMode = failOnErrorOverride))
     } else {
       Seq(child)
     }
@@ -926,7 +919,19 @@ abstract class GpuSum(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.sum().onColumn(inputs.head._2)
 
-  override def windowOutput(result: ColumnVector): ColumnVector = result.incRefCount()
+  private lazy val castOptions = if (failOnErrorOverride) {
+    CastOptions.ARITH_ANSI_OPTIONS
+  } else {
+    CastOptions.DEFAULT_CAST_OPTIONS
+  }
+
+  override def windowOutput(result: ColumnVector): ColumnVector = {
+    if (internalSumDataType != resultType) {
+      GpuCast.doCast(result, internalSumDataType, resultType, castOptions)
+    } else {
+      result.incRefCount()
+    }
+  }
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -946,7 +951,11 @@ abstract class GpuSum(
     Seq(AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
-    cols.head.incRefCount()
+    if (internalSumDataType != resultType) {
+      GpuCast.doCast(cols.head, internalSumDataType, resultType, castOptions)
+    } else {
+      cols.head.incRefCount()
+    }
   }
 }
 
@@ -955,7 +964,18 @@ case class GpuBasicSum(
     child: Expression,
     resultType: DataType,
     failOnErrorOverride: Boolean)
-    extends GpuSum(child, resultType, failOnErrorOverride)
+    extends GpuSum(child, resultType, failOnErrorOverride) {
+
+  override val internalSumDataType: DataType = {
+    if (failOnErrorOverride && GpuAnsi.needBasicOpOverflowCheck(resultType)) {
+      // In order to be able to detect overflow errors we need to have a size that
+      // can handle the sum without actually overflowing until we can check it.
+      DecimalType(38, 0)
+    } else {
+      resultType
+    }
+  }
+}
 
 abstract class GpuDecimalSum(
     child: Expression,

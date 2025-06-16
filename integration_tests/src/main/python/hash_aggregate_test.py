@@ -2199,16 +2199,14 @@ def test_hash_reduction_avg_nulls_ansi(data_gen, conf, kudo_enabled):
 
 
 @ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
-  'HashPartitioning', 'ShuffleExchangeExec', 'Sum')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_sum_fallback_when_ansi_enabled(data_gen, kudo_enabled):
+def test_sum_no_fallback_when_ansi_enabled(data_gen, kudo_enabled):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
         return df.groupBy('a').agg(f.sum("b"))
 
-    assert_gpu_fallback_collect(do_it, 'Sum',
+    assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true', kudo_enabled_conf_key: kudo_enabled})
 
 
@@ -2562,3 +2560,32 @@ def test_hash_groupby_bitwise(int_gen):
         lambda spark: gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
         "select a, bit_and(b), bit_or(b), bit_xor(b) from hash_agg_table group by a")
+
+
+_jvm_long_max = 9223372036854775807
+_jvm_long_min = -9223372036854775808
+
+def test_sum_long_ansi_reduction_overflow():
+    conf = {'spark.sql.ansi.enabled': 'true'}
+    overflow_data = [(1, _jvm_long_max - 100), (1, 101), (2, _jvm_long_max // 2 + 10), (2, _jvm_long_max // 2 + 20), (3, 100), (3, 200)]
+    schema = StructType([StructField("group_key", IntegerType()), StructField("long_val", LongType())])
+    assert_gpu_and_cpu_error(lambda s: s.createDataFrame(overflow_data, schema).select(f.sum('long_val')).show(), conf=conf, error_message='overflow')
+
+def test_sum_long_ansi_reduction_negative_overflow():
+    conf = {'spark.sql.ansi.enabled': 'true'}
+    negative_overflow_data = [(1, _jvm_long_min + 100), (1, -101), (2, -100), (2, -200)]
+    schema = StructType([StructField("group_key", IntegerType()), StructField("long_val", LongType())])
+    assert_gpu_and_cpu_error(lambda s: s.createDataFrame(negative_overflow_data, schema).select(f.sum('long_val')).show(), conf=conf, error_message='overflow')
+
+def test_sum_long_ansi_groupby_overflow():
+    conf = {'spark.sql.ansi.enabled': 'true'}
+    overflow_data = [(1, _jvm_long_max - 100), (1, 101), (2, _jvm_long_max // 2 + 10), (2, _jvm_long_max // 2 + 20), (3, 100), (3, 200)]
+    schema = StructType([StructField("group_key", IntegerType()), StructField("long_val", LongType())])
+    assert_gpu_and_cpu_error(lambda s: s.createDataFrame(overflow_data, schema).groupBy('group_key').agg(f.sum('long_val')).collect(), conf=conf, error_message='overflow')
+
+def test_sum_long_ansi_groupby_negative_overflow():
+    conf = {'spark.sql.ansi.enabled': 'true'}
+    overflow_data = [(1, _jvm_long_max - 100), (1, 101), (2, _jvm_long_max // 2 + 10), (2, _jvm_long_max // 2 + 20), (3, 100), (3, 200)]
+    negative_overflow_data = [(1, _jvm_long_min + 100), (1, -101), (2, -100), (2, -200)]
+    schema = StructType([StructField("group_key", IntegerType()), StructField("long_val", LongType())])
+    assert_gpu_and_cpu_error(lambda s: s.createDataFrame(negative_overflow_data, schema).groupBy('group_key').agg(f.sum('long_val')).collect(), conf=conf, error_message='overflow')
