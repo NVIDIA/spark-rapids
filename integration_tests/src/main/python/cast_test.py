@@ -884,7 +884,9 @@ def test_cast_string_to_timestamp_valid():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
 
-def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
+def test_cast_string_to_timestamp_just_time_ANSI_OFF():
     # For the just time strings, will get current date to fill the missing date.
     # E.g.: "T00:00:00" will be "2025-05-23T00:00:00"
     # This test case is sensitive to the current date, and may cause diff between CPU and GPU
@@ -903,7 +905,11 @@ def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
                 ("T23:17:50",),
                 ("T23:17:50",),
                 ("T23:17:50",),
-                (" \r\n\tT23:17:50",), # This is testing issue: https://github.com/NVIDIA/spark-rapids-jni/issues/3401
+
+                # This is invalid value for Spark 4.0
+                # For details, refer to https://github.com/NVIDIA/spark-rapids-jni/issues/3401
+                (" \r\n\tT23:17:50",),
+
                 ("T23:17:50 \r\n\t",),
                 ("T00",),
                 ("T1:2",),
@@ -1081,7 +1087,9 @@ _cast_string_to_timestamp_invalid = [
     ("-T00:00:00",),
 ]
 
-def test_cast_string_to_timestamp_invalid():
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
+def test_cast_string_to_timestamp_invalid_ANSI_OFF():
     def _gen_df(spark):
         return spark.createDataFrame(
             _cast_string_to_timestamp_invalid,
@@ -1111,7 +1119,8 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
         conf=ansi_enabled_conf,
         error_message="DateTimeException")
 
-
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
 @pytest.mark.parametrize(
     'pattern',
     [
@@ -1141,7 +1150,7 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
             r'3[0-9]{3,3}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
             id='yyyy-mm-dd[ T]hh:mm:ss PST, ts > 2200')
     ])
-def test_cast_string_to_timestamp_const_format(pattern):
+def test_cast_string_to_timestamp_const_format_ANSI_OFF(pattern):
     gen = [("str_col", StringGen(pattern))]
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
