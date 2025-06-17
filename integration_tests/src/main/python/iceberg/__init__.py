@@ -62,8 +62,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
                              table_prop: Optional[Dict[str, str]] = None) -> str:
 
     gen_list = list(zip(iceberg_base_table_cols, iceberg_gens_list))
-    ns = setup_namespace(spark_tmp_table_factory)
-    table_name = f"{ns}.{spark_tmp_table_factory.get()}"
+    table_name = get_full_table_name(spark_tmp_table_factory)
     tmp_view_name = spark_tmp_table_factory.get()
 
     if table_prop is None:
@@ -131,9 +130,14 @@ def get_iceberg_s3tables_ns() -> Optional[str]:
 def is_s3tables_catalog() -> bool:
     return get_iceberg_s3tables_ns() is not None
 
-def setup_namespace(spark_tmp_table_factory):
+def get_namespace(spark_tmp_table_factory):
     ns = get_iceberg_s3tables_ns()
     if ns is None:
         return spark_tmp_table_factory.get()
     else:
         return ns
+
+def get_full_table_name(spark_tmp_table_factory):
+    ns = get_namespace(spark_tmp_table_factory)
+    table = spark_tmp_table_factory.get()
+    return f"{ns}.{table}"

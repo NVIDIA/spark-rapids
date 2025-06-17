@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
-from iceberg import setup_namespace
+from iceberg import get_namespace, get_full_table_name
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_databricks_runtime, with_cpu_session, \
     with_gpu_session, is_spark_35x
@@ -49,9 +49,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     def setup_iceberg_table(spark):
         spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data STRING) USING ICEBERG")
         spark.sql(f"INSERT INTO {full_table} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
@@ -67,9 +65,7 @@ def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
                     reason="AQE+DPP not supported until Spark 3.2.0+ and AQE+DPP not supported on Databricks")
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = two_col_df(spark, int_gen, int_gen)
@@ -90,9 +86,7 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
@@ -110,9 +104,7 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
@@ -131,9 +123,7 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, rea
 @pytest.mark.allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 def test_iceberg_parquet_read_round_trip_all_types(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
@@ -150,9 +140,7 @@ def test_iceberg_parquet_read_round_trip_all_types(spark_tmp_table_factory, data
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg_format, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
@@ -173,9 +161,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
 @pytest.mark.parametrize("disable_conf", ["spark.rapids.sql.format.iceberg.enabled",
                                           "spark.rapids.sql.format.iceberg.read.enabled"], ids=idfn)
 def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     def setup_iceberg_table(spark):
         spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data STRING) USING ICEBERG")
         spark.sql(f"INSERT INTO {full_table} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
@@ -199,9 +185,7 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_info, reader_type):
     codec, error_msg = codec_info
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -224,9 +208,7 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
 @pytest.mark.parametrize("key_gen", [int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_64bit], ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = two_col_df(spark, key_gen, long_gen).orderBy("a")
@@ -242,9 +224,7 @@ def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen, reader_typ
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_input_meta(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen).orderBy("a")
@@ -262,9 +242,7 @@ def test_iceberg_input_meta(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_disorder_read_schema(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = three_col_df(spark, long_gen, string_gen, float_gen)
@@ -279,9 +257,7 @@ def test_iceberg_disorder_read_schema(spark_tmp_table_factory, reader_type):
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_read_appended_table(spark_tmp_table_factory):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -300,9 +276,7 @@ def test_iceberg_read_appended_table(spark_tmp_table_factory):
 @allow_non_gpu("BatchScanExec", "ProjectExec")
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -325,9 +299,7 @@ def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
 # Some metadata files have types that are not supported on the GPU yet (e.g.: BinaryType)
 @allow_non_gpu("BatchScanExec", "ProjectExec")
 def test_iceberg_read_metadata_count(spark_tmp_table_factory):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -349,9 +321,7 @@ def test_iceberg_read_metadata_count(spark_tmp_table_factory):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_snapshots(spark):
         df = binary_op_df(spark, long_gen)
@@ -374,9 +344,7 @@ def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = spark_tmp_table_factory.get()
-    full_table = f"{ns}.{table}"
+    full_table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_snapshots(spark):
         df = binary_op_df(spark, long_gen)
@@ -406,8 +374,7 @@ def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_reorder_columns(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -428,8 +395,7 @@ def test_iceberg_reorder_columns(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_rename_column(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -450,8 +416,7 @@ def test_iceberg_rename_column(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_column_names_swapped(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -474,8 +439,7 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_alter_column_type(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = three_col_df(spark, int_gen, float_gen, DecimalGen(precision=7, scale=3))
@@ -498,8 +462,7 @@ def test_iceberg_alter_column_type(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_add_column(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -520,8 +483,7 @@ def test_iceberg_add_column(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_remove_column(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -542,8 +504,7 @@ def test_iceberg_remove_column(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_add_partition_field(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, int_gen)
@@ -564,8 +525,7 @@ def test_iceberg_add_partition_field(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_drop_partition_field(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, int_gen)
@@ -586,8 +546,7 @@ def test_iceberg_drop_partition_field(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -604,8 +563,7 @@ def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
@@ -621,8 +579,7 @@ def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_ty
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_from_url_encoded_path(spark_tmp_table_factory, reader_type):
-    ns = setup_namespace(spark_tmp_table_factory)
-    table = f"{ns}.{spark_tmp_table_factory.get()}"
+    table = get_full_table_name(spark_tmp_table_factory)
     tmp_view = spark_tmp_table_factory.get()
     partition_gen = StringGen(pattern="(.|\n){1,10}", nullable=False)\
         .with_special_case('%29%3EtkiudF4%3C', 1000)\
