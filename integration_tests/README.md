@@ -479,7 +479,7 @@ If Spark has been configured to support Iceberg then these tests can be enabled 
 ### Run Apache iceberg s3tables tests
 
 To run iceberg tests against aws s3tables catalog, we need to setup several things:
-1. Run `aws configure` to setup aws credentials
+1. Run `aws configure` to setup aws credentials and region.
 2. Create a s3tables [table bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-create.html), and fetch its arn
 3. Create a namespace under the table bucket created in step 2.
 4. Add environment `ICEBERG_TEST_S3TABLES_NAMESPACE=<namespace name>`
