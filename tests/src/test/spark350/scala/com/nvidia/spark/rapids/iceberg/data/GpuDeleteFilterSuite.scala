@@ -410,6 +410,7 @@ private object TestGpuDeleteLoader {
     }
     col.getType.getTypeId match {
       case DType.DTypeEnum.DECIMAL128 => col.getBigDecimal(rowIdx).asInstanceOf[AnyRef]
+      case DType.DTypeEnum.STRING => col.getJavaString(rowIdx)
       case _ => HOST_COL_GET_ELEMENT.invoke(col, Integer.valueOf(rowIdx)).asInstanceOf[AnyRef]
     }
   }
