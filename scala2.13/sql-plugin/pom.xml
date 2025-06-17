@@ -39,6 +39,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>tools.profiler</groupId>
+            <artifactId>async-profiler</artifactId>
+            <version>${aysnc.profiler.version}</version>
+        </dependency>
+        <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
             <classifier>${jni.classifier}</classifier>
