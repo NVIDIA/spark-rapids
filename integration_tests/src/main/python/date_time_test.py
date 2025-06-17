@@ -517,6 +517,7 @@ def test_unsupported_fallback_from_unixtime(data_gen):
     ('2021-01', 'yyyy/MM'),
     ('01/02/201', 'dd/MM/yyyy'),
     ('2021-01-01 00:00', 'yyyy-MM-dd HH:mm:ss'),
+    ('19224303 22:82:35', 'yyyy-MM-dd HH:mm:ss'),
     ('01#01', 'MM-dd'),
     ('01T01', 'MM/dd'),
     ('29-02', 'dd-MM'),  # 1970-02-29 is invalid
