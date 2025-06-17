@@ -452,7 +452,6 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
         _create_cpu_gpu_tables(spark, data_path, "id bigint, data string", "id")
         spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("id", "data")).createOrReplaceTempView(view)
     with_cpu_session(setup, conf=writer_confs)
-    fallback_classes = ["AppendDataExecV1"]
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy'), (4L, 'value')", "AppendDataExecV1")
     fallback_class = "OverwriteByExpressionExecV1" if mode == "STATIC" else None
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
