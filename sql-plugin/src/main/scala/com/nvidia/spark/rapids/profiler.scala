@@ -34,6 +34,10 @@ import org.apache.spark.scheduler.{SparkListener, SparkListenerJobEnd, SparkList
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.util.SerializableConfiguration
 
+/**
+ * For profiling with com.nvidia.spark.rapids.jni.Profiler
+ */
+
 object ProfilerOnExecutor extends Logging {
   private val jobPattern = raw"SPARK_.*_JId_([0-9]+).*".r
   private var writer: Option[ProfileWriter] = None
@@ -358,9 +362,11 @@ object ProfilerOnDriver extends Logging {
   private var isJobsStageProfilingComplete = false
 
   def init(sc: SparkContext, conf: RapidsConf): Unit = {
+    // Even if conf.profilePath is not set, we still might need it in AsyncProfiler
+    hadoopConf = new SerializableConfiguration(sc.hadoopConfiguration)
+
     // if no profile path, profiling is disabled and nothing to do
     conf.profilePath.foreach { _ =>
-      hadoopConf = new SerializableConfiguration(sc.hadoopConfiguration)
       jobRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_JOBS)
       stageRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_STAGES)
       if (jobRanges.nonEmpty || stageRanges.nonEmpty) {

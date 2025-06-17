@@ -829,6 +829,35 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(8 * 1024 * 1024)
 
+  // ASYNC PROFILER (FOR FLAME GRAPH)
+
+  val ASYNC_PROFILER_PATH_PREFIX = conf("spark.rapids.asyncProfiler.pathPrefix")
+    .doc("Enables async-profiler (for flame graph) and specifies a file prefix to use " +
+      "when writing the flame graph file by async-profiler. The async-profiler will write " +
+      "a flame graph file for each stage. " +
+      "It is required to set 'spark.scheduler.mode' to 'FIFO' so that there is a clean " +
+      "boundary between stages, so that we can better understand each stage.")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val ASYNC_PROFILER_EXECUTORS = conf("spark.rapids.asyncProfiler.executors")
+    .doc("Comma-separated list of executors IDs and hyphenated ranges of executor IDs to " +
+      "profile when async-profiler (for flame graph) is enabled. By default it's on all executors")
+    .internal()
+    .stringConf
+    .createWithDefault("*")
+
+  val ASYNC_PROFILER_PROFILE_OPTIONS = conf("spark.rapids.asyncProfiler.profileOptions")
+    .doc("The profile options except the 'file' option " +
+      ",which you should set via spark.rapids.asyncProfiler.pathPrefix. Check out " +
+      "https://github.com/async-profiler/async-profiler/blob/master/docs/" +
+      "ProfilerOptions.md#options-applicable-to-any-output-format for all the options. " +
+      "The default values is 'jfr,event=cpu,wall=10ms' for understanding the CPU wall time. ")
+    .internal()
+    .stringConf
+    .createWithDefault("jfr,event=cpu,wall=10ms")
+
   // ENABLE/DISABLE PROCESSING
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
@@ -2780,6 +2809,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val profileFlushPeriodMillis: Int = get(PROFILE_FLUSH_PERIOD_MILLIS)
 
   lazy val profileWriteBufferSize: Long = get(PROFILE_WRITE_BUFFER_SIZE)
+
+  lazy val asyncProfilerPathPrefix: Option[String] = get(ASYNC_PROFILER_PATH_PREFIX)
+
+  lazy val asyncProfilerExecutors: String = get(ASYNC_PROFILER_EXECUTORS)
+
+  lazy val asyncProfilerProfileOptions: String = get(ASYNC_PROFILER_PROFILE_OPTIONS)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 

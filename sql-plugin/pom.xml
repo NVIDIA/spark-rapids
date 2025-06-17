@@ -41,7 +41,7 @@
         <dependency>
             <groupId>tools.profiler</groupId>
             <artifactId>async-profiler</artifactId>
-            <version>3.0</version>
+            <version>${aysnc.profiler.version}</version>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>

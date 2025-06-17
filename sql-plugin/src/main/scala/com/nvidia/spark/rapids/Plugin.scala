@@ -30,14 +30,12 @@ import scala.util.Try
 import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner, NvtxColor, NvtxRange}
 import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
-import com.nvidia.spark.rapids.RapidsExecutorPlugin.{currentProfilingStage, profiler}
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.io.async.TrafficController
 import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import one.profiler.AsyncProfiler
 import org.apache.commons.lang3.exception.ExceptionUtils
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
@@ -50,7 +48,6 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-
 
 class PluginException(msg: String) extends RuntimeException(msg)
 
@@ -531,6 +528,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
       ProfilerOnExecutor.init(pluginContext, conf)
+      AsyncProfilerOnExecutor.init(pluginContext, conf)
 
       // Checks if the current GPU architecture is supported by the
       // spark-rapids-jni and cuDF libraries.
@@ -690,6 +688,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     ProfilerOnExecutor.shutdown()
+    AsyncProfilerOnExecutor.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
@@ -725,37 +724,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def onTaskStart(): Unit = {
-    val stageid = TaskContext.get.stageId()
-    //    log.error("Task started: " + stageid + ", task id: " + TaskContext.get.taskAttemptId())
-    if (stageid > currentProfilingStage) {
-      profiler.synchronized {
-        if (stageid > currentProfilingStage) {
-          try {
-            log.error("stop profiling for stage " + currentProfilingStage +
-              ", my stage is " + stageid)
-            profiler.execute("stop");
-            log.error("successfully stopped profiling for stage " + currentProfilingStage)
-          } catch {
-            case e: Exception =>
-              log.error("error stopping profiling for stage " + currentProfilingStage, e)
-          }
-
-          log.error("setting current profiling stage to " + stageid + " from " +
-            currentProfilingStage)
-          currentProfilingStage = stageid
-          val prefix = System.getProperty("JFR_PREFIX", "/tmp/")
-          try {
-            profiler.execute("start,jfr,event=cpu,wall=10ms,file=" + prefix + "async-%p-"
-              + currentProfilingStage + ".jfr")
-            log.error("successfully started profiling for stage " + currentProfilingStage)
-          } catch {
-            case e: Exception =>
-              log.error("error starting profiling for stage " + currentProfilingStage, e)
-          }
-        }
-      }
-    }
-
     val tc = TaskContext.get
     startTaskNvtx(tc)
     // Set the priority for the task as soon as it is launched
@@ -765,6 +733,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     })
     extraExecutorPlugins.foreach(_.onTaskStart())
     ProfilerOnExecutor.onTaskStart()
+    AsyncProfilerOnExecutor.onTaskStart()
     // Make sure that the thread/task is registered before we try and block
     // For the task main thread, we want to make sure that it's registered in the OOM state
     // machine throughout the task lifecycle.
@@ -793,9 +762,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 }
 
 object RapidsExecutorPlugin {
-  @volatile var currentProfilingStage = -1
-  val profiler = AsyncProfiler.getInstance
-
   /**
    * Return true if the expected cudf version is satisfied by the actual version found.
    * The version is satisfied if the major and minor versions match exactly. If there is a requested
