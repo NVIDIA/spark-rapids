@@ -339,7 +339,7 @@ def test_delta_append_data_exec_v1(spark_tmp_path, use_cdf, enable_deletion_vect
             data_path,
             "AppendDataExecV1",
             conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930, https://github.com/NVIDIA/spark-rapids/issues/12931")
+        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
