@@ -553,9 +553,12 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
-      dIn.close()
-      streamClosed = true
-      sharedBuffer.map(_.close())
+      Seq[AutoCloseable](
+        () => dIn.close(),
+        () => streamClosed = true,
+        () => sharedBuffer.map(_.close(),
+      ).safeClose()
+    )
     }
   }
 
