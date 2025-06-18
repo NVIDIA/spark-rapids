@@ -264,7 +264,7 @@ def test_array_position(data_gen):
         'array_position(array(null), b)',
         'array_position(array(), b)',
         'array_position(a, b)',
-        'array_position(a, a[5]))',
+        'array_position(a, a[5])',
         'array_position(a, null)'))
 
 
