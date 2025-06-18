@@ -32,7 +32,6 @@ import org.apache.spark.sql.rapids.delta.{DeltaShufflePartitionsUtil, GpuOptimiz
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.Clock
 
-/** Common type from which all open-source Delta Lake implementations derive. */
 abstract class GpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
     catalog: Option[CatalogTable],

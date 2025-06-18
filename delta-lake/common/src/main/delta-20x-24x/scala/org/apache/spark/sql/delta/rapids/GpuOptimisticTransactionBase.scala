@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.delta.{DeltaLog, Snapshot}
 import org.apache.spark.util.Clock
 
-/** Common type from which all open-source Delta Lake implementations derive. */
+/** Common type from which 20x-24x open-source Delta Lake implementations derive. */
 abstract class GpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
     catalog: Option[CatalogTable],
