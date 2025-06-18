@@ -600,7 +600,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
         // The previous batches should be able to be spilled by itself.
         val buffer = {
           if (sharedBuffer.isEmpty) {
-            val allocated = allocateWithRetry(header.getTotalDataLen)
+            val allocated = allocateHostWithRetry(header.getTotalDataLen)
 
             if (firstTenBatchesSizes.length < 10) {
               firstTenBatchesSizes += header.getTotalDataLen
@@ -610,7 +610,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
                 if (maxSize < sharedBufferTriggerSize) {
                   // If the max size of the first 10 batches is less than the threshold,
                   // we can use a shared buffer.
-                  sharedBuffer = Some(allocateWithRetry(sharedBufferTotalSize))
+                  sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
                   sharedBufferCurrentUse = 0
                 }
               }
@@ -621,13 +621,13 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
             if (header.getTotalDataLen > sharedBufferTotalSize / 2) {
               // Too big to use shared buffer, this should rarely happen since
               // first ten batches all much smaller.
-              allocateWithRetry(header.getTotalDataLen)
+              allocateHostWithRetry(header.getTotalDataLen)
             } else {
               if (sharedBufferCurrentUse + header.getTotalDataLen > sharedBufferTotalSize) {
                 // If not enough room left, we need to allocate a new shared buffer.
                 sharedBuffer.get.close()
                 sharedBufferCurrentUse = 0
-                sharedBuffer = Some(allocateWithRetry(sharedBufferTotalSize))
+                sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
               }
               val ret = sharedBuffer.get.slice(sharedBufferCurrentUse,
                 header.getTotalDataLen)
