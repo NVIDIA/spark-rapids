@@ -582,7 +582,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
     }
   }
 
-  private def allocateWithRetry(size: Int): HostMemoryBuffer = {
+  private def allocateHostWithRetry(size: Int): HostMemoryBuffer = {
     withRetryNoSplit[HostMemoryBuffer] {
       // This buffer will later be concatenated into another host buffer before being
       // sent to the GPU, so no need to use pinned memory for these buffers.
