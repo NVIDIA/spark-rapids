@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.jni.DeviceAttr
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.spill.SpillFramework
 
@@ -236,7 +237,13 @@ object GpuDeviceManager extends Logging {
     // public, then we need to do some more work.
     conf.rmmExactAlloc.map(truncateToAlignment).getOrElse {
       val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
-      val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
+      val maxAllocFractionLimit = 0.8
+      val maxAllocFraction = if (DeviceAttr.isIntegratedGPU == 1) {
+        maxAllocFractionLimit
+      } else {
+        conf.rmmAllocMaxFraction
+      }
+      val maxAllocation = truncateToAlignment((maxAllocFraction * info.total).toLong)
       val reserveAmount =
         if (conf.isUCXShuffleManagerMode && conf.rmmPool.equalsIgnoreCase("ASYNC")) {
           // When using the async allocator, UCX calls `cudaMalloc` directly to allocate the
