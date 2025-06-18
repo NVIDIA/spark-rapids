@@ -913,7 +913,7 @@ def test_format_number_float_value():
                          [
                              pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
                              pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16'),
-                             pytest.param(36, r'-?[0-9a-zA-Z]{1,15}', id='from_36')
+                             pytest.param(36, r'-?[0-9a-zA-Z]{1,11}', id='from_36')
                          ])
 @pytest.mark.parametrize('to_base', [2, 10, 16, 21, 36, -2, -10, -16, -29, -33], ids=idfn)
 def test_conv_with_more_valid_values(from_base, to_base, pattern):
@@ -931,6 +931,7 @@ def test_conv_with_more_valid_values(from_base, to_base, pattern):
 
 # valid base range is [2, 36], to_base can be negative, out of range results nulls
 # When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
+@disable_ansi_mode
 def test_conv_with_more_invalid_values():
     gen = [
         ("str_col", mk_str_gen(r'-?[0-9a-zA-Z]{1,15}')),

@@ -2215,6 +2215,10 @@ object GpuOverrides extends Logging {
         repeatingParamCheck = Some(RepeatingParamCheck(
           "input", TypeSig.all, TypeSig.all))),
       (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
+
+        // Spark Count agg returns Long and does not check Ansi mode and overflow
+        override def needsAnsiCheck: Boolean = false
+
         override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
             willNotWorkOnGpu("count of multiple columns not supported")

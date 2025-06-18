@@ -76,22 +76,11 @@ def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
-def test_cast_string_date_valid_format_ansi_off():
-    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
-    # This provides values that are valid in all of those formats.
+def test_cast_string_date_ansi_off():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())),
-            conf = copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}))
+        lambda spark: unary_op_df(spark, StringGen(date_start_1_1_1)).selectExpr("cast(a as date)"),
+        conf=ansi_disabled_conf)
 
-
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11556")
-def test_cast_string_date_valid_format_ansi_on():
-    # In Spark 3.2.0+ the valid format changed, and we cannot support all formats.
-    # This provides values that are valid in all of those formats.
-    assert_gpu_and_cpu_error(
-        lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())).collect(),
-        conf = copy_and_update(ansi_enabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}),
-        error_message="One or more values could not be converted to DateType")
 
 invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
                                  '1970 T', ' 1970-01T', '1970-01 A',  # not conform to "yyyy-[M]M" after trim
@@ -99,10 +88,10 @@ invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conf
                                  '1970-01-01A',
                                  '2022-02-29',  # nonexistent day
                                  '200-1-1',  # 200 not conform to 'YYYY'
-                                 '2001-13-1',  # nonexistent day
+                                 '2001-13-1',  # nonexistent month
                                  '2001-1-32',  # nonexistent day
                                  'not numbers',
-                                 '666666666'
+                                 '666666666' # year has more than 7 digits.
                                  ]
 valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
                                '1970-1-01', ' 1970-10-5 ', ' 2001-10-16 ',  # 'yyyy-[M]M-[d]d' after trim
@@ -111,66 +100,45 @@ valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
                                ]
 values_string_to_data = invalid_values_string_to_date + valid_values_string_to_date
 
-# Spark 320+ and databricks support Ansi mode when casting string to date
-# This means an exception will be thrown when casting invalid string to date on Spark 320+ or databricks
-# test Spark versions < 3.2.0 and non databricks, ANSI mode
-@pytest.mark.skipif(not is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
-def test_cast_string_date_invalid_ansi_before_320():
+def test_cast_string_date_ansi_off_special_strings():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': False,
-              'spark.sql.ansi.enabled': True}, )
+        lambda spark: spark.createDataFrame(data_rows, "a string").selectExpr("cast(a as date)"),
+        conf=ansi_disabled_conf)
 
-# test Spark versions >= 320 and databricks, ANSI mode, valid values
-@pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
-def test_cast_string_date_valid_ansi():
+def test_cast_string_date_valid_values_ansi_on():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': False,
-              'spark.sql.ansi.enabled': True})
+        lambda spark: spark.createDataFrame(data_rows, "a string").selectExpr("cast(a as date)"),
+        conf = ansi_disabled_conf)
 
-# test Spark versions >= 320, ANSI mode
-@pytest.mark.skipif(is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
+# test ANSI mode, invalid input
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_cast_string_date_invalid_ansi(invalid):
+def test_cast_string_date_invalid_values_ansi_on(invalid):
     assert_gpu_and_cpu_error(
-        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
-        conf={'spark.rapids.sql.hasExtendedYearValues': False,
-              'spark.sql.ansi.enabled': True},
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("cast(a as date)").collect(),
+        conf = ansi_enabled_conf,
         error_message="DateTimeException")
-
 
 # test try_cast in Spark versions >= 320 and < 340
 @pytest.mark.skipif(is_before_spark_320() or is_spark_340_or_later() or is_databricks113_or_later(), reason="try_cast only in Spark 3.2+")
 @allow_non_gpu('ProjectExec', 'TryCast')
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_try_cast_fallback(invalid):
+def test_try_cast_string_date_fallback(invalid):
     assert_gpu_fallback_collect(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
         'TryCast',
-        conf={'spark.rapids.sql.hasExtendedYearValues': False,
-              'spark.sql.ansi.enabled': True})
+        conf = ansi_enabled_conf)
 
 # test try_cast in Spark versions >= 340
 @pytest.mark.skipif(not (is_spark_340_or_later() or is_databricks113_or_later()), reason="Cast with EvalMode only in Spark 3.4+")
 @allow_non_gpu('ProjectExec','Cast')
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_try_cast_fallback_340(invalid):
+def test_try_cast_string_date_fallback_340(invalid):
     assert_gpu_fallback_collect(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
         'Cast',
-        conf={'spark.rapids.sql.hasExtendedYearValues': False,
-              'spark.sql.ansi.enabled': True})
-
-# test all Spark versions, non ANSI mode, invalid value will be converted to NULL
-def test_cast_string_date_non_ansi():
-    data_rows = [(v,) for v in values_string_to_data]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf=copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}))
-
+        conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
                                       StringGen(date_start_1_1_1 + '[ T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
@@ -916,7 +884,9 @@ def test_cast_string_to_timestamp_valid():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
 
-def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
+def test_cast_string_to_timestamp_just_time_ANSI_OFF():
     # For the just time strings, will get current date to fill the missing date.
     # E.g.: "T00:00:00" will be "2025-05-23T00:00:00"
     # This test case is sensitive to the current date, and may cause diff between CPU and GPU
@@ -935,6 +905,11 @@ def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
                 ("T23:17:50",),
                 ("T23:17:50",),
                 ("T23:17:50",),
+
+                # This is invalid value for Spark 4.0
+                # For details, refer to https://github.com/NVIDIA/spark-rapids-jni/issues/3401
+                (" \r\n\tT23:17:50",),
+
                 ("T23:17:50 \r\n\t",),
                 ("T00",),
                 ("T1:2",),
@@ -957,25 +932,6 @@ def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
 
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
-        return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
-
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: _query(spark))
-
-
-# Spark 400 and DB35 can not handle pattern: left spaces + Thh:mm:ss, refer to the bug link
-@pytest.mark.skipif(is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
-                    reason="https://github.com/NVIDIA/spark-rapids-jni/issues/3401")
-def test_cast_string_to_timestamp_for_just_time_spaces_leading():
-    def _gen_df(spark):
-        return spark.createDataFrame(
-            [
-                (" \r\n\tT23:17:50 \r\n\t",),
-                (" \r\n\tT23:17:50",),
-            ],
-            'str_col string')
-
-    def _query(spark):
         spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
 
@@ -1131,7 +1087,9 @@ _cast_string_to_timestamp_invalid = [
     ("-T00:00:00",),
 ]
 
-def test_cast_string_to_timestamp_invalid():
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
+def test_cast_string_to_timestamp_invalid_ANSI_OFF():
     def _gen_df(spark):
         return spark.createDataFrame(
             _cast_string_to_timestamp_invalid,
@@ -1161,7 +1119,8 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
         conf=ansi_enabled_conf,
         error_message="DateTimeException")
 
-
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
 @pytest.mark.parametrize(
     'pattern',
     [
@@ -1191,7 +1150,7 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
             r'3[0-9]{3,3}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
             id='yyyy-mm-dd[ T]hh:mm:ss PST, ts > 2200')
     ])
-def test_cast_string_to_timestamp_const_format(pattern):
+def test_cast_string_to_timestamp_const_format_ANSI_OFF(pattern):
     gen = [("str_col", StringGen(pattern))]
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first

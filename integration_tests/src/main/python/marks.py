@@ -15,6 +15,7 @@
 import pytest
 
 allow_non_gpu_databricks = pytest.mark.allow_non_gpu_databricks
+allow_non_gpu_conditional = pytest.mark.allow_non_gpu_conditional
 allow_non_gpu = pytest.mark.allow_non_gpu
 disable_ansi_mode = pytest.mark.disable_ansi_mode
 validate_execs_in_gpu_plan = pytest.mark.validate_execs_in_gpu_plan

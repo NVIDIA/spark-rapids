@@ -405,6 +405,7 @@ def test_hash_grpby_sum_full_decimal(data_gen, conf, kudo_enabled):
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf = new_conf)
 
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @approximate_float
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9822")
 @ignore_order
@@ -2226,16 +2227,14 @@ def test_avg_fallback_when_ansi_enabled(data_gen, kudo_enabled):
 
 
 @ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression',
-  'HashPartitioning', 'ShuffleExchangeExec', 'Count', 'Literal')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_count_fallback_when_ansi_enabled(data_gen, kudo_enabled):
+def test_count_when_ansi_enabled(data_gen, kudo_enabled):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
         return df.groupBy('a').agg(f.count("b"), f.count("*"))
 
-    assert_gpu_fallback_collect(do_it, 'Count',
+    assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true', kudo_enabled_conf_key: kudo_enabled})
 
 @ignore_order(local=True)
@@ -2439,6 +2438,7 @@ def test_hash_agg_force_pre_sort(cast_key_to, kudo_enabled):
             'spark.rapids.sql.agg.singlePassPartialSortEnabled': True,
             kudo_enabled_conf_key: kudo_enabled})
 
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize("gen", [
     binary_gen,
@@ -2489,6 +2489,8 @@ hash_agg_conf = {"spark.rapids.sql.foldLocalAggregate.enabled": 'true',
 sort_agg_conf = {"spark.rapids.sql.foldLocalAggregate.enabled": 'true',
                  "spark.sql.test.forceApplySortAggregate": 'true'}
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.skipif(is_databricks_runtime(), reason="This rule is not applied onto Databricks shims")
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
@@ -2541,6 +2543,7 @@ def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, ag
     assert_gpu_and_cpu_are_equal_collect(run_spark_fn, conf=run_conf)
 
 
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_hash_reduction_bitwise(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -2550,6 +2553,7 @@ def test_hash_reduction_bitwise(data_gen):
             "bit_xor(a)"))
 
 
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('int_gen', integral_gens, ids=idfn)
 def test_hash_groupby_bitwise(int_gen):
