@@ -259,6 +259,7 @@ orderable_gens_sample_no_null = [g for g in orderable_gens_sample if g != null_g
 @pytest.mark.parametrize('data_gen',
     orderable_gens_sample_no_null if is_spark_340_or_later() or is_databricks_runtime() else orderable_gens_sample, ids=idfn)
 def test_array_position(data_gen):
+    # min_length=6 to make sure 'a[5]' always works.
     arr_gen = ArrayGen(data_gen, min_length=6)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(spark, arr_gen, data_gen).selectExpr(
         'array_position(array(null), b)',
