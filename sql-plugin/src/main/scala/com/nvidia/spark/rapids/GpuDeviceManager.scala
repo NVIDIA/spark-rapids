@@ -239,7 +239,7 @@ object GpuDeviceManager extends Logging {
       val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
       val maxAllocFractionLimit = 0.8
       val maxAllocFraction = if (DeviceAttr.isIntegratedGPU == 1) {
-        maxAllocFractionLimit
+        Math.min(maxAllocFractionLimit, conf.rmmAllocMaxFraction)
       } else {
         conf.rmmAllocMaxFraction
       }
