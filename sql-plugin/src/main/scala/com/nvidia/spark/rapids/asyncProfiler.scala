@@ -153,25 +153,27 @@ object AsyncProfilerOnExecutor extends Logging {
 
   private def closeLastProfiler(): Unit = {
     asyncProfiler.foreach(profiler => {
-      if (currentProfilingStage != -1) { // for the first stage, skip stopping
-        try {
-          log.info(s"stop profiling for stage $currentProfilingStage")
-          profiler.execute("stop")
-          if (needMoveFile) {
-            val executorId = pluginCtx.executorID()
+      asyncProfiler.synchronized {
+        if (currentProfilingStage != -1) { // for the first stage, skip stopping
+          try {
+            log.info(s"stop profiling for stage $currentProfilingStage")
+            profiler.execute("stop")
+            if (needMoveFile) {
+              val executorId = pluginCtx.executorID()
 
-            val outPath = new Path(asyncProfilerPrefix.get,
-              s"async-profiler-app-$getAppId-stage-$currentProfilingStage.jfr")
-            val hadoopConf = pluginCtx.ask(ProfileInitMsg(executorId, outPath.toString))
-              .asInstanceOf[SerializableConfiguration].value
-            val fs = outPath.getFileSystem(hadoopConf)
-            fs.copyFromLocalFile(new Path(tempFilePath.toString), outPath)
-            tempFilePath.toFile.delete() // delete the temp file after moving
+              val outPath = new Path(asyncProfilerPrefix.get,
+                s"async-profiler-app-$getAppId-stage-$currentProfilingStage.jfr")
+              val hadoopConf = pluginCtx.ask(ProfileInitMsg(executorId, outPath.toString))
+                .asInstanceOf[SerializableConfiguration].value
+              val fs = outPath.getFileSystem(hadoopConf)
+              fs.copyFromLocalFile(new Path(tempFilePath.toString), outPath)
+              tempFilePath.toFile.delete() // delete the temp file after moving
+            }
+            log.info(s"successfully stopped profiling stage $currentProfilingStage")
+          } catch {
+            case e: Exception =>
+              log.error(s"error stopping profiling for stage $currentProfilingStage", e)
           }
-          log.info(s"successfully stopped profiling stage $currentProfilingStage")
-        } catch {
-          case e: Exception =>
-            log.error(s"error stopping profiling for stage $currentProfilingStage", e)
         }
       }
     })

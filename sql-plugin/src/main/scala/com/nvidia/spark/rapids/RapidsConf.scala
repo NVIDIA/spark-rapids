@@ -831,29 +831,32 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   // ASYNC PROFILER (FOR FLAME GRAPH)
 
-  val ASYNC_PROFILER_PATH_PREFIX = conf("spark.rapids.asyncProfiler.pathPrefix")
-    .doc("Enables async-profiler (for flame graph) and specifies a file prefix to use " +
-      "when writing the flame graph file by async-profiler. The async-profiler will write " +
-      "a flame graph file for each stage. " +
+  val ASYNC_PROFILER_PATH_PREFIX = conf("spark.rapids.flameGraph.pathPrefix")
+    .doc("Enables collecting flame graph (with async profiler) and specifies " +
+      "a file prefix to use when writing the JFR file by async-profiler. " +
+      "The async-profiler will write a flame graph file for each stage. " +
       "It is required to set 'spark.scheduler.mode' to 'FIFO' so that there is a clean " +
       "boundary between stages, so that we can better understand each stage.")
     .internal()
     .stringConf
     .createOptional
 
-  val ASYNC_PROFILER_EXECUTORS = conf("spark.rapids.asyncProfiler.executors")
+  val ASYNC_PROFILER_EXECUTORS = conf("spark.rapids.flameGraph.executors")
     .doc("Comma-separated list of executors IDs and hyphenated ranges of executor IDs to " +
-      "profile when async-profiler (for flame graph) is enabled. By default it's on all executors")
+      "profile when async-profiler (for flame graph) is enabled. " +
+      "The default value '*' means all executors")
     .internal()
     .stringConf
     .createWithDefault("*")
 
-  val ASYNC_PROFILER_PROFILE_OPTIONS = conf("spark.rapids. flameGraph.asyncProfiler.options")
-    .doc("The profile options except the 'file' option " +
-      ",which you should set via spark.rapids.asyncProfiler.pathPrefix. Check out " +
-      "https://github.com/async-profiler/async-profiler/blob/master/docs/" +
-      "ProfilerOptions.md#options-applicable-to-any-output-format for all the options. " +
-      "The default values is 'jfr,event=cpu,wall=10ms' for understanding the CPU wall time. ")
+  val ASYNC_PROFILER_PROFILE_OPTIONS = conf("spark.rapids.flameGraph.asyncProfiler.options")
+    .doc("Spark-RAPIDS plugin uses the async profiler to generate flame graphs. " +
+      "You can specify profiler options via this property. " +
+      "The plugin supports all options except for the 'file' option listed in " +
+      "https://github.com/async-profiler/async-profiler/blob/" +
+      "b3f58429f5c0252e9ced3f0fcb444fed17671321/" +
+      "docs/ProfilerOptions.md#options-applicable-to-any-output-format ." +
+      "The default values is 'jfr,event=cpu,wall=10ms'.")
     .internal()
     .stringConf
     .createWithDefault("jfr,event=cpu,wall=10ms")
