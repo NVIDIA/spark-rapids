@@ -848,7 +848,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault("*")
 
-  val ASYNC_PROFILER_PROFILE_OPTIONS = conf("spark.rapids.asyncProfiler.profileOptions")
+  val ASYNC_PROFILER_PROFILE_OPTIONS = conf("spark.rapids. flameGraph.asyncProfiler.options")
     .doc("The profile options except the 'file' option " +
       ",which you should set via spark.rapids.asyncProfiler.pathPrefix. Check out " +
       "https://github.com/async-profiler/async-profiler/blob/master/docs/" +
