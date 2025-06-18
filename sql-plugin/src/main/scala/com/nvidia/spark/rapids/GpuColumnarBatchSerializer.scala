@@ -556,9 +556,8 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
       Seq[AutoCloseable](
         () => dIn.close(),
         () => streamClosed = true,
-        () => sharedBuffer.map(_.close(),
+        () => sharedBuffer.map(_.close())
       ).safeClose()
-    )
     }
   }
 
