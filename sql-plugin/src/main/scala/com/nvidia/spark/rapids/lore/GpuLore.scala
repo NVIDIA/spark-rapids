@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, RapidsConf}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuDataWritingCommand, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -34,6 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, ReusedSubqueryExec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
+import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec}
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.DataType
@@ -60,7 +61,6 @@ trait GpuLoreRDD {
     new Path(pathOfPartition(partitionIndex), s"batch-$batchIndex.parquet")
   }
 }
-
 
 object GpuLore {
   /**
@@ -112,8 +112,8 @@ object GpuLore {
     new Path(rootPath, s"input-$childIndex")
   }
 
-  def restoreGpuExec(rootPath: Path, spark: SparkSession): GpuExec = {
-    val rootExec = loadObject[GpuExec](pathOfRootPlanMeta(rootPath),
+  def restoreGpuExec(rootPath: Path, spark: SparkSession): SparkPlan = {
+    val rootExec = loadObject[SparkPlan](pathOfRootPlanMeta(rootPath),
       spark.sparkContext.hadoopConfiguration)
 
     checkUnsupportedOperator(rootExec)
@@ -123,6 +123,21 @@ object GpuLore {
       sc.broadcast(new SerializableConfiguration(spark.sparkContext.hadoopConfiguration))
     }
 
+    rootExec match {
+      case gpuExec: GpuExec =>
+        // Handle regular GpuExec (existing logic)
+        restoreGpuExecInternal(gpuExec, rootPath, broadcastHadoopConf)
+      case dwce: DataWritingCommandExec if dwce.cmd.isInstanceOf[GpuDataWritingCommand] =>
+        // Handle GpuDataWritingCommandExec
+        restoreDataWritingCommandExec(dwce, rootPath, broadcastHadoopConf)
+      case _ =>
+        throw new IllegalArgumentException(
+          s"Unsupported plan type for restoration: ${rootExec.getClass.getSimpleName}")
+    }
+  }
+
+  private def restoreGpuExecInternal(rootExec: GpuExec, rootPath: Path,
+      broadcastHadoopConf: Broadcast[SerializableConfiguration]): GpuExec = {
     // Load children
     val newChildren = rootExec.children.zipWithIndex.map { case (plan, idx) =>
       val newChild = GpuLoreReplayExec(idx, rootPath.toString, broadcastHadoopConf)
@@ -143,6 +158,18 @@ object GpuLore {
         nextId += 1
         newSub
     }.withNewChildren(newChildren).asInstanceOf[GpuExec]
+  }
+
+  private def restoreDataWritingCommandExec(
+      dwce: DataWritingCommandExec,
+      rootPath: Path,
+      broadcastHadoopConf:
+        org.apache.spark.broadcast.Broadcast[SerializableConfiguration]): DataWritingCommandExec = {
+    // For DataWritingCommandExec, we need to restore the child plan
+    val newChildren = dwce.children.zipWithIndex.map { case (_, idx) =>
+      GpuLoreReplayExec(idx, rootPath.toString, broadcastHadoopConf)
+    }
+    dwce.withNewChildren(newChildren).asInstanceOf[DataWritingCommandExec]
   }
 
   private def restoreSubqueryPlan(id: Int, sub: ExecSubqueryExpression,
@@ -261,6 +288,26 @@ object GpuLore {
               }
             }
           }
+        // Add support for DataWritingCommandExec containing GpuDataWritingCommand
+        case dwce: DataWritingCommandExec if dwce.cmd.isInstanceOf[GpuDataWritingCommand] =>
+          nextLoreIdOf(dwce).foreach { loreId =>
+            dwce.setTagValue(LORE_ID_TAG, loreId.toString)
+
+            loreDumpIds.get(loreId).foreach { outputLoreIds =>
+              checkUnsupportedOperator(dwce)
+              val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
+              dwce.setTagValue(LORE_DUMP_PATH_TAG, currentExecRootPath.toString)
+              val loreOutputInfo = LoreOutputInfo(outputLoreIds,
+                currentExecRootPath.toString)
+
+              // For DataWritingCommandExec, the child is the input plan
+              dwce.children.zipWithIndex.foreach {
+                case (child, idx) =>
+                  val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf)
+                  child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
+              }
+            }
+          }
         case _ =>
       }
 
@@ -272,6 +319,11 @@ object GpuLore {
         case g: GpuExec =>
           nextLoreIdOf(g).foreach { loreId =>
             g.setTagValue(LORE_ID_TAG, loreId.toString)
+          }
+        // Add support for DataWritingCommandExec containing GpuDataWritingCommand
+        case dwce: DataWritingCommandExec if dwce.cmd.isInstanceOf[GpuDataWritingCommand] =>
+          nextLoreIdOf(dwce).foreach { loreId =>
+            dwce.setTagValue(LORE_ID_TAG, loreId.toString)
           }
         case _ =>
       }
@@ -303,11 +355,61 @@ object GpuLore {
   }
 
   private def checkUnsupportedOperator(plan: SparkPlan): Unit = {
-    if (plan.children.isEmpty ||
-      plan.isInstanceOf[GpuCustomShuffleReaderExec]
-    ) {
-      throw new UnsupportedOperationException(s"Currently we don't support dumping input of " +
-        s"${plan.getClass.getSimpleName} operator.")
+    plan match {
+      // Allow GpuInsertIntoHiveTable through DataWritingCommandExec
+      case dwce: GpuDataWritingCommandExec
+        if dwce.cmd.isInstanceOf[GpuDataWritingCommand] =>
+        checkGpuDataWritingCommandSupportedVersion()
+      case _ =>
+        if (plan.children.isEmpty ||
+          plan.isInstanceOf[GpuCustomShuffleReaderExec]
+        ) {
+          throw new UnsupportedOperationException(s"Currently we don't support dumping input of " +
+            s"${plan.getClass.getSimpleName} operator.")
+        }
     }
+  }
+
+  /**
+   * Check if the current Spark version is in the unsupported versions list for GpuWriteFiles
+   * @param dwc The DataWritingCommandExec to check
+   */
+  private def checkGpuDataWritingCommandSupportedVersion(): Unit = {
+    val currentShimVersion = ShimLoader.getShimVersion
+    val currentVersionString = currentShimVersion match {
+      case com.nvidia.spark.rapids.SparkShimVersion(major, minor, patch) =>
+        s"$major$minor$patch" // e.g., "340" for Spark 3.4.0
+      case com.nvidia.spark.rapids.DatabricksShimVersion(major, minor, patch, dbrVersion) =>
+        if (dbrVersion == "14.3") {
+          s"${major}${minor}${patch}db143" // e.g., "350db143" for Spark 3.5.0 Databricks 14.3
+        } else {
+          s"${major}${minor}${patch}db" // e.g., "332db" for Spark 3.3.2 Databricks
+        }
+      case com.nvidia.spark.rapids.ClouderaShimVersion(major, minor, patch, _) =>
+        s"${major}${minor}${patch}cdh" // e.g., "332cdh" for Spark 3.3.2 Cloudera
+      case _ =>
+        throw new UnsupportedOperationException(s"Unknown shim version: $currentShimVersion")
+    }
+
+    // Get the list of unsupported versions from GpuWriteFiles.scala
+    val unsupportedVersions = getGpuWriteFilesUnsupportedVersions
+    if (unsupportedVersions.contains(currentVersionString)) {
+      throw new UnsupportedOperationException(
+        s"LORE dump is not supported for GpuDataWritingCommandExec on Spark" +
+          s" version $currentVersionString. " +
+        s"Unsupported versions: ${unsupportedVersions.mkString(", ")}")
+    }
+  }
+
+  /**
+   * Parse the unsupported versions from GpuWriteFiles.scala shim-json-lines
+   * @return Set of unsupported version strings
+   */
+  private def getGpuWriteFilesUnsupportedVersions: Set[String] = {
+    // These versions are extracted from GpuWriteFiles.scala spark-rapids-shim-json-lines
+    Set(
+      "332db", "340", "341", "341db", "342", "343", "344",
+      "350", "350db143", "351", "352", "353", "354", "355", "356", "400"
+    )
   }
 }
