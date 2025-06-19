@@ -16,9 +16,10 @@ import tempfile
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_iceberg_s3tables
 from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
-    all_eq_column_combinations, is_s3tables_catalog
+    all_eq_column_combinations
 from marks import iceberg, ignore_order
 from spark_session import is_spark_35x, with_gpu_session
 
@@ -32,7 +33,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 @pytest.mark.parametrize('eq_delete_cols',
                          all_eq_column_combinations,
                          ids=lambda x: str(x))
-@pytest.mark.skipif(is_s3tables_catalog(), reason = "S3tables catalog is managed")
+@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
                                eq_delete_cols):
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
@@ -63,7 +64,7 @@ def test_iceberg_v2_position_delete(spark_tmp_table_factory, reader_type):
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.skipif(is_s3tables_catalog(), reason = "S3tables catalog is managed")
+@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factory,
                                                           spark_tmp_path,
                                                           reader_type):
@@ -83,7 +84,7 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.skipif(is_s3tables_catalog(), reason = "S3tables catalog is managed")
+@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type):
     # We use a fixed seed here to ensure that data deletion vector has been generated
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)

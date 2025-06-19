@@ -124,20 +124,5 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
                      conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
                          "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
 
-def get_iceberg_s3tables_ns() -> Optional[str]:
-    return os.getenv('ICEBERG_TEST_S3TABLES')
-
-def is_s3tables_catalog() -> bool:
-    return os.getenv('ICEBERG_TEST_S3TABLES') is not None
-
-def get_namespace():
-    ns = get_iceberg_s3tables_ns()
-    if ns is None:
-        return "default"
-    else:
-        return ns
-
 def get_full_table_name(spark_tmp_table_factory):
-    ns = get_namespace()
-    table = spark_tmp_table_factory.get()
-    return f"{ns}.{table}"
+    return spark_tmp_table_factory.get()

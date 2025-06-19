@@ -99,6 +99,10 @@ def is_utc():
 def is_not_utc():
     return not is_utc()
 
+def is_iceberg_s3tables():
+    v = os.environ.get('ICEBERG_TEST_S3TABLES')
+    return v == "1"
+
 # key is time zone, value is recorded boolean value
 _support_info_cache_for_time_zone = {}
 
@@ -487,7 +491,12 @@ def spark_tmp_table_factory(request):
     for row in tables:
         t_name = row['tableName']
         if (t_name.startswith(base_id)):
-            sp.sql("DROP TABLE IF EXISTS {}".format(t_name))
+            if is_iceberg_s3tables():
+                # AWS s3tables only accept purge table.
+                sp.sql("DROP TABLE IF EXISTS {} PURGE".format(t_name))
+            else:
+                sp.sql("DROP TABLE IF EXISTS {} ".format(t_name))
+
 
 def _get_jvm_session(spark):
     return spark._jsparkSession
