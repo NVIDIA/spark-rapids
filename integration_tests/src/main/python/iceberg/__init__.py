@@ -125,4 +125,4 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
                          "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
 
 def get_full_table_name(spark_tmp_table_factory):
-    return spark_tmp_table_factory.get()
+    return f"default.{spark_tmp_table_factory.get()}"
