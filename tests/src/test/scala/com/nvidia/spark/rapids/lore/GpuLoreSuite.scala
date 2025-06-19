@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, RapidsConf, SparkQueryCompareTestSuite}
+import com.nvidia.spark.rapids.{ClouderaShimVersion, DatabricksShimVersion, FunSuiteWithTempDir,
+  GpuColumnarToRowExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite, SparkShimVersion }
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
 
@@ -25,8 +26,46 @@ import org.apache.spark.sql.{functions, DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.internal.SQLConf
 
-
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
+  /**
+   * Versions that are unsupported for LORE dump with GpuDataWritingCommandExec
+   * These versions will be skipped for GpuInsertIntoHiveTable tests and
+   * should throw exceptions for LORE dump tests
+   */
+  private val unsupportedHiveInsertVersions = Set(
+    "332db", "340", "341", "341db", "342", "343", "344",
+    "350", "350db143", "351", "352", "353", "354", "355", "356", "400"
+  )
+  /**
+   * Get the current shim version string in the format used by GpuWriteFiles
+   */
+  private def getCurrentVersionString: String = {
+    val currentShimVersion = ShimLoader.getShimVersion
+    currentShimVersion match {
+      case SparkShimVersion(major, minor, patch) => s"$major$minor$patch"
+      case DatabricksShimVersion(major, minor, patch, dbver) => 
+        // For Databricks versions, we need to check the specific version
+        (major, minor, patch, dbver) match {
+          case (3, 3, 2, "12.2") => "332db"
+          case (3, 4, 1, "13.3") => "341db"
+          case (3, 5, 0, "14.3") => "350db143"
+          case _ => s"$major$minor$patch"
+        }
+      case ClouderaShimVersion(major, minor, patch, _) => s"$major$minor$patch"
+    }
+  }
+
+  /**
+   * Check if the current version should be skipped for GpuInsertIntoHiveTable test
+   */
+  private def skipIfUnsupportedVersion(testName: String): Unit = {
+    val versionString = getCurrentVersionString
+
+    // Skip this test if the current version is in unsupportedHiveInsertVersions
+    assume(!unsupportedHiveInsertVersions.contains(versionString),
+      s"Skipping $testName for version $versionString as it's in the unsupported versions list")
+  }
+
   test("Aggregate") {
     skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     doTestReplay("10[*]") { spark =>
@@ -222,8 +261,11 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     So the validation should be comparing the Hive Table content between the first run and the
     replay run.
     */
+
+    // Skip this test for versions that are in unsupportedHiveInsertVersions
+    skipIfUnsupportedVersion("GpuInsertIntoHiveTable with LoRE dump and replay")
     try {
-      val loreDumpIds = "5[*]"
+      val loreDumpIds = "5[*]" // Fixed LORE ID since unsupported versions are skipped
       val loreId = OutputLoreId.parse(loreDumpIds).head._1
 
       // Use a single SparkSession for both operations
@@ -234,7 +276,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         // Configure LORE for the first execution
         spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
         spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreDumpIds)
-        
+
         // Clean up any existing table and its associated directory
         spark.sql("DROP TABLE IF EXISTS test_hive_table")
         spark.sql("""
@@ -251,11 +293,9 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         df.write
           .mode("overwrite")
           .insertInto("test_hive_table")
-        
         // Disable LORE for the replay phase
         spark.conf.unset(RapidsConf.LORE_DUMP_PATH.key)
         spark.conf.unset(RapidsConf.LORE_DUMP_IDS.key)
-        
         // Clean up and recreate table for replay
         spark.sql("DROP TABLE IF EXISTS test_hive_table")
         spark.sql("""
@@ -265,7 +305,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
           )
           STORED AS textfile
         """)
-        
+
         // Execute the LoRE replay
         // LoRE replay is not a fully-completed Query execution, but partial,
         // no query executionId is set. Mean while,
@@ -282,10 +322,11 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         } finally {
           spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, null)
         }
-        
+        // TODO: remove, reason:
+        // Spark 400 enables ANSI mode by default which will fallback the shuffleExec
+        spark.conf.set(RapidsConf.TEST_CONF.key, "false")
         // Read the data written by replay and count it
         val replayDataCount = spark.sql("SELECT * FROM test_hive_table").count()
-        
         // Verify the results
         assert(originalDataCount == replayDataCount,
           s"Original data count ($originalDataCount) != Replay data count ($replayDataCount)")
@@ -327,6 +368,47 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
           case _: Exception => // Ignore cleanup failures
         }
       }
+    }
+  }
+
+  test("LORE dump should throw exception for GpuDataWritingCommandExec on unsupported versions") {
+    // Only run this test for versions that are in unsupportedHiveInsertVersions
+    val versionString = getCurrentVersionString
+
+    // Skip this test if the current version is NOT in unsupportedHiveInsertVersions
+    assume(unsupportedHiveInsertVersions.contains(versionString),
+      s"Skipping test for version $versionString as it's not in the unsupported versions list")
+
+    withGpuHiveSparkSession { spark =>
+      // Configure LORE for testing
+      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "7[*]")
+
+      // Clean up any existing table
+      spark.sql("DROP TABLE IF EXISTS test_hive_table")
+      spark.sql("""
+        CREATE TABLE test_hive_table (
+          id INT,
+          name STRING
+        )
+        STORED AS textfile
+      """)
+
+      // Create test data
+      val df = spark.range(0, 10, 1, 2)
+        .selectExpr("id as id", "concat('name_', id) as name")
+
+      // This should throw an exception if the current version is in the unsupported list
+      val exception = intercept[UnsupportedOperationException] {
+        df.write
+          .mode("overwrite")
+          .insertInto("test_hive_table")
+      }
+
+      // Verify the exception message contains the expected information
+      assert(exception.getMessage.contains("LORE dump is not supported for" +
+        " GpuDataWritingCommandExec"))
+      assert(exception.getMessage.contains("Unsupported versions:"))
     }
   }
 

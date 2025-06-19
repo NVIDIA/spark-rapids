@@ -18,21 +18,18 @@ package com.nvidia.spark.rapids.lore
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import java.util.concurrent.atomic.AtomicInteger
-
 import scala.collection.mutable
 import scala.reflect.ClassTag
-
-import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuDataWritingCommand, GpuExec, RapidsConf}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuDataWritingCommand, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.SparkEnv
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, ReusedSubqueryExec, SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, ReusedSubqueryExec, SQLExecution, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec}
@@ -61,7 +58,6 @@ trait GpuLoreRDD {
     new Path(pathOfPartition(partitionIndex), s"batch-$batchIndex.parquet")
   }
 }
-
 
 object GpuLore {
   /**
@@ -358,8 +354,9 @@ object GpuLore {
   private def checkUnsupportedOperator(plan: SparkPlan): Unit = {
     plan match {
       // Allow GpuInsertIntoHiveTable through DataWritingCommandExec
-      case dwce: DataWritingCommandExec
+      case dwce: GpuDataWritingCommandExec
         if dwce.cmd.isInstanceOf[GpuDataWritingCommand] =>
+        checkGpuDataWritingCommandSupportedVersion()
       case _ =>
         if (plan.children.isEmpty ||
           plan.isInstanceOf[GpuCustomShuffleReaderExec]
@@ -368,5 +365,48 @@ object GpuLore {
             s"${plan.getClass.getSimpleName} operator.")
         }
     }
+  }
+
+  /**
+   * Check if the current Spark version is in the unsupported versions list for GpuWriteFiles
+   * @param dwc The DataWritingCommandExec to check
+   */
+  private def checkGpuDataWritingCommandSupportedVersion(): Unit = {
+    val currentShimVersion = ShimLoader.getShimVersion
+    val currentVersionString = currentShimVersion match {
+      case com.nvidia.spark.rapids.SparkShimVersion(major, minor, patch) =>
+        s"$major$minor$patch" // e.g., "340" for Spark 3.4.0
+      case com.nvidia.spark.rapids.DatabricksShimVersion(major, minor, patch, dbrVersion) =>
+        if (dbrVersion == "14.3") {
+          s"${major}${minor}${patch}db143" // e.g., "350db143" for Spark 3.5.0 Databricks 14.3
+        } else {
+          s"${major}${minor}${patch}db" // e.g., "332db" for Spark 3.3.2 Databricks
+        }
+      case com.nvidia.spark.rapids.ClouderaShimVersion(major, minor, patch, _) =>
+        s"${major}${minor}${patch}cdh" // e.g., "332cdh" for Spark 3.3.2 Cloudera
+      case _ =>
+        throw new UnsupportedOperationException(s"Unknown shim version: $currentShimVersion")
+    }
+
+    // Get the list of unsupported versions from GpuWriteFiles.scala
+    val unsupportedVersions = getGpuWriteFilesUnsupportedVersions
+    if (unsupportedVersions.contains(currentVersionString)) {
+      throw new UnsupportedOperationException(
+        s"LORE dump is not supported for GpuDataWritingCommandExec on Spark" +
+          s" version $currentVersionString. " +
+        s"Unsupported versions: ${unsupportedVersions.mkString(", ")}")
+    }
+  }
+
+  /**
+   * Parse the unsupported versions from GpuWriteFiles.scala shim-json-lines
+   * @return Set of unsupported version strings
+   */
+  private def getGpuWriteFilesUnsupportedVersions: Set[String] = {
+    // These versions are extracted from GpuWriteFiles.scala spark-rapids-shim-json-lines
+    Set(
+      "332db", "340", "341", "341db", "342", "343", "344",
+      "350", "350db143", "351", "352", "353", "354", "355", "356", "400"
+    )
   }
 }
