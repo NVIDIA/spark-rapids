@@ -18,7 +18,7 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gp
 from data_gen import *
 from delta_lake_utils import deletion_vector_values_with_350DB143_xfail_reasons
 from marks import allow_non_gpu, ignore_order, delta_lake
-from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks113_or_later, supports_delta_lake_deletion_vectors
+from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks113_or_later, supports_delta_lake_deletion_vectors, is_spark_353_or_later
 from dpp_test import _exchange_reuse_conf
 
 # Almost all of this is the metadata query
@@ -44,11 +44,16 @@ def test_delta_zorder(spark_tmp_table_factory):
         # from one run to another, so we cannot just compare them...
         spark.sql("OPTIMIZE {} ZORDER BY a, b".format(table)).show()
         return spark.sql("select * from {} where a = 1".format(table))
-
-    assert_gpu_and_cpu_are_equal_collect(optimize_table,
-            conf={"spark.rapids.sql.castFloatToIntegralTypes.enabled": True,
-                  "spark.rapids.sql.castFloatToString.enabled": True,
-                  "spark.rapids.sql.explain": "ALL"})
+    conf = {"spark.rapids.sql.castFloatToIntegralTypes.enabled": True,
+            "spark.rapids.sql.castFloatToString.enabled": True,
+            "spark.rapids.sql.explain": "ALL"}
+    if is_spark_353_or_later():
+        assert_gpu_and_cpu_are_equal_collect(optimize_table,
+                conf=conf)
+    else: 
+        assert_gpu_fallback_collect(optimize_table, "AppendDataExecV1",
+                conf=conf)
+        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
 
 _statements = [
     # join on z-ordered column
