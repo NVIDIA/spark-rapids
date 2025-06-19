@@ -443,11 +443,18 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
             localRightKeys, rightOutput, rightIter,
             localCondition, localGpuBatchSizeBytes, localMetrics)
       }
-      val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
-        if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
+      if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
+        val joinIterator = if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
           Iterator.empty
         } else {
           doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
+        }
+        val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
+        val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
+        joinIterator.map { cb =>
+          numOutputRows += cb.numRows()
+          numOutputBatches += 1
+          cb
         }
       } else {
         val targetSize = realTargetBatchSize()
@@ -459,13 +466,6 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
         doJoinBySubPartition(joinInfo.buildIter, joinInfo.streamIter, targetSize,
           numPartitions, localMetrics(NUM_OUTPUT_ROWS), localMetrics(NUM_OUTPUT_BATCHES),
           localMetrics(OP_TIME), localMetrics(JOIN_TIME))
-      }
-      val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
-      val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
-      joinIterator.map { cb =>
-        numOutputRows += cb.numRows()
-        numOutputBatches += 1
-        cb
       }
     }
   }
