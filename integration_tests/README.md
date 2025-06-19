@@ -481,8 +481,8 @@ If Spark has been configured to support Iceberg then these tests can be enabled 
 To run iceberg tests against aws s3tables catalog, we need to setup several things:
 1. Run `aws configure` to setup aws credentials and region.
 2. Create a s3tables [table bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-create.html), and fetch its arn
-3. Create a namespace under the table bucket created in step 2.
-4. Add environment `ICEBERG_TEST_S3TABLES_NAMESPACE=<namespace name>`
+3. Create a namespace with name `default` under the table bucket created in step 2.
+4. Add environment `ICEBERG_TEST_S3TABLES=1`
 5. Set spark catalog implementation s3 tables: 
    `--conf spark.sql.catalog.spark_catalog.catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog"`
 6. Set spark warehouse to table bucket arn in step 2: `--conf spark.sql.catalog.spark_catalog.warehouse=<table bucket arn>`
@@ -501,7 +501,6 @@ These tests can be enabled by adding the `--large_data_test` option to the comma
 ### Enabling Pyarrow tests
 Some tests require that Pyarrow is installed. By default, these tests are disabled.
 These tests can be enabled by adding the `--pyarrow_test` option to the command.
-
 
 ## Writing tests
 

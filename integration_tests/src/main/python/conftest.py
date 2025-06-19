@@ -486,6 +486,7 @@ def spark_tmp_table_factory(request):
     table_id = random.getrandbits(31)
     base_id = f'tmp_table_{worker_id}_{table_id}'
     yield TmpTableFactory(base_id)
+    # Drop table doesn't work spark sql with aws s3tables.
     if not is_iceberg_s3tables():
         sp = get_spark_i_know_what_i_am_doing()
         tables = sp.sql("SHOW TABLES").collect()
