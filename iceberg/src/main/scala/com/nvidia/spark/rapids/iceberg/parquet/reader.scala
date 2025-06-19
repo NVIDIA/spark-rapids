@@ -241,7 +241,7 @@ object GpuIcebergParquetReader {
         }
         optionsBuilder = HadoopReadOptions.builder(conf)
       case _ =>
-        throw new UnsupportedOperationException("Only Hadoop files are supported for now")
+        optionsBuilder = ParquetReadOptions.builder()
     }
     split.foreach { case (start, length) =>
       optionsBuilder = optionsBuilder.withRange(start, start + length)

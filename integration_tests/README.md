@@ -476,6 +476,17 @@ properly without it. These tests assume Iceberg is not configured and are disabl
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
 
+### Run Apache iceberg s3tables tests
+
+To run iceberg tests against aws s3tables catalog, we need to setup several things:
+1. Run `aws configure` to setup aws credentials and region.
+2. Create a s3tables [table bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-create.html), and fetch its arn
+3. Create a namespace with name `default` under the table bucket created in step 2.
+4. Add environment `ICEBERG_TEST_S3TABLES=1`
+5. Set spark catalog implementation s3 tables: 
+   `--conf spark.sql.catalog.spark_catalog.catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog"`
+6. Set spark warehouse to table bucket arn in step 2: `--conf spark.sql.catalog.spark_catalog.warehouse=<table bucket arn>`
+
 ### Enabling Delta Lake tests
 
 Some tests require that Delta Lake has been configured in the Spark environment and cannot run
