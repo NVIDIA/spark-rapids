@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package org.apache.spark.sql.delta.rapids.delta24x
 
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.{Delta20xConfigChecker, DeltaConfigChecker, DeltaProvider}
 import com.nvidia.spark.rapids.delta.delta24x.{Delta24xProvider, GpuDeltaCatalog}
 
 import org.apache.spark.sql.SparkSession
@@ -31,6 +31,8 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
 class Delta24xRuntimeShim extends DeltaRuntimeShim {
+  override def getDeltaConfigChecker: DeltaConfigChecker = Delta20xConfigChecker
+
   override def getDeltaProvider: DeltaProvider = Delta24xProvider
 
   override def startTransaction(

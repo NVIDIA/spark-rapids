@@ -30,13 +30,13 @@ import org.apache.spark.sql.types.StringType
 import org.apache.spark.util.Clock
 
 /** Common type from which all open-source Delta Lake implementations derive. */
-abstract class GpuOptimisticTransactionBase(
+abstract class AbstractGpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
     catalog: Option[CatalogTable],
     snapshot: Snapshot,
     rapidsConf: RapidsConf)
-    (implicit clock: Clock)
-    extends ShimOptimisticTransaction(deltaLog, catalog, snapshot)(clock)
+  (implicit clock: Clock)
+  extends ShimOptimisticTransaction(deltaLog, catalog, snapshot)(clock)
     with DeltaLogging {
 
   /**
