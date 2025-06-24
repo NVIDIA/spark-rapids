@@ -794,7 +794,6 @@ def test_delta_write_stat_column_limits(spark_tmp_path):
     # so instead of a full delta log compare with the CPU, focus on the reported statistics on GPU.
     with_cpu_session(verify_stat_limits)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -814,20 +813,11 @@ def test_delta_write_generated_columns(spark_tmp_table_factory, spark_tmp_path):
         df.write.format("delta").mode("append").save(path)
 
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            write_data,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=delta_writes_enabled_conf)
-    else:
-        assert_gpu_fallback_write(
-            write_data,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=delta_writes_enabled_conf)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        write_data,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=delta_writes_enabled_conf)
 
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
