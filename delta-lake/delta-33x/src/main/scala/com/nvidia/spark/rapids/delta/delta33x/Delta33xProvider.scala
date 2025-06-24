@@ -26,7 +26,6 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
-import org.apache.spark.sql.sources.CreatableRelationProvider
 
 object Delta33xProvider extends DeltaIOProvider {
 
@@ -38,12 +37,6 @@ object Delta33xProvider extends DeltaIOProvider {
           (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
         .disabledByDefault("Delta Lake merge support is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
-  }
-
-  override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
-    CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
-    Map.empty[Class[_ <: CreatableRelationProvider],
-      CreatableRelationProviderRule[_ <: CreatableRelationProvider]]
   }
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
