@@ -64,7 +64,7 @@ import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-trait GpuFileFormatWriterBase {
+trait GpuFileFormatWriterBase extends Serializable {
 
   /**
    * Basic work flow of this command is:
