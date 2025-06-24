@@ -64,7 +64,7 @@ import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-trait GpuFileFormatWriterBase extends Serializable {
+trait GpuFileFormatWriterBase extends Serializable with Logging {
 
   /**
    * Basic work flow of this command is:
@@ -304,16 +304,16 @@ trait GpuFileFormatWriterBase extends Serializable {
       val (_, duration) = TimingUtils.timeTakenMs {
         committer.commitJob(job, commitMsgs)
       }
-//      logInfo(s"Write Job ${description.uuid} committed. Elapsed time: $duration ms.")
+      logInfo(s"Write Job ${description.uuid} committed. Elapsed time: $duration ms.")
 
       processStats(description.statsTrackers, ret.map(_.summary.stats), duration)
-//      logInfo(s"Finished processing stats for write job ${description.uuid}.")
+      logInfo(s"Finished processing stats for write job ${description.uuid}.")
 
       // return a set of all the partition paths that were updated during this job
       ret.map(_.summary.updatedPartitions).reduceOption(_ ++ _).getOrElse(Set.empty)
     } catch {
       case cause: Throwable =>
-//        logError(s"Aborting job ${description.uuid}.", cause)
+        logError(s"Aborting job ${description.uuid}.", cause)
         committer.abortJob(job)
         throw new SparkException("Job aborted.", cause)
     }
@@ -435,7 +435,7 @@ trait GpuFileFormatWriterBase extends Serializable {
       })(catchBlock = {
         // If there is an error, abort the task
         dataWriter.abort()
-//        logError(s"Job $jobId aborted.")
+        logError(s"Job $jobId aborted.")
       }, finallyBlock = {
         dataWriter.close()
       })
@@ -491,7 +491,7 @@ trait GpuFileFormatWriterBase extends Serializable {
 }
 
 /** A helper object for writing columnar data out to a location. */
-object GpuFileFormatWriter extends GpuFileFormatWriterBase with Logging {
+object GpuFileFormatWriter extends GpuFileFormatWriterBase {
   /** Describes how concurrent output writers should be executed. */
   case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
       batchSize: Long, sortOrder: Seq[SortOrder])

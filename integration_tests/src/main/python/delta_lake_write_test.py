@@ -143,26 +143,14 @@ def test_delta_write_round_trip_unmanaged(spark_tmp_path, enable_deletion_vector
 def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens, enable_deletion_vectors):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
-                .partitionBy("a")
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+            gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .partitionBy("a")
             .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
 
