@@ -264,6 +264,8 @@ trait GpuFileFormatWriterBase extends Logging {
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
+      val partitionColumnToDataType = description.partitionColumns
+        .map(attr => (attr.name, attr.dataType)).toMap
       sparkSession.sparkContext.runJob(
         rddWithNonEmptyPartitions,
         (taskContext: TaskContext, iter: Iterator[ColumnarBatch]) => {
@@ -276,7 +278,8 @@ trait GpuFileFormatWriterBase extends Logging {
             committer,
             iterator = iter,
             concurrentOutputWriterSpec = concurrentOutputWriterSpec,
-            baseDebugOutputPath = baseDebugOutputPath)
+            baseDebugOutputPath = baseDebugOutputPath,
+            partitionColumnToDataType = partitionColumnToDataType)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -385,7 +388,7 @@ trait GpuFileFormatWriterBase extends Logging {
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
       baseDebugOutputPath: Option[String],
-      partitionColumnToDataType: Map[String, DataType] = Map.empty): WriteTaskResult = {
+      partitionColumnToDataType: Map[String, DataType]): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
