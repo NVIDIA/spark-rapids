@@ -50,17 +50,17 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
   override def getGpuDeltaCatalog(
      cpuCatalog: DeltaCatalog,
      rapidsConf: RapidsConf): StagingTableCatalog = {
-    throw new UnsupportedOperationException("Not implemented")
+    throw new UnsupportedOperationException("getGpuDeltaCatalog  Not implemented")
   }
 
   def startTransaction(
      log: DeltaLog,
      conf: RapidsConf,
      clock: Clock): GpuOptimisticTransactionBase = {
-    throw new UnsupportedOperationException("Not implemented")
+    throw new UnsupportedOperationException("startTransaction Not implemented")
   }
 
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {
-    throw new UnsupportedOperationException("Not implemented")
+    throw new UnsupportedOperationException("stringFromStringUdf Not implemented")
   }
 }
