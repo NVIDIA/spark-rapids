@@ -1254,7 +1254,6 @@ if is_databricks_runtime():
     # compaction can fallback due to unsupported WriteIntoDeltaCommand
     # tracked by https://github.com/NVIDIA/spark-rapids/issues/11169
     compaction_allow += "," + delta_write_fallback_allow
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(compaction_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -1268,17 +1267,8 @@ def test_delta_compaction(spark_tmp_path, enable_deletion_vectors):
     data_path = spark_tmp_path + "/DELTA_DATA"
     with_cpu_session(
         lambda spark: _create_cpu_gpu_tables(spark, data_path, "id bigint"), conf=_delta_confs)
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            do_write,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=_delta_confs)
-    else:
-        assert_gpu_fallback_write(
-            do_write,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=_delta_confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_write,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=_delta_confs)
