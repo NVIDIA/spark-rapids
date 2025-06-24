@@ -234,7 +234,7 @@ class GpuOptimisticTransaction
       }
 
       try {
-        GpuFileFormatWriter.write(
+        GpuDeltaFileFormatWriter.write(
           sparkSession = spark,
           plan = physicalPlan,
           fileFormat = gpuFileFormat,

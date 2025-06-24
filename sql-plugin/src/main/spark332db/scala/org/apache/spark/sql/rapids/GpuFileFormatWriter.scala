@@ -57,27 +57,14 @@ import org.apache.spark.sql.connector.write.WriterCommitMessage
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{GpuWriteFiles, GpuWriteFilesExec, GpuWriteFilesSpec, WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
+import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
 import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-/** A helper object for writing columnar data out to a location. */
-object GpuFileFormatWriter extends Logging {
-
-  private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
-    schema.foreach { field =>
-      if (!format.supportDataType(field.dataType)) {
-        throw new RapidsAnalysisException(
-          s"$format data source does not support ${field.dataType.catalogString} data type.")
-      }
-    }
-  }
-
-  /** Describes how concurrent output writers should be executed. */
-  case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
-      batchSize: Long, sortOrder: Seq[SortOrder])
+trait GpuFileFormatWriterBase extends Logging {
 
   /**
    * Basic work flow of this command is:
@@ -154,9 +141,9 @@ object GpuFileFormatWriter extends Logging {
       path = finalOutputSpec.outputPath,
       customPartitionLocations = finalOutputSpec.customPartitionLocations,
       maxRecordsPerFile = caseInsensitiveOptions.get("maxRecordsPerFile").map(_.toLong)
-          .getOrElse(sparkSession.sessionState.conf.maxRecordsPerFile),
+        .getOrElse(sparkSession.sessionState.conf.maxRecordsPerFile),
       timeZoneId = caseInsensitiveOptions.get(DateTimeUtils.TIMEZONE_OPTION)
-          .getOrElse(sparkSession.sessionState.conf.sessionLocalTimeZone),
+        .getOrElse(sparkSession.sessionState.conf.sessionLocalTimeZone),
       statsTrackers = statsTrackers,
       concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize
     )
@@ -397,7 +384,8 @@ object GpuFileFormatWriter extends Logging {
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
-      baseDebugOutputPath: Option[String]): WriteTaskResult = {
+      baseDebugOutputPath: Option[String],
+      partitionColumnToDataType: Map[String, DataType] = Map.empty): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -413,7 +401,7 @@ object GpuFileFormatWriter extends Logging {
       hadoopConf.setBoolean("mapreduce.task.ismap", true)
       hadoopConf.setInt("mapreduce.task.partition", 0)
 
-      new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
+      createTaskAttemptContext(hadoopConf, partitionColumnToDataType, taskAttemptId)
     }
 
     committer.setupTask(taskAttemptContext)
@@ -482,5 +470,32 @@ object GpuFileFormatWriter extends Logging {
     statsTrackers.zip(statsPerTracker).foreach {
       case (statsTracker, stats) => statsTracker.processStats(stats, jobCommitDuration)
     }
+  }
+
+
+  private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
+    schema.foreach { field =>
+      if (!format.supportDataType(field.dataType)) {
+        throw new RapidsAnalysisException(
+          s"$format data source does not support ${field.dataType.catalogString} data type.")
+      }
+    }
+  }
+
+  def createTaskAttemptContext(hadoopConf: Configuration,
+      partitionColumnToDataType: Map[String, DataType],
+      taskAttemptId: TaskAttemptID): TaskAttemptContext
+}
+
+/** A helper object for writing columnar data out to a location. */
+object GpuFileFormatWriter extends GpuFileFormatWriterBase with Logging {
+  /** Describes how concurrent output writers should be executed. */
+  case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
+      batchSize: Long, sortOrder: Seq[SortOrder])
+
+  def createTaskAttemptContext(hadoopConf: Configuration,
+      partitionColumnToDataType: Map[String, DataType],
+      taskAttemptId: TaskAttemptID): TaskAttemptContext = {
+    new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
 }
