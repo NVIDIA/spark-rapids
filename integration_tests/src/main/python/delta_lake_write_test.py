@@ -1178,7 +1178,6 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == 2
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -1190,24 +1189,13 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
                 ("d", SetValuesGen(IntegerType(), [1, 2, 3])),
                 ("e", long_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
-                .partitionBy("b", "d")\
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .partitionBy("b", "d") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
+            .partitionBy("b", "d")\
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
     #
@@ -1216,28 +1204,15 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
                 ("e", long_gen),
                 ("c", string_gen),
                 ("d", SetValuesGen(IntegerType(), [1, 2, 3]))]
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
-                .mode("overwrite")\
-                .partitionBy("b", "d")\
-                .option("replaceWhere", "b = 'y'")\
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .mode("overwrite") \
-                .partitionBy("b", "d") \
-                .option("replaceWhere", "b = 'y'") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
+            .mode("overwrite")\
+            .partitionBy("b", "d")\
+            .option("replaceWhere", "b = 'y'")\
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
 
