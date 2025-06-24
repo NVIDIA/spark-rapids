@@ -42,6 +42,7 @@
             <groupId>tools.profiler</groupId>
             <artifactId>async-profiler</artifactId>
             <version>${aysnc.profiler.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
