@@ -133,6 +133,13 @@ case class GpuLoreDumpExec(
     loreDumpInfo: LoreDumpRDDInfo)
     extends ShimUnaryExecNode with GpuExec with Logging {
 
+  // Check if child is supported in LORE
+  if (!child.isInstanceOf[GpuExec]) {
+    throw new UnsupportedOperationException(
+      s"LoRE dump is not supported for child of type ${child.getClass.getSimpleName}. " +
+      s"Only GpuExec instances are supported in LORE.")
+  }
+
   override def output: Seq[Attribute] = child.output
 
   override protected def doExecute(): RDD[InternalRow] = {
@@ -141,17 +148,12 @@ case class GpuLoreDumpExec(
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    child match {
-      case gpuExec: GpuExec =>
-        val childRDD = gpuExec.executeColumnar()
-        val rdd = new GpuLoreDumpRDD(loreDumpInfo, childRDD)
-        rdd.saveMeta()
-        rdd
-      case _ =>
-        logInfo(s"LoRE dump not supported for child of type ${child.getClass.getSimpleName}, " +
-          s"falling back to regular execution")
-        child.executeColumnar()
-    }
+    // Child is guaranteed to be GpuExec due to constructor check
+    val gpuExec = child.asInstanceOf[GpuExec]
+    val childRDD = gpuExec.executeColumnar()
+    val rdd = new GpuLoreDumpRDD(loreDumpInfo, childRDD)
+    rdd.saveMeta()
+    rdd
   }
 
   override def nodeName: String = s"GpuLoreDumpExec(${child.nodeName})"
