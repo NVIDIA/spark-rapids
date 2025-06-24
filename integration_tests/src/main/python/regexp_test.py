@@ -1125,6 +1125,8 @@ def test_illegal_regexp_exception():
         if is_before_spark_400():
             assert "Illegal" in cpu_error and "Illegal" in gpu_error
         else:
+            # TODO: We should throw same error message for both CPU and GPU.
+            # issue: https://github.com/NVIDIA/spark-rapids/issues/6012
             assert "INVALID_PARAMETER_VALUE.PATTERN" in cpu_error
             assert "Illegal" in gpu_error # GPU still uses old format
 
