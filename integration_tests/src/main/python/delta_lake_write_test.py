@@ -250,6 +250,7 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
+@pytest.mark.xfail(is_spark_356(), reason="https://github.com/delta-io/delta/issues/4671")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True, enable_deletion_vectors=enable_deletion_vectors,
         fallback_classes=["AtomicReplaceTableAsSelectExec", "AppendDataExecV1"])
