@@ -936,7 +936,6 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
         "ExecutedCommandExec",
         conf=confs)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -950,20 +949,11 @@ def test_delta_write_aqe_join(spark_tmp_path, enable_deletion_vectors):
         df = unary_op_df(spark, int_gen)
         get_writer_with_deletion_vector_property_set(
         df.join(df, ["a"], "inner").write.format("delta"), enable_deletion_vectors).save(path)
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            do_join,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=confs)
-    else:
-        assert_gpu_fallback_write(
-            do_join,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_join,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
 
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
