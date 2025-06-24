@@ -1222,7 +1222,6 @@ column_mappings = ["name"]
 if is_spark_340_or_later() or is_databricks_runtime():
     column_mappings.append("id")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -1241,24 +1240,13 @@ def test_delta_write_column_name_mapping(spark_tmp_path, mapping):
         "spark.databricks.delta.properties.defaults.minWriterVersion": "5",
         "spark.sql.parquet.fieldId.read.enabled": "true"
     })
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .partitionBy("b", "d") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=confs)
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .partitionBy("b", "d") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
+            .partitionBy("b", "d") \
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
 
 # Hash aggregate can be used in a metadata query for compaction which completely falls back
 compaction_allow = "HashAggregateExec"
