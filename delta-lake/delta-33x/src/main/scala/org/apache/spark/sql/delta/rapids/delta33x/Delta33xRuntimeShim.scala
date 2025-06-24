@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.delta.delta33x.Delta33xProvider
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
-import org.apache.spark.sql.delta.{DeltaLog, Snapshot}
+import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.execution.datasources.FileFormat
@@ -61,6 +61,6 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
   }
 
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {
-    throw new UnsupportedOperationException("stringFromStringUdf Not implemented")
+    DeltaUDF.stringFromString(f)
   }
 }

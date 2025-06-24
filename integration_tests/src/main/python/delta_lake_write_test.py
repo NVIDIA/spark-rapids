@@ -133,7 +133,6 @@ def test_delta_write_round_trip_unmanaged(spark_tmp_path, enable_deletion_vector
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
