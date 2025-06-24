@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_350, is_jvm_charset_utf8, is_databricks_runtime, spark_version
+from spark_session import is_before_spark_320, is_before_spark_350, is_before_spark_400, is_jvm_charset_utf8, is_databricks_runtime, spark_version, with_cpu_session, with_gpu_session
 
 if not is_jvm_charset_utf8():
     pytestmark = [pytest.mark.regexp, pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))]
@@ -1104,14 +1104,29 @@ def test_regexp_memory_ok():
 
 def test_illegal_regexp_exception():
         gen = mk_str_gen('[abcdef]{0,5}')
-        assert_gpu_and_cpu_error(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+
+        def run_test(spark):
+            return unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "a{", "bb")',
                 'REGEXP_REPLACE(a, "\\}\\,\\{", "}>>{")'
-            ).collect(),
-            conf=_regexp_conf,
-            error_message="Illegal"
-        )
+            ).collect()
+
+        # Test CPU and GPU separately with appropriate error messages
+        with pytest.raises(Exception) as excinfo:
+            with_cpu_session(run_test, conf=_regexp_conf)
+        cpu_error = str(excinfo.value)
+
+        with pytest.raises(Exception) as excinfo:
+            with_gpu_session(run_test, conf=_regexp_conf)
+        gpu_error = str(excinfo.value)
+
+        # Check appropriate error patterns for each,
+        # Spark 4.0 uses different error message format
+        if is_before_spark_400():
+            assert "Illegal" in cpu_error and "Illegal" in gpu_error
+        else:
+            assert "INVALID_PARAMETER_VALUE.PATTERN" in cpu_error
+            assert "Illegal" in gpu_error # GPU still uses old format
 
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9731')
 def test_re_replace_all():
