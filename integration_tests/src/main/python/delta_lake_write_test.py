@@ -533,7 +533,6 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
         conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -549,20 +548,11 @@ def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
         "spark.sql.legacy.parquet.int96RebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.outputTimestampType": ts_write
     })
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=all_confs)
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=all_confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=all_confs)
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
