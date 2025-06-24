@@ -57,7 +57,7 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
      log: DeltaLog,
      conf: RapidsConf,
      clock: Clock): GpuOptimisticTransactionBase = {
-    throw new UnsupportedOperationException("startTransaction Not implemented")
+    new GpuOptimisticTransaction(log, conf)(clock)
   }
 
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {

@@ -29,15 +29,15 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
-import org.apache.spark.SparkException
 
-import org.apache.spark.sql.Dataset
+import org.apache.spark.SparkException
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
-import org.apache.spark.sql.delta.actions.FileAction
+import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.InvariantViolationException
@@ -63,8 +63,8 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 class GpuOptimisticTransaction
-    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
-    (implicit clock: Clock)
+(deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
+  (implicit clock: Clock)
   extends GpuOptimisticTransactionBase(deltaLog,
     Option.empty[CatalogTable], snapshot, rapidsConf)(clock) {
 
@@ -75,6 +75,65 @@ class GpuOptimisticTransaction
    */
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
     this(deltaLog, deltaLog.update(), rapidsConf)
+  }
+
+  private def getGpuStatsColExpr(
+      statsDataSchema: Seq[Attribute],
+      statsCollection: GpuStatisticsCollection): Expression = {
+    Dataset.ofRows(spark, LocalRelation(statsDataSchema))
+      .select(to_json(statsCollection.statsCollector))
+      .queryExecution.analyzed.expressions.head
+  }
+
+  /** Return the pair of optional stats tracker and stats collection class */
+  private def getOptionalGpuStatsTrackerAndStatsCollection(
+      output: Seq[Attribute],
+      partitionSchema: StructType, data: DataFrame): (
+    Option[GpuDeltaJobStatisticsTracker],
+      Option[GpuStatisticsCollection]) = {
+    if (spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
+
+      val (statsDataSchema, statsCollectionSchema) = getStatsSchema(output, partitionSchema)
+
+      val indexedCols = DeltaConfigs.DATA_SKIPPING_NUM_INDEXED_COLS.fromMetaData(metadata)
+      val prefixLength =
+        spark.sessionState.conf.getConf(DeltaSQLConf.DATA_SKIPPING_STRING_PREFIX_LENGTH)
+      val tableSchema = {
+        // If collecting stats using the table schema, then pass in statsCollectionSchema.
+        // Otherwise pass in statsDataSchema to collect stats using the DataFrame schema.
+        if (spark.sessionState.conf.getConf(DeltaSQLConf
+          .DELTA_COLLECT_STATS_USING_TABLE_SCHEMA)) {
+          statsCollectionSchema.toStructType
+        } else {
+          statsDataSchema.toStructType
+        }
+      }
+
+      val _spark = spark
+
+      val statsCollection = new GpuStatisticsCollection {
+        override protected def spark: SparkSession = _spark
+        override val deletionVectorsSupported =
+          DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).protocol
+            .isFeatureSupported(DeletionVectorsTableFeature)
+        override val tableDataSchema = tableSchema
+        override val dataSchema = statsDataSchema.toStructType
+        override val numIndexedCols = indexedCols
+        override val stringPrefixLength: Int = prefixLength
+      }
+
+      val statsColExpr = getGpuStatsColExpr(statsDataSchema, statsCollection)
+
+      val statsSchema = statsCollection.statCollectionSchema
+      val explodedDataSchema = statsCollection.explodedDataSchema
+      val batchStatsToRow = (batch: ColumnarBatch, row: InternalRow) => {
+        GpuStatisticsCollection.batchStatsToRow(statsSchema, explodedDataSchema, batch, row)
+      }
+      (Some(new GpuDeltaJobStatisticsTracker(statsDataSchema, statsColExpr, batchStatsToRow)),
+        Some(statsCollection))
+    } else {
+      (None, None)
+    }
   }
 
   override def writeFiles(
@@ -88,7 +147,7 @@ class GpuOptimisticTransaction
     val outputPath = deltaLog.dataPath
 
     val (normalizedQueryExecution, output, generatedColumnConstraints, _) =
-      normalizeData(deltaLog, data)
+      normalizeData(deltaLog, writeOptions, data)
 
     // Build a new plan with a stub GpuDeltaWrite node to work around undesired transitions between
     // columns and rows when AQE is involved. Without this node in the plan, AdaptiveSparkPlanExec
@@ -110,43 +169,8 @@ class GpuOptimisticTransaction
     // If Statistics Collection is enabled, then create a stats tracker that will be injected during
     // the FileFormatWriter.write call below and will collect per-file stats using
     // StatisticsCollection
-    val optionalStatsTracker =
-      if (spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
-        val partitionColNames = partitionSchema.map(_.name).toSet
-
-        // schema should be normalized, therefore we can do an equality check
-        val statsDataSchema = output.filterNot(c => partitionColNames.contains(c.name))
-
-        val indexedCols = DeltaConfigs.DATA_SKIPPING_NUM_INDEXED_COLS.fromMetaData(metadata)
-        val prefixLength =
-          spark.sessionState.conf.getConf(DeltaSQLConf.DATA_SKIPPING_STRING_PREFIX_LENGTH)
-
-        val _spark = spark
-
-        val statsCollection = new GpuStatisticsCollection {
-          override val spark = _spark
-          override val deletionVectorsSupported = false
-          override def tableDataSchema: StructType = statsDataSchema.toStructType
-          override val dataSchema: StructType = tableDataSchema
-          override val numIndexedCols: Int = indexedCols
-          override val stringPrefixLength: Int = prefixLength
-        }
-
-        val statsColExpr: Expression = {
-          val dummyDF = Dataset.ofRows(spark, LocalRelation(statsDataSchema))
-          dummyDF.select(to_json(statsCollection.statsCollector))
-              .queryExecution.analyzed.expressions.head
-        }
-
-        val statsSchema = statsCollection.statCollectionSchema
-        val explodedDataSchema = statsCollection.explodedDataSchema
-        val batchStatsToRow = (batch: ColumnarBatch, row: InternalRow) => {
-          GpuStatisticsCollection.batchStatsToRow(statsSchema, explodedDataSchema, batch, row)
-        }
-        Some(new GpuDeltaJobStatisticsTracker(statsDataSchema, statsColExpr, batchStatsToRow))
-      } else {
-        None
-      }
+    val (optionalStatsTracker, _) = getOptionalGpuStatsTrackerAndStatsCollection(output,
+      partitionSchema, data)
 
     val constraints =
       Constraints.getAll(metadata, spark) ++ generatedColumnConstraints ++ additionalConstraints
@@ -198,7 +222,7 @@ class GpuOptimisticTransaction
         case Some(writeOptions) =>
           writeOptions.options.filterKeys { key =>
             key.equalsIgnoreCase(DeltaOptions.MAX_RECORDS_PER_FILE) ||
-                key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
+              key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
           }.toMap
       }
 
@@ -239,6 +263,15 @@ class GpuOptimisticTransaction
     val resultFiles = committer.addedStatuses.map { a =>
       a.copy(stats = optionalStatsTracker.map(
         _.recordedStats(new Path(new URI(a.path)).getName)).getOrElse(a.stats))
+    }.filter {
+      // In some cases, we can write out an empty `inputData`. Some examples of this (though, they
+      // may be fixed in the future) are the MERGE command when you delete with empty source, or
+      // empty target, or on disjoint tables. This is hard to catch before the write without
+      // collecting the DF ahead of time. Instead, we can return only the AddFiles that
+      // a) actually add rows, or
+      // b) don't have any stats so we don't know the number of rows at all
+      case a: AddFile => a.numLogicalRecords.forall(_ > 0)
+      case _ => true
     }
 
     resultFiles.toSeq ++ committer.changeFiles
