@@ -324,7 +324,8 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ColumnarToRowExec, OverwriteByExpressionExecV1")
+@allow_non_gpu_conditional(is_spark_353_or_later(), "ColumnarToRowExec, AppendDataExecV1, "
+                                                    "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -357,7 +358,7 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
+@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -385,7 +386,7 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
+@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
