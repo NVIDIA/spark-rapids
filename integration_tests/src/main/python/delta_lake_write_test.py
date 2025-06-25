@@ -206,7 +206,7 @@ def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path, enable_deletion_ve
 def test_delta_append_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     do_update_round_trip_managed(spark_tmp_path, "append", enable_deletion_vectors)
 
-def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite, enable_deletion_vectors, fallback_classes):
+def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite, enable_deletion_vectors):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
@@ -218,22 +218,12 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
         if overwrite:
             writer = writer.mode("overwrite")
         writer.saveAsTable(table)
-    if not is_spark_353_or_later():
         assert_gpu_and_cpu_writes_are_equal_collect(
             do_write,
             lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
             data_path,
             conf=confs)
-    else:
-        assert_gpu_fallback_write(
-            do_write,
-            lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
-            data_path,
-            fallback_classes,
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930, https://github.com/NVIDIA/spark-rapids/issues/12931")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AtomicCreateTableAsSelectExec, AppendDataExecV1")
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -241,10 +231,10 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
-    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False, enable_deletion_vectors=enable_deletion_vectors,
-        fallback_classes=["AtomicCreateTableAsSelectExec", "AppendDataExecV1"])
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
+                                  overwrite=False,
+                                  enable_deletion_vectors=enable_deletion_vectors)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AtomicReplaceTableAsSelectExec, AppendDataExecV1")
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -253,8 +243,8 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
                             enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 @pytest.mark.xfail(is_spark_356(), reason="https://github.com/delta-io/delta/issues/4671")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
-    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True, enable_deletion_vectors=enable_deletion_vectors,
-        fallback_classes=["AtomicReplaceTableAsSelectExec", "AppendDataExecV1"])
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
+                                  overwrite=True, enable_deletion_vectors=enable_deletion_vectors)
 
 @allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1")
 @allow_non_gpu(*delta_meta_allow)
