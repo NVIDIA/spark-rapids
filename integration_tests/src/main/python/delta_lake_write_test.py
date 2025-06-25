@@ -24,7 +24,8 @@ from delta_lake_utils import *
 from marks import *
 from parquet_write_test import parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, with_cpu_session, supports_delta_lake_deletion_vectors, is_spark_353_or_later
+from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
+    with_cpu_session, supports_delta_lake_deletion_vectors, is_spark_353_or_later, is_spark_356
 
 delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
 
@@ -105,7 +106,6 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf, enable_dele
         delta_write_fallback_check,
         conf=copy_and_update(writer_confs, disable_conf))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -115,25 +115,14 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf, enable_dele
 def test_delta_write_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors).save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors).save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+            gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors).save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -143,30 +132,17 @@ def test_delta_write_round_trip_unmanaged(spark_tmp_path, enable_deletion_vector
 def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens, enable_deletion_vectors):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
-                .partitionBy("a")
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+            gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .partitionBy("a")
             .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -176,26 +152,14 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens, enable_dele
 def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens, enable_deletion_vectors):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens), ("c", SetValuesGen(StringType(), ["x", "y", "z"]))]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
-                .partitionBy("a", "c")
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path).filter("c='x'"),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+            gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .partitionBy("a", "c")
             .save(path),
-            lambda spark, path: spark.read.format("delta").load(path).filter("c='x'"),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+        lambda spark, path: spark.read.format("delta").load(path).filter("c='x'"),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
 
@@ -203,35 +167,18 @@ def do_update_round_trip_managed(spark_tmp_path, mode, enable_deletion_vectors):
     gen_list = [("x", int_gen), ("y", binary_gen), ("z", string_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-            gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors).save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=confs)
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-            gen_df(spark, gen_list).coalesce(1).write.mode(mode).format("delta"), enable_deletion_vectors).save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=confs)
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors).save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.mode(mode).format("delta"), enable_deletion_vectors).save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+        gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors).save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+        gen_df(spark, gen_list).coalesce(1).write.mode(mode).format("delta"), enable_deletion_vectors).save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
 
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     # Verify time travel still works
@@ -304,6 +251,7 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
+@pytest.mark.xfail(is_spark_356(), reason="https://github.com/delta-io/delta/issues/4671")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True, enable_deletion_vectors=enable_deletion_vectors,
         fallback_classes=["AtomicReplaceTableAsSelectExec", "AppendDataExecV1"])
@@ -491,7 +439,6 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -504,65 +451,34 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, enable_deletion_ve
     gen_list = [("ints", int_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
-    if not is_spark_353_or_later():
-        # drop the _commit_timestamp column when comparing since it will always be different
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
-                .option("delta.enableChangeDataFeed", "true")
-                .save(path),
-            lambda spark, path: spark.read.format("delta")
-                .option("readChangeDataFeed", "true")
-                .option("startingVersion", 0)
-                .load(path)
-                .drop("_commit_timestamp"),
-            data_path,
-            conf=confs)
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
-                .mode("overwrite")
-                .save(path),
-            lambda spark, path: spark.read.format("delta")
-                .option("readChangeDataFeed", "true")
-                .option("startingVersion", 0)
-                .load(path)
-                .drop("_commit_timestamp"),
-            data_path,
-            conf=confs)
-    else:
-        # drop the _commit_timestamp column when comparing since it will always be different
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
+    # drop the _commit_timestamp column when comparing since it will always be different
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+            gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
-            lambda spark, path: spark.read.format("delta")
+        lambda spark, path: spark.read.format("delta")
             .option("readChangeDataFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
+        data_path,
+        conf=confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+            gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .mode("overwrite")
             .save(path),
-            lambda spark, path: spark.read.format("delta")
+        lambda spark, path: spark.read.format("delta")
             .option("readChangeDataFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+        data_path,
+        conf=confs)
 
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -576,63 +492,32 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
             spark.sql("CREATE TABLE delta.`{}/{}` (ints INT) ".format(data_path, name) +
                       "USING DELTA TBLPROPERTIES (delta.enableChangeDataFeed = true)")
     with_cpu_session(setup_tables)
-    if not is_spark_353_or_later():
-        # drop the _commit_timestamp column when comparing since it will always be different
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
-                .mode("append")
-                .option("delta.enableChangeDataFeed", "true")
-                .save(path),
-            lambda spark, path: spark.read.format("delta")
-                .option("readChangeDataFeed", "true")
-                .option("startingVersion", 0)
-                .load(path)
-                .drop("_commit_timestamp"),
-            data_path,
-            conf=confs)
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
-                .mode("overwrite")
-                .save(path),
-            lambda spark, path: spark.read.format("delta")
-                .option("readChangeDataFeed", "true")
-                .option("startingVersion", 0)
-                .load(path)
-                .drop("_commit_timestamp"),
-            data_path,
-            conf=confs)
-    else:
-        # drop the _commit_timestamp column when comparing since it will always be different
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
+    # drop the _commit_timestamp column when comparing since it will always be different
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
             .mode("append")
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
-            lambda spark, path: spark.read.format("delta")
+        lambda spark, path: spark.read.format("delta")
             .option("readChangeDataFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
+        data_path,
+        conf=confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
             .mode("overwrite")
             .save(path),
-            lambda spark, path: spark.read.format("delta")
+        lambda spark, path: spark.read.format("delta")
             .option("readChangeDataFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        if is_spark_353_or_later():
-            pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+        data_path,
+        conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -648,20 +533,11 @@ def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
         "spark.sql.legacy.parquet.int96RebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.outputTimestampType": ts_write
     })
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=all_confs)
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=all_confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=all_confs)
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
@@ -903,7 +779,6 @@ def test_delta_write_stat_column_limits(spark_tmp_path):
     # so instead of a full delta log compare with the CPU, focus on the reported statistics on GPU.
     with_cpu_session(verify_stat_limits)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -923,20 +798,11 @@ def test_delta_write_generated_columns(spark_tmp_table_factory, spark_tmp_path):
         df.write.format("delta").mode("append").save(path)
 
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            write_data,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=delta_writes_enabled_conf)
-    else:
-        assert_gpu_fallback_write(
-            write_data,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=delta_writes_enabled_conf)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        write_data,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=delta_writes_enabled_conf)
 
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -1055,7 +921,6 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
         "ExecutedCommandExec",
         conf=confs)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -1069,20 +934,11 @@ def test_delta_write_aqe_join(spark_tmp_path, enable_deletion_vectors):
         df = unary_op_df(spark, int_gen)
         get_writer_with_deletion_vector_property_set(
         df.join(df, ["a"], "inner").write.format("delta"), enable_deletion_vectors).save(path)
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            do_join,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=confs)
-    else:
-        assert_gpu_fallback_write(
-            do_join,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_join,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
 
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -1307,7 +1163,6 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == 2
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -1319,24 +1174,13 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
                 ("d", SetValuesGen(IntegerType(), [1, 2, 3])),
                 ("e", long_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
-                .partitionBy("b", "d")\
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .partitionBy("b", "d") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
+            .partitionBy("b", "d")\
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
     #
@@ -1345,28 +1189,15 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
                 ("e", long_gen),
                 ("c", string_gen),
                 ("d", SetValuesGen(IntegerType(), [1, 2, 3]))]
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
-                .mode("overwrite")\
-                .partitionBy("b", "d")\
-                .option("replaceWhere", "b = 'y'")\
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .mode("overwrite") \
-                .partitionBy("b", "d") \
-                .option("replaceWhere", "b = 'y'") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
+            .mode("overwrite")\
+            .partitionBy("b", "d")\
+            .option("replaceWhere", "b = 'y'")\
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
 
@@ -1376,7 +1207,6 @@ column_mappings = ["name"]
 if is_spark_340_or_later() or is_databricks_runtime():
     column_mappings.append("id")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -1395,24 +1225,13 @@ def test_delta_write_column_name_mapping(spark_tmp_path, mapping):
         "spark.databricks.delta.properties.defaults.minWriterVersion": "5",
         "spark.sql.parquet.fieldId.read.enabled": "true"
     })
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .partitionBy("b", "d") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=confs)
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-                .partitionBy("b", "d") \
-                .save(path),
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
+            .partitionBy("b", "d") \
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
 
 # Hash aggregate can be used in a metadata query for compaction which completely falls back
 compaction_allow = "HashAggregateExec"
@@ -1420,7 +1239,6 @@ if is_databricks_runtime():
     # compaction can fallback due to unsupported WriteIntoDeltaCommand
     # tracked by https://github.com/NVIDIA/spark-rapids/issues/11169
     compaction_allow += "," + delta_write_fallback_allow
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(compaction_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -1434,17 +1252,8 @@ def test_delta_compaction(spark_tmp_path, enable_deletion_vectors):
     data_path = spark_tmp_path + "/DELTA_DATA"
     with_cpu_session(
         lambda spark: _create_cpu_gpu_tables(spark, data_path, "id bigint"), conf=_delta_confs)
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            do_write,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            conf=_delta_confs)
-    else:
-        assert_gpu_fallback_write(
-            do_write,
-            lambda spark, path: spark.read.format("delta").load(path),
-            data_path,
-            "ExecutedCommandExec",
-            conf=_delta_confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12929")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_write,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=_delta_confs)

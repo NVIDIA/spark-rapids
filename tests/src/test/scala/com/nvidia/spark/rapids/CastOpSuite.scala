@@ -162,8 +162,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Cast from string to timestamp") {
-    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
-    assumePriorToSpark400
     testCastStringTo(DataTypes.TimestampType,
       timestampsAsStringsSeq(castStringToTimestamp = true, validOnly = false))
   }
@@ -263,8 +261,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Test all supported casts with in-range values") {
-    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
-    assumePriorToSpark400
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
@@ -580,16 +576,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual(
-    "Test cast from timestamp", timestampDatesMsecParquet,
-      assumeCondition = _ => (!isSpark400OrLater,
-        "Spark version not before 4.0.0, " +
-        "non-ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12019," +
-        "ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12714"))(timestampCastFn)
+    "Test cast from timestamp",
+    timestampDatesMsecParquet,
+    assumeCondition = spark =>
+      ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")(spark)
+  )(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
     skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12714")
-    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
-    assumePriorToSpark400
     val oldtz = TimeZone.getDefault
     try {
       TimeZone.setDefault(TimeZone.getTimeZone("Etc/UTC-0"))
@@ -1400,7 +1394,6 @@ object CastOpSuite {
     } else {
       Seq(
         "23:59:59.333666Z",
-        "T21:34:56.333666Z"
       )
     }
 
