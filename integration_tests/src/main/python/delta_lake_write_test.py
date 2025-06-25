@@ -682,7 +682,6 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(is_spark_353_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/12924")
 def test_delta_write_stat_column_limits(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(delta_writes_enabled_conf, {"spark.databricks.io.skipping.stringPrefixLength": 8})
