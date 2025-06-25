@@ -95,11 +95,6 @@ object Delta33xProvider extends DeltaIOProvider {
       cpuExec.invalidateCache)
   }
 
-  override def tagForGpu(cpuExec: AppendDataExecV1,
-    meta: AppendDataExecV1Meta): Unit = {
-    meta.willNotWorkOnGpu("AppendDataExecV1 is not supported at the moment")
-  }
-
   override def tagForGpu(
     cpuExec: OverwriteByExpressionExecV1,
     meta: OverwriteByExpressionExecV1Meta): Unit = {
