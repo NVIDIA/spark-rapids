@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.trees.UnaryLike
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.RoundingErrorUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
@@ -1474,6 +1475,29 @@ object GpuCast {
     }
   }
 
+  private def checkNFixDecimalBounds(
+      input: ColumnView,
+      fromType: DecimalType,
+      toType: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
+    assert(input.getType.isDecimalType)
+    withResource(DecimalUtil.outOfBounds(input, toType)) { outOfBounds =>
+      if (ansiMode) {
+        withResource(outOfBounds.any()) { isAny =>
+          if (isAny.isValid && isAny.getBoolean) {
+            throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(input, outOfBounds,
+              fromType, toType)
+          }
+        }
+        input.copyToColumnVector()
+      } else {
+        withResource(Scalar.fromNull(input.getType)) { nullVal =>
+          outOfBounds.ifElse(nullVal, input)
+        }
+      }
+    }
+  }
+
   def castDecimalToDecimal(
       input: ColumnView,
       from: DecimalType,
@@ -1515,7 +1539,7 @@ object GpuCast {
           // We need to check for out of bound values.
           // The wholeNumberUpcast is obvious why we have to check, but we also have to check it
           // when we rounded, because rounding can add a digit to the effective precision.
-          checkNFixDecimalBounds(rounded, to, ansiMode)
+          checkNFixDecimalBounds(rounded, from, to, ansiMode)
         } else {
           rounded.incRefCount()
         }
