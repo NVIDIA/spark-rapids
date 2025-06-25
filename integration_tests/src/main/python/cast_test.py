@@ -580,10 +580,6 @@ def test_cast_timestamp_to_numeric_ansi_no_overflow():
         conf=ansi_enabled_conf)
 
 
-@pytest.mark.skipif(is_databricks_runtime() and is_databricks_version_or_later(14, 3),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
-@pytest.mark.skipif(not is_databricks_runtime() and is_spark_400_or_later(),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
 def test_cast_timestamp_to_numeric_non_ansi():
     """
     Test timestamp->numeric conversions with ANSI off.

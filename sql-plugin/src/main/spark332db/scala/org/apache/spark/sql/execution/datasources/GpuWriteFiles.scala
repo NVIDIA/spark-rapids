@@ -153,7 +153,8 @@ case class GpuWriteFilesExec(
         committer,
         iterator,
         concurrentOutputWriterSpec,
-        localBaseOutputDebugPath
+        localBaseOutputDebugPath,
+        Map.empty
       )
 
       Iterator(ret)
