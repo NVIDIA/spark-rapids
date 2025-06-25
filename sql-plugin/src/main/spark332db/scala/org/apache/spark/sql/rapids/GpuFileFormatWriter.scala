@@ -264,8 +264,6 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
-      val partitionColumnToDataType = description.partitionColumns
-        .map(attr => (attr.name, attr.dataType)).toMap
       sparkSession.sparkContext.runJob(
         rddWithNonEmptyPartitions,
         (taskContext: TaskContext, iter: Iterator[ColumnarBatch]) => {
@@ -278,8 +276,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
             committer,
             iterator = iter,
             concurrentOutputWriterSpec = concurrentOutputWriterSpec,
-            baseDebugOutputPath = baseDebugOutputPath,
-            partitionColumnToDataType = partitionColumnToDataType)
+            baseDebugOutputPath = baseDebugOutputPath)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -387,25 +384,15 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
-      baseDebugOutputPath: Option[String],
-      partitionColumnToDataType: Map[String, DataType]): WriteTaskResult = {
+      baseDebugOutputPath: Option[String]): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
     val taskAttemptId = new TaskAttemptID(taskId, sparkAttemptNumber)
 
     // Set up the attempt context required to use in the output committer.
-    val taskAttemptContext: TaskAttemptContext = {
-      // Set up the configuration object
-      val hadoopConf = description.serializableHadoopConf.value
-      hadoopConf.set("mapreduce.job.id", jobId.toString)
-      hadoopConf.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
-      hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
-      hadoopConf.setBoolean("mapreduce.task.ismap", true)
-      hadoopConf.setInt("mapreduce.task.partition", 0)
-
-      createTaskAttemptContext(hadoopConf, partitionColumnToDataType, taskAttemptId)
-    }
+    val taskAttemptContext: TaskAttemptContext =
+      createTaskAttemptContext(description, jobId, taskAttemptId)
 
     committer.setupTask(taskAttemptContext)
 
@@ -485,8 +472,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
     }
   }
 
-  def createTaskAttemptContext(hadoopConf: Configuration,
-      partitionColumnToDataType: Map[String, DataType],
+  def createTaskAttemptContext(description: GpuWriteJobDescription,
+      jobId: JobID,
       taskAttemptId: TaskAttemptID): TaskAttemptContext
 }
 
@@ -496,9 +483,17 @@ object GpuFileFormatWriter extends GpuFileFormatWriterBase {
   case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
       batchSize: Long, sortOrder: Seq[SortOrder])
 
-  def createTaskAttemptContext(hadoopConf: Configuration,
-      partitionColumnToDataType: Map[String, DataType],
+  def createTaskAttemptContext(description: GpuWriteJobDescription,
+      jobId: JobID,
       taskAttemptId: TaskAttemptID): TaskAttemptContext = {
+    // Set up the configuration object
+    val hadoopConf = description.serializableHadoopConf.value
+    hadoopConf.set("mapreduce.job.id", jobId.toString)
+    hadoopConf.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
+    hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
+    hadoopConf.setBoolean("mapreduce.task.ismap", true)
+    hadoopConf.setInt("mapreduce.task.partition", 0)
+
     new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
 }
