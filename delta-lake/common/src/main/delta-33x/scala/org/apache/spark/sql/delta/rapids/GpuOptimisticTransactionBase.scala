@@ -58,7 +58,7 @@ abstract class GpuOptimisticTransactionBase(
           val partMeta = GpuOverrides.wrapPart(partitioning, rapidsConf, None)
           partMeta.tagForGpu()
           if (partMeta.canThisBeReplaced) {
-            val plan = GpuOptimizeWriteExchangeExec(partMeta.convertToGpu(), p)
+            val plan = GpuOptimizeWriteExchangeExec(partMeta.convertToGpu(), p, deltaLog)
             if (GpuShuffleEnv.useGPUShuffle(rapidsConf)) {
               GpuCoalesceBatches(plan, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
             } else {

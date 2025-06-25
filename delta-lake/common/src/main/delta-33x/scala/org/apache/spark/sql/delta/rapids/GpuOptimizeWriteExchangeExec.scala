@@ -35,7 +35,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
+import org.apache.spark.sql.delta.DeltaLog
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
+import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, ShufflePartitionSpec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.{SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
@@ -54,7 +56,8 @@ import org.apache.spark.util.ThreadUtils
  */
 case class GpuOptimizeWriteExchangeExec(
     partitioning: GpuPartitioning,
-    override val child: SparkPlan) extends Exchange with GpuExec {
+    override val child: SparkPlan,
+    @transient deltaLog: DeltaLog) extends Exchange with GpuExec with DeltaLogging {
   import GpuMetric._
 
   // Use 150% of target file size hint config considering parquet compression.
@@ -85,7 +88,6 @@ case class GpuOptimizeWriteExchangeExec(
       NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
       NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
       NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
-      // TODO: data size
     ) ++ additionalMetrics
   }
 
@@ -151,14 +153,26 @@ case class GpuOptimizeWriteExchangeExec(
     // Collect execution statistics, these will be used to adjust/decide how to split files
     val stats = ThreadUtils.awaitResult(mapOutputStatisticsFuture, Duration.Inf)
 
-    // TODO: record delta event
-
     if (stats == null) {
       new ShuffledBatchRDD(shuffleDependency, metrics)
     } else {
       try {
-        val partitionSpecs = Some(rebalancePartitions(stats))
-        new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
+        val partitionSpecs = rebalancePartitions(stats)
+
+        recordDeltaEvent(deltaLog,
+          "delta.optimizeWrite.planned",
+          data = Map(
+            "originalPartitions" -> childNumPartitions,
+            "outputPartitions" -> partitionSpecs.length,
+            "shufflePartitions" -> actualNumPartitions,
+            "numShuffleBlocks" -> conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_SHUFFLE_BLOCKS),
+            "binSize" -> conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_BIN_SIZE),
+            "maxShufflePartitions" ->
+              conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_MAX_SHUFFLE_PARTITIONS)
+          )
+        )
+
+        new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.toArray)
       } catch {
         case e: Throwable =>
           logWarning("Failed to apply OptimizeWrite.", e)
