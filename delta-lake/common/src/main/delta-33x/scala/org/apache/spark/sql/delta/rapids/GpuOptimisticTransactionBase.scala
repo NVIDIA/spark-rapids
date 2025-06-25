@@ -25,10 +25,11 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.delta.{DeltaLog, DeltaOptions, Snapshot}
 import org.apache.spark.sql.delta.files.TahoeBatchFileIndex
+import org.apache.spark.sql.delta.perf.DeltaOptimizedWriterExec
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.rapids.GpuShuffleEnv
-import org.apache.spark.sql.rapids.delta.{DeltaShufflePartitionsUtil, GpuOptimizeWriteExchangeExec, OptimizeWriteExchangeExec}
+import org.apache.spark.sql.rapids.delta.{DeltaShufflePartitionsUtil, GpuOptimizeWriteExchangeExec}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.Clock
 
@@ -65,10 +66,10 @@ abstract class GpuOptimisticTransactionBase(
               GpuShuffleCoalesceExec(plan, rapidsConf.gpuTargetBatchSizeBytes)
             }
           } else {
-            GpuColumnarToRowExec(OptimizeWriteExchangeExec(partitioning, p))
+            GpuColumnarToRowExec(DeltaOptimizedWriterExec(p, metadata.partitionColumns, deltaLog))
           }
         case p =>
-          OptimizeWriteExchangeExec(partitioning, p)
+          DeltaOptimizedWriterExec(p, metadata.partitionColumns, deltaLog)
       }
     } else {
       physicalPlan
