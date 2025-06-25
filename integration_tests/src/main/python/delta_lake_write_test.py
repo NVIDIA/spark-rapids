@@ -268,7 +268,6 @@ def test_delta_append_data_exec_v1(spark_tmp_path, use_cdf, enable_deletion_vect
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -291,20 +290,11 @@ def test_delta_overwrite_by_expression_exec_v1(spark_tmp_table_factory, spark_tm
     with_cpu_session(setup_tables, writer_confs)
     def overwrite_table(spark, path):
         spark.sql(f"INSERT OVERWRITE delta.`{path}` SELECT * FROM {src_table}")
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            overwrite_table,
-            read_delta_path,
-            data_path,
-            conf=_delta_confs)
-    else:
-        assert_gpu_fallback_write(
-            overwrite_table,
-            read_delta_path,
-            data_path,
-            "OverwriteByExpressionExecV1",
-            conf=_delta_confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        overwrite_table,
+        read_delta_path,
+        data_path,
+        conf=_delta_confs)
 
 @allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
