@@ -27,6 +27,7 @@ import scala.concurrent.duration.Duration
 
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
+import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.network.util.ByteUnit
@@ -84,6 +85,7 @@ case class GpuOptimizeWriteExchangeExec(
       NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
       NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
       NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
+      // TODO: data size
     ) ++ additionalMetrics
   }
 
@@ -103,16 +105,34 @@ case class GpuOptimizeWriteExchangeExec(
     }
   }
 
+  private lazy val childNumPartitions = inputRDD.getNumPartitions
+
+  private lazy val actualNumPartitions: Int = {
+    val targetShuffleBlocks = conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_SHUFFLE_BLOCKS)
+    math.min(
+      math.max(targetShuffleBlocks / childNumPartitions, 1),
+      conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_MAX_SHUFFLE_PARTITIONS))
+  }
+
+  // The actual partitioning to use for the shuffle exchange. The input partition count can be
+  // adjusted based on the number of partitions in the input RDD and the target number of shuffle
+  // blocks.
+  private lazy val actualPartitioning: GpuPartitioning = partitioning match {
+    // Currently only hash and round-robin partitioning are supported.
+    // See DeltaShufflePartitionsUtil.partitioningForRebalance() for more details.
+    case p: GpuHashPartitioning => p.copy(numPartitions = actualNumPartitions)
+    case p: GpuRoundRobinPartitioning => p.copy(numPartitions = actualNumPartitions)
+  }
 
   @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
       child.output,
-      partitioning,
+      actualPartitioning,
       child.output.map(_.dataType).toArray,
       serializer,
-      useGPUShuffle=partitioning.usesGPUShuffle,
-      useMultiThreadedShuffle=partitioning.usesMultiThreadedShuffle,
+      useGPUShuffle=actualPartitioning.usesGPUShuffle,
+      useMultiThreadedShuffle=actualPartitioning.usesMultiThreadedShuffle,
       metrics=allMetrics,
       writeMetrics=writeMetrics,
       additionalMetrics=additionalMetrics)
@@ -130,6 +150,9 @@ case class GpuOptimizeWriteExchangeExec(
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // Collect execution statistics, these will be used to adjust/decide how to split files
     val stats = ThreadUtils.awaitResult(mapOutputStatisticsFuture, Duration.Inf)
+
+    // TODO: record delta event
+
     if (stats == null) {
       new ShuffledBatchRDD(shuffleDependency, metrics)
     } else {
@@ -154,7 +177,7 @@ case class GpuOptimizeWriteExchangeExec(
     val bytesByPartitionId = stats.bytesByPartitionId
     val targetPartitionSize = (binSize * PARQUET_COMPRESSION_RATIO).toLong
 
-    val splitPartitions = if (partitioning.isInstanceOf[GpuRoundRobinPartitioning]) {
+    val splitPartitions = if (actualPartitioning.isInstanceOf[GpuRoundRobinPartitioning]) {
       DeltaShufflePartitionsUtil.splitSizeListByTargetSize(
         bytesByPartitionId,
         targetPartitionSize,
