@@ -181,8 +181,14 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
 
   private def dumpLoreRDD(inputChild: SparkPlan): SparkPlan = {
     getTagValue(LORE_DUMP_RDD_TAG).map { info =>
+      // Check if child is supported in LORE before creating GpuLoreDumpExec
+      if (!inputChild.isInstanceOf[GpuExec]) {
+        throw new UnsupportedOperationException(
+          s"LoRE dump is not supported for child of type ${inputChild.getClass.getSimpleName}. " +
+          s"Only GpuExec instances are supported in LORE.")
+      }
       // Create a new exec that wraps the child with LoRE dumping capability
-      GpuLoreDumpExec(inputChild, info)
+      GpuLoreDumpExec(inputChild.asInstanceOf[GpuExec], info)
     }.getOrElse(inputChild)
   }
 }
