@@ -71,21 +71,14 @@ def _create_cpu_gpu_tables(spark, path, schema, partitioned_by=None, enable_dele
     _create_table(spark, path + "/CPU", schema, partitioned_by, enable_deletion_vectors)
     _create_table(spark, path + "/GPU", schema, partitioned_by, enable_deletion_vectors)
 
-def _assert_sql(data_path, confs, query, fallback_class=None):
+def _assert_sql(data_path, confs, query):
     def do_sql(spark, q): spark.sql(q)
-    if not is_spark_353_or_later() or fallback_class is None:
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: do_sql(spark, query.format(path=path)),
-            read_delta_path,
-            data_path,
-            confs)
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: do_sql(spark, query.format(path=path)),
-            read_delta_path,
-            data_path,
-            fallback_class,
-            confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: do_sql(spark, query.format(path=path)),
+        read_delta_path,
+        data_path,
+        confs)
+
 
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
@@ -307,9 +300,9 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     with_cpu_session(lambda spark: _create_cpu_gpu_tables(spark, data_path, schema), conf=writer_confs)
     confs = _delta_confs
     fallback_class = "OverwriteByExpressionExecV1"
-    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(id, data, data2) VALUES(1L, 'a', 'b')", fallback_class)
-    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('b', 'd', 2L)", fallback_class)
-    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('c', 'e', 1)", fallback_class)
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(id, data, data2) VALUES(1L, 'a', 'b')")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('b', 'd', 2L)")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('c', 'e', 1)")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
@@ -333,15 +326,14 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
         _create_cpu_gpu_tables(spark, data_path, dst_schema, enable_deletion_vectors=enable_deletion_vectors)
     with_cpu_session(setup_tables, conf=writer_confs)
     confs = copy_and_update(_delta_confs, {"spark.databricks.delta.schema.autoMerge.enabled": "true"})
-    fallback_class = "AppendDataExecV1"
     _assert_sql(data_path, confs,
-                "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02', array(struct(2, struct('s2'))))", fallback_class)
+                "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02', array(struct(2, struct('s2'))))")
     _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}` " +
-                f"SELECT * FROM delta.`{src_path}`", "OverwriteByExpressionExecV1")
+                f"SELECT * FROM delta.`{src_path}`")
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02'," +
-               "array(struct(2, struct('s2', DATE'2022-11-02'), struct('s2'))))", fallback_class)
+               "array(struct(2, struct('s2', DATE'2022-11-02'), struct('s2'))))")
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (3, DATE'2022-11-03', " +
-               "array(struct(3, struct('s3', NULL), struct(NULL))))", fallback_class)
+               "array(struct(3, struct('s3', NULL), struct(NULL))))")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu(*delta_meta_allow)
@@ -363,10 +355,10 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
         _create_cpu_gpu_tables(spark, data_path, "id bigint, data string", "id")
         spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("id", "data")).createOrReplaceTempView(view)
     with_cpu_session(setup, conf=writer_confs)
-    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy'), (4L, 'value')", "AppendDataExecV1")
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy'), (4L, 'value')")
     fallback_class = "OverwriteByExpressionExecV1" if mode == "STATIC" else None
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
-                f"{clause} SELECT * FROM {view}", fallback_class)
+                f"{clause} SELECT * FROM {view}")
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -388,10 +380,10 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
         _create_cpu_gpu_tables(spark, data_path, "id bigint, data string, p int", "id, p")
         spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("id", "data")).createOrReplaceTempView(view)
     with_cpu_session(setup, conf=writer_confs)
-    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy', 23), (4L, 'value', 2)", "AppendDataExecV1")
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy', 23), (4L, 'value', 2)")
     fallback_class = "OverwriteByExpressionExecV1" if mode == "STATIC" else None
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
-                f"{clause} SELECT * FROM {view}", fallback_class)
+                f"{clause} SELECT * FROM {view}")
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
 
