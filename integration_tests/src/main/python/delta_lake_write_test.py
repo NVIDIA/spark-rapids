@@ -324,8 +324,6 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ColumnarToRowExec, AppendDataExecV1, "
-                                                    "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -355,10 +353,7 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (3, DATE'2022-11-03', " +
                "array(struct(3, struct('s3', NULL), struct(NULL))))", fallback_class)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
-    if is_spark_353_or_later():
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -382,11 +377,8 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
     fallback_class = "OverwriteByExpressionExecV1" if mode == "STATIC" else None
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
                 f"{clause} SELECT * FROM {view}", fallback_class)
-    if is_spark_353_or_later():
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -412,8 +404,6 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
                 f"{clause} SELECT * FROM {view}", fallback_class)
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
-    if is_spark_353_or_later():
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
