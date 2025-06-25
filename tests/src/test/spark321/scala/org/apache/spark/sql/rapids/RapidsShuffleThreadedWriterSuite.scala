@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -288,6 +288,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
+      taskContext,
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
@@ -316,6 +317,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       val writer = new RapidsShuffleThreadedWriter[Int, Int](
         blockManager,
         shuffleHandle,
+        taskContext,
         0L, // MapId
         transferConf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
@@ -354,6 +356,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
+      taskContext,
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
@@ -378,6 +381,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
+      taskContext,
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
@@ -435,6 +439,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
+      taskContext,
       mapId,
       conf,
       new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
@@ -466,6 +471,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       val writer = new RapidsShuffleThreadedWriter[Int, BadSerializable](
         blockManager,
         shuffleHandle,
+        taskContext,
         0L, // MapId
         conf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),

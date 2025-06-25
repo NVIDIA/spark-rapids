@@ -45,7 +45,7 @@ import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
-import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter, GpuWriteJobStatsTracker}
+import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuWriteJobStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{Clock, SerializableConfiguration}
@@ -81,16 +81,16 @@ class GpuOptimisticTransaction
       statsDataSchema: Seq[Attribute],
       statsCollection: GpuStatisticsCollection): Expression = {
     Dataset.ofRows(spark, LocalRelation(statsDataSchema))
-        .select(to_json(statsCollection.statsCollector))
-        .queryExecution.analyzed.expressions.head
+      .select(to_json(statsCollection.statsCollector))
+      .queryExecution.analyzed.expressions.head
   }
 
   /** Return the pair of optional stats tracker and stats collection class */
   private def getOptionalGpuStatsTrackerAndStatsCollection(
       output: Seq[Attribute],
       partitionSchema: StructType, data: DataFrame): (
-      Option[GpuDeltaJobStatisticsTracker],
-          Option[GpuStatisticsCollection]) = {
+    Option[GpuDeltaJobStatisticsTracker],
+      Option[GpuStatisticsCollection]) = {
     if (spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
 
       val (statsDataSchema, statsCollectionSchema) = getStatsSchema(output, partitionSchema)
@@ -102,7 +102,7 @@ class GpuOptimisticTransaction
         // If collecting stats using the table schema, then pass in statsCollectionSchema.
         // Otherwise pass in statsDataSchema to collect stats using the DataFrame schema.
         if (spark.sessionState.conf.getConf(DeltaSQLConf
-            .DELTA_COLLECT_STATS_USING_TABLE_SCHEMA)) {
+          .DELTA_COLLECT_STATS_USING_TABLE_SCHEMA)) {
           statsCollectionSchema.toStructType
         } else {
           statsDataSchema.toStructType
@@ -130,7 +130,7 @@ class GpuOptimisticTransaction
         GpuStatisticsCollection.batchStatsToRow(statsSchema, explodedDataSchema, batch, row)
       }
       (Some(new GpuDeltaJobStatisticsTracker(statsDataSchema, statsColExpr, batchStatsToRow)),
-          Some(statsCollection))
+        Some(statsCollection))
     } else {
       (None, None)
     }
@@ -238,7 +238,7 @@ class GpuOptimisticTransaction
       }
 
       try {
-        GpuFileFormatWriter.write(
+        GpuDeltaFileFormatWriter.write(
           sparkSession = spark,
           plan = physicalPlan,
           fileFormat = gpuFileFormat,

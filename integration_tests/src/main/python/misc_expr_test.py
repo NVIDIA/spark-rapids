@@ -63,7 +63,7 @@ def raise_error_test_impl(test_conf):
         lambda spark: spark.range(0).select(f.raise_error(f.col("id"))),
         conf=test_conf)
 
-    error_fragment = "org.apache.spark.SparkRuntimeException" if use_new_error_semantics \
+    error_fragment = "SparkRuntimeException" if use_new_error_semantics \
       else "java.lang.RuntimeException"
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, null_gen, length=2, num_slices=1).select(

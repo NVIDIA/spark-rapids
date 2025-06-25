@@ -586,6 +586,13 @@ object RmmRapidsRetryIterator extends Logging {
     }
   }
 
+  // Used to figure out if we should inject an OOM (only for tests)
+  // We assume that runtime change of spark.rapids.sql.test.injectRetryOOM is not supported, so
+  // we can just use a cached value, in order to save the cost of creating new RapidsConf, which
+  // is quite expensive when we're constantly invoking RmmRapidsRetryIterator in a long loop, e.g.
+  // KudoSerializedBatchIterator.
+  private lazy val injectMode = Option(SQLConf.get).map(new RapidsConf(_).testRetryOOMInjectionMode)
+
   /**
    * RmmRapidsRetryIterator exposes an iterator that can retry work,
    * specified by `fn`, abstracting away the retry specifics.
@@ -598,8 +605,6 @@ object RmmRapidsRetryIterator extends Logging {
       extends Iterator[K] {
     // We want to be sure that retry will work in all cases
     TaskRegistryTracker.registerThreadForRetry()
-    // used to figure out if we should inject an OOM (only for tests)
-    private val config = Option(SQLConf.get).map(new RapidsConf(_))
 
     // this is true if an OOM was injected (only for tests)
     private var injectedOOM = false
@@ -653,25 +658,24 @@ object RmmRapidsRetryIterator extends Logging {
         splitReason = SplitReason.NONE
         try {
           // call the user's function
-          config.foreach {
-            case rapidsConf if !injectedOOM && rapidsConf.testRetryOOMInjectionMode.numOoms > 0 =>
+          injectMode.foreach {
+            case mode if !injectedOOM && mode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
               // `forceRetryOOM` requires a prior association.
               if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
                 RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
               }
-              val injectConf = rapidsConf.testRetryOOMInjectionMode
-              if (injectConf.withSplit) {
+              if (mode.withSplit) {
                 RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
-                          injectConf.numOoms,
-                          injectConf.oomInjectionFilter.ordinal,
-                          injectConf.skipCount)
+                  mode.numOoms,
+                  mode.oomInjectionFilter.ordinal,
+                  mode.skipCount)
               } else {
                 RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                  injectConf.numOoms,
-                  injectConf.oomInjectionFilter.ordinal,
-                  injectConf.skipCount)
+                  mode.numOoms,
+                  mode.oomInjectionFilter.ordinal,
+                  mode.skipCount)
               }
             case _ => ()
           }
