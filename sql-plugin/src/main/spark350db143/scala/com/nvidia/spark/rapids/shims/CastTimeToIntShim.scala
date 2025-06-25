@@ -20,6 +20,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 object CastTimeToIntShim {
-  // From 400, rows overflow will be set to nulls when casting timestamps to integrals.
+  // From 400, rows overflow will be set to nulls when casting timestamps to integrals,
+  // when ANSI is disabled.
   def ifNullifyOverflows: Boolean = true
 }
