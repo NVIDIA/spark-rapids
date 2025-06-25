@@ -324,7 +324,7 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, ColumnarToRowExec, OverwriteByExpressionExecV1")
+@allow_non_gpu_conditional(is_spark_353_or_later(), "ColumnarToRowExec, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -356,9 +356,8 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
+@allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -384,10 +383,9 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
                 f"{clause} SELECT * FROM {view}", fallback_class)
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
 
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
+@allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -415,7 +413,6 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
     # there's no guarantees on the task partitioning due to random sampling.
     if is_spark_353_or_later():
         pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
