@@ -20,7 +20,8 @@ import com.nvidia.spark.rapids.RapidsConf
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
+import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction, Snapshot}
 import org.apache.spark.util.Clock
 
 class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
@@ -40,6 +41,11 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
    */
   def startTransaction(): GpuOptimisticTransactionBase = {
     DeltaRuntimeShim.startTransaction(deltaLog, rapidsConf)
+  }
+
+  def startTransaction(catalogTable: Option[CatalogTable],
+      snapshot: Option[Snapshot]): GpuOptimisticTransactionBase = {
+    DeltaRuntimeShim.startTransaction(deltaLog, rapidsConf, catalogTable, snapshot)
   }
 
   /**

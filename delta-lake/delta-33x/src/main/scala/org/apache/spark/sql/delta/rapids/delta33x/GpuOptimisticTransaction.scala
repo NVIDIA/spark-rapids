@@ -36,6 +36,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
+import org.apache.spark.sql.delta.hooks.GpuAutoCompact
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.InvariantViolationException
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
@@ -60,10 +61,11 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 class GpuOptimisticTransaction
-    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
-    (implicit clock: Clock)
+  (deltaLog: DeltaLog, catalogTable: Option[CatalogTable], snapshot: Option[Snapshot],
+    rapidsConf: RapidsConf)
+  (implicit clock: Clock)
   extends GpuOptimisticTransactionBase(deltaLog,
-    Option.empty[CatalogTable], snapshot, rapidsConf)(clock) {
+    catalogTable, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -71,7 +73,7 @@ class GpuOptimisticTransaction
    * @param rapidsConf RAPIDS Accelerator config settings
    */
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
-    this(deltaLog, deltaLog.update(), rapidsConf)
+    this(deltaLog, Option.empty[CatalogTable], Some(deltaLog.update()), rapidsConf)
   }
 
   private def getGpuStatsColExpr(
@@ -280,6 +282,8 @@ class GpuOptimisticTransaction
         case a: AddFile => a.numLogicalRecords.forall(_ > 0)
         case _ => true
       }
+
+    if (resultFiles.nonEmpty && !isOptimize) registerPostCommitHook(GpuAutoCompact)
 
     resultFiles.toSeq ++ committer.changeFiles
   }

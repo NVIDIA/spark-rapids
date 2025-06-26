@@ -33,7 +33,7 @@ import org.apache.spark.util.Clock
 abstract class GpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
     catalog: Option[CatalogTable],
-    snapshot: Snapshot,
+    snapshot: Option[Snapshot],
     rapidsConf: RapidsConf)
     (implicit clock: Clock)
   extends AbstractGpuOptimisticTransactionBase(deltaLog, catalog, snapshot, rapidsConf)(clock) {
