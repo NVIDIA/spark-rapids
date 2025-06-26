@@ -341,7 +341,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     }
     // some tests need an event handler
     RmmSpark.setEventHandler(
-      new DeviceMemoryEventHandler(SpillFramework.stores.deviceStore, None, 0))
+      new DeviceMemoryEventHandler(SpillFramework.stores.deviceStore, None, 0), "STDERR")
     PinnedMemoryPool.shutdown()
     HostAlloc.initialize(-1)
   }

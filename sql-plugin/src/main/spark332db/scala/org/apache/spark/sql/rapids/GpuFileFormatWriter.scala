@@ -391,8 +391,17 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
     val taskAttemptId = new TaskAttemptID(taskId, sparkAttemptNumber)
 
     // Set up the attempt context required to use in the output committer.
-    val taskAttemptContext: TaskAttemptContext =
-      createTaskAttemptContext(description, jobId, taskAttemptId)
+    val taskAttemptContext: TaskAttemptContext = {
+      // Set up the configuration object
+      val hadoopConf = description.serializableHadoopConf.value
+      hadoopConf.set("mapreduce.job.id", jobId.toString)
+      hadoopConf.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
+      hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
+      hadoopConf.setBoolean("mapreduce.task.ismap", true)
+      hadoopConf.setInt("mapreduce.task.partition", 0)
+
+      createTaskAttemptContext(description, hadoopConf, taskAttemptId)
+    }
 
     committer.setupTask(taskAttemptContext)
 
@@ -473,7 +482,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
   }
 
   def createTaskAttemptContext(description: GpuWriteJobDescription,
-      jobId: JobID,
+      hadoopConf: Configuration,
       taskAttemptId: TaskAttemptID): TaskAttemptContext
 }
 
@@ -484,15 +493,8 @@ object GpuFileFormatWriter extends GpuFileFormatWriterBase {
       batchSize: Long, sortOrder: Seq[SortOrder])
 
   def createTaskAttemptContext(description: GpuWriteJobDescription,
-      jobId: JobID,
+      hadoopConf: Configuration,
       taskAttemptId: TaskAttemptID): TaskAttemptContext = {
-    // Set up the configuration object
-    val hadoopConf = description.serializableHadoopConf.value
-    hadoopConf.set("mapreduce.job.id", jobId.toString)
-    hadoopConf.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
-    hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
-    hadoopConf.setBoolean("mapreduce.task.ismap", true)
-    hadoopConf.setInt("mapreduce.task.partition", 0)
 
     new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
