@@ -111,7 +111,7 @@ object GpuLore {
     new Path(rootPath, s"input-$childIndex")
   }
 
-  def restoreGpuExec(rootPath: Path, spark: SparkSession): SparkPlan = {
+  def restoreGpuExec(rootPath: Path, spark: SparkSession): GpuExec = {
     val rootExec = loadObject[SparkPlan](pathOfRootPlanMeta(rootPath),
       spark.sparkContext.hadoopConfiguration)
 
@@ -347,7 +347,7 @@ object GpuLore {
    * Get the unsupported versions for GpuWriteFiles
    * @return Set of unsupported ShimVersion instances
    */
-  private def getGpuWriteFilesUnsupportedVersions: Set[ShimVersion] = {
+  private[lore] lazy val getGpuWriteFilesUnsupportedVersions: Set[ShimVersion] = {
     // These versions are extracted from GpuWriteFiles.scala spark-rapids-shim-json-lines
     Set(
       // Spark versions

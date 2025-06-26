@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{ClouderaShimVersion, DatabricksShimVersion, FunSuiteWithTempDir,
-  GpuColumnarToRowExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite, SparkShimVersion }
+import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
 
@@ -28,42 +27,15 @@ import org.apache.spark.sql.internal.SQLConf
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   /**
-   * Versions that are unsupported for LORE dump with GpuDataWritingCommandExec
-   * These versions will be skipped for GpuInsertIntoHiveTable tests and
-   * should throw exceptions for LORE dump tests
-   */
-  private val unsupportedHiveInsertVersions = Set(
-    "332db", "340", "341", "341db", "342", "343", "344",
-    "350", "350db143", "351", "352", "353", "354", "355", "356", "400"
-  )
-  /**
-   * Get the current shim version string in the format used by GpuWriteFiles
-   */
-  private def getCurrentVersionString: String = {
-    val currentShimVersion = ShimLoader.getShimVersion
-    currentShimVersion match {
-      case SparkShimVersion(major, minor, patch) => s"$major$minor$patch"
-      case DatabricksShimVersion(major, minor, patch, dbver) => 
-        // For Databricks versions, we need to check the specific version
-        (major, minor, patch, dbver) match {
-          case (3, 3, 2, "12.2") => "332db"
-          case (3, 4, 1, "13.3") => "341db"
-          case (3, 5, 0, "14.3") => "350db143"
-          case _ => s"$major$minor$patch"
-        }
-      case ClouderaShimVersion(major, minor, patch, _) => s"$major$minor$patch"
-    }
-  }
-
-  /**
    * Check if the current version should be skipped for GpuInsertIntoHiveTable test
    */
   private def skipIfUnsupportedVersion(testName: String): Unit = {
-    val versionString = getCurrentVersionString
+    val version = ShimLoader.getShimVersion
+    val unsupportedVersions = GpuLore.getGpuWriteFilesUnsupportedVersions
 
-    // Skip this test if the current version is in unsupportedHiveInsertVersions
-    assume(!unsupportedHiveInsertVersions.contains(versionString),
-      s"Skipping $testName for version $versionString as it's in the unsupported versions list")
+    // Skip this test if the current version is in unsupported versions
+    assume(!unsupportedVersions.contains(version),
+      s"Skipping $testName for version $version as it's in the unsupported versions list")
   }
 
   test("Aggregate") {
@@ -372,12 +344,13 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("LORE dump should throw exception for GpuDataWritingCommandExec on unsupported versions") {
-    // Only run this test for versions that are in unsupportedHiveInsertVersions
-    val versionString = getCurrentVersionString
+    // Only run this test for versions that are in unsupported versions
+    val currentShimVersion = ShimLoader.getShimVersion
+    val unsupportedVersions = GpuLore.getGpuWriteFilesUnsupportedVersions
 
-    // Skip this test if the current version is NOT in unsupportedHiveInsertVersions
-    assume(unsupportedHiveInsertVersions.contains(versionString),
-      s"Skipping test for version $versionString as it's not in the unsupported versions list")
+    // Skip this test if the current version is NOT in unsupported versions
+    assume(unsupportedVersions.contains(currentShimVersion),
+      s"Skipping test for version $currentShimVersion as it's not in the unsupported versions list")
 
     withGpuHiveSparkSession { spark =>
       // Configure LORE for testing
