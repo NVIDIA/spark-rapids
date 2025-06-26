@@ -35,7 +35,7 @@ import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.rapids._
 import org.apache.spark.sql.delta.DeltaColumnMapping.{dropColumnMappingMetadata, filterColumnMappingProperties}
 import org.apache.spark.sql.delta.actions.{Action, DomainMetadata, Metadata, Protocol}
-import org.apache.spark.sql.delta.commands.{CloneTableCommand, DeltaCommand, WriteIntoDelta, WriteIntoDeltaLike}
+import org.apache.spark.sql.delta.commands.{CloneTableCommand, DeltaCommand, TableCreationModes, WriteIntoDelta, WriteIntoDeltaLike}
 import org.apache.spark.sql.delta.commands.DMLUtils.TaggedCommitData
 import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.rapids.GpuDeltaLog
@@ -829,26 +829,5 @@ case class GpuCreateDeltaTableCommand(
       ClusteredTableUtils.isSupported(protocol)) {
       throw DeltaErrors.replacingClusteredTableWithPartitionedTableNotAllowed()
     }
-  }
-}
-
-// isCreate is true for Create and CreateOrReplace modes. It is false for Replace mode.
-object TableCreationModes {
-  sealed trait CreationMode {
-    def mode: SaveMode
-    def isCreate: Boolean = true
-  }
-
-  case object Create extends CreationMode {
-    override def mode: SaveMode = SaveMode.ErrorIfExists
-  }
-
-  case object CreateOrReplace extends CreationMode {
-    override def mode: SaveMode = SaveMode.Overwrite
-  }
-
-  case object Replace extends CreationMode {
-    override def mode: SaveMode = SaveMode.Overwrite
-    override def isCreate: Boolean = false
   }
 }

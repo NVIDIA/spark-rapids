@@ -18,7 +18,7 @@ package org.apache.spark.sql.delta.rapids.delta33x
 
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.{Delta33xConfigChecker, DeltaConfigChecker, DeltaProvider}
-import com.nvidia.spark.rapids.delta.delta33x.Delta33xProvider
+import com.nvidia.spark.rapids.delta.delta33x.{Delta33xProvider, GpuDeltaCatalog}
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
@@ -54,7 +54,7 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
   override def getGpuDeltaCatalog(
      cpuCatalog: DeltaCatalog,
      rapidsConf: RapidsConf): StagingTableCatalog = {
-    throw new UnsupportedOperationException("getGpuDeltaCatalog  Not implemented")
+    new GpuDeltaCatalog(cpuCatalog, rapidsConf)
   }
 
   def startTransaction(
