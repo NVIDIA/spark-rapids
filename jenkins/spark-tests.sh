@@ -201,11 +201,6 @@ run_delta_lake_tests() {
   fi
 
   if [[ $SPARK_VER =~ $SPARK_35X_PATTERN ]]; then
-    # We don't want the Delta Lake tests to run in DEFAULT mode for Spark 3.5.3 as 
-    # there are expected failures that may cause other pipelines to be blocked
-    if [[ $TEST_MODE == "DEFAULT" ]]; then
-      return 
-    fi
     DELTA_LAKE_VERSIONS="3.3.0"
   fi
 
