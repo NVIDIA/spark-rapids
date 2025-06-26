@@ -250,6 +250,59 @@ run_iceberg_tests() {
  fi
 }
 
+run_iceberg_s3tables_test() {
+   # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
+   ICEBERG_VERSION=1.6.1
+   # get the major/minor version of Spark
+   ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
+   IS_SPARK_35X=0
+   # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
+   if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
+     IS_SPARK_35X=1
+   fi
+
+   # AWS deps versions for Spark 3.5.x
+   AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
+   HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
+   AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}
+   S3TABLES_CATALOG_VERSION=${S3TABLES_CATALOG_VERSION:-"0.1.6"}
+
+  # RAPIDS-iceberg only support Spark 3.5.x yet
+  if [[ "IS_SPARK_35X" -ne "1" ]]; then
+    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
+  else
+    echo "!!! Running iceberg test with s3table catalog"
+
+    ICEBERG_S3TABLES_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
+software.amazon.s3tables:s3-tables-catalog-for-iceberg-runtime:${S3TABLES_CATALOG_VERSION},\
+software.amazon.awssdk:apache-client:${AWS_SDK_VERSION},\
+software.amazon.awssdk:aws-core:${AWS_SDK_VERSION},\
+software.amazon.awssdk:dynamodb:${AWS_SDK_VERSION},\
+software.amazon.awssdk:glue:${AWS_SDK_VERSION},\
+software.amazon.awssdk:http-client-spi:${AWS_SDK_VERSION},\
+software.amazon.awssdk:kms:${AWS_SDK_VERSION},\
+software.amazon.awssdk:s3:${AWS_SDK_VERSION},\
+software.amazon.awssdk:sdk-core:${AWS_SDK_VERSION},\
+software.amazon.awssdk:sts:${AWS_SDK_VERSION},\
+software.amazon.awssdk:url-connection-client:${AWS_SDK_VERSION},\
+software.amazon.awssdk:s3tables:${AWS_SDK_VERSION},\
+org.apache.hadoop:hadoop-aws:${HADOOP_AWS_VERSION},\
+com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
+
+    ICEBERG_TEST_S3TABLES='1' \
+    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
+        PYSP_TEST_spark_driver_memory="6G" \
+        PYSP_TEST_spark_jars_packages="$ICEBERG_S3TABLES_JARS" \
+        PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
+        PYSP_TEST_spark_hadoop_fs_s3_impl="org.apache.hadoop.fs.s3a.S3AFileSystem" \
+        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="$S3TABLES_BUCKET_ARN" \
+        ./run_pyspark_from_build.sh -s -m iceberg --iceberg
+  fi
+}
+
 run_avro_tests() {
   # Workaround to avoid appending avro jar file by '--jars',
   # which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
@@ -297,6 +350,7 @@ run_non_utc_time_zone_tests() {
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
 # - ICEBERG_ONLY: iceberg tests only
+# - ICEBERG_S3TABLES_ONLY: iceberg s3tables tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only
@@ -337,6 +391,11 @@ fi
 # Iceberg tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
+fi
+
+# Iceberg s3tables tests
+if [[ "$TEST_MODE" == "ICEBERG_S3TABLES_ONLY" ]]; then
+  run_iceberg_s3tables_test
 fi
 
 # Avro tests
