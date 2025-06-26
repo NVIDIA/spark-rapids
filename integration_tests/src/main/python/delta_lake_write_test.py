@@ -71,21 +71,14 @@ def _create_cpu_gpu_tables(spark, path, schema, partitioned_by=None, enable_dele
     _create_table(spark, path + "/CPU", schema, partitioned_by, enable_deletion_vectors)
     _create_table(spark, path + "/GPU", schema, partitioned_by, enable_deletion_vectors)
 
-def _assert_sql(data_path, confs, query, fallback_class=None):
+def _assert_sql(data_path, confs, query):
     def do_sql(spark, q): spark.sql(q)
-    if not is_spark_353_or_later() or fallback_class is None:
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: do_sql(spark, query.format(path=path)),
-            read_delta_path,
-            data_path,
-            confs)
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: do_sql(spark, query.format(path=path)),
-            read_delta_path,
-            data_path,
-            fallback_class,
-            confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: do_sql(spark, query.format(path=path)),
+        read_delta_path,
+        data_path,
+        confs)
+
 
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
@@ -206,7 +199,7 @@ def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path, enable_deletion_ve
 def test_delta_append_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     do_update_round_trip_managed(spark_tmp_path, "append", enable_deletion_vectors)
 
-def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite, enable_deletion_vectors, fallback_classes):
+def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite, enable_deletion_vectors):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
@@ -218,22 +211,12 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
         if overwrite:
             writer = writer.mode("overwrite")
         writer.saveAsTable(table)
-    if not is_spark_353_or_later():
         assert_gpu_and_cpu_writes_are_equal_collect(
             do_write,
             lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
             data_path,
             conf=confs)
-    else:
-        assert_gpu_fallback_write(
-            do_write,
-            lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
-            data_path,
-            fallback_classes,
-            conf=confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930, https://github.com/NVIDIA/spark-rapids/issues/12931")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AtomicCreateTableAsSelectExec, AppendDataExecV1")
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -241,10 +224,10 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
-    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False, enable_deletion_vectors=enable_deletion_vectors,
-        fallback_classes=["AtomicCreateTableAsSelectExec", "AppendDataExecV1"])
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
+                                  overwrite=False,
+                                  enable_deletion_vectors=enable_deletion_vectors)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AtomicReplaceTableAsSelectExec, AppendDataExecV1")
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -253,10 +236,9 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
                             enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 @pytest.mark.xfail(is_spark_356(), reason="https://github.com/delta-io/delta/issues/4671")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
-    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True, enable_deletion_vectors=enable_deletion_vectors,
-        fallback_classes=["AtomicReplaceTableAsSelectExec", "AppendDataExecV1"])
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
+                                  overwrite=True, enable_deletion_vectors=enable_deletion_vectors)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -270,27 +252,15 @@ def test_delta_append_data_exec_v1(spark_tmp_path, use_cdf, enable_deletion_vect
         setup_delta_dest_tables(spark, data_path,
                                 lambda spark: gen_df(spark, gen_list).coalesce(1), use_cdf, enable_deletion_vectors)
     with_cpu_session(setup_tables, writer_confs)
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1)\
-                .write.format("delta").mode("append"), enable_deletion_vectors).saveAsTable(f"delta.`{path}`"),
-            read_delta_path,
-            data_path,
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    else:
-        assert_gpu_fallback_write(
-            lambda spark, path: get_writer_with_deletion_vector_property_set(
-                gen_df(spark, gen_list).coalesce(1) \
-                    .write.format("delta").mode("append"), enable_deletion_vectors).saveAsTable(f"delta.`{path}`"),
-            read_delta_path,
-            data_path,
-            "AppendDataExecV1",
-            conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_writer_with_deletion_vector_property_set(
+            gen_df(spark, gen_list).coalesce(1)\
+            .write.format("delta").mode("append"), enable_deletion_vectors).saveAsTable(f"delta.`{path}`"),
+        read_delta_path,
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -313,20 +283,11 @@ def test_delta_overwrite_by_expression_exec_v1(spark_tmp_table_factory, spark_tm
     with_cpu_session(setup_tables, writer_confs)
     def overwrite_table(spark, path):
         spark.sql(f"INSERT OVERWRITE delta.`{path}` SELECT * FROM {src_table}")
-    if not is_spark_353_or_later():
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            overwrite_table,
-            read_delta_path,
-            data_path,
-            conf=_delta_confs)
-    else:
-        assert_gpu_fallback_write(
-            overwrite_table,
-            read_delta_path,
-            data_path,
-            "OverwriteByExpressionExecV1",
-            conf=_delta_confs)
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        overwrite_table,
+        read_delta_path,
+        data_path,
+        conf=_delta_confs)
 
 @allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
@@ -338,15 +299,11 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     schema = "id bigint, data string, data2 string"
     with_cpu_session(lambda spark: _create_cpu_gpu_tables(spark, data_path, schema), conf=writer_confs)
     confs = _delta_confs
-    fallback_class = "OverwriteByExpressionExecV1"
-    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(id, data, data2) VALUES(1L, 'a', 'b')", fallback_class)
-    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('b', 'd', 2L)", fallback_class)
-    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('c', 'e', 1)", fallback_class)
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(id, data, data2) VALUES(1L, 'a', 'b')")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('b', 'd', 2L)")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('c', 'e', 1)")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
-    if is_spark_353_or_later():
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, ColumnarToRowExec, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -366,21 +323,16 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
         _create_cpu_gpu_tables(spark, data_path, dst_schema, enable_deletion_vectors=enable_deletion_vectors)
     with_cpu_session(setup_tables, conf=writer_confs)
     confs = copy_and_update(_delta_confs, {"spark.databricks.delta.schema.autoMerge.enabled": "true"})
-    fallback_class = "AppendDataExecV1"
     _assert_sql(data_path, confs,
-                "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02', array(struct(2, struct('s2'))))", fallback_class)
+                "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02', array(struct(2, struct('s2'))))")
     _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}` " +
-                f"SELECT * FROM delta.`{src_path}`", "OverwriteByExpressionExecV1")
+                f"SELECT * FROM delta.`{src_path}`")
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02'," +
-               "array(struct(2, struct('s2', DATE'2022-11-02'), struct('s2'))))", fallback_class)
+               "array(struct(2, struct('s2', DATE'2022-11-02'), struct('s2'))))")
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (3, DATE'2022-11-03', " +
-               "array(struct(3, struct('s3', NULL), struct(NULL))))", fallback_class)
+               "array(struct(3, struct('s3', NULL), struct(NULL))))")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
-    if is_spark_353_or_later():
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -400,16 +352,11 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
         _create_cpu_gpu_tables(spark, data_path, "id bigint, data string", "id")
         spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("id", "data")).createOrReplaceTempView(view)
     with_cpu_session(setup, conf=writer_confs)
-    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy'), (4L, 'value')", "AppendDataExecV1")
-    fallback_class = "OverwriteByExpressionExecV1" if mode == "STATIC" else None
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy'), (4L, 'value')")
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
-                f"{clause} SELECT * FROM {view}", fallback_class)
-    if is_spark_353_or_later():
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
+                f"{clause} SELECT * FROM {view}")
 
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "AppendDataExecV1, OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -429,15 +376,11 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
         _create_cpu_gpu_tables(spark, data_path, "id bigint, data string, p int", "id, p")
         spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("id", "data")).createOrReplaceTempView(view)
     with_cpu_session(setup, conf=writer_confs)
-    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy', 23), (4L, 'value', 2)", "AppendDataExecV1")
-    fallback_class = "OverwriteByExpressionExecV1" if mode == "STATIC" else None
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy', 23), (4L, 'value', 2)")
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
-                f"{clause} SELECT * FROM {view}", fallback_class)
+                f"{clause} SELECT * FROM {view}")
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
-    if is_spark_353_or_later():
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12932")
-        pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12930")
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -739,7 +682,6 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(is_spark_353_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/12924")
 def test_delta_write_stat_column_limits(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(delta_writes_enabled_conf, {"spark.databricks.io.skipping.stringPrefixLength": 8})
