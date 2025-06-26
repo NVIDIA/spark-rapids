@@ -22,12 +22,9 @@ import com.nvidia.spark.rapids.delta.DeltaWriteUtils
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.delta.{DeltaLog, DeltaOptions, Snapshot}
-import org.apache.spark.sql.delta.files.TahoeBatchFileIndex
 import org.apache.spark.sql.delta.perf.DeltaOptimizedWriterExec
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.delta.{DeltaShufflePartitionsUtil, GpuOptimizeWriteExchangeExec}
 import org.apache.spark.sql.types.StructType
@@ -47,6 +44,8 @@ abstract class GpuOptimisticTransactionBase(
       partitionSchema: StructType,
       isOptimize: Boolean,
       writeOptions: Option[DeltaOptions]): SparkPlan = {
+    // No need to plan optimized write if the write command is OPTIMIZE, which aims to produce
+    // evenly-balanced data files already.
     val optimizeWriteEnabled = !isOptimize &&
       DeltaWriteUtils.shouldOptimizeWrite(writeOptions, spark.sessionState.conf, metadata)
     if (optimizeWriteEnabled) {
@@ -74,14 +73,5 @@ abstract class GpuOptimisticTransactionBase(
     } else {
       physicalPlan
     }
-  }
-
-  protected def isOptimizeCommand(plan: LogicalPlan): Boolean = {
-    val leaves = plan.collectLeaves()
-    leaves.size == 1 && leaves.head.collect {
-      case LogicalRelation(HadoopFsRelation(
-      index: TahoeBatchFileIndex, _, _, _, _, _), _, _, _) =>
-        index.actionType.equals("Optimize")
-    }.headOption.getOrElse(false)
   }
 }
