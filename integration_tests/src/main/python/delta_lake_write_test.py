@@ -25,7 +25,7 @@ from marks import *
 from parquet_write_test import parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
-    with_cpu_session, supports_delta_lake_deletion_vectors, is_spark_353_or_later, is_spark_356
+    with_cpu_session, supports_delta_lake_deletion_vectors, is_spark_356
 
 delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
 
@@ -179,7 +179,6 @@ def do_update_round_trip_managed(spark_tmp_path, mode, enable_deletion_vectors):
         lambda spark: spark.read.format("delta").option("versionAsOf", "0").load(data_path + "/GPU"),
         conf=confs)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec, ColumnarToRowExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -189,7 +188,6 @@ def do_update_round_trip_managed(spark_tmp_path, mode, enable_deletion_vectors):
 def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     do_update_round_trip_managed(spark_tmp_path, "overwrite", enable_deletion_vectors)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec, ColumnarToRowExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -211,11 +209,11 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
         if overwrite:
             writer = writer.mode("overwrite")
         writer.saveAsTable(table)
-        assert_gpu_and_cpu_writes_are_equal_collect(
-            do_write,
-            lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
-            data_path,
-            conf=confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_write,
+        lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
+        data_path,
+        conf=confs)
 
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
@@ -289,7 +287,6 @@ def test_delta_overwrite_by_expression_exec_v1(spark_tmp_table_factory, spark_tm
         data_path,
         conf=_delta_confs)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "OverwriteByExpressionExecV1")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -574,7 +571,6 @@ def test_delta_write_legacy_format_fallback(spark_tmp_path):
         delta_write_fallback_check,
         conf=confs)
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
@@ -593,7 +589,6 @@ def test_delta_write_append_only(spark_tmp_path):
             conf=delta_writes_enabled_conf),
         "This table is configured to only allow appends")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
@@ -619,7 +614,6 @@ def test_delta_write_constraint_not_null(spark_tmp_path):
             conf=delta_writes_enabled_conf),
         "NOT NULL constraint violated for column: a")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
@@ -650,7 +644,6 @@ def test_delta_write_constraint_check(spark_tmp_path):
             conf=delta_writes_enabled_conf),
         "CHECK constraint customcheck (id < x) violated")
 
-@allow_non_gpu_conditional(is_spark_353_or_later(), "ExecutedCommandExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
