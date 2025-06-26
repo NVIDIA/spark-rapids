@@ -209,11 +209,11 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
         if overwrite:
             writer = writer.mode("overwrite")
         writer.saveAsTable(table)
-    assert_gpu_and_cpu_writes_are_equal_collect(
-        do_write,
-        lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
-        data_path,
-        conf=confs)
+        assert_gpu_and_cpu_writes_are_equal_collect(
+            do_write,
+            lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
+            data_path,
+            conf=confs)
 
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
