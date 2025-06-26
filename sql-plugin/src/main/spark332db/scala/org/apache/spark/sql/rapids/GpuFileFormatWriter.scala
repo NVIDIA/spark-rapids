@@ -60,7 +60,7 @@ import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
 import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
 import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
@@ -264,8 +264,6 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
-      val partitionColumnToDataType = description.partitionColumns
-        .map(attr => (attr.name, attr.dataType)).toMap
       sparkSession.sparkContext.runJob(
         rddWithNonEmptyPartitions,
         (taskContext: TaskContext, iter: Iterator[ColumnarBatch]) => {
@@ -278,8 +276,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
             committer,
             iterator = iter,
             concurrentOutputWriterSpec = concurrentOutputWriterSpec,
-            baseDebugOutputPath = baseDebugOutputPath,
-            partitionColumnToDataType = partitionColumnToDataType)
+            baseDebugOutputPath = baseDebugOutputPath)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -387,8 +384,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
-      baseDebugOutputPath: Option[String],
-      partitionColumnToDataType: Map[String, DataType]): WriteTaskResult = {
+      baseDebugOutputPath: Option[String]): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -404,7 +400,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       hadoopConf.setBoolean("mapreduce.task.ismap", true)
       hadoopConf.setInt("mapreduce.task.partition", 0)
 
-      createTaskAttemptContext(hadoopConf, partitionColumnToDataType, taskAttemptId)
+      createTaskAttemptContext(description, hadoopConf, taskAttemptId)
     }
 
     committer.setupTask(taskAttemptContext)
@@ -485,8 +481,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
     }
   }
 
-  def createTaskAttemptContext(hadoopConf: Configuration,
-      partitionColumnToDataType: Map[String, DataType],
+  def createTaskAttemptContext(description: GpuWriteJobDescription,
+      hadoopConf: Configuration,
       taskAttemptId: TaskAttemptID): TaskAttemptContext
 }
 
@@ -496,9 +492,10 @@ object GpuFileFormatWriter extends GpuFileFormatWriterBase {
   case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
       batchSize: Long, sortOrder: Seq[SortOrder])
 
-  def createTaskAttemptContext(hadoopConf: Configuration,
-      partitionColumnToDataType: Map[String, DataType],
+  def createTaskAttemptContext(description: GpuWriteJobDescription,
+      hadoopConf: Configuration,
       taskAttemptId: TaskAttemptID): TaskAttemptContext = {
+
     new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
 }
