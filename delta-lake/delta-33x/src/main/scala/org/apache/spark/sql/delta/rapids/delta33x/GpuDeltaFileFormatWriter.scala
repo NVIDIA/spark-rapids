@@ -16,7 +16,8 @@
 
 package org.apache.spark.sql.delta.rapids.delta33x
 
-import org.apache.hadoop.mapreduce.{JobID, TaskAttemptContext, TaskAttemptID}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.mapreduce.{TaskAttemptContext, TaskAttemptID}
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
 import org.apache.spark.sql.delta.files.DeltaFileFormatWriter.PartitionedTaskAttemptContextImpl
@@ -25,16 +26,8 @@ import org.apache.spark.sql.rapids.{GpuFileFormatWriterBase, GpuWriteJobDescript
 object GpuDeltaFileFormatWriter extends GpuFileFormatWriterBase {
 
   override def createTaskAttemptContext(description: GpuWriteJobDescription,
-      jobId: JobID,
+      hadoopConf: Configuration,
       taskAttemptId: TaskAttemptID): TaskAttemptContext = {
-    // Set up the configuration object
-    val hadoopConf = description.serializableHadoopConf.value
-    hadoopConf.set("mapreduce.job.id", jobId.toString)
-    hadoopConf.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
-    hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
-    hadoopConf.setBoolean("mapreduce.task.ismap", true)
-    hadoopConf.setInt("mapreduce.task.partition", 0)
-
     if (description.partitionColumns.isEmpty) {
       new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
     } else {
