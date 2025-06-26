@@ -20,7 +20,8 @@ import com.nvidia.spark.rapids.RapidsConf
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
+import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction, Snapshot}
 import org.apache.spark.util.Clock
 
 class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
@@ -39,7 +40,8 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
    * directly to the DeltaLog otherwise they will not be checked for conflicts.
    */
   def startTransaction(): GpuOptimisticTransactionBase = {
-    DeltaRuntimeShim.startTransaction(deltaLog, rapidsConf)
+    DeltaRuntimeShim.startTransaction(deltaLog, Option.empty[CatalogTable],
+      Option.empty[Snapshot], rapidsConf)
   }
 
   /**
@@ -54,6 +56,24 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
     try {
       val txn = startTransaction()
       OptimisticTransaction.setActive(txn)
+      thunk(txn)
+    } finally {
+      OptimisticTransaction.clearActive()
+    }
+  }
+
+  def startTransaction(catalogTableOpt: Option[CatalogTable],
+    snapshotOpt: Option[Snapshot] = None): GpuOptimisticTransactionBase = {
+      DeltaRuntimeShim.startTransaction(deltaLog, catalogTableOpt, snapshotOpt, rapidsConf)
+  }
+
+  def withNewTransaction[T](
+     catalogTableOpt: Option[CatalogTable],
+     snapshotOpt: Option[Snapshot] = None)(
+     thunk: GpuOptimisticTransactionBase => T): T = {
+    val txn = startTransaction(catalogTableOpt, snapshotOpt)
+    OptimisticTransaction.setActive(txn)
+    try {
       thunk(txn)
     } finally {
       OptimisticTransaction.clearActive()
