@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.ParquetCachedBatchSerializer
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.ShimLeafExecNode
 
 import org.apache.spark.rdd.RDD
@@ -98,17 +98,13 @@ case class GpuInMemoryTableScanExec(
     relation.cacheBuilder.serializer.vectorTypes(attributes, conf)
 
   private lazy val columnarInputRDD: RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val buffers = filteredCachedBatches()
     relation.cacheBuilder.serializer.asInstanceOf[ParquetCachedBatchSerializer]
       .gpuConvertCachedBatchToColumnarBatch(
         buffers,
         relation.output,
         attributes,
-        conf).map { cb =>
-      numOutputRows += cb.numRows()
-      cb
-    }
+        conf)
   }
 
   override def output: Seq[Attribute] = attributes

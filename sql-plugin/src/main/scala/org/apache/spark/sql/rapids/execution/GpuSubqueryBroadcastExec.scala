@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExec, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExec, GpuMetric, MetricsOverrideGpuExec, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
 import com.nvidia.spark.rapids.shims.{ShimBaseSubqueryExec, ShimUnaryExecNode, SparkShimImpl}
@@ -170,7 +170,7 @@ case class GpuSubqueryBroadcastExec(
     indices: Seq[Int],
     buildKeys: Seq[Expression],
     child: SparkPlan)(modeKeys: Option[Seq[Expression]])
-    extends ShimBaseSubqueryExec with GpuExec with ShimUnaryExecNode {
+    extends ShimBaseSubqueryExec with MetricsOverrideGpuExec with ShimUnaryExecNode {
 
   override def otherCopyArgs: Seq[AnyRef] = modeKeys :: Nil
 
@@ -193,7 +193,7 @@ case class GpuSubqueryBroadcastExec(
     }
   }
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
     COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME))
 

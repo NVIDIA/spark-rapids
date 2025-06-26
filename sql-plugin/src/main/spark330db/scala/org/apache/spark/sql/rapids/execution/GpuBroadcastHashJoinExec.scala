@@ -87,7 +87,7 @@ case class GpuBroadcastHashJoinExec(
       leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
   import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
@@ -136,7 +136,7 @@ case class GpuBroadcastHashJoinExec(
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-    val metricsMap = allMetrics
+    val metricsMap = opMetrics
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
@@ -154,8 +154,6 @@ case class GpuBroadcastHashJoinExec(
   }
 
   private[this] def doColumnarExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
@@ -177,9 +175,9 @@ case class GpuBroadcastHashJoinExec(
           localBuildSchema,
           localBuildOutput,
           new CollectTimeIterator("executor broadcast join stream", it, streamTime),
-          allMetrics)
+          opMetrics)
       // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+      doJoin(builtBatch, streamIter, targetSize, NoopMetric, NoopMetric, opTime, joinTime)
     }
   }
 

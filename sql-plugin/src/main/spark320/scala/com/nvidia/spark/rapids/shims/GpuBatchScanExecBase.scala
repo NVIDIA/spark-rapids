@@ -72,7 +72,7 @@ abstract class GpuBatchScanExecBase(
   @transient lazy val batch: Batch = scan.toBatch
 
   override lazy val inputRDD: RDD[InternalRow] = {
-    scan.metrics = allMetrics
+    scan.metrics = opMetrics
     if (filteredPartitions.isEmpty && outputPartitioning == SinglePartition) {
       // return an empty RDD with 1 partition if dynamic filtering removed the only split
       sparkContext.parallelize(Array.empty[InternalRow], 1)
@@ -89,10 +89,6 @@ abstract class GpuBatchScanExecBase(
   }
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
-    inputRDD.asInstanceOf[RDD[ColumnarBatch]].map { b =>
-      numOutputRows += b.numRows()
-      b
-    }
+    inputRDD.asInstanceOf[RDD[ColumnarBatch]]
   }
 }

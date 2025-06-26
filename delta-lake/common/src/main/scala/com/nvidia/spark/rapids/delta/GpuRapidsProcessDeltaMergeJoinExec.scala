@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -171,7 +171,7 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
   private lazy val boundNoopCopyOutput = noopCopyOutput.map(bindForGpu)
   private lazy val boundDeleteRowOutput = deleteRowOutput.map(bindForGpu)
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = {
+  override lazy val opMetrics: Map[String, GpuMetric] = {
     import GpuMetric._
     Map(OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
   }
@@ -210,7 +210,7 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
         notMatchedOutputs = localNotMatchedOutputs,
         noopCopyOutput = localNoopCopyOutput,
         deleteRowOutput = localDeleteRowOutput,
-        allMetrics)
+        opMetrics)
     }
   }
 

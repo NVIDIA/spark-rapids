@@ -28,7 +28,7 @@ import scala.language.implicitConversions
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions,HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, SCAN_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, READ_FS_TIME, SCAN_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -382,9 +382,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       val dataBuf = withRetryNoSplit(hostBuf)(_.getDataHostBuffer())
       val t = withResource(dataBuf)(sendToGpuUnchecked(_, bufSize, splits))
       withResource(t) { _ =>
-        val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
-        logDebug(s"GPU batch size: $batchSizeBytes bytes")
-        metrics(NUM_OUTPUT_BATCHES) += 1
+        logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(t)} bytes")
         // convert to batch
         Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
       }
@@ -981,7 +979,6 @@ class GpuMultiFileAvroPartitionReader(
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
             s"but read ${table.getNumberOfColumns}")
       }
-      metrics(NUM_OUTPUT_BATCHES) += 1
       table
     }
   }

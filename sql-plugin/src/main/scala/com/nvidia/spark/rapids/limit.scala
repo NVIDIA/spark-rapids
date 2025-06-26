@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,9 +41,7 @@ class GpuBaseLimitIterator(
     input: Iterator[ColumnarBatch],
     limit: Int,
     offset: Int,
-    opTime: GpuMetric,
-    numOutputBatches: GpuMetric,
-    numOutputRows: GpuMetric) extends Iterator[ColumnarBatch] {
+    opTime: GpuMetric) extends Iterator[ColumnarBatch] {
   private var remainingLimit = limit - offset
   private var remainingOffset = offset
 
@@ -98,8 +96,6 @@ class GpuBaseLimitIterator(
         remainingOffset = 0
       }
       remainingLimit -= result.numRows()
-      numOutputBatches += 1
-      numOutputRows += result.numRows()
       result
     }
   }
@@ -129,7 +125,7 @@ class GpuBaseLimitIterator(
  */
 trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
   )
 
@@ -153,10 +149,8 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
 
   protected def sliceRDD(rdd: RDD[ColumnarBatch], limit: Int, offset: Int): RDD[ColumnarBatch] = {
     val opTime = gpuLongMetric(OP_TIME)
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     rdd.mapPartitions { iter =>
-      new GpuBaseLimitIterator(iter, limit, offset, opTime, numOutputBatches, numOutputRows)
+      new GpuBaseLimitIterator(iter, limit, offset, opTime)
     }
   }
 
@@ -263,8 +257,6 @@ object GpuTopN {
       concatTime: GpuMetric,
       inputBatches: GpuMetric,
       inputRows: GpuMetric,
-      outputBatches: GpuMetric,
-      outputRows: GpuMetric,
       offset: Int): Iterator[SpillableColumnarBatch] =
     new Iterator[SpillableColumnarBatch]() {
       override def hasNext: Boolean = iter.hasNext
@@ -322,7 +314,7 @@ object GpuTopN {
 
         val tempScb = pending.get
         pending = None
-        val ret = if (offset > 0) {
+        if (offset > 0) {
           val retCb = RmmRapidsRetryIterator.withRetryNoSplit(tempScb) { _ =>
             withResource(new NvtxWithMetrics("TOP N Offset", NvtxColor.ORANGE, opTime)) { _ =>
               withResource(tempScb.getColumnarBatch()) { tempCb =>
@@ -334,9 +326,6 @@ object GpuTopN {
         } else {
           tempScb
         }
-        outputBatches += 1
-        outputRows += ret.numRows()
-        ret
       }
     }
 }
@@ -364,7 +353,7 @@ case class GpuTopN(
 
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
@@ -378,8 +367,6 @@ case class GpuTopN(
     val opTime = gpuLongMetric(OP_TIME)
     val inputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val inputRows = gpuLongMetric(NUM_INPUT_ROWS)
-    val outputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val sortTime = gpuLongMetric(SORT_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val localLimit = limit
@@ -388,7 +375,7 @@ case class GpuTopN(
 
     child.executeColumnar().mapPartitions { iter =>
       val topN = GpuTopN(localLimit, sorter, iter, opTime, sortTime, concatTime,
-        inputBatches, inputRows, outputBatches, outputRows, offset)
+        inputBatches, inputRows, offset)
       if (localProjectList != childOutput) {
         topN.map { scb =>
           opTime.ns {

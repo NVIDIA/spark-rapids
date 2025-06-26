@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -886,7 +886,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   }
 
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
@@ -920,8 +920,6 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
 
@@ -944,14 +942,14 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
           batches.mapPartitions { iter =>
             new GpuCompressionAwareCoalesceIterator(
               iter, dataTypes, sizeGoal, decompressMemoryTarget,
-              numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
+              numInputRows, numInputBatches, NoopMetric, NoopMetric, NoopMetric,
               concatTime, opTime, "GpuCoalesceBatches",
               localCodecConfigs)
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
           val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
-            numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+            numInputRows, numInputBatches, NoopMetric, NoopMetric,
             concatTime, opTime)
           batches.mapPartitions { iter =>
             f(iter)

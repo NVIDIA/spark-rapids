@@ -91,9 +91,9 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     // Narrow down all used metrics on the Executor side, in case transferring unnecessary metrics
     val embeddedMetrics = {
       val mapBuilder = mutable.Map.empty[String, GpuMetric]
-      hybridCommonMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
-      nativeMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
-      preloadMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
+      hybridCommonMetrics.keys.foreach(key => mapBuilder += key -> opMetrics(key))
+      nativeMetrics.keys.foreach(key => mapBuilder += key -> opMetrics(key))
+      preloadMetrics.keys.foreach(key => mapBuilder += key -> opMetrics(key))
       mapBuilder.toMap
     }
 
@@ -135,7 +135,7 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     }
   }
 
-  override lazy val allMetrics: Map[String, GpuMetric] = {
+  override lazy val opMetrics: Map[String, GpuMetric] = {
     val mapBuilder = Map.newBuilder[String, GpuMetric]
     mapBuilder += SCAN_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, "TotalTime")
     // Add common embedded metrics

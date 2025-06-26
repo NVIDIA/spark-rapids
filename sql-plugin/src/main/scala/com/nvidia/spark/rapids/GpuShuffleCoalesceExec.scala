@@ -54,14 +54,14 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
   import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
   )
 
-  override protected val outputBatchesLevel = MODERATE_LEVEL
+  override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override def output: Seq[Attribute] = child.output
 
@@ -72,7 +72,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   }
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val metricsMap = allMetrics
+    val metricsMap = opMetrics
     val targetSize = targetBatchByteSize
     val dataTypes = GpuColumnVector.extractTypes(schema)
     val readOption = CoalesceReadOption(conf)
@@ -415,8 +415,6 @@ class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
     dataTypes: Array[DataType],
     metricsMap: Map[String, GpuMetric]) extends Iterator[ColumnarBatch] {
   private[this] val opTimeMetric = metricsMap(GpuMetric.OP_TIME)
-  private[this] val outputBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
-  private[this] val outputRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
 
   override def hasNext: Boolean = iter.hasNext
 
@@ -439,10 +437,7 @@ class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
         // generate GPU data from batches that are empty.
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         withResource(new MetricRange(opTimeMetric)) { _ =>
-          val batch = hostCoalescedResult.toGpuBatch(dataTypes)
-          outputBatchesMetric += 1
-          outputRowsMetric += batch.numRows()
-          batch
+          hostCoalescedResult.toGpuBatch(dataTypes)
         }
       }
     }

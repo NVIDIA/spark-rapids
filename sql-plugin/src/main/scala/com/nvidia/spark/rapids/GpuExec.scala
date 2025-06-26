@@ -125,19 +125,47 @@ trait GpuExec extends SparkPlan {
 
   override def supportsColumnar = true
 
+  private lazy val allMetrics: Map[String, GpuMetric] = commMetrics ++ opMetrics
+
+  // Common metrics are protected from child classes, to avoid duplicated updates which may be done
+  // by both base class and child class mistakenly. In the other hand, child class can also
+  // discard some of the common metrics via setting the corresponding MetricsLevel to None.
+  private lazy val commMetrics: Map[String, GpuMetric] = {
+    val b = Map.newBuilder[String, GpuMetric]
+    createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS) match {
+      case NoopMetric =>
+        // If the metric is disabled, we do not add it to the map.
+      case metric =>
+        b += NUM_OUTPUT_ROWS -> metric
+    }
+    createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES) match {
+      case NoopMetric =>
+        // If the metric is disabled, we do not add it to the map.
+      case metric =>
+        b += NUM_OUTPUT_BATCHES -> metric
+    }
+    createSizeMetric(outputDataSizeLevel, DESCRIPTION_OUTPUT_DATA_SIZE) match {
+      case NoopMetric =>
+        // If the metric is disabled, we do not add it to the map.
+      case metric =>
+        b += OUTPUT_DATA_SIZE -> metric
+    }
+    b.result()
+  }
+
   protected val outputRowsLevel: MetricsLevel = DEBUG_LEVEL
   protected val outputBatchesLevel: MetricsLevel = DEBUG_LEVEL
+  protected val outputDataSizeLevel: MetricsLevel = DEBUG_LEVEL
 
-  lazy val allMetrics: Map[String, GpuMetric] = Map(
-    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES)) ++
-      additionalMetrics
-
-  def gpuLongMetric(name: String): GpuMetric = allMetrics(name)
+  final def gpuLongMetric(name: String): GpuMetric = {
+    require(!commMetrics.contains(name),
+      s"The update of Metric $name can only be done in GpuExec")
+    allMetrics(name)
+  }
 
   final override lazy val metrics: Map[String, SQLMetric] = unwrap(allMetrics)
 
-  lazy val additionalMetrics: Map[String, GpuMetric] = Map.empty
+  lazy val opMetrics: Map[String, GpuMetric] = Map.empty
 
   /**
    * Returns true if there is something in the exec that cannot work when batches between
@@ -189,15 +217,25 @@ trait GpuExec extends SparkPlan {
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     this.dumpLoreMetaInfo()
+    val commonMetrics = GpuCommonMetrics(commMetrics)
     val orig = this.dumpLoreRDD(internalDoExecuteColumnar())
-    val metrics = getTaskMetrics
-    metrics.map { gpuMetrics =>
-      // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
+    val taskMetrics = getTaskMetrics
+    // Do not wrap GpuMetricsIterator if no common metrics is needed to be tracked, to minimize
+    // the overhead of the iterator.
+    if (!commonMetrics.isAllMetricsDisabled) {
       LocationPreservingMapPartitionsRDD(orig) { iter =>
-        gpuMetrics.makeSureRegistered()
-        iter
+        taskMetrics.foreach(_.makeSureRegistered())
+        new GpuMetricsIterator(iter, commonMetrics)
       }
-    }.getOrElse(orig)
+    } else {
+      taskMetrics.map { gpuMetrics =>
+        // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
+        LocationPreservingMapPartitionsRDD(orig) { iter =>
+          gpuMetrics.makeSureRegistered()
+          iter
+        }
+      }.getOrElse(orig)
+    }
   }
 
   override def stringArgs: Iterator[Any] = super.stringArgs ++ loreArgs
@@ -225,4 +263,59 @@ trait GpuExec extends SparkPlan {
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]
+}
+
+/**
+ * Gpu plans in which common metrics are banned because they cannot be tracked appropriately.
+ * This trait is useful for GPU plans which does not produce ColumnarBatch as output, such as
+ * GpuColumnarToRowExec and GpuWriteExecs. And also for GPU plans which are not executed via
+ * `doExecuteColumnar`, such as GpuBroadcastExchangeExec.
+ */
+trait MetricsOverrideGpuExec extends GpuExec {
+  override protected val outputRowsLevel: MetricsLevel = GpuMetric.DISABLE_LEVEL
+  override protected val outputBatchesLevel: MetricsLevel = GpuMetric.DISABLE_LEVEL
+  override protected val outputDataSizeLevel: MetricsLevel = GpuMetric.DISABLE_LEVEL
+}
+
+// An iterator wrapper that tracks the most common metrics for the GPU operation.
+// NOTE: Metrics tracking can be disabled by changing the metrics level of specific metric.
+private class GpuMetricsIterator(
+    iter: Iterator[ColumnarBatch],
+    metrics: GpuCommonMetrics) extends Iterator[ColumnarBatch] {
+
+  override def hasNext: Boolean = iter.hasNext
+
+  override def next(): ColumnarBatch = {
+    val outputBatch = iter.next()
+    metrics.outputRows += outputBatch.numRows()
+    metrics.outputBatches += 1
+    // compute total device memory might be expensive, so only do it if needed
+    metrics.outputDataSize match {
+      case NoopMetric => // do nothing
+      case m => m += GpuColumnVector.getTotalDeviceMemoryUsed(outputBatch)
+    }
+    outputBatch
+  }
+}
+
+case class GpuCommonMetrics(
+    outputRows: GpuMetric,
+    outputBatches: GpuMetric,
+    outputDataSize: GpuMetric) {
+
+  def isAllMetricsDisabled: Boolean = {
+    Seq(outputRows, outputBatches, outputDataSize).forall {
+      case NoopMetric => true
+      case _ => false
+    }
+  }
+}
+
+object GpuCommonMetrics {
+  def apply(metricMap: Map[String, GpuMetric]): GpuCommonMetrics = {
+    GpuCommonMetrics(
+      metricMap.getOrElse(GpuMetric.NUM_OUTPUT_ROWS, NoopMetric),
+      metricMap.getOrElse(GpuMetric.NUM_OUTPUT_BATCHES, NoopMetric),
+      metricMap.getOrElse(GpuMetric.OUTPUT_DATA_SIZE, NoopMetric))
+  }
 }

@@ -375,7 +375,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
@@ -413,7 +413,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     val isRightHost = isHostBatchProducer(right)
     val localCondition = condition
     val localGpuBatchSizeBytes = gpuBatchSizeBytes
-    val localMetrics = allMetrics.withDefaultValue(NoopMetric)
+    val localMetrics = opMetrics.withDefaultValue(NoopMetric)
     val localReadOption = readOption
     left.executeColumnar().zipPartitions(right.executeColumnar()) { case (leftIter, rightIter) =>
       val joinInfo = (isLeftHost, isRightHost) match {
@@ -434,7 +434,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
             localRightKeys, rightOutput, rightIter,
             localCondition, localGpuBatchSizeBytes, localMetrics)
       }
-      val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
+      if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
         if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
           Iterator.empty
         } else {
@@ -442,13 +442,6 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
         }
       } else {
         doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, partitionNumAmplification, localMetrics)
-      }
-      val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
-      val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
-      joinIterator.map { cb =>
-        numOutputRows += cb.numRows()
-        numOutputBatches += 1
-        cb
       }
     }
   }

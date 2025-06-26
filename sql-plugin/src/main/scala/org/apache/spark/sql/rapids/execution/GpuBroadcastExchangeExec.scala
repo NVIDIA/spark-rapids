@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -353,12 +353,18 @@ class GpuBroadcastMeta(
 
 abstract class GpuBroadcastExchangeExecBase(
     mode: BroadcastMode,
-    child: SparkPlan) extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec {
+    child: SparkPlan) extends ShimBroadcastExchangeLike with ShimUnaryExecNode
+  with MetricsOverrideGpuExec {
 
-  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics = Map(
-    "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
+    // override common metrics
+    GpuMetric.NUM_OUTPUT_BATCHES ->
+      createSizeMetric(MODERATE_LEVEL, GpuMetric.DESCRIPTION_NUM_OUTPUT_BATCHES),
+    GpuMetric.NUM_OUTPUT_ROWS ->
+      createSizeMetric(ESSENTIAL_LEVEL, GpuMetric.DESCRIPTION_NUM_OUTPUT_ROWS),
+    GpuMetric.OUTPUT_DATA_SIZE ->
+      createSizeMetric(ESSENTIAL_LEVEL, GpuMetric.DESCRIPTION_OUTPUT_DATA_SIZE),
+    // additional metrics
     COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     "broadcastTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time to broadcast"))
@@ -382,7 +388,7 @@ abstract class GpuBroadcastExchangeExecBase(
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val dataSize = gpuLongMetric("dataSize")
+    val dataSize = gpuLongMetric(GpuMetric.OUTPUT_DATA_SIZE)
     val collectTime = gpuLongMetric(COLLECT_TIME)
     val buildTime = gpuLongMetric(BUILD_TIME)
     val broadcastTime = gpuLongMetric("broadcastTime")
@@ -519,7 +525,7 @@ abstract class GpuBroadcastExchangeExecBase(
 
   override def runtimeStatistics: Statistics = {
     Statistics(
-      sizeInBytes = metrics("dataSize").value,
+      sizeInBytes = metrics(GpuMetric.OUTPUT_DATA_SIZE).value,
       rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
   }
 

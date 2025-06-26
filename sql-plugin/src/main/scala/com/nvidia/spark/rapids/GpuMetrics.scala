@@ -78,6 +78,7 @@ object GpuMetric extends Logging {
   val NUM_INPUT_BATCHES = "numInputBatches"
   val NUM_OUTPUT_ROWS = "numOutputRows"
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
+  val OUTPUT_DATA_SIZE = "outputDataSize"
   val PARTITION_SIZE = "partitionSize"
   val NUM_PARTITIONS = "numPartitions"
   val OP_TIME = "opTime"
@@ -120,6 +121,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_NUM_INPUT_BATCHES = "input columnar batches"
   val DESCRIPTION_NUM_OUTPUT_ROWS = "output rows"
   val DESCRIPTION_NUM_OUTPUT_BATCHES = "output columnar batches"
+  val DESCRIPTION_OUTPUT_DATA_SIZE = "output data size"
   val DESCRIPTION_PARTITION_SIZE = "partition data size"
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME = "op time"
@@ -271,6 +273,7 @@ object GpuMetric extends Logging {
     }
   }
 
+  object DISABLE_LEVEL extends MetricsLevel(-1)
   object DEBUG_LEVEL extends MetricsLevel(0)
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)

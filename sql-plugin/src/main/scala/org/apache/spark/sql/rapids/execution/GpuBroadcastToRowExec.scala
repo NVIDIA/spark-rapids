@@ -21,9 +21,9 @@ import java.util.concurrent._
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.ExecutionContext
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.{GpuMetric, MetricsOverrideGpuExec}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.SparkException
@@ -46,12 +46,14 @@ case class GpuBroadcastToRowExec(
   buildKeys: Seq[Expression],
   broadcastMode: BroadcastMode,
   child: SparkPlan)
-  extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec with Logging {
+  extends ShimBroadcastExchangeLike with ShimUnaryExecNode
+    with MetricsOverrideGpuExec with Logging {
 
   @transient
   private val timeout: Long = conf.broadcastTimeout
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
+    NUM_OUTPUT_ROWS -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
     "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
     COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME))
 
