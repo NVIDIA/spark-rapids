@@ -877,6 +877,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
       precision: Int,
       scale: Int): Unit = {
       // Catch out of range exception when AnsiMode is on
+      val errMsg = dataType match {
+        case DataTypes.DoubleType | DataTypes.FloatType => GpuCast.OVERFLOW_MESSAGE
+        case _ => "cannot be represented as Decimal"
+      }
       assert(
         exceptionContains(
           if (isSpark400OrLater) {
@@ -894,7 +898,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
               nonOverflowCase(dataType, generator, precision, scale)
             }
           },
-        GpuCast.OVERFLOW_MESSAGE)
+          errMsg)
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
       testCastToDecimal(dataType,

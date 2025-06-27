@@ -210,7 +210,6 @@ def test_with_ansi_disabled_cast_decimal_to_decimal(data_gen, to_type):
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')))
 
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11550")
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(3, 0)], ids=meta_idfn('from:'))
@@ -220,7 +219,7 @@ def test_ansi_cast_failures_decimal_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')).collect(),
         conf=ansi_enabled_conf,
-        error_message="overflow occurred")
+        error_message="cannot be represented as Decimal")
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
@@ -240,14 +239,14 @@ def test_cast_integral_to_decimal_ansi_off(data_gen, to_type):
         conf=ansi_disabled_conf)
 
 
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [LongGen(min_val=100)], ids=idfn)
 @pytest.mark.parametrize('to_type', [DecimalType(2, 0)], ids=idfn)
 def test_cast_integral_to_decimal_ansi_on(data_gen, to_type):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(
-                f.col('a').cast(to_type)),
-        conf=ansi_enabled_conf)
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)).collect(),
+        conf=ansi_enabled_conf,
+        error_message="cannot be represented as Decimal")
+
 
 def test_cast_byte_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
