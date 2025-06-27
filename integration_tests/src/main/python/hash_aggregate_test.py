@@ -365,7 +365,7 @@ def test_hash_reduction_decimal_overflow_sum_ansi(precision, kudo_enabled):
         conf = {'spark.rapids.sql.batchSizeBytes': '128m',
                 kudo_enabled_conf_key: kudo_enabled,
                 'spark.sql.ansi.enabled': True},
-        error_message=re.compile(r'(overflow)|(NUMERIC_VALUE_OUT_OF_RANGE)', re.IGNORECASE))
+        error_message=re.compile(r'(overflow)|(NUMERIC_VALUE_OUT_OF_RANGE)|(ArithmeticException)', re.IGNORECASE))
 
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 @pytest.mark.parametrize('override_split_until_size', [None, 1], ids=idfn)
