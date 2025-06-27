@@ -25,7 +25,7 @@ from marks import *
 from parquet_write_test import parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
-    with_cpu_session, supports_delta_lake_deletion_vectors, is_spark_356
+    is_spark_353_or_later, is_spark_356, with_cpu_session, supports_delta_lake_deletion_vectors
 
 delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
 
