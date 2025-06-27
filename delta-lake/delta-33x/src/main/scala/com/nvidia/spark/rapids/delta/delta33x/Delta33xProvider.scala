@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.delta.DeltaIOProvider
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.commands.MergeIntoCommand
+import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -35,6 +35,10 @@ object Delta33xProvider extends DeltaIOProvider {
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
     Seq(
+      GpuOverrides.runnableCmd[DeleteCommand](
+          "Delete rows from a Delta Lake table",
+          (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r))
+        .disabledByDefault("Delta Lake delete support is experimental"),
       GpuOverrides.runnableCmd[MergeIntoCommand](
           "Merge of a source query/table into a Delta Lake table",
           (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
