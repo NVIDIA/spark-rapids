@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.delta
 import com.nvidia.spark.rapids.RapidsMeta
 
 import org.apache.spark.sql.delta.DeltaLog
-import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.internal.SQLConf
 
 object Delta33xConfigChecker extends DeltaConfigChecker {
@@ -29,25 +28,5 @@ object Delta33xConfigChecker extends DeltaConfigChecker {
       sqlConf: SQLConf,
       options: Map[String, String]
   ): Unit = {
-    def getSQLConf(key: String): Option[String] = {
-      try {
-        Option(sqlConf.getConfString(key))
-      } catch {
-        case _: NoSuchElementException => None
-      }
-    }
-
-    val autoCompactEnabled =
-      getSQLConf("spark.databricks.delta.autoCompact.enabled").orElse {
-        deltaLog.flatMap { log =>
-          val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(log).metadata
-          metadata.configuration.get("delta.autoOptimize.autoCompact").orElse {
-            getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.autoCompact")
-          }
-        }
-      }.exists(_.toBoolean)
-    if (autoCompactEnabled) {
-      meta.willNotWorkOnGpu("automatic compaction of Delta Lake tables is not supported")
-    }
   }
 }
