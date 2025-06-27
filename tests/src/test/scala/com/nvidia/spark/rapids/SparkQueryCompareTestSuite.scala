@@ -89,7 +89,6 @@ object SparkSessionHolder extends Logging {
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
         .config(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "false")
-//        .config(RapidsConf.OFF_HEAP_LIMIT_SIZE.key, "96GB")
         .appName("rapids spark plugin integration tests (scala)")
 
     // comma separated config from command line
