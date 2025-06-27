@@ -367,16 +367,17 @@ def test_hash_reduction_decimal_overflow_sum_ansi(precision, kudo_enabled):
                 'spark.sql.ansi.enabled': True},
         error_message=re.compile(r'(overflow)|(NUMERIC_VALUE_OUT_OF_RANGE)', re.IGNORECASE))
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 @pytest.mark.parametrize('override_split_until_size', [None, 1], ids=idfn)
 @pytest.mark.parametrize('override_batch_size_bytes', [None, 1], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen, override_split_until_size,
                                      override_batch_size_bytes, kudo_enabled):
+    # disable ANSI mode to avoid overflow errors on longs_with_nulls
     conf = {
         'spark.rapids.sql.test.overrides.splitUntilSize': override_split_until_size,
-        kudo_enabled_conf_key: kudo_enabled
+        kudo_enabled_conf_key: kudo_enabled,
+        'spark.sql.ansi.enabled': False
     }
     if override_batch_size_bytes is not None:
         conf["spark.rapids.sql.batchSizeBytes"] = override_batch_size_bytes
@@ -396,22 +397,25 @@ def test_hash_grpby_list_min_max(data_gen, kudo_enabled):
             'b'), f.max('b')),
         conf = {kudo_enabled_conf_key: kudo_enabled})
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
 def test_hash_reduction_sum_count_action(data_gen, kudo_enabled):
+    # disable ANSI mode to avoid overflow errors on longs_with_nulls
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).agg(f.sum('b')),
-        conf = {kudo_enabled_conf_key: kudo_enabled}
+        conf = {kudo_enabled_conf_key: kudo_enabled,
+            'spark.sql.ansi.enabled': False}
     )
 
 # Make sure that we can do computation in the group by columns
 @ignore_order
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_computation_in_grpby_columns(kudo_enabled):
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
+def test_computation_in_grpby_columns(kudo_enabled, ansi):
+    #We do not generate enough rows for the sum of a short to ever overflow
     conf = {'spark.rapids.sql.batchSizeBytes' : '250',
-            kudo_enabled_conf_key: kudo_enabled}
+            kudo_enabled_conf_key: kudo_enabled,
+            'spark.sql.ansi.enabled': ansi}
     data_gen = [
             ('a', RepeatSeqGen(StringGen('a{1,20}'), length=50)),
             ('b', short_gen)]
@@ -423,12 +427,13 @@ def test_computation_in_grpby_columns(kudo_enabled):
 @approximate_float
 @ignore_order
 @incompat
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
 def test_hash_grpby_sum(data_gen, conf, kudo_enabled):
-    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled})
+    # disable ANSI mode to avoid possible overflow issues in some of the data gens
+    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled,
+        'spark.sql.ansi.enabled': False})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf = new_conf)
@@ -437,26 +442,28 @@ def test_hash_grpby_sum(data_gen, conf, kudo_enabled):
 @approximate_float
 @ignore_order
 @incompat
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_grpkey_short_sum_full_decimals, _grpkey_short_sum_full_neg_scale_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
 def test_hash_grpby_sum_full_decimal(data_gen, conf, kudo_enabled):
-    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled})
+    # disable ANSI mode to avoid possible overflow issues in some of the data gens
+    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled,
+        'spark.sql.ansi.enabled': False})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf = new_conf)
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @approximate_float
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9822")
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [DecimalGen(precision=36, scale=5)], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
 def test_hash_reduction_sum(data_gen, conf, kudo_enabled):
-    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled})
+    # disable ANSI mode to avoid possible overflow issues in some of the data gens
+    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled,
+        'spark.sql.ansi.enabled': False})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
         conf = new_conf)
@@ -464,14 +471,15 @@ def test_hash_reduction_sum(data_gen, conf, kudo_enabled):
 @approximate_float
 @ignore_order
 @incompat
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [
     DecimalGen(precision=38, scale=0), DecimalGen(precision=38, scale=-10)], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9779')
 def test_hash_reduction_sum_full_decimal(data_gen, conf, kudo_enabled):
-    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled})
+    # disable ANSI mode to avoid possible overflow issues in some of the data gens
+    new_conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled,
+        'spark.sql.ansi.enabled': False})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
         conf = new_conf)
@@ -559,17 +567,18 @@ _pivot_gens_with_decimals = _init_list + [
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _pivot_gens_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
 def test_hash_grpby_pivot(data_gen, conf, kudo_enabled):
+    # disable ANSI mode to avoid overflow in some cases of SUM
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .pivot('b')
             .agg(f.sum('c')),
-        conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled}))
+        conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled,
+            'spark.sql.ansi.enabled': False}))
 
 @approximate_float
 @ignore_order(local=True)
@@ -589,18 +598,18 @@ def test_hash_multiple_grpby_pivot(data_gen, conf, kudo_enabled):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_hash_reduction_pivot(data_gen, conf, kudo_enabled):
+    # disable ANSI mode to avoid overflow in some cases of SUM
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby()
             .pivot('b')
             .agg(f.sum('c')),
-        conf=copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled}))
-
+        conf = copy_and_update(conf, {kudo_enabled_conf_key: kudo_enabled,
+            'spark.sql.ansi.enabled': False}))
 
 @approximate_float
 @ignore_order(local=True)
@@ -1239,7 +1248,7 @@ def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback(k
 @approximate_float
 @ignore_order
 @incompat
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114 (But SUM is okay)
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
@@ -1280,7 +1289,7 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf, kudo_enabled):
 @ignore_order
 @incompat
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10388")
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114 (But SUM is okay)
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
@@ -1307,7 +1316,7 @@ def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, kudo_en
 @approximate_float
 @ignore_order
 @incompat
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114 (But SUM is okay)
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
@@ -1354,7 +1363,7 @@ def test_hash_multiple_filters(data_gen, conf, kudo_enabled):
 
 @approximate_float
 @ignore_order
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114 (But SUM is okay)
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
                                       _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
@@ -1377,7 +1386,7 @@ def test_hash_agg_with_nan_keys(data_gen, kudo_enabled):
         local_conf)
 
 @ignore_order
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114 (But SUM is okay)
 @pytest.mark.parametrize('data_gen',  [_grpkey_structs_with_non_nested_children,
                                        _grpkey_nested_structs], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
@@ -1563,7 +1572,7 @@ def test_distinct_float_count_reductions(data_gen, kudo_enabled):
         conf = {kudo_enabled_conf_key: kudo_enabled})
 
 @approximate_float
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114 (But SUM is okay)
 @pytest.mark.parametrize('data_gen', numeric_gens + [decimal_gen_64bit, decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_arithmetic_reductions(data_gen, kudo_enabled):
@@ -1647,7 +1656,7 @@ def test_sorted_groupby_first_last(data_gen, kudo_enabled):
 @ignore_order(local=True)
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
+@pytest.mark.parametrize('count_func', [f.count, f.countDistinct], ids=["COUNT", "COUNT_DISTINCT"])
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_agg_count(data_gen, count_func, kudo_enabled):
@@ -1685,7 +1694,7 @@ def subquery_create_temp_views(spark, expr):
 # SPARK-32031, but our GPU hash aggregate does not seem to exhibit the same failure.
 # The tests are being added more as a sanity check.
 # Adaptive is being turned on and off so we invoke re-optimization at the logical plan level.
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114 (But SUM is okay)
 @pytest.mark.parametrize('adaptive', ["true", "false"])
 @pytest.mark.parametrize('expr', [
   "select sum(if(c > (select a from t1), d, 0)) as csum from t2",
@@ -1811,25 +1820,30 @@ def test_struct_count_distinct_cast(cast_struct_tostring, key_data_gen, kudo_ena
     })
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_reduction_nested_struct(kudo_enabled):
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
+def test_reduction_nested_struct(kudo_enabled, ansi):
+    # we do not generate enough rows for the values 0 to 4 to overflow in a sum
     def do_it(spark):
         df = unary_op_df(spark, StructGen([('aa', StructGen([('aaa', IntegerGen(min_val=0, max_val=4))]))]))
         return df.agg(f.sum(df.a.aa.aaa))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {kudo_enabled_conf_key: kudo_enabled})
+    assert_gpu_and_cpu_are_equal_collect(do_it,
+            conf = {kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.ansi.enabled': ansi})
 
-
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_reduction_nested_array(kudo_enabled):
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
+def test_reduction_nested_array(kudo_enabled, ansi):
+    # we do not generate enough rows for the values 0 to 4 to overflow in a sum
     def do_it(spark):
-        df = unary_op_df(spark, ArrayGen(StructGen([('aa', IntegerGen(min_val=0, max_val=4))])))
+        # Set the min array length to 2 to avoid array index out of bounds errors in ANSI mode
+        df = unary_op_df(spark, ArrayGen(StructGen([('aa', IntegerGen(min_val=0, max_val=4))]), min_length=2))
         return df.agg(f.sum(df.a[1].aa))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {kudo_enabled_conf_key: kudo_enabled})
-
+    assert_gpu_and_cpu_are_equal_collect(do_it,
+            conf = {kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.ansi.enabled': ansi})
 
 # The map here is a child not a top level, because we only support GetMapValue on String to String maps.
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
@@ -1842,13 +1856,16 @@ def test_reduction_nested_map(kudo_enabled):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf = {kudo_enabled_conf_key: kudo_enabled})
 
 @ignore_order(local=True)
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_agg_nested_struct(kudo_enabled):
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
+def test_agg_nested_struct(kudo_enabled, ansi):
+    # we do not generate enough rows for the values 0 to 4 to overflow in a sum
     def do_it(spark):
         df = two_col_df(spark, StringGen('k{1,5}'), StructGen([('aa', StructGen([('aaa', IntegerGen(min_val=0, max_val=4))]))]))
         return df.groupBy('a').agg(f.sum(df.b.aa.aaa))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {kudo_enabled_conf_key: kudo_enabled})
+    assert_gpu_and_cpu_are_equal_collect(do_it, 
+            conf = {kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.ansi.enabled': ansi})
 
 @ignore_order(local=True)
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
@@ -2243,7 +2260,7 @@ def test_hash_reduction_avg_nulls_ansi(data_gen, conf, kudo_enabled):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_sum_no_fallback_when_ansi_enabled(data_gen, kudo_enabled):
+def test_sum_ansi_enabled(data_gen, kudo_enabled):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
         return df.groupBy('a').agg(f.sum("b"))
@@ -2464,21 +2481,23 @@ def test_hash_aggregate_complete_with_grouping_expressions(kudo_enabled):
         conf = {kudo_enabled_conf_key: kudo_enabled})
 
 @ignore_order(local=True)
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('cast_key_to', ["byte", "short", "int",
     "long", "string", "DECIMAL(38,5)"], ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_hash_agg_force_pre_sort(cast_key_to, kudo_enabled):
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
+def test_hash_agg_force_pre_sort(cast_key_to, kudo_enabled, ansi):
     def do_it(spark):
-        gen = StructGen([("key", UniqueLongGen()), ("value", long_gen)], nullable=False)
+        # limit long value to avoid overflow in ANSI mode
+        # limit key value range to avoid ANSI cast overflow to BYTE
+        gen = StructGen([("key", UniqueLongGen()), ("value", LongGen(min_val=-100, max_val=100))], nullable=False)
         df = gen_df(spark, gen)
-        return df.selectExpr("CAST((key div 10) as " + cast_key_to + ") as key", "value").groupBy("key").sum("value")
+        return df.selectExpr("CAST((key % 127) as " + cast_key_to + ") as key", "value").groupBy("key").sum("value")
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.rapids.sql.agg.forceSinglePassPartialSort': True,
             'spark.rapids.sql.agg.singlePassPartialSortEnabled': True,
-            kudo_enabled_conf_key: kudo_enabled})
+            kudo_enabled_conf_key: kudo_enabled,
+            'spark.sql.ansi.enabled': ansi})
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize("gen", [
     binary_gen,
@@ -2486,13 +2505,16 @@ def test_hash_agg_force_pre_sort(cast_key_to, kudo_enabled):
     ArrayGen(ArrayGen(binary_gen)),
     StructGen([('s1', int_gen), ('b2', binary_gen)]),
     StructGen([('s1', int_gen), ('b2', ArrayGen(ArrayGen(binary_gen)))])], ids=idfn)
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
 @allow_non_gpu('ShuffleExchangeExec')
-def test_group_by_binary(gen):
+def test_group_by_binary(gen, ansi):
+    # we do not generate enough rows for an int_gen to overflow in ansi mode
     gen_list = [('c_binary', gen), ('c_int', int_gen)]
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen_list),
         "tab",
-        "select c_binary, sum(c_int) from tab group by c_binary")
+        "select c_binary, sum(c_int) from tab group by c_binary",
+        conf={'spark.sql.ansi.enabled': ansi})
 
 def local_aggregate_gen(spark, bucketed_table, group_key):
     df = spark.table(bucketed_table).filter(f.length('str_val') > 1).groupBy(group_key)
