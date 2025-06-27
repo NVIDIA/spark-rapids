@@ -1509,6 +1509,10 @@ def test_running_window_function_exec_for_all_aggs():
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_join_sum_window_of_window_no_ansi(data_gen):
+    # we have no ANSI mode test for this because it overflows all over the place in really bad ways
+    # it also is suseptible to divide by 0 errors and if we get the size small enough to avoid
+    # overflows, the divide by zeros start to show up. Because this is specific to a bug that is
+    # not ANSI related it is okay to keep it as is.
     def do_it(spark):
         agg_table = gen_df(spark, StructGen([('a_1', UniqueLongGen()), ('c', data_gen)], nullable=False))
         part_table = gen_df(spark, StructGen([('a_2', UniqueLongGen()), ('b', byte_gen)], nullable=False))
@@ -1525,36 +1529,9 @@ def test_join_sum_window_of_window_no_ansi(data_gen):
         from agg, part
         where a_1 = a_2
         group by b, c
-        order by b, ratio_sum, ratio_bc""",
-        conf={'spark.sql.ansi.enabled': False})
+        order by b, ratio_sum, ratio_bc""")
 
-    assert_gpu_and_cpu_are_equal_collect(do_it)
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, LongGen(min_val=-3000, max_val=3000)], ids=idfn)
-def test_join_sum_window_of_window_ansi(data_gen):
-    def do_it(spark):
-        agg_table = gen_df(spark, StructGen([('a_1', UniqueLongGen()), ('c', data_gen)], nullable=False))
-        part_table = gen_df(spark, StructGen([('a_2', UniqueLongGen()), ('b', byte_gen)], nullable=False))
-        agg_table.createOrReplaceTempView("agg")
-        part_table.createOrReplaceTempView("part")
-        # Note that if we include `c` in the select clause here (the output projection), the bug described
-        # in https://github.com/NVIDIA/spark-rapids/issues/6531 does not manifest
-        return spark.sql("""
-        select
-            b,
-            sum(c) as sum_c,
-            sum(c)/sum(sum(c)) over (partition by b) as ratio_sum,
-            (b + c)/sum(sum(c)) over (partition by b) as ratio_bc
-        from agg, part
-        where a_1 = a_2
-        group by b, c
-        order by b, ratio_sum, ratio_bc""",
-        conf={'spark.sql.ansi.enabled': True})
-
-    assert_gpu_and_cpu_are_equal_collect(do_it)
-
-
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
 
 # Generates some repeated values to test the deduplication of GpuCollectSet.
 # And GpuCollectSet does not yet support struct type.
