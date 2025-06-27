@@ -13,14 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*** spark-rapids-shim-json-lines
-{"spark": "350db143"}
-{"spark": "400"}
-spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
 
-object CastTimeToIntShim {
-  // From 400, rows overflow will be set to nulls when casting timestamps to integrals,
-  // when ANSI is disabled.
-  def ifNullifyOverflows: Boolean = true
+package com.nvidia.spark.rapids.delta
+
+import com.nvidia.spark.rapids.RapidsMeta
+
+import org.apache.spark.sql.delta.DeltaLog
+import org.apache.spark.sql.internal.SQLConf
+
+trait DeltaConfigChecker {
+  /**
+   * Check delta configurations if they are compatible with the Rapids Accelerator.
+   * The `meta` will be marked if incompatible configurations are found.
+   */
+  def checkIncompatibleConfs(
+      meta: RapidsMeta[_, _, _],
+      deltaLog: Option[DeltaLog],
+      sqlConf: SQLConf,
+      options: Map[String, String]
+  ): Unit
 }
