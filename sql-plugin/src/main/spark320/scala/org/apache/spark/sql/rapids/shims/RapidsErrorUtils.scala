@@ -87,4 +87,10 @@ object RapidsErrorUtils extends RapidsQueryErrorUtils
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
   }
+
+  def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String, 
+      errorContext: String): RuntimeException = {
+    // For Spark 3.2, ignore the errorContext parameter and call the single-parameter version
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s)
+  }
 }

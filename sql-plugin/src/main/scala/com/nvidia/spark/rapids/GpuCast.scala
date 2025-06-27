@@ -1211,7 +1211,12 @@ object GpuCast {
           if (ansiEnabled) {
             withResource(validBools.all()) { isAllBool =>
               if (isAllBool.isValid && !isAllBool.getBoolean) {
-                throw new IllegalStateException(INVALID_INPUT_MESSAGE)
+                // Throw the correct Spark exception instead of generic IllegalStateException
+                // Create a representative UTF8String for the error message
+                // val errorString = org.apache.spark.unsafe.types.UTF8String.fromString("invalid input")
+                val INVALID_STRING = org.apache.spark.unsafe.types.UTF8String.fromString(
+                  "in the input column has atleast one invalid value")
+                throw RapidsErrorUtils.invalidInputSyntaxForBooleanError(INVALID_STRING, "cast")
               }
             }
           }

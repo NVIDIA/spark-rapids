@@ -69,4 +69,13 @@ trait RapidsErrorUtilsFor330plus {
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
   }
+
+  def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String, 
+      errorContext: String): RuntimeException = {
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, context=null)
+  }
+
+  // def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String): RuntimeException = {
+  //   QueryExecutionErrors.invalidInputSyntaxForBooleanError(s)
+  // }
 }
