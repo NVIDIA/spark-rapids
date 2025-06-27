@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.{NvtxId, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -233,6 +234,8 @@ class GpuTaskMetrics extends Serializable {
   private val maxPinnedMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
 
+  private val maxGpuFootprint = new LongAccumulator
+
   private var maxHostBytesAllocated: Long = 0
   private var maxPageableBytesAllocated: Long = 0
   private var maxPinnedBytesAllocated: Long = 0
@@ -288,7 +291,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuMaxPageableMemoryBytes" -> maxPageableMemoryBytes,
     "gpuMaxPinnedMemoryBytes" -> maxPinnedMemoryBytes,
     "gpuOnGpuTasksWaitingGPUAvgCount" -> onGpuTasksInWaitingQueueAvgCount,
-    "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount
+    "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
+    "gpuMaxTaskFootprint" -> maxGpuFootprint
   )
 
   def register(sc: SparkContext): Unit = {
@@ -325,11 +329,26 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
+  private def timeIt[A](timer: NanoSecondAccumulator,
+                        range: NvtxId,
+                        f: => A): A = {
+    val start = System.nanoTime()
+    range {
+      try {
+        f
+      } finally {
+        timer.add(System.nanoTime() - start)
+      }
+    }
+  }
+
+  def getSemaphoreHoldingTime: Long = semaphoreHoldingTime.value.value
+
   def addSemaphoreHoldingTime(duration: Long): Unit = semaphoreHoldingTime.add(duration)
 
   def getSemWaitTime(): Long = semWaitTimeNs.value.value
 
-  def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, "Acquire GPU", NvtxColor.RED, f)
+  def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, NvtxRegistry.ACQUIRE_GPU, f)
 
   def spillToHostTime[A](f: => A): A = {
     timeIt(spillToHostTimeNs, "spillToHostTime", NvtxColor.RED, f)
@@ -390,6 +409,13 @@ class GpuTaskMetrics extends Serializable {
     }
     if (maxDiskBytesAllocated > 0) {
       maxDiskMemoryBytes.add(maxDiskBytesAllocated)
+    }
+  }
+
+  def updateFootprint(taskAttemptId: Long): Unit = {
+    val maxFootprint = RmmSpark.getMaxGpuTaskMemory(taskAttemptId)
+    if (maxFootprint > 0) {
+      maxGpuFootprint.setValue(maxFootprint)
     }
   }
 

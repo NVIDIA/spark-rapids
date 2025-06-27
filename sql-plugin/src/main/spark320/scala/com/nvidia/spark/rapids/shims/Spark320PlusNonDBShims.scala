@@ -38,11 +38,12 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.SparkShims
+import com.nvidia.spark.rapids.{BucketJoinTwoSidesPrefetch, FoldLocalAggregate, RapidsConf, SparkShims}
 import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -80,5 +81,19 @@ trait Spark320PlusNonDBShims extends SparkShims {
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
+  }
+
+  override def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    // We don't apply FoldLocalAggregate under Databricks runtime. This rule is only applied to
+    // shim layers other than Databricks shims.
+    if (conf.enableFoldLocalAggregate) {
+      FoldLocalAggregate(plan)
+    } else {
+      plan
+    }
+  }
+
+  override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
+    BucketJoinTwoSidesPrefetch(super.applyPostShimPlanRules(plan))
   }
 }

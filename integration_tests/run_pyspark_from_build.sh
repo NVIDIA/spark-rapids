@@ -12,6 +12,50 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# Documentation generated using a generative AI tool
+# ============================================================================
+# run_pyspark_from_build.sh
+# ============================================================================
+#
+# Description:
+#   This script runs PySpark integration tests from a build environment.
+#
+# Usage:
+#   To run this script, ensure you have Apache Spark installed and configured
+#   properly, along with the necessary dependencies (e.g., findspark, xdist).
+#
+# Parameters and Environment Variables:
+#   - SPARK_HOME: Path to your Apache Spark installation.
+#   - SKIP_TESTS: If set to true, skips running the Python integration tests.
+#   - INCLUDE_SPARK_AVRO_JAR: If set to true, includes Avro tests.
+#   - TEST: Specifies a specific test to run.
+#   - TEST_TAGS: Allows filtering tests based on tags.
+#   - TEST_TYPE: Specifies the type of tests to run.
+#   - LOCAL_JAR_PATH: Path to local jars if not building from source.
+#   - PLUGIN_JAR: Path to a built spark-rapids plugin jar, the default points to the target directory
+#   - INTEGRATION_TEST_VERSION_OVERRIDE: Overrides the auto-detected shim version.
+#
+# Script Flow:
+#   1. Setup and Checks: Validates environment and detects Spark/Scala versions.
+#   2. Jars and Dependencies: Identifies necessary jars based on Spark version.
+#   3. Test Configuration: Determines parallelism and checks for necessary tools.
+#   4. Running Tests: Executes tests using runtests.py with specified options.
+#
+# Example Usage:
+#   To run all tests, including Avro tests:
+#     INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh
+#
+#   To run a specific test:
+#     TEST=my_test ./run_pyspark_from_build.sh
+#
+# Troubleshooting:
+#   - Ensure SPARK_HOME is correctly set.
+#   - Check for missing dependencies like findspark or xdist.
+#   - Verify that the necessary jars are correctly linked.
+#
+# ============================================================================
+
 set -ex
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
@@ -56,7 +100,7 @@ else
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
-        PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
+        PLUGIN_JAR=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
         if [ -f $(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar) ]; then
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
             PARQUET_HADOOP_TESTS=$(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar)
@@ -80,7 +124,7 @@ else
         # Make sure we have Parquet version >= 1.12 in the dependency
         LOWEST_PARQUET_JAR=$(echo -e "$MIN_PARQUET_JAR\n$PARQUET_HADOOP_TESTS" | sort -V | head -1)
         export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "$MIN_PARQUET_JAR" ]] && echo true || echo false)
-        PLUGIN_JARS=$(echo "$TARGET_DIR"/../../dist/target/rapids-4-spark_*.jar)
+        PLUGIN_JAR=${PLUGIN_JAR:-$(echo "$TARGET_DIR"/../../dist/target/rapids-4-spark_*.jar)}
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$TARGET_DIR"/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     fi
@@ -99,7 +143,7 @@ else
 
     # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
     # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
-    ALL_JARS=$(readlink -e $PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
     # `:` separated jars
     ALL_JARS="${ALL_JARS//$'\n'/:}"
 
@@ -348,6 +392,7 @@ else
     fi
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
+    EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
     if [[ "${SPARK_SHELL_SMOKE_TEST}" != "0" ]]; then
         echo "Running spark-shell smoke test..."
         SPARK_SHELL_ARGS_ARR=(
@@ -380,6 +425,20 @@ else
             "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
             | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
         echo "SUCCESS spark-shell smoke test"
+    elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
+        echo "Running explainOnly mode on CPU smoke test..."
+        SPARK_SHELL_ARGS_ARR=(
+            --master local[2]
+            --jars "${PYSP_TEST_spark_jars}"
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --conf spark.deploy.maxExecutorRetries=0
+            --conf spark.rapids.sql.mode=explainOnly
+        )
+        output=$(<<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+            CUDA_VISIBLE_DEVICES="" "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1)
+        grep 'WARN RapidsPluginUtils: RAPIDS Accelerator is in explain only mode' <<< "$output"
+        grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])' <<< "$output"
+        echo "SUCCESS explainOnly mode on CPU smoke test"
     elif ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"

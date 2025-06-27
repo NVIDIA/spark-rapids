@@ -795,6 +795,14 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
+@pytest.mark.parametrize('reader_type', ['COALESCING', 'MULTITHREADED', 'PERFILE'])
+def test_parquet_read_empty_arrow(std_input_path, reader_type):
+    conf = {'spark.rapids.sql.format.parquet.reader.type': reader_type}
+    data_path = "%s/empty_arrow.parquet" % (std_input_path)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path),
+        conf=conf)
+
 @pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
 @pytest.mark.skipif(is_dataproc_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/8074')
 def test_parquet_read_nano_as_longs_31x(std_input_path):
@@ -1532,12 +1540,11 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
     ])
 
     spark_conf = {}
-    if is_before_spark_400():
-        # In Spark versions earlier than 4.0, the vectorized Parquet reader throws an exception
-        # if the read scale differs from the write scale. We disable the vectorized reader,
-        # forcing Spark to use the non-vectorized path for CPU case. This configuration
-        # is ignored by the plugin.
-        spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
+    # The vectorized Parquet reader throws an exception in some cases where the
+    # read scale differs from the write scale. We disable the vectorized reader,
+    # forcing Spark to use the non-vectorized path for CPU case. This configuration
+    # is ignored by the plugin.
+    spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path), conf=spark_conf)

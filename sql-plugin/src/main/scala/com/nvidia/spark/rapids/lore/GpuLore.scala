@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, RapidsConf}
+import com.nvidia.spark.rapids.{DatabricksShimVersion, GpuColumnarToRowExec, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader, ShimVersion, SparkShimVersion}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -60,7 +60,6 @@ trait GpuLoreRDD {
     new Path(pathOfPartition(partitionIndex), s"batch-$batchIndex.parquet")
   }
 }
-
 
 object GpuLore {
   /**
@@ -113,7 +112,7 @@ object GpuLore {
   }
 
   def restoreGpuExec(rootPath: Path, spark: SparkSession): GpuExec = {
-    val rootExec = loadObject[GpuExec](pathOfRootPlanMeta(rootPath),
+    val rootExec = loadObject[SparkPlan](pathOfRootPlanMeta(rootPath),
       spark.sparkContext.hadoopConfiguration)
 
     checkUnsupportedOperator(rootExec)
@@ -123,6 +122,18 @@ object GpuLore {
       sc.broadcast(new SerializableConfiguration(spark.sparkContext.hadoopConfiguration))
     }
 
+    rootExec match {
+      case gpuExec: GpuExec =>
+        // Handle regular GpuExec (existing logic)
+        restoreGpuExecInternal(gpuExec, rootPath, broadcastHadoopConf)
+      case _ =>
+        throw new IllegalArgumentException(
+          s"Unsupported plan type for restoration: ${rootExec.getClass.getSimpleName}")
+    }
+  }
+
+  private def restoreGpuExecInternal(rootExec: GpuExec, rootPath: Path,
+      broadcastHadoopConf: Broadcast[SerializableConfiguration]): GpuExec = {
     // Load children
     val newChildren = rootExec.children.zipWithIndex.map { case (plan, idx) =>
       val newChild = GpuLoreReplayExec(idx, rootPath.toString, broadcastHadoopConf)
@@ -303,11 +314,61 @@ object GpuLore {
   }
 
   private def checkUnsupportedOperator(plan: SparkPlan): Unit = {
-    if (plan.children.isEmpty ||
-      plan.isInstanceOf[GpuCustomShuffleReaderExec]
-    ) {
-      throw new UnsupportedOperationException(s"Currently we don't support dumping input of " +
-        s"${plan.getClass.getSimpleName} operator.")
+    plan match {
+      // Allow GpuDataWritingCommandExec
+      case _: GpuDataWritingCommandExec =>
+        checkGpuDataWritingCommandSupportedVersion()
+      case _ =>
+        if (plan.children.isEmpty ||
+          plan.isInstanceOf[GpuCustomShuffleReaderExec]
+        ) {
+          throw new UnsupportedOperationException(s"Currently we don't support dumping input of " +
+            s"${plan.getClass.getSimpleName} operator.")
+        }
     }
+  }
+
+  /**
+   * Check if the current Spark version is in the unsupported versions list for GpuWriteFiles
+   */
+  private def checkGpuDataWritingCommandSupportedVersion(): Unit = {
+    val currentShimVersion = ShimLoader.getShimVersion
+    // Get the list of unsupported versions
+    val unsupportedVersions = getGpuWriteFilesUnsupportedVersions
+    if (unsupportedVersions.contains(currentShimVersion)) {
+      throw new UnsupportedOperationException(
+        s"LORE dump is not supported for GpuDataWritingCommandExec on Spark" +
+          s" version $currentShimVersion. " +
+        s"Unsupported versions: ${unsupportedVersions.mkString(", ")}")
+    }
+  }
+
+  /**
+   * Get the unsupported versions for GpuWriteFiles
+   * @return Set of unsupported ShimVersion instances
+   */
+  private[lore] lazy val getGpuWriteFilesUnsupportedVersions: Set[ShimVersion] = {
+    // These versions are extracted from GpuWriteFiles.scala spark-rapids-shim-json-lines
+    Set(
+      // Spark versions
+      SparkShimVersion(3, 3, 2),
+      SparkShimVersion(3, 4, 0),
+      SparkShimVersion(3, 4, 1),
+      SparkShimVersion(3, 4, 2),
+      SparkShimVersion(3, 4, 3),
+      SparkShimVersion(3, 4, 4),
+      SparkShimVersion(3, 5, 0),
+      SparkShimVersion(3, 5, 1),
+      SparkShimVersion(3, 5, 2),
+      SparkShimVersion(3, 5, 3),
+      SparkShimVersion(3, 5, 4),
+      SparkShimVersion(3, 5, 5),
+      SparkShimVersion(3, 5, 6),
+      SparkShimVersion(4, 0, 0),
+      // Databricks versions
+      DatabricksShimVersion(3, 3, 2), // 332db
+      DatabricksShimVersion(3, 4, 1, "13.3"), // 341db143
+      DatabricksShimVersion(3, 5, 0, "14.3") // 350db143
+    )
   }
 }

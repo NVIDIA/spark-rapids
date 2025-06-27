@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
-        <version>25.06.0-SNAPSHOT</version>
+        <version>25.08.0-SNAPSHOT</version>
         <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>25.06.0-SNAPSHOT</version>
+    <version>25.08.0-SNAPSHOT</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -357,6 +357,9 @@ self.log("... OK")
                                         <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
                                             <arg value="${project.basedir}/../docs/configs.md"/>
                                             <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.NvtxRangeDocs" failonerror="true">
+                                            <arg value="${project.basedir}/../docs/dev/nvtx_ranges.md"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
                                             <arg value="${project.basedir}/../docs/supported_ops.md"/>

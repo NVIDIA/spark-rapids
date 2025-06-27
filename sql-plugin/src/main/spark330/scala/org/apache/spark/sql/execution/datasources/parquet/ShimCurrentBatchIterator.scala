@@ -37,6 +37,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet
@@ -47,8 +48,9 @@ import java.util
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.CurrentBatchIterator
-import com.nvidia.spark.rapids.ParquetCachedBatch
-import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetTimestampNTZShims}
+import com.nvidia.spark.rapids.parquet.ParquetCachedBatch
+import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
+import com.nvidia.spark.rapids.shims.parquet.ParquetTimestampNTZShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.ParquetReadOptions
 import org.apache.parquet.column.page.PageReadStore

@@ -21,7 +21,7 @@ import scala.collection.immutable.TreeMap
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -70,6 +70,8 @@ class GpuMetricFactory(metricsConf: MetricsLevel, context: SparkContext) {
 object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
+  val BUFFER_TIME_WITH_SEM = "bufferTimeWithSem"
+  val SCAN_TIME = "scanTime"
   val COPY_BUFFER_TIME = "copyBufferTime"
   val GPU_DECODE_TIME = "gpuDecodeTime"
   val NUM_INPUT_ROWS = "numInputRows"
@@ -86,6 +88,7 @@ object GpuMetric extends Logging {
   val AGG_TIME = "computeAggTime"
   val JOIN_TIME = "joinTime"
   val FILTER_TIME = "filterTime"
+  val FILTER_TIME_WITH_SEM = "filterTimeWithSem"
   val BUILD_DATA_SIZE = "buildDataSize"
   val BUILD_TIME = "buildTime"
   val STREAM_TIME = "streamTime"
@@ -110,6 +113,7 @@ object GpuMetric extends Logging {
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
+  val DESCRIPTION_BUFFER_TIME_WITH_SEM = "buffer time with Sem."
   val DESCRIPTION_COPY_BUFFER_TIME = "copy buffer time"
   val DESCRIPTION_GPU_DECODE_TIME = "GPU decode time"
   val DESCRIPTION_NUM_INPUT_ROWS = "input rows"
@@ -126,6 +130,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_AGG_TIME = "aggregation time"
   val DESCRIPTION_JOIN_TIME = "join time"
   val DESCRIPTION_FILTER_TIME = "filter time"
+  val DESCRIPTION_FILTER_TIME_WITH_SEM = "filter time with Sem."
+  val DESCRIPTION_SCAN_TIME = "scan time"
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
@@ -147,6 +153,19 @@ object GpuMetric extends Logging {
   val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
+
+  /**
+   * Determine if a GpuMetric wraps a TimingMetric or NanoTimingMetric.
+   *
+   * NOTE: SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private, so we have to use
+   * the string directly
+   */
+  def isTimeMetric(input: GpuMetric): Boolean = input match {
+    case w: WrappedGpuMetric =>
+      w.sqlMetric.metricType.toLowerCase.contains("timing")
+    case _ =>
+      false
+  }
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -174,12 +193,81 @@ object GpuMetric extends Logging {
   }
 
   def ns[T](metrics: GpuMetric*)(f: => T): T = {
+    val initedMetrics = metrics.map(m => (m, m.tryActivateTimer()))
     val start = System.nanoTime()
     try {
       f
     } finally {
       val taken = System.nanoTime() - start
-      metrics.foreach(_.add(taken))
+      initedMetrics.foreach { case (m, isTrack) =>
+        if (isTrack) m.deactivateTimer(taken)
+      }
+    }
+  }
+
+  /**
+   * Give compute block, track its GpuSemaphore withholding time along with the wall time.
+   *
+   * The computation of semaphoreHoldingTime is a typical interval problem. There are 3 kinds of
+   * semaphore holding intervals:
+   *  1. The partial lead one, only the tail part is overlapped with the compute block.
+   *
+   *  2. The complete ones, which are fully overlapped with the compute block. The complete
+   *     intervals can be got from the difference of `getSemaphoreHoldingTime`, since
+   *     semaphoreHoldingTime will only be updated when the semaphore is released.
+   *
+   *  3. The partial lag one, only the head part is overlapped with the compute block.
+   *
+   * Consider the timeline and the relevant durations based on the following diagram style:
+   *
+   * Acq.     Rel.   Acq.        Rel.             Acq.          Rel.
+   *  |--------|      |-----------|                |-------------|
+   *      |----------------------------------------------| (Compute Block)
+   *      <---->      <----------->                <----->
+   *       (1)             (2)                       (3)
+   */
+  def withSemaphoreTime[T](
+      wallTime: GpuMetric,
+      semTime: GpuMetric,
+      ctx: TaskContext)(f: => T): T = {
+    val start = System.nanoTime()
+    val semStart = GpuTaskMetrics.get.getSemaphoreHoldingTime
+    // Compute the preBlockHead if there exists a partial lead interval. The preBlockHead will
+    // be explicitly subtracted in final:
+    //   Sem.Acq                                 Sem.Rel
+    //      |---------------------------------------| (Partial Lead Interval)
+    //                     |--------------------------------------| (Compute Block)
+    //        preBlockHead
+    //      <-------------->
+    val preBlockHead = GpuSemaphore.getLastSemAcqAndRelTime(ctx) match {
+      case (acqTime, relTime) if acqTime > relTime && acqTime < start =>
+        start - acqTime
+      case _ =>
+        0L
+    }
+
+    try {
+      f
+    } finally {
+      val end = System.nanoTime()
+      val semEnd = GpuTaskMetrics.get.getSemaphoreHoldingTime
+      // Compute the partial tail if there exists a partial lag interval. The partial tail will
+      // be explicitly added in final:
+      //                              Sem.Acq           Sem.Rel
+      //                                 |-----------------| (Partial Lag Interval)
+      //      |--------------------------------------| (Compute Block)
+      //                                  partialTail
+      //                                 <----------->
+      val partialTail = GpuSemaphore.getLastSemAcqAndRelTime(ctx) match {
+        case (acqTime, relTime) if acqTime > relTime =>
+          // directly minus acqTime instead of `acqTime max start` because the ahead part has
+          // been subtracted ahead of time (`semHoldTimeBefore`)
+          end - acqTime
+        case _ =>
+          0L
+      }
+      wallTime.add(System.nanoTime() - start)
+      semTime.add(semEnd - semStart - preBlockHead + partialTail)
     }
   }
 
@@ -246,9 +334,7 @@ final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsExclSemWait: 
   extends GpuMetric {
 
   if (withMetricsExclSemWait) {
-    //  SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private,
-    //  so we have to use the string directly
-    if (sqlMetric.metricType == "nsTiming") {
+    if (GpuMetric.isTimeMetric(this)) {
       companionGpuMetric = Some(WrappedGpuMetric.apply(SQLMetrics.createNanoTimingMetric(
         SparkSession.getActiveSession.get.sparkContext, sqlMetric.name.get + " (excl. SemWait)")))
     }

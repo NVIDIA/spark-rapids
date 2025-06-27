@@ -29,6 +29,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -56,27 +57,14 @@ import org.apache.spark.sql.connector.write.WriterCommitMessage
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{GpuWriteFiles, GpuWriteFilesExec, GpuWriteFilesSpec, WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
+import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
 import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-/** A helper object for writing columnar data out to a location. */
-object GpuFileFormatWriter extends Logging {
-
-  private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
-    schema.foreach { field =>
-      if (!format.supportDataType(field.dataType)) {
-        throw new RapidsAnalysisException(
-          s"$format data source does not support ${field.dataType.catalogString} data type.")
-      }
-    }
-  }
-
-  /** Describes how concurrent output writers should be executed. */
-  case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
-      batchSize: Long, sortOrder: Seq[SortOrder])
+trait GpuFileFormatWriterBase extends Serializable with Logging {
 
   /**
    * Basic work flow of this command is:
@@ -153,9 +141,9 @@ object GpuFileFormatWriter extends Logging {
       path = finalOutputSpec.outputPath,
       customPartitionLocations = finalOutputSpec.customPartitionLocations,
       maxRecordsPerFile = caseInsensitiveOptions.get("maxRecordsPerFile").map(_.toLong)
-          .getOrElse(sparkSession.sessionState.conf.maxRecordsPerFile),
+        .getOrElse(sparkSession.sessionState.conf.maxRecordsPerFile),
       timeZoneId = caseInsensitiveOptions.get(DateTimeUtils.TIMEZONE_OPTION)
-          .getOrElse(sparkSession.sessionState.conf.sessionLocalTimeZone),
+        .getOrElse(sparkSession.sessionState.conf.sessionLocalTimeZone),
       statsTrackers = statsTrackers,
       concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize
     )
@@ -415,7 +403,7 @@ object GpuFileFormatWriter extends Logging {
       hadoopConf.setBoolean("mapreduce.task.ismap", true)
       hadoopConf.setInt("mapreduce.task.partition", 0)
 
-      new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
+      createTaskAttemptContext(description, hadoopConf, taskAttemptId)
     }
 
     committer.setupTask(taskAttemptContext)
@@ -484,5 +472,33 @@ object GpuFileFormatWriter extends Logging {
     statsTrackers.zip(statsPerTracker).foreach {
       case (statsTracker, stats) => statsTracker.processStats(stats, jobCommitDuration)
     }
+  }
+
+
+  private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
+    schema.foreach { field =>
+      if (!format.supportDataType(field.dataType)) {
+        throw new RapidsAnalysisException(
+          s"$format data source does not support ${field.dataType.catalogString} data type.")
+      }
+    }
+  }
+
+  def createTaskAttemptContext(description: GpuWriteJobDescription,
+      hadoopConf: Configuration,
+      taskAttemptId: TaskAttemptID): TaskAttemptContext
+}
+
+/** A helper object for writing columnar data out to a location. */
+object GpuFileFormatWriter extends GpuFileFormatWriterBase {
+  /** Describes how concurrent output writers should be executed. */
+  case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
+      batchSize: Long, sortOrder: Seq[SortOrder])
+
+  def createTaskAttemptContext(description: GpuWriteJobDescription,
+      hadoopConf: Configuration,
+      taskAttemptId: TaskAttemptID): TaskAttemptContext = {
+
+    new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
 }

@@ -9,6 +9,8 @@ Documentation on the current release can be found [here](https://nvidia.github.i
 
 To get started and try the plugin out use the [getting started guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html).
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/spark-rapids)
+
 ## Compatibility
 
 The SQL plugin tries to produce results that are bit for bit identical with Apache Spark.
@@ -73,7 +75,7 @@ as a `provided` dependency.
 <dependency>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark_2.12</artifactId>
-    <version>25.06.0-SNAPSHOT</version>
+    <version>25.08.0-SNAPSHOT</version>
     <scope>provided</scope>
 </dependency>
 ```

@@ -22,14 +22,14 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
-        <version>25.06.0-SNAPSHOT</version>
+        <version>25.08.0-SNAPSHOT</version>
         <relativePath>../../jdk-profiles/pom.xml</relativePath>
     </parent>
 
     <artifactId>rapids-4-spark-delta-21x_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Delta Lake 2.1.x Support</name>
     <description>Delta Lake 2.1.x support for the RAPIDS Accelerator for Apache Spark</description>
-    <version>25.06.0-SNAPSHOT</version>
+    <version>25.08.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>../delta-lake/delta-21x</rapids.module>
@@ -76,14 +76,9 @@
                         </goals>
                         <configuration>
                             <sources>
-                                <!-- #if scala-2.12 -->
-                                <source>${project.basedir}/../common/src/main/scala</source>
-                                <source>${project.basedir}/../common/src/main/delta-io/scala</source>
-                                <!-- #endif scala-2.12 -->
-                                <!-- #if scala-2.13 --><!--
-                                <source>${project.basedir}/../../${rapids.module}/../common/src/main/scala</source>
-                                <source>${project.basedir}/../../${rapids.module}/../common/src/main/delta-io/scala</source>
-                                --><!-- #endif scala-2.13 -->
+                                <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/scala</source>
+                                <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-io/scala</source>
+                                <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-20x-24x/scala</source>
                             </sources>
                         </configuration>
                     </execution>

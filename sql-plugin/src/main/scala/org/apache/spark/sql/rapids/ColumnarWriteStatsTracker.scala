@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -35,7 +36,7 @@ trait ColumnarWriteTaskStatsTracker {
    *       count of partitions without examining the values.
    * //@param partitionValues The values that define this new partition.
    */
-  def newPartition(/*partitionValues: InternalRow*/): Unit
+  def newPartition(partitionValues: InternalRow): Unit
 
   /**
    * Process the fact that a new file is about to be written.
@@ -59,6 +60,12 @@ trait ColumnarWriteTaskStatsTracker {
    * @param batch Current data batch to be processed.
    */
   def newBatch(filePath: String, batch: ColumnarBatch): Unit
+
+  /**
+   * Process the fact that how many writers are currently opened.
+   * @param numWriters the current number of open writers
+   */
+  def writersNumber(numWriters: Int): Unit
 
   /**
    * Returns the final statistics computed so far.

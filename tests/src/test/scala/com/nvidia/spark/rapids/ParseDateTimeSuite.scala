@@ -59,50 +59,58 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
         // until we fix https://github.com/NVIDIA/spark-rapids/issues/2118 we need to fall
         // back to CPU when parsing two-digit years
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-          "ProjectExec,Alias,Cast,GetTimestamp,UnixTimestamp,Literal,ShuffleExchangeExec")) {
+          "ProjectExec,Alias,Cast,GetTimestamp,UnixTimestamp,Literal,ShuffleExchangeExec"),
+          assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yy"))
   }
 
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+      conf = CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd LEGACY",
     datesAsStrings,
-    conf = LEGACY_TIME_PARSER_POLICY_CONF) {
+    conf = LEGACY_TIME_PARSER_POLICY_CONF,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
   testSparkResultsAreEqual("to_date yyyy/MM/dd LEGACY",
     datesAsStrings,
-    conf = LEGACY_TIME_PARSER_POLICY_CONF) {
+    conf = LEGACY_TIME_PARSER_POLICY_CONF,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy/MM/dd"))
   }
 
   testSparkResultsAreEqual("to_date dd/MM/yyyy",
       datesAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+      conf = CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
   }
 
   testSparkResultsAreEqual("to_date dd/MM/yyyy LEGACY",
     datesAsStrings,
-    conf = LEGACY_TIME_PARSER_POLICY_CONF) {
+    conf = LEGACY_TIME_PARSER_POLICY_CONF,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
   }
 
   testSparkResultsAreEqual("to_date MM/dd/yyyy",
       datesAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+      conf = CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "MM/dd/yyyy"))
   }
 
   testSparkResultsAreEqual("to_date yyyy/MM",
     datesAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+    conf = CORRECTED_TIME_PARSER_POLICY,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy/MM"))
   }
 
@@ -120,13 +128,15 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
       timestampsAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+      conf = CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
   }
 
   testSparkResultsAreEqual("to_timestamp dd/MM/yyyy",
       timestampsAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+      conf = CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_timestamp(col("c0"), "dd/MM/yyyy"))
   }
 
@@ -134,25 +144,29 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
     CORRECTED_TIME_PARSER_POLICY
         // All of the dates being parsed are valid for all of the versions of Spark supported.
-        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")) {
+        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false"),
+        assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", to_date(col("c0")))
   }
 
   testSparkResultsAreEqual("unix_timestamp parse date",
       timestampsAsStrings,
-      CORRECTED_TIME_PARSER_POLICY) {
+      CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd"))
   }
 
   testSparkResultsAreEqual("unix_timestamp parse yyyy/MM",
     timestampsAsStrings,
-    CORRECTED_TIME_PARSER_POLICY) {
+    CORRECTED_TIME_PARSER_POLICY,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy/MM"))
   }
 
   testSparkResultsAreEqual("to_unix_timestamp parse yyyy/MM",
     timestampsAsStrings,
-    CORRECTED_TIME_PARSER_POLICY) {
+    CORRECTED_TIME_PARSER_POLICY,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => {
       df.createOrReplaceTempView("df")
       val spark = getActiveSession
@@ -162,19 +176,22 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   testSparkResultsAreEqual("unix_timestamp parse timestamp",
       timestampsAsStrings,
-      CORRECTED_TIME_PARSER_POLICY) {
+      CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
   }
 
   testSparkResultsAreEqual("unix_timestamp parse yyyy-MM-dd HH:mm:ss LEGACY",
     timestampsAsStrings,
-    LEGACY_TIME_PARSER_POLICY_CONF) {
+    LEGACY_TIME_PARSER_POLICY_CONF,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
   }
 
   testSparkResultsAreEqual("unix_timestamp parse yyyy/MM/dd HH:mm:ss LEGACY",
     timestampsAsStrings,
-    LEGACY_TIME_PARSER_POLICY_CONF) {
+    LEGACY_TIME_PARSER_POLICY_CONF,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy/MM/dd HH:mm:ss"))
   }
 
@@ -182,13 +199,15 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     timestampsAsStrings,
     new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-        "ProjectExec,Alias,UnixTimestamp,Literal,ShuffleExchangeExec")) {
+        "ProjectExec,Alias,UnixTimestamp,Literal,ShuffleExchangeExec"),
+        assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss.SSS"))
   }
 
   testSparkResultsAreEqual("unix_timestamp parse timestamp default pattern",
       timestampsAsStrings,
-      CORRECTED_TIME_PARSER_POLICY) {
+      CORRECTED_TIME_PARSER_POLICY,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12632")) {
     df => df.withColumn("c1", unix_timestamp(col("c0")))
   }
 
@@ -234,6 +253,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
   test("parse now") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     def now(spark: SparkSession) = {
       import spark.implicits._
       Seq("now").toDF("c0")

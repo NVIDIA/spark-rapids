@@ -33,7 +33,7 @@ def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda12.0.1' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
-def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks")
+def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
@@ -77,7 +77,9 @@ pipeline {
         URM_URL = "https://${common.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
-        CLASSIFIER = 'cuda11'
+        CLASSIFIER = 'cuda12'
+        PVC_MOUNT_PATH = "/pvc"
+        PVC_WORKSPACE = "/pvc/workspace/${BUILD_TAG}"
     }
 
     stages {
@@ -183,17 +185,18 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         kubernetes {
                             label "premerge-ci-1-${BUILD_TAG}"
                             cloud "${common.CLOUD_NAME}"
-                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
-                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            yaml pod.getGPUYAMLwithVolume("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", "${PVC}", "${PVC_MOUNT_PATH}", '8', '32Gi')
                             customWorkspace "${CUSTOM_WORKSPACE}"
                         }
                     }
 
                     steps {
                         script {
+                            unstash "source_tree"
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') { // step only timeout for test run
                                     try {
+                                        common.pvcM2Cache(this, PVC_MOUNT_PATH)
                                         sh "$PREMERGE_SCRIPT mvn_verify"
                                         step([$class                : 'JacocoPublisher',
                                               execPattern           : '**/target/jacoco.exec',
@@ -201,11 +204,13 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                               sourceInclusionPattern: '**/*.java,**/*.scala',
                                               sourcePattern         : sourcePattern
                                         ])
+                                    } catch(e) {
+                                        common.syncDir(this, "${env.CUSTOM_WORKSPACE}", "${env.PVC_WORKSPACE}", false, ['.m2/'])
+                                        throw e
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
                                     }
-                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
@@ -220,8 +225,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         kubernetes {
                             label "premerge-ci-2-${BUILD_TAG}"
                             cloud "${common.CLOUD_NAME}"
-                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
-                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            yaml pod.getGPUYAMLwithVolume("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", "${PVC}", "${PVC_MOUNT_PATH}", '8', '32Gi')
                             customWorkspace "${CUSTOM_WORKSPACE}-ci-2" // Use different workspace to avoid conflict with IT
                         }
                     }
@@ -232,12 +236,15 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') {
                                     try {
+                                        common.pvcM2Cache(this, PVC_MOUNT_PATH)
                                         sh "$PREMERGE_SCRIPT ci_2"
+                                    } catch(e) {
+                                        common.syncDir(this, "${env.CUSTOM_WORKSPACE}-ci-2", "${env.PVC_WORKSPACE}-ci-2", false, ['.m2/'])
+                                        throw e
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
                                     }
-                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
@@ -252,8 +259,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         kubernetes {
                             label "ci-scala213-${BUILD_TAG}"
                             cloud "${common.CLOUD_NAME}"
-                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
-                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            yaml pod.getGPUYAMLwithVolume("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", "${PVC}", "${PVC_MOUNT_PATH}", '8', '32Gi')
                             customWorkspace "${CUSTOM_WORKSPACE}-scala-213" // Use different workspace to avoid conflict with IT
                         }
                     }
@@ -264,12 +270,15 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                             container('gpu') {
                                 timeout(time: 6, unit: 'HOURS') {
                                     try {
+                                        common.pvcM2Cache(this, PVC_MOUNT_PATH)
                                         sh "$PREMERGE_SCRIPT ci_scala213"
+                                    } catch(e) {
+                                        common.syncDir(this, "${env.CUSTOM_WORKSPACE}-scala-213", "${env.PVC_WORKSPACE}-scala-213", false, ['.m2/'])
+                                        throw e
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
                                     }
-                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
