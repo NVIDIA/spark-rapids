@@ -14,6 +14,7 @@
 
 import math
 import pytest
+import re
 
 from asserts import *
 from conftest import is_databricks_runtime, spark_jvm
@@ -307,10 +308,10 @@ _init_list_with_decimalbig = _init_list + [
 #Any smaller precision takes way too long to process on the CPU
 # or results in using too much memory on the GPU
 @nightly_gpu_mem_consuming_case
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31], ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_hash_reduction_decimal_overflow_sum(precision, kudo_enabled):
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=["KUDO", "NOT_KUDO"])
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NOT_ANSI"])
+def test_hash_reduction_decimal_near_overflow_sum(precision, kudo_enabled, ansi):
     constant = '9' * precision
     count = pow(10, 38 - precision)
     assert_gpu_and_cpu_are_equal_collect(
@@ -322,8 +323,49 @@ def test_hash_reduction_decimal_overflow_sum(precision, kudo_enabled):
         # we really are just doing a really bad job at multiplying to get this result so
         # some optimizations are conspiring against us.
         conf = {'spark.rapids.sql.batchSizeBytes': '128m',
-                kudo_enabled_conf_key: kudo_enabled})
+                kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.ansi.enabled': ansi})
 
+#Any smaller precision takes way too long to process on the CPU
+# or results in using too much memory on the GPU
+@nightly_gpu_mem_consuming_case
+@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=["KUDO", "NOT_KUDO"])
+def test_hash_reduction_decimal_overflow_sum_no_ansi(precision, kudo_enabled):
+    constant = '9' * precision
+    count = pow(10, 38 - precision) + 1
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(count)\
+                .selectExpr("CAST('{}' as Decimal({}, 0)) as a".format(constant, precision))\
+                .selectExpr("SUM(a)"),
+        # This is set to 128m because of a number of other bugs that compound to having us
+        # run out of memory in some setups. These should not happen in production, because
+        # we really are just doing a really bad job at multiplying to get this result so
+        # some optimizations are conspiring against us.
+        conf = {'spark.rapids.sql.batchSizeBytes': '128m',
+                kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.ansi.enabled': False})
+
+#Any smaller precision takes way too long to process on the CPU
+# or results in using too much memory on the GPU
+@nightly_gpu_mem_consuming_case
+@pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=["KUDO", "NOT_KUDO"])
+def test_hash_reduction_decimal_overflow_sum_ansi(precision, kudo_enabled):
+    constant = '9' * precision
+    count = pow(10, 38 - precision) + 1
+    assert_gpu_and_cpu_error(
+        lambda spark: print(spark.range(count)
+                .selectExpr("CAST('{}' as Decimal({}, 0)) as a".format(constant, precision))\
+                .selectExpr("SUM(a)").collect()),
+        # This is set to 128m because of a number of other bugs that compound to having us
+        # run out of memory in some setups. These should not happen in production, because
+        # we really are just doing a really bad job at multiplying to get this result so
+        # some optimizations are conspiring against us.
+        conf = {'spark.rapids.sql.batchSizeBytes': '128m',
+                kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.ansi.enabled': True},
+        error_message=re.compile(r'(overflow)|(NUMERIC_VALUE_OUT_OF_RANGE)', re.IGNORECASE))
 
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)

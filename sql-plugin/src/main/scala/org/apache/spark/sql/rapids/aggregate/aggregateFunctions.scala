@@ -645,9 +645,12 @@ case class GpuExtractChunk32(
  * @param nullOnOverflow whether to produce null on overflows
  */
 case class GpuAssembleSumChunks(
-    chunkAttrs: Seq[AttributeReference],
+    chunkAttrs: Seq[Expression],
     dataType: DecimalType,
-    nullOnOverflow: Boolean) extends GpuExpression with ShimExpression {
+    nullOnOverflow: Boolean,
+    extOverflow: Option[Expression]) extends GpuExpression with ShimExpression {
+
+  override def hasSideEffects: Boolean = !nullOnOverflow || super.hasSideEffects
 
   override def nullable: Boolean = true
 
@@ -660,17 +663,38 @@ case class GpuAssembleSumChunks(
     }
     withResource(assembledTable) { assembledTable =>
       assert(assembledTable.getNumberOfColumns == 2)
-      val hasOverflowed = assembledTable.getColumn(0)
-      val decimalData = assembledTable.getColumn(1)
-      assert(hasOverflowed.getType == DType.BOOL8)
-      assert(decimalData.getType.getTypeId == DType.DTypeEnum.DECIMAL128)
-      withResource(Scalar.fromNull(cudfType)) { nullScalar =>
-        GpuColumnVector.from(hasOverflowed.ifElse(nullScalar, decimalData), dataType)
+      val hasOverflowed = {
+        extOverflow match {
+          case Some(attr) =>
+            withResource(attr.columnarEval(batch)) { extOverflowCol =>
+              // If either overflowed, then we overflowed...
+              extOverflowCol.getBase.or(assembledTable.getColumn(0))
+            }
+          case None =>
+            assembledTable.getColumn(0).incRefCount()
+        }
+      }
+      withResource(hasOverflowed) { _ =>
+        val decimalData = assembledTable.getColumn(1)
+        assert(decimalData.getType.getTypeId == DType.DTypeEnum.DECIMAL128)
+        if (nullOnOverflow) {
+          withResource(Scalar.fromNull(cudfType)) { nullScalar =>
+            GpuColumnVector.from(hasOverflowed.ifElse(nullScalar, decimalData), dataType)
+          }
+        } else {
+          // ANSI MODE
+          withResource(hasOverflowed.any) { anyProblem =>
+            if (anyProblem.isValid && anyProblem.getBoolean) {
+              throw new ArithmeticException("Overflow in sum of decimals.")
+            }
+          }
+          GpuColumnVector.from(decimalData.incRefCount(), dataType)
+        }
       }
     }
   }
 
-  override def children: Seq[Expression] = chunkAttrs
+  override def children: Seq[Expression] = chunkAttrs ++ extOverflow
 }
 
 
@@ -753,34 +777,38 @@ case class GpuCheckOverflowAfterSum(
 
   override def nullable: Boolean = true
 
-  override def toString: String = s"CheckOverflowInSum($data, $isEmpty, $dataType, $nullOnOverflow)"
+  override def toString: String =
+    s"CheckOverflowAfterSum($data, $isEmpty, $dataType, $nullOnOverflow)"
 
   override def sql: String = data.sql
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(data.columnarEval(batch)) { dataCol =>
       val dataBase = dataCol.getBase
-      withResource(isEmpty.columnarEval(batch)) { isEmptyCol =>
-        val isEmptyBase = isEmptyCol.getBase
-        if (!nullOnOverflow) {
-          // ANSI mode
-          val problem = withResource(dataBase.isNull) { isNull =>
-            withResource(isEmptyBase.not()) { notEmpty =>
-              isNull.and(notEmpty)
-            }
-          }
-          withResource(problem) { problem =>
-            withResource(problem.any()) { anyProblem =>
-              if (anyProblem.isValid && anyProblem.getBoolean) {
-                throw new ArithmeticException("Overflow in sum of decimals.")
+      withResource(GpuCast.checkNFixDecimalBounds(dataBase, dataType, !nullOnOverflow)) {
+        fixedData =>
+          withResource(isEmpty.columnarEval(batch)) { isEmptyCol =>
+            val isEmptyBase = isEmptyCol.getBase
+            if (!nullOnOverflow) {
+              // ANSI mode
+              val problem = withResource(fixedData.isNull) { isNull =>
+                withResource(isEmptyBase.not()) { notEmpty =>
+                  isNull.and(notEmpty)
+                }
               }
+              withResource(problem) { problem =>
+                withResource(problem.any()) { anyProblem =>
+                  if (anyProblem.isValid && anyProblem.getBoolean) {
+                    throw new ArithmeticException("Overflow in sum of decimals.")
+                  }
+                }
+              }
+              // No problems fall through...
+            }
+            withResource(GpuScalar.from(null, dataType)) { nullScale =>
+              GpuColumnVector.from(isEmptyBase.ifElse(nullScale, fixedData), dataType)
             }
           }
-          // No problems fall through...
-        }
-        withResource(GpuScalar.from(null, dataType)) { nullScale =>
-          GpuColumnVector.from(isEmptyBase.ifElse(nullScale, dataBase), dataType)
-        }
       }
     }
   }
@@ -1008,6 +1036,15 @@ abstract class GpuDecimalSum(
     Seq(sum, isEmpty)
   }
 
+  override lazy val postUpdate: Seq[Expression] = {
+    if (failOnErrorOverride) {
+      Seq(GpuCheckOverflowAfterSum(updateSum.attr, updateIsEmpty.attr, dt, !failOnErrorOverride),
+        updateIsEmpty.attr)
+    } else {
+      Seq(updateSum.attr, updateIsEmpty.attr)
+    }
+  }
+
   override lazy val preMerge: Seq[Expression] = {
     Seq(sum, isEmpty, GpuIsNull(sum))
   }
@@ -1023,9 +1060,15 @@ abstract class GpuDecimalSum(
   }
 
   override lazy val postMerge: Seq[Expression] = {
-    Seq(
-      GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, dt), mergeSum.attr),
-      mergeIsEmpty.attr)
+    if (failOnErrorOverride) {
+      Seq(
+        GpuCheckOverflowAfterSum(mergeSum.attr, mergeIsEmpty.attr, dt, !failOnErrorOverride),
+        mergeIsEmpty.attr)
+    } else {
+      Seq(
+        GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, dt), mergeSum.attr),
+        mergeIsEmpty.attr)
+    }
   }
 
   override lazy val evaluateExpression: Expression = {
@@ -1117,7 +1160,8 @@ case class GpuDecimal128Sum(
 
   override lazy val postUpdate: Seq[Expression] = {
     Seq(
-      GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, !failOnErrorOverride),
+      // No merge overflow check yet...
+      GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, !failOnErrorOverride, None),
       updateIsEmpty.attr)
   }
 
@@ -1140,10 +1184,10 @@ case class GpuDecimal128Sum(
   }
 
   override lazy val postMerge: Seq[Expression] = {
-    val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt, !failOnErrorOverride)
-    Seq(
-      GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, dt), assembleExpr),
-      mergeIsEmpty.attr)
+    val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt,
+      !failOnErrorOverride, Some(mergeIsOverflow.attr))
+
+    Seq(assembleExpr, mergeIsEmpty.attr)
   }
 
   // Replacement Window Function
@@ -1500,7 +1544,8 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
   override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateCount
 
   override lazy val postUpdate: Seq[Expression] = {
-    val assembleExpr = GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, nullOnOverflow = true)
+    val assembleExpr = GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, nullOnOverflow = true,
+      None)
     Seq(GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = true), updateCount.attr)
   }
 
@@ -1519,11 +1564,10 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
     mergeSumChunks ++ Seq(mergeCount, mergeIsOverflow)
 
   override lazy val postMerge: Seq[Expression] = {
-    val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt, nullOnOverflow = true)
+    val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt, nullOnOverflow = true,
+      Some(mergeIsOverflow.attr))
     Seq(
-      GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
-        GpuLiteral.create(null, dt),
-        assembleExpr), dt, nullOnOverflow = true),
+      GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = true),
       mergeCount.attr)
   }
 }
