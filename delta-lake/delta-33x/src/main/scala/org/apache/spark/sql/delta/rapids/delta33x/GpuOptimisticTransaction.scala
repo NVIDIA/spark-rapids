@@ -21,14 +21,11 @@
 
 package org.apache.spark.sql.delta.rapids.delta33x
 
-import java.net.URI
-
 import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
 import org.apache.commons.lang3.exception.ExceptionUtils
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
@@ -63,8 +60,8 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 class GpuOptimisticTransaction
-(deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
-  (implicit clock: Clock)
+    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
+    (implicit clock: Clock)
   extends GpuOptimisticTransactionBase(deltaLog,
     Option.empty[CatalogTable], snapshot, rapidsConf)(clock) {
 
@@ -139,6 +136,7 @@ class GpuOptimisticTransaction
   override def writeFiles(
       inputData: Dataset[_],
       writeOptions: Option[DeltaOptions],
+      isOptimize: Boolean,
       additionalConstraints: Seq[Constraint]): Seq[FileAction] = {
     hasWritten = true
 
@@ -193,8 +191,10 @@ class GpuOptimisticTransaction
 
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
-      val planWithInvariants = addInvariantChecks(empty2NullPlan, constraints)
-      val physicalPlan = convertToGpu(planWithInvariants)
+      val checkInvariants = addInvariantChecks(empty2NullPlan, constraints)
+      val optimizedPlan = applyOptimizeWriteIfNeeded(spark, checkInvariants, partitionSchema,
+        isOptimize, writeOptions)
+      val physicalPlan = convertToGpu(optimizedPlan)
 
       val statsTrackers: ListBuffer[ColumnarWriteJobStatsTracker] = ListBuffer()
 
@@ -222,7 +222,7 @@ class GpuOptimisticTransaction
         case Some(writeOptions) =>
           writeOptions.options.filterKeys { key =>
             key.equalsIgnoreCase(DeltaOptions.MAX_RECORDS_PER_FILE) ||
-              key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
+                key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
           }.toMap
       }
 
@@ -260,19 +260,26 @@ class GpuOptimisticTransaction
       }
     }
 
-    val resultFiles = committer.addedStatuses.map { a =>
-      a.copy(stats = optionalStatsTracker.map(
-        _.recordedStats(new Path(new URI(a.path)).getName)).getOrElse(a.stats))
-    }.filter {
-      // In some cases, we can write out an empty `inputData`. Some examples of this (though, they
-      // may be fixed in the future) are the MERGE command when you delete with empty source, or
-      // empty target, or on disjoint tables. This is hard to catch before the write without
-      // collecting the DF ahead of time. Instead, we can return only the AddFiles that
-      // a) actually add rows, or
-      // b) don't have any stats so we don't know the number of rows at all
-      case a: AddFile => a.numLogicalRecords.forall(_ > 0)
-      case _ => true
-    }
+    val resultFiles =
+      (if (optionalStatsTracker.isDefined) {
+        committer.addedStatuses.map { a =>
+          a.copy(stats = optionalStatsTracker.map(
+            _.recordedStats(a.toPath.getName)).getOrElse(a.stats))
+        }
+      }
+      else {
+        committer.addedStatuses
+      })
+      .filter {
+        // In some cases, we can write out an empty `inputData`. Some examples of this (though, they
+        // may be fixed in the future) are the MERGE command when you delete with empty source, or
+        // empty target, or on disjoint tables. This is hard to catch before the write without
+        // collecting the DF ahead of time. Instead, we can return only the AddFiles that
+        // a) actually add rows, or
+        // b) don't have any stats so we don't know the number of rows at all
+        case a: AddFile => a.numLogicalRecords.forall(_ > 0)
+        case _ => true
+      }
 
     resultFiles.toSeq ++ committer.changeFiles
   }
