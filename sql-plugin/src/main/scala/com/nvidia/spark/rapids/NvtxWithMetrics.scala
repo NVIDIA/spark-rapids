@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,29 @@ class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
       }
     }
     super.close()
+  }
+}
+
+/**
+ *  NvtxId with option to pass one or more nano timing metric(s) that are updated upon close
+ *  by the amount of time spent in the range
+ */
+object NvtxIdWithMetrics {
+
+  def apply[V](nvtxId: NvtxId, metrics: GpuMetric*)(block: => V): V = {
+    val needTracks = metrics.map(_.tryActivateTimer())
+    val start = System.nanoTime()
+
+    try {
+      nvtxId.apply(block)
+    } finally {
+      val time = System.nanoTime() - start
+      metrics.toSeq.zip(needTracks).foreach { pair =>
+        if (pair._2) {
+          pair._1.deactivateTimer(time)
+        }
+      }
+    }
   }
 }
 

@@ -86,6 +86,36 @@ object NvtxRegistry {
   val GET_MAP_SIZES_BY_EXEC_ID: NvtxId = NvtxId("getMapSizesByExecId", NvtxColor.CYAN,
     "Call to internal Spark API for retrieving size and location of shuffle map output blocks")
 
+  val GPU_COALESCE_BATCHES_COLLECT: NvtxId = NvtxId("GpuCoalesceBatches: collect", NvtxColor.BLUE,
+    "GPU combining of small batches post-kernel processing")
+
+  val BUILD_BATCH_COLLECT: NvtxId = NvtxId("build batch: collect", NvtxColor.BLUE,
+    "Perform a join where the build side fits in a single GPU batch")
+
+  val GPU_COALESCE_ITERATOR: NvtxId = NvtxId("AbstractGpuCoalesceIterator", NvtxColor.BLUE,
+    "Default range for a code path in the AbstractGpuCoalesceIterator for an op which " +
+      "is not explicitly documented in its own range")
+
+  val SHUFFLED_JOIN_STREAM: NvtxId = NvtxId("shuffled join stream", NvtxColor.BLUE,
+    "GpuShuffledHashJoinExec op is preparing build batches for join")
+
+  val HASH_JOIN_BUILD: NvtxId = NvtxId("hash join build", NvtxColor.BLUE,
+    "Return multiple batches as the build side data for the following sub-partitioning join")
+
+  val PROBE_LEFT: NvtxId = NvtxId("probe left", NvtxColor.BLUE,
+    "Probing the left side of a join input iterator to get the data size for preparing the join")
+
+  val PROBE_RIGHT: NvtxId = NvtxId("probe right", NvtxColor.BLUE,
+    "Probing the right side of a join input iterator to get the data size for preparing the join")
+
+  val FETCH_JOIN_STREAM: NvtxId = NvtxId("fetch join stream", NvtxColor.BLUE,
+    "stream iterator time for GpuShuffleSizeHashJoinExec")
+
+  val BROADCAST_JOIN_STREAM: NvtxId = NvtxId("broadcast join stream", NvtxColor.BLUE,
+    "GpuBroadcastHashJoinExec.getBroadcastBuiltBatchAndStreamIter -  Gets the ColumnarBatch for " +
+      "the build side and the stream iterator by acquiring the GPU only after first stream batch " +
+      "has been streamed to GPU.")
+
   def init(): Unit = {
     register(ACQUIRE_GPU)
     register(RELEASE_GPU)
@@ -98,6 +128,15 @@ object NvtxRegistry {
     register(QUEUE_FETCHED)
     register(RAPIDS_CACHING_WRITER_WRITE)
     register(GET_MAP_SIZES_BY_EXEC_ID)
+    register(GPU_COALESCE_BATCHES_COLLECT)
+    register(BUILD_BATCH_COLLECT)
+    register(GPU_COALESCE_ITERATOR)
+    register(SHUFFLED_JOIN_STREAM)
+    register(HASH_JOIN_BUILD)
+    register(PROBE_LEFT)
+    register(PROBE_RIGHT)
+    register(FETCH_JOIN_STREAM)
+    register(BROADCAST_JOIN_STREAM)
   }
 }
 
