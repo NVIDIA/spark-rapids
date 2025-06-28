@@ -290,7 +290,19 @@ def test_cast_floating_point_to_decimal_ansi_off(data_gen, to_type):
                {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
 
 
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
+@pytest.mark.parametrize('d_gen', [
+    SetValuesGen(FloatType(), [float('nan'), float('-inf'), float('inf')]),
+    SetValuesGen(DoubleType(), [float('nan'), float('-inf'), float('inf')])])
+def test_cast_floating_point_to_decimal_specials_ansi_on(d_gen):
+    # Spark always returns a null for a NaN, an inf, or an -inf.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, d_gen).select(
+            f.col('a'), f.col('a').cast(DecimalType(7, 1))),
+        conf=copy_and_update(
+            ansi_enabled_conf,
+            {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
+
+
 @pytest.mark.parametrize('data_gen', [FloatGen(special_cases=_float_special_cases)])
 @pytest.mark.parametrize('to_type', [DecimalType(7, 1)])
 def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
@@ -301,7 +313,7 @@ def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
         conf=copy_and_update(
             ansi_enabled_conf,
             {'spark.rapids.sql.castFloatToDecimal.enabled': True}),
-        error_message="[NUMERIC_VALUE_OUT_OF_RANGE.WITH_SUGGESTION]")
+        error_message="cannot be represented as Decimal")
 
 
 # casting these types to string should be passed
