@@ -172,7 +172,7 @@ case class GpuShuffledHashJoinExec(
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
@@ -215,8 +215,6 @@ case class GpuShuffledHashJoinExec(
 
   override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
@@ -229,7 +227,7 @@ case class GpuShuffledHashJoinExec(
     // iterators, setting as noop certain metrics that the coalesce iterators
     // normally update, but that in the case of the join they would produce
     // the wrong statistics (since there are conflicts)
-    val coalesceMetrics = allMetrics ++
+    val coalesceMetrics = opMetrics ++
       Map(GpuMetric.NUM_INPUT_ROWS -> NoopMetric,
           GpuMetric.NUM_INPUT_BATCHES -> NoopMetric,
           GpuMetric.NUM_OUTPUT_BATCHES -> NoopMetric,
@@ -251,7 +249,7 @@ case class GpuShuffledHashJoinExec(
             }
             // doJoin will close singleBatch
             doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
-              numOutputRows, numOutputBatches, opTime, joinTime)
+              NoopMetric, NoopMetric, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>
@@ -261,7 +259,7 @@ case class GpuShuffledHashJoinExec(
               cb
             }
             doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
-              numPartitions, numOutputRows, numOutputBatches, opTime, joinTime)
+              numPartitions, NoopMetric, NoopMetric, opTime, joinTime)
         }
       }
     }

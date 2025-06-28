@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -231,8 +231,6 @@ trait GpuGenerator extends GpuUnevaluable {
       boundOthersProjectList: Seq[Expression],
       outputSchema: Array[DataType],
       outer: Boolean,
-      numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
     throw new NotImplementedError("The method should be implemented by specific generators.")
   }
@@ -762,8 +760,6 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       boundOthersProjectList: Seq[Expression],
       outputSchema: Array[DataType],
       outer: Boolean,
-      numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
 
     val numArrayColumns = boundLazyProjectList.length
@@ -807,8 +803,6 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
           val projectCb =
             GpuProjectExec.projectWithRetrySingleBatch(spillableCurrentBatch, boundExprs)
           indexIntoData += 1
-          numOutputBatches += 1
-          numOutputRows += projectCb.numRows()
           projectCb
         }
       }
@@ -833,7 +827,7 @@ case class GpuGenerateExec(
 
   import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
   )
 
@@ -850,8 +844,6 @@ case class GpuGenerateExec(
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
 
     generator.fixedLenLazyExpressions match {
@@ -870,8 +862,6 @@ case class GpuGenerateExec(
             boundOthersProjectList,
             outputSchema,
             outer,
-            numOutputRows,
-            numOutputBatches,
             opTime)
         }
 
@@ -883,8 +873,7 @@ case class GpuGenerateExec(
           GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output)
 
         child.executeColumnar().flatMap { inputFromChild =>
-          doGenerateAndClose(inputFromChild, genProjectList, othersProjectList,
-            numOutputRows, numOutputBatches, opTime)
+          doGenerateAndClose(inputFromChild, genProjectList, othersProjectList, opTime)
         }
     }
   }
@@ -892,8 +881,6 @@ case class GpuGenerateExec(
   private def doGenerateAndClose(input: ColumnarBatch,
       genProjectList: Seq[GpuExpression],
       othersProjectList: Seq[GpuExpression],
-      numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
     val splits = withResource(new NvtxWithMetrics("GpuGenerate project split",
       NvtxColor.PURPLE, opTime)) { _ =>
@@ -906,7 +893,7 @@ case class GpuGenerateExec(
       getSplits(projectedInput, othersProjectList, new RapidsConf(conf).gpuTargetBatchSizeBytes)
     }
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
-      numOutputRows, numOutputBatches, opTime)
+      opTime)
   }
 
   // Split up the input batch and call generate on each split.
@@ -962,8 +949,6 @@ class GpuGenerateIterator(
     generator: GpuGenerator,
     generatorOffset: Int,
     outer: Boolean,
-    numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
   // Need to ensure these are closed in case of failure.
   inputs.foreach(scb => use(scb))
@@ -977,10 +962,7 @@ class GpuGenerateIterator(
 
   override def next(): ColumnarBatch = {
     withResource(new NvtxWithMetrics("GpuGenerateIterator", NvtxColor.PURPLE, opTime)) { _ =>
-      val cb = generateIter.next()
-      numOutputBatches += 1
-      numOutputRows += cb.numRows()
-      cb
+      generateIter.next()
     }
   }
 }

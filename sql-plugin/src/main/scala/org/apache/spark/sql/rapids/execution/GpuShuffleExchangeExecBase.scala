@@ -169,7 +169,7 @@ abstract class GpuShuffleExchangeExecBaseWithMetrics(
  */
 abstract class GpuShuffleExchangeExecBase(
     gpuOutputPartitioning: GpuPartitioning,
-    child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
+    child: SparkPlan) extends Exchange with ShimUnaryExecNode with MetricsOverrideGpuExec {
   import GpuMetric._
 
   private lazy val useKudo = RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf)
@@ -201,20 +201,22 @@ abstract class GpuShuffleExchangeExecBase(
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
-  override lazy val additionalMetrics : Map[String, GpuMetric] = {
-    createAdditionalExchangeMetrics(this) ++
-      GpuMetric.wrap(readMetrics) ++
-      GpuMetric.wrap(writeMetrics)
-  }
 
-  // Spark doesn't report totalTime for this operator so we override metrics
-  override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
-    NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
-    NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    COPY_TO_HOST_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_TO_HOST_TIME)
-  ) ++ additionalMetrics
+  override lazy val opMetrics : Map[String, GpuMetric] = {
+    val bf = Map.newBuilder[String, GpuMetric]
+    // Overrides common metrics of GpuExec, in order to track the size metrics of the shuffle write
+    // stage instead of the shuffle read stage.
+    bf += NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS)
+    bf += NUM_OUTPUT_BATCHES -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
+    // Custom metrics for the shuffle r/w
+    bf += PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE)
+    bf += NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS)
+    bf += COPY_TO_HOST_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_TO_HOST_TIME)
+    bf ++= createAdditionalExchangeMetrics(this)
+    bf ++= GpuMetric.wrap(readMetrics)
+    bf ++= GpuMetric.wrap(writeMetrics)
+    bf.result()
+  }
 
   override def nodeName: String = "GpuColumnarExchange"
 
@@ -227,7 +229,7 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    allMetrics, sparkTypes, useKudo, kudoBufferCopyMeasurementEnabled)
+    opMetrics, sparkTypes, useKudo, kudoBufferCopyMeasurementEnabled)
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -246,9 +248,9 @@ abstract class GpuShuffleExchangeExecBase(
       serializer,
       useGPUShuffle,
       useMultiThreadedShuffle,
-      allMetrics,
+      opMetrics,
       writeMetrics,
-      additionalMetrics)
+      opMetrics)
   }
 
   /**
@@ -396,9 +398,9 @@ object GpuShuffleExchangeExecBase {
               // check if it is empty for the later case.
               if (batch.numRows > 0) {
                 partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-                partitioned.foreach(batches => {
-                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                })
+                // Update the numRows and numBatches in the shuffle write side, which is NOT
+                // called by doExecuteColumnar.
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batch.numRows()
                 metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
                 at = 0
               } else {

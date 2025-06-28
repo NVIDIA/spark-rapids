@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,17 @@
 
 package com.nvidia.spark.rapids.window
 
+import java.util
+
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{AutoClosableArrayBuffer, ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.window.TableAndBatchUtils.{adoptAndMakeSpillable, getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
-import java.util
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -1144,8 +1145,6 @@ case class GpuUnboundedToUnboundedAggWindowExec(
     Seq(cpuPartitionOrdering)
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
-    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
 
     val boundStages = GpuUnboundedToUnboundedAggWindowIterator.breakUpAggregations(
@@ -1153,7 +1152,7 @@ case class GpuUnboundedToUnboundedAggWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
       GpuUnboundedToUnboundedAggWindowIterator(iter, boundStages,
-        numOutputBatches, numOutputRows, opTime, targetSizeBytes)
+        NoopMetric, NoopMetric, opTime, targetSizeBytes)
     }
   }
 }
