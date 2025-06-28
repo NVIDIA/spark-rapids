@@ -38,6 +38,44 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       s"Skipping $testName for version $version as it's in the unsupported versions list")
   }
 
+  // Reusable Derby cleanup function
+  private def cleanupDerbyFiles(metastoreDir: String = "metastore_db"): Unit = {
+    val derbyFiles = Seq("derby.log", "derbyout.log", "derbyerr.log")
+    derbyFiles.foreach { fileName =>
+      val file = new java.io.File(fileName)
+      if (file.exists()) {
+        try {
+          file.delete()
+        } catch {
+          case _: Exception => // Ignore cleanup failures
+        }
+      }
+    }
+
+    val metadataDb = new java.io.File(metastoreDir)
+    if (metadataDb.exists()) {
+      import java.nio.file.{Files, Paths}
+      import java.util.Comparator
+      try {
+        if (metadataDb.isDirectory) {
+          Files.walk(Paths.get(metastoreDir))
+            .sorted(Comparator.reverseOrder())
+            .forEach(Files.deleteIfExists(_))
+        } else {
+          metadataDb.delete()
+        }
+      } catch {
+        case _: Exception =>
+          try {
+            import sys.process._
+            s"rm -rf $metastoreDir".!
+          } catch {
+            case _: Exception => // Ignore cleanup failures
+          }
+      }
+    }
+  }
+
   test("Aggregate") {
     skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     doTestReplay("10[*]") { spark =>
@@ -236,15 +274,22 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
     // Skip this test for versions that are in unsupportedHiveInsertVersions
     skipIfUnsupportedVersion("GpuInsertIntoHiveTable with LoRE dump and replay")
+    // Clean up before test starts
+    cleanupDerbyFiles()
+    // Create unique metastore location for this test run
+    val uniqueMetastoreDir = s"metastore_db_${System.currentTimeMillis()}"
     try {
       val loreDumpIds = "5[*]" // Fixed LORE ID since unsupported versions are skipped
       val loreId = OutputLoreId.parse(loreDumpIds).head._1
 
-      // Use a single SparkSession for both operations
-      withGpuHiveSparkSession { spark =>
+      // Use a single SparkSession for both operations with unique metastore
+      withGpuHiveSparkSession({ spark =>
+        // Configure unique metastore location
+        spark.conf.set("javax.jdo.option.ConnectionURL",
+          s"jdbc:derby:;databaseName=$uniqueMetastoreDir;create=true")
+
         // First execution - capture the original data written to Hive table
         val originalDataCount = 100
-        
         // Configure LORE for the first execution
         spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
         spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreDumpIds)
@@ -302,7 +347,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         // Verify the results
         assert(originalDataCount == replayDataCount,
           s"Original data count ($originalDataCount) != Replay data count ($replayDataCount)")
-      }
+      })
     } finally {
       // Clean up warehouse directory to avoid conflicts in future test runs
       val possiblePaths = Seq(
@@ -323,23 +368,9 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
           }
         }
       }
-      // Clean up Hive-generated files and directories
-      val derbyLog = new java.io.File("derby.log")
-      if (derbyLog.exists()) {
-        derbyLog.delete()
-      }
-      val metadataDb = new java.io.File("metastore_db")
-      if (metadataDb.exists() && metadataDb.isDirectory) {
-        import java.nio.file.{Files, Paths}
-        import java.util.Comparator
-        try {
-          Files.walk(Paths.get("metastore_db"))
-            .sorted(Comparator.reverseOrder())
-            .forEach(Files.deleteIfExists(_))
-        } catch {
-          case _: Exception => // Ignore cleanup failures
-        }
-      }
+      // Clean up Derby files and metastore directories
+      cleanupDerbyFiles()
+      cleanupDerbyFiles(uniqueMetastoreDir)
     }
   }
 
@@ -352,36 +383,44 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     assume(unsupportedVersions.contains(currentShimVersion),
       s"Skipping test for version $currentShimVersion as it's not in the unsupported versions list")
 
-    withGpuHiveSparkSession { spark =>
-      // Configure LORE for testing
-      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "7[*]")
+    // Clean up before test starts
+    cleanupDerbyFiles()
 
-      // Clean up any existing table
-      spark.sql("DROP TABLE IF EXISTS test_hive_table")
-      spark.sql("""
-        CREATE TABLE test_hive_table (
-          id INT,
-          name STRING
-        )
-        STORED AS textfile
-      """)
+    try {
+      withGpuHiveSparkSession { spark =>
+        // Configure LORE for testing
+        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "7[*]")
 
-      // Create test data
-      val df = spark.range(0, 10, 1, 2)
-        .selectExpr("id as id", "concat('name_', id) as name")
+        // Clean up any existing table
+        spark.sql("DROP TABLE IF EXISTS test_hive_table")
+        spark.sql("""
+          CREATE TABLE test_hive_table (
+            id INT,
+            name STRING
+          )
+          STORED AS textfile
+        """)
 
-      // This should throw an exception if the current version is in the unsupported list
-      val exception = intercept[UnsupportedOperationException] {
-        df.write
-          .mode("overwrite")
-          .insertInto("test_hive_table")
+        // Create test data
+        val df = spark.range(0, 10, 1, 2)
+          .selectExpr("id as id", "concat('name_', id) as name")
+
+        // This should throw an exception if the current version is in the unsupported list
+        val exception = intercept[UnsupportedOperationException] {
+          df.write
+            .mode("overwrite")
+            .insertInto("test_hive_table")
+        }
+
+        // Verify the exception message contains the expected information
+        assert(exception.getMessage.contains("LORE dump is not supported for" +
+          " GpuDataWritingCommandExec"))
+        assert(exception.getMessage.contains("Unsupported versions:"))
       }
-
-      // Verify the exception message contains the expected information
-      assert(exception.getMessage.contains("LORE dump is not supported for" +
-        " GpuDataWritingCommandExec"))
-      assert(exception.getMessage.contains("Unsupported versions:"))
+    } finally {
+      // Clean up Derby files after test completes
+      cleanupDerbyFiles()
     }
   }
 

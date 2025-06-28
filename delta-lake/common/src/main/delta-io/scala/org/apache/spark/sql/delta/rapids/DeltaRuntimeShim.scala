@@ -19,7 +19,7 @@ package org.apache.spark.sql.delta.rapids
 import scala.util.Try
 
 import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, ShimReflectionUtils, VersionUtils}
-import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.{DeltaConfigChecker, DeltaProvider}
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
@@ -30,6 +30,7 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
 trait DeltaRuntimeShim {
+  def getDeltaConfigChecker: DeltaConfigChecker
   def getDeltaProvider: DeltaProvider
   def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock): GpuOptimisticTransactionBase
   def stringFromStringUdf(f: String => String): UserDefinedFunction
@@ -78,6 +79,10 @@ object DeltaRuntimeShim {
   }
 
   def getDeltaProvider: DeltaProvider = shimInstance.getDeltaProvider
+
+  def getDeltaConfigChecker: DeltaConfigChecker = {
+    shimInstance.getDeltaConfigChecker
+  }
 
   def startTransaction(
       log: DeltaLog,
