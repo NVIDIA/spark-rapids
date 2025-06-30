@@ -13,14 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*** spark-rapids-shim-json-lines
-{"spark": "350db143"}
-{"spark": "400"}
-spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
 
-object CastTimeToIntShim {
-  // From 400, rows overflow will be set to nulls when casting timestamps to integrals,
-  // when ANSI is disabled.
-  def ifNullifyOverflows: Boolean = true
+package org.apache.spark.sql.delta.rapids
+
+import com.nvidia.spark.rapids.RapidsConf
+
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
+import org.apache.spark.sql.delta.{DeltaLog, Snapshot}
+import org.apache.spark.util.Clock
+
+/** Common type from which 20x-24x open-source Delta Lake implementations derive. */
+abstract class GpuOptimisticTransactionBase(
+    deltaLog: DeltaLog,
+    catalog: Option[CatalogTable],
+    snapshot: Snapshot,
+    rapidsConf: RapidsConf)
+    (implicit clock: Clock)
+    extends AbstractGpuOptimisticTransactionBase(deltaLog, catalog, snapshot, rapidsConf)(clock) {
+
 }

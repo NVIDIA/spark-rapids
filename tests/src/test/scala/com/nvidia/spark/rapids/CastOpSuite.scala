@@ -704,11 +704,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.FloatType, scale,
         customDataGenerator = Some(floatsIncludeNaNs))
-      assertThrows[Throwable] {
-        testCastToDecimal(DataTypes.FloatType, scale,
-          customDataGenerator = Some(floatsIncludeNaNs),
-          ansiEnabled = true)
-      }
+      testCastToDecimal(DataTypes.FloatType, scale,
+        customDataGenerator = Some(floatsIncludeNaNs),
+        ansiEnabled = true)
     }
   }
 
@@ -726,11 +724,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.DoubleType, scale,
         customDataGenerator = Some(doublesIncludeNaNs))
-      assertThrows[Throwable] {
-        testCastToDecimal(DataTypes.DoubleType, scale,
-          customDataGenerator = Some(doublesIncludeNaNs),
-          ansiEnabled = true)
-      }
+      testCastToDecimal(DataTypes.DoubleType, scale,
+        customDataGenerator = Some(doublesIncludeNaNs),
+        ansiEnabled = true)
     }
   }
 
@@ -894,7 +890,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
               nonOverflowCase(dataType, generator, precision, scale)
             }
           },
-        GpuCast.OVERFLOW_MESSAGE)
+          "cannot be represented as Decimal")
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
       testCastToDecimal(dataType,
