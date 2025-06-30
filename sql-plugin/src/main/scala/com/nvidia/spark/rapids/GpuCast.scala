@@ -516,7 +516,7 @@ object GpuCast {
           }
         }
       case (FloatType | DoubleType, dt: DecimalType) =>
-        castFloatsToDecimal(input, dt, ansiMode)
+        castFloatsToDecimal(input, fromDataType, dt, ansiMode)
       case (from: DecimalType, to: DecimalType) =>
         castDecimalToDecimal(input, from, to, ansiMode)
       case (BooleanType, TimestampType) =>
@@ -1437,13 +1437,21 @@ object GpuCast {
 
   private def castFloatsToDecimal(
       input: ColumnView,
+      fromType: DataType,
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     val targetType = DecimalUtil.createCudfDecimal(dt)
     val converted = DecimalUtils.floatingPointToDecimal(input, targetType, dt.precision)
-    if (ansiMode && converted.hasFailure) {
+    if (ansiMode && converted.failureRowId >= 0L) {
       converted.result.close()
-      throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
+      val failedValue = withResource(input.copyToHost()) { hcv =>
+        fromType match {
+          case FloatType => hcv.getFloat(converted.failureRowId).toDouble
+          case DoubleType => hcv.getDouble(converted.failureRowId)
+          case _ => throw new IllegalArgumentException(s"unsupported type $fromType")
+        }
+      }
+      throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(failedValue), dt)
     }
     converted.result
   }
