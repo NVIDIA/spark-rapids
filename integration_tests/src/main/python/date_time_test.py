@@ -517,6 +517,7 @@ def test_unsupported_fallback_from_unixtime(data_gen):
     ('2021-01', 'yyyy/MM'),
     ('01/02/201', 'dd/MM/yyyy'),
     ('2021-01-01 00:00', 'yyyy-MM-dd HH:mm:ss'),
+    ('19224303 22:82:35', 'yyyy-MM-dd HH:mm:ss'),
     ('01#01', 'MM-dd'),
     ('01T01', 'MM/dd'),
     ('29-02', 'dd-MM'),  # 1970-02-29 is invalid
@@ -677,6 +678,7 @@ def test_to_timestamp_tz_rules(parser_policy):
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
 # mm: minute; MM: month
+@disable_ansi_mode
 @pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd', 'yyyy-mm-dd'], ids=idfn)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
@@ -694,6 +696,7 @@ def test_formats_for_legacy_mode(format):
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 # mm: minute; MM: month
+@disable_ansi_mode
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
 def test_formats_for_legacy_mode_other_formats_runtime_fallback():
     # We will do a CPU fallback during runtime for timezones with transitions during 
@@ -713,6 +716,7 @@ def test_formats_for_legacy_mode_other_formats_runtime_fallback():
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 # mm: minute; MM: month
+@disable_ansi_mode
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
 def test_formats_for_legacy_mode_other_formats_tz_rules():
     format = "yyyyMMdd HH:mm:ss"

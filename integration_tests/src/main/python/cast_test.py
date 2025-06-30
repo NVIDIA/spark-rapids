@@ -210,7 +210,6 @@ def test_with_ansi_disabled_cast_decimal_to_decimal(data_gen, to_type):
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')))
 
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11550")
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(3, 0)], ids=meta_idfn('from:'))
@@ -220,7 +219,7 @@ def test_ansi_cast_failures_decimal_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')).collect(),
         conf=ansi_enabled_conf,
-        error_message="overflow occurred")
+        error_message="cannot be represented as Decimal")
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
@@ -240,14 +239,14 @@ def test_cast_integral_to_decimal_ansi_off(data_gen, to_type):
         conf=ansi_disabled_conf)
 
 
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [LongGen(min_val=100)], ids=idfn)
 @pytest.mark.parametrize('to_type', [DecimalType(2, 0)], ids=idfn)
 def test_cast_integral_to_decimal_ansi_on(data_gen, to_type):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(
-                f.col('a').cast(to_type)),
-        conf=ansi_enabled_conf)
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)).collect(),
+        conf=ansi_enabled_conf,
+        error_message="cannot be represented as Decimal")
+
 
 def test_cast_byte_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
@@ -291,7 +290,19 @@ def test_cast_floating_point_to_decimal_ansi_off(data_gen, to_type):
                {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
 
 
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
+@pytest.mark.parametrize('d_gen', [
+    SetValuesGen(FloatType(), [float('nan'), float('-inf'), float('inf')]),
+    SetValuesGen(DoubleType(), [float('nan'), float('-inf'), float('inf')])])
+def test_cast_floating_point_to_decimal_specials_ansi_on(d_gen):
+    # Spark always returns a null for a NaN, an inf, or an -inf.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, d_gen).select(
+            f.col('a'), f.col('a').cast(DecimalType(7, 1))),
+        conf=copy_and_update(
+            ansi_enabled_conf,
+            {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
+
+
 @pytest.mark.parametrize('data_gen', [FloatGen(special_cases=_float_special_cases)])
 @pytest.mark.parametrize('to_type', [DecimalType(7, 1)])
 def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
@@ -302,7 +313,7 @@ def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
         conf=copy_and_update(
             ansi_enabled_conf,
             {'spark.rapids.sql.castFloatToDecimal.enabled': True}),
-        error_message="[NUMERIC_VALUE_OUT_OF_RANGE.WITH_SUGGESTION]")
+        error_message="cannot be represented as Decimal")
 
 
 # casting these types to string should be passed
@@ -580,10 +591,6 @@ def test_cast_timestamp_to_numeric_ansi_no_overflow():
         conf=ansi_enabled_conf)
 
 
-@pytest.mark.skipif(is_databricks_runtime() and is_databricks_version_or_later(14, 3),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
-@pytest.mark.skipif(not is_databricks_runtime() and is_spark_400_or_later(),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
 def test_cast_timestamp_to_numeric_non_ansi():
     """
     Test timestamp->numeric conversions with ANSI off.
@@ -884,7 +891,9 @@ def test_cast_string_to_timestamp_valid():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
 
-def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
+def test_cast_string_to_timestamp_just_time_ANSI_OFF():
     # For the just time strings, will get current date to fill the missing date.
     # E.g.: "T00:00:00" will be "2025-05-23T00:00:00"
     # This test case is sensitive to the current date, and may cause diff between CPU and GPU
@@ -903,7 +912,11 @@ def test_cast_string_to_timestamp_valid_just_time_with_default_timezone():
                 ("T23:17:50",),
                 ("T23:17:50",),
                 ("T23:17:50",),
-                (" \r\n\tT23:17:50",), # This is testing issue: https://github.com/NVIDIA/spark-rapids-jni/issues/3401
+
+                # This is invalid value for Spark 4.0
+                # For details, refer to https://github.com/NVIDIA/spark-rapids-jni/issues/3401
+                (" \r\n\tT23:17:50",),
+
                 ("T23:17:50 \r\n\t",),
                 ("T00",),
                 ("T1:2",),
@@ -1081,7 +1094,9 @@ _cast_string_to_timestamp_invalid = [
     ("-T00:00:00",),
 ]
 
-def test_cast_string_to_timestamp_invalid():
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
+def test_cast_string_to_timestamp_invalid_ANSI_OFF():
     def _gen_df(spark):
         return spark.createDataFrame(
             _cast_string_to_timestamp_invalid,
@@ -1111,7 +1126,8 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
         conf=ansi_enabled_conf,
         error_message="DateTimeException")
 
-
+# Disable ANSI for Spark 4.0
+@disable_ansi_mode
 @pytest.mark.parametrize(
     'pattern',
     [
@@ -1141,7 +1157,7 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
             r'3[0-9]{3,3}-[0-9]{1,2}-[0-9]{1,2}[ T][0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} PST',
             id='yyyy-mm-dd[ T]hh:mm:ss PST, ts > 2200')
     ])
-def test_cast_string_to_timestamp_const_format(pattern):
+def test_cast_string_to_timestamp_const_format_ANSI_OFF(pattern):
     gen = [("str_col", StringGen(pattern))]
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
