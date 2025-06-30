@@ -156,9 +156,9 @@ case class GpuCreateDeltaTableCommand(
    * Handles the transaction logic for the command. Returns the operation metrics in case of CLONE.
    */
   private def handleCommit(
-                            sparkSession: SparkSession,
-                            gpuDeltaLog: GpuDeltaLog,
-                            tableWithLocation: CatalogTable): Seq[Row] = {
+     sparkSession: SparkSession,
+     gpuDeltaLog: GpuDeltaLog,
+     tableWithLocation: CatalogTable): Seq[Row] = {
     val tableExistsInCatalog = existingTableOpt.isDefined
     val hadoopConf = gpuDeltaLog.deltaLog.newDeltaHadoopConf()
     val tableLocation = getDeltaTablePath(tableWithLocation)
@@ -264,11 +264,11 @@ case class GpuCreateDeltaTableCommand(
    * .saveAsTable in DataframeWriter API
    */
   private def handleCreateTableAsSelect(
-                                         sparkSession: SparkSession,
-                                         txn: OptimisticTransaction,
-                                         gpuDeltaLog: GpuDeltaLog,
-                                         deltaWriter: WriteIntoDeltaLike,
-                                         tableWithLocation: CatalogTable): Unit = {
+     sparkSession: SparkSession,
+     txn: OptimisticTransaction,
+     gpuDeltaLog: GpuDeltaLog,
+     deltaWriter: WriteIntoDeltaLike,
+     tableWithLocation: CatalogTable): Unit = {
     val isManagedTable = tableWithLocation.tableType == CatalogTableType.MANAGED
     val options = new DeltaOptions(table.storage.properties, sparkSession.sessionState.conf)
 
@@ -338,11 +338,11 @@ case class GpuCreateDeltaTableCommand(
    * without the AS [CLONE, SELECT] clause.
    */
   private def handleCreateTable(
-                                 sparkSession: SparkSession,
-                                 txn: OptimisticTransaction,
-                                 tableWithLocation: CatalogTable,
-                                 fs: FileSystem,
-                                 hadoopConf: Configuration): Unit = {
+     sparkSession: SparkSession,
+     txn: OptimisticTransaction,
+     tableWithLocation: CatalogTable,
+     fs: FileSystem,
+     hadoopConf: Configuration): Unit = {
 
     val isManagedTable = tableWithLocation.tableType == CatalogTableType.MANAGED
     val tableLocation = getDeltaTablePath(tableWithLocation)
@@ -465,8 +465,8 @@ case class GpuCreateDeltaTableCommand(
   }
 
   private def assertPathEmpty(
-                               hadoopConf: Configuration,
-                               tableWithLocation: CatalogTable): Unit = {
+     hadoopConf: Configuration,
+     tableWithLocation: CatalogTable): Unit = {
     val path = getDeltaTablePath(tableWithLocation)
     val fs = path.getFileSystem(hadoopConf)
     // Verify that the table location associated with CREATE TABLE doesn't have any data. Note that
@@ -480,11 +480,11 @@ case class GpuCreateDeltaTableCommand(
   }
 
   private def assertTableSchemaDefined(
-                                        fs: FileSystem,
-                                        path: Path,
-                                        table: CatalogTable,
-                                        sparkSession: SparkSession,
-                                        allowEmptyTableSchema: Boolean): Unit = {
+     fs: FileSystem,
+     path: Path,
+     table: CatalogTable,
+     sparkSession: SparkSession,
+     allowEmptyTableSchema: Boolean): Unit = {
     // Users did not specify the schema. We expect the schema exists in Delta.
     if (table.schema.isEmpty) {
       if (table.tableType == CatalogTableType.EXTERNAL) {
@@ -755,10 +755,10 @@ case class GpuCreateDeltaTableCommand(
    * methods, then we will verify that the metadata match exactly.
    */
   private def replaceMetadataIfNecessary(
-                                          txn: OptimisticTransaction,
-                                          tableDesc: CatalogTable,
-                                          options: DeltaOptions,
-                                          schema: StructType): Unit = {
+     txn: OptimisticTransaction,
+     tableDesc: CatalogTable,
+     options: DeltaOptions,
+     schema: StructType): Unit = {
     // If a user explicitly specifies not to overwrite the schema, during a replace, we should
     // tell them that it's not supported
     val dontOverwriteSchema = options.options.contains(DeltaOptions.OVERWRITE_SCHEMA_OPTION) &&

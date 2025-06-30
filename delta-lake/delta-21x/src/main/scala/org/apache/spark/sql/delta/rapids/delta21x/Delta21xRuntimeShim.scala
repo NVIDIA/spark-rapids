@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.delta.{Delta20xConfigChecker, DeltaConfigChecker,
 import com.nvidia.spark.rapids.delta.delta21x.Delta21xProvider
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -40,6 +41,8 @@ class Delta21xRuntimeShim extends DeltaRuntimeShim {
 
   override def startTransaction(
       log: DeltaLog,
+      catalogOpt: Option[CatalogTable],
+      snapshotOpt: Option[Snapshot],
       conf: RapidsConf,
       clock: Clock): GpuOptimisticTransactionBase = {
     new GpuOptimisticTransaction(log, conf)(clock)

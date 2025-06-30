@@ -57,7 +57,7 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
     new GpuDeltaCatalog(cpuCatalog, rapidsConf)
   }
 
-  def startTransaction(
+  override def startTransaction(
      log: DeltaLog,
      catalogOpt: Option[CatalogTable],
      snapshotOpt: Option[Snapshot],
