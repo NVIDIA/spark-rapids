@@ -39,10 +39,9 @@
 
     <dependencies>
         <dependency>
-            <groupId>tools.profiler</groupId>
-            <artifactId>async-profiler</artifactId>
-            <version>${aysnc.profiler.version}</version>
-            <scope>provided</scope>
+            <groupId>me.bechberger</groupId>
+            <artifactId>ap-loader-all</artifactId>
+            <version>${ap.loader.version}</version>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>

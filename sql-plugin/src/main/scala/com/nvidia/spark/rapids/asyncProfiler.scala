@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.nio.file.{Files, Paths}
 
-import one.profiler.AsyncProfiler
+import one.profiler.{AsyncProfiler, AsyncProfilerLoader}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.TaskContext
@@ -65,8 +65,8 @@ object AsyncProfilerOnExecutor extends Logging {
     asyncProfilerPrefix.foreach(prefix => {
 
       val executorId = pluginCtx.executorID()
-      asyncProfiler = if (shouldProfile(executorId, conf)) {
-        Some(AsyncProfiler.getInstance)
+      asyncProfiler = if (shouldProfile(executorId, conf) && AsyncProfilerLoader.isSupported) {
+        Some(AsyncProfilerLoader.load())
       } else {
         None
       }
@@ -110,7 +110,8 @@ object AsyncProfilerOnExecutor extends Logging {
                   // if the path is local, we can just use it directly
                   val parentPath: java.nio.file.Path = Paths.get(asyncProfilerPrefix.get)
                   parentPath.resolve(
-                    s"async-profiler-app-$getAppId-stage-$currentProfilingStage.jfr").toString
+                    s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
+                      s"-stage-$currentProfilingStage.jfr").toString
                 }
               }
               profiler.execute(s"start,$profileOptions,file=$filePath")

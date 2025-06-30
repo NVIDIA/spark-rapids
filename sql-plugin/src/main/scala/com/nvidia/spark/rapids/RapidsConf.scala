@@ -835,8 +835,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("Enables collecting flame graph (with async profiler) and specifies " +
       "a file prefix to use when writing the JFR file by async-profiler. " +
       "The async-profiler will write a flame graph file for each stage. " +
-      "It is required to set 'spark.scheduler.mode' to 'FIFO' so that there is a clean " +
-      "boundary between stages, so that we can better understand each stage.")
+      "It is strongly recommended to set 'spark.scheduler.mode' to 'FIFO' " +
+      "so that there is a clean boundary between stages, " +
+      "and then we can better understand each stage.")
     .internal()
     .stringConf
     .createOptional
