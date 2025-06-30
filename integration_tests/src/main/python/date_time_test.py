@@ -14,18 +14,25 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_are_equal_sql
-from conftest import is_utc, is_supported_time_zone, get_test_tz
+from conftest import is_utc, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
+from dateutil import tz
 from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
+from timezones import all_timezones, fixed_offset_timezones, fixed_offset_timezones_iana, variable_offset_timezones, variable_offset_timezones_iana
 
 # Some operations only work in UTC specifically
 non_utc_tz_allow = ['ProjectExec'] if not is_utc() else []
 # Others work in all supported time zones
-non_supported_tz_allow = ['ProjectExec'] if not is_supported_time_zone() else []
+
+# the last time that is configured to be supported by the GPU transition rules
+last_supported_tz_time = datetime(2200, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
+tz_rules_date_gen = DateGen(end=date(2170,12,31))
+tz_rules_date_n_time_gens = [tz_rules_date_gen, TimestampGen(end=last_supported_tz_time)]
 
 # We only support literal intervals for TimeSub
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
@@ -137,12 +144,19 @@ def test_datediff(data_gen):
             'datediff(a, date(null))',
             'datediff(a, \'2016-03-02\')'))
 
-hms_fallback = ['ProjectExec'] if not is_supported_time_zone() else []
+@allow_non_gpu(*non_utc_tz_allow)
+def test_months_between_runtime_fallback():
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    time_zone_gen = TimestampGen(tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, false)'))
 
 @allow_non_gpu(*non_utc_tz_allow)
-def test_months_between():
+def test_months_between_tz_rules():
+    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, false)'))
+        lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, false)'))
 
 @allow_non_gpu(*non_utc_tz_allow)
 def test_months_between_first_day():
@@ -156,9 +170,19 @@ def test_months_between_last_day():
 
 @allow_non_gpu(*non_utc_tz_allow)
 @approximate_float()
-def test_months_between_round():
+def test_months_between_round_runtime_fallback():
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    time_zone_gen = TimestampGen(tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, true)'))
+        lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, true)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@approximate_float()
+def test_months_between_round_tz_rules():
+    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(os.environ.get('TZ', 'UTC')))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, true)'))
 
 @allow_non_gpu(*non_utc_tz_allow)
 @approximate_float()
@@ -172,20 +196,65 @@ def test_months_between_last_day_round():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", true)'))
 
-@allow_non_gpu(*hms_fallback)
-def test_hour():
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_hour_tz_rules(time_zone):
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'))
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('hour(a)'))
 
-@allow_non_gpu(*hms_fallback)
-def test_minute():
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_hour_tz_rules_runtime_fallback(time_zone):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'))
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('hour(a)'))
 
-@allow_non_gpu(*hms_fallback)
-def test_second():
+@pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
+def test_hour_fixed_offset(time_zone):
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('hour(a)'))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_minute_tz_rules(time_zone):
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_minute_tz_rules_runtime_fallback(time_zone):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
+
+@pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
+def test_minute_fixed_offset(time_zone):
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_second_tz_rules(time_zone):
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('second(a)'))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_second_tz_rules_runtime_fallback(time_zone):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('second(a)'))
+
+@pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
+def test_second_fixed_offset(time_zone):
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr('second(a)'))
 
 def test_quarter():
     assert_gpu_and_cpu_are_equal_collect(
@@ -290,52 +359,86 @@ def test_dayofyear(data_gen):
 
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @tz_sensitive_test
-@allow_non_gpu(*non_supported_tz_allow)
-def test_unix_timestamp(data_gen):
+def test_unix_timestamp_runtime_fallback(data_gen):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
+
+@pytest.mark.parametrize('data_gen', tz_rules_date_n_time_gens, ids=idfn)
+@tz_sensitive_test
+def test_unix_timestamp_tz_rules(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
 
 
-@pytest.mark.skipif(is_supported_time_zone(), reason='fallback only happens on unsupported timezones')
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_unsupported_fallback_unix_timestamp(data_gen):
-    assert_gpu_fallback_collect(lambda spark: gen_df(
-        spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
-        "unix_timestamp(a, b)"),
-        "UnixTimestamp")
-
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_to_unix_timestamp(data_gen, ansi_enabled):
+def test_to_unix_timestamp_runtime_fallback(data_gen, ansi_enabled):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
         conf = {'spark.sql.ansi.enabled': ansi_enabled})
 
-@pytest.mark.skipif(is_supported_time_zone(), reason='fallback only happens on unsupported timezones')
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_unsupported_fallback_to_unix_timestamp(data_gen):
-    assert_gpu_fallback_collect(lambda spark: gen_df(
-        spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
-        "to_unix_timestamp(a, b)"),
-        "ToUnixTimestamp")
 
-supported_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
-unsupported_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
-
-@pytest.mark.parametrize('time_zone', supported_timezones, ids=idfn)
-def test_from_utc_timestamp(time_zone):
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+@pytest.mark.parametrize('data_gen', tz_rules_date_n_time_gens, ids=idfn)
+def test_to_unix_timestamp_tz_rules(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, timestamp_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
+        conf = {'spark.sql.ansi.enabled': ansi_enabled})
 
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('time_zone', unsupported_timezones, ids=idfn)
-def test_from_utc_timestamp_unsupported_timezone_fallback(time_zone):
-    assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, timestamp_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
-    'FromUTCTimestamp')
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_from_utc_timestamp_tz_rules(time_zone):
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'from_utc_timestamp(a, "{time_zone}")'))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_from_utc_timestamp_tz_rules_runtime_fallback(time_zone):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    tz_timestamp_gen = TimestampGen(tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'from_utc_timestamp(a, "{time_zone}")'))
+
+@pytest.mark.parametrize('time_zone', fixed_offset_timezones, ids=idfn)
+def test_from_utc_timestamp_fixed_offset(time_zone):
+    tz_timestamp_gen = TimestampGen(tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'from_utc_timestamp(a, "{time_zone}")'))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones, ids=idfn)
+def test_from_utc_timestamp_dst_spring_forward(time_zone):
+    # March 13, 2022 2:30 AM EDT doesn't exist due to DST spring forward
+    # In Spark this will return the same result as 3:30 AM EDT
+    # Test times around the spring forward time, including things like 2:30 AM
+    start_time = datetime(2022, 3, 13, 1, 0, 0, 0, tzinfo=timezone.utc)
+    end_time = datetime(2022, 3, 13, 4, 0, 0, 0, tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, TimestampGen(start=start_time,end=end_time))\
+            .select(f.from_utc_timestamp(f.col('a'), time_zone)))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones, ids=idfn)
+def test_from_utc_timestamp_dst_spring_backward(time_zone):
+    # November 6, 2022 1:30 AM EDT exists twice due to DST fall back
+    # Test times around the spring forward time, including things like 1:30 AM
+    start_time = datetime(2022, 11, 6, 0, 0, 0, 0, tzinfo=timezone.utc)
+    end_time = datetime(2022, 11, 6, 3, 0, 0, 0, tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, TimestampGen(start=start_time,end=end_time))\
+            .select(f.from_utc_timestamp(f.col('a'), time_zone)))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones, ids=idfn)
+def test_from_utc_timestamp_dst_leap_year(time_zone):
+    # Check that Feb 29th (leap year) is handled correctly
+    start_time = datetime(2024, 2, 28, 0, 0, 0, 0, tzinfo=timezone.utc)
+    end_time = datetime(2024, 3, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, TimestampGen(start=start_time,end=end_time))\
+            .select(f.from_utc_timestamp(f.col('a'), time_zone)))
 
 @allow_non_gpu('ProjectExec')
 def test_unsupported_fallback_from_utc_timestamp():
@@ -345,18 +448,49 @@ def test_unsupported_fallback_from_utc_timestamp():
             "from_utc_timestamp(a, tzone)"),
         'FromUTCTimestamp')
 
-@pytest.mark.parametrize('time_zone', supported_timezones, ids=idfn)
-def test_to_utc_timestamp(time_zone):
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_to_utc_timestamp_tz_rules(time_zone):
+    tz_timestamp_gen = TimestampGen(end=last_supported_tz_time, tzinfo=tz.gettz(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, timestamp_gen).select(f.to_utc_timestamp(f.col('a'), time_zone)))
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('time_zone', unsupported_timezones, ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-def test_to_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
-    assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(f.to_utc_timestamp(f.col('a'), time_zone)),
-    'ToUTCTimestamp')
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_to_utc_timestamp_tz_rules_runtime_fallback(time_zone):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
+
+@pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
+def test_to_utc_timestamp_fixed_offset(time_zone):
+    tz_timestamp_gen = TimestampGen(tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
+
+# test from_utc_timestamp
+# If `end_timestamp` is 2200 year, then generated timestamps are < 2200 year, will use GPU to compute both DST and non-DST timezones.
+# If it has any generated timestamp is > 2200 year and timezone is DST, then `fallback` to CPU.
+# The `fallback` means GPU operator invokes CPU to compute, not really fallback to CPU.
+@pytest.mark.parametrize('time_zone', all_timezones, ids=idfn)
+@pytest.mark.parametrize('end_timestamp', [last_supported_tz_time, None], ids=idfn)
+def test_comprehensive_from_utc_timestamp(time_zone, end_timestamp):
+    # if end = None, will use the default value
+    tz_timestamp_gen = TimestampGen(end = end_timestamp, tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'from_utc_timestamp(a, "{time_zone}")'))
+
+# test to_utc_timestamp
+# If `end_timestamp` is 2200 year, then generated timestamps are < 2200 year, will use GPU to compute both DST and non-DST timezones.
+# If it has any generated timestamp is > 2200 year and timezone is DST, then `fallback` to CPU.
+# The `fallback` means GPU operator invokes CPU to compute, not really fallback to CPU.
+@pytest.mark.parametrize('time_zone', all_timezones, ids=idfn)
+@pytest.mark.parametrize('end_timestamp', [last_supported_tz_time, None], ids=idfn)
+def test_comprehensive_to_utc_timestamp(time_zone, end_timestamp):
+    # if end = None, will use the default value
+    tz_timestamp_gen = TimestampGen(end=end_timestamp, tzinfo=tz.gettz(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, tz_timestamp_gen).selectExpr(f'to_utc_timestamp(a, "{time_zone}")'))
 
 @allow_non_gpu('ProjectExec')
 def test_unsupported_fallback_to_utc_timestamp():
@@ -383,6 +517,7 @@ def test_unsupported_fallback_from_unixtime(data_gen):
     ('2021-01', 'yyyy/MM'),
     ('01/02/201', 'dd/MM/yyyy'),
     ('2021-01-01 00:00', 'yyyy-MM-dd HH:mm:ss'),
+    ('19224303 22:82:35', 'yyyy-MM-dd HH:mm:ss'),
     ('01#01', 'MM-dd'),
     ('01T01', 'MM/dd'),
     ('29-02', 'dd-MM'),  # 1970-02-29 is invalid
@@ -407,7 +542,6 @@ def test_string_to_timestamp_functions_ansi_invalid(invalid, fmt, parser_policy,
 
 @pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
 # first get expected string via `date_format`
-@allow_non_gpu(*non_utc_allow)
 def test_string_to_timestamp_functions_ansi_valid(parser_policy):
     expr_format = "{operator}(date_format(a, '{fmt}'), '{fmt}')"
     formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM', 'dd/MM/yyyy', 'yyyy-MM-dd HH:mm:ss',
@@ -427,15 +561,31 @@ def test_string_to_timestamp_functions_ansi_valid(parser_policy):
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @tz_sensitive_test
-@allow_non_gpu(*non_supported_tz_allow)
-def test_unix_timestamp(data_gen, ansi_enabled):
+def test_unix_timestamp_runtime_fallback(data_gen, ansi_enabled):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
+        {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+@pytest.mark.parametrize('data_gen', tz_rules_date_n_time_gens, ids=idfn)
+@tz_sensitive_test
+def test_unix_timestamp_tz_rules(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 
-str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
+str_date_and_format_gen_all = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
+        (StringGen('[01][12]/[0-2][1-8]'), 'MM/dd'),
+        (StringGen('[0-2][1-8]/[01][12]'), 'dd/MM'),
+        (ConvertGen(DateGen(nullable=False), lambda d: d.strftime('%Y/%m').zfill(7), data_type=StringType()), 'yyyy/MM')]
+
+str_date_and_format_gen_tz_max = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
+        (StringGen('1[0-9]{3}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
+        (StringGen('2[0-1][0-9]{2}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
         (StringGen('[01][12]/[0-2][1-8]'), 'MM/dd'),
         (StringGen('[0-2][1-8]/[01][12]'), 'dd/MM'),
         (ConvertGen(DateGen(nullable=False), lambda d: d.strftime('%Y/%m').zfill(7), data_type=StringType()), 'yyyy/MM')]
@@ -445,9 +595,17 @@ def invalid_date_string_df(spark):
     return spark.createDataFrame([['invalid_date_string']], "a string")
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_supported_tz_allow)
-def test_string_to_unix_timestamp(data_gen, date_form, ansi_enabled):
+@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen_tz_max, ids=idfn)
+def test_string_to_unix_timestamp_tz_rules(data_gen, date_form, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
+        {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen_all, ids=idfn)
+def test_string_to_unix_timestamp_runtime_fallback(data_gen, date_form, ansi_enabled):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
         {'spark.sql.ansi.enabled': ansi_enabled})
@@ -459,9 +617,17 @@ def test_string_to_unix_timestamp_ansi_exception():
         conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_supported_tz_allow)
-def test_string_unix_timestamp(data_gen, date_form, ansi_enabled):
+@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen_tz_max, ids=idfn)
+def test_string_unix_timestamp_tz_rules(data_gen, date_form, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),
+        {'spark.sql.ansi.enabled': ansi_enabled})
+
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+@pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen_all, ids=idfn)
+def test_string_unix_timestamp_runtime_fallback(data_gen, date_form, ansi_enabled):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),
         {'spark.sql.ansi.enabled': ansi_enabled})
@@ -475,9 +641,10 @@ def test_string_unix_timestamp_ansi_exception():
 
 @disable_ansi_mode  # ANSI mode is tested separately.
 @tz_sensitive_test
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
-def test_to_timestamp(parser_policy):
+def test_to_timestamp_runtime_fallback(parser_policy):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
     gen = StringGen("[0-9]{3}[1-9]-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]) ([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]")
     if get_test_tz() == "Asia/Shanghai":
         # ensure some times around transition are tested
@@ -492,8 +659,26 @@ def test_to_timestamp(parser_policy):
             .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
+@disable_ansi_mode  # ANSI mode is tested separately.
+@tz_sensitive_test
+@pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
+def test_to_timestamp_tz_rules(parser_policy):
+    gen = StringGen("(19[0-9]{2}|20[0-9]{2}|21[0-9]{2})-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1]) ([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]")
+    if get_test_tz() == "Asia/Shanghai":
+        # ensure some times around transition are tested
+        gen = gen.with_special_case("1991-04-14 02:00:00")\
+        .with_special_case("1991-04-14 02:30:00")\
+        .with_special_case("1991-04-14 03:00:00")\
+        .with_special_case("1991-09-15 02:00:00")\
+        .with_special_case("1991-09-15 02:30:00")\
+        .with_special_case("1991-09-15 03:00:00")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, gen)
+            .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
+        { "spark.sql.legacy.timeParserPolicy": parser_policy})
+
 # mm: minute; MM: month
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@disable_ansi_mode
 @pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd', 'yyyy-mm-dd'], ids=idfn)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
@@ -511,9 +696,11 @@ def test_formats_for_legacy_mode(format):
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 # mm: minute; MM: month
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@disable_ansi_mode
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
-def test_formats_for_legacy_mode_other_formats():
+def test_formats_for_legacy_mode_other_formats_runtime_fallback():
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
     format = "yyyyMMdd HH:mm:ss"
     # Test years after 1900,
     gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4}) [0-9]{2}:[0-9]{2}:[0-9]{2}')
@@ -528,8 +715,25 @@ def test_formats_for_legacy_mode_other_formats():
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
+# mm: minute; MM: month
+@disable_ansi_mode
+@pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
+def test_formats_for_legacy_mode_other_formats_tz_rules():
+    format = "yyyyMMdd HH:mm:ss"
+    # Test years after 1900, before 2200 see https://github.com/NVIDIA/spark-rapids/issues/6840
+    gen = StringGen('(19[0-9]{2}|2[0-1][0-9]{2})([0-9]{4}) [0-9]{2}:[0-9]{2}:[0-9]{2}')
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, gen),
+        "tab",
+        '''select unix_timestamp(a, '{}'),
+                  from_unixtime(unix_timestamp(a, '{}'), '{}'),
+                  date_format(to_timestamp(a, '{}'), '{}')
+           from tab
+        '''.format(format, format, format, format, format),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
 @tz_sensitive_test
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize("ansi_enabled", [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 def test_to_date(ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
@@ -538,7 +742,6 @@ def test_to_date(ansi_enabled):
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 @tz_sensitive_test
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize('data_gen', [StringGen('0[1-9][0-9]{4}')], ids=idfn)
 def test_to_date_format_MMyyyy(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -555,43 +758,50 @@ supported_date_formats = ['yyyy-MM-dd', 'yyyy-MM', 'yyyy/MM/dd', 'yyyy/MM', 'dd/
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
 @allow_non_gpu('ProjectExec')
-def test_date_format_for_date(data_gen, date_format):
+def test_date_format_for_date_runtime_fallback(data_gen, date_format):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
+    
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('data_gen', [tz_rules_date_gen], ids=idfn)
+@allow_non_gpu('ProjectExec')
+def test_date_format_for_date_tz_rules(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 # use 9999-12-30 instead of 9999-12-31 to avoid the issue: https://github.com/NVIDIA/spark-rapids/issues/10083
 @pytest.mark.parametrize('data_gen', [TimestampGen(end=datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))], ids=idfn)
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
-def test_date_format_for_time(data_gen, date_format):
+def test_date_format_for_time_runtime_fallback(data_gen, date_format):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
+    
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+# use 9999-12-30 instead of 9999-12-31 to avoid the issue: https://github.com/NVIDIA/spark-rapids/issues/10083
+@pytest.mark.parametrize('data_gen', [TimestampGen(end=datetime(2200, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))], ids=idfn)
+def test_date_format_for_time_tz_rules(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
-@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-@pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
-@allow_non_gpu('ProjectExec')
-def test_date_format_for_time_fall_back(data_gen, date_format):
-    assert_gpu_fallback_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
-        'ProjectExec')
-
 @pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
-@pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(2200, 12, 30).timestamp()))], ids=idfn)
 def test_from_unixtime(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)))
 
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
-@pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
-def test_from_unixtime_fall_back(data_gen, date_format):
-    assert_gpu_fallback_collect(lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)),
-        'ProjectExec')
+def test_from_unixtime_runtime_fallback(data_gen, date_format):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)))
 
 unsupported_date_formats = ['F']
 @pytest.mark.parametrize('date_format', unsupported_date_formats, ids=idfn)
@@ -628,7 +838,20 @@ def test_date_format_maybe(data_gen, date_format):
                                       TimestampGen(end=datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))
                                       ], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_date_format_maybe_incompat(data_gen, date_format):
+def test_date_format_maybe_incompat_runtime_fallback(data_gen, date_format):
+    # We will do a CPU fallback during runtime for timezones with transitions during 
+    # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
+    conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
+
+@pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
+
+@pytest.mark.parametrize('data_gen', [date_gen,
+                                      # use 9999-12-30 instead of 9999-12-31 to avoid the issue: https://github.com/NVIDIA/spark-rapids/issues/10083
+                                      TimestampGen(end=datetime(2200, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))
+                                      ], ids=idfn)
+def test_date_format_maybe_incompat_tz_rules(data_gen, date_format):
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
@@ -741,7 +964,6 @@ def test_timestamp_micros(data_gen):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_micros(a)"))
 
 
-@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize('parser_policy', ['LEGACY', 'CORRECTED', 'EXCEPTION'], ids=idfn)
 def test_date_to_timestamp(parser_policy):
     assert_gpu_and_cpu_are_equal_sql(

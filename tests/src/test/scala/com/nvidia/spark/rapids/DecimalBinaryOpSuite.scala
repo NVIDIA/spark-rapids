@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -123,7 +123,8 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
 
   // https://github.com/NVIDIA/spark-rapids/issues/6076
   testSparkResultsAreEqual("SPARK-24957: average with decimal followed by " +
-      "aggregation returning wrong result", decimals) {
+      "aggregation returning wrong result", decimals,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     df => df.groupBy("text").agg(avg("number").as("avg_res"))
         .groupBy("text").agg(sum("avg_res"))
   }

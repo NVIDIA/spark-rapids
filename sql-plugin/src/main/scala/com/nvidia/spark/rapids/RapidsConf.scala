@@ -366,6 +366,20 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createOptional // The default
 
+  val CGROUPS_MEMORY_LIMIT_PATH = conf("spark.rapids.cgroups.memory.limit.path")
+    .doc("The filepath of the local file on host that stores the memory limit " +
+      "for the process. If omitted, attempts to detect the file from common locations.")
+    .startupOnly()
+    .stringConf
+    .createOptional
+
+  val CGROUPS_MEMORY_USAGE_PATH = conf("spark.rapids.cgroups.memory.usage.path")
+    .doc("The filepath of the local file on host that stores the memory usage " +
+      "for the process. If omitted, attempts to detect the file from common locations.")
+    .startupOnly()
+    .stringConf
+    .createOptional
+
   val TASK_OVERHEAD_SIZE = conf("spark.rapids.memory.host.taskOverhead.size")
       .doc("The amount of off heap memory reserved per task for overhead activities " +
           "like C++ heap/stack and a few other small things that are hard to control for.")
@@ -510,7 +524,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
-        "memory pools.")
+        "memory pools. This config is deprecated in favor of " +
+        "spark.rapids.memory.host.offHeapLimit.enabled/" +
+        "spark.rapids.memory.host.offHeapLimit.size, which will take precedence if set.")
     .startupOnly()
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
@@ -536,13 +552,19 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault("ASYNC")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
-      .doc("Set the number of tasks that can execute concurrently per GPU. " +
-          "Tasks may temporarily block when the number of concurrent tasks in the executor " +
-          "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
-          "GPU out of memory errors.")
-      .commonlyUsed()
+      .doc("Set the initial number of tasks that can execute concurrently per GPU. " +
+        "By default the number of tasks allowed on the GPU will adjust dynamically " +
+        "to try and provide optimal performance. This sets the starting point for each " +
+        "stage. If this is not set the amount of GPU memory will be used to come up " +
+        "with a starting estimate.")
       .integerConf
-      .createWithDefault(2)
+      .createOptional
+
+  val DYNAMIC_CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks.dynamic")
+      .doc("Set to false if the system should not dynamically adjust the concurrent task " +
+        "amount, but keep it to be a static number")
+      .booleanConf
+      .createWithDefault(true)
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
@@ -620,6 +642,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val TIMESTAMP_RULES_END_YEAR = conf("spark.rapids.timezone.transitionCache.maxYear")
+    .doc("Set the max year for timestamp processing for timezones with transitions " +
+      "such as Daylight Savings. For efficiency reasons, timestamp" +
+      " transitions are stored on the GPU. We store transitions up to some set year." +
+      " Adding more years will use more memory, every 100 years is roughly 1MB.")
+    .startupOnly()
+    .integerConf
+    .createWithDefault(2200)
+
   // Internal Features
 
   val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
@@ -672,6 +703,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .integerConf
       .createWithDefault(10000)
+
+  val BUCKET_JOIN_IO_PREFETCH =
+    conf("spark.rapids.sql.join.bucket.IOPrefetch")
+      .doc("Enable I/O prefetch of the upstream bucket scans if there is a SizedHashJoin " +
+        "in downstream. Please notice the prefetch will only take affect with " +
+        "MultiFileCloudPartitionReader")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -898,6 +938,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_FOLD_LOCAL_AGGREGATE = conf("spark.rapids.sql.foldLocalAggregate.enabled")
+    .doc("Whether to fold two-stages local aggregate into one-shot Complete aggregate.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_CAST_FLOAT_TO_DECIMAL = conf("spark.rapids.sql.castFloatToDecimal.enabled")
     .doc("Casting from floating point types to decimal on the GPU returns results that have " +
       "tiny difference compared to results returned from CPU.")
@@ -942,11 +988,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
-    .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
-      "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
-      "documentation for more details.")
+    .doc("When set to false, this disables casting from string to timestamp on the GPU.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val HAS_EXTENDED_YEAR_VALUES = conf("spark.rapids.sql.hasExtendedYearValues")
       .doc("Spark 3.2.0+ extended parsing of years in dates and " +
@@ -1595,12 +1639,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val SKIP_AGG_PASS_REDUCTION_RATIO = conf("spark.rapids.sql.agg.skipAggPassReductionRatio")
-    .doc("In non-final aggregation stages, if the previous pass has a row reduction ratio " +
+    .doc("In non-final aggregation stages, if the previous pass has a row retention ratio " +
         "greater than this value, the next aggregation pass will be skipped." +
-        "Setting this to 1 essentially disables this feature.")
+        "Setting this to 1 essentially disables this feature. For Historical reasons it is " +
+        "called skipAggPassReductionRatio, actually skipAggPassRetentionRatio would have " +
+        "been better")
+    .internal()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The ratio value must be in [0, 1].")
-    .createWithDefault(1.0)
+    .createWithDefault(0.85)
 
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
@@ -2059,7 +2106,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .internal()
     .startupOnly()
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED =
     conf("spark.rapids.shuffle.kudo.serializer.measure.buffer.copy.enabled")
@@ -2559,7 +2606,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.08.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2755,6 +2802,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
 
+  lazy val bucketJoinIoPrefetch: Boolean = get(BUCKET_JOIN_IO_PREFETCH)
+
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
@@ -2775,9 +2824,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val offHeapLimit: Option[Long] = get(OFF_HEAP_LIMIT_SIZE)
 
+  lazy val cgroupsMemoryLimitPath: Option[String] = get(CGROUPS_MEMORY_LIMIT_PATH)
+
+  lazy val cgroupsMemoryUsagePath: Option[String] = get(CGROUPS_MEMORY_USAGE_PATH)
+
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 
-  lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
+  lazy val concurrentGpuTasks: Option[Integer] = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
@@ -2971,6 +3024,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
+
+  lazy val enableFoldLocalAggregate: Boolean = get(ENABLE_FOLD_LOCAL_AGGREGATE)
 
   lazy val areInnerJoinsEnabled: Boolean = get(ENABLE_INNER_JOIN)
 
@@ -3334,6 +3389,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
+
+  lazy val timestampRulesEndYear: Int = get(TIMESTAMP_RULES_END_YEAR)
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
 

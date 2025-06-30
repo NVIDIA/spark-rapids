@@ -22,22 +22,23 @@ import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
 import java.nio.file.StandardOpenOption
 import java.util
 import java.util.UUID
-import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
+import java.util.concurrent.ArrayBlockingQueue
 
 import scala.collection.mutable
 
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer, GpuCompressedColumnVector, GpuDeviceManager, HostAlloc, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, RapidsConf, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer, GpuCompressedColumnVector, GpuDeviceManager, HashedPriorityQueue, HostAlloc, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, RapidsConf, RapidsHostColumnVector}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.internal.HostByteBufferIterator
+import com.nvidia.spark.rapids.jni.TaskPriority
 import org.apache.commons.io.IOUtils
 
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
-import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
+import org.apache.spark.sql.rapids.execution.{SerializedHostTableUtils, TrampolineUtil}
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -161,9 +162,17 @@ trait StoreHandle extends AutoCloseable {
    * This is used to resolve races between closing a handle and spilling.
    */
   private[spill] var closed: Boolean = false
+
+  lazy val taskId: Option[Long] = Option(TaskContext.get()).map(tc => tc.taskAttemptId())
+
+  /**
+   * Be very careful that you set this before it is added into the Store, or that
+   * the store knows to update the priority internally after this is set.
+   */
+  var taskPriority: Long = taskId.map(TaskPriority.getTaskPriority).getOrElse(Long.MaxValue)
 }
 
-trait SpillableHandle extends StoreHandle {
+trait SpillableHandle extends StoreHandle with Logging {
   /**
    * used to gate when a spill is actively being done so that a second thread won't
    * also begin spilling, and a handle won't release the underlying buffer if it's
@@ -216,6 +225,24 @@ trait SpillableHandle extends StoreHandle {
    * the spill thread will be responsible for calling this after finishing its operation
    */
   private[spill] def doClose(): Unit
+
+  /**
+   * When the current handle is actually doing spilling, it might encounter exceptions, e.g.
+   * InterruptedException. This method is used to catch those exceptions and reset spilling state
+   * to false
+   */
+  def inCaseSpillingFailed(block: () => Long): Long = {
+    try {
+      block()
+    } catch {
+      case e: Throwable =>
+        logWarning("Failed to spill SpillableColumnarBatchHandle", e)
+        synchronized {
+          spilling = false
+        }
+        throw e
+    }
+  }
 
   /**
    * Marks the handle as closed, and closes the underlying buffers if the handle is not currently
@@ -301,8 +328,10 @@ object SpillableHostBufferHandle extends Logging {
   }
 
   private[spill] def createHostHandleWithPacker(
-      chunkedPacker: ChunkedPacker): SpillableHostBufferHandle = {
+      chunkedPacker: ChunkedPacker,
+      taskPriority: Long): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(chunkedPacker.getTotalContiguousSize)
+    handle.taskPriority = taskPriority
     withResource(
       SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
       while (chunkedPacker.hasNext) {
@@ -318,8 +347,10 @@ object SpillableHostBufferHandle extends Logging {
   }
 
   private[spill] def createHostHandleFromDeviceBuff(
-      buff: DeviceMemoryBuffer): SpillableHostBufferHandle = {
+      buff: DeviceMemoryBuffer,
+      taskPriority: Long): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(buff.getLength)
+    handle.taskPriority = taskPriority
     withResource(
       SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
       builder.copyNext(buff, buff.getLength, Cuda.DEFAULT_STREAM)
@@ -367,9 +398,18 @@ class SpillableHostBufferHandle private (
       }
     }
     if (materialized == null) {
-      materialized = closeOnExcept(HostMemoryBuffer.allocate(sizeInBytes)) { hmb =>
-        diskHandle.materializeToHostMemoryBuffer(hmb)
-        hmb
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        materialized = closeOnExcept(HostMemoryBuffer.allocate(sizeInBytes)) { hmb =>
+          diskHandle.materializeToHostMemoryBuffer(hmb)
+          hmb
+        }
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -391,38 +431,41 @@ class SpillableHostBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        withResource(host.get) { buf =>
-          withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
-            val outputChannel = diskHandleBuilder.getChannel
-            // the spill IO is non-blocking as it won't impact dev or host directly
-            // instead we "atomically" swap the buffers below once they are ready
-            GpuTaskMetrics.get.spillToDiskTime {
-              val iter = new HostByteBufferIterator(buf)
-              iter.foreach { bb =>
-                try {
-                  while (bb.hasRemaining) {
-                    outputChannel.write(bb)
+        inCaseSpillingFailed { () =>
+          withResource(host.get) { buf =>
+            withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+              val outputChannel = diskHandleBuilder.getChannel
+              // the spill IO is non-blocking as it won't impact dev or host directly
+              // instead we "atomically" swap the buffers below once they are ready
+              GpuTaskMetrics.get.spillToDiskTime {
+                val iter = new HostByteBufferIterator(buf)
+                iter.foreach { bb =>
+                  try {
+                    while (bb.hasRemaining) {
+                      outputChannel.write(bb)
+                    }
+                  } finally {
+                    RapidsStorageUtils.dispose(bb)
                   }
-                } finally {
-                  RapidsStorageUtils.dispose(bb)
                 }
               }
-            }
-            var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
-            synchronized {
-              spilling = false
-              if (closed) {
-                staging.foreach(_.close())
-                staging = None
-                doClose()
-              } else {
-                disk = staging
+              TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
+              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
+              synchronized {
+                spilling = false
+                if (closed) {
+                  staging.foreach(_.close())
+                  staging = None
+                  doClose()
+                } else {
+                  disk = staging
+                }
               }
+              releaseHostResource()
             }
-            releaseHostResource()
           }
+          sizeInBytes
         }
-        sizeInBytes
       } else {
         0
       }
@@ -481,6 +524,14 @@ object SpillableDeviceBufferHandle {
     SpillFramework.stores.deviceStore.track(handle)
     handle
   }
+
+  def apply(dmb: DeviceMemoryBuffer, overrideTaskPriority: Long): SpillableDeviceBufferHandle = {
+    val handle = new SpillableDeviceBufferHandle(dmb.getLength, dev = Some(dmb))
+    // Must be set before adding into the deviceStore
+    handle.taskPriority = overrideTaskPriority
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
 }
 
 class SpillableDeviceBufferHandle private (
@@ -524,9 +575,18 @@ class SpillableDeviceBufferHandle private (
     // state, as we are not allowing unspill, and we don't need
     // to hold locks while we copy back from here.
     if (materialized == null) {
-      materialized = closeOnExcept(DeviceMemoryBuffer.allocate(sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        materialized = closeOnExcept(DeviceMemoryBuffer.allocate(sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
+        }
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -548,23 +608,25 @@ class SpillableDeviceBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        withResource(dev.get) { buf =>
-          // the spill IO is non-blocking as it won't impact dev or host directly
-          // instead we "atomically" swap the buffers below once they are ready
-          var stagingHost: Option[SpillableHostBufferHandle] =
-            Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
-          synchronized {
-            spilling = false
-            if (closed) {
-              stagingHost.foreach(_.close())
-              stagingHost = None
-              doClose()
-            } else {
-              host = stagingHost
+        inCaseSpillingFailed { () =>
+          withResource(dev.get) { buf =>
+            // the spill IO is non-blocking as it won't impact dev or host directly
+            // instead we "atomically" swap the buffers below once they are ready
+            var stagingHost: Option[SpillableHostBufferHandle] =
+              Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf, taskPriority))
+            synchronized {
+              spilling = false
+              if (closed) {
+                stagingHost.foreach(_.close())
+                stagingHost = None
+                doClose()
+              } else {
+                host = stagingHost
+              }
             }
           }
+          sizeInBytes
         }
-        sizeInBytes
       } else {
         0
       }
@@ -618,16 +680,25 @@ class SpillableColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
-      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
-      }
-      val cb = withResource(devBuffer) { _ =>
-        withResource(Table.fromPackedTable(meta.get, devBuffer)) { tbl =>
-          GpuColumnVector.from(tbl, dt)
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
         }
+        val cb = withResource(devBuffer) { _ =>
+          withResource(Table.fromPackedTable(meta.get, devBuffer)) { tbl =>
+            GpuColumnVector.from(tbl, dt)
+          }
+        }
+        materialized = cb
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
-      materialized = cb
     }
     materialized
   }
@@ -646,25 +717,28 @@ class SpillableColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        withChunkedPacker(dev.get) { chunkedPacker =>
-          meta = Some(chunkedPacker.getPackedMeta)
-          var staging: Option[SpillableHostBufferHandle] =
-            Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
-          synchronized {
-            spilling = false
-            if (closed) {
-              staging.foreach(_.close())
-              staging = None
-              doClose()
-            } else {
-              host = staging
+        inCaseSpillingFailed { () =>
+          withChunkedPacker(dev.get) { chunkedPacker =>
+            meta = Some(chunkedPacker.getPackedMeta)
+            var staging: Option[SpillableHostBufferHandle] =
+              Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker,
+                taskPriority))
+            synchronized {
+              spilling = false
+              if (closed) {
+                staging.foreach(_.close())
+                staging = None
+                doClose()
+              } else {
+                host = staging
+              }
             }
           }
+          // We return the size we were created with. This is not the actual size
+          // of this batch when it is packed, and it is used by the calling code
+          // to figure out more or less how much did we free in the device.
+          approxSizeInBytes
         }
-        // We return the size we were created with. This is not the actual size
-        // of this batch when it is packed, and it is used by the calling code
-        // to figure out more or less how much did we free in the device.
-        approxSizeInBytes
       } else {
         0L
       }
@@ -757,16 +831,25 @@ class SpillableColumnarBatchFromBufferHandle private (
       }
     }
     if (materialized == null) {
-      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
-      }
-      val cb = withResource(devBuffer) { _ =>
-        withResource(Table.fromPackedTable(meta.get.packedMetaAsByteBuffer(), devBuffer)) { tbl =>
-          GpuColumnVector.from(tbl, dt)
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
         }
+        val cb = withResource(devBuffer) { _ =>
+          withResource(Table.fromPackedTable(meta.get.packedMetaAsByteBuffer(), devBuffer)) { tbl =>
+            GpuColumnVector.from(tbl, dt)
+          }
+        }
+        materialized = cb
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
-      materialized = cb
     }
     materialized
   }
@@ -785,23 +868,25 @@ class SpillableColumnarBatchFromBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        withResource(dev.get) { cb =>
-          val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-          meta = Some(cvFromBuffer.getTableMeta)
-          var staging: Option[SpillableHostBufferHandle] =
-            Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-              cvFromBuffer.getBuffer))
-          synchronized {
-            spilling = false
-            if (closed) {
-              doClose()
-              staging.foreach(_.close())
-              staging = None
-            } else {
-              host = staging
+        inCaseSpillingFailed { () =>
+          withResource(dev.get) { cb =>
+            val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
+            meta = Some(cvFromBuffer.getTableMeta)
+            var staging: Option[SpillableHostBufferHandle] =
+              Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+                cvFromBuffer.getBuffer, taskPriority))
+            synchronized {
+              spilling = false
+              if (closed) {
+                doClose()
+                staging.foreach(_.close())
+                staging = None
+              } else {
+                host = staging
+              }
             }
+            sizeInBytes
           }
-          sizeInBytes
         }
       } else {
         0L
@@ -865,12 +950,21 @@ class SpillableCompressedColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
-      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
-      }
-      materialized = withResource(devBuffer) { _ =>
-        GpuCompressedColumnVector.from(devBuffer, meta.get)
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
+        }
+        materialized = withResource(devBuffer) { _ =>
+          GpuCompressedColumnVector.from(devBuffer, meta.get)
+        }
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -890,22 +984,24 @@ class SpillableCompressedColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        withResource(dev.get) { cb =>
-          val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
-          meta = Some(cvFromBuffer.getTableMeta)
-          var staging: Option[SpillableHostBufferHandle] =
-            Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-              cvFromBuffer.getTableBuffer))
-          synchronized {
-            spilling = false
-            if (closed) {
-              doClose()
-              staging = None
-            } else {
-              host = staging
+        inCaseSpillingFailed { () =>
+          withResource(dev.get) { cb =>
+            val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
+            meta = Some(cvFromBuffer.getTableMeta)
+            var staging: Option[SpillableHostBufferHandle] =
+              Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+                cvFromBuffer.getTableBuffer, taskPriority))
+            synchronized {
+              spilling = false
+              if (closed) {
+                doClose()
+                staging = None
+              } else {
+                host = staging
+              }
             }
+            compressedSizeInBytes
           }
-          compressedSizeInBytes
         }
       } else {
         0L
@@ -971,12 +1067,21 @@ class SpillableHostColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
-      materialized = diskHandle.withInputWrappedStream { inputStream =>
-        val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(inputStream)
-        val hostCols = withResource(hostBuffer) { _ =>
-          SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        materialized = diskHandle.withInputWrappedStream { inputStream =>
+          val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(inputStream)
+          val hostCols = withResource(hostBuffer) { _ =>
+            SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+          }
+          new ColumnarBatch(hostCols.toArray, numRows)
         }
-        new ColumnarBatch(hostCols.toArray, numRows)
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -996,26 +1101,29 @@ class SpillableHostColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        withResource(host.get) { cb =>
-          withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
-            GpuTaskMetrics.get.spillToDiskTime {
-              val dos = diskHandleBuilder.getDataOutputStream
-              val columns = RapidsHostColumnVector.extractBases(cb)
-              JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
-            }
-            var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
-            synchronized {
-              spilling = false
-              if (closed) {
-                doClose()
-                staging.foreach(_.close())
-                staging = None
-              } else {
-                disk = staging
+        inCaseSpillingFailed { () =>
+          withResource(host.get) { cb =>
+            withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+              GpuTaskMetrics.get.spillToDiskTime {
+                val dos = diskHandleBuilder.getDataOutputStream
+                val columns = RapidsHostColumnVector.extractBases(cb)
+                JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
               }
+              TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
+              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
+              synchronized {
+                spilling = false
+                if (closed) {
+                  doClose()
+                  staging.foreach(_.close())
+                  staging = None
+                } else {
+                  disk = staging
+                }
+              }
+              releaseHostResource()
+              approxSizeInBytes
             }
-            releaseHostResource()
-            approxSizeInBytes
           }
         }
       } else {
@@ -1037,6 +1145,17 @@ object DiskHandle {
             diskSizeInBytes: Long): DiskHandle = {
     val handle = new DiskHandle(
       blockId, offset, diskSizeInBytes)
+    SpillFramework.stores.diskStore.track(handle)
+    handle
+  }
+
+  def apply(blockId: BlockId,
+            offset: Long,
+            diskSizeInBytes: Long,
+            taskPriority: Long): DiskHandle = {
+    val handle = new DiskHandle(
+      blockId, offset, diskSizeInBytes)
+    handle.taskPriority = taskPriority
     SpillFramework.stores.diskStore.track(handle)
     handle
   }
@@ -1121,31 +1240,47 @@ class DiskHandle private(
   }
 }
 
-trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
-  protected val handles = new ConcurrentHashMap[T, java.lang.Boolean]()
+object HandleComparator extends util.Comparator[StoreHandle] {
 
-  def numHandles: Int = {
+  override def compare(t1: StoreHandle, t2: StoreHandle): Int = {
+    java.lang.Long.compare(t1.taskPriority, t2.taskPriority)
+  }
+}
+
+trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
+  protected lazy val handles = new HashedPriorityQueue[T](HandleComparator)
+
+  def numHandles: Int = synchronized {
     handles.size()
   }
 
-  def track(handle: T): Unit = {
+  def track(handle: T): Unit = synchronized {
     doTrack(handle)
   }
 
-  def remove(handle: T): Unit = {
+  def remove(handle: T): Unit = synchronized {
     doRemove(handle)
   }
 
-  protected def doTrack(handle: T): Boolean = {
-    handles.put(handle, true) == null
+  def isEmpty: Boolean = synchronized {
+    handles.isEmpty
   }
 
-  protected def doRemove(handle: T): Boolean = {
-    handles.remove(handle) != null
+  protected def doTrack(handle: T): Boolean = synchronized {
+    if (handles.contains(handle)) {
+      false
+    } else {
+      handles.offer(handle)
+      true
+    }
   }
 
-  override def close(): Unit = {
-    handles.forEach((handle, _ )=> {
+  protected def doRemove(handle: T): Boolean = synchronized {
+    handles.remove(handle)
+  }
+
+  override def close(): Unit = synchronized {
+    handles.forEach(handle => {
       handle.close()
     })
     handles.clear()
@@ -1205,7 +1340,9 @@ trait SpillableStore[T <: SpillableHandle]
   private def makeSpillPlan(spillNeeded: Long): SpillPlan = {
     val plan = new SpillPlan()
     var amountToSpill = 0L
-    val allHandles = handles.keySet().iterator()
+    val allHandles = synchronized {
+      handles.priorityIterator()
+    }
     // two threads could be here trying to spill and creating a list of spillables
     while (allHandles.hasNext && amountToSpill < spillNeeded) {
       val handle = allHandles.next()
@@ -1224,10 +1361,19 @@ trait SpillableStore[T <: SpillableHandle]
       0L
     } else {
       withResource(spillNvtxRange) { _ =>
-        val plan = makeSpillPlan(spillNeeded)
-        val amountSpilled = plan.trySpill()
-        postSpill(plan)
-        amountSpilled
+        // Note that we are using a try finally here. This is to reduce the amount
+        // of garbage collection that needs to happen. We could use a lot of
+        // syntactic sugar to make the code look cleaner, but I don't want to
+        // add more overhead for only a handful of places in the code.
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+        try {
+          val plan = makeSpillPlan(spillNeeded)
+          val amountSpilled = plan.trySpill()
+          postSpill(plan)
+          amountSpilled
+        } finally {
+          com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
+        }
       }
     }
   }
@@ -1236,13 +1382,15 @@ trait SpillableStore[T <: SpillableHandle]
     var spillableHandleCount = 0L
     var spillableHandleBytes = 0L
     var totalHandleBytes = 0L
-    handles.forEach((handle, _) => {
-      totalHandleBytes += handle.approxSizeInBytes
-      if (handle.spillable) {
-        spillableHandleCount += 1
-        spillableHandleBytes += handle.approxSizeInBytes
-      }
-    })
+    synchronized {
+      handles.forEach(handle => {
+        totalHandleBytes += handle.approxSizeInBytes
+        if (handle.spillable) {
+          spillableHandleCount += 1
+          spillableHandleBytes += handle.approxSizeInBytes
+        }
+      })
+    }
     s"SpillableStore: ${this.getClass.getSimpleName}, " +
       s"Total Handles: $numHandles, " +
       s"Spillable Handles: $spillableHandleCount, " +
@@ -1300,7 +1448,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       var canFit = true
       val handleSize = handle.approxSizeInBytes
       var amountSpilled = 0L
-      val hadHandlesToSpill = !handles.isEmpty
+      val hadHandlesToSpill = !isEmpty
       while (canFit && !tracked && numRetries < 5) {
         // if we are trying to add a handle larger than our limit
         if (maxSize.get < handleSize) {
@@ -1432,6 +1580,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
           len,
           stream)
         copied += len
+        TrampolineUtil.incTaskMetricsMemoryBytesSpilled(len)
       }
     }
 
@@ -1494,6 +1643,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       require(handle != null, "Called build too many times")
       require(copied == handle.sizeInBytes,
         s"Expected ${handle.sizeInBytes} B but copied $copied B instead")
+      TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
       handle.setDisk(diskHandleBuilder.build)
       val res = handle
       handle = null
@@ -1640,11 +1790,16 @@ object DiskHandleStore {
       closed = true
     }
 
+    def size: Long = fc.position() - startPos
+
     def build: DiskHandle =
       DiskHandle(
         blockId,
         startPos,
-        fc.position() - startPos)
+        size)
+
+    def build(taskPriority: Long): DiskHandle =
+      DiskHandle(blockId, startPos, size, taskPriority)
   }
 
   def makeBuilder: DiskHandleBuilder = {
@@ -1715,6 +1870,11 @@ object SpillFramework extends Logging {
 
     val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
       // Disable the limit because it is handled by the RapidsHostMemoryStore
+      if (rapidsConf.hostSpillStorageSize == -1) {
+        logWarning(s"both ${RapidsConf.OFF_HEAP_LIMIT_ENABLED} and " +
+          s"${RapidsConf.HOST_SPILL_STORAGE_SIZE} are set; using " +
+          s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} and ignoring ${RapidsConf.HOST_SPILL_STORAGE_SIZE}")
+      }
       None
     } else if (rapidsConf.hostSpillStorageSize == -1) {
       // + 1 GiB by default to match backwards compatibility

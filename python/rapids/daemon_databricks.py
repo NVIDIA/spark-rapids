@@ -1,4 +1,3 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -16,6 +15,20 @@
 # limitations under the License.
 #
 
+# Not a contribution
+# Changes made by NVIDIA CORPORATION & AFFILIATES enabling rapids Python or otherwise documented as
+# NVIDIA-proprietary are not a contribution and subject to the following terms and conditions:
+#
+# SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
 import os
 import signal
 import select
@@ -26,13 +39,71 @@ import time
 import gc
 from errno import EINTR, EAGAIN
 from socket import AF_INET, SOCK_STREAM, SOMAXCONN
-from signal import SIGHUP, SIGTERM, SIGCHLD, SIG_DFL, SIG_IGN
+from signal import SIGHUP, SIGTERM, SIGCHLD, SIG_DFL, SIG_IGN, SIGINT
 
-from pyspark.serializers import read_int, write_int, UTF8Deserializer
-from pyspark.daemon import worker
+from pyspark.serializers import read_int, write_int, write_with_length, UTF8Deserializer
+from pyspark.worker import main as worker_main
+from pyspark.wrapped_python import do_all_setup_for_username
 
-from rapids.worker import initialize_gpu_mem
+from rapids.worker import initialize_gpu_mem, handle_worker_exception
 utf8_deserializer = UTF8Deserializer()
+
+
+def compute_real_exit_code(exit_code):
+    # SystemExit's code can be integer or string, but os._exit only accepts integers
+    if isinstance(exit_code, numbers.Integral):
+        return exit_code
+    else:
+        return 1
+
+
+def worker(sock, authenticated, executor_username):
+    """
+    Called by a worker process after the fork().
+    """
+    signal.signal(SIGHUP, SIG_DFL)
+    signal.signal(SIGCHLD, SIG_DFL)
+    signal.signal(SIGTERM, SIG_DFL)
+    # restore the handler for SIGINT,
+    # it's useful for debugging (show the stacktrace before exit)
+    signal.signal(SIGINT, signal.default_int_handler)
+
+    # Read the socket using fdopen instead of socket.makefile() because the latter
+    # seems to be very slow; note that we need to dup() the file descriptor because
+    # otherwise writes also cause a seek that makes us miss data on the read side.
+    buffer_size = int(os.environ.get("SPARK_BUFFER_SIZE", 65536))
+    infile = os.fdopen(os.dup(sock.fileno()), "rb", buffer_size)
+    outfile = os.fdopen(os.dup(sock.fileno()), "wb", buffer_size)
+
+    if not authenticated:
+        client_secret = UTF8Deserializer().loads(infile)
+        if os.environ["PYTHON_WORKER_FACTORY_SECRET"] == client_secret:
+            write_with_length("ok".encode("utf-8"), outfile)
+            outfile.flush()
+        else:
+            write_with_length("err".encode("utf-8"), outfile)
+            outfile.flush()
+            sock.close()
+            return 1
+
+    exit_code = 0
+    try:
+        # Do the exact same security setup that we do for the Python REPL process on the driver
+        do_all_setup_for_username(executor_username)
+        # GPU context setup
+        initialize_gpu_mem()
+        worker_main(infile, outfile)
+    except SystemExit as exc:
+        exit_code = compute_real_exit_code(exc.code)
+    except BaseException as e:
+        handle_worker_exception(e, outfile)
+        exit_code = -1
+    finally:
+        try:
+            outfile.flush()
+        except Exception:
+            pass
+    return exit_code
 
 
 def manager():
@@ -129,9 +200,6 @@ def manager():
                     devnull.close()
 
                     try:
-                        # GPU context setup
-                        initialize_gpu_mem()
-
                         infile = sock.makefile(mode="rb")
                         executor_username = utf8_deserializer.loads(infile)
                         # Acknowledge that the fork was successful

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * This file was derived from DataSkippingStatsTracker.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -136,7 +136,9 @@ class GpuDeltaTaskStatisticsTracker(
     submittedFiles.remove(filePath)
   }
 
-  override def newPartition(): Unit = { }
+  override def newPartition(partitionValues: InternalRow): Unit = { }
+
+  override def writersNumber(numWriters: Int): Unit = { }
 
   protected def initializeAggBuf(buffer: SpecificInternalRow): InternalRow =
     initializeStats.target(buffer).apply(EmptyRow)

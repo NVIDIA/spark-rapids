@@ -263,7 +263,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-25.04.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-25.04.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-25.08.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-25.08.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -283,10 +283,10 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
 If you just want to verify the SQL replacement is working you will need to add the
 `rapids-4-spark` jar to your `spark-submit` command. Note the following example
-assumes CUDA 11.0 is being used and the Spark distribution is built with Scala 2.12.
+assumes CUDA 12 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.08.0-SNAPSHOT-cuda12.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -330,8 +330,9 @@ under YARN and even though it is off by default you probably want to be sure it 
 
 In case your test jars and resources are downloaded to the `local-path` from dependency Repo, and you want to run tests with them
 using the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh), then the `LOCAL_JAR_PATH=local-path` must be set to point
-to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.By setting `LOCAL_JAR_PATH=local-path`
-the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path.
+to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`. By setting `LOCAL_JAR_PATH=local-path`
+the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path. If you only want to override the 
+plugin jar then you can just set `PLUGIN_JAR=<path to the jar>`.
 
 When running the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) under YARN or Kubernetes, the `$SCRIPTPATH` in the python options
 `--rootdir $SCRIPTPATH ...` and `--std_input_path $SCRIPTPATH ...` will not work, as the `$SCRIPTPATH` is a local path, you need to overwrite it to the cloud paths.
@@ -453,10 +454,10 @@ To run cudf_udf tests, need following configuration changes:
    * Decrease `spark.rapids.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
    * Add `spark.rapids.python.concurrentPythonWorkers` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
 
-As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
+As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 12:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-25.04.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.08.0-SNAPSHOT-cuda12.jar,rapids-4-spark-tests_2.12-25.08.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.08.0-SNAPSHOT-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.08.0-SNAPSHOT-cuda12.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests

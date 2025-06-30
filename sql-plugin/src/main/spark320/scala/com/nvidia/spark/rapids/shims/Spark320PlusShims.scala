@@ -43,11 +43,10 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
-
-import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
@@ -341,24 +340,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override def hasCastFloatTimestampUpcast: Boolean = true
 
   override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
-    def recurse(
-        plan: SparkPlan,
-        predicate: SparkPlan => Boolean,
-        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
-      if (predicate(plan)) {
-        accum += plan
-      }
-      plan match {
-        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
-        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
-        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
-        case c: CommandResultExec => recurse(c.commandPhysicalPlan, predicate, accum)
-        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
-      }
-      accum.toSeq
-    }
-
-    recurse(plan, predicate, new ListBuffer[SparkPlan]())
+    OperatorsUtilShims.findOperators(plan, predicate)
   }
 
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = plan match {

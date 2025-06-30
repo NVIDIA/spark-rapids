@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.spill.SpillableDeviceStore
 import com.sun.management.HotSpotDiagnosticMXBean
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
  * RMM event handler to trigger spilling from the device memory store.
@@ -147,7 +146,6 @@ class DeviceMemoryEventHandler(
           false
         }
       } else {
-        TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
         true
       }
     } catch {

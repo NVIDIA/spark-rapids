@@ -27,7 +27,7 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
+CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda12'}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
 MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CLASSIFIER"
@@ -251,13 +251,6 @@ nvidia-smi
 . jenkins/version-def.sh
 
 PREMERGE_PROFILES="-Ppre-merge"
-
-# If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
-# Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
-M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
-if [ -s "$M2_CACHE_TAR" ] ; then
-    tar xf $M2_CACHE_TAR -C ~/
-fi
 
 case $BUILD_TYPE in
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package org.apache.spark.sql.delta.rapids
 
 import scala.util.Try
 
-import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils, VersionUtils}
-import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, ShimReflectionUtils, VersionUtils}
+import com.nvidia.spark.rapids.delta.{DeltaConfigChecker, DeltaProvider}
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
@@ -30,6 +30,7 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
 trait DeltaRuntimeShim {
+  def getDeltaConfigChecker: DeltaConfigChecker
   def getDeltaProvider: DeltaProvider
   def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock): GpuOptimisticTransactionBase
   def stringFromStringUdf(f: String => String): UserDefinedFunction
@@ -60,8 +61,14 @@ object DeltaRuntimeShim {
         }.getOrElse("org.apache.spark.sql.delta.rapids.delta23x.Delta23xRuntimeShim")
     } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
       "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
+    } else if (VersionUtils.cmpSparkVersion(3, 5, 2) > 0 &&
+               VersionUtils.cmpSparkVersion(4, 0, 0) < 0) {
+      "org.apache.spark.sql.delta.rapids.delta33x.Delta33xRuntimeShim"
     } else {
-      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.4.x")
+      val sparkVer = ShimLoader.getShimVersion
+      throw new IllegalStateException(
+        s"${sparkVer}: No Delta Lake support for this build of Spark"
+      )
     }
   }
 
@@ -72,6 +79,10 @@ object DeltaRuntimeShim {
   }
 
   def getDeltaProvider: DeltaProvider = shimInstance.getDeltaProvider
+
+  def getDeltaConfigChecker: DeltaConfigChecker = {
+    shimInstance.getDeltaConfigChecker
+  }
 
   def startTransaction(
       log: DeltaLog,

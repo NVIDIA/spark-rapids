@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -77,7 +77,7 @@ def hdfs_glob(path_str, pattern):
     """
     Finds hdfs files by checking the input path with glob pattern
 
-    :param path_str: hdfs path to check 
+    :param path_str: hdfs path to check
     :type path_str: str
     :return: generator of matched files
     """
@@ -96,7 +96,7 @@ def glob(path_str, pattern):
     Finds files by checking the input path with glob pattern.
     Support local file system and hdfs
 
-    :param path_str: input path to check 
+    :param path_str: input path to check
     :type path_str: str
     :return: generator of matched files
     """

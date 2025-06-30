@@ -259,7 +259,8 @@ orderable_gens_sample_no_null = [g for g in orderable_gens_sample if g != null_g
 @pytest.mark.parametrize('data_gen',
     orderable_gens_sample_no_null if is_spark_340_or_later() or is_databricks_runtime() else orderable_gens_sample, ids=idfn)
 def test_array_position(data_gen):
-    arr_gen = ArrayGen(data_gen)
+    # min_length=6 to make sure 'a[5]' always works.
+    arr_gen = ArrayGen(data_gen, min_length=6)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(spark, arr_gen, data_gen).selectExpr(
         'array_position(array(null), b)',
         'array_position(array(), b)',
@@ -319,8 +320,9 @@ def test_array_slice_with_zero_start(data_gen, zero_start, valid_length):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, array_all_null_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
             f"slice(a, {zero_start}, {valid_length})"))
-    error = "The value of parameter(s) `start` in `slice` is invalid: Expects a positive or a negative value for `start`, but got" if is_databricks143_or_later() \
-            else "Unexpected value for start in function slice: SQL array indices start at 1."
+    error = "The value of parameter(s) `start` in `slice` is invalid: Expects a positive or a negative value for `start`, but got"\
+        if is_databricks143_or_later() or is_spark_400_or_later() \
+        else "Unexpected value for start in function slice: SQL array indices start at 1."
     # start can not be zero
     assert_gpu_and_cpu_error(
         lambda spark: three_col_df(spark, data_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
@@ -338,8 +340,9 @@ def test_array_slice_with_negative_length(data_gen, valid_start, negative_length
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
             f"slice(a, {valid_start}, {negative_length})"))
-    error = "The value of parameter(s) `length` in `slice` is invalid: Expects `length` greater than or equal to 0" if is_databricks143_or_later() \
-            else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
+    error = "The value of parameter(s) `length` in `slice` is invalid: Expects `length` greater than or equal to 0"\
+        if is_databricks143_or_later() or is_spark_400_or_later()\
+        else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
     # length can not be negative
     assert_gpu_and_cpu_error(
         lambda spark: three_col_df(spark, data_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
@@ -844,6 +847,22 @@ def test_flatten_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('flatten(a)')
     )
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in no_neg_zero_all_basic_gens+\
+                                      nested_array_gens_sample+single_level_array_gens_no_null], ids=idfn)
+def test_array_distinct_no_neg_zero(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('array_distinct(a)')
+    )
+
+@pytest.mark.xfail
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in [float_gen, double_gen]], ids=idfn)
+def test_array_distinct_neg_zero(data_gen):
+    # separate -0.0 case, because Spark itself is inconsistent, see https://issues.apache.org/jira/browse/SPARK-51475
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('array_distinct(a)')
+    )
+
 
 # No NULL keys are allowed
 data_gen = [IntegerGen(nullable=False), StringGen(nullable=False),

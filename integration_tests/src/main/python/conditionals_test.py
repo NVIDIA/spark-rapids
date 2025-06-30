@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
-from marks import datagen_overrides, allow_non_gpu
+from marks import datagen_overrides, allow_non_gpu, disable_ansi_mode
 import pyspark.sql.functions as f
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -47,6 +47,8 @@ if_struct_gens_sample = [if_struct_gen,
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
 @pytest.mark.parametrize('data_gen', all_gens + if_nested_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_if_else(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -117,6 +119,8 @@ def test_nanvl(data_gen):
                 f.nanvl(f.lit(float('nan')).cast(data_type), f.col('b'))))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_nvl(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -156,6 +160,8 @@ def test_coalesce_constant_output():
             lambda spark : spark.range(1, 100).selectExpr("4 + coalesce(5, id) as nine"))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_nvl2(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -169,6 +175,8 @@ def test_nvl2(data_gen):
                 'nvl2(a, {}, c)'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_nullif(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -182,6 +190,8 @@ def test_nullif(data_gen):
                 'nullif(a, {})'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_ifnull(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))

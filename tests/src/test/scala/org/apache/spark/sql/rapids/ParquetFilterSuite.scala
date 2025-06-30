@@ -263,6 +263,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("SPARK-31026: Parquet predicate pushdown for fields having dots in the names") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withCpuSparkSession(spark => {
       import spark.implicits._
       val df1 = Seq(Some(1), None).toDF("col.dots")

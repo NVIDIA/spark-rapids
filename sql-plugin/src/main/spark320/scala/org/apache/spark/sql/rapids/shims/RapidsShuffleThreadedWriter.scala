@@ -43,11 +43,12 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle.ShuffleWriteMetricsReporter
 import org.apache.spark.shuffle.api.{ShuffleExecutorComponents, ShuffleMapOutputWriter}
 import org.apache.spark.sql.rapids.{RapidsShuffleThreadedWriterBase, ShuffleHandleWithMetrics}
@@ -62,6 +63,7 @@ object RapidsShuffleThreadedWriter {
 class RapidsShuffleThreadedWriter[K, V](
     blockManager: BlockManager,
     handle: ShuffleHandleWithMetrics[K, V, V],
+    context: TaskContext,
     mapId: Long,
     sparkConf: SparkConf,
     writeMetrics: ShuffleWriteMetricsReporter,
@@ -71,6 +73,7 @@ class RapidsShuffleThreadedWriter[K, V](
   extends RapidsShuffleThreadedWriterBase[K, V](
     blockManager,
     handle,
+    context,
     mapId,
     sparkConf,
     writeMetrics,

@@ -33,6 +33,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkException
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
@@ -64,7 +65,8 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
 class GpuOptimisticTransaction
     (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
     (implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
+  extends GpuOptimisticTransactionBase(deltaLog,
+    Option.empty[CatalogTable], snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -221,9 +221,12 @@ def pytest_runtest_setup(item):
     global _non_gpu_allowed
     global _per_test_ansi_mode_enabled
     _non_gpu_allowed_databricks = []
+    _non_gpu_allowed_conditional = []
     _allow_any_non_gpu_databricks = False
+    _allow_any_non_gpu_conditional = False
     non_gpu_databricks = item.get_closest_marker('allow_non_gpu_databricks')
     non_gpu = item.get_closest_marker('allow_non_gpu')
+    non_gpu_conditional = item.get_closest_marker('allow_non_gpu_conditional')
     _per_test_ansi_mode_enabled = None if item.get_closest_marker('disable_ansi_mode') is None \
       else not item.get_closest_marker('disable_ansi_mode')
 
@@ -250,11 +253,30 @@ def pytest_runtest_setup(item):
         _allow_any_non_gpu = False
         _non_gpu_allowed = []
 
-    _allow_any_non_gpu = _allow_any_non_gpu | _allow_any_non_gpu_databricks
+    if non_gpu_conditional:
+        condition = non_gpu_conditional.args[0]
+        _non_gpu_allowed_conditional = non_gpu_conditional.args[1]
+        if not isinstance(condition, bool):
+            raise ValueError("The first parameter of 'allow_non_gpu_conditional' must be a Boolean.")
+        if condition:
+            if non_gpu_conditional.kwargs and non_gpu_conditional.kwargs['any']:
+                _allow_any_non_gpu_conditional = True
+                _non_gpu_allowed_conditional = []
+            elif _non_gpu_allowed_conditional:
+                _allow_any_non_gpu_conditional = False
+            else:
+                warnings.warn('allow_non_gpu_conditional marker without anything allowed')
+                _allow_any_non_gpu_conditional = False
+                _non_gpu_allowed_conditional = []
+
+
+    _allow_any_non_gpu = _allow_any_non_gpu | _allow_any_non_gpu_databricks | _allow_any_non_gpu_conditional
     if _non_gpu_allowed and _non_gpu_allowed_databricks:
         _non_gpu_allowed = _non_gpu_allowed + _non_gpu_allowed_databricks
     elif _non_gpu_allowed_databricks:
         _non_gpu_allowed = _non_gpu_allowed_databricks
+    if _non_gpu_allowed_conditional:
+        _non_gpu_allowed = _non_gpu_allowed + tuple(_non_gpu_allowed_conditional.split(","))
 
     global _validate_execs_in_gpu_plan
     validate_execs = item.get_closest_marker('validate_execs_in_gpu_plan')

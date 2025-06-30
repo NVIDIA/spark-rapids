@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -368,6 +368,7 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
                                ("spark.rapids.sql.hasExtendedYearValues", "false")]))
 
 
+@allow_non_gpu("EmptyRelationExec")  # 'EmptyRelationExec' is introduced from Spark 400
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # Test handling DPP subquery that could broadcast EmptyRelation rather than a GPU serialized batch
 @pytest.mark.parametrize('aqe_enabled', [

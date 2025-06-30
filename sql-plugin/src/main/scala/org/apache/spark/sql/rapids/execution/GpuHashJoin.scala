@@ -103,6 +103,37 @@ object JoinTypeChecks {
 
 object GpuHashJoin {
 
+  // For the join on struct, it's equal for nulls in child columns of struct column, it's not
+  // equal for the root struct when meets both nulls.
+  // So for join types other than FullOuter and join on struct column with nullable child,
+  // we simply set compareNullsEqual as true, and Spark plan already filter out the nulls for root
+  // struct column.
+  // For details, see https://github.com/NVIDIA/spark-rapids/issues/2126.
+  // For Non-nested keys, it is also correctly processed, because compareNullsEqual will be set to
+  // false which is the semantic of join: null != null when join
+  def compareNullsEqual(
+      joinType: JoinType,
+      buildKeys: Seq[Expression]): Boolean = (joinType != FullOuter) &&
+    GpuHashJoin.anyNullableStructChild(buildKeys)
+
+  // For full outer and outer joins with build side matching outer side, we need to keep the
+  // nulls in the build table and compare nulls as equal.
+  // Note: for outer joins with build side matching outer side and join on struct column with child
+  // is nullable, MUST not filter out null records from build table.
+  def buildSideNeedsNullFilter(
+      joinType: JoinType,
+      compareNullsEqual: Boolean, // from function: compareNullsEqual
+      buildSide: GpuBuildSide,
+      buildKeys:Seq[Expression]): Boolean = {
+    val needFilterOutNull = joinType match {
+      case FullOuter => false
+      case LeftOuter if buildSide == GpuBuildLeft => false
+      case RightOuter if buildSide == GpuBuildRight => false
+      case _ => true
+    }
+    needFilterOutNull && compareNullsEqual && buildKeys.exists(_.nullable)
+  }
+
   def tagJoin(
       meta: SparkPlanMeta[_],
       joinType: JoinType,
@@ -1114,12 +1145,8 @@ trait GpuHashJoin extends GpuJoinExec {
     (rightData, remappedRightOutput)
   }
 
-  // For join types other than FullOuter, we simply set compareNullsEqual as true to adapt
-  // struct keys with nullable children. Non-nested keys can also be correctly processed with
-  // compareNullsEqual = true, because we filter all null records from build table before join.
-  // For some details, please refer the issue: https://github.com/NVIDIA/spark-rapids/issues/2126
-  protected lazy val compareNullsEqual: Boolean = (joinType != FullOuter) &&
-      GpuHashJoin.anyNullableStructChild(buildKeys)
+  protected lazy val compareNullsEqual: Boolean =
+    GpuHashJoin.compareNullsEqual(joinType, buildKeys)
 
   protected lazy val (boundBuildKeys, boundStreamKeys) = {
     val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
@@ -1150,11 +1177,11 @@ trait GpuHashJoin extends GpuJoinExec {
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
-    // Filtering nulls on the build side is a workaround for Struct joins with nullable children
-    // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
-    val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
 
-    val nullFiltered = if (builtAnyNullable) {
+    val filterOutNull = GpuHashJoin.buildSideNeedsNullFilter(joinType, compareNullsEqual,
+      buildSide, buildKeys)
+
+    val nullFiltered = if (filterOutNull) {
       val sb = closeOnExcept(builtBatch)(
         SpillableColumnarBatch(_, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
       GpuHashJoin.filterNullsWithRetryAndClose(sb, boundBuildKeys)

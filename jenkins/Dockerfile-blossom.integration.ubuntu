@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,13 +19,13 @@
 # Build the image for rapids-plugin development environment
 #
 # Arguments:
-#    CUDA_VER=11.X.Y
-#    UBUNTU_VER=20.04 or 22.04
+#    CUDA_VER=12.X.Y
+#    UBUNTU_VER=22.04
 #    CUDF_VER=<cudf-py version>
 ###
 
-ARG CUDA_VER=11.8.0
-ARG UBUNTU_VER=20.04
+ARG CUDA_VER=12.8.0
+ARG UBUNTU_VER=22.04
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
 ARG CUDF_VER
@@ -34,6 +34,15 @@ ARG UBUNTU_VER
 # https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
 RUN UB_VER=$(echo ${UBUNTU_VER} | tr -d '.') && \
     apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UB_VER}/x86_64/3bf863cc.pub || true
+
+# ubuntu22
+RUN sed -i -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+           -e 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' \
+           /etc/apt/sources.list
+# ubuntu24+
+RUN find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i \
+           -e "s|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
+           -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" {} +
 # Install jdk-8, jdk-11, jdk-17, docker image
 RUN apt-get update -y && \
     apt-get install -y software-properties-common rsync zip unzip

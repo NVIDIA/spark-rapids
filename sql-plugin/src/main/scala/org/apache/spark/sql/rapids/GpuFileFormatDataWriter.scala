@@ -184,6 +184,16 @@ abstract class GpuFileFormatDataWriter(
   /** Writes a columnar batch of records */
   def write(batch: ColumnarBatch): Unit
 
+  protected val reportSingleWriter = true
+
+  private def updateWritersNumber(): Unit = {
+    if (currentWriterStatus.writer != null && reportSingleWriter) {
+      // By default, only one writer is opened for write.
+      // And concurrent writer will do this by itself.
+      statsTrackers.foreach(_.writersNumber(1))
+    }
+  }
+
   /**
    * Returns the summary of relative information which
    * includes the list of partition strings written out. The list of partitions is sent back
@@ -191,6 +201,7 @@ abstract class GpuFileFormatDataWriter(
    * driver too and used to e.g. update the metrics in UI.
    */
   override def commit(): WriteTaskResult = {
+    updateWritersNumber()
     releaseResources()
     val (taskCommitMessage, taskCommitTime) = TimingUtils.timeTakenMs {
       committer.commitTask(taskAttemptContext)
@@ -204,6 +215,7 @@ abstract class GpuFileFormatDataWriter(
 
   override def abort(): Unit = {
     try {
+      updateWritersNumber()
       releaseResources()
     } finally {
       committer.abortTask(taskAttemptContext)
@@ -306,31 +318,31 @@ class GpuDynamicPartitionDataSingleWriter(
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
   /** Wrapper class to index a unique concurrent output writer. */
   protected class WriterIndex(
-      var partitionPath: Option[String],
-      var bucketId: Option[Int]) extends Product2[Option[String], Option[Int]] {
+      var partitionValues: Option[InternalRow],
+      var bucketId: Option[Int]) extends Product2[Option[InternalRow], Option[Int]] {
 
     override def hashCode(): Int = ScalaMurmur3Hash.productHash(this)
 
     override def equals(obj: Any): Boolean = {
-      if (obj.isInstanceOf[WriterIndex]) {
+      if (canEqual(obj)) {
         val otherWI = obj.asInstanceOf[WriterIndex]
-        partitionPath == otherWI.partitionPath && bucketId == otherWI.bucketId
+        partitionValues == otherWI.partitionValues && bucketId == otherWI.bucketId
       } else {
         false
       }
     }
 
-    override def _1: Option[String] = partitionPath
+    override def _1: Option[InternalRow] = partitionValues
     override def _2: Option[Int] = bucketId
     override def canEqual(that: Any): Boolean = that.isInstanceOf[WriterIndex]
   }
 
   /**
-   * A case class to hold the batch, the optional partition path and the optional bucket
+   * A case class to hold the batch, the optional partition values and the optional bucket
    * ID for a split group. All the rows in the batch belong to the group defined by the
-   * partition path and the bucket ID.
+   * partition values and the bucket ID.
    */
-  private case class SplitPack(split: SpillableColumnarBatch, path: Option[String],
+  private case class SplitPack(split: SpillableColumnarBatch, partValues: Option[InternalRow],
       bucketId: Option[Int]) extends AutoCloseable {
     override def close(): Unit = {
       split.safeClose()
@@ -432,7 +444,7 @@ class GpuDynamicPartitionDataSingleWriter(
     }
   }
 
-  protected def genGetPartitionPathFunc(keyHostCb: ColumnarBatch): Int => Option[String] = {
+  protected def genGetPartValuesFunc(keyHostCb: ColumnarBatch): Int => Option[InternalRow] = {
     if (isPartitioned) {
       // Use the existing code to convert each row into a path. It would be nice to do this
       // on the GPU, but the data should be small and there are things we cannot easily
@@ -440,7 +452,7 @@ class GpuDynamicPartitionDataSingleWriter(
       import scala.collection.JavaConverters._
       val partCols = description.partitionColumns.indices.map(keyHostCb.column)
       val iter = new ColumnarBatch(partCols.toArray, keyHostCb.numRows()).rowIterator()
-        .asScala.map(getPartitionPath)
+        .asScala.map(_.copy())
       _ => Some(iter.next)
     } else {
       _ => None
@@ -512,7 +524,7 @@ class GpuDynamicPartitionDataSingleWriter(
     withResource(splits) { _ =>
       withResource(keyHostCb) { _ =>
         val getBucketId = genGetBucketIdFunc(keyHostCb)
-        val getNextPartPath = genGetPartitionPathFunc(keyHostCb)
+        val getNextPartValues = genGetPartValuesFunc(keyHostCb)
         val outDataTypes = description.dataColumns.map(_.dataType).toArray
         (0 until keyHostCb.numRows()).safeMap { idx =>
           val split = splits(idx)
@@ -521,7 +533,7 @@ class GpuDynamicPartitionDataSingleWriter(
             SplitPack(
               SpillableColumnarBatch(split, outDataTypes,
                 SpillPriorities.ACTIVE_BATCHING_PRIORITY),
-              getNextPartPath(idx), getBucketId(idx))
+              getNextPartValues(idx), getBucketId(idx))
           }
         }.toArray
       }
@@ -538,7 +550,7 @@ class GpuDynamicPartitionDataSingleWriter(
       releaseOutWriter(curWriterStatus)
     }
     curWriterStatus.recordsInFile = 0
-    curWriterStatus.writer = newWriter(newWriterId.partitionPath, newWriterId.bucketId,
+    curWriterStatus.writer = newWriter(newWriterId.partitionValues, newWriterId.bucketId,
       curWriterStatus.fileCounter)
   }
 
@@ -557,7 +569,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * If bucket id is specified, we will append it to the end of the file name, but before the
    * file extension, e.g. part-r-00009-ea518ad4-455a-4431-b471-d24e03814677-00002.gz.parquet
    *
-   * @param partDir     the partition directory
+   * @param partValues  the partition values
    * @param bucketId    the bucket which all tuples being written by this OutputWriter belong to,
    *                    currently does not support `bucketId`, it's always None
    * @param fileCounter integer indicating the number of files to be written to `partDir`
@@ -565,8 +577,9 @@ class GpuDynamicPartitionDataSingleWriter(
   @scala.annotation.nowarn(
     "msg=method newTaskTempFile.* in class FileCommitProtocol is deprecated"
   )
-  def newWriter(partDir: Option[String], bucketId: Option[Int],
+  def newWriter(partValues: Option[InternalRow], bucketId: Option[Int],
       fileCounter: Int): ColumnarOutputWriter = {
+    val partDir = partValues.map(getPartitionPath(_))
     partDir.foreach(updatedPartitions.add)
     // Currently will be empty
     val bucketIdStr = bucketId.map(BucketingUtils.bucketIdToString).getOrElse("")
@@ -645,14 +658,14 @@ class GpuDynamicPartitionDataSingleWriter(
     // The input batch that is entirely sorted, so split it up by partitions and (or)
     // bucket ids, and write the split batches one by one.
     withResource(splitBatchByKeyAndClose(batch)) { splitPacks =>
-      splitPacks.zipWithIndex.foreach { case (SplitPack(sp, partPath, bucketId), i) =>
-        val hasDiffPart = partPath != currentWriterId.partitionPath
+      splitPacks.zipWithIndex.foreach { case (SplitPack(sp, partVals, bucketId), i) =>
+        val hasDiffPart = partVals != currentWriterId.partitionValues
         val hasDiffBucket = bucketId != currentWriterId.bucketId
         if (hasDiffPart || hasDiffBucket) {
           preUpdateCurrentWriterStatus(currentWriterId)
           if (hasDiffPart) {
-            currentWriterId.partitionPath = partPath
-            statsTrackers.foreach(_.newPartition())
+            currentWriterId.partitionValues = partVals
+            statsTrackers.foreach(_.newPartition(partVals.get))
           }
           if (hasDiffBucket) {
             currentWriterId.bucketId = bucketId
@@ -709,6 +722,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
     }
   }
 
+  override protected val reportSingleWriter: Boolean = false
+
   // Keep all the unclosed writers, key is a partition path and(or) bucket id.
   // Note: if fall back to sort-based mode, also use the opened writers in the map.
   private val concurrentWriters = mutable.HashMap[WriterIndex, WriterStatusWithBatches]()
@@ -748,9 +763,15 @@ class GpuDynamicPartitionDataConcurrentWriter(
           withResource(pendingBatches.dequeue())(_.getColumnarBatch())
         }
       }
+      val (sortMetric, sortOpTime) =
+        statsTrackers.find(_.isInstanceOf[GpuWriteTaskStatsTracker]).map { tc =>
+          val tt = tc.asInstanceOf[GpuWriteTaskStatsTracker]
+          (tt.sortTime, tt.sortOpTime)
+        }.getOrElse((NoopMetric, NoopMetric))
+
       val sortIter = GpuOutOfCoreSortIterator(pendingCbsIter ++ iterator,
         new GpuSorter(spec.sortOrder, spec.output), GpuSortExec.targetSize(spec.batchSize),
-        NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+        sortOpTime, sortMetric, NoopMetric, NoopMetric)
       while (sortIter.hasNext) {
         // write with sort-based sequential writer
         super.write(sortIter.next())
@@ -797,6 +818,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
     // Split the batch and cache the result, along with opening the writers.
     splitBatchToCacheAndClose(cb)
+    // Update the maxWriterNumber metric since the writers are already opened and cached.
+    statsTrackers.foreach(_.writersNumber(concurrentWriters.size))
     // Write the cached batches
     val writeFunc: (WriterIndex, WriterStatusWithBatches) => Unit =
       if (pendingBatches.nonEmpty) {
@@ -861,15 +884,21 @@ class GpuDynamicPartitionDataConcurrentWriter(
     withResource(groups) { _ =>
       withResource(keyHostCb) { _ =>
         val getBucketId = genGetBucketIdFunc(keyHostCb)
-        val getNextPartPath = genGetPartitionPathFunc(keyHostCb)
+        val getNextPartValues = genGetPartValuesFunc(keyHostCb)
         var idx = 0
+        var tempParVals: Option[InternalRow] = None
         while (idx < groups.length && concurrentWriters.size < spec.maxWriters) {
-          val writerId = new WriterIndex(getNextPartPath(idx), getBucketId(idx))
+          val writerId = new WriterIndex(getNextPartValues(idx), getBucketId(idx))
           val writerStatus =
             concurrentWriters.getOrElseUpdate(writerId, new WriterStatusWithBatches)
           if (writerStatus.writer == null) {
             // a new partition or bucket, so create a writer
             renewOutWriter(writerId, writerStatus, closeOldWriter = false)
+            // if due to different part, update the tracker
+            if (tempParVals != writerId.partitionValues) {
+              tempParVals = writerId.partitionValues
+              statsTrackers.foreach(_.newPartition(tempParVals.get))
+            }
           }
           withResource(groups(idx)) { gp =>
             groups(idx) = null

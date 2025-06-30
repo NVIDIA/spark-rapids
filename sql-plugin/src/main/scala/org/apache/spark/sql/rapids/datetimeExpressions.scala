@@ -909,7 +909,6 @@ abstract class GpuToTimestamp
             if (GpuOverrides.isUTCTimezone(zoneId)) {
               lhs.getBase.asTimestampMicroseconds()
             } else {
-              assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
               withResource(lhs.getBase.asTimestampMicroseconds) { tsInMs =>
                 GpuTimeZoneDB.fromTimestampToUtcTimestamp(tsInMs, zoneId)
               }
@@ -949,6 +948,7 @@ case class GpuUnixTimestamp(strTs: Expression,
     strf: String,
     timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
+
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
@@ -964,6 +964,7 @@ case class GpuToUnixTimestamp(strTs: Expression,
     strf: String,
     timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
+
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
@@ -1119,10 +1120,8 @@ abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
         willNotWorkOnGpu("timezone input must be a literal string")
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
+          // check that this timezoneID is valid
           timezoneId = GpuTimeZoneDB.getZoneId(timezoneShortID)
-          if (!GpuTimeZoneDB.isSupportedTimeZone(timezoneId)) {
-            willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
-          }
         }
     }
   }

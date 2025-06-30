@@ -47,7 +47,6 @@ _default_conf = {
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
     'spark.rapids.sql.castFloatToString.enabled': 'false',
     'spark.rapids.sql.castStringToFloat.enabled': 'false',
-    'spark.rapids.sql.castStringToTimestamp.enabled': 'false',
     'spark.rapids.sql.fast.sample': 'false',
     'spark.rapids.sql.hasExtendedYearValues': 'true',
     'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
@@ -178,6 +177,9 @@ def is_before_spark_314():
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
+def is_before_spark_321():
+    return spark_version() < "3.2.1"
+
 def is_before_spark_322():
     return spark_version() < "3.2.2"
 
@@ -208,6 +210,9 @@ def is_before_spark_350():
 def is_before_spark_351():
     return spark_version() < "3.5.1"
 
+def is_before_spark_353():
+    return spark_version() < "3.5.3"
+
 def is_before_spark_400():
     return spark_version() < "4.0.0"
 
@@ -226,8 +231,17 @@ def is_spark_341():
 def is_spark_350_or_later():
     return spark_version() >= "3.5.0"
 
+def is_spark_353_or_later():
+    return spark_version() >= "3.5.3"
+
 def is_spark_351_or_later():
     return spark_version() >= "3.5.1"
+
+def is_spark_356():
+    return spark_version() == "3.5.6"
+
+def is_spark_35x():
+    return "3.5.0" <= spark_version() < "3.6.0"
 
 def is_spark_400_or_later():
     return spark_version() >= "4.0.0"
