@@ -163,7 +163,8 @@ object AsyncProfilerOnExecutor extends Logging {
               val executorId = pluginCtx.executorID()
 
               val outPath = new Path(asyncProfilerPrefix.get,
-                s"async-profiler-app-$getAppId-stage-$currentProfilingStage.jfr")
+                s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
+                  s"-stage-$currentProfilingStage.jfr")
               val hadoopConf = pluginCtx.ask(ProfileInitMsg(executorId, outPath.toString))
                 .asInstanceOf[SerializableConfiguration].value
               val fs = outPath.getFileSystem(hadoopConf)
