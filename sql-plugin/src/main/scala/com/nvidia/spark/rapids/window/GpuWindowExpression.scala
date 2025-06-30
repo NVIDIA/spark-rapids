@@ -1480,9 +1480,10 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
           withResource(nullsReplaced) { nullsReplaced =>
             if (needsBasicOverflowCheck) {
               withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
-                val ret = mask.ifElse(updated, windowedColumnOutput)
-                AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, Some(mask))
-                ret
+                closeOnExcept(mask.ifElse(updated, windowedColumnOutput)) { ret =>
+                  AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, Some(mask))
+                  ret
+                }
               }
             } else {
               withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
