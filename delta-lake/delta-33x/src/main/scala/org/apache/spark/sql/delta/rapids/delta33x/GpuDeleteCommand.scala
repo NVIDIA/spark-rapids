@@ -21,9 +21,12 @@
 
 package org.apache.spark.sql.delta.rapids.delta33x
 
+import java.util.concurrent.TimeUnit
+
 import com.nvidia.spark.rapids.delta.GpuDeltaMetricUpdateUDF
 
 import org.apache.spark.sql.{Column, DataFrame, Dataset, Row, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, EqualNullSafe, Expression, If, Literal, Not}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -33,11 +36,9 @@ import org.apache.spark.sql.delta.commands.{DeleteCommandMetrics, DeleteMetric, 
 import org.apache.spark.sql.delta.commands.DeleteCommand.{rewritingFilesMsg, FINDING_TOUCHED_FILES_MSG}
 import org.apache.spark.sql.delta.commands.MergeIntoCommandBase.totalBytesAndDistinctPartitionValues
 import org.apache.spark.sql.delta.files.TahoeBatchFileIndex
-import org.apache.spark.sql.delta.rapids.GpuDeltaLog
+import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
-import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.functions.input_file_name
 import org.apache.spark.sql.types.LongType
 
@@ -55,6 +56,7 @@ import org.apache.spark.sql.types.LongType
  */
 case class GpuDeleteCommand(
     gpuDeltaLog: GpuDeltaLog,
+    catalogTable: Option[CatalogTable],
     target: LogicalPlan,
     condition: Option[Expression])
     extends LeafRunnableCommand with DeltaCommand with DeleteCommandMetrics {
@@ -68,7 +70,7 @@ case class GpuDeleteCommand(
   final override def run(sparkSession: SparkSession): Seq[Row] = {
     val deltaLog = gpuDeltaLog.deltaLog
     recordDeltaOperation(gpuDeltaLog.deltaLog, "delta.dml.delete") {
-      gpuDeltaLog.withNewTransaction { txn =>
+      gpuDeltaLog.withNewTransaction(catalogTable) { txn =>
         DeltaLog.assertRemovable(txn.snapshot)
         if (hasBeenExecuted(txn, sparkSession)) {
           sendDriverMetrics(sparkSession, metrics)
@@ -76,8 +78,9 @@ case class GpuDeleteCommand(
         }
 
         val (deleteActions, deleteMetrics) = performDelete(sparkSession, deltaLog, txn)
-        val commitVersion = txn.commitIfNeeded(deleteActions,
-          DeltaOperations.Delete(condition.toSeq),
+        val commitVersion = txn.commitIfNeeded(
+          actions = deleteActions,
+          op = DeltaOperations.Delete(condition.toSeq),
           tags = RowTracking.addPreservedRowTrackingTagIfNotSet(txn.snapshot))
 
         recordDeltaEvent(
@@ -104,7 +107,7 @@ case class GpuDeleteCommand(
   def performDelete(
       sparkSession: SparkSession,
       deltaLog: DeltaLog,
-      txn: OptimisticTransaction): (Seq[Action], DeleteMetric) = {
+      txn: GpuOptimisticTransactionBase): (Seq[Action], DeleteMetric) = {
     import org.apache.spark.sql.delta.implicits._
 
     var numRemovedFiles: Long = 0
@@ -223,9 +226,8 @@ case class GpuDeleteCommand(
             val newTarget = DeltaTableUtils.replaceFileIndex(target, fileIndex)
             val data = Dataset.ofRows(sparkSession, newTarget)
             val deletedRowCount = metrics("numDeletedRows")
-            val deletedRowUdf = DeltaUDF.boolean { () =>
-              deletedRowCount += 1
-              true
+            val deletedRowUdf = DeltaUDF.boolean {
+              new GpuDeltaMetricUpdateUDF(deletedRowCount)
             }.asNondeterministic()
             val filesToRewrite =
               withStatusCode("DELTA", FINDING_TOUCHED_FILES_MSG) {
@@ -258,7 +260,9 @@ case class GpuDeleteCommand(
               // Keep everything from the resolved target except a new TahoeFileIndex
               // that only involves the affected files instead of all files.
               val newTarget = DeltaTableUtils.replaceFileIndex(target, baseRelation.location)
-              val targetDF = Dataset.ofRows(sparkSession, newTarget)
+              val targetDF = RowTracking.preserveRowTrackingColumns(
+                dfWithoutRowTrackingColumns = Dataset.ofRows(sparkSession, newTarget),
+                snapshot = txn.snapshot)
               val filterCond = Not(EqualNullSafe(cond, Literal.TrueLiteral))
               val rewrittenActions = rewriteFiles(txn, targetDF, filterCond, filesToRewrite.length)
               val (changeFiles, rewrittenFiles) = rewrittenActions
@@ -278,7 +282,8 @@ case class GpuDeleteCommand(
               }
               numAddedChangeFiles = changeFiles.size
               changeFileBytes = changeFiles.collect { case f: AddCDCFile => f.size }.sum
-              rewriteTimeMs = (System.nanoTime() - startTime) / 1000 / 1000 - scanTimeMs
+              rewriteTimeMs =
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime) - scanTimeMs
               numDeletedRows = Some(metrics("numDeletedRows").value)
               numCopiedRows = Some(metrics("numTouchedRows").value -
                 metrics("numDeletedRows").value)
@@ -304,15 +309,15 @@ case class GpuDeleteCommand(
     metrics("numBytesBeforeSkipping").set(numBytesBeforeSkipping)
     metrics("numFilesAfterSkipping").set(numFilesAfterSkipping)
     metrics("numBytesAfterSkipping").set(numBytesAfterSkipping)
+    metrics("numDeletionVectorsAdded").set(numDeletionVectorsAdded)
+    metrics("numDeletionVectorsRemoved").set(numDeletionVectorsRemoved)
+    metrics("numDeletionVectorsUpdated").set(numDeletionVectorsUpdated)
     numPartitionsAfterSkipping.foreach(metrics("numPartitionsAfterSkipping").set)
     numPartitionsAddedTo.foreach(metrics("numPartitionsAddedTo").set)
     numPartitionsRemovedFrom.foreach(metrics("numPartitionsRemovedFrom").set)
     numCopiedRows.foreach(metrics("numCopiedRows").set)
     txn.registerSQLMetrics(sparkSession, metrics)
-    // This is needed to make the SQL metrics visible in the Spark UI
-    val executionId = sparkSession.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
-    SQLMetrics.postDriverMetricUpdates(
-      sparkSession.sparkContext, executionId, metrics.values.toSeq)
+    sendDriverMetrics(sparkSession, metrics)
 
     val numRecordsStats = NumRecordsStats.fromActions(deleteActions)
     val deleteMetrics = DeleteMetric(
@@ -356,7 +361,7 @@ case class GpuDeleteCommand(
    * Returns the list of `AddFile`s and `AddCDCFile`s that have been re-written.
    */
   private def rewriteFiles(
-      txn: OptimisticTransaction,
+      txn: GpuOptimisticTransactionBase,
       baseData: DataFrame,
       filterCondition: Expression,
       numFilesToRewrite: Long): Seq[FileAction] = {

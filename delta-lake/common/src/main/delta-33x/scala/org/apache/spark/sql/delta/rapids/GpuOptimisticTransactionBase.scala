@@ -28,15 +28,14 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.delta.{DeltaShufflePartitionsUtil, GpuOptimizeWriteExchangeExec}
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.util.Clock
 
 abstract class GpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
     catalog: Option[CatalogTable],
     snapshot: Snapshot,
     rapidsConf: RapidsConf)
-    (implicit clock: Clock)
-  extends AbstractGpuOptimisticTransactionBase(deltaLog, catalog, snapshot, rapidsConf)(clock) {
+  extends AbstractGpuOptimisticTransactionBase(deltaLog, catalog, snapshot,
+    rapidsConf)(deltaLog.clock) {
 
   protected def applyOptimizeWriteIfNeeded(
       spark: SparkSession,

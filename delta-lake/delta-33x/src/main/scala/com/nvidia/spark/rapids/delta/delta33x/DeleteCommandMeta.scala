@@ -52,6 +52,7 @@ class DeleteCommandMeta(
   override def convertToGpu(): RunnableCommand = {
     GpuDeleteCommand(
       new GpuDeltaLog(deleteCmd.deltaLog, conf),
+      deleteCmd.catalogTable,
       deleteCmd.target,
       deleteCmd.condition)
   }

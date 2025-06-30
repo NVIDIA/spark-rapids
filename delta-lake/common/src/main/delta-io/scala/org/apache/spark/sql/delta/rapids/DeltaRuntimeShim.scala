@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, ShimReflectionUtils, Ver
 import com.nvidia.spark.rapids.delta.{DeltaConfigChecker, DeltaProvider}
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -29,10 +30,17 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
+case class StartTxArg(log: DeltaLog, conf: RapidsConf, clock: Clock,
+    catalogTable: Option[CatalogTable] = None, snapshot: Option[Snapshot] = None)
+
 trait DeltaRuntimeShim {
   def getDeltaConfigChecker: DeltaConfigChecker
   def getDeltaProvider: DeltaProvider
-  def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock): GpuOptimisticTransactionBase
+  def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock)
+  : GpuOptimisticTransactionBase = {
+    startTransaction(StartTxArg(log, conf, clock))
+  }
+  def startTransaction(arg: StartTxArg): GpuOptimisticTransactionBase
   def stringFromStringUdf(f: String => String): UserDefinedFunction
   def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot
   def fileFormatFromLog(deltaLog: DeltaLog): FileFormat
@@ -84,10 +92,9 @@ object DeltaRuntimeShim {
     shimInstance.getDeltaConfigChecker
   }
 
-  def startTransaction(
-      log: DeltaLog,
-      rapidsConf: RapidsConf)(implicit clock: Clock): GpuOptimisticTransactionBase =
-    shimInstance.startTransaction(log, rapidsConf, clock)
+  def startTransaction(txArg: StartTxArg): GpuOptimisticTransactionBase = {
+    shimInstance.startTransaction(txArg)
+  }
 
   def stringFromStringUdf(f: String => String): UserDefinedFunction =
     shimInstance.stringFromStringUdf(f)
