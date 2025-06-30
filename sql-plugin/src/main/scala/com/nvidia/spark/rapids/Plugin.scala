@@ -530,9 +530,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
 
-      // Check this before touching AsyncProfilerOnExecutor so that we can avoid
-      // java.lang.NoClassDefFoundError when user does not intend to enable async profiler,
-      // and thus does not have the dependency in the classpath.
       isAsyncProfilerEnabled = conf.asyncProfilerPathPrefix.nonEmpty
 
       ProfilerOnExecutor.init(pluginContext, conf)
