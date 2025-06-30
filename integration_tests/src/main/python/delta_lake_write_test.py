@@ -214,7 +214,7 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
         data_path,
         conf=confs)
 
-@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', 'AppendDataExecV1', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
@@ -225,7 +225,7 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
                                   overwrite=False,
                                   enable_deletion_vectors=enable_deletion_vectors)
 
-@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', 'AppendDataExecV1', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
