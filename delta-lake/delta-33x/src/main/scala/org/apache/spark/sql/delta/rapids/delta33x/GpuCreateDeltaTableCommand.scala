@@ -1,4 +1,9 @@
 /*
+ * Copyright (c) 2025, NVIDIA CORPORATION.
+ *
+ * This file was derived from CreateDeltaTableCommand.scala in the
+ * Delta Lake project at https://github.com/delta-io/delta.
+ *
  * Copyright (2021) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
