@@ -24,7 +24,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase, StartTransactionArg}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
@@ -34,11 +34,8 @@ class Delta23xRuntimeShim extends DeltaRuntimeShim {
 
   override def getDeltaProvider: DeltaProvider = Delta23xProvider
 
-  override def startTransaction(
-      log: DeltaLog,
-      conf: RapidsConf,
-      clock: Clock): GpuOptimisticTransactionBase = {
-    new GpuOptimisticTransaction(log, conf)(clock)
+  override def startTransaction(arg: StartTransactionArg): GpuOptimisticTransactionBase = {
+    new GpuOptimisticTransaction(arg.log, arg.conf)(arg.clock)
   }
 
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {

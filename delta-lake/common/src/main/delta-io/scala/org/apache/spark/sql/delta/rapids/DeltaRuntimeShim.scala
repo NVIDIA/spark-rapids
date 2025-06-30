@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
-case class StartTxArg(log: DeltaLog, conf: RapidsConf, clock: Clock,
+case class StartTransactionArg(log: DeltaLog, conf: RapidsConf, clock: Clock,
     catalogTable: Option[CatalogTable] = None, snapshot: Option[Snapshot] = None)
 
 trait DeltaRuntimeShim {
@@ -38,9 +38,9 @@ trait DeltaRuntimeShim {
   def getDeltaProvider: DeltaProvider
   def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock)
   : GpuOptimisticTransactionBase = {
-    startTransaction(StartTxArg(log, conf, clock))
+    startTransaction(StartTransactionArg(log, conf, clock))
   }
-  def startTransaction(arg: StartTxArg): GpuOptimisticTransactionBase
+  def startTransaction(arg: StartTransactionArg): GpuOptimisticTransactionBase
   def stringFromStringUdf(f: String => String): UserDefinedFunction
   def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot
   def fileFormatFromLog(deltaLog: DeltaLog): FileFormat
@@ -92,7 +92,7 @@ object DeltaRuntimeShim {
     shimInstance.getDeltaConfigChecker
   }
 
-  def startTransaction(txArg: StartTxArg): GpuOptimisticTransactionBase = {
+  def startTransaction(txArg: StartTransactionArg): GpuOptimisticTransactionBase = {
     shimInstance.startTransaction(txArg)
   }
 

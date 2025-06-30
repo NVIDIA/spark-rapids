@@ -40,7 +40,7 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
    * directly to the DeltaLog otherwise they will not be checked for conflicts.
    */
   def startTransaction(): GpuOptimisticTransactionBase = {
-    DeltaRuntimeShim.startTransaction(StartTxArg(deltaLog, rapidsConf, _clock, None,
+    DeltaRuntimeShim.startTransaction(StartTransactionArg(deltaLog, rapidsConf, _clock, None,
       None))
   }
 
@@ -63,7 +63,8 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
   }
 
   /**
-   * Returns a new [[OptimisticTransaction]] that can be used to read the current state of the log
+   * Returns a new [[GpuOptimisticTransactionBase]] that can be used to read the current state of
+   * the log
    * and then commit updates. The reads and updates will be checked for logical conflicts with any
    * concurrent writes to the log, and post-commit hooks can be used to notify the table's catalog
    * of schema changes, etc.
@@ -79,13 +80,13 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
   def startTransaction(
       catalogTableOpt: Option[CatalogTable],
       snapshotOpt: Option[Snapshot] = None): GpuOptimisticTransactionBase = {
-    DeltaRuntimeShim.startTransaction(StartTxArg(deltaLog, rapidsConf, _clock, catalogTableOpt,
+    DeltaRuntimeShim.startTransaction(StartTransactionArg(deltaLog, rapidsConf, _clock, catalogTableOpt,
       snapshotOpt))
   }
 
   /**
-   * Execute a piece of code within a new [[OptimisticTransaction]]. Reads/write sets will
-   * be recorded for this table, and all other tables will be read
+   * Execute a piece of code within a new [[GpuOptimisticTransactionBase]].
+   * Reads/write sets will be recorded for this table, and all other tables will be read
    * at a snapshot that is pinned on the first access.
    *
    * @param catalogTableOpt The [[CatalogTable]] for the table this transaction updates. Passing
