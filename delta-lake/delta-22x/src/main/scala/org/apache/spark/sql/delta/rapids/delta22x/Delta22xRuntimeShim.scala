@@ -27,7 +27,6 @@ import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBas, StartTransactionArg}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.util.Clock
 
 class Delta22xRuntimeShim extends DeltaRuntimeShim {
   override def getDeltaConfigChecker: DeltaConfigChecker = Delta20xConfigChecker

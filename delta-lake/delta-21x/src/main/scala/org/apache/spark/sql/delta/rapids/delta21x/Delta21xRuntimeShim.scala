@@ -24,10 +24,9 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBas, StartTransactionArg}
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase, StartTransactionArg}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.util.Clock
 
 /**
  * Delta runtime shim for Delta 2.1.x on Spark 3.3.x.
