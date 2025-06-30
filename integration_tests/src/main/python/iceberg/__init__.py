@@ -62,7 +62,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
                              table_prop: Optional[Dict[str, str]] = None) -> str:
 
     gen_list = list(zip(iceberg_base_table_cols, iceberg_gens_list))
-    table_name = spark_tmp_table_factory.get()
+    table_name = get_full_table_name(spark_tmp_table_factory)
     tmp_view_name = spark_tmp_table_factory.get()
 
     if table_prop is None:
@@ -106,7 +106,7 @@ def _add_eq_deletes(spark: SparkSession, eq_delete_cols: List[str], row_count: i
     parquet_files = [f for f in os.listdir(temp_dir) if f.endswith(".parquet")]
     assert len(parquet_files) == 1, "Only one delete parquet file should be created"
     delete_parquet_file_path = os.path.join(temp_dir, parquet_files[0])
-    spark.sql(f"select add_eq_deletes('{spark_warehouse_dir}', 'default.{table_name}', "
+    spark.sql(f"select add_eq_deletes('{spark_warehouse_dir}', '{table_name}', "
               f"'{delete_parquet_file_path}')").collect()
     spark.sql(f"REFRESH TABLE {table_name}")
 
@@ -122,4 +122,7 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
 
     with_cpu_session(change_table,
                      conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
-                             "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
+                         "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
+
+def get_full_table_name(spark_tmp_table_factory):
+    return f"default.{spark_tmp_table_factory.get()}"
