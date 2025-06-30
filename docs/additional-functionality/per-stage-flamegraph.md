@@ -34,7 +34,7 @@ Currently the built-in async profiler generates a couple of JFR files in the `sp
 ```
 hongbin at ws3 in [~/develop/async-profiler-4.0-linux-x64]
 16:43:09 › java -cp lib/converter.jar jfr2flame ~/Downloads/spark-kubernetes-executor_var_log_tiger_async-35-11.jfr  117393386_parquetscan_stage_11.html
-```` 
+```
 
 Then open the html file in your web browser and you’ll get a nice flame graph. Remember by default we’re collecting a CPU wall clock flame graph, that means even idle thread pools will create a large “sub-flame”. So if you’re only interested in what’s happening in the main task threads, you should find the “sub-flame” rooted in a node called “TaskRunner.run”, click it and get a detailed view of the “sub-flame”.
 
