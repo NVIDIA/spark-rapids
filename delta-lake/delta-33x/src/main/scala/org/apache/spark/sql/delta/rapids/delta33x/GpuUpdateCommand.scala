@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * This file was derived from UpdateCommand.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
