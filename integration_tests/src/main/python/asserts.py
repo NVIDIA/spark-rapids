@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import types as pytypes
 import data_gen
 import difflib
 import sys
+import re
 
 def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
@@ -650,7 +651,12 @@ def assert_spark_exception(func, error_message):
     with pytest.raises(Exception) as excinfo:
         func()
     actual_error = excinfo.exconly()
-    assert error_message in actual_error, f"Expected error '{error_message}' did not appear in '{actual_error}'"
+    if isinstance(error_message, re.Pattern):
+        assert error_message.search(actual_error), f"Expected error '{error_message}' to match '{actual_error}'"
+    elif isinstance(error_message, str):
+        assert error_message in actual_error, f"Expected error '{error_message}' did not appear in '{actual_error}'"
+    else:
+        assert False, f"expected str or Pattern found {type(error_message)} {error_message}"
 
 def assert_gpu_and_cpu_error(df_fun, conf, error_message):
     """
