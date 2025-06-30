@@ -1019,14 +1019,13 @@
             330
         </premergeUT1.buildvers>
         <premergeUT2.buildvers>
-            340
+            356
         </premergeUT2.buildvers>
         <premergeUTF8.buildvers>
             320
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
-            333,
-            340
+            330
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             321,
