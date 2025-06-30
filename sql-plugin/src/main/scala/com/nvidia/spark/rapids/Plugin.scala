@@ -517,6 +517,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
   private val activeTaskNvtx = new ConcurrentHashMap[Thread, NvtxRange]()
 
+  private var isAsyncProfilerEnabled = false
+
   override def init(
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
@@ -527,8 +529,16 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
+
+      // Check this before touching AsyncProfilerOnExecutor so that we can avoid
+      // java.lang.NoClassDefFoundError when user does not intend to enable async profiler,
+      // and thus does not have the dependency in the classpath.
+      isAsyncProfilerEnabled = conf.asyncProfilerPathPrefix.nonEmpty
+
       ProfilerOnExecutor.init(pluginContext, conf)
-      AsyncProfilerOnExecutor.init(pluginContext, conf)
+      if (isAsyncProfilerEnabled) {
+        AsyncProfilerOnExecutor.init(pluginContext, conf)
+      }
 
       // Checks if the current GPU architecture is supported by the
       // spark-rapids-jni and cuDF libraries.
@@ -688,7 +698,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     ProfilerOnExecutor.shutdown()
-    AsyncProfilerOnExecutor.shutdown()
+    if (isAsyncProfilerEnabled) {
+      AsyncProfilerOnExecutor.shutdown()
+    }
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
@@ -733,7 +745,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     })
     extraExecutorPlugins.foreach(_.onTaskStart())
     ProfilerOnExecutor.onTaskStart()
-    AsyncProfilerOnExecutor.onTaskStart()
+    if (isAsyncProfilerEnabled) {
+      AsyncProfilerOnExecutor.onTaskStart()
+    }
     // Make sure that the thread/task is registered before we try and block
     // For the task main thread, we want to make sure that it's registered in the OOM state
     // machine throughout the task lifecycle.
