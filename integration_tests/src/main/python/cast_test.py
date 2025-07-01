@@ -38,8 +38,9 @@ def test_cast_empty_string_to_int_ansi_off():
                 conf=ansi_disabled_conf)
 
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11552")
 def test_cast_empty_string_to_int_ansi_on():
+    err_mess = "invalid input syntax for type numeric" if is_before_spark_330() \
+        else "cannot be cast to "
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
             'CAST(a as BYTE)',
@@ -47,7 +48,7 @@ def test_cast_empty_string_to_int_ansi_on():
             'CAST(a as INTEGER)',
             'CAST(a as LONG)').collect(),
         conf=ansi_enabled_conf,
-        error_message="cannot be cast to ")
+        error_message=err_mess)
 
 # These tests are not intended to be exhaustive. The scala test CastOpSuite should cover
 # just about everything for non-nested values. This is intended to check that the
