@@ -17,6 +17,7 @@
 set -e
 
 scala_ver=${1:-"2.12"}
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/13027
 base_URL="https://oss.sonatype.org/service/local/artifact/maven/resolve"
 project_jni="spark-rapids-jni"
 project_private="rapids-4-spark-private_${scala_ver}"
