@@ -78,6 +78,11 @@ trait RapidsErrorUtils330To334Base extends RapidsErrorUtilsFor330plus with Rapid
     new SparkDateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
   }
 
+  // def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String, 
+  //   errorContext: String): RuntimeException = {
+  //   QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, errorContext=null)
+  // }
+
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }

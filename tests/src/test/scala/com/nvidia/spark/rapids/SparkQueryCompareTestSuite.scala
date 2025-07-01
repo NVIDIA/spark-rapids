@@ -1125,15 +1125,30 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
+
+    // val (testConf, qualifiedTestName) =
+    //   setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+    //     maxFloatDiff, sortBeforeRepart)
+
+    
+    // test(qualifiedTestName) {
+    // if (assumeCondition != null) {
+    //   val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = testConf)
+    //   assume(isAllowed, reason)
+    // }
+    // }
+        
     // test cpu throws an exception
     testCpuExpectedException(testName + " ,cpu", expectedException, df, conf, repart, sort,
-      maxFloatDiff, incompat, execsAllowedNonGpu, sortBeforeRepart)(fun)
+      maxFloatDiff, incompat, execsAllowedNonGpu, sortBeforeRepart, assumeCondition)(fun)
 
     // then test gpu throws an exception
     testGpuExpectedException(testName + " ,gpu", expectedException, df, conf, repart, sort,
-      maxFloatDiff, incompat, execsAllowedNonGpu, sortBeforeRepart)(fun)
+      maxFloatDiff, incompat, execsAllowedNonGpu, sortBeforeRepart, assumeCondition)(fun)
+    
   }
 
   def testCpuExpectedException[T <: Throwable](
@@ -1146,7 +1161,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
     val clazz = classTag.runtimeClass
     val (testConf, qualifiedTestName) =
@@ -1154,6 +1170,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
         maxFloatDiff, sortBeforeRepart)
 
     test(qualifiedTestName) {
+      if (assumeCondition != null) {
+        val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = testConf)
+        assume(isAllowed, reason)
+      }
       val t = Try({
         withCpuSparkSession( session => {
           var data = df(session)
@@ -1169,7 +1189,12 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       t match {
         case Failure(e) if clazz.isAssignableFrom(e.getClass) =>
           assert(expectedException(e.asInstanceOf[T]))
-        case Failure(e) => throw e
+        case Failure(e) => {
+          println("Error message: " + e.getMessage)
+          println("Error class: " + e.getClass)
+          println("class: " + clazz)
+          throw e
+        }
         case _ => fail("Expected an exception, but got none")
       }
     }
@@ -1185,7 +1210,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
     val clazz = classTag.runtimeClass
     val (testConf, qualifiedTestName) =
@@ -1193,6 +1219,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
         maxFloatDiff, sortBeforeRepart)
 
     test(qualifiedTestName) {
+      if (assumeCondition != null) {
+        val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = testConf)
+        assume(isAllowed, reason)
+      }
       val t = Try({
         withGpuSparkSession( session => {
           var data = df(session)
@@ -2323,6 +2353,11 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   // SparkSession => (Boolean, String)
   def ignoreAnsi(issue: String)(spark: SparkSession): (Boolean, String) = {
     (!SQLConf.get.ansiEnabled, s"ANSI mode is not supported in this test: ${issue}")
+  }
+
+  def requireAnsi(issue: String)(spark: SparkSession): (Boolean, String) = {
+    // SparkSessionHolder.sparkSession
+    (SQLConf.get.ansiEnabled, s"This test requires ANSI mode to be enabled: ${issue}")
   }
 
   def skipIfAnsiEnabled(issue: String): Unit = {

@@ -25,7 +25,7 @@ import java.util.TimeZone
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
@@ -547,8 +547,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(TimestampType))
    }
 
-  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12715")) {
+  // testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings,
+  testSparkResultsAreEqual("Test_cast_from_string_to_bool", maybeBoolStrings){
+    // assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12715")) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))
   }
 
@@ -560,6 +561,112 @@ class CastOpSuite extends GpuExpressionTestSuite {
       "maybe", " true ", " false ", null, "", "12")
     maybeBool.toDF("maybe_bool")
   }
+
+
+  // Run only if ansi is enabled
+    println("ansi enabled value is: " + SQLConf.get.ansiEnabled)
+    testBothCpuGpuExpectedException[Exception](
+      "Test_cast_from_string_to_bool_ansi_invalid",
+      e => e.getMessage.contains("CAST_INVALID_INPUT"),
+      spark => {
+        val invalidValues = Seq("maybe", "", "12")
+        import spark.implicits._
+        invalidValues.toDF("maybe_bool")
+      },
+      new SparkConf().set("spark.sql.ansi.enabled", "true"),
+      // assumeCondition = requireAnsi("This test only runs when ANSI mode is enabled")
+    ) {
+      frame => frame.select(col("maybe_bool").cast(BooleanType))
+      }
+
+  //   testBothCpuGpuExpectedException[SparkException](
+  //   "test year month interval arithmetic: abs overflow, ansi mode",
+  //   e => e.getMessage.contains("ArithmeticException"),
+  //   spark => {
+  //     import spark.implicits._
+  //     Seq((Period.ofMonths(Integer.MIN_VALUE)))
+  //         .toDF("c_year_month1")
+  //   },
+  //   new SparkConf().set(SQLConf.ANSI_ENABLED.key, "true")
+  // ) {
+  //   df => df.selectExpr("abs(c_year_month1)")
+  // }
+
+  
+
+  // test("Test_cast_from_string_to_bool_ansi_invalid") {
+  //   val invalidValues = Seq("maybe", " true ", " false ", "", "12")
+    
+  //   // Create a temporary parquet file with invalid values
+  //   val tempDir = Files.createTempDirectory("spark-rapids-test").toFile
+  //   val parquetPath = new File(tempDir, "invalid_bool_strings.parquet").getAbsolutePath
+    
+  //   try {
+  //     // Write invalid values to parquet file
+  //     withGpuSparkSession(
+  //       (spark: SparkSession) => {
+  //         import spark.implicits._
+  //         invalidValues.toDF("maybe_bool").write.parquet(parquetPath)
+  //       },
+  //       new SparkConf().set("spark.sql.ansi.enabled", "false") // Disable ANSI for writing
+  //     )
+      
+  //     // Test invalid values should throw exception in ANSI mode when reading from parquet
+  //     invalidValues.foreach { invalidValue =>
+  //       val exception = intercept[Exception] {
+  //         withGpuSparkSession(
+  //           (spark: SparkSession) => {
+  //             // Read from parquet and filter to get the specific invalid value
+  //             val df = spark.read.parquet(parquetPath)
+  //               .filter(col("maybe_bool") === invalidValue)
+  //               .select(col("maybe_bool").cast(BooleanType))
+  //             df.collect()
+  //           },
+  //           new SparkConf().set("spark.sql.ansi.enabled", "true")
+  //         )
+  //       }
+        
+  //       assert(exception.getMessage.contains("CAST_INVALID_INPUT"))
+  //     }
+  //   } finally {
+  //     org.apache.commons.io.FileUtils.deleteQuietly(tempDir)
+  //   }
+  // }
+
+  // test("Test_cast_from_string_to_bool_non_ansi") {
+  //   val invalidValues = Seq("maybe", " true ", " false ", "", "12")
+    
+  //   // Create a temporary parquet file with invalid values
+  //   val tempDir = Files.createTempDirectory("spark-rapids-test").toFile
+  //   val parquetPath = new File(tempDir, "invalid_bool_strings.parquet").getAbsolutePath
+    
+  //   try {
+  //     // Write invalid values to parquet file
+  //     withGpuSparkSession(
+  //       (spark: SparkSession) => {
+  //         import spark.implicits._
+  //         invalidValues.toDF("maybe_bool").write.parquet(parquetPath)
+  //       },
+  //       new SparkConf().set("spark.sql.ansi.enabled", "false")
+  //     )
+      
+  //     // Test invalid values should become null in non-ANSI mode when reading from parquet
+  //     withGpuSparkSession(
+  //       (spark: SparkSession) => {
+  //         val df = spark.read.parquet(parquetPath)
+  //         val result = df.select(col("maybe_bool").cast(BooleanType)).collect()
+          
+  //         // In non-ANSI mode, invalid values should become null
+  //         result.foreach { row =>
+  //           assert(row.isNullAt(0), s"Expected null for invalid value, got: ${row.get(0)}")
+  //         }
+  //       },
+  //       new SparkConf().set("spark.sql.ansi.enabled", "false")
+  //     )
+  //   } finally {
+  //     org.apache.commons.io.FileUtils.deleteQuietly(tempDir)
+  //   }
+  // }
 
   private val timestampCastFn = { frame: DataFrame =>
     frame.select(
