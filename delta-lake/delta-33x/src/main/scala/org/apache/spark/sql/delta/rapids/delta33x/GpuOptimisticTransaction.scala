@@ -60,10 +60,9 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 class GpuOptimisticTransaction
-    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
+    (deltaLog: DeltaLog, catalog: Option[CatalogTable], snapshot: Snapshot, rapidsConf: RapidsConf)
     (implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog,
-    Option.empty[CatalogTable], snapshot, rapidsConf)(clock) {
+  extends GpuOptimisticTransactionBase(deltaLog, catalog, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -71,7 +70,19 @@ class GpuOptimisticTransaction
    * @param rapidsConf RAPIDS Accelerator config settings
    */
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
-    this(deltaLog, deltaLog.update(), rapidsConf)
+    this(deltaLog, Option.empty[CatalogTable], deltaLog.update(), rapidsConf)
+  }
+
+  /** Creates a new OptimisticTransaction.
+   *
+   * @param deltaLog The Delta Log for the table this transaction is modifying.
+   * @param catalog The Delta Catalog to use for snapshot
+   * @param rapidsConf RAPIDS Accelerator config settings
+   */
+  def this(deltaLog: DeltaLog,
+     catalog: Option[CatalogTable],
+     rapidsConf: RapidsConf)(implicit clock: Clock) = {
+    this(deltaLog, catalog, deltaLog.update(), rapidsConf)
   }
 
   private def getGpuStatsColExpr(

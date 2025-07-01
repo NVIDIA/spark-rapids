@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,6 +59,48 @@ class GpuDeltaRecordTouchedFileNameUDF(accum: AccumulatorV2[String, java.util.Se
       }
       withResource(Scalar.fromInt(1)) { one =>
         ColumnVector.fromScalar(one, input.getRowCount.toInt)
+      }
+    }
+  }
+}
+
+class GpuDeltaRecordTouchedFilesStringBoolUDF(accum: AccumulatorV2[String, java.util.Set[String]])
+  extends Function2[String, Boolean, Int] with RapidsUDF with Serializable {
+
+  override def apply(fileName: String, shouldRecord: Boolean = true): Int = {
+    if (shouldRecord) {
+      accum.add(fileName)
+      1
+    } else {
+      0
+    }
+  }
+
+  override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
+    require(args.length == 2, s"Expected two argument, received $numRows")
+    val fileName = args(0)
+    val shouldRecord = args(1)
+    require(numRows == fileName.getRowCount,
+      s"Expected $numRows rows, received ${fileName.getRowCount}")
+    withResource(new Table(args: _*)) { t =>
+      withResource(t.filter(shouldRecord)) { filteredTable =>
+        val hostData =
+          withResource(filteredTable.dropDuplicates(Array(0), DuplicateKeepOption.KEEP_ANY, true)) {
+            _.getColumn(0).copyToHost()
+          }
+        withResource(hostData) { _ =>
+          (0 until hostData.getRowCount.toInt).foreach { i =>
+            val str = if (hostData.isNull(i)) {
+              null
+            } else {
+              hostData.getJavaString(i)
+            }
+            accum.add(str)
+          }
+        }
+        withResource(Scalar.fromInt(1)) { one =>
+          ColumnVector.fromScalar(one, fileName.getRowCount.toInt)
+        }
       }
     }
   }

@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.delta.{Delta33xConfigChecker, DeltaConfigChecker,
 import com.nvidia.spark.rapids.delta.delta33x.Delta33xProvider
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -58,9 +59,15 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
 
   def startTransaction(
      log: DeltaLog,
+     catalogOpt: Option[CatalogTable],
+     snapshotOpt: Option[Snapshot],
      conf: RapidsConf,
      clock: Clock): GpuOptimisticTransactionBase = {
-    new GpuOptimisticTransaction(log, conf)(clock)
+    if (snapshotOpt.isEmpty) {
+      new GpuOptimisticTransaction(log, catalogOpt, conf)(clock)
+    } else {
+      new GpuOptimisticTransaction(log, catalogOpt, snapshotOpt.get, conf)(clock)
+    }
   }
 
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {
