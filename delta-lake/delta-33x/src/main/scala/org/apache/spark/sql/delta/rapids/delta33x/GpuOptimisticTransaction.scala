@@ -46,7 +46,7 @@ import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuWriteJobStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.{Clock, SerializableConfiguration}
+import org.apache.spark.util.SerializableConfiguration
 
 /**
  * Used to perform a set of reads in a transaction and then commit a set of updates to the
@@ -60,19 +60,18 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param snapshot The snapshot that this transaction is reading at.
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
-class GpuOptimisticTransaction
-  (deltaLog: DeltaLog, catalogTable: Option[CatalogTable], snapshot: Option[Snapshot],
+class GpuOptimisticTransaction(deltaLog: DeltaLog,
+    catalogTable: Option[CatalogTable],
+    snapshot: Option[Snapshot],
     rapidsConf: RapidsConf)
-  (implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog,
-    catalogTable, snapshot, rapidsConf)(clock) {
+  extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf) {
 
   /** Creates a new OptimisticTransaction.
    *
    * @param deltaLog The Delta Log for the table this transaction is modifying.
    * @param rapidsConf RAPIDS Accelerator config settings
    */
-  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
+  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf) = {
     this(deltaLog, Option.empty[CatalogTable], Some(deltaLog.update()), rapidsConf)
   }
 

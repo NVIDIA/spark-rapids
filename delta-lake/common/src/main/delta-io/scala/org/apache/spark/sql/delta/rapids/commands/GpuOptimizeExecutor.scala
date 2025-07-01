@@ -377,7 +377,7 @@ class GpuOptimizeExecutor(
     } catch {
       case e: ConcurrentModificationException =>
         val newTxn = new GpuDeltaLog(txn.deltaLog, rapidsConf).startTransaction(txn.catalogTable,
-          snapshot = None)
+          snapshotOpt = None)
         if (f(newTxn)) {
           logInfo(
             log"Retrying commit after checking for semantic conflicts with concurrent updates.")
