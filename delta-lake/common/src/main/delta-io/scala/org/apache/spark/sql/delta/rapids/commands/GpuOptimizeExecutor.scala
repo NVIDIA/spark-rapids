@@ -27,29 +27,28 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.RapidsConf
 
-import org.apache.spark.sql.delta.skipping.MultiDimClustering
-import org.apache.spark.sql.delta.skipping.clustering.{ClusteredTableUtils, ClusteringColumnInfo}
-import org.apache.spark.sql.delta._
-import org.apache.spark.sql.delta.DeltaOperations.Operation
-import org.apache.spark.sql.delta.actions.{Action, AddFile, DeletionVectorDescriptor, FileAction, RemoveFile}
-import org.apache.spark.sql.delta.commands.{Batch, Bin, ClusteringStrategy, DeltaCommand, DeltaOptimizeContext, OptimizeTableStrategy, ZOrderStrategy}
-import org.apache.spark.sql.delta.commands.optimize._
-import org.apache.spark.sql.delta.files.SQLMetricsReporting
-import org.apache.spark.sql.delta.logging.DeltaLogKeys
-import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase}
-import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.delta.util.BinPackingUtils
-
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext.SPARK_JOB_GROUP_ID
 import org.apache.spark.internal.MDC
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.delta._
+import org.apache.spark.sql.delta.DeltaOperations.Operation
+import org.apache.spark.sql.delta.actions.{Action, AddFile, DeletionVectorDescriptor, FileAction, RemoveFile}
+import org.apache.spark.sql.delta.actions.InMemoryLogReplay.UniqueFileActionTuple
+import org.apache.spark.sql.delta.commands.{Batch, Bin, ClusteringStrategy, CompactionStrategy, DeltaCommand, DeltaOptimizeContext, OptimizeTableStrategy, ZOrderStrategy}
+import org.apache.spark.sql.delta.commands.optimize._
+import org.apache.spark.sql.delta.files.SQLMetricsReporting
+import org.apache.spark.sql.delta.logging.DeltaLogKeys
+import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase}
+import org.apache.spark.sql.delta.skipping.MultiDimClustering
+import org.apache.spark.sql.delta.skipping.clustering.{ClusteredTableUtils, ClusteringColumnInfo}
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
+import org.apache.spark.sql.delta.util.BinPackingUtils
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.execution.metric.SQLMetrics.createMetric
 import org.apache.spark.util.{SystemClock, ThreadUtils}
-import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.delta.actions.InMemoryLogReplay.UniqueFileActionTuple
 
 /**
  * Optimize job which compacts small files into larger files to reduce
