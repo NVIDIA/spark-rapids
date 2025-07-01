@@ -60,7 +60,6 @@ import org.apache.spark.sql.delta.actions.InMemoryLogReplay.UniqueFileActionTupl
  * @param partitionPredicate List of partition predicates to select subset of files to optimize.
  */
 class GpuOptimizeExecutor(
-    rapidsConf: RapidsConf,
     sparkSession: SparkSession,
     snapshot: Snapshot,
     catalogTable: Option[CatalogTable],
@@ -69,6 +68,8 @@ class GpuOptimizeExecutor(
     isAutoCompact: Boolean,
     optimizeContext: DeltaOptimizeContext)
   extends DeltaCommand with SQLMetricsReporting with Serializable {
+
+  private val rapidsConf = new RapidsConf(sparkSession.sessionState.conf)
 
   /**
    * In which mode the Optimize command is running. There are three valid modes:
@@ -365,7 +366,7 @@ class GpuOptimizeExecutor(
    * otherwise throws a subclass of [[ConcurrentModificationException]].
    */
   private def commitAndRetry(
-      txn: OptimisticTransaction,
+      txn: GpuOptimisticTransactionBase,
       optimizeOperation: Operation,
       actions: Seq[Action],
       metrics: Map[String, SQLMetric])(f: OptimisticTransaction => Boolean): Unit = {

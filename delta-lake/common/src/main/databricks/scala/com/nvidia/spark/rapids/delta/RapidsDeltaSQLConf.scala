@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * This file was derived from DeltaSQLConf.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -44,7 +44,6 @@ trait RapidsDeltaSQLConf {
         .doubleConf
         .createWithDefault(1.2)
 
-  // TODO: should I support this?
   val AUTO_COMPACT_TARGET =
     DeltaSQLConf.buildConf("autoCompact.target")
       .internal()
@@ -62,7 +61,6 @@ trait RapidsDeltaSQLConf {
       .transform(_.toLowerCase(Locale.ROOT))
       .createWithDefault("partition")
 
-  // TODO: looks duplicate with DELTA_OPTIMIZE_MAX_FILE_SIZE. need double check.
   val AUTO_COMPACT_MAX_COMPACT_BYTES =
     DeltaSQLConf.buildConf("autoCompact.maxCompactBytes")
       .internal()

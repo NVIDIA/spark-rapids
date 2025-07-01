@@ -17,7 +17,7 @@
 package org.apache.spark.sql.delta.rapids.delta33x
 
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.delta.{Delta33xConfigChecker, DeltaConfigChecker, DeltaProvider}
+import com.nvidia.spark.rapids.delta.{AcceptAllConfigChecker, DeltaConfigChecker, DeltaProvider}
 import com.nvidia.spark.rapids.delta.delta33x.Delta33xProvider
 
 import org.apache.spark.sql.SparkSession
@@ -37,7 +37,7 @@ import org.apache.spark.util.Clock
  */
 class Delta33xRuntimeShim extends DeltaRuntimeShim {
 
-  override def getDeltaConfigChecker: DeltaConfigChecker = Delta33xConfigChecker
+  override def getDeltaConfigChecker: DeltaConfigChecker = AcceptAllConfigChecker
 
   override def getDeltaProvider: DeltaProvider = Delta33xProvider
 

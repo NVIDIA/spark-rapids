@@ -21,8 +21,6 @@
 
 package org.apache.spark.sql.delta.hooks
 
-import com.nvidia.spark.rapids.RapidsConf
-
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions._
 import org.apache.spark.sql.delta.commands.DeltaOptimizeContext
@@ -50,6 +48,9 @@ trait GpuAutoCompactBase extends AutoCompactBase {
       committedVersion, postCommitSnapshot, actions)
   }
 
+  /**
+   * Run the Auto Compact hook with the GPU optimistic transaction.
+   */
   def run(
       spark: SparkSession,
       txn: GpuOptimisticTransactionBase,
@@ -57,29 +58,6 @@ trait GpuAutoCompactBase extends AutoCompactBase {
       postCommitSnapshot: Snapshot,
       actions: Seq[Action]): Unit
 
-  // TODO: maybe move all impls to here instead of in GpuAutoCompact
-}
-
-case object GpuAutoCompact extends GpuAutoCompactBase {
-
-  override def run(
-      spark: SparkSession,
-      txn: GpuOptimisticTransactionBase,
-      committedVersion: Long,
-      postCommitSnapshot: Snapshot,
-      actions: Seq[Action]): Unit = {
-    val conf = spark.sessionState.conf
-    val autoCompactTypeOpt = getAutoCompactType(conf, postCommitSnapshot.metadata)
-    // Skip Auto Compact if current transaction is not qualified or the table is not qualified
-    // based on the value of autoCompactTypeOpt.
-    if (shouldSkipAutoCompact(autoCompactTypeOpt, spark, txn)) return
-    compactIfNecessary(
-      spark,
-      txn,
-      postCommitSnapshot,
-      OP_TYPE,
-      maxDeletedRowsRatio = None)
-  }
   /**
    * Compact the target table of write transaction `txn` only when there are sufficient amount of
    * small size files.
@@ -95,7 +73,6 @@ case object GpuAutoCompact extends GpuAutoCompactBase {
       opType: String,
       maxDeletedRowsRatio: Option[Double]
   ): Seq[OptimizeMetrics] = {
-    // TODO: GpuDeltaLog?
     val tableId = txn.deltaLog.tableId
     val autoCompactRequest = AutoCompactUtils.prepareAutoCompactRequest(
       spark,
@@ -176,9 +153,7 @@ case object GpuAutoCompact extends GpuAutoCompactBase {
         maxFileSizeOpt,
         maxDeletedRowsRatio = maxDeletedRowsRatio
       )
-      val rapidsConf = new RapidsConf(spark.sessionState.conf)
       val rows = new GpuOptimizeExecutor(
-        rapidsConf,
         spark,
         deltaLog.update(catalogTableOpt = catalogTable),
         catalogTable,
@@ -191,5 +166,27 @@ case object GpuAutoCompact extends GpuAutoCompactBase {
       recordDeltaEvent(deltaLog, s"$opType.execute.metrics", data = metrics.head)
       metrics
     }
+  }
+}
+
+case object GpuAutoCompact extends GpuAutoCompactBase {
+
+  override def run(
+      spark: SparkSession,
+      txn: GpuOptimisticTransactionBase,
+      committedVersion: Long,
+      postCommitSnapshot: Snapshot,
+      actions: Seq[Action]): Unit = {
+    val conf = spark.sessionState.conf
+    val autoCompactTypeOpt = getAutoCompactType(conf, postCommitSnapshot.metadata)
+    // Skip Auto Compact if current transaction is not qualified or the table is not qualified
+    // based on the value of autoCompactTypeOpt.
+    if (shouldSkipAutoCompact(autoCompactTypeOpt, spark, txn)) return
+    compactIfNecessary(
+      spark,
+      txn,
+      postCommitSnapshot,
+      OP_TYPE,
+      maxDeletedRowsRatio = None)
   }
 }
