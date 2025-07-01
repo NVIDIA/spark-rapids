@@ -190,7 +190,7 @@ trait SplittableGoal
  */
 case object RequireSingleBatch extends CoalesceSizeGoal with RequireSingleBatchLike {
 
-  override val targetSizeBytes: Long = 2L * 1024 * 1024 * 1024
+  override val targetSizeBytes: Long = Long.MaxValue
 
   /** Override toString to improve readability of Spark explain output */
   override def toString: String = "RequireSingleBatch"

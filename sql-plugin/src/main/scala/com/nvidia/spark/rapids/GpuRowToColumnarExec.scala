@@ -589,6 +589,7 @@ class RowToColumnarIterator(
     rowIter: Iterator[InternalRow],
     localSchema: StructType,
     localGoal: CoalesceSizeGoal,
+    batchSizeBytes: Long,
     converters: GpuRowToColumnConverter,
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
@@ -611,6 +612,7 @@ class RowToColumnarIterator(
   }
 
   private def buildBatch(): ColumnarBatch = {
+    var initialRows = 0
     withResource(new NvtxRange("RowToColumnar", NvtxColor.CYAN)) { _ =>
       val streamStart = System.nanoTime()
       // estimate the size of the first batch based on the schema
@@ -623,10 +625,12 @@ class RowToColumnarIterator(
           val sampleRows = GpuBatchUtils.VALIDITY_BUFFER_BOUNDARY_ROWS
           val sampleBytes = GpuBatchUtils.estimateGpuMemory(localSchema, sampleRows)
           targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
+          initialRows = GpuBatchUtils.estimateRowCount(batchSizeBytes, sampleBytes, sampleRows)
         }
       }
 
-      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows)) { builders =>
+
+      withResource(new GpuColumnarBatchBuilder(localSchema, initialRows)) { builders =>
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
@@ -911,8 +915,10 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
         numInputRows, numOutputRows, numOutputBatches))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
+      val conf = new RapidsConf(child.conf)
+      val batchSizeBytes = conf.gpuTargetBatchSizeBytes
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, converters,
+        localSchema, localGoal, batchSizeBytes, converters,
         numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
     }
   }
