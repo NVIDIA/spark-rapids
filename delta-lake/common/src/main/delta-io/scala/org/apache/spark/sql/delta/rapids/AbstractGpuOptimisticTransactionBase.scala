@@ -40,7 +40,7 @@ abstract class AbstractGpuOptimisticTransactionBase(
     with DeltaLogging {
 
   def this(deltaLog: DeltaLog, catalog: Option[CatalogTable], snapshot: Option[Snapshot],
-      rapidsConf: RapidsConf)(implicit clock: Clock) {
+      rapidsConf: RapidsConf)(implicit clock: Clock) = {
     // It is better to pass just the Option[Snapshot] as it is, so that it can be computed
     // in the constructor of OptimisticTransaction. However, the constructor that takes
     // an Option[Snapshot] is reletively new and not available in old versions of Delta.
