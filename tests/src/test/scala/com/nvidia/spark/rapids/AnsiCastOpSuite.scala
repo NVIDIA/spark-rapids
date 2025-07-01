@@ -363,29 +363,35 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
+  private lazy val toNumErrMsg = if (isSpark330OrLater) {
+    "cannot be cast to"
+  } else {
+    "invalid input syntax for type numeric"
+  }
+
   testCastFailsForBadInputs("ansi_cast string to byte (invalid values)", shortsAsStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to short (invalid values)", intsAsStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to long (invalid decimal values)",
     longsAsDecimalStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (invalid values)", longsAsStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (non-numeric values)", testStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
