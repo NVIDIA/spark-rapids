@@ -184,7 +184,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
         val orderingExpr = GpuBindReferences.bindReferences(requiredOrdering
           .map(attr => SortOrder(attr, Ascending)), outputSpec.outputColumns)
         // this sort plan does not execute, only use its output
-        val sortPlan = createSortPlan(plan, orderingExpr, useStableSort)
+        val sortPlan = createSortPlan(plan, orderingExpr, useStableSort, statsTrackers)
         val batchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sparkSession.sessionState.conf)
         GpuWriteFiles.createConcurrentOutputWriterSpec(sparkSession, sortColumns,
           sortPlan.output, batchSize, orderingExpr)
@@ -247,7 +247,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
           (empty2NullPlan.executeColumnar(), concurrentOutputWriterSpec)
         } else {
           // sort, then write
-          val sortPlan = createSortPlan(empty2NullPlan, orderingExpr, useStableSort)
+          val sortPlan = createSortPlan(empty2NullPlan, orderingExpr, useStableSort,
+            description.statsTrackers)
           val sort = sortPlan.executeColumnar()
           (sort, concurrentOutputWriterSpec) // concurrentOutputWriterSpec is None
         }
@@ -353,7 +354,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
   private def createSortPlan(
       child: SparkPlan,
       orderingExpr: Seq[SortOrder],
-      useStableSort: Boolean): GpuSortExec = {
+      useStableSort: Boolean,
+      statsTrackers: Seq[ColumnarWriteJobStatsTracker]): GpuSortExec = {
     // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
     // the physical plan may have different attribute ids due to optimizer removing some
     // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
@@ -366,12 +368,13 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
     }
     // TODO: Using a GPU ordering as a CPU ordering here. Should be OK for now since we do not
     //       support bucket expressions yet and the rest should be simple attributes.
+    val sortTrackers = statsTrackers.filter(_.isInstanceOf[GpuWriteJobStatsTracker])
     GpuSortExec(
       orderingExpr,
       global = false,
       child = child,
       sortType = sortType
-    )(orderingExpr)
+    )(orderingExpr, Some(sortTrackers.asInstanceOf[Seq[GpuWriteJobStatsTracker]]))
   }
 
   /** Writes data out in a single Spark task. */
