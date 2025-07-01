@@ -550,10 +550,10 @@ object GpuCast {
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (StringType, ByteType | ShortType | IntegerType | LongType) =>
-        fixupToNumberException(input, toDataType)(
-          CastStrings.toInteger(input, ansiMode,
+        fixupToNumException(input, toDataType) { strings =>
+          CastStrings.toInteger(strings, ansiMode,
             GpuColumnVector.getNonNestedRapidsType(toDataType))
-        )
+        }
       case (StringType, FloatType | DoubleType) =>
         CastStrings.toFloat(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -641,9 +641,9 @@ object GpuCast {
     }
   }
 
-  private def fixupToNumberException[A](input: ColumnView, to: DataType)(f: => A): A = {
+  private def fixupToNumException[A](input: ColumnView, to: DataType)(f: ColumnView => A): A = {
     try {
-      f
+      f(input)
     } catch {
       case c: CastException =>
         val s = withResource(input.copyToHost()) { hcv =>
