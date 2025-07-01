@@ -38,15 +38,13 @@ def test_cast_empty_string_to_int_ansi_off():
                 conf=ansi_disabled_conf)
 
 
-def test_cast_empty_string_to_int_ansi_on():
+@pytest.mark.parametrize('to_type', ['BYTE', 'SHORT', 'INTEGER', 'LONG'])
+def test_cast_empty_string_to_int_ansi_on(to_type):
     err_mess = "invalid input syntax for type numeric" if is_before_spark_330() \
         else "cannot be cast to "
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
-            'CAST(a as BYTE)',
-            'CAST(a as SHORT)',
-            'CAST(a as INTEGER)',
-            'CAST(a as LONG)').collect(),
+            'CAST(a as {})'.format(to_type)).collect(),
         conf=ansi_enabled_conf,
         error_message=err_mess)
 
