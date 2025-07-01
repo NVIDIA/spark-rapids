@@ -80,6 +80,14 @@ class GpuOptimizeExecutor(
   private val optimizeStrategy =
     OptimizeTableStrategy(sparkSession, snapshot, optimizeContext, zOrderByColumns)
 
+  // Sanity check to ensure that this class is used only for what we support at the moment,
+  // though this class is completely ported from the original Delta IO OptimizeExecutor class.
+  // We can simply remove this check once we support more modes.
+  if (!optimizeStrategy.isInstanceOf[CompactionStrategy]) {
+    throw new IllegalArgumentException(
+      s"Optimize strategy ${optimizeStrategy.getClass.getSimpleName} is not supported.")
+  }
+
   /** Timestamp to use in [[FileAction]] */
   private val operationTimestamp = new SystemClock().getTimeMillis()
 
