@@ -629,7 +629,6 @@ class RowToColumnarIterator(
         }
       }
 
-
       withResource(new GpuColumnarBatchBuilder(localSchema, initialRows)) { builders =>
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
