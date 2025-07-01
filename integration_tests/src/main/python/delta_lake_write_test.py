@@ -740,16 +740,8 @@ def test_delta_write_generated_columns(spark_tmp_table_factory, spark_tmp_path):
 
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu("CreateTableExec", *delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(is_before_spark_320() or not is_databricks_runtime(),
-                    reason="Delta Lake identity columns are currently only supported on Databricks")
-def test_delta_write_identity_columns(spark_tmp_path):
-    data_path = spark_tmp_path + "/DELTA_DATA"
-    def create_data(spark, path):
-        spark.sql("CREATE TABLE delta.`{}` (x BIGINT, id BIGINT GENERATED ALWAYS AS IDENTITY) USING DELTA".format(path))
-        spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
+
+def test_delta_write_identity_columns(data_path, create_data):
     assert_gpu_and_cpu_writes_are_equal_collect(
         create_data,
         lambda spark, path: spark.read.format("delta").load(path),
@@ -769,9 +761,68 @@ def test_delta_write_identity_columns(spark_tmp_path):
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320() or not is_databricks_runtime(),
-                    reason="Delta Lake identity columns are currently only supported on Databricks")
-def test_delta_write_multiple_identity_columns(spark_tmp_path):
+@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_350(),
+                    reason="Delta Lake identity columns for Dataframe are currently only supported on Apache Spark 3.5+")
+def test_delta_write_identity_columns_df(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    # clean up redundant slashes in the path
+    data_path = data_path.replace("//", "/")
+    def create_data(spark, path):
+        from delta.tables import DeltaTable, IdentityGenerator
+        from pyspark.sql.types import LongType
+        DeltaTable.create() \
+            .location("file:{}".format(path)) \
+            .addColumn("x", dataType=LongType()) \
+            .addColumn("id", dataType=LongType(), generatedAlwaysAs=IdentityGenerator()) \
+            .execute()
+        spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
+    test_delta_write_identity_columns(data_path, create_data)
+
+
+@allow_non_gpu("CreateTableExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_runtime(),
+                    reason="Delta Lake identity columns for SQL are currently only supported on Databricks")
+def test_delta_write_identity_columns_sql(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def create_data(spark, path):
+        spark.sql("CREATE TABLE delta.`{}` (x BIGINT, id BIGINT GENERATED ALWAYS AS IDENTITY) USING DELTA".format(path))
+        spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
+    test_delta_write_identity_columns(data_path, create_data)
+
+
+@allow_non_gpu("CreateTableExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_350(),
+                    reason="Delta Lake identity columns for Dataframe are currently only supported on Apache Spark 3.5+")
+def test_delta_write_multiple_identity_columns_df(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    # clean up redundant slashes in the path
+    data_path = data_path.replace("//", "/")
+    def create_data(spark, path):
+        from delta.tables import DeltaTable, IdentityGenerator
+        from pyspark.sql.types import LongType
+        DeltaTable.create() \
+            .location("file:{}".format(path)) \
+            .addColumn("id1", dataType=LongType(), generatedAlwaysAs=IdentityGenerator()) \
+            .addColumn("x", dataType=LongType()) \
+            .addColumn("id2", dataType=LongType(), generatedAlwaysAs=IdentityGenerator(start=100)) \
+            .addColumn("id3", dataType=LongType(), generatedAlwaysAs=IdentityGenerator(step=11)) \
+            .addColumn("id4", dataType=LongType(), generatedAlwaysAs=IdentityGenerator(start=-200,step=3)) \
+            .addColumn("id5", dataType=LongType(), generatedAlwaysAs=IdentityGenerator(start=12,step=-3)) \
+            .execute()
+        spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
+    test_delta_write_identity_columns(data_path, create_data)
+
+
+@allow_non_gpu("CreateTableExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_runtime(),
+                    reason="Delta Lake identity columns for SQL are currently only supported on Databricks")
+def test_delta_write_multiple_identity_columns_sql(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def create_data(spark, path):
         spark.sql("CREATE TABLE delta.`{}` (".format(path) +
@@ -783,20 +834,8 @@ def test_delta_write_multiple_identity_columns(spark_tmp_path):
                   "id5 BIGINT GENERATED ALWAYS AS IDENTITY ( START WITH 12 INCREMENT BY -3 )"
                   ") USING DELTA")
         spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
-    assert_gpu_and_cpu_writes_are_equal_collect(
-        create_data,
-        lambda spark, path: spark.read.format("delta").load(path),
-        data_path,
-        conf=delta_writes_enabled_conf)
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
-    def append_data(spark, path):
-        spark.range(2048).selectExpr("id + 10 as x").write.format("delta").mode("append").save(path)
-    assert_gpu_and_cpu_writes_are_equal_collect(
-        append_data,
-        lambda spark, path: spark.read.format("delta").load(path),
-        data_path,
-        conf=delta_writes_enabled_conf)
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    test_delta_write_identity_columns(data_path, create_data)
+
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

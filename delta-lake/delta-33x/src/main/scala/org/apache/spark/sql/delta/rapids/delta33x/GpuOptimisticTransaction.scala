@@ -44,6 +44,7 @@ import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuWriteJobStatsTracker}
+import org.apache.spark.sql.rapids.delta.GpuIdentityColumn
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -145,8 +146,11 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
     val (data, partitionSchema) = performCDCPartition(inputData)
     val outputPath = deltaLog.dataPath
 
-    val (normalizedQueryExecution, output, generatedColumnConstraints, _) =
+    val (normalizedQueryExecution, output, generatedColumnConstraints, trackFromData) =
       normalizeData(deltaLog, writeOptions, data)
+    // Use the track set from the transaction if set,
+    // otherwise use the track set from `normalizeData()`.
+    val trackIdentityHighWaterMarks = trackHighWaterMarks.getOrElse(trackFromData)
 
     // Build a new plan with a stub GpuDeltaWrite node to work around undesired transitions between
     // columns and rows when AQE is involved. Without this node in the plan, AdaptiveSparkPlanExec
@@ -165,6 +169,8 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
 
     val committer = getCommitter(outputPath)
 
+    val (statsDataSchema, _) = getStatsSchema(output, partitionSchema)
+
     // If Statistics Collection is enabled, then create a stats tracker that will be injected during
     // the FileFormatWriter.write call below and will collect per-file stats using
     // StatisticsCollection
@@ -173,6 +179,13 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
 
     val constraints =
       Constraints.getAll(metadata, spark) ++ generatedColumnConstraints ++ additionalConstraints
+
+    val identityTrackerOpt = GpuIdentityColumn.createIdentityColumnStatsTracker(
+      spark,
+      metadata.schema,
+      statsDataSchema,
+      trackIdentityHighWaterMarks
+    )
 
     SQLExecution.withNewExecutionId(queryExecution, Option("deltaTransactionalWrite")) {
       val outputSpec = FileFormatWriter.OutputSpec(
@@ -244,7 +257,7 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
           hadoopConf = hadoopConf,
           partitionColumns = partitioningColumns,
           bucketSpec = None,
-          statsTrackers = optionalStatsTracker.toSeq ++ statsTrackers,
+          statsTrackers = optionalStatsTracker.toSeq ++ statsTrackers ++ identityTrackerOpt.toSeq,
           options = options,
           useStableSort = rapidsConf.stableSort,
           concurrentWriterPartitionFlushSize = rapidsConf.concurrentWriterPartitionFlushSize,
@@ -283,6 +296,11 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
       }
 
     if (resultFiles.nonEmpty && !isOptimize) registerPostCommitHook(GpuAutoCompact)
+
+     // Record the updated high water marks to be used during transaction commit.
+    identityTrackerOpt.foreach { tracker =>
+      updatedIdentityHighWaterMarks.appendAll(tracker.highWaterMarks.toSeq)
+    }
 
     resultFiles.toSeq ++ committer.changeFiles
   }
