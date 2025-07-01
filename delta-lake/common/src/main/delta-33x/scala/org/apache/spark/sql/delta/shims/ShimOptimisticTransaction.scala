@@ -23,6 +23,6 @@ import org.apache.spark.util.Clock
 class ShimOptimisticTransaction(
    deltaLog: DeltaLog,
    catalog: Option[CatalogTable],
-   snapshot: Option[Snapshot])
+   snapshot: Snapshot)
    (implicit clock: Clock)
    extends OptimisticTransaction(deltaLog, catalog, snapshot)
