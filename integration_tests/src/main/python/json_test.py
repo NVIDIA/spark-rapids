@@ -1138,7 +1138,8 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     options = { 'ignoreNullFields': ignore_null_fields,
-                'timeZone': timezone}
+                'timeZone': timezone,
+                'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"}
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)
