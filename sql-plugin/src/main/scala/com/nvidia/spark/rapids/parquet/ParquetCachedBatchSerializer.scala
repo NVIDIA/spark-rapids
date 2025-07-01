@@ -1331,9 +1331,10 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         isSchemaSupportedByCudf(schema)) {
       val structSchema = schemaWithUnambiguousNames.toStructType
       val converters = new GpuRowToColumnConverter(structSchema)
+      val batchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
       val columnarBatchRdd = input.mapPartitions(iter => {
-        new RowToColumnarIterator(iter, structSchema, RequireSingleBatch,
-        rapidsConf.gpuTargetBatchSizeBytes, converters)
+        new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, batchSizeBytes,
+        converters)
       })
       columnarBatchRdd.flatMap(cb => {
         withResource(cb)(cb => compressColumnarBatchWithParquet(cb, structSchema,
