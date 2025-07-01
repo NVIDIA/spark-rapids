@@ -32,8 +32,10 @@ get_latest_snapshot_version() {
     return 0
   fi
   local latest_ver
-  latest_ver=$(curl -s "${project_URL}/maven-metadata.xml" 2>/dev/null | \
-    xmllint --xpath "string(//snapshotVersions/snapshotVersion[extension='jar']/value)" - 2>/dev/null) || latest_ver=""
+  latest_ver=$(curl -s "${project_URL}/maven-metadata.xml" 2>/dev/null | tr -d '\n' | 
+      grep -o '<snapshotVersion>.*<extension>jar</extension>.*<value>[^<]*</value>' | 
+      sed -n 's/.*<value>\([^<]*\)<\/value>.*/\1/p' | 
+      head -1) || latest_ver=""
   echo "$latest_ver"
 }
 
