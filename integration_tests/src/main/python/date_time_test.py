@@ -741,6 +741,25 @@ def test_to_date(ansi_enabled):
             .select(f.to_date(f.col("a").cast('string'), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
+# invalid values for operators: to_date, to_timestamp; Spark 320 and 320+ do not support special datetime: e.g.: now, today, ...
+_invalid_values_for_to_datetime = ['now', 'today', '']
+
+# test ANSI mode, invalid input
+@pytest.mark.parametrize('invalid', _invalid_values_for_to_datetime)
+def test_to_date_ansi_on_invalid_value(invalid):
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.to_date(f.col("a"), "yyyy-MM-dd")).collect(),
+        conf = ansi_enabled_conf,
+        error_message="Exception")
+
+# test ANSI mode, invalid input
+@pytest.mark.parametrize('invalid', _invalid_values_for_to_datetime)
+def test_to_timestamp_ansi_on_invalid_value(invalid):
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.to_timestamp(f.col("a"), "yyyy-MM-dd")).collect(),
+        conf = ansi_enabled_conf,
+        error_message="Exception")
+
 @tz_sensitive_test
 @pytest.mark.parametrize('data_gen', [StringGen('0[1-9][0-9]{4}')], ids=idfn)
 def test_to_date_format_MMyyyy(data_gen):
