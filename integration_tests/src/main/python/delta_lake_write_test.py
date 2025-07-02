@@ -761,6 +761,7 @@ def do_test_delta_write_identity_columns(data_path, create_data):
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
+@pytest.mark.skipif(is_databricks_runtime(), reason="IdentityGenerator is missing in Databricks python API")
 @pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_350(),
                     reason="Delta Lake identity columns for Dataframe are currently only supported on Apache Spark 3.5+")
 def test_delta_write_identity_columns_df(spark_tmp_path):
@@ -795,6 +796,7 @@ def test_delta_write_identity_columns_sql(spark_tmp_path):
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
+@pytest.mark.skipif(is_databricks_runtime(), reason="IdentityGenerator is missing in Databricks python API")
 @pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_350(),
                     reason="Delta Lake identity columns for Dataframe are currently only supported on Apache Spark 3.5+")
 def test_delta_write_multiple_identity_columns_df(spark_tmp_path):
