@@ -44,7 +44,7 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.InputFileUtils
+import org.apache.spark.sql.rapids.{GpuTaskMetrics, InputFileUtils}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
@@ -364,12 +364,18 @@ abstract class MultiFileCloudPartitionReaderBase(
     logInfo(s"[${ctx.taskAttemptId()}] submit $numTasks async tasks eagerly for prefetch")
   }
 
+  private def addTaskFuture(fut: Future[HostMemoryBuffersWithMetaDataBase]): Unit = {
+    tasks.add(fut)
+    GpuTaskMetrics.get.updateMultithreadReaderMaxParallelism(tasks.size())
+  }
+
   private def initAndStartReaders(): Int = {
     // apply CAS to make sure we only init once
     if (!isInit.compareAndSet(false, true)) {
       return 0
     }
 
+    execMetrics.get("numPartedFiles").foreach(_.add(inputFiles.length))
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, inputFiles.length)
     val tc = TaskContext.get
@@ -394,12 +400,12 @@ abstract class MultiFileCloudPartitionReaderBase(
       logDebug(s"MultiFile reader using file $file")
       if (!keepReadsInOrder) {
         val futureRunner = fcs.submit(getBatchRunner(tc, file, conf, filters))
-        tasks.add(futureRunner)
+        addTaskFuture(futureRunner)
       } else {
         // Add these in the order as we got them so that we can make sure
         // we process them in the same order as CPU would.
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        tasks.add(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
+        addTaskFuture(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
       }
     }
     // queue up any left to add once others finish
@@ -707,10 +713,10 @@ abstract class MultiFileCloudPartitionReaderBase(
       val runner = tasksToRun.dequeue()
       if (!keepReadsInOrder) {
         val futureRunner = fcs.submit(runner)
-        tasks.add(futureRunner)
+        addTaskFuture(futureRunner)
       } else {
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        tasks.add(threadPool.submit(runner))
+        addTaskFuture(threadPool.submit(runner))
       }
     }
   }
