@@ -18,7 +18,7 @@ import pytest
 from delta_lake_merge_common import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime, spark_version, supports_delta_lake_deletion_vectors, is_spark_353_or_later
+from spark_session import is_before_spark_320, is_databricks_runtime, spark_version, supports_delta_lake_deletion_vectors, is_before_spark_353
 
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
@@ -230,7 +230,7 @@ def test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_fac
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(not is_databricks_runtime() and not is_spark_353_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/7573")
+@pytest.mark.xfail(not is_databricks_runtime() and is_before_spark_353(), reason="https://github.com/NVIDIA/spark-rapids/issues/7573")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
 @pytest.mark.parametrize("enable_deletion_vector", deletion_vector_values_with_350DB143_xfail_reasons(

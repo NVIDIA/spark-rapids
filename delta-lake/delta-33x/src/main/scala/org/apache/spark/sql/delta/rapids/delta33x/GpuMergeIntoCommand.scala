@@ -38,7 +38,7 @@ import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.commands.MergeIntoCommandBase
 import org.apache.spark.sql.delta.commands.merge._
 import org.apache.spark.sql.delta.files._
-import org.apache.spark.sql.delta.rapids.GpuDeltaLog
+import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.util.SetAccumulator
@@ -317,14 +317,14 @@ case class GpuMergeIntoCommand(
   protected def runMerge(spark: SparkSession): Seq[Row] = {
     recordDeltaOperation(targetDeltaLog, "delta.dml.merge") {
       val startTime = System.nanoTime()
-      gpuDeltaLog.withNewTransaction(catalogTable) { deltaTxn =>
-        if (hasBeenExecuted(deltaTxn, spark)) {
+      gpuDeltaLog.withNewTransaction(catalogTable) { gpuDeltaTxn =>
+        if (hasBeenExecuted(gpuDeltaTxn, spark)) {
           sendDriverMetrics(spark, metrics)
           return Seq.empty
         }
-        if (target.schema.size != deltaTxn.metadata.schema.size) {
+        if (target.schema.size != gpuDeltaTxn.metadata.schema.size) {
           throw DeltaErrors.schemaChangedSinceAnalysis(
-            atAnalysis = target.schema, latestSchema = deltaTxn.metadata.schema)
+            atAnalysis = target.schema, latestSchema = gpuDeltaTxn.metadata.schema)
         }
 
         // Check that type widening wasn't enabled/disabled between analysis and the start of the
@@ -332,19 +332,19 @@ case class GpuMergeIntoCommand(
         TypeWidening.ensureFeatureConsistentlyEnabled(
           protocol = targetFileIndex.protocol,
           metadata = targetFileIndex.metadata,
-          otherProtocol = deltaTxn.protocol,
-          otherMetadata = deltaTxn.metadata
+          otherProtocol = gpuDeltaTxn.protocol,
+          otherMetadata = gpuDeltaTxn.metadata
         )
 
         if (canMergeSchema) {
           updateMetadata(
-            spark, deltaTxn, migratedSchema.getOrElse(target.schema),
-            deltaTxn.metadata.partitionColumns, deltaTxn.metadata.configuration,
+            spark, gpuDeltaTxn, migratedSchema.getOrElse(target.schema),
+            gpuDeltaTxn.metadata.partitionColumns, gpuDeltaTxn.metadata.configuration,
             isOverwriteMode = false, rearrangeOnly = false)
         }
 
-        checkIdentityColumnHighWaterMarks(deltaTxn)
-        deltaTxn.setTrackHighWaterMarks(trackHighWaterMarks)
+        checkIdentityColumnHighWaterMarks(gpuDeltaTxn)
+        gpuDeltaTxn.setTrackHighWaterMarks(trackHighWaterMarks)
 
         // Materialize the source if needed.
         prepareMergeSource(
@@ -360,33 +360,20 @@ case class GpuMergeIntoCommand(
             // This is a single-job execution so there is no WriteChanges.
             performedSecondSourceScan = false
             writeOnlyInserts(
-              spark, deltaTxn, filterMatchedRows = true, numSourceRowsMetric = "numSourceRows")
+              spark, gpuDeltaTxn, filterMatchedRows = true, numSourceRowsMetric = "numSourceRows")
           } else {
-            val (filesToRewrite, deduplicateCDFDeletes) = findTouchedFiles(spark, deltaTxn)
+            val (filesToRewrite, deduplicateCDFDeletes) = findTouchedFiles(spark, gpuDeltaTxn)
             if (filesToRewrite.nonEmpty) {
-              val shouldWriteDeletionVectors = shouldWritePersistentDeletionVectors(spark, deltaTxn)
+              val shouldWriteDeletionVectors =
+                shouldWritePersistentDeletionVectors(spark, gpuDeltaTxn)
               if (shouldWriteDeletionVectors) {
-                val newWrittenFiles = withStatusCode("DELTA", "Writing modified data") {
-                  writeAllChanges(
-                    spark,
-                    deltaTxn,
-                    filesToRewrite,
-                    deduplicateCDFDeletes,
-                    writeUnmodifiedRows = false)
-                }
-
-                val dvActions = withStatusCode(
-                  "DELTA",
-                  "Writing Deletion Vectors for modified data") {
-                  writeDVs(spark, deltaTxn, filesToRewrite)
-                }
-
-                newWrittenFiles ++ dvActions
+                // We should never come here because we should have tagged the Exec to fallback
+                throw new IllegalStateException("Deletion Vectors are not supported on the GPU")
               } else {
                 val newWrittenFiles = withStatusCode("DELTA", "Writing modified data") {
                   writeAllChanges(
                     spark,
-                    deltaTxn,
+                    gpuDeltaTxn,
                     filesToRewrite,
                     deduplicateCDFDeletes,
                     writeUnmodifiedRows = true)
@@ -397,7 +384,7 @@ case class GpuMergeIntoCommand(
               // Run an insert-only job instead of WriteChanges
               writeOnlyInserts(
                 spark,
-                deltaTxn,
+                gpuDeltaTxn,
                 filterMatchedRows = false,
                 numSourceRowsMetric = "numSourceRowsInSecondScan")
             }
@@ -405,7 +392,7 @@ case class GpuMergeIntoCommand(
         }
         commitAndRecordStats(
           spark,
-          deltaTxn,
+          gpuDeltaTxn,
           mergeActions,
           startTime,
           getMergeSource.materializeReason)
@@ -433,7 +420,7 @@ case class GpuMergeIntoCommand(
    */
   private def commitAndRecordStats(
       spark: SparkSession,
-      deltaTxn: OptimisticTransaction,
+      gpuDeltaTxn: GpuOptimisticTransactionBase,
       mergeActions: Seq[FileAction],
       startTime: Long,
       materializeSourceReason: MergeIntoMaterializeSourceReason.MergeIntoMaterializeSourceReason
@@ -442,11 +429,11 @@ case class GpuMergeIntoCommand(
 
     // Metrics should be recorded before commit (where they are written to delta logs).
     metrics("executionTimeMs").set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime))
-    deltaTxn.registerSQLMetrics(spark, metrics)
+    gpuDeltaTxn.registerSQLMetrics(spark, metrics)
 
     val finalActions = createSetTransaction(spark, targetDeltaLog).toSeq ++ mergeActions
     val numRecordsStats = NumRecordsStats.fromActions(finalActions)
-    val commitVersion = deltaTxn.commitIfNeeded(
+    val commitVersion = gpuDeltaTxn.commitIfNeeded(
       actions = finalActions,
       op = DeltaOperations.Merge(
         predicate = Option(condition),
@@ -454,8 +441,8 @@ case class GpuMergeIntoCommand(
         notMatchedPredicates = notMatchedClauses.map(DeltaOperations.MergePredicate(_)),
         notMatchedBySourcePredicates =
           notMatchedBySourceClauses.map(DeltaOperations.MergePredicate(_))),
-      tags = RowTracking.addPreservedRowTrackingTagIfNotSet(deltaTxn.snapshot))
-    val stats = collectGpuMergeStats(deltaTxn, materializeSourceReason, commitVersion,
+      tags = RowTracking.addPreservedRowTrackingTagIfNotSet(gpuDeltaTxn.snapshot))
+    val stats = collectGpuMergeStats(gpuDeltaTxn, materializeSourceReason, commitVersion,
       numRecordsStats)
     recordDeltaEvent(targetDeltaLog, "delta.dml.merge.stats", data = stats)
   }
@@ -465,18 +452,18 @@ case class GpuMergeIntoCommand(
    * recorded with `recordDeltaEvent`. Merge stats should be collected after committing all new
    * actions as metrics may still be updated during commit.
    */
-  protected def collectGpuMergeStats(
-     deltaTxn: OptimisticTransaction,
-     materializeSourceReason: MergeIntoMaterializeSourceReason.MergeIntoMaterializeSourceReason,
-     commitVersion: Option[Long],
-     numRecordsStats: NumRecordsStats): GpuMergeStats = {
+  private def collectGpuMergeStats(
+      gpuDeltaTxn: GpuOptimisticTransactionBase,
+      materializeSourceReason: MergeIntoMaterializeSourceReason.MergeIntoMaterializeSourceReason,
+      commitVersion: Option[Long],
+      numRecordsStats: NumRecordsStats): GpuMergeStats = {
     val stats = GpuMergeStats.fromMergeSQLMetrics(
       metrics,
       condition,
       matchedClauses,
       notMatchedClauses,
       notMatchedBySourceClauses,
-      isPartitioned = deltaTxn.metadata.partitionColumns.nonEmpty,
+      isPartitioned = gpuDeltaTxn.metadata.partitionColumns.nonEmpty,
       performedSecondSourceScan = performedSecondSourceScan,
       commitVersion = commitVersion,
       numRecordsStats = numRecordsStats
@@ -490,9 +477,9 @@ case class GpuMergeIntoCommand(
    * We had to override this method from ClassicMergeExecutor to give it the UDF to accumulate the
    * files modified
    */
-  override protected def findTouchedFiles(
+  private def findTouchedFiles(
       spark: SparkSession,
-      deltaTxn: OptimisticTransaction
+      gpuDeltaTxn: GpuOptimisticTransactionBase
       ): (Seq[AddFile], DeduplicateCDFDeletes) = recordMergeOperation(
     extraOpType = "findTouchedFiles",
     status = "MERGE operation - scanning files for matches",
@@ -510,9 +497,9 @@ case class GpuMergeIntoCommand(
     // Prune non-matching files if we don't need to collect them for NOT MATCHED BY SOURCE clauses.
     val dataSkippedFiles =
       if (notMatchedBySourceClauses.isEmpty) {
-        deltaTxn.filterFiles(getTargetOnlyPredicates(spark), keepNumRecords = true)
+        gpuDeltaTxn.filterFiles(getTargetOnlyPredicates(spark), keepNumRecords = true)
       } else {
-        deltaTxn.filterFiles(filters = Seq(Literal.TrueLiteral), keepNumRecords = true)
+        gpuDeltaTxn.filterFiles(filters = Seq(Literal.TrueLiteral), keepNumRecords = true)
       }
 
     // Join the source and target table using the merge condition to find touched files. An inner
@@ -536,11 +523,11 @@ case class GpuMergeIntoCommand(
 
     // Compute the columns needed for the inner join.
     val targetColsNeeded = {
-      condition.references.map(_.name) ++ deltaTxn.snapshot.metadata.partitionColumns ++
+      condition.references.map(_.name) ++ gpuDeltaTxn.snapshot.metadata.partitionColumns ++
         matchedPredicate.references.map(_.name)
     }
 
-    val columnsToDrop = deltaTxn.snapshot.metadata.schema.map(_.name)
+    val columnsToDrop = gpuDeltaTxn.snapshot.metadata.schema.map(_.name)
       .filterNot { field =>
         targetColsNeeded.exists { name => columnComparator(name, field) }
       }
@@ -554,7 +541,7 @@ case class GpuMergeIntoCommand(
     val targetPlan =
       buildTargetPlanWithFiles(
         spark,
-        deltaTxn,
+        gpuDeltaTxn,
         dataSkippedFiles,
         columnsToDrop)
     val targetDF = Dataset.ofRows(spark, targetPlan)
@@ -615,8 +602,8 @@ case class GpuMergeIntoCommand(
       metrics("numSourceRows").set(numSourceRows)
     }
 
-    metrics("numTargetFilesBeforeSkipping") += deltaTxn.snapshot.numOfFiles
-    metrics("numTargetBytesBeforeSkipping") += deltaTxn.snapshot.sizeInBytes
+    metrics("numTargetFilesBeforeSkipping") += gpuDeltaTxn.snapshot.numOfFiles
+    metrics("numTargetBytesBeforeSkipping") += gpuDeltaTxn.snapshot.sizeInBytes
     val (afterSkippingBytes, afterSkippingPartitions) =
       totalBytesAndDistinctPartitionValues(dataSkippedFiles)
     metrics("numTargetFilesAfterSkipping") += dataSkippedFiles.size
@@ -627,7 +614,7 @@ case class GpuMergeIntoCommand(
     metrics("numTargetBytesRemoved") += removedBytes
     metrics("numTargetPartitionsRemovedFrom") += removedPartitions
     val dedupe = DeduplicateCDFDeletes(
-      hasMultipleMatches && isCdcEnabled(deltaTxn),
+      hasMultipleMatches && isCdcEnabled(gpuDeltaTxn),
       includesInserts)
     (touchedAddFiles, dedupe)
   }
