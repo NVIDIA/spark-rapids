@@ -45,7 +45,7 @@ import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuWriteJobStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.{Clock, SerializableConfiguration}
+import org.apache.spark.util.SerializableConfiguration
 
 /**
  * Used to perform a set of reads in a transaction and then commit a set of updates to the
@@ -60,29 +60,19 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 class GpuOptimisticTransaction
-    (deltaLog: DeltaLog, catalog: Option[CatalogTable], snapshot: Snapshot, rapidsConf: RapidsConf)
-    (implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog, catalog, snapshot, rapidsConf)(clock) {
+    (deltaLog: DeltaLog, catalogTable: Option[CatalogTable], snapshot: Snapshot,
+        rapidsConf: RapidsConf)
+  extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf) {
 
   /** Creates a new OptimisticTransaction.
    *
    * @param deltaLog The Delta Log for the table this transaction is modifying.
    * @param rapidsConf RAPIDS Accelerator config settings
    */
-  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
-    this(deltaLog, Option.empty[CatalogTable], deltaLog.update(), rapidsConf)
-  }
-
-  /** Creates a new OptimisticTransaction.
-   *
-   * @param deltaLog The Delta Log for the table this transaction is modifying.
-   * @param catalog The Delta Catalog to use for snapshot
-   * @param rapidsConf RAPIDS Accelerator config settings
-   */
-  def this(deltaLog: DeltaLog,
-     catalog: Option[CatalogTable],
-     rapidsConf: RapidsConf)(implicit clock: Clock) = {
-    this(deltaLog, catalog, deltaLog.update(), rapidsConf)
+  def this(deltaLog: DeltaLog, table: Option[CatalogTable], snapshotOpt: Option[Snapshot],
+    rapidsConf: RapidsConf) = {
+    this(deltaLog, table,
+      snapshotOpt.getOrElse(deltaLog.update(catalogTableOpt = table)), rapidsConf)
   }
 
   private def getGpuStatsColExpr(
