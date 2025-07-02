@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
 import java.util.concurrent.{Callable, ConcurrentLinkedQueue, ExecutorCompletionService, Future, ThreadPoolExecutor, TimeUnit}
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -354,6 +354,9 @@ abstract class MultiFileCloudPartitionReaderBase(
   // like in the case of a limit call and we don't read all files
   private var fcs: ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase] = null
 
+  // Tracking the number of running tasks in the thread pool.
+  private val runningTaskNum = new AtomicInteger(0)
+
   // If I/O eager prefetch is enabled, submit async reading tasks eagerly instead of triggering
   // async reading tasks when the first batch is requested.
   // TODO: manage the priority of the read tasks, on-demand tasks should have the highest priority
@@ -364,18 +367,12 @@ abstract class MultiFileCloudPartitionReaderBase(
     logInfo(s"[${ctx.taskAttemptId()}] submit $numTasks async tasks eagerly for prefetch")
   }
 
-  private def addTaskFuture(fut: Future[HostMemoryBuffersWithMetaDataBase]): Unit = {
-    tasks.add(fut)
-    GpuTaskMetrics.get.updateMultithreadReaderMaxParallelism(tasks.size())
-  }
-
   private def initAndStartReaders(): Int = {
     // apply CAS to make sure we only init once
     if (!isInit.compareAndSet(false, true)) {
       return 0
     }
 
-    execMetrics.get("numPartedFiles").foreach(_.add(inputFiles.length))
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, inputFiles.length)
     val tc = TaskContext.get
@@ -392,6 +389,24 @@ abstract class MultiFileCloudPartitionReaderBase(
       logDebug("Keeping reads in same order")
     }
 
+    // A callable wrapper used to update related metrics
+    val newTaskRunner = (file: PartitionedFile) => {
+      new Callable[HostMemoryBuffersWithMetaDataBase] {
+
+        private val impl = getBatchRunner(tc, file, conf, filters)
+        private val metrics = GpuTaskMetrics.get
+
+        override def call(): HostMemoryBuffersWithMetaDataBase = {
+          metrics.updateMultithreadReaderMaxParallelism(runningTaskNum.incrementAndGet())
+          try {
+            impl.call()
+          } finally {
+            runningTaskNum.decrementAndGet()
+          }
+        }
+      }
+    }
+
     // Currently just add the files in order, we may consider doing something with the size of
     // the files in the future. ie try to start some of the larger files but we may not want
     // them all to be large
@@ -399,19 +414,19 @@ abstract class MultiFileCloudPartitionReaderBase(
       val file = inputFiles(i)
       logDebug(s"MultiFile reader using file $file")
       if (!keepReadsInOrder) {
-        val futureRunner = fcs.submit(getBatchRunner(tc, file, conf, filters))
-        addTaskFuture(futureRunner)
+        val futureRunner = fcs.submit(newTaskRunner(file))
+        tasks.add(futureRunner)
       } else {
         // Add these in the order as we got them so that we can make sure
         // we process them in the same order as CPU would.
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        addTaskFuture(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
+        tasks.add(threadPool.submit(newTaskRunner(file)))
       }
     }
     // queue up any left to add once others finish
     for (i <- limit until inputFiles.length) {
       val file = inputFiles(i)
-      tasksToRun.enqueue(getBatchRunner(tc, file, conf, filters))
+      tasksToRun.enqueue(newTaskRunner(file))
     }
     filesToRead = inputFiles.length
     limit
@@ -713,10 +728,10 @@ abstract class MultiFileCloudPartitionReaderBase(
       val runner = tasksToRun.dequeue()
       if (!keepReadsInOrder) {
         val futureRunner = fcs.submit(runner)
-        addTaskFuture(futureRunner)
+        tasks.add(futureRunner)
       } else {
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        addTaskFuture(threadPool.submit(runner))
+        tasks.add(threadPool.submit(runner))
       }
     }
   }
