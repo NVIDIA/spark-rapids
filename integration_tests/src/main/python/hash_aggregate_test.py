@@ -691,7 +691,7 @@ _gen_data_for_collect_set_op_nested = [[
 _all_basic_gens_with_all_nans_cases = all_basic_gens + [SetValuesGen(t, [math.nan, None]) for t in [FloatType(), DoubleType()]]
 
 @ignore_order(local=True)
-# COUNT does not care about ANSI more or not, but include a few tests
+# COUNT does not care about ANSI mode or not, but include a few tests
 # to future proof them
 @pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
