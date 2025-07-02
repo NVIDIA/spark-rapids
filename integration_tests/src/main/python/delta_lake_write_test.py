@@ -741,7 +741,7 @@ def test_delta_write_generated_columns(spark_tmp_table_factory, spark_tmp_path):
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 
-def test_delta_write_identity_columns(data_path, create_data):
+def do_test_delta_write_identity_columns(data_path, create_data):
     assert_gpu_and_cpu_writes_are_equal_collect(
         create_data,
         lambda spark, path: spark.read.format("delta").load(path),
@@ -776,7 +776,7 @@ def test_delta_write_identity_columns_df(spark_tmp_path):
             .addColumn("id", dataType=LongType(), generatedAlwaysAs=IdentityGenerator()) \
             .execute()
         spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
-    test_delta_write_identity_columns(data_path, create_data)
+    do_test_delta_write_identity_columns(data_path, create_data)
 
 
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
@@ -789,7 +789,7 @@ def test_delta_write_identity_columns_sql(spark_tmp_path):
     def create_data(spark, path):
         spark.sql("CREATE TABLE delta.`{}` (x BIGINT, id BIGINT GENERATED ALWAYS AS IDENTITY) USING DELTA".format(path))
         spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
-    test_delta_write_identity_columns(data_path, create_data)
+    do_test_delta_write_identity_columns(data_path, create_data)
 
 
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
@@ -814,7 +814,7 @@ def test_delta_write_multiple_identity_columns_df(spark_tmp_path):
             .addColumn("id5", dataType=LongType(), generatedAlwaysAs=IdentityGenerator(start=12,step=-3)) \
             .execute()
         spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
-    test_delta_write_identity_columns(data_path, create_data)
+    do_test_delta_write_identity_columns(data_path, create_data)
 
 
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
@@ -834,7 +834,7 @@ def test_delta_write_multiple_identity_columns_sql(spark_tmp_path):
                   "id5 BIGINT GENERATED ALWAYS AS IDENTITY ( START WITH 12 INCREMENT BY -3 )"
                   ") USING DELTA")
         spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
-    test_delta_write_identity_columns(data_path, create_data)
+    do_test_delta_write_identity_columns(data_path, create_data)
 
 
 @allow_non_gpu(*delta_meta_allow)
