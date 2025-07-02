@@ -994,9 +994,10 @@
         <spark34x.iceberg.artifact.suffix>3.4</spark34x.iceberg.artifact.suffix>
         <spark34x.iceberg.version>1.6.1</spark34x.iceberg.version>
         <spark35x.iceberg.artifact.suffix>3.5</spark35x.iceberg.artifact.suffix>
-        <spark35x.iceberg.version>1.6.1</spark35x.iceberg.version>
-        <iceberg.artifact.suffix>3.3</iceberg.artifact.suffix>
-        <iceberg.version>1.6.1</iceberg.version>
+        <spark35x.iceberg.version>1.7.2</spark35x.iceberg.version>
+        <iceberg.artifact.suffix>NO_EXIST</iceberg.artifact.suffix>
+        <!--A placeholder for default iceberg version, each shim should define it own value-->
+        <iceberg.version>NO_EXIST</iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!
