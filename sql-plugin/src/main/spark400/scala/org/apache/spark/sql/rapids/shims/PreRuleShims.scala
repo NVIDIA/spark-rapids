@@ -33,7 +33,7 @@ import org.apache.spark.sql.types.{AbstractDataType, ObjectType, StringType}
  *   StructsToJson => Invoke(Literal(StructsToJsonEvaluator), "evaluate", type, arguments)
  *   ...
  * This rule is used to do the revert of the above transforms.
- * After the revert, it's easy to use the existing code.
+ * After the revert, it can still leverage the existing GPU overriding strategy.
  */
 object RevertInvokeRule extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan =
@@ -44,14 +44,11 @@ object RevertInvokeRule extends Rule[SparkPlan] {
           _: StringType,
           arguments: Seq[Expression],
           methodInputTypes: Seq[AbstractDataType],
-          propagateNull: Boolean,
-          returnNullable : Boolean,
-          isDeterministic: Boolean) if (functionName == "evaluate"
+          _: Boolean,
+          _: Boolean,
+          _: Boolean) if (functionName == "evaluate"
             && arguments.size == 1
-            && methodInputTypes.size == 1
-            && propagateNull == true
-            && returnNullable == true
-            && isDeterministic == true) =>
+            && methodInputTypes.size == 1) =>
           val child = arguments.head
           StructsToJson(evaluator.options, child, evaluator.timeZoneId)
     }
