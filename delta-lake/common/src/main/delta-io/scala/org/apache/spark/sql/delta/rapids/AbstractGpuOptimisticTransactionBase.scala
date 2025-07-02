@@ -39,6 +39,15 @@ abstract class AbstractGpuOptimisticTransactionBase(
   extends ShimOptimisticTransaction(deltaLog, catalog, snapshot)(clock)
     with DeltaLogging {
 
+  def this(deltaLog: DeltaLog, catalog: Option[CatalogTable], snapshot: Option[Snapshot],
+      rapidsConf: RapidsConf)(implicit clock: Clock) = {
+    // It is better to pass just the Option[Snapshot] as it is, so that it can be computed
+    // in the constructor of OptimisticTransaction. However, the constructor that takes
+    // an Option[Snapshot] is reletively new and not available in old versions of Delta.
+    // To avoid breaking compatibility, we compute the snapshot here if it is not provided.
+    this(deltaLog, catalog, snapshot.getOrElse(deltaLog.update()), rapidsConf)(clock)
+  }
+
   /**
    * Adds checking of constraints on the table
    *

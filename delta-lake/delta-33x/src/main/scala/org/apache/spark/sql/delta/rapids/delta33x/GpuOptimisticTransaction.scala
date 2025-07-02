@@ -36,6 +36,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
+import org.apache.spark.sql.delta.hooks.GpuAutoCompact
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.InvariantViolationException
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
@@ -59,9 +60,10 @@ import org.apache.spark.util.SerializableConfiguration
  * @param snapshot The snapshot that this transaction is reading at.
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
-class GpuOptimisticTransaction
-    (deltaLog: DeltaLog, catalogTable: Option[CatalogTable], snapshot: Snapshot,
-        rapidsConf: RapidsConf)
+class GpuOptimisticTransaction(deltaLog: DeltaLog,
+    catalogTable: Option[CatalogTable],
+    snapshot: Option[Snapshot],
+    rapidsConf: RapidsConf)
   extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf) {
 
   /** Creates a new OptimisticTransaction.
@@ -69,10 +71,8 @@ class GpuOptimisticTransaction
    * @param deltaLog The Delta Log for the table this transaction is modifying.
    * @param rapidsConf RAPIDS Accelerator config settings
    */
-  def this(deltaLog: DeltaLog, table: Option[CatalogTable], snapshotOpt: Option[Snapshot],
-    rapidsConf: RapidsConf) = {
-    this(deltaLog, table,
-      snapshotOpt.getOrElse(deltaLog.update(catalogTableOpt = table)), rapidsConf)
+  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf) = {
+    this(deltaLog, Option.empty[CatalogTable], Some(deltaLog.update()), rapidsConf)
   }
 
   private def getGpuStatsColExpr(
@@ -281,6 +281,8 @@ class GpuOptimisticTransaction
         case a: AddFile => a.numLogicalRecords.forall(_ > 0)
         case _ => true
       }
+
+    if (resultFiles.nonEmpty && !isOptimize) registerPostCommitHook(GpuAutoCompact)
 
     resultFiles.toSeq ++ committer.changeFiles
   }

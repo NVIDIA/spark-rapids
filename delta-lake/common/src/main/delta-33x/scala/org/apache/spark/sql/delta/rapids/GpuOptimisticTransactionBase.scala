@@ -32,7 +32,7 @@ import org.apache.spark.sql.types.StructType
 abstract class GpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
     catalog: Option[CatalogTable],
-    snapshot: Snapshot,
+    snapshot: Option[Snapshot],
     rapidsConf: RapidsConf)
   extends AbstractGpuOptimisticTransactionBase(deltaLog, catalog, snapshot,
     rapidsConf)(deltaLog.clock) {
