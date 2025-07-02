@@ -21,17 +21,24 @@ import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
-import org.apache.spark.sql.delta.commands.MergeIntoCommand
+import org.apache.spark.sql.delta.catalog.DeltaCatalog
+import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand}
+import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
 object Delta33xProvider extends DeltaIOProvider {
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
     Seq(
+      GpuOverrides.runnableCmd[DeleteCommand](
+          "Delete rows from a Delta Lake table",
+          (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r))
+        .disabledByDefault("Delta Lake delete support is experimental"),
       GpuOverrides.runnableCmd[MergeIntoCommand](
           "Merge of a source query/table into a Delta Lake table",
           (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
@@ -66,35 +73,29 @@ object Delta33xProvider extends DeltaIOProvider {
   override def convertToGpu(
     cpuExec: AtomicCreateTableAsSelectExec,
     meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
-    throw new UnsupportedOperationException("convertToGpu for " +
-      "AtomicCreateTableAsSelectExec not implemented")
+    val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
+    GpuAtomicCreateTableAsSelectExec(
+      DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.query,
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.ifNotExists)
   }
 
   override def convertToGpu(
     cpuExec: AtomicReplaceTableAsSelectExec,
     meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
-    throw new UnsupportedOperationException("convertToGpu for " +
-      "AtomicReplaceTableAsSelectExec not implemented")
-  }
-
-  override def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec,
-    meta: AtomicCreateTableAsSelectExecMeta): Unit = {
-    meta.willNotWorkOnGpu("AtomicCreateTableAsSelectExec is not supported at the moment")
-  }
-
-  override def tagForGpu(cpuExec: AtomicReplaceTableAsSelectExec,
-    meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
-    meta.willNotWorkOnGpu("AtomicReplaceTableAsSelectExec is not supported at the moment")
-  }
-
-  override def tagForGpu(cpuExec: AppendDataExecV1,
-    meta: AppendDataExecV1Meta): Unit = {
-    meta.willNotWorkOnGpu("AppendDataExecV1 is not supported at the moment")
-  }
-
-  override def tagForGpu(
-    cpuExec: OverwriteByExpressionExecV1,
-    meta: OverwriteByExpressionExecV1Meta): Unit = {
-    meta.willNotWorkOnGpu("OverwriteByExpressionExecV1 is not supported at the moment")
+    val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
+    GpuAtomicReplaceTableAsSelectExec(
+      DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.query,
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.orCreate,
+      cpuExec.invalidateCache)
   }
 }

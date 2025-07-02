@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.trees.UnaryLike
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.RoundingErrorUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
@@ -515,7 +516,7 @@ object GpuCast {
           }
         }
       case (FloatType | DoubleType, dt: DecimalType) =>
-        castFloatsToDecimal(input, dt, ansiMode)
+        castFloatsToDecimal(input, fromDataType, dt, ansiMode)
       case (from: DecimalType, to: DecimalType) =>
         castDecimalToDecimal(input, from, to, ansiMode)
       case (BooleanType, TimestampType) =>
@@ -1436,13 +1437,21 @@ object GpuCast {
 
   private def castFloatsToDecimal(
       input: ColumnView,
+      fromType: DataType,
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     val targetType = DecimalUtil.createCudfDecimal(dt)
     val converted = DecimalUtils.floatingPointToDecimal(input, targetType, dt.precision)
-    if (ansiMode && converted.hasFailure) {
+    if (ansiMode && converted.failureRowId >= 0L) {
       converted.result.close()
-      throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
+      val failedValue = withResource(input.copyToHost()) { hcv =>
+        fromType match {
+          case FloatType => hcv.getFloat(converted.failureRowId).toDouble
+          case DoubleType => hcv.getDouble(converted.failureRowId)
+          case _ => throw new IllegalArgumentException(s"unsupported type $fromType")
+        }
+      }
+      throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(failedValue), dt)
     }
     converted.result
   }
@@ -1471,6 +1480,29 @@ object GpuCast {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
       fixDecimalBounds(input, outOfBounds, ansiMode)
+    }
+  }
+
+  private def checkNFixDecimalBounds(
+      input: ColumnView,
+      fromType: DecimalType,
+      toType: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
+    assert(input.getType.isDecimalType)
+    withResource(DecimalUtil.outOfBounds(input, toType)) { outOfBounds =>
+      if (ansiMode) {
+        withResource(outOfBounds.any()) { isAny =>
+          if (isAny.isValid && isAny.getBoolean) {
+            throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(input, outOfBounds,
+              fromType, toType)
+          }
+        }
+        input.copyToColumnVector()
+      } else {
+        withResource(Scalar.fromNull(input.getType)) { nullVal =>
+          outOfBounds.ifElse(nullVal, input)
+        }
+      }
     }
   }
 
@@ -1515,7 +1547,7 @@ object GpuCast {
           // We need to check for out of bound values.
           // The wholeNumberUpcast is obvious why we have to check, but we also have to check it
           // when we rounded, because rounding can add a digit to the effective precision.
-          checkNFixDecimalBounds(rounded, to, ansiMode)
+          checkNFixDecimalBounds(rounded, from, to, ansiMode)
         } else {
           rounded.incRefCount()
         }

@@ -19,9 +19,10 @@ package org.apache.spark.sql.delta.rapids
 import scala.util.Try
 
 import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, ShimReflectionUtils, VersionUtils}
-import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.{DeltaConfigChecker, DeltaProvider}
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -29,9 +30,17 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
+case class StartTransactionArg(log: DeltaLog, conf: RapidsConf, clock: Clock,
+    catalogTable: Option[CatalogTable] = None, snapshot: Option[Snapshot] = None)
+
 trait DeltaRuntimeShim {
+  def getDeltaConfigChecker: DeltaConfigChecker
   def getDeltaProvider: DeltaProvider
-  def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock): GpuOptimisticTransactionBase
+  def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock)
+  : GpuOptimisticTransactionBase = {
+    startTransaction(StartTransactionArg(log, conf, clock))
+  }
+  def startTransaction(arg: StartTransactionArg): GpuOptimisticTransactionBase
   def stringFromStringUdf(f: String => String): UserDefinedFunction
   def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot
   def fileFormatFromLog(deltaLog: DeltaLog): FileFormat
@@ -79,10 +88,13 @@ object DeltaRuntimeShim {
 
   def getDeltaProvider: DeltaProvider = shimInstance.getDeltaProvider
 
-  def startTransaction(
-      log: DeltaLog,
-      rapidsConf: RapidsConf)(implicit clock: Clock): GpuOptimisticTransactionBase =
-    shimInstance.startTransaction(log, rapidsConf, clock)
+  def getDeltaConfigChecker: DeltaConfigChecker = {
+    shimInstance.getDeltaConfigChecker
+  }
+
+  def startTransaction(txArg: StartTransactionArg): GpuOptimisticTransactionBase = {
+    shimInstance.startTransaction(txArg)
+  }
 
   def stringFromStringUdf(f: String => String): UserDefinedFunction =
     shimInstance.stringFromStringUdf(f)

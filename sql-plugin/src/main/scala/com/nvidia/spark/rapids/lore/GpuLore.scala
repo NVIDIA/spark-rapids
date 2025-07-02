@@ -351,7 +351,6 @@ object GpuLore {
     // These versions are extracted from GpuWriteFiles.scala spark-rapids-shim-json-lines
     Set(
       // Spark versions
-      SparkShimVersion(3, 3, 2),
       SparkShimVersion(3, 4, 0),
       SparkShimVersion(3, 4, 1),
       SparkShimVersion(3, 4, 2),
@@ -366,7 +365,7 @@ object GpuLore {
       SparkShimVersion(3, 5, 6),
       SparkShimVersion(4, 0, 0),
       // Databricks versions
-      DatabricksShimVersion(3, 3, 2), // 332db
+      DatabricksShimVersion(3, 3, 2, "12.2"), // 332db
       DatabricksShimVersion(3, 4, 1, "13.3"), // 341db143
       DatabricksShimVersion(3, 5, 0, "14.3") // 350db143
     )
