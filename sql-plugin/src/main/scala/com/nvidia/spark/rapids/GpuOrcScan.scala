@@ -21,7 +21,6 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.charset.StandardCharsets
-import java.time.ZoneId
 import java.util
 import java.util.concurrent.Callable
 import java.util.regex.Pattern
