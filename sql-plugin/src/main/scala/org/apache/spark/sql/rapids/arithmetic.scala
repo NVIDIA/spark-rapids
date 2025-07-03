@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,8 @@ object AddOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
+      ret: ColumnVector,
+      mask: Option[ColumnVector] = None): Unit = {
     // Check overflow. It is true if the arguments have different signs and
     // the sign of the result is different from the sign of x.
     // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
@@ -51,12 +52,20 @@ object AddOverflowChecks {
         sign.lessThan(zero)
       }
     }
-    withResource(signDiffCV) { signDiff =>
-      withResource(signDiff.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-          "One or more rows overflow for Add operation."
-          )
+    withResource(signDiffCV) { tmpSignDiff =>
+      val signDiff = if (mask.isDefined) {
+        // If a mask is passed in we only want to look for overflow within the mask
+        mask.get.and(tmpSignDiff)
+      } else {
+        tmpSignDiff.incRefCount()
+      }
+      withResource(signDiff) { signDiff =>
+        withResource(signDiff.any()) { any =>
+          if (any.isValid && any.getBoolean) {
+            throw RapidsErrorUtils.arithmeticOverflowError(
+              "One or more rows overflow for Add operation."
+            )
+          }
         }
       }
     }

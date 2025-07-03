@@ -16,6 +16,7 @@ import tempfile
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_iceberg_s3tables
 from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
     all_eq_column_combinations
@@ -32,6 +33,10 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 @pytest.mark.parametrize('eq_delete_cols',
                          all_eq_column_combinations,
                          ids=lambda x: str(x))
+# In spark/iceberg integration, there is no builtin way to generate eq deletion files using
+# sql, we used a low level api to add eq deletion files to iceberg table.
+# This does not work with aws s3tables, which is a managed table service.
+@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
                                eq_delete_cols):
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
@@ -50,7 +55,6 @@ def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_t
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_v2_position_delete(spark_tmp_table_factory, reader_type):
-    # We use a fixed seed here to ensure that data deletion vector has been generated
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
     _change_table(table_name,
                   lambda spark: spark.sql(f"DELETE FROM {table_name} where _c1 < 0"),
@@ -63,6 +67,9 @@ def test_iceberg_v2_position_delete(spark_tmp_table_factory, reader_type):
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+# This requires setting a write data path for data files, which is hard to confirm with aws
+# s3tables.
+@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factory,
                                                           spark_tmp_path,
                                                           reader_type):
@@ -82,6 +89,7 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type):
     # We use a fixed seed here to ensure that data deletion vector has been generated
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)

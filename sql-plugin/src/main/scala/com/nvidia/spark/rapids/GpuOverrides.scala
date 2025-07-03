@@ -70,7 +70,7 @@ import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.GpuFlatMapGroupsInPandasExecMeta
-import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuMapInPandasExecMeta, GpuTimeAdd}
+import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuMapInPandasExecMeta, GpuTimeAdd, PreRuleShims}
 import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -2288,6 +2288,8 @@ object GpuOverrides extends Logging {
           val inputDataType = a.child.dataType
           checkAndTagFloatAgg(inputDataType, this.conf, this)
         }
+
+        override def needsAnsiCheck: Boolean = false
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuSum(childExprs.head, a.dataType)
@@ -4894,7 +4896,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         var updatedPlan = updateForAdaptivePlan(plan, conf)
         updatedPlan = HybridExecutionUtils.tryToApplyHybridScanRules(updatedPlan, conf)
         updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
-        updatedPlan = applyOverrides(updatedPlan, conf)
+        updatedPlan = applyOverridesWithPreRules(updatedPlan, conf)
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
@@ -5013,6 +5015,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         false
     })
     deltaLogScans.nonEmpty
+  }
+
+  private def applyOverridesWithPreRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    val p = PreRuleShims.getPreRules.foldLeft(plan) { (tmpPlan, rule) => rule.apply(tmpPlan) }
+    applyOverrides(p, conf)
   }
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {

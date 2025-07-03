@@ -33,3 +33,13 @@ trait DeltaConfigChecker {
       options: Map[String, String]
   ): Unit
 }
+
+object AcceptAllConfigChecker extends DeltaConfigChecker {
+  override def checkIncompatibleConfs(
+      meta: RapidsMeta[_, _, _],
+      deltaLog: Option[DeltaLog],
+      sqlConf: SQLConf,
+      options: Map[String, String]): Unit = {
+    // No-op, accepts all configurations
+  }
+}
