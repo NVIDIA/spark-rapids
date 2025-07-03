@@ -527,7 +527,6 @@ def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_
             conf=all_confs)
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7733")
@@ -849,7 +848,7 @@ def test_parquet_read_nano_as_longs_true(std_input_path):
         conf=conf)
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@allow_non_gpu('ProjectExec') # ProjectExec will fallback to CPU on Spark-4.0 due to some optimizations.
 def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):
         schema_dict = {}
@@ -1586,7 +1585,6 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
         error_message='The GPU does not support reading encrypted Parquet files')
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 def test_parquet_read_count(spark_tmp_path):
     parquet_gens = [int_gen, string_gen, double_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
