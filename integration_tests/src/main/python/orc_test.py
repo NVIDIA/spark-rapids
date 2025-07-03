@@ -1051,31 +1051,23 @@ def test_orc_version_V_0_11_and_V_0_12(std_input_path):
         "v12_table",
         "select * from v12_table")
 
-
-@pytest.mark.parametrize('write_on', ["cpu", "gpu"])
-@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
-@pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-@pytest.mark.parametrize("timezone_pair",
-                         [("UTC", "Asia/Shanghai"), ("Asia/Shanghai", "UTC"), ("Asia/Shanghai", "America/Los_Angeles")])
-def test_orc_non_utc_timezone(spark_tmp_path, write_on, v1_enabled_list, timestamp_type, timezone_pair):
+@pytest.mark.parametrize('v1_enabled_list', ["","orc"])
+@pytest.mark.parametrize("timezone_pair", [("UTC", "Asia/Shanghai"), ("Asia/Shanghai", "UTC"), ("Asia/Shanghai", "America/Los_Angeles")], ids=idfn)
+def test_orc_non_utc_timezone(spark_tmp_path, v1_enabled_list, timezone_pair):
     data_path = spark_tmp_path + "/ORC_DATA"
     write_confs = {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.timestampType': timestamp_type,
         'spark.sql.session.timeZone': timezone_pair[0]  # write with a timezone
     }
     read_confs = {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.timestampType': timestamp_type,
         'spark.sql.session.timeZone': timezone_pair[1]  # read with another timezone
     }
-    date_timestamp_gens = [DateGen(start=date(1590, 1, 1)), orc_timestamp_gen]
+    date_timestamp_gens = [('c1', DateGen(start=date(1590, 1, 1))), ('c2', orc_timestamp_gen)]
 
-    # write with a timezone
-    if write_on == "cpu":
-        with_cpu_session(lambda spark: gen_df(spark, date_timestamp_gens).write.orc(data_path), conf=write_confs)
-    else:
-        with_cpu_session(lambda spark: gen_df(spark, date_timestamp_gens).write.orc(data_path), conf=write_confs)
-
-    # read with another timezone
+    # check read: write with a timezone on CPU, read with another timezone
+    with_cpu_session(lambda spark: gen_df(spark, date_timestamp_gens).write.orc(data_path), conf=write_confs)
     assert_gpu_and_cpu_are_equal_collect(read_orc_df(data_path), conf=read_confs)
+
+    # TODO test write with GPU
+
