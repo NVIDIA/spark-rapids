@@ -17,6 +17,8 @@ from data_gen import *
 from delta_lake_utils import delta_meta_allow
 from marks import *
 from spark_session import with_gpu_session
+from delta.tables import *
+from pyspark.sql.types import TimestampType
 
 
 
@@ -35,6 +37,7 @@ def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, ti
         df = two_col_df(spark, int_gen, string_gen)
         df.write.format("delta").save(table_path)
 
+
     def append_to_delta_table(spark):
         df = two_col_df(spark, int_gen, string_gen)
         df.write.mode("append").format("delta").save(table_path)
@@ -46,6 +49,12 @@ def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, ti
             with_cpu_session(append_to_delta_table)
 
     return table_path
+
+def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, TimestampType]:
+    delta_table = DeltaTable.forPath(spark, table_path)
+    commit_history_rows = delta_table.history().select("version", "timestamp").collect()
+    commit_map = {row.version: row.timestamp for row in commit_history_rows}
+    return commit_map
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -76,3 +85,33 @@ def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
 
 
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory):
+    table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
+                                                  times = 3)
+    commit_map = with_cpu_session(lambda spark: do_get_delta_table_timestamps(spark, table_path))
+    def check_version(spark, version):
+        ts = commit_map[version]
+        return spark.read.format("delta").option("timestampAsOf", ts).load(table_path)
+
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory):
+    table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
+                                                  times = 3)
+    commit_map = with_cpu_session(lambda spark: do_get_delta_table_timestamps(spark, table_path))
+    def check_version(spark, version):
+        ts = commit_map[version]
+        return spark.sql(f"SELECT * FROM delta.`{table_path}` TIMESTAMP AS OF {ts}")
+
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
