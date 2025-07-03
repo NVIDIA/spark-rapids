@@ -848,8 +848,8 @@ def test_parquet_read_nano_as_longs_true(std_input_path):
         conf=conf)
 
 
-def test_many_column_project(spark_tmp_path):
-
+@allow_non_gpu('ProjectExec') # ProjectExec will fallback to CPU on Spark-4.0 due to some optimizations.
+def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):
         schema_dict = {}
         for i in range(num_cols):
@@ -857,11 +857,8 @@ def test_many_column_project(spark_tmp_path):
         return spark.createDataFrame([Row(**r) for r in [schema_dict]])\
             .withColumn('out', f.col('c1') * 100)
 
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(lambda spark: _create_wide_data_frame(spark, 1000).write.parquet(data_path))
-
     assert_gpu_and_cpu_are_equal_collect(
-        func=lambda spark: spark.read.parquet(data_path),
+        func=lambda spark: _create_wide_data_frame(spark, 1000),
         is_cpu_first=False)
 
 def setup_parquet_file_with_column_names(spark, table_name):
