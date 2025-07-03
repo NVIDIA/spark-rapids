@@ -56,7 +56,7 @@ def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, datetime]:
     commit_history_rows = delta_table.history().select("version", "timestamp").collect()
     def convert_ts(ts):
         if isinstance(ts, (int, float)):
-            return datetime.fromtimestamp(int(ts))
+            return datetime.fromtimestamp(ts / 1000.0)
         else:
             return ts
     commit_map = {row.version: convert_ts(row.timestamp) for row in commit_history_rows}
