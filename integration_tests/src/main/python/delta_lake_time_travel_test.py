@@ -93,7 +93,7 @@ def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory):
                                                   times = 3)
     commit_map = with_cpu_session(lambda spark: do_get_delta_table_timestamps(spark, table_path))
     def check_version(spark, version):
-        ts = commit_map[version]
+        ts = commit_map[version].isoformat()
         return spark.read.format("delta").option("timestampAsOf", ts).load(table_path)
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
@@ -109,7 +109,7 @@ def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory):
                                                   times = 3)
     commit_map = with_cpu_session(lambda spark: do_get_delta_table_timestamps(spark, table_path))
     def check_version(spark, version):
-        ts = commit_map[version]
+        ts = commit_map[version].isoformat()
         return spark.sql(f"SELECT * FROM delta.`{table_path}` TIMESTAMP AS OF {ts}")
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
