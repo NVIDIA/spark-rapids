@@ -14,6 +14,7 @@
 
 from asserts import *
 from data_gen import *
+from delta_lake_utils import delta_meta_allow
 from marks import *
 from spark_session import with_gpu_session
 
@@ -47,6 +48,7 @@ def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, ti
     return table_path
 
 
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory):
@@ -60,6 +62,7 @@ def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
 
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory):
