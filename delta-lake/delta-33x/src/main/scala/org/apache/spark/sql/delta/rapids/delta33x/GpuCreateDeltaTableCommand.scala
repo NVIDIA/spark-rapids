@@ -283,8 +283,8 @@ case class GpuCreateDeltaTableCommand(
     //     new created actions,
     //   - returning the Delta Operation type of this DataFrameWriter
     def doDeltaWrite(
-                      deltaWriter: WriteIntoDeltaLike,
-                      schema: StructType): (TaggedCommitData[Action], DeltaOperations.Operation) = {
+      deltaWriter: WriteIntoDeltaLike,
+      schema: StructType): (TaggedCommitData[Action], DeltaOperations.Operation) = {
       // In the V2 Writer, methods like "replace" and "createOrReplace" implicitly mean that
       // the metadata should be changed. This wasn't the behavior for DataFrameWriterV1.
       if (!isV1Writer) {
@@ -539,8 +539,8 @@ case class GpuCreateDeltaTableCommand(
    * table.
    */
   private def verifyTableMetadata(
-                                   txn: OptimisticTransaction,
-                                   tableDesc: CatalogTable): Unit = {
+    txn: OptimisticTransaction,
+    tableDesc: CatalogTable): Unit = {
     val existingMetadata = txn.metadata
     val path = getDeltaTablePath(tableDesc)
 
@@ -627,11 +627,11 @@ case class GpuCreateDeltaTableCommand(
    * @param options Write options, if this was a CTAS/RTAS
    */
   private def getOperation(
-                            metadata: Metadata,
-                            isManagedTable: Boolean,
-                            options: Option[DeltaOptions],
-                            clusterBy: Option[Seq[String]]
-                          ): DeltaOperations.Operation = operation match {
+    metadata: Metadata,
+    isManagedTable: Boolean,
+    options: Option[DeltaOptions],
+    clusterBy: Option[Seq[String]]
+    ): DeltaOperations.Operation = operation match {
     // This is legacy saveAsTable behavior in Databricks Runtime
     case TableCreationModes.Create if existingTableOpt.isDefined && query.isDefined =>
       DeltaOperations.Write(mode, Option(table.partitionColumnNames), options.get.replaceWhere,
@@ -725,7 +725,6 @@ case class GpuCreateDeltaTableCommand(
     // empty out the schema and property information
     if (conf.getConf(DeltaSQLConf.DELTA_UPDATE_CATALOG_ENABLED)) {
       // In the case we're creating a Delta table on an existing path and adopting the schema
-//      val schema = if (table.schema.isEmpty) snapshot.schema else table.schema
       val truncationThreshold = spark.sessionState.conf.getConf(
         DeltaSQLConf.DELTA_UPDATE_CATALOG_LONG_FIELD_TRUNCATION_THRESHOLD)
       val (truncatedSchema, additionalProperties) = UpdateCatalog.truncateSchemaIfNecessary(
