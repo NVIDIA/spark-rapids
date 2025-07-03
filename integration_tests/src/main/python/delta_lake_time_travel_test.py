@@ -19,7 +19,7 @@ import pytest
 
 from asserts import *
 from data_gen import *
-from delta_lake_utils import delta_meta_allow, enable_in_commit_ts, in_commit_ts_param_id
+from delta_lake_utils import delta_meta_allow, enable_in_commit_ts
 from marks import *
 from spark_session import with_gpu_session
 from delta.tables import *
