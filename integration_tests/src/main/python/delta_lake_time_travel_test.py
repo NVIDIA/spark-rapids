@@ -108,7 +108,7 @@ def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
 
 
-@allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu("HashAggregateExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory):
