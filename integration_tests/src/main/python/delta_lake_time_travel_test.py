@@ -18,7 +18,7 @@ import pytest
 
 from asserts import *
 from data_gen import *
-from delta_lake_utils import delta_meta_allow, enable_in_commit_ts
+from delta_lake_utils import delta_meta_allow, enable_in_commit_ts, in_commit_ts_param_id
 from marks import *
 from spark_session import with_gpu_session
 from delta.tables import *
@@ -123,7 +123,7 @@ def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory, in_co
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=idfn)
+@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,

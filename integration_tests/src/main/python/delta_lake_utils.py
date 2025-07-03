@@ -206,3 +206,7 @@ def enable_in_commit_ts():
         return [True, False]
     else:
         return [False]
+
+
+def in_commit_ts_param_id(val):
+    return f"in_commit_ts={val}"
