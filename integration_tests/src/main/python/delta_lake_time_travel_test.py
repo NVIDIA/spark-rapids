@@ -73,7 +73,7 @@ def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, datetime]:
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=idfn)
+@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,
@@ -90,7 +90,7 @@ def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory, in_comm
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=idfn)
+@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,
@@ -106,7 +106,7 @@ def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory, in_com
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=idfn)
+@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,
@@ -124,8 +124,7 @@ def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory, in_co
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(),
-                         ids=in_commit_ts_param_id)
+@pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,
