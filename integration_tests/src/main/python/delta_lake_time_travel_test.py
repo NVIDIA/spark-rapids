@@ -54,7 +54,7 @@ def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory):
                                                   times = 3)
 
     def check_version(spark, version):
-        spark.read.format("delta").option("versionAsOf", version).load(table_path)
+        return spark.read.format("delta").option("versionAsOf", version).load(table_path)
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
@@ -66,12 +66,10 @@ def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory):
     table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   times = 3)
     def check_version(spark, version):
-        spark.sql(f"SELECT * FROM delta.`{table_path}` VERSION AS OF {version}")
-        spark.read.format("delta").option("versionAsOf", version).load(table_path)
+        return spark.sql(f"SELECT * FROM delta.`{table_path}` VERSION AS OF {version}")
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
-
 
 
