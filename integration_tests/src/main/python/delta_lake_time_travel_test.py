@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
 
 from asserts import *
 from data_gen import *
@@ -50,10 +51,15 @@ def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, ti
 
     return table_path
 
-def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, TimestampType]:
+def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, datetime]:
     delta_table = DeltaTable.forPath(spark, table_path)
     commit_history_rows = delta_table.history().select("version", "timestamp").collect()
-    commit_map = {row.version: row.timestamp for row in commit_history_rows}
+    def convert_ts(ts):
+        if isinstance(ts, (int, float)):
+            return datetime.fromtimestamp(int(ts))
+        else:
+            return ts
+    commit_map = {row.version: convert_ts(row.timestamp) for row in commit_history_rows}
     return commit_map
 
 
