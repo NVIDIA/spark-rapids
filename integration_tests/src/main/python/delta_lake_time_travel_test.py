@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import datetime
+import logging
 
 from asserts import *
 from data_gen import *
@@ -116,6 +117,8 @@ def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory):
     commit_map = with_cpu_session(lambda spark: do_get_delta_table_timestamps(spark, table_path))
     def check_version(spark, version):
         ts = commit_map[version].isoformat()
+        count = spark.sql(f"SELECT * FROM delta.`{table_path}` TIMESTAMP AS OF '{ts}'").count()
+        logging.error(f"timestamp: {ts}, count: {count}")
         return spark.sql(f"SELECT * FROM delta.`{table_path}` TIMESTAMP AS OF '{ts}'")
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
