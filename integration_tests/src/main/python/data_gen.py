@@ -951,6 +951,9 @@ def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
 
+def idfn_with_name(name, val):
+    return f'{name}={val}'
+
 def meta_idfn(meta):
     def tmp(something):
         return meta + idfn(something)
