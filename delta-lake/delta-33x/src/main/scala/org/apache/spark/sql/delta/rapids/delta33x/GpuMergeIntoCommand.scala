@@ -443,6 +443,17 @@ case class GpuMergeIntoCommand(
       materializeSourceAttempts = Some(attempt))
   }
 
+  /** Expressions to increment SQL metrics */
+  private def makeMetricUpdateUDF(name: String, deterministic: Boolean = false): Expression = {
+    // only capture the needed metric in a local variable
+    val metric = metrics(name)
+    var u = DeltaUDF.boolean(new GpuDeltaMetricUpdateUDF(metric))
+    if (!deterministic) {
+      u = u.asNondeterministic()
+    }
+    u.apply().expr
+  }
+
   /**
    * We had to override this method from ClassicMergeExecutor to give it the UDF to accumulate the
    * files modified
@@ -501,7 +512,7 @@ case class GpuMergeIntoCommand(
       .filterNot { field =>
         targetColsNeeded.exists { name => columnComparator(name, field) }
       }
-    val incrSourceRowCountExpr = incrementMetricAndReturnBool("numSourceRows", valueToReturn = true)
+    val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRows")
     // We can't use filter() directly on the expression because that will prevent
     // column pruning. We don't need the SOURCE_ROW_PRESENT_COL so we immediately drop it.
     val sourceDF = getMergeSource.df
