@@ -848,7 +848,9 @@ def test_parquet_read_nano_as_longs_true(std_input_path):
         conf=conf)
 
 
-@allow_non_gpu('ProjectExec') # ProjectExec will fallback to CPU on Spark-4.0 due to some optimizations.
+# ProjectExec will fallback to CPU since Multiply expr is not supported with ANSI mode.
+# https://github.com/NVIDIA/spark-rapids/issues/13054
+@allow_non_gpu('ProjectExec')
 def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):
         schema_dict = {}
