@@ -127,7 +127,7 @@ def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory, in_co
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(),
-                         ids=in_comit_ts_param_id)
+                         ids=in_commit_ts_param_id)
 def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,
