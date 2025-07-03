@@ -40,7 +40,7 @@ class GpuDeltaRecordTouchedFileNameUDF(accum: AccumulatorV2[String, java.util.Se
   }
 
   override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
-    require(args.length == 1, s"Expected one argument, received $numRows")
+    require(args.length == 1, s"Expected one argument, received ${args.length}")
     val input = args.head
     require(numRows == input.getRowCount, s"Expected $numRows rows, received ${input.getRowCount}")
     withResource(new Table(input)) { t =>
@@ -77,7 +77,7 @@ class GpuDeltaRecordTouchedFilesStringBoolUDF(accum: AccumulatorV2[String, java.
   }
 
   override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
-    require(args.length == 2, s"Expected two argument, received $numRows")
+    require(args.length == 2, s"Expected two argument, received ${args.length}")
     val fileName = args(0)
     val shouldRecord = args(1)
     require(numRows == fileName.getRowCount,

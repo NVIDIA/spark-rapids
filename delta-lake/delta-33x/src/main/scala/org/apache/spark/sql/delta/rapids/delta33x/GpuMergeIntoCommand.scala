@@ -39,7 +39,6 @@ import org.apache.spark.sql.delta.commands.MergeIntoCommandBase
 import org.apache.spark.sql.delta.commands.merge._
 import org.apache.spark.sql.delta.files._
 import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase}
-import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.util.SetAccumulator
 import org.apache.spark.sql.execution.metric.SQLMetric
@@ -284,35 +283,6 @@ case class GpuMergeIntoCommand(
     AttributeReference("num_updated_rows", LongType)(),
     AttributeReference("num_deleted_rows", LongType)(),
     AttributeReference("num_inserted_rows", LongType)())
-
-  override def run(spark: SparkSession): Seq[Row] = {
-    metrics("executionTimeMs").set(0)
-    metrics("scanTimeMs").set(0)
-    metrics("rewriteTimeMs").set(0)
-    if (migratedSchema.isDefined) {
-      // Block writes of void columns in the Delta log. Currently void columns are not properly
-      // supported and are dropped on read, but this is not enough for merge command that is also
-      // reading the schema from the Delta log. Until proper support we prefer to fail merge
-      // queries that add void columns.
-      val newNullColumn = SchemaUtils.findNullTypeColumn(migratedSchema.get)
-      if (newNullColumn.isDefined) {
-        throw new AnalysisException(
-          s"""Cannot add column '${newNullColumn.get}' with type 'void'. Please explicitly specify a
-             |non-void type.""".stripMargin.replaceAll("\n", " ")
-        )
-      }
-    }
-
-    val (materializeSource, _) = shouldMaterializeSource(spark, source, isInsertOnly)
-    if (!materializeSource) {
-      runMerge(spark)
-    } else {
-      // If it is determined that source should be materialized, wrap the execution with retries,
-      // in case the data of the materialized source is lost.
-      runWithMaterializedSourceLostRetries(
-        spark, targetDeltaLog, metrics, runMerge)
-    }
-  }
 
   protected def runMerge(spark: SparkSession): Seq[Row] = {
     recordDeltaOperation(targetDeltaLog, "delta.dml.merge") {
