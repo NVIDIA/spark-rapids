@@ -627,7 +627,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "test count, sum, max, min with shuffle",
       longsFromCSVDf,
       conf = enableCsvConf(),
-      repart = 2) {
+      repart = 2,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5120" +
+        " Multiply does not work in ANSI mode yet")) {
     frame => frame.groupBy(col("more_longs")).agg(
       count("*"),
       sum("more_longs"),
@@ -1450,7 +1452,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Average", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2) {
+      repart = 2,
+      // Still need AVG for ANSI
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(countDistinct("longs"),
       avg("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }

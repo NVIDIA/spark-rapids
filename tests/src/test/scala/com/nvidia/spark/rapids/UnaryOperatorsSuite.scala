@@ -33,7 +33,12 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test md5", mixedDfWithNulls) {
     frame => frame.selectExpr("md5(strings)", "md5(cast(ints as string))",
-      "md5(cast(longs as binary))")
+      "md5(cast(strings as binary))")
+  }
+
+  testSparkResultsAreEqual("Test md5 - longs as binary", mixedDfWithNulls,
+    assumeCondition = ignoreAnsi("cast long to binary is not supported in ANSI mode")) {
+    frame => frame.selectExpr("md5(cast(longs as binary))")
   }
 
   testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls) {
