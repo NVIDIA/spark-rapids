@@ -13,9 +13,7 @@
 # limitations under the License.
 
 import datetime
-import functools
 
-import pytest
 
 from asserts import *
 from data_gen import *
@@ -25,7 +23,7 @@ from spark_session import with_gpu_session
 from delta.tables import *
 
 
-in_commit_ts_param_id = functools.partial(idfn_with_name, name="in_commit_ts")
+in_commit_ts_param_id = lambda val: f"in_commit_ts={val}"
 
 @delta_lake
 def test_time_travel_on_non_existing_table():
