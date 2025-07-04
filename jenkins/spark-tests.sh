@@ -233,13 +233,18 @@ run_iceberg_tests() {
     IS_SPARK_35X=1
   fi
 
- # RAPIDS-iceberg only support Spark 3.5.x yet
- if [[ "IS_SPARK_35X" -ne "1" ]]; then
-   echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
- else
-   # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
-   # Disabling them may slow down the tests, so we increase memory here.
-   env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
+  # RAPIDS-iceberg only supports Spark 3.5.x yet
+  if [[ "IS_SPARK_35X" -ne "1" ]]; then
+    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
+    return 0
+  fi
+
+  local test_type=${1:-'default'}
+  if [[ "$test_type" == "default" ]]; then
+    echo "!!! Running iceberg tests"
+    # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
+    # Disabling them may slow down the tests, so we increase memory here.
+    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
     PYSP_TEST_spark_driver_memory="6G" \
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
@@ -247,31 +252,13 @@ run_iceberg_tests() {
       PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
- fi
-}
-
-run_iceberg_s3tables_test() {
-   # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
-   ICEBERG_VERSION=1.6.1
-   # get the major/minor version of Spark
-   ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
-   IS_SPARK_35X=0
-   # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
-   if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
-     IS_SPARK_35X=1
-   fi
-
-   # AWS deps versions for Spark 3.5.x
-   AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
-   HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
-   AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}
-   S3TABLES_CATALOG_VERSION=${S3TABLES_CATALOG_VERSION:-"0.1.6"}
-
-  # RAPIDS-iceberg only support Spark 3.5.x yet
-  if [[ "IS_SPARK_35X" -ne "1" ]]; then
-    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
-  else
-    echo "!!! Running iceberg test with s3table catalog"
+  elif [[ "$test_type" == "s3tables" ]]; then
+    echo "!!! Running iceberg tests with s3tables"
+    # AWS deps versions for Spark 3.5.x
+    AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
+    HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
+    AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}
+    S3TABLES_CATALOG_VERSION=${S3TABLES_CATALOG_VERSION:-"0.1.6"}
 
     ICEBERG_S3TABLES_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
 software.amazon.s3tables:s3-tables-catalog-for-iceberg-runtime:${S3TABLES_CATALOG_VERSION},\
@@ -289,6 +276,9 @@ software.amazon.awssdk:s3tables:${AWS_SDK_VERSION},\
 org.apache.hadoop:hadoop-aws:${HADOOP_AWS_VERSION},\
 com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
 
+    # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
+    # These steps are included in the test pipeline.
+    # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
     ICEBERG_TEST_S3TABLES='1' \
     env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
         PYSP_TEST_spark_driver_memory="6G" \
@@ -395,7 +385,7 @@ fi
 
 # Iceberg s3tables tests
 if [[ "$TEST_MODE" == "ICEBERG_S3TABLES_ONLY" ]]; then
-  run_iceberg_s3tables_test
+  run_iceberg_tests 's3tables'
 fi
 
 # Avro tests
