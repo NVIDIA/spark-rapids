@@ -21,6 +21,7 @@ from delta_lake_utils import delta_meta_allow
 from marks import *
 from spark_session import with_gpu_session, is_spark_353_or_later
 from delta.tables import *
+from dataclasses import dataclass
 
 
 in_commit_ts_param_id = lambda val: f"in_commit_ts={val}"
@@ -31,6 +32,26 @@ def test_time_travel_on_non_existing_table():
         with_gpu_session(lambda spark: spark.sql("SELECT * FROM not_existing VERSION AS OF 0"))
 
     assert_spark_exception(time_travel_on_non_existing_table, "AnalysisException")
+
+@dataclass
+class SetupTableResult:
+    table_path: str
+    table_name: str
+    # key is commit version, value is if this version has data
+    commit_versions: Dict[int, bool]
+
+    def check_version_count(self, df_func):
+        def check(spark, version, has_data):
+            df = df_func(spark, version)
+            if has_data:
+                assert(df.count() > 0)
+            else:
+                assert(df.count() == 0)
+
+        for version, has_data in self.commit_versions:
+            with_cpu_session(lambda spark: check(spark, version, has_data))
+
+
 
 def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, in_commit_ts = True,
                                      times = 2):
@@ -55,7 +76,13 @@ def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, in
         for _ in range(times - 1):
             with_cpu_session(append_to_delta_table)
 
-    return table_path
+    if in_commit_ts:
+        commit_versions = {**{0: False},  **{v: False for v in range(1, 1 + times)}}
+    else:
+        commit_versions = {**{0: False, 1: False},  **{v: False for v in range(2, 2 + times)}}
+
+
+    return SetupTableResult(table_path, table, commit_versions)
 
 def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, datetime]:
     delta_table = DeltaTable.forPath(spark, table_path)
@@ -78,25 +105,23 @@ def enable_in_commit_ts():
         return [False]
 
 
-@allow_non_gpu("HashAggregateExec", *delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
-    table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
+    result = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,
                                                   times = 3)
+    def df_of_version(spark, version):
+        return spark.read.format("delta").option("versionAsOf", version).load(result.table_path)
 
-    def check_version(spark, version, check_count=True):
-        df = spark.read.format("delta").option("versionAsOf", version).load(table_path)
-        if check_count:
-            assert(df.count() > 0)
-        return df
+    result.check_version_count(df_of_version)
 
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0, False))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1, False))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 3))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 0, False))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 1, False))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 2))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 3))
 
 
 @allow_non_gpu(*delta_meta_allow)
