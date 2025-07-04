@@ -132,7 +132,7 @@ def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory, in_com
                                                   in_commit_ts,
                                                   times = 3)
     def df_of_version(spark, version):
-        return spark.sql(f"SELECT * FROM {result.table} VERSION AS OF {version}")
+        return spark.sql(f"SELECT * FROM {result.table_name} VERSION AS OF {version}")
 
     result.check_version_count(df_of_version)
     result.check_versions_are_same(df_of_version)
