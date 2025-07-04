@@ -78,7 +78,7 @@ def enable_in_commit_ts():
         return [False]
 
 
-@allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu("HashAggregateExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
