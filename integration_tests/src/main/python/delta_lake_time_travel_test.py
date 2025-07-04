@@ -52,6 +52,10 @@ class SetupTableResult:
             with_cpu_session(lambda spark: check(spark, version, has_data))
 
 
+    def check_versions_are_same(self, df_func):
+        for version in self.commit_versions.keys():
+            assert_gpu_and_cpu_are_equal_collect(lambda spark: df_func(spark, version))
+
 
 def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, in_commit_ts = True,
                                      times = 2):
@@ -117,27 +121,21 @@ def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory, in_comm
         return spark.read.format("delta").option("versionAsOf", version).load(result.table_path)
 
     result.check_version_count(df_of_version)
-
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 0))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 1))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 2))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: df_of_version(spark, 3))
-
+    result.check_versions_are_same(df_of_version)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
-    table_path = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
+    result = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
                                                   in_commit_ts,
                                                   times = 3)
-    def check_version(spark, version):
-        return spark.sql(f"SELECT * FROM delta.`{table_path}` VERSION AS OF {version}")
+    def df_of_version(spark, version):
+        return spark.sql(f"SELECT * FROM {result.table} VERSION AS OF {version}")
 
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
+    result.check_version_count(df_of_version)
+    result.check_versions_are_same(df_of_version)
 
 
 @allow_non_gpu(*delta_meta_allow)
