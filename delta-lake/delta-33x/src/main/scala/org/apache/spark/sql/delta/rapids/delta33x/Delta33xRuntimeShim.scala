@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.delta.{AcceptAllConfigChecker, DeltaConfigChecker
 import com.nvidia.spark.rapids.delta.delta33x.{Delta33xProvider, GpuDeltaCatalog}
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot, TransactionExecutionObserver}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog

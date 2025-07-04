@@ -168,7 +168,7 @@ case class GpuCreateDeltaTableCommand(
     val tableLocation = getDeltaTablePath(tableWithLocation)
     val fs = tableLocation.getFileSystem(hadoopConf)
 
-    def checkPathEmpty(txn: OptimisticTransaction): Unit = {
+    def checkPathEmpty(txn: GpuOptimisticTransactionBase): Unit = {
       // Verify the table does not exist.
       if (mode == SaveMode.Ignore || mode == SaveMode.ErrorIfExists) {
         // We should have returned earlier in Ignore and ErrorIfExists mode if the table
@@ -269,7 +269,7 @@ case class GpuCreateDeltaTableCommand(
    */
   private def handleCreateTableAsSelect(
      sparkSession: SparkSession,
-     txn: OptimisticTransaction,
+     txn: GpuOptimisticTransactionBase,
      gpuDeltaLog: GpuDeltaLog,
      deltaWriter: WriteIntoDeltaLike,
      tableWithLocation: CatalogTable): Unit = {
@@ -343,7 +343,7 @@ case class GpuCreateDeltaTableCommand(
    */
   private def handleCreateTable(
      sparkSession: SparkSession,
-     txn: OptimisticTransaction,
+     txn: GpuOptimisticTransactionBase,
      tableWithLocation: CatalogTable,
      fs: FileSystem,
      hadoopConf: Configuration): Unit = {
@@ -539,7 +539,7 @@ case class GpuCreateDeltaTableCommand(
    * table.
    */
   private def verifyTableMetadata(
-    txn: OptimisticTransaction,
+    txn: GpuOptimisticTransactionBase,
     tableDesc: CatalogTable): Unit = {
     val existingMetadata = txn.metadata
     val path = getDeltaTablePath(tableDesc)
@@ -758,7 +758,7 @@ case class GpuCreateDeltaTableCommand(
    * methods, then we will verify that the metadata match exactly.
    */
   private def replaceMetadataIfNecessary(
-     txn: OptimisticTransaction,
+     txn: GpuOptimisticTransactionBase,
      tableDesc: CatalogTable,
      options: DeltaOptions,
      schema: StructType): Unit = {
