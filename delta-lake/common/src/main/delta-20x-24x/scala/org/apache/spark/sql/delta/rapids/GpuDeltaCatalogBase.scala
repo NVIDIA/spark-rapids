@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids
-
 import java.util
 import java.util.Locale
 

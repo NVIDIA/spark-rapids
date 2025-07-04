@@ -21,39 +21,42 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
-import com.nvidia.spark.rapids.RapidsConf
-import java.util
 import java.util.Locale
-import org.apache.hadoop.fs.Path
+
 import scala.collection.JavaConverters._
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import com.nvidia.spark.rapids.RapidsConf
+import java.util
+import org.apache.hadoop.fs.Path
+
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, CatalogUtils}
-import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, SupportsWrite, Table, TableCapability, TableCatalog}
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, CatalogUtils, SessionCatalog}
+import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, SupportsWrite, Table, TableCapability, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.catalog.TableCapability._
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, V1Write, WriteBuilder}
 import org.apache.spark.sql.delta.{ColumnWithDefaultExprUtils, DeltaConfigs, DeltaErrors, DeltaLog, DeltaOptions}
-import org.apache.spark.sql.delta.catalog.DeltaCatalog
+import org.apache.spark.sql.delta.catalog.{DeltaCatalog, IcebergTablePlaceHolder}
 import org.apache.spark.sql.delta.commands.{TableCreationModes, WriteIntoDelta}
+import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.rapids.DeltaTrampoline
 import org.apache.spark.sql.delta.rapids.delta33x.GpuCreateDeltaTableCommand
 import org.apache.spark.sql.delta.sources.{DeltaSourceUtils, DeltaSQLConf}
 import org.apache.spark.sql.delta.stats.StatisticsCollection
 import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.ShimTrampolineUtil
 import org.apache.spark.sql.sources.InsertableRelation
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 
 class GpuDeltaCatalog(
     val cpuCatalog: DeltaCatalog,
     val rapidsConf: RapidsConf)
-  extends DeltaCatalog {
-
-  override val spark: SparkSession = cpuCatalog.spark
+  extends StagingTableCatalog
+    with DeltaLogging
+    with SupportsPathIdentifier {
 
   private lazy val isUnityCatalog: Boolean = {
     val cpuIsUnityCatalogField = classOf[DeltaCatalog].getDeclaredField("isUnityCatalog")
@@ -74,7 +77,7 @@ class GpuDeltaCatalog(
    * @param operation          The specific table creation mode, whether this is a
    *                           Create/Replace/Create or Replace
    */
-  protected def createDeltaTable(
+  def createDeltaTable(
       ident: Identifier,
       schema: StructType,
       partitions: Array[Transform],
@@ -98,7 +101,7 @@ class GpuDeltaCatalog(
     }.toMap
     val (partitionColumns, maybeBucketSpec, maybeClusterBySpec) =
       DeltaTrampoline.convertTransforms(partitions)
-    validateClusterBySpec(maybeClusterBySpec, schema)
+    cpuCatalog.validateClusterBySpec(maybeClusterBySpec, schema)
     // Check partition columns are not IDENTITY columns.
     partitionColumns.foreach { colName =>
       if (ColumnWithDefaultExprUtils.isIdentityColumn(schema(colName))) {
@@ -108,7 +111,7 @@ class GpuDeltaCatalog(
     val newSchema = schema
     val newPartitionColumns = partitionColumns
     val newBucketSpec = maybeBucketSpec
-    val conf = spark.sessionState.conf
+    val conf = cpuCatalog.spark.sessionState.conf
     allTableProperties.asScala
       .get(DeltaConfigs.DATA_SKIPPING_STATS_COLUMNS.key)
       .foreach(StatisticsCollection.validateDeltaStatsColumns(schema, partitionColumns, _))
@@ -131,7 +134,7 @@ class GpuDeltaCatalog(
       TableIdentifier(ident.name(), ident.namespace().lastOption)
     }
     val locUriOpt = location.map(CatalogUtils.stringToURI)
-    val existingTableOpt = getExistingTableIfExists(id)
+    val existingTableOpt = cpuCatalog.getExistingTableIfExists(id)
     // PROP_IS_MANAGED_LOCATION indicates that the table location is not user-specified but
     // system-generated. The table should be created as managed table in this case.
     val isManagedLocation = Option(allTableProperties.get(TableCatalog.PROP_IS_MANAGED_LOCATION))
@@ -147,7 +150,7 @@ class GpuDeltaCatalog(
     }
     val loc = locUriOpt
       .orElse(existingTableOpt.flatMap(_.storage.locationUri))
-      .getOrElse(spark.sessionState.catalog.defaultTablePath(id))
+      .getOrElse(cpuCatalog.spark.sessionState.catalog.defaultTablePath(id))
     val storage = DataSource.buildStorageFormatFromOptions(writeOptions)
       .copy(locationUri = Option(loc))
     val commentOpt = Option(allTableProperties.get("comment"))
@@ -166,7 +169,7 @@ class GpuDeltaCatalog(
     )
 
     val withDb =
-      verifyTableAndSolidify(
+      cpuCatalog.verifyTableAndSolidify(
         tableDesc,
         None,
         maybeClusterBySpec
@@ -174,9 +177,9 @@ class GpuDeltaCatalog(
 
     val writer = sourceQuery.map { df =>
       WriteIntoDelta(
-        DeltaLog.forTable(spark, new Path(loc)),
+        DeltaLog.forTable(cpuCatalog.spark, new Path(loc)),
         operation.mode,
-        new DeltaOptions(withDb.storage.properties, spark.sessionState.conf),
+        new DeltaOptions(withDb.storage.properties, cpuCatalog.spark.sessionState.conf),
         withDb.partitionColumnNames,
         withDb.properties ++ commentOpt.map("comment" -> _),
         df,
@@ -206,7 +209,7 @@ class GpuDeltaCatalog(
       writer,
       operation,
       tableByPath = isByPath,
-      createTableFunc = tableCreateFunc)(rapidsConf).run(spark)
+      createTableFunc = tableCreateFunc)(rapidsConf).run(cpuCatalog.spark)
 
     cpuCatalog.loadTable(ident)
   }
@@ -223,7 +226,7 @@ class GpuDeltaCatalog(
 
   private def getProvider(properties: util.Map[String, String]): String = {
     Option(properties.get("provider"))
-      .getOrElse(spark.sessionState.conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
+      .getOrElse(cpuCatalog.spark.sessionState.conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
   }
 
   override def createTable(
@@ -244,8 +247,34 @@ class GpuDeltaCatalog(
       partitions: Array[Transform],
       properties: util.Map[String, String]): Table =
     recordFrameProfile("DeltaCatalog", "createTable") {
-      super.createTable(ident, schema, partitions, properties)
+      if (DeltaSourceUtils.isDeltaDataSourceName(getProvider(properties))) {
+        // TODO: we should extract write options from table properties for all the cases. We
+        //       can remove the UC check when we have confidence.
+        val respectOptions = isUnityCatalog || properties.containsKey("test.simulateUC")
+        val (props, writeOptions) = if (respectOptions) {
+          val (props, writeOptions) = getTablePropsAndWriteOptions(properties)
+          expandTableProps(props, writeOptions, cpuCatalog.spark.sessionState.conf)
+          props.remove("test.simulateUC")
+          (props, writeOptions)
+        } else {
+          (properties, Map.empty[String, String])
+        }
+
+        createDeltaTable(
+          ident,
+          schema,
+          partitions,
+          props,
+          writeOptions,
+          sourceQuery = None,
+          TableCreationModes.Create
+        )
+      } else {
+          cpuCatalog.createTable(ident, schema, partitions, properties
+        )
+      }
     }
+
 
   override def stageReplace(
       ident: Identifier,
@@ -255,6 +284,7 @@ class GpuDeltaCatalog(
     recordFrameProfile("DeltaCatalog", "stageReplace") {
       if (DeltaSourceUtils.isDeltaDataSourceName(getProvider(properties))) {
         new GpuStagedDeltaTableV2(
+          this,
           ident,
           schema,
           partitions,
@@ -273,6 +303,7 @@ class GpuDeltaCatalog(
     recordFrameProfile("DeltaCatalog", "stageCreateOrReplace") {
       if (DeltaSourceUtils.isDeltaDataSourceName(getProvider(properties))) {
         new GpuStagedDeltaTableV2(
+          this,
           ident,
           schema,
           partitions,
@@ -302,7 +333,7 @@ class GpuDeltaCatalog(
     }
   }
 
-  private def getTablePropsAndWriteOptions(properties: util.Map[String, String])
+  def getTablePropsAndWriteOptions(properties: util.Map[String, String])
   : (util.Map[String, String], Map[String, String]) = {
     val props = new util.HashMap[String, String]()
     // Options passed in through the SQL API will show up both with an "option." prefix and
@@ -323,7 +354,7 @@ class GpuDeltaCatalog(
     (props, writeOptions.asScala.toMap)
   }
 
-  private def expandTableProps(
+  def expandTableProps(
       props: util.Map[String, String],
       options: Map[String, String],
       conf: SQLConf): Unit = {
@@ -348,69 +379,147 @@ class GpuDeltaCatalog(
       partitions: Array[Transform],
       properties: util.Map[String, String],
       operation: TableCreationModes.CreationMode): StagedTable = {
-    new GpuStagedDeltaTableV2(ident, schema, partitions, properties, operation)
+    new GpuStagedDeltaTableV2(this, ident, schema, partitions, properties, operation)
   }
 
-  /**
-   * A staged delta table, which creates a HiveMetaStore entry and appends data if this was a
-   * CTAS/RTAS command. We have a ugly way of using this API right now, but it's the best way to
-   * maintain old behavior compatibility between Databricks Runtime and OSS Delta Lake.
+
+  override def listTables(namespace: Array[String]): Array[Identifier] =
+    cpuCatalog.listTables(namespace)
+
+  override def alterTable(ident: Identifier, changes: TableChange*): Table = cpuCatalog
+    .alterTable(ident, changes:_*)
+
+  override def dropTable(ident: Identifier): Boolean = cpuCatalog.dropTable(ident)
+
+  override def renameTable(oldIdent: Identifier, newIdent: Identifier): Unit = {
+    cpuCatalog.renameTable(oldIdent, newIdent)
+  }
+
+  override def initialize(name: String, options: CaseInsensitiveStringMap): Unit = {
+    cpuCatalog.initialize(name, options)
+  }
+
+  override def name(): String = cpuCatalog.name()
+}
+
+/**
+ * A trait for handling table access through delta.`/some/path`. This is a stop-gap solution
+ * until PathIdentifiers are implemented in Apache Spark.
+ */
+trait SupportsPathIdentifier extends TableCatalog { self: GpuDeltaCatalog =>
+
+  private def supportSQLOnFile: Boolean = cpuCatalog.spark.sessionState.conf.runSQLonFile
+
+  protected lazy val catalog: SessionCatalog = cpuCatalog.spark.sessionState.catalog
+
+  private def hasDeltaNamespace(ident: Identifier): Boolean = {
+    ident.namespace().length == 1 && DeltaSourceUtils.isDeltaDataSourceName(ident.namespace().head)
+  }
+
+  private def hasIcebergNamespace(ident: Identifier): Boolean = {
+    ident.namespace().length == 1 && ident.namespace().head.equalsIgnoreCase("iceberg")
+  }
+
+  protected def isIcebergPathIdentifier(ident: Identifier): Boolean = {
+    hasIcebergNamespace(ident) && new Path(ident.name()).isAbsolute
+  }
+
+  protected def newIcebergPathTable(ident: Identifier): IcebergTablePlaceHolder = {
+    IcebergTablePlaceHolder(TableIdentifier(ident.name(), Some("iceberg")))
+  }
+
+  protected def isPathIdentifier(ident: Identifier): Boolean = {
+    // Should be a simple check of a special PathIdentifier class in the future
+    try {
+      supportSQLOnFile && hasDeltaNamespace(ident) && new Path(ident.name()).isAbsolute
+    } catch {
+      case _: IllegalArgumentException => false
+    }
+  }
+
+  protected def isPathIdentifier(table: CatalogTable): Boolean = {
+    isPathIdentifier(table.identifier)
+  }
+
+  protected def isPathIdentifier(tableIdentifier: TableIdentifier) : Boolean = {
+    isPathIdentifier(Identifier.of(tableIdentifier.database.toArray, tableIdentifier.table))
+  }
+
+  override def tableExists(ident: Identifier): Boolean = recordFrameProfile(
+    "DeltaCatalog", "tableExists") {
+    if (isPathIdentifier(ident)) {
+      val path = new Path(ident.name())
+      // scalastyle:off deltahadoopconfiguration
+      val fs = path.getFileSystem(cpuCatalog.spark.sessionState.newHadoopConf())
+      // scalastyle:on deltahadoopconfiguration
+      fs.exists(path) && fs.listStatus(path).nonEmpty
+    } else {
+      super.tableExists(ident)
+    }
+  }
+}
+
+
+/**
+ * A staged delta table, which creates a HiveMetaStore entry and appends data if this was a
+ * CTAS/RTAS command. We have a ugly way of using this API right now, but it's the best way to
+ * maintain old behavior compatibility between Databricks Runtime and OSS Delta Lake.
+ */
+class GpuStagedDeltaTableV2(
+    gpuCatalog: GpuDeltaCatalog,
+    val ident: Identifier,
+    override val schema: StructType,
+    val partitions: Array[Transform],
+    override val properties: util.Map[String, String],
+    operation: TableCreationModes.CreationMode
+) extends StagedTable with SupportsWrite with DeltaLogging {
+
+  private var asSelectQuery: Option[DataFrame] = None
+  private var writeOptions: Map[String, String] = Map.empty
+
+  override def partitioning(): Array[Transform] = partitions
+
+  override def commitStagedChanges(): Unit = recordFrameProfile(
+    "DeltaCatalog", "commitStagedChanges") {
+    val conf = gpuCatalog.cpuCatalog.spark.sessionState.conf
+    val (props, sqlWriteOptions) = gpuCatalog.getTablePropsAndWriteOptions(properties)
+    if (writeOptions.isEmpty && sqlWriteOptions.nonEmpty) {
+      writeOptions = sqlWriteOptions
+    }
+    gpuCatalog.expandTableProps(props, writeOptions, conf)
+    gpuCatalog.createDeltaTable(
+      ident,
+      schema,
+      partitions,
+      props,
+      writeOptions,
+      asSelectQuery,
+      operation
+    )
+  }
+
+  override def name(): String = ident.name()
+
+  override def abortStagedChanges(): Unit = {}
+
+  override def capabilities(): util.Set[TableCapability] = {
+    Set(V1_BATCH_WRITE).asJava
+  }
+
+  override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = {
+    writeOptions = info.options.asCaseSensitiveMap().asScala.toMap
+    new DeltaV1WriteBuilder
+  }
+
+  /*
+   * WriteBuilder for creating a Delta table.
    */
-  protected class GpuStagedDeltaTableV2(
-      ident: Identifier,
-      override val schema: StructType,
-      val partitions: Array[Transform],
-      override val properties: util.Map[String, String],
-      operation: TableCreationModes.CreationMode
-      ) extends StagedTable with SupportsWrite {
-
-    private var asSelectQuery: Option[DataFrame] = None
-    private var writeOptions: Map[String, String] = Map.empty
-
-    override def partitioning(): Array[Transform] = partitions
-
-    override def commitStagedChanges(): Unit = recordFrameProfile(
-      "DeltaCatalog", "commitStagedChanges") {
-      val conf = spark.sessionState.conf
-      val (props, sqlWriteOptions) = getTablePropsAndWriteOptions(properties)
-      if (writeOptions.isEmpty && sqlWriteOptions.nonEmpty) {
-        writeOptions = sqlWriteOptions
-      }
-      expandTableProps(props, writeOptions, conf)
-      createDeltaTable(
-        ident,
-        schema,
-        partitions,
-        props,
-        writeOptions,
-        asSelectQuery,
-        operation
-      )
-    }
-
-    override def name(): String = ident.name()
-
-    override def abortStagedChanges(): Unit = {}
-
-    override def capabilities(): util.Set[TableCapability] = {
-      Set(V1_BATCH_WRITE).asJava
-    }
-
-    override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = {
-      writeOptions = info.options.asCaseSensitiveMap().asScala.toMap
-      new DeltaV1WriteBuilder
-    }
-
-    /*
-     * WriteBuilder for creating a Delta table.
-     */
-    private class DeltaV1WriteBuilder extends WriteBuilder {
-      override def build(): V1Write = new V1Write {
-        override def toInsertableRelation(): InsertableRelation = {
-          new InsertableRelation {
-            override def insert(data: DataFrame, overwrite: Boolean): Unit = {
-              asSelectQuery = Option(data)
-            }
+  private class DeltaV1WriteBuilder extends WriteBuilder {
+    override def build(): V1Write = new V1Write {
+      override def toInsertableRelation(): InsertableRelation = {
+        new InsertableRelation {
+          override def insert(data: DataFrame, overwrite: Boolean): Unit = {
+            asSelectQuery = Option(data)
           }
         }
       }

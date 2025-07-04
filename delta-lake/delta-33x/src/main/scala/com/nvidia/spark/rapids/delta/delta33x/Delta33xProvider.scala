@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids.delta.delta33x
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.{DeltaIOProvider, RapidsDeltaUtils}
 import org.apache.hadoop.fs.Path
+import scala.collection.JavaConverters._
 
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.connector.catalog.{StagedTable, SupportsWrite}
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
@@ -36,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTabl
 object Delta33xProvider extends DeltaIOProvider {
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2] || classOf[StagedTable].isAssignableFrom(write)
+    write == classOf[DeltaTableV2] || write == classOf[GpuStagedDeltaTableV2]
   }
 
   override def tagForGpu(
@@ -61,7 +63,13 @@ object Delta33xProvider extends DeltaIOProvider {
         extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
           meta.setCustomTaggingData(writeConfig)
         }
-      case _ =>
+      case stageTable: GpuStagedDeltaTableV2 =>
+        val deltaLog = DeltaLog.forTable(cpuExec.session, TableIdentifier(stageTable.name()))
+        RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
+          stageTable.properties.asScala.toMap, cpuExec.session)
+        extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
+          meta.setCustomTaggingData(writeConfig)
+        }
     }
   }
 
