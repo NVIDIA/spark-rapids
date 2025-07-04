@@ -112,7 +112,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       forceOverwrite: Boolean,
       options: mutable.HashMap[String, String])
 
-  private def extractWriteV1Config(
+  protected def extractWriteV1Config(
       meta: RapidsMeta[_, _, _],
       deltaLog: DeltaLog,
       write: V1Write): Option[DeltaWriteV1Config] = {

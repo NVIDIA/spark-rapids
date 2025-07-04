@@ -26,8 +26,8 @@ import java.util.concurrent.TimeUnit
 import com.nvidia.spark.rapids.RapidsConf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.SparkContext
 
+import org.apache.spark.SparkContext
 import org.apache.spark.internal.MDC
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType}
@@ -43,9 +43,7 @@ import org.apache.spark.sql.delta.coordinatedcommits.CoordinatedCommitsUtils
 import org.apache.spark.sql.delta.hooks.{HudiConverterHook, IcebergConverterHook, UpdateCatalog, UpdateCatalogFactory}
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.metering.DeltaLogging
-import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase, GpuWriteIntoDelta}
-import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
@@ -197,7 +195,7 @@ case class GpuCreateDeltaTableCommand(
         case Some(deltaWriter: WriteIntoDeltaLike) =>
           checkPathEmpty(txn)
           handleCreateTableAsSelect(sparkSession, txn, gpuDeltaLog,
-            deltaWriter, tableWithLocation)
+            deltaWriter.asInstanceOf[GpuWriteIntoDelta], tableWithLocation)
           Nil
         case Some(query) =>
           checkPathEmpty(txn)
@@ -274,7 +272,7 @@ case class GpuCreateDeltaTableCommand(
      sparkSession: SparkSession,
      txn: GpuOptimisticTransactionBase,
      gpuDeltaLog: GpuDeltaLog,
-     deltaWriter: WriteIntoDeltaLike,
+     deltaWriter: GpuWriteIntoDelta,
      tableWithLocation: CatalogTable): Unit = {
     val isManagedTable = tableWithLocation.tableType == CatalogTableType.MANAGED
     val options = new DeltaOptions(table.storage.properties, sparkSession.sessionState.conf)

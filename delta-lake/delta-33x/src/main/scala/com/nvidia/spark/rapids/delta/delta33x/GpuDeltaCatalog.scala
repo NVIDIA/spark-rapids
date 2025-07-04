@@ -356,7 +356,7 @@ class GpuDeltaCatalog(
    * CTAS/RTAS command. We have a ugly way of using this API right now, but it's the best way to
    * maintain old behavior compatibility between Databricks Runtime and OSS Delta Lake.
    */
-  private class GpuStagedDeltaTableV2(
+  protected class GpuStagedDeltaTableV2(
       ident: Identifier,
       override val schema: StructType,
       val partitions: Array[Transform],
