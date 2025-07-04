@@ -94,7 +94,7 @@ def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory, in_comm
         return df
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0, False))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1, False))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 2))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 3))
 
