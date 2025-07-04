@@ -323,7 +323,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
   import GpuMetric._
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
@@ -355,8 +355,6 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
 
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val copyBufTime = gpuLongMetric(COPY_BUFFER_TIME)
@@ -370,7 +368,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val confUseArrow = new RapidsConf(child.conf).useArrowCopyOptimization
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+        numInputRows, numInputBatches, NoopMetric, NoopMetric,
         streamTime, concatTime, copyBufTime, opTime,
         "HostColumnarToGpu", confUseArrow)
     }

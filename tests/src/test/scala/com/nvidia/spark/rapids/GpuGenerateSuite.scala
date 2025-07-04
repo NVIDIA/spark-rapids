@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -335,8 +335,6 @@ class GpuGenerateSuite
         generator = generate,
         generatorOffset,
         outer,
-        NoopMetric,
-        NoopMetric,
         NoopMetric)
       val expectedExploded = itNoFailures.next()
       withResource(expectedExploded) { _ =>
@@ -361,8 +359,6 @@ class GpuGenerateSuite
             generator = failingGenerate,
             generatorOffset,
             outer,
-            NoopMetric,
-            NoopMetric,
             NoopMetric)
 
           failingGenerate.doForceSplitAndRetry(numOOMs)

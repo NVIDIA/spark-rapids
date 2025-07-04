@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -368,8 +368,6 @@ case class GpuCachedDoublePassWindowExec(
   override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
-    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
@@ -378,7 +376,7 @@ case class GpuCachedDoublePassWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuCachedDoublePassWindowIterator(iter, boundWindowOps, boundPartitionSpec,
-        boundOrderSpec, output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
+        boundOrderSpec, output.map(_.dataType).toArray, NoopMetric, NoopMetric, opTime)
     }
   }
 }

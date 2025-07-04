@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
     val limit = 20
     Seq(0, 5).foreach { offset =>
       val topNIter = GpuTopN(limit, gpuSorter, Seq(buildBatch1, buildBatch2).toIterator,
-        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
+        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
         offset)
       val numRows = limit - offset
       var curValue = offset
@@ -79,7 +79,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       val limitIter = new GpuBaseLimitIterator(
         // 3 batches as input, and each has 8 rows
         (0 until totalRows).grouped(8).map(buildBatch(_)).toList.toIterator,
-        limit, offset, NoopMetric, NoopMetric, NoopMetric)
+        limit, offset, NoopMetric)
       var leftRows = if (limit > totalRows) totalRows - offset else limit - offset
       var curValue = offset
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
