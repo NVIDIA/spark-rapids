@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.delta33x
+package org.apache.spark.sql.delta.rapids
 
 import java.util.Locale
 
@@ -40,13 +40,11 @@ import org.apache.spark.sql.delta.{ColumnWithDefaultExprUtils, DeltaConfigs, Del
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, IcebergTablePlaceHolder}
 import org.apache.spark.sql.delta.commands.{TableCreationModes, WriteIntoDelta}
 import org.apache.spark.sql.delta.metering.DeltaLogging
-import org.apache.spark.sql.delta.rapids.DeltaTrampoline
 import org.apache.spark.sql.delta.rapids.delta33x.GpuCreateDeltaTableCommand
 import org.apache.spark.sql.delta.sources.{DeltaSourceUtils, DeltaSQLConf}
 import org.apache.spark.sql.delta.stats.StatisticsCollection
 import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.ShimTrampolineUtil
 import org.apache.spark.sql.sources.InsertableRelation
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -407,7 +405,7 @@ class GpuDeltaCatalog(
  * A trait for handling table access through delta.`/some/path`. This is a stop-gap solution
  * until PathIdentifiers are implemented in Apache Spark.
  */
-trait SupportsPathIdentifier extends TableCatalog { self: GpuDeltaCatalog =>
+trait SupportsPathIdentifier { self: GpuDeltaCatalog =>
 
   private def supportSQLOnFile: Boolean = cpuCatalog.spark.sessionState.conf.runSQLonFile
 
@@ -455,7 +453,7 @@ trait SupportsPathIdentifier extends TableCatalog { self: GpuDeltaCatalog =>
       // scalastyle:on deltahadoopconfiguration
       fs.exists(path) && fs.listStatus(path).nonEmpty
     } else {
-      super.tableExists(ident)
+      tableExists(ident)
     }
   }
 }
