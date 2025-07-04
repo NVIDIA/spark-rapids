@@ -77,9 +77,9 @@ def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, in
             with_cpu_session(append_to_delta_table)
 
     if in_commit_ts:
-        commit_versions = {**{0: False, 1: False},  **{v: False for v in range(2, 2 + times)}}
+        commit_versions = {**{0: False, 1: False},  **{v: True for v in range(2, 2 + times)}}
     else:
-        commit_versions = {**{0: False},  **{v: False for v in range(1, 1 + times)}}
+        commit_versions = {**{0: False},  **{v: True for v in range(1, 1 + times)}}
 
 
     return SetupTableResult(table_path, table, commit_versions)
