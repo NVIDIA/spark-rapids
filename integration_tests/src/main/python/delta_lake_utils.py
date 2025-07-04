@@ -198,4 +198,3 @@ def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_d
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
-
