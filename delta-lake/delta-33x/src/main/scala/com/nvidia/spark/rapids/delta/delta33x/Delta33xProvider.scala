@@ -63,13 +63,7 @@ object Delta33xProvider extends DeltaIOProvider {
         extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
           meta.setCustomTaggingData(writeConfig)
         }
-      case stageTable: GpuStagedDeltaTableV2 =>
-        val deltaLog = DeltaLog.forTable(cpuExec.session, TableIdentifier(stageTable.name()))
-        RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
-          stageTable.properties.asScala.toMap, cpuExec.session)
-        extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
-          meta.setCustomTaggingData(writeConfig)
-        }
+      case _: GpuStagedDeltaTableV2 =>
     }
   }
 
