@@ -41,14 +41,14 @@ class SetupTableResult:
     commit_versions: Dict[int, bool]
 
     def check_version_count(self, df_func):
-        def check(spark, version, has_data):
-            df = df_func(spark, version)
-            if has_data:
+        def check(spark, _version, _has_data):
+            df = df_func(spark, _version)
+            if _has_data:
                 assert(df.count() > 0)
             else:
                 assert(df.count() == 0)
 
-        for version, has_data in self.commit_versions:
+        for version, has_data in self.commit_versions.items():
             with_cpu_session(lambda spark: check(spark, version, has_data))
 
 
