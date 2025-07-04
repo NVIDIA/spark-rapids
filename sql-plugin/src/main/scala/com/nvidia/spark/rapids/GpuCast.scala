@@ -25,7 +25,7 @@ import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType,
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{CastStrings, DecimalUtils, GpuTimeZoneDB}
+import com.nvidia.spark.rapids.jni.{CastException, CastStrings, DecimalUtils, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{AnsiUtil, CastTimeToIntShim, GpuCastShims, GpuIntervalUtils, GpuTypeShims, NullIntolerantShim, SparkShimImpl}
 import org.apache.commons.text.StringEscapeUtils
 
@@ -36,8 +36,9 @@ import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RoundingErrorUtil
-import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
+import org.apache.spark.sql.rapids.shims.{GpuCastToNumberErrorShim, RapidsErrorUtils}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 
 /** Meta-data for cast and ansi_cast. */
 final class CastExprMeta[INPUT <: UnaryLike[Expression] with TimeZoneAwareExpression](
@@ -549,8 +550,10 @@ object GpuCast {
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (StringType, ByteType | ShortType | IntegerType | LongType) =>
-        CastStrings.toInteger(input, ansiMode,
-          GpuColumnVector.getNonNestedRapidsType(toDataType))
+        fixupToNumException(input, toDataType) { strings =>
+          CastStrings.toInteger(strings, ansiMode,
+            GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
       case (StringType, FloatType | DoubleType) =>
         CastStrings.toFloat(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -635,6 +638,18 @@ object GpuCast {
         }
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+    }
+  }
+
+  private def fixupToNumException[A](input: ColumnView, to: DataType)(f: ColumnView => A): A = {
+    try {
+      f(input)
+    } catch {
+      case c: CastException =>
+        val s = withResource(input.copyToHost()) { hcv =>
+          UTF8String.fromString(hcv.getJavaString(c.getRowWithError.toLong))
+        }
+        throw GpuCastToNumberErrorShim.invalidInputInCastToNumberError(to, s)
     }
   }
 

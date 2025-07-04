@@ -40,8 +40,30 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
    * directly to the DeltaLog otherwise they will not be checked for conflicts.
    */
   def startTransaction(): GpuOptimisticTransactionBase = {
-    DeltaRuntimeShim.startTransaction(deltaLog, Option.empty[CatalogTable],
-      Option.empty[Snapshot], rapidsConf)
+    DeltaRuntimeShim.startTransaction(StartTransactionArg(deltaLog, rapidsConf, _clock, None,
+      None))
+  }
+
+  /**
+   * Returns a new [[GpuOptimisticTransactionBase]] that can be used to read the current state of
+   * the log
+   * and then commit updates. The reads and updates will be checked for logical conflicts with any
+   * concurrent writes to the log, and post-commit hooks can be used to notify the table's catalog
+   * of schema changes, etc.
+   *
+   * Note that all reads in a transaction must go through the returned transaction object, and not
+   * directly to the [[DeltaLog]] otherwise they will not be checked for conflicts.
+   *
+   * @param catalogTableOpt The [[CatalogTable]] for the table this transaction updates. Passing
+   * None asserts this is a path-based table with no catalog entry.
+   *
+   * @param snapshotOpt THe [[Snapshot]] this transaction should use, if not latest.
+   */
+  def startTransaction(
+      catalogTableOpt: Option[CatalogTable],
+      snapshotOpt: Option[Snapshot] = None): GpuOptimisticTransactionBase = {
+    DeltaRuntimeShim.startTransaction(StartTransactionArg(deltaLog, rapidsConf, _clock,
+      catalogTableOpt, snapshotOpt))
   }
 
   /**
@@ -62,15 +84,22 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
     }
   }
 
-  def startTransaction(catalogTableOpt: Option[CatalogTable],
-    snapshotOpt: Option[Snapshot] = None): GpuOptimisticTransactionBase = {
-      DeltaRuntimeShim.startTransaction(deltaLog, catalogTableOpt, snapshotOpt, rapidsConf)
-  }
-
+  /**
+   * Execute a piece of code within a new [[GpuOptimisticTransactionBase]].
+   * Reads/write sets will be recorded for this table, and all other tables will be read
+   * at a snapshot that is pinned on the first access.
+   *
+   * @param catalogTableOpt The [[CatalogTable]] for the table this transaction updates. Passing
+   * None asserts this is a path-based table with no catalog entry.
+   *
+   * @param snapshotOpt THe [[Snapshot]] this transaction should use, if not latest.
+   * @note This uses thread-local variable to make the active transaction visible. So do not use
+   *       multi-threaded code in the provided thunk.
+   */
   def withNewTransaction[T](
-     catalogTableOpt: Option[CatalogTable],
-     snapshotOpt: Option[Snapshot] = None)(
-     thunk: GpuOptimisticTransactionBase => T): T = {
+      catalogTableOpt: Option[CatalogTable],
+      snapshotOpt: Option[Snapshot] = None)(
+      thunk: GpuOptimisticTransactionBase => T): T = {
     val txn = startTransaction(catalogTableOpt, snapshotOpt)
     OptimisticTransaction.setActive(txn)
     try {

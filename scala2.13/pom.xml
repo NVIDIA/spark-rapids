@@ -1019,14 +1019,13 @@
             330
         </premergeUT1.buildvers>
         <premergeUT2.buildvers>
-            340
+            356
         </premergeUT2.buildvers>
         <premergeUTF8.buildvers>
             320
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
-            333,
-            340
+            330
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             321,
@@ -1985,7 +1984,7 @@ This will force full Scala code rebuild in downstream modules.
     <repositories>
         <repository>
             <id>snapshots-repo</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
             <releases>
                 <enabled>false</enabled>
             </releases>

@@ -1127,7 +1127,6 @@ structs_read_allowed_non_gpu = non_utc_project_allow if is_before_spark_400() el
     'UTC',
     'Etc/UTC'
 ])
-@allow_non_gpu(*structs_read_allowed_non_gpu)
 def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     struct_gen = StructGen([
         ('a', data_gen),
@@ -1139,7 +1138,8 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     options = { 'ignoreNullFields': ignore_null_fields,
-                'timeZone': timezone}
+                'timeZone': timezone,
+                'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"}
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)
