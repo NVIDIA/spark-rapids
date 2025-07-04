@@ -45,6 +45,7 @@ import org.apache.spark.sql.delta.sources.{DeltaSourceUtils, DeltaSQLConf}
 import org.apache.spark.sql.delta.stats.StatisticsCollection
 import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.ShimTrampolineUtil
 import org.apache.spark.sql.sources.InsertableRelation
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
