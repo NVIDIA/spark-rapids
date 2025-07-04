@@ -22,7 +22,7 @@ import org.apache.hadoop.fs.Path
 import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.connector.catalog.{StagedTable, SupportsWrite}
+import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
