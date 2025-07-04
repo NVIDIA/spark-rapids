@@ -107,7 +107,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
-  private case class DeltaWriteV1Config(
+  protected case class DeltaWriteV1Config(
       deltaLog: DeltaLog,
       forceOverwrite: Boolean,
       options: mutable.HashMap[String, String])
