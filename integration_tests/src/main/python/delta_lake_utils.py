@@ -17,8 +17,7 @@ import os.path
 import pytest
 import re
 
-from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, \
-    is_databricks143_or_later
+from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
