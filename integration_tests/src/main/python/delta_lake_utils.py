@@ -18,7 +18,7 @@ import pytest
 import re
 
 from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, \
-    is_databricks143_or_later, is_spark_353_or_later
+    is_databricks143_or_later
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -200,9 +200,3 @@ def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_d
         path = "{}/{}".format(data_path, name)
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
 
-def enable_in_commit_ts():
-    # In commit timestamp is added in oss delta 3.3.0, e.g. spark 3.5.3 for spark-rapids
-    if is_spark_353_or_later():
-        return [True, False]
-    else:
-        return [False]

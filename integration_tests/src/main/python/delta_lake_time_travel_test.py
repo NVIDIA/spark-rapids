@@ -17,9 +17,9 @@ import datetime
 
 from asserts import *
 from data_gen import *
-from delta_lake_utils import delta_meta_allow, enable_in_commit_ts
+from delta_lake_utils import delta_meta_allow
 from marks import *
-from spark_session import with_gpu_session
+from spark_session import with_gpu_session, is_spark_353_or_later
 from delta.tables import *
 
 
@@ -70,6 +70,14 @@ def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, datetime]:
     return commit_map
 
 
+def enable_in_commit_ts():
+    # In commit timestamp is added in oss delta 3.3.0, e.g. spark 3.5.3 for spark-rapids
+    if is_spark_353_or_later():
+        return [True, False]
+    else:
+        return [False]
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -80,7 +88,9 @@ def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory, in_comm
                                                   times = 3)
 
     def check_version(spark, version):
-        return spark.read.format("delta").option("versionAsOf", version).load(table_path)
+        df = spark.read.format("delta").option("versionAsOf", version).load(table_path)
+        assert(df.count() > 0)
+        return df
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 0))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: check_version(spark, 1))
