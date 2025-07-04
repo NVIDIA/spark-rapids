@@ -13,14 +13,13 @@
 # limitations under the License.
 
 import datetime
-
+from typing import Dict
 
 from asserts import *
 from data_gen import *
 from delta_lake_utils import delta_meta_allow
 from marks import *
 from spark_session import with_gpu_session, is_spark_353_or_later
-from delta.tables import *
 from dataclasses import dataclass
 
 
@@ -88,9 +87,10 @@ def do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory, in
 
     return SetupTableResult(table_path, table, commit_versions)
 
-def do_get_delta_table_timestamps(spark, table_path) -> Dict[int, datetime]:
-    delta_table = DeltaTable.forPath(spark, table_path)
-    commit_history_rows = delta_table.history().select("version", "timestamp").collect()
+def do_get_delta_table_timestamps(spark, table_name) -> Dict[int, datetime]:
+    commit_history_rows = (spark.sql(f"DESCRIBE HISTORY {table_name}")
+                           .select("version", "timestamp")
+                           .collect())
     def convert_ts(ts):
         if isinstance(ts, (int, float)):
             # timestamp is in microseconds
@@ -147,7 +147,7 @@ def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory, in_co
                                                   in_commit_ts,
                                                   times = 3)
     commit_map = with_cpu_session(lambda spark: do_get_delta_table_timestamps(spark,
-                                                                              result.table_path))
+                                                                              result.table_name))
     def df_of_version(spark, version):
         ts = commit_map[version].isoformat()
         return spark.read.format("delta").option("timestampAsOf", ts).load(result.table_path)
@@ -165,7 +165,7 @@ def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory, in_c
                                                   in_commit_ts,
                                                   times = 3)
     commit_map = with_cpu_session(lambda spark: do_get_delta_table_timestamps(spark,
-                                                                              result.table_path))
+                                                                              result.table_name))
     def df_of_version(spark, version):
         ts = commit_map[version].isoformat()
         return spark.sql(f"SELECT * FROM {result.table_name} TIMESTAMP AS OF '{ts}'")
