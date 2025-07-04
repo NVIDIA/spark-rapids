@@ -176,7 +176,7 @@ class GpuDeltaCatalog(
       )
 
     val writer = sourceQuery.map { df =>
-      WriteIntoDelta(
+      val cpuWriter = WriteIntoDelta(
         DeltaLog.forTable(cpuCatalog.spark, new Path(loc)),
         operation.mode,
         new DeltaOptions(withDb.storage.properties, cpuCatalog.spark.sessionState.conf),
@@ -185,6 +185,9 @@ class GpuDeltaCatalog(
         df,
         Some(tableDesc),
         schemaInCatalog = if (newSchema != schema) Some(newSchema) else None)
+
+      val gpuDeltaLog = new GpuDeltaLog(cpuWriter.deltaLog, rapidsConf)
+      GpuWriteIntoDelta(gpuDeltaLog, cpuWriter)
     }
 
     // We should invoke the Spark catalog plugin API to create the table, to
