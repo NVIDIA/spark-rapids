@@ -26,8 +26,8 @@ import java.util.concurrent.TimeUnit
 import com.nvidia.spark.rapids.RapidsConf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-
 import org.apache.spark.SparkContext
+
 import org.apache.spark.internal.MDC
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType}
@@ -44,8 +44,7 @@ import org.apache.spark.sql.delta.hooks.{HudiConverterHook, IcebergConverterHook
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.metering.DeltaLogging
-import org.apache.spark.sql.delta.rapids.GpuDeltaLog
-import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
+import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
@@ -207,14 +206,18 @@ case class GpuCreateDeltaTableCommand(
           // to once again go through analysis
           val data = Dataset.ofRows(sparkSession, query)
           val options = new DeltaOptions(table.storage.properties, sparkSession.sessionState.conf)
-          val deltaWriter = WriteIntoDelta(
-            deltaLog = gpuDeltaLog.deltaLog,
-            mode = mode,
-            options,
-            partitionColumns = table.partitionColumnNames,
-            configuration = tableWithLocation.properties + ("comment" -> table.comment.orNull),
-            data = data,
-            Some(tableWithLocation))
+          val deltaWriter = {
+            val cpuWriter = WriteIntoDelta(
+              deltaLog = gpuDeltaLog.deltaLog,
+              mode = mode,
+              options,
+              partitionColumns = table.partitionColumnNames,
+              configuration = tableWithLocation.properties + ("comment" -> table.comment.orNull),
+              data = data,
+              Some(tableWithLocation))
+
+            GpuWriteIntoDelta(gpuDeltaLog, cpuWriter)
+          }
           handleCreateTableAsSelect(sparkSession, txn, gpuDeltaLog,
             deltaWriter, tableWithLocation)
           Nil
