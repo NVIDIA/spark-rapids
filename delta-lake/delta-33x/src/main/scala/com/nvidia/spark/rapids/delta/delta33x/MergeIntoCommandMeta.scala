@@ -17,9 +17,14 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
+import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.delta.commands.MergeIntoCommand
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.delta.commands.{DeletionVectorUtils, MergeIntoCommand}
+import org.apache.spark.sql.delta.rapids.GpuDeltaLog
+import org.apache.spark.sql.delta.rapids.delta33x.GpuMergeIntoCommand
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class MergeIntoCommandMeta(
@@ -30,11 +35,41 @@ class MergeIntoCommandMeta(
   extends RunnableCommandMeta[MergeIntoCommand](mergeCmd, conf, parent, rule) with Logging {
 
   override def tagSelfForGpu(): Unit = {
-    willNotWorkOnGpu("MergeIntoCommand is not supported for Delta Lake 3.3.0")
+    if (!conf.isDeltaWriteEnabled) {
+      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
+      // https://github.com/NVIDIA/spark-rapids/issues/8415
+      willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
+    }
+    val deltaLog = mergeCmd.targetFileIndex.deltaLog
+    val dvFeatureEnabled =
+      DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot)
+
+    if (dvFeatureEnabled && mergeCmd.conf.getConf(
+      DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS)) {
+      // https://github.com/NVIDIA/spark-rapids/issues/8654
+      willNotWorkOnGpu("Deletion vectors are not supported on GPU")
+    }
+    val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
+    RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, Some(deltaLog), Map.empty,
+      SparkSession.active)
   }
 
   override def convertToGpu(): RunnableCommand = {
-    throw new UnsupportedOperationException("MergeIntoCommand not implemented")
+    GpuMergeIntoCommand(
+      mergeCmd.source,
+      mergeCmd.target,
+      mergeCmd.catalogTable,
+      mergeCmd.targetFileIndex,
+      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+      mergeCmd.condition,
+      mergeCmd.matchedClauses,
+      mergeCmd.notMatchedClauses,
+      mergeCmd.notMatchedBySourceClauses,
+      mergeCmd.migratedSchema,
+      mergeCmd.trackHighWaterMarks,
+      mergeCmd.schemaEvolutionEnabled)(conf)
   }
-
 }
