@@ -475,8 +475,6 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
         conf=hive_text_enabled_conf)
 
 
-@disable_ansi_mode  # Cannot run in ANSI mode until COUNT aggregation is supported.
-                    # See https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.skipif(is_spark_cdh(),
                     reason="Hive text reads are disabled on CDH, as per "
                            "https://github.com/NVIDIA/spark-rapids/pull/7628")

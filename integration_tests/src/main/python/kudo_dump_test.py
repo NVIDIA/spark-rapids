@@ -21,7 +21,6 @@ from data_gen import *
 from marks import *
 import pyspark.sql.functions as f
 
-@disable_ansi_mode
 @ignore_order(local=True)
 @pytest.mark.skipif(not is_apache_runtime() and not is_databricks_runtime(), reason="only test on local file system")
 def test_kudo_serializer_debug_dump(spark_tmp_path):
