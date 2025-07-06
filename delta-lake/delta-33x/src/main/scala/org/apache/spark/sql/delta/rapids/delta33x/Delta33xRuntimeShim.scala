@@ -24,7 +24,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot, TransactionExecutionObserver}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase, StartTransactionArg}
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuDeltaCatalog, GpuOptimisticTransactionBase, StartTransactionArg}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 
@@ -52,7 +52,7 @@ class Delta33xRuntimeShim extends DeltaRuntimeShim {
   override def getGpuDeltaCatalog(
      cpuCatalog: DeltaCatalog,
      rapidsConf: RapidsConf): StagingTableCatalog = {
-    throw new UnsupportedOperationException("getGpuDeltaCatalog  Not implemented")
+    new GpuDeltaCatalog(cpuCatalog, rapidsConf)
   }
 
   def startTransaction(arg: StartTransactionArg): GpuOptimisticTransactionBase = {
