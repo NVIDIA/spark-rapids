@@ -1089,6 +1089,15 @@ def test_div_by_zero(expr, ansi):
 def test_div_by_zero_literal(ansi):
     _test_div_by_zero(ansi_mode=ansi, expr='1/0', is_lit=True)
 
+@pytest.mark.parametrize('ansi_on', [True, False])
+def test_null_div_by_zero(ansi_on):
+    null_dividend_gen = SetValuesGen(IntegerType(), [None])
+    zero_int_gen = IntegerGen(min_val=0, max_val=0)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, null_dividend_gen, zero_int_gen).selectExpr(
+            'null/0', 'null/b', 'a/b', 'a/0'),
+        conf={'spark.sql.ansi.enabled': ansi_on})
+
 def _get_div_overflow_df(spark, expr):
     return spark.createDataFrame(
         [(LONG_MIN, -1)],
