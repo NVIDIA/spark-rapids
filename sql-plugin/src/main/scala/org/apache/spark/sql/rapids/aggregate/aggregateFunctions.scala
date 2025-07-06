@@ -910,7 +910,7 @@ abstract class GpuSum(
     Seq(GpuCast(updateAggregates.head.attr, resultType, ansiMode = failOnErrorOverride))
 
   // output of GpuSum
-  protected lazy val sum: AttributeReference = AttributeReference("sum", internalSumDataType)()
+  protected lazy val sum: AttributeReference = AttributeReference("sum", resultType)()
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = sum :: Nil
 

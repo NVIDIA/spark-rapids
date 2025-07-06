@@ -106,7 +106,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     incompat: Boolean = false,
     execsAllowedNonGpu: Seq[String] = Seq.empty,
     sortBeforeRepart: Boolean = false,
-    assumeCondition: SparkSession => (Boolean, String))
+    assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame)
     (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
@@ -393,8 +393,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "test hash agg with shuffle",
       longsFromCSVDf,
       conf = enableCsvConf(),
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy(col("longs")).agg(sum(col("more_longs")))
   }
 
@@ -402,8 +401,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "test hash agg with Single partitioning",
       longsFromCSVDf,
       repart = 2,
-      conf = enableCsvConf().set("spark.sql.shuffle.partitions", "1"),
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      conf = enableCsvConf().set("spark.sql.shuffle.partitions", "1")) {
     frame => {
       frame.agg(count("*"))
     }
@@ -413,8 +411,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "test hash agg with Single partitioning with partition sort",
       longsFromCSVDf,
       repart = 2,
-      conf = enableCsvConf().set("spark.sql.shuffle.partitions", "1"), sortBeforeRepart = true,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      conf = enableCsvConf().set("spark.sql.shuffle.partitions", "1"), sortBeforeRepart = true) {
     frame => {
       frame.agg(count("*"))
     }
@@ -428,6 +425,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       shortsFromCsv,
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(
       (max("shorts") - min("more_shorts")) * lit(5),
@@ -443,6 +441,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3, enableCsvConf())
           .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+       // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(
       (max("longs") - min("more_longs")) * lit(5),
@@ -457,6 +456,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("avg literals", longsFromCSVDf, conf = floatAggConf,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit(1.toDouble)),avg(lit(2.toDouble)))
   }
@@ -466,6 +466,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       maxFloatDiff = 0.0001,
       conf = floatAggConf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit(1.4718094e+19)),avg(lit(1.4718094e+19)))
   }
@@ -474,6 +475,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals long_max casted",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit(1.4718094e+19.toLong)),avg(lit(1.4718094e+19.toLong)))
   }
@@ -482,6 +484,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals strings",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     //returns (null, null) as strings are casted to double prior avg eval.
     frame => frame.agg(avg(lit("abc")),avg(lit("pqr")))
@@ -499,6 +502,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals bytes",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
       frame => frame.agg(avg(lit(1.toByte)),avg(lit(2.toByte)))
   }
@@ -507,6 +511,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals shorts",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit(1.toShort)),avg(lit(2.toShort)))
   }
@@ -516,6 +521,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       maxFloatDiff = 0.0001,
       conf = floatAggConf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit("1.4718094e+19")),avg(lit("1.4718094e+19")))
   }
@@ -524,6 +530,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals timestamps",
       timestampsDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit(Timestamp.valueOf("0100-1-1 23:00:01"))))
   }
@@ -532,6 +539,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals with nulls",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit(null)),avg(lit(2.toDouble)))
   }
@@ -540,6 +548,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals with all nulls",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg(lit(null)),avg(lit(null)))
   }
@@ -553,6 +562,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "group by string include nulls in count aggregate",
       nullableStringsIntsDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
@@ -566,6 +576,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "group by string include nulls in count aggregate small batches",
       nullableStringsIntsDf,
       conf = floatAggConf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "10"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
@@ -579,6 +590,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "group by strings exclude nulls in count aggregate",
       nullableStringsIntsDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
@@ -591,8 +603,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testMatrixSparkResultsAreEqual(
       "group by float with NaNs and null",
       intnullableFloatWithNullAndNanDf,
-      conf = floatAggConf,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      conf = floatAggConf) {
     frame => frame.groupBy("ints").agg(
       count("floats"),
       count(lit(null)));
@@ -602,6 +613,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "group by utf8 strings",
       utf8RepeatedDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
@@ -616,7 +628,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = enableCsvConf(),
       repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5120" +
+        " Multiply does not work in ANSI mode yet")) {
     frame => frame.groupBy(col("more_longs")).agg(
       count("*"),
       sum("more_longs"),
@@ -628,6 +641,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "float basic aggregates group by string literal",
       floatCsvDf,
       conf = enableCsvConf(),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy(lit("2019-02-10")).agg(
       min(col("floats")) + lit(123),
@@ -644,6 +658,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "float basic aggregates group by float and string literal",
       floatCsvDf,
       conf = enableCsvConf(),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => {
       val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
@@ -664,8 +679,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual(
       "aggregates with timestamp and string literal",
-      timestampsDf,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      timestampsDf) {
     frame => {
       val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
       val frameWithCol = frame.withColumn("timestamp_lit", feature_window_end_time)
@@ -677,6 +691,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testMatrixSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf,
     conf = enableCsvConf(),
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
@@ -693,6 +708,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   FLOAT_TEST_testMatrixSparkResultsAreEqual("float basic aggregates group by more_floats",
     floatCsvDf,
     conf = enableCsvConf(),
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
@@ -748,6 +764,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "nullable float basic aggregates group by more_floats",
       nullableFloatCsvDf,
       conf = makeBatchedBytes(3,  enableCsvConf()),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
@@ -767,6 +784,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3,  enableCsvConf())
           .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_shorts").agg(
       lit(456),
@@ -786,6 +804,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3,  enableCsvConf())
           .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("longs").agg(
       lit(456f),
@@ -805,6 +824,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3,  enableCsvConf())
           .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_longs").agg(
       lit(456f),
@@ -824,6 +844,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3,  enableCsvConf())
           .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("ints").agg(
       lit(456f),
@@ -843,6 +864,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3, enableCsvConf())
           .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_ints").agg(
       lit(456f),
@@ -861,6 +883,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       doubleCsvDf,
       maxFloatDiff = 0.000001,
       conf = makeBatchedBytes(3, enableCsvConf()),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("doubles").agg(
       lit(456f),
@@ -879,6 +902,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       doubleCsvDf,
       maxFloatDiff = 0.000001,
       conf = makeBatchedBytes(3, enableCsvConf()),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_doubles").agg(
       lit(456f),
@@ -895,22 +919,19 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testMatrixSparkResultsAreEqual(
       "sum(longs) multi group by longs, more_longs",
       longsCsvDf,
-      conf = enableCsvConf(),
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      conf = enableCsvConf()) {
     frame => frame.groupBy("longs", "more_longs").agg(
       sum("longs"), count("*"))
   }
 
   // misc aggregation tests
   testMatrixSparkResultsAreEqual("sum(ints) group by literal", intCsvDf,
-    conf = enableCsvConf(),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = enableCsvConf()) {
     frame => frame.groupBy(lit(1)).agg(sum("ints"))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("sum(ints) group by dates", datesCsvDf,
-    conf = enableCsvConf(),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = enableCsvConf()) {
     frame => frame.groupBy("dates").sum("ints")
   }
 
@@ -934,6 +955,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       floatCsvDf,
       conf = enableCsvConf(),
       repart = 4,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_floats").avg("floats")
   }
@@ -943,6 +965,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       floatCsvDf,
       conf = enableCsvConf(),
       repart = 4,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame
       .groupBy("more_floats")
@@ -952,6 +975,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("complex aggregate expressions", intCsvDf,
     // Avg can always have floating point issues
     conf = floatAggConf,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy(col("more_ints") * 2).agg(
       lit(1000) +
@@ -961,6 +985,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("complex aggregate expressions 2", intCsvDf,
     // Avg can always have floating point issues
     conf = floatAggConf,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_ints").agg(
       min("ints") +
@@ -970,6 +995,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("complex aggregate expression 3", intCsvDf,
     // Avg can always have floating point issues
     conf = floatAggConf,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_ints").agg(
       min("ints"), avg("ints"),
@@ -1094,13 +1120,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   FLOAT_TEST_testMatrixSparkResultsAreEqual("empty df: reduction count", floatCsvDf,
-    conf = enableCsvConf(),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = enableCsvConf()) {
     frame => frame.filter("floats > 10000000.0").agg(count("*"))
   }
 
   FLOAT_TEST_testMatrixSparkResultsAreEqual("empty df: reduction aggs", floatCsvDf,
     conf = enableCsvConf(),
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.filter("floats > 10000000.0").agg(
       lit(456f),
@@ -1119,8 +1145,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   FLOAT_TEST_testMatrixSparkResultsAreEqual("empty df: grouped count", floatCsvDf,
-    conf = enableCsvConf(),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = enableCsvConf()) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(count("*"))
   }
 
@@ -1142,6 +1167,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "empty df: float basic aggregates group by floats",
       floatCsvDf,
       conf = enableCsvConf(),
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.filter("floats > 10000000.0").groupBy("floats").agg(
       lit(456f),
@@ -1201,25 +1227,25 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   testMatrixSparkResultsAreEqual("Agg expression with filter", longsFromCSVDf,
-    conf = enableCsvConf(),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = enableCsvConf()) {
     frame => frame.selectExpr("count(1) filter (where longs > 20)")
   }
 
   testMatrixSparkResultsAreEqualWithCapture("PartMerge:countDistinct:sum", longsFromCSVDf,
-    conf = floatAggConf, repart = 2,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = floatAggConf, repart = 2) {
     frame => frame.agg(countDistinct("longs"), sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   testMatrixSparkResultsAreEqualWithCapture("PartMerge:countDistinct:avg", longsFromCSVDf,
     conf = floatAggConf, repart = 2,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
       frame => frame.agg(countDistinct("longs"), avg("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   testMatrixSparkResultsAreEqualWithCapture("PartMerge:countDistinct:all", longsFromCSVDf,
     conf = floatAggConf, repart = 2,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(countDistinct("longs"),
       avg("more_longs"),
@@ -1230,26 +1256,24 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   testMatrixSparkResultsAreEqualWithCapture("PartMerge:countDistinct:min", longsFromCSVDf,
-    conf = floatAggConf, repart = 2,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = floatAggConf, repart = 2) {
     frame => frame.agg(countDistinct("longs"), min("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   testMatrixSparkResultsAreEqualWithCapture("PartMerge:countDistinct:max", longsFromCSVDf,
-    conf = floatAggConf, repart = 2,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = floatAggConf, repart = 2) {
     frame => frame.agg(countDistinct("longs"), max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqualWithCapture("PartMerge:groupBy:countDistinct:sum",
-    longsFromCSVDf, conf = floatAggConf, repart = 2,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    longsFromCSVDf, conf = floatAggConf, repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqualWithCapture("PartMerge:groupBy:countDistinct:avg",
     longsFromCSVDf, conf = floatAggConf, repart = 2,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1259,6 +1283,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:groupBy:countDistinct:all",
       longsFromCSVDf,
       conf = floatAggConf, repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"),
@@ -1273,6 +1298,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = floatAggConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("longs").agg(avg("more_longs"),
       countDistinct("longs"), max("longs"))
@@ -1283,6 +1309,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       repart = 2,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("longs").agg(avg("more_longs"),
       max("longs"), countDistinct("longs"))
@@ -1292,8 +1319,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:groupBy:countDistinct:last",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       last("more_longs", true))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1302,8 +1328,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:groupBy:countDistinct:min",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       min("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1312,8 +1337,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:groupBy:countDistinct:max",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1322,8 +1346,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:groupBy_2:countDistinct:sum",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1333,6 +1356,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = floatAggConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1342,8 +1366,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:groupBy_2:countDistinct:min",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1352,8 +1375,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:groupBy_2:countDistinct:max",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1373,8 +1395,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Sum", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1386,6 +1407,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "AttributeReference", "Alias", "Average", "Count"),
       conf = nonFinalOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1397,8 +1419,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Count", "Min"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"),
       min("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1409,8 +1430,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Max", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1421,8 +1441,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Sum", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1434,6 +1453,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonPartialOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1445,8 +1465,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Min", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"),
       min("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1457,8 +1476,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Max", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1469,8 +1487,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Sum", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1482,6 +1499,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonFinalOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1504,8 +1522,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Max", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1516,8 +1533,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Sum", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1529,6 +1545,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonFinalOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1540,8 +1557,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Min", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1552,8 +1568,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Max", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1564,8 +1579,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Sum", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1577,6 +1591,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonPartialOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1599,8 +1614,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Max", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1611,8 +1625,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Sum", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       sum("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1624,6 +1637,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonPartialOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       avg("more_longs"))
@@ -1635,8 +1649,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Min", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       min("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1647,8 +1660,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Max", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1659,8 +1671,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Count"),
       conf = nonPartialOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
@@ -1680,8 +1691,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Count"),
       conf = nonFinalOnGpuConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
@@ -1699,8 +1709,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:countDistinctOnly",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
@@ -1708,8 +1717,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:countDistinctOnly_2",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.agg(countDistinct("longs"),
       countDistinct("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1718,8 +1726,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "PartMerge:countDistinct:count",
       longsFromCSVDf,
       conf = floatAggConf,
-      repart = 2,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      repart = 2) {
     frame => frame.selectExpr("count(distinct longs)", "count(longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
@@ -1728,6 +1735,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = floatAggConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)","count(longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1737,6 +1745,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = floatAggConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)","count(more_longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1746,6 +1755,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = floatAggConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)","avg(more_longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1757,6 +1767,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonFinalOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)","count(longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1768,6 +1779,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonPartialOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)","count(longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1779,6 +1791,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonFinalOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)","count(more_longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1790,6 +1803,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Count"),
       conf = nonPartialOnGpuConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)","count(more_longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1799,6 +1813,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = floatAggConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1808,6 +1823,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       longsFromCSVDf,
       conf = floatAggConf,
       repart = 2,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.selectExpr("avg(distinct longs)", "avg(distinct more_longs)")
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1819,18 +1835,19 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           "Alias", "Average", "Cast"),
       conf = nonFinalOnGpuConf,
       repart = 8,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.agg(avg("ints"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   testMatrixSparkResultsAreEqual("Avg with filter", longsFromCSVDf, conf = floatAggConf,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => val res = frame.selectExpr("avg(longs) filter (where longs < 5)")
       res
   }
 
-  testMatrixSparkResultsAreEqual("Sum with filter", longsFromCSVDf, conf = enableCsvConf(),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+  testMatrixSparkResultsAreEqual("Sum with filter", longsFromCSVDf, conf = enableCsvConf()) {
     frame => val res = frame.selectExpr("sum(longs) filter (where longs < 10)")
       res
   }
@@ -1839,6 +1856,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "Avg with filter grpBy",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
@@ -1854,6 +1872,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "Avg with 2 filter grpBy",
       longsFromCSVDf,
       conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
@@ -1869,8 +1888,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testMatrixSparkResultsAreEqual(
       "Sum with filter grpBy",
       longsFromCSVDf,
-      conf = floatAggConf,
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      conf = floatAggConf) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
         s"""
@@ -1881,8 +1899,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
            |""".stripMargin)
   }
 
-  testMatrixSparkResultsAreEqual("Count with filter", longsFromCSVDf, conf = floatAggConf,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+  testMatrixSparkResultsAreEqual("Count with filter", longsFromCSVDf, conf = floatAggConf) {
     frame => val res = frame.selectExpr("count(longs) filter (where longs < 5)")
       res
   }
@@ -1904,6 +1921,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   } else {
     testMatrixSparkResultsAreEqual("Avg Distinct with filter",
       longsFromCSVDf, conf = floatAggConf,
+      // Still need AVG for ANSI
       assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
       frame => frame.selectExpr("avg(distinct longs) filter (where longs < 5)")
     }
@@ -1912,6 +1930,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   testMatrixSparkResultsAreEqualWithCapture("PartMerge:avg_overflow_cast_dbl",
     veryLargeLongsFromCSVDf,
     conf = floatAggConf, repart = 2,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.groupBy("large_longs").agg(avg("large_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
@@ -1920,8 +1939,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testName = "Test NormalizeNansAndZeros(Float)",
     floatWithDifferentKindsOfNansAndZeros,
     conf = enableCsvConf()
-      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("float")).agg(sum(col("int")))
   }
 
@@ -1929,8 +1947,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testName = "Test NormalizeNansAndZeros(Double)",
     doubleWithDifferentKindsOfNansAndZeros,
     conf = enableCsvConf()
-      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+      .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("double")).agg(sum(col("int")))
   }
 
@@ -1939,6 +1956,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     execsAllowedNonGpu = Seq("HashAggregateExec",
       "AggregateExpression", "AttributeReference", "Alias", "Average", "Count", "Cast"),
     conf = nonFinalOnGpuConf, repart = 2,
+    // Still need AVG for ANSI
     assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
@@ -1954,8 +1972,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     nullDf,
     execsAllowedNonGpu = Seq("HashAggregateExec",
       "AggregateExpression", "AttributeReference", "Alias", "Count", "Cast"),
-    conf = nonFinalOnGpuConf, repart = 2,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    conf = nonFinalOnGpuConf, repart = 2) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
         s"""
@@ -1971,8 +1988,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     execsAllowedNonGpu = Seq("HashAggregateExec",
       "AggregateExpression", "AttributeReference", "Alias", "Sum", "Cast"),
     conf = nonFinalOnGpuConf,
-    repart = 2,
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+    repart = 2) {
     frame =>
       frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
