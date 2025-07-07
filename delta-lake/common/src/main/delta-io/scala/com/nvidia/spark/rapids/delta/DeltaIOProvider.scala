@@ -188,6 +188,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
         val gpuWrite = toGpuWrite(writeConfig, meta.conf)
         GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
       case _ =>
+        // For staging table
         GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, cpuExec.write)
     }
   }
