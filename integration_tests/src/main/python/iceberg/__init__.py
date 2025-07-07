@@ -20,7 +20,7 @@ from types import MappingProxyType
 from typing import Callable, List, Dict, Optional
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import FloatType, DoubleType, NullType, BinaryType
+from pyspark.sql.types import FloatType, DoubleType, BinaryType
 
 from data_gen import byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, \
     boolean_gen, DataGen, gen_df, date_gen, timestamp_gen, binary_gen, decimal_gen_32bit, \
@@ -115,7 +115,7 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
         table_func(spark)
         spark.sql(f"REFRESH TABLE {table_name}")
         after_count = spark.table(table_name).count()
-        if before_count != after_count:
+        if before_count == after_count:
             logging.warning(message)
 
     with_cpu_session(change_table,

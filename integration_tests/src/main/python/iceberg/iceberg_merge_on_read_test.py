@@ -39,7 +39,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 # This does not work with aws s3tables, which is a managed table service.
 @pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
-                               eq_delete_cols):
+                               eq_delete_cols, register_iceberg_add_eq_deletes_udf):
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
 
     _change_table(table_name,
@@ -91,6 +91,8 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
+@pytest.mark.datagen_overrides(seed=1751800441, permanent=True,
+                               reason="Debug https://github.com/NVIDIA/spark-rapids/issues/12885")
 def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
                                   register_iceberg_add_eq_deletes_udf):
     # We use a fixed seed here to ensure that data deletion vector has been generated
