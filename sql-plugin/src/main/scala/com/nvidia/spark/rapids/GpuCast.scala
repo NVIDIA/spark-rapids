@@ -646,8 +646,8 @@ object GpuCast {
       f(input)
     } catch {
       case c: CastException =>
-        val s = withResource(input.copyToHost()) { hcv =>
-          UTF8String.fromString(hcv.getJavaString(c.getRowWithError.toLong))
+        val s = withResource(input.getScalarElement(c.getRowWithError)) { errScalar =>
+          UTF8String.fromString(errScalar.getJavaString)
         }
         throw GpuCastToNumberErrorShim.invalidInputInCastToNumberError(to, s)
     }
@@ -1459,14 +1459,14 @@ object GpuCast {
     val converted = DecimalUtils.floatingPointToDecimal(input, targetType, dt.precision)
     if (ansiMode && converted.failureRowId >= 0L) {
       converted.result.close()
-      val failedValue = withResource(input.copyToHost()) { hcv =>
+      val failedVal = withResource(input.getScalarElement(converted.failureRowId.toInt)) { s =>
         fromType match {
-          case FloatType => hcv.getFloat(converted.failureRowId).toDouble
-          case DoubleType => hcv.getDouble(converted.failureRowId)
+          case FloatType => s.getFloat.toDouble
+          case DoubleType => s.getDouble
           case _ => throw new IllegalArgumentException(s"unsupported type $fromType")
         }
       }
-      throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(failedValue), dt)
+      throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(failedVal), dt)
     }
     converted.result
   }
