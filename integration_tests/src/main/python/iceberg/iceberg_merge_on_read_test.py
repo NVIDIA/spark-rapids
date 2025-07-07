@@ -121,7 +121,7 @@ def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reade
 
 
     # Trigger a count operation to verify that it works
-    count = with_cpu_session(lambda spark: spark.table(table_name).count(),
+    count = with_gpu_session(lambda spark: spark.table(table_name).count(),
                      conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
     logging.info(f"Count is {count}")
 
