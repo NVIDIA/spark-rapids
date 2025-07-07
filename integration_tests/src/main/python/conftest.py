@@ -17,6 +17,8 @@ import pytest
 import random
 import warnings
 
+from pyspark.sql.types import NullType
+
 # TODO redo _spark stuff using fixtures
 #
 # Don't import pyspark / _spark directly in conftest globally
@@ -556,3 +558,12 @@ def enable_fuzz_test(request):
     if not enable_fuzz_test:
         # fuzz tests are not required for any test runs
         pytest.skip("fuzz_test not configured to run")
+
+@pytest.fixture(scope="session")
+def register_iceberg_add_eq_deletes_udf(request):
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
+    sp = get_spark_i_know_what_i_am_doing
+    sp.udf.registerJavaFunction("iceberg_add_eq_deletes",
+                                   "com.nvidia.spark.rapids.iceberg.testutils.AddEqDeletes",
+                                   NullType())
+    yield
