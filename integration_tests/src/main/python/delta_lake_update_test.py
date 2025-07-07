@@ -66,7 +66,7 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, enable_deletion_vec
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors aren't supported")
-@pytest.mark.skipif((not is_databricks_runtime()) or is_before_spark_353(),
+@pytest.mark.skipif((not is_databricks_runtime()) and is_before_spark_353(),
                     reason="Update with deletion vector is only supported after delta.io 3.0.0")
 @pytest.mark.xfail(condition=is_databricks_runtime() and not is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/12123")
 def test_delta_update_fallback_with_deletion_vectors(spark_tmp_path):
