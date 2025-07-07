@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import tempfile
 
 import pytest
@@ -21,7 +22,7 @@ from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
     all_eq_column_combinations
 from marks import iceberg, ignore_order
-from spark_session import is_spark_35x, with_gpu_session
+from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
                                 reason="Current spark-rapids only support spark 3.5.x")
@@ -115,9 +116,11 @@ def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reade
                                                 spark_tmp_path),
                   "No equation deletes generated")
 
+
     # Trigger a count operation to verify that it works
-    with_gpu_session(lambda spark: spark.table(table_name).count(),
+    count = with_cpu_session(lambda spark: spark.table(table_name).count(),
                      conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+    logging.info(f"Count is {count}")
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),
