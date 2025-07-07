@@ -562,7 +562,7 @@ def enable_fuzz_test(request):
 @pytest.fixture(scope="session")
 def register_iceberg_add_eq_deletes_udf(request):
     from spark_init_internal import get_spark_i_know_what_i_am_doing
-    sp = get_spark_i_know_what_i_am_doing
+    sp = get_spark_i_know_what_i_am_doing()
     sp.udf.registerJavaFunction("iceberg_add_eq_deletes",
                                    "com.nvidia.spark.rapids.iceberg.testutils.AddEqDeletes",
                                    NullType())
