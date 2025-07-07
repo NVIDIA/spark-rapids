@@ -695,6 +695,20 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     class AllocOnAnotherThreadWithWarmup(override val thread: TaskThread,
         override val size: Long) extends AllocOnAnotherThread(thread, size) {
 
+      def wasteSomeTime(): Unit = {
+        val startTime = System.currentTimeMillis
+        val duration = 100 // 100ms
+
+        val endTime = startTime + duration
+        var result = 0.0
+
+        while (System.currentTimeMillis < endTime) {
+          result += Math.sqrt(Math.random)
+        }
+
+        println(s"Wasted $duration ms on thread ${Thread.currentThread().getName}, result: $result")
+      }
+
       override def doAlloc(): Void = {
         RmmRapidsRetryIterator.withRetryNoSplit {
 
@@ -702,7 +716,10 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
           val w = SpillableHostBuffer.apply(HostAlloc.alloc(1024, preferPinned),
             1024, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
 
-          Thread.sleep(1000)
+          // Why can't we just use Thread.sleep here? Because TIMED_WAITING is a special state
+          // treated as BUFN in spark_resource_adaptor::is_thread_bufn_or_above, this will cause
+          // issues like https://github.com/NVIDIA/spark-rapids/issues/12883
+          wasteSomeTime()
 
           // let's say we will do sth with the shuffle data read, e.g. concat them
           // for simplicity, we just have one SpillableHostBuffer as input, in real case there
