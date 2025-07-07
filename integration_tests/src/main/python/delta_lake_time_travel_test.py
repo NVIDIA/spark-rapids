@@ -19,7 +19,7 @@ from asserts import *
 from data_gen import *
 from delta_lake_utils import delta_meta_allow
 from marks import *
-from spark_session import with_gpu_session, is_spark_353_or_later
+from spark_session import with_gpu_session, is_spark_353_or_later, is_before_spark_330
 from dataclasses import dataclass
 
 
@@ -126,6 +126,7 @@ def test_time_travel_df_version(spark_tmp_path, spark_tmp_table_factory, in_comm
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_330(), "AS OF sql syntax is only supported after spark 3.3.0")
 @pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_sql_version(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     result = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
@@ -159,6 +160,7 @@ def test_time_travel_df_timestamp(spark_tmp_path, spark_tmp_table_factory, in_co
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_330(), "AS OF sql syntax is only supported after spark 3.3.0")
 @pytest.mark.parametrize("in_commit_ts", enable_in_commit_ts(), ids=in_commit_ts_param_id)
 def test_time_travel_sql_timestamp(spark_tmp_path, spark_tmp_table_factory, in_commit_ts):
     result = do_set_up_tables_for_time_travel(spark_tmp_path, spark_tmp_table_factory,
