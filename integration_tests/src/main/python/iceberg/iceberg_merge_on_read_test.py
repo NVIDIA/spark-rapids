@@ -91,6 +91,7 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
+# When using this datagen, local run is 784 rows
 @pytest.mark.datagen_overrides(seed=1749483297, permanent=True,
                                reason="Debug https://github.com/NVIDIA/spark-rapids/issues/12885")
 def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
