@@ -38,7 +38,7 @@ import org.apache.spark.sql.delta.{ColumnWithDefaultExprUtils, DeltaConfigs, Del
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.{TableCreationModes, WriteIntoDelta}
 import org.apache.spark.sql.delta.metering.DeltaLogging
-import org.apache.spark.sql.delta.rapids.DeltaTrampoline
+import org.apache.spark.sql.delta.rapids.{DeltaTrampoline, GpuDeltaLog, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.rapids.delta33x.GpuCreateDeltaTableCommand
 import org.apache.spark.sql.delta.sources.{DeltaSourceUtils, DeltaSQLConf}
 import org.apache.spark.sql.delta.stats.StatisticsCollection
@@ -221,8 +221,9 @@ class GpuDeltaCatalog(
       )
 
     val writer = sourceQuery.map { df =>
-      WriteIntoDelta(
-        DeltaLog.forTable(spark, new Path(loc)),
+      val deltaLog = DeltaLog.forTable(spark, new Path(loc))
+      val cpuWriter = WriteIntoDelta(
+        deltaLog,
         operation.mode,
         new DeltaOptions(withDb.storage.properties, spark.sessionState.conf),
         withDb.partitionColumnNames,
@@ -230,7 +231,10 @@ class GpuDeltaCatalog(
         df,
         Some(tableDesc),
         schemaInCatalog = if (newSchema != schema) Some(newSchema) else None)
+      val gpuDeltaLog = new GpuDeltaLog(deltaLog, rapidsConf)
+      GpuWriteIntoDelta(gpuDeltaLog, cpuWriter)
     }
+
 
     // We should invoke the Spark catalog plugin API to create the table, to
     // respect third party catalogs. Note: only handle CREATE TABLE for now, we

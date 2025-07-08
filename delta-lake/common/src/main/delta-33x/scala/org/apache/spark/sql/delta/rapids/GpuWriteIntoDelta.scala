@@ -23,6 +23,8 @@ package org.apache.spark.sql.delta.rapids
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids._
+
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.expressions.{And, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.DeleteFromTable
@@ -32,6 +34,7 @@ import org.apache.spark.sql.delta.actions.{Action, AddCDCFile, AddFile, FileActi
 import org.apache.spark.sql.delta.commands.{DeleteCommand, DeltaCommand, WriteIntoDelta, WriteIntoDeltaLike}
 import org.apache.spark.sql.delta.commands.DMLUtils.TaggedCommitData
 import org.apache.spark.sql.delta.commands.cdc.CDCReader
+import org.apache.spark.sql.delta.rapids.delta33x._
 import org.apache.spark.sql.delta.schema.{ImplicitMetadataOperation, InvariantViolationException, SchemaUtils}
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterBySpec
@@ -355,8 +358,22 @@ case class GpuWriteIntoDelta(
     val command = spark.sessionState.analyzer.execute(
       DeleteFromTable(relation, processedCondition.getOrElse(Literal.TrueLiteral)))
     spark.sessionState.analyzer.checkAnalysis(command)
-    val (deleteActions, deleteMetrics) =
-      command.asInstanceOf[DeleteCommand].performDelete(spark, txn.deltaLog, txn)
+    val deleteCommandMeta = GpuOverrides
+      .wrapRunnableCmd(command.asInstanceOf[DeleteCommand], gpuDeltaLog.rapidsConf, None)
+    deleteCommandMeta.tagSelfForGpu()
+
+    val (deleteActions, deleteMetrics) = {
+      val deleteCommand = if (deleteCommandMeta.canThisBeReplaced) {
+        val gpuTxn = txn.asInstanceOf[GpuOptimisticTransactionBase]
+        GpuExecutedCommandExec(deleteCommandMeta.convertToGpu())
+          .asInstanceOf[GpuDeleteCommand]
+          .performDelete(spark, gpuTxn.deltaLog, gpuTxn)
+      } else {
+        command.asInstanceOf[DeleteCommand].performDelete(spark, txn.deltaLog, txn)
+      }
+      deleteCommand
+    }
+
     recordDeltaEvent(
       deltaLog,
       "delta.dml.write.removeFiles.stats",

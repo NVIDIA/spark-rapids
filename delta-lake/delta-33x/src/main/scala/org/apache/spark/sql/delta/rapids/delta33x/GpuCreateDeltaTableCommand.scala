@@ -144,7 +144,12 @@ case class GpuCreateDeltaTableCommand(
 
     val tableLocation = getDeltaTablePath(tableWithLocation)
 
-    val gpuDeltaLog = GpuDeltaLog.forTable(sparkSession, tableLocation, rapidsConf)
+    val fileSystemOptions = table.storage.properties.filter { case (k, _) =>
+      DeltaTableUtils.validDeltaTableHadoopPrefixes.exists(k.startsWith)
+    }
+
+    val gpuDeltaLog =
+      GpuDeltaLog.forTable(sparkSession, tableLocation, fileSystemOptions, rapidsConf)
     CoordinatedCommitsUtils.validateConfigurationsForCreateDeltaTableCommand(
       sparkSession, gpuDeltaLog.deltaLog.tableExists, query, tableWithLocation.properties)
 

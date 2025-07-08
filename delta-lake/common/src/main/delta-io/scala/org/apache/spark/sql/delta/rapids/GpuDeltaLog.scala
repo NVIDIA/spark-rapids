@@ -124,6 +124,15 @@ object GpuDeltaLog {
   def forTable(
       spark: SparkSession,
       tableLocation: Path,
+      options: Map[String, String],
+      rapidsConf: RapidsConf): GpuDeltaLog = {
+    val deltaLog = DeltaLog.forTable(spark, tableLocation, options)
+    new GpuDeltaLog(deltaLog, rapidsConf)
+  }
+
+  def forTable(
+      spark: SparkSession,
+      tableLocation: Path,
       rapidsConf: RapidsConf): GpuDeltaLog = {
     val deltaLog = DeltaLog.forTable(spark, tableLocation)
     new GpuDeltaLog(deltaLog, rapidsConf)
