@@ -44,7 +44,7 @@ import org.apache.spark.sql.delta.hooks.{HudiConverterHook, IcebergConverterHook
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.metering.DeltaLogging
-import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase}
+import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
@@ -197,7 +197,7 @@ case class GpuCreateDeltaTableCommand(
         case Some(deltaWriter: WriteIntoDeltaLike) =>
           checkPathEmpty(txn)
           handleCreateTableAsSelect(sparkSession, txn, gpuDeltaLog,
-            deltaWriter, tableWithLocation)
+            deltaWriter.asInstanceOf[GpuWriteIntoDelta], tableWithLocation)
           Nil
         case Some(query) =>
           checkPathEmpty(txn)
@@ -206,14 +206,17 @@ case class GpuCreateDeltaTableCommand(
           // to once again go through analysis
           val data = Dataset.ofRows(sparkSession, query)
           val options = new DeltaOptions(table.storage.properties, sparkSession.sessionState.conf)
-          val deltaWriter = WriteIntoDelta(
-            deltaLog = gpuDeltaLog.deltaLog,
-            mode = mode,
-            options,
-            partitionColumns = table.partitionColumnNames,
-            configuration = tableWithLocation.properties + ("comment" -> table.comment.orNull),
-            data = data,
-            Some(tableWithLocation))
+          val deltaWriter = {
+            val cpuWriter = WriteIntoDelta(
+              deltaLog = gpuDeltaLog.deltaLog,
+              mode = mode,
+              options,
+              partitionColumns = table.partitionColumnNames,
+              configuration = tableWithLocation.properties + ("comment" -> table.comment.orNull),
+              data = data,
+              Some(tableWithLocation))
+            GpuWriteIntoDelta(gpuDeltaLog, cpuWriter)
+          }
           handleCreateTableAsSelect(sparkSession, txn, gpuDeltaLog,
             deltaWriter, tableWithLocation)
           Nil
@@ -270,7 +273,7 @@ case class GpuCreateDeltaTableCommand(
      sparkSession: SparkSession,
      txn: GpuOptimisticTransactionBase,
      gpuDeltaLog: GpuDeltaLog,
-     deltaWriter: WriteIntoDeltaLike,
+     deltaWriter: GpuWriteIntoDelta,
      tableWithLocation: CatalogTable): Unit = {
     val isManagedTable = tableWithLocation.tableType == CatalogTableType.MANAGED
     val options = new DeltaOptions(table.storage.properties, sparkSession.sessionState.conf)
