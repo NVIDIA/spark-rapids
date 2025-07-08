@@ -360,13 +360,13 @@ case class GpuWriteIntoDelta(
     spark.sessionState.analyzer.checkAnalysis(command)
     val deleteCommandMeta = GpuOverrides
       .wrapRunnableCmd(command.asInstanceOf[DeleteCommand], gpuDeltaLog.rapidsConf, None)
+    deleteCommandMeta.initReasons()
     deleteCommandMeta.tagSelfForGpu()
 
     val (deleteActions, deleteMetrics) = {
       val deleteCommand = if (deleteCommandMeta.canThisBeReplaced) {
         val gpuTxn = txn.asInstanceOf[GpuOptimisticTransactionBase]
-        GpuExecutedCommandExec(deleteCommandMeta.convertToGpu())
-          .asInstanceOf[GpuDeleteCommand]
+        deleteCommandMeta.convertToGpu().asInstanceOf[GpuDeleteCommand]
           .performDelete(spark, gpuTxn.deltaLog, gpuTxn)
       } else {
         command.asInstanceOf[DeleteCommand].performDelete(spark, txn.deltaLog, txn)
