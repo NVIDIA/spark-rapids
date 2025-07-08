@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * This file was derived from WriteIntoDelta.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -23,36 +23,14 @@ package org.apache.spark.sql.delta.rapids
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.delta.{DeltaOperations, OptimisticTransaction}
-import org.apache.spark.sql.delta.actions.Action
-import org.apache.spark.sql.delta.commands.{WriteIntoDelta, WriteIntoDeltaLike}
-import org.apache.spark.sql.delta.commands.DMLUtils.TaggedCommitData
-import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterBySpec
+import org.apache.spark.sql.delta.commands.WriteIntoDelta
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
 
 /** GPU version of Delta Lake's WriteIntoDelta. */
 case class GpuWriteIntoDelta(
     gpuDeltaLog: GpuDeltaLog,
     cpuWrite: WriteIntoDelta)
-    extends LeafRunnableCommand with WriteIntoDeltaLike {
-
-  override val configuration: Map[String,String] = cpuWrite.configuration
-
-  override val data: DataFrame = cpuWrite.data
-
-  override val deltaLog: org.apache.spark.sql.delta.DeltaLog = gpuDeltaLog.deltaLog
-
-  override def withNewWriterConfiguration(
-    updatedConfiguration: Map[String,String]): WriteIntoDeltaLike = {
-    cpuWrite.withNewWriterConfiguration(updatedConfiguration)
-  }
-
-  override def writeAndReturnCommitData(
-    txn: OptimisticTransaction,
-    sparkSession: SparkSession,
-    clusterBySpecOpt: Option[ClusterBySpec],
-    isTableReplace: Boolean): TaggedCommitData[Action] = {
-    cpuWrite.writeAndReturnCommitData(txn, sparkSession, clusterBySpecOpt, isTableReplace)
-  }
+    extends LeafRunnableCommand {
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
     gpuDeltaLog.withNewTransaction { txn =>
