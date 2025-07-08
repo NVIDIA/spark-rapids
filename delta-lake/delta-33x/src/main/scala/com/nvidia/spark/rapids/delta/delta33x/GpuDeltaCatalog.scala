@@ -30,13 +30,14 @@ import scala.collection.JavaConverters._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, CatalogUtils}
-import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, SupportsWrite, Table, TableCapability, TableCatalog}
+import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, SupportsWrite, Table, TableCapability, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.catalog.TableCapability._
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, V1Write, WriteBuilder}
 import org.apache.spark.sql.delta.{ColumnWithDefaultExprUtils, DeltaConfigs, DeltaErrors, DeltaLog, DeltaOptions}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.{TableCreationModes, WriteIntoDelta}
+import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.rapids.DeltaTrampoline
 import org.apache.spark.sql.delta.rapids.delta33x.GpuCreateDeltaTableCommand
 import org.apache.spark.sql.delta.sources.{DeltaSourceUtils, DeltaSQLConf}
@@ -51,14 +52,61 @@ import org.apache.spark.sql.types.StructType
 class GpuDeltaCatalog(
     val cpuCatalog: DeltaCatalog,
     val rapidsConf: RapidsConf)
-  extends DeltaCatalog {
+  extends StagingTableCatalog
+  with DeltaLogging {
 
-  override val spark: SparkSession = cpuCatalog.spark
+  val spark: SparkSession = cpuCatalog.spark
+
+  /** copied from trait SupportsPathIdentifier */
+  private def supportSQLOnFile: Boolean = spark.sessionState.conf.runSQLonFile
+
+  /** copied from trait SupportsPathIdentifier */
+  private def hasDeltaNamespace(ident: Identifier): Boolean = {
+    ident.namespace().length == 1 && DeltaSourceUtils.isDeltaDataSourceName(ident.namespace().head)
+  }
 
   private lazy val isUnityCatalog: Boolean = {
     val cpuIsUnityCatalogField = classOf[DeltaCatalog].getDeclaredField("isUnityCatalog")
     cpuIsUnityCatalogField.setAccessible(true)
     cpuIsUnityCatalogField.getBoolean(cpuCatalog)
+  }
+
+  protected def isPathIdentifier(ident: Identifier): Boolean = {
+    // Should be a simple check of a special PathIdentifier class in the future
+    try {
+      supportSQLOnFile && hasDeltaNamespace(ident) && new Path(ident.name()).isAbsolute
+    } catch {
+      case _: IllegalArgumentException => false
+    }
+  }
+
+  // Members declared in org.apache.spark.sql.connector.catalog.CatalogPlugin
+  override def initialize(
+      name: String,
+      conf: org.apache.spark.sql.util.CaseInsensitiveStringMap): Unit = {
+    // nothing to initialize
+  }
+
+  override def name(): String = "GpuDeltaCatalog"
+
+  // Members declared in org.apache.spark.sql.connector.catalog.TableCatalog
+  // Fallback to the CPU for now
+  override def alterTable(
+      ident: Identifier,
+      changes: TableChange*): Table = {
+    cpuCatalog.alterTable(ident, changes: _*)
+  }
+
+  override def dropTable(ident: Identifier): Boolean = {
+    cpuCatalog.dropTable(ident)
+  }
+
+  override def listTables(namespace: Array[String]): Array[Identifier] = {
+    cpuCatalog.listTables(namespace)
+  }
+
+  def renameTable(oldIdent: Identifier, newIdent: Identifier): Unit = {
+    cpuCatalog.renameTable(oldIdent, newIdent)
   }
 
   /**
@@ -98,7 +146,7 @@ class GpuDeltaCatalog(
     }.toMap
     val (partitionColumns, maybeBucketSpec, maybeClusterBySpec) =
       DeltaTrampoline.convertTransforms(partitions)
-    validateClusterBySpec(maybeClusterBySpec, schema)
+    cpuCatalog.validateClusterBySpec(maybeClusterBySpec, schema)
     // Check partition columns are not IDENTITY columns.
     partitionColumns.foreach { colName =>
       if (ColumnWithDefaultExprUtils.isIdentityColumn(schema(colName))) {
@@ -131,7 +179,7 @@ class GpuDeltaCatalog(
       TableIdentifier(ident.name(), ident.namespace().lastOption)
     }
     val locUriOpt = location.map(CatalogUtils.stringToURI)
-    val existingTableOpt = getExistingTableIfExists(id)
+    val existingTableOpt = cpuCatalog.getExistingTableIfExists(id)
     // PROP_IS_MANAGED_LOCATION indicates that the table location is not user-specified but
     // system-generated. The table should be created as managed table in this case.
     val isManagedLocation = Option(allTableProperties.get(TableCatalog.PROP_IS_MANAGED_LOCATION))
@@ -166,7 +214,7 @@ class GpuDeltaCatalog(
     )
 
     val withDb =
-      verifyTableAndSolidify(
+      cpuCatalog.verifyTableAndSolidify(
         tableDesc,
         None,
         maybeClusterBySpec
@@ -244,7 +292,7 @@ class GpuDeltaCatalog(
       partitions: Array[Transform],
       properties: util.Map[String, String]): Table =
     recordFrameProfile("DeltaCatalog", "createTable") {
-      super.createTable(ident, schema, partitions, properties)
+      cpuCatalog.createTable(ident, schema, partitions, properties)
     }
 
   override def stageReplace(
@@ -261,7 +309,7 @@ class GpuDeltaCatalog(
           properties,
           TableCreationModes.Replace)
       } else {
-        throw new IllegalStateException(s"Cannot create non-Delta tables")
+        cpuCatalog.stageReplace(ident, schema, partitions, properties)
       }
     }
 
@@ -280,7 +328,7 @@ class GpuDeltaCatalog(
           TableCreationModes.CreateOrReplace
         )
       } else {
-        throw new IllegalStateException(s"Cannot create non-Delta tables")
+        cpuCatalog.stageCreateOrReplace(ident, schema, partitions, properties)
       }
     }
 
@@ -298,7 +346,7 @@ class GpuDeltaCatalog(
         TableCreationModes.Create
       )
     } else {
-      throw new IllegalStateException(s"Cannot create non-Delta tables")
+      cpuCatalog.stageCreate(ident, schema, partitions, properties)
     }
   }
 

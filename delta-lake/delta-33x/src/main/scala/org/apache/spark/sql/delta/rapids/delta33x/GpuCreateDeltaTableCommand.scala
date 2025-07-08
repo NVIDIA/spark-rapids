@@ -44,8 +44,7 @@ import org.apache.spark.sql.delta.hooks.{HudiConverterHook, IcebergConverterHook
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.metering.DeltaLogging
-import org.apache.spark.sql.delta.rapids.GpuDeltaLog
-import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
+import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.schema.SchemaUtils
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
@@ -677,11 +676,11 @@ case class GpuCreateDeltaTableCommand(
    * code paths.
    */
   private def updateCatalog(
-                             spark: SparkSession,
-                             table: CatalogTable,
-                             snapshot: Snapshot,
-                             didNotChangeMetadata: Boolean
-                           ): Unit = {
+      spark: SparkSession,
+      table: CatalogTable,
+      snapshot: Snapshot,
+      didNotChangeMetadata: Boolean
+      ): Unit = {
     val cleaned = cleanupTableDefinition(spark, table, snapshot)
     operation match {
       case _ if tableByPath => // do nothing with the metastore if this is by path
