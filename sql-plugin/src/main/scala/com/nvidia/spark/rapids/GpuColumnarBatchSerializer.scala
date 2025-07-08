@@ -353,11 +353,11 @@ object SerializedTableColumn {
  * @param dataTypes data types of the columns in the batch
  */
 private class KudoSerializerInstance(
-                                      val metrics: Map[String, GpuMetric],
-                                      val dataTypes: Array[DataType],
-                                      val kudo: Option[KudoSerializer],
-                                      val measureBufferCopyTime: Boolean,
-                                    ) extends SerializerInstance {
+    val metrics: Map[String, GpuMetric],
+    val dataTypes: Array[DataType],
+    val kudo: Option[KudoSerializer],
+    val measureBufferCopyTime: Boolean,
+) extends SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
   private val serCopyBufferTime = metrics(METRIC_SHUFFLE_SER_COPY_BUFFER_TIME)
