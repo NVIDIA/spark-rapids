@@ -17,16 +17,14 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.{DeltaIOProvider, RapidsDeltaUtils}
-import org.apache.hadoop.fs.Path
+import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.connector.catalog.SupportsWrite
-import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
+import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
-import org.apache.spark.sql.delta.sources.DeltaDataSource
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
@@ -36,7 +34,7 @@ import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTabl
 object Delta33xProvider extends DeltaIOProvider {
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2] || write == classOf[GpuStagedDeltaTableV2]
+    write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
   }
 
   override def tagForGpu(
@@ -48,20 +46,9 @@ object Delta33xProvider extends DeltaIOProvider {
     }
 
     cpuExec.table match {
-      case deltaTable: DeltaTableV2 =>
-        val tablePath = if (deltaTable.catalogTable.isDefined) {
-          new Path(deltaTable.catalogTable.get.location)
-        } else {
-          DeltaDataSource.parsePathIdentifier(cpuExec.session, deltaTable.path.toString,
-            deltaTable.options)._1
-        }
-        val deltaLog = DeltaLog.forTable(cpuExec.session, tablePath, deltaTable.options)
-        RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
-          deltaTable.options, cpuExec.session)
-        extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
-          meta.setCustomTaggingData(writeConfig)
-        }
-      case _: GpuStagedDeltaTableV2 =>
+      case _: DeltaTableV2 => super.tagForGpu(cpuExec, meta)
+      case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
+      case _ => meta.willNotWorkOnGpu(s"${cpuExec.table} table class not supported on GPU")
     }
   }
 

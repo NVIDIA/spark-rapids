@@ -107,12 +107,12 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
-  protected case class DeltaWriteV1Config(
+  private case class DeltaWriteV1Config(
       deltaLog: DeltaLog,
       forceOverwrite: Boolean,
       options: mutable.HashMap[String, String])
 
-  protected def extractWriteV1Config(
+  private def extractWriteV1Config(
       meta: RapidsMeta[_, _, _],
       deltaLog: DeltaLog,
       write: V1Write): Option[DeltaWriteV1Config] = {
