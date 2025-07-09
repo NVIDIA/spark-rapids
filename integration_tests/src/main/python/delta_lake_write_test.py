@@ -114,13 +114,7 @@ def test_delta_write_round_trip_managed(spark_tmp_table_factory, enable_deletion
             .saveAsTable(table),
         conf=conf
     )
-    cols = ["version", "userId", "userName", "operation", "operationParameters", "job", "notebook",
-            "clusterId", "readVersion", "isolationLevel", "isBlindAppend", "operationMetrics", "userMetadata"]
-    cpu_history = with_cpu_session(lambda spark: spark.sql("DESCRIBE HISTORY {}".format(cpu_table))
-                                   .select(cols).collect(), conf=conf)
-    gpu_history = with_cpu_session(lambda spark: spark.sql("DESCRIBE HISTORY {}".format(gpu_table))
-                                   .select(cols).collect(), conf=conf)
-    assert_equal(cpu_history, gpu_history)
+    assert_delta_history_equal(conf, cpu_table, gpu_table)
 
 
 @allow_non_gpu(*delta_meta_allow)
