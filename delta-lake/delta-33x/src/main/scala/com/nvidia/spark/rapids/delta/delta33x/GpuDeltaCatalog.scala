@@ -122,7 +122,7 @@ class GpuDeltaCatalog(
    * @param operation          The specific table creation mode, whether this is a
    *                           Create/Replace/Create or Replace
    */
-  protected def createDeltaTable(
+  def createDeltaTable(
       ident: Identifier,
       schema: StructType,
       partitions: Array[Transform],
@@ -307,6 +307,7 @@ class GpuDeltaCatalog(
     recordFrameProfile("DeltaCatalog", "stageReplace") {
       if (DeltaSourceUtils.isDeltaDataSourceName(getProvider(properties))) {
         new GpuStagedDeltaTableV2(
+          this,
           ident,
           schema,
           partitions,
@@ -325,6 +326,7 @@ class GpuDeltaCatalog(
     recordFrameProfile("DeltaCatalog", "stageCreateOrReplace") {
       if (DeltaSourceUtils.isDeltaDataSourceName(getProvider(properties))) {
         new GpuStagedDeltaTableV2(
+          this,
           ident,
           schema,
           partitions,
@@ -354,7 +356,7 @@ class GpuDeltaCatalog(
     }
   }
 
-  private def getTablePropsAndWriteOptions(properties: util.Map[String, String])
+  def getTablePropsAndWriteOptions(properties: util.Map[String, String])
   : (util.Map[String, String], Map[String, String]) = {
     val props = new util.HashMap[String, String]()
     // Options passed in through the SQL API will show up both with an "option." prefix and
@@ -375,7 +377,7 @@ class GpuDeltaCatalog(
     (props, writeOptions.asScala.toMap)
   }
 
-  private def expandTableProps(
+  def expandTableProps(
       props: util.Map[String, String],
       options: Map[String, String],
       conf: SQLConf): Unit = {
@@ -400,72 +402,73 @@ class GpuDeltaCatalog(
       partitions: Array[Transform],
       properties: util.Map[String, String],
       operation: TableCreationModes.CreationMode): StagedTable = {
-    new GpuStagedDeltaTableV2(ident, schema, partitions, properties, operation)
+    new GpuStagedDeltaTableV2(this, ident, schema, partitions, properties, operation)
+  }
+}
+/**
+ * A staged delta table, which creates a HiveMetaStore entry and appends data if this was a
+ * CTAS/RTAS command. We have a ugly way of using this API right now, but it's the best way to
+ * maintain old behavior compatibility between Databricks Runtime and OSS Delta Lake.
+ */
+class GpuStagedDeltaTableV2(
+    gpuCatalog: GpuDeltaCatalog, 
+    ident: Identifier,
+    override val schema: StructType,
+    val partitions: Array[Transform],
+    override val properties: util.Map[String, String],
+    operation: TableCreationModes.CreationMode
+    ) extends StagedTable with SupportsWrite with DeltaLogging {
+
+  private var asSelectQuery: Option[DataFrame] = None
+  private var writeOptions: Map[String, String] = Map.empty
+
+  override def partitioning(): Array[Transform] = partitions
+
+  override def commitStagedChanges(): Unit = recordFrameProfile(
+    "DeltaCatalog", "commitStagedChanges") {
+    val conf = gpuCatalog.cpuCatalog.spark.sessionState.conf
+    val (props, sqlWriteOptions) = gpuCatalog.getTablePropsAndWriteOptions(properties)
+    if (writeOptions.isEmpty && sqlWriteOptions.nonEmpty) {
+      writeOptions = sqlWriteOptions
+    }
+    gpuCatalog.expandTableProps(props, writeOptions, conf)
+    gpuCatalog.createDeltaTable(
+      ident,
+      schema,
+      partitions,
+      props,
+      writeOptions,
+      asSelectQuery,
+      operation
+    )
   }
 
-  /**
-   * A staged delta table, which creates a HiveMetaStore entry and appends data if this was a
-   * CTAS/RTAS command. We have a ugly way of using this API right now, but it's the best way to
-   * maintain old behavior compatibility between Databricks Runtime and OSS Delta Lake.
+  override def name(): String = ident.name()
+
+  override def abortStagedChanges(): Unit = {}
+
+  override def capabilities(): util.Set[TableCapability] = {
+    Set(V1_BATCH_WRITE).asJava
+  }
+
+  override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = {
+    writeOptions = info.options.asCaseSensitiveMap().asScala.toMap
+    new DeltaV1WriteBuilder
+  }
+
+  /*
+   * WriteBuilder for creating a Delta table.
    */
-  private class GpuStagedDeltaTableV2(
-      ident: Identifier,
-      override val schema: StructType,
-      val partitions: Array[Transform],
-      override val properties: util.Map[String, String],
-      operation: TableCreationModes.CreationMode
-      ) extends StagedTable with SupportsWrite {
-
-    private var asSelectQuery: Option[DataFrame] = None
-    private var writeOptions: Map[String, String] = Map.empty
-
-    override def partitioning(): Array[Transform] = partitions
-
-    override def commitStagedChanges(): Unit = recordFrameProfile(
-      "DeltaCatalog", "commitStagedChanges") {
-      val conf = spark.sessionState.conf
-      val (props, sqlWriteOptions) = getTablePropsAndWriteOptions(properties)
-      if (writeOptions.isEmpty && sqlWriteOptions.nonEmpty) {
-        writeOptions = sqlWriteOptions
-      }
-      expandTableProps(props, writeOptions, conf)
-      createDeltaTable(
-        ident,
-        schema,
-        partitions,
-        props,
-        writeOptions,
-        asSelectQuery,
-        operation
-      )
-    }
-
-    override def name(): String = ident.name()
-
-    override def abortStagedChanges(): Unit = {}
-
-    override def capabilities(): util.Set[TableCapability] = {
-      Set(V1_BATCH_WRITE).asJava
-    }
-
-    override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = {
-      writeOptions = info.options.asCaseSensitiveMap().asScala.toMap
-      new DeltaV1WriteBuilder
-    }
-
-    /*
-     * WriteBuilder for creating a Delta table.
-     */
-    private class DeltaV1WriteBuilder extends WriteBuilder {
-      override def build(): V1Write = new V1Write {
-        override def toInsertableRelation(): InsertableRelation = {
-          new InsertableRelation {
-            override def insert(data: DataFrame, overwrite: Boolean): Unit = {
-              asSelectQuery = Option(data)
-            }
+  private class DeltaV1WriteBuilder extends WriteBuilder {
+    override def build(): V1Write = new V1Write {
+      override def toInsertableRelation(): InsertableRelation = {
+        new InsertableRelation {
+          override def insert(data: DataFrame, overwrite: Boolean): Unit = {
+            asSelectQuery = Option(data)
           }
         }
       }
     }
   }
 }
+

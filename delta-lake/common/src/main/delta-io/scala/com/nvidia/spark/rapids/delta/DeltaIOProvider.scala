@@ -107,12 +107,12 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
-  private case class DeltaWriteV1Config(
+  protected case class DeltaWriteV1Config(
       deltaLog: DeltaLog,
       forceOverwrite: Boolean,
       options: mutable.HashMap[String, String])
 
-  private def extractWriteV1Config(
+  protected def extractWriteV1Config(
       meta: RapidsMeta[_, _, _],
       deltaLog: DeltaLog,
       write: V1Write): Option[DeltaWriteV1Config] = {
@@ -183,12 +183,14 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
   override def convertToGpu(
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): GpuExec = {
-    val writeConfig = meta.getCustomTaggingData match {
-      case Some(c: DeltaWriteV1Config) => c
-      case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
+    meta.getCustomTaggingData match {
+      case Some(writeConfig: DeltaWriteV1Config) =>
+        val gpuWrite = toGpuWrite(writeConfig, meta.conf)
+        GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+      case _ =>
+        // For staging table
+        GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, cpuExec.write)
     }
-    val gpuWrite = toGpuWrite(writeConfig, meta.conf)
-    GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   override def tagForGpu(
