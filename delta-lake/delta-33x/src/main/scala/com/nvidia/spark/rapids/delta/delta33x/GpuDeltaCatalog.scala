@@ -414,7 +414,7 @@ class GpuDeltaCatalog(
       val partitions: Array[Transform],
       override val properties: util.Map[String, String],
       operation: TableCreationModes.CreationMode
-      ) extends StagedTable with SupportsWrite with DeltaLogging {
+      ) extends StagedTable with SupportsWrite {
 
     private var asSelectQuery: Option[DataFrame] = None
     private var writeOptions: Map[String, String] = Map.empty
@@ -423,7 +423,7 @@ class GpuDeltaCatalog(
 
     override def commitStagedChanges(): Unit = recordFrameProfile(
       "DeltaCatalog", "commitStagedChanges") {
-      val conf = cpuCatalog.spark.sessionState.conf
+      val conf = spark.sessionState.conf
       val (props, sqlWriteOptions) = getTablePropsAndWriteOptions(properties)
       if (writeOptions.isEmpty && sqlWriteOptions.nonEmpty) {
         writeOptions = sqlWriteOptions
