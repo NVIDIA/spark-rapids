@@ -514,9 +514,11 @@ private class KudoGpuSerializerInstance(
           val firstCol = batch.column(0)
           // TODO: handle secondCol
           firstCol match {
-            case vector: GpuCompressedColumnVector =>
-              withResource(vector.getTableBuffer) { buf =>
-                val data = buf
+            case vector: SlicedGpuCompressedColumnVector =>
+              withResource(vector.getWrap.getTableBuffer) { buf =>
+                val start = vector.getStart
+                val len = vector.getEnd - start
+                val data = buf.slice(start, len)
                 val hostBuffer = HostMemoryBuffer.allocate(data.getLength)
                 hostBuffer.copyFromDeviceBuffer(data);
                 val ret: Array[Byte] = new Array(hostBuffer.getLength.toInt)

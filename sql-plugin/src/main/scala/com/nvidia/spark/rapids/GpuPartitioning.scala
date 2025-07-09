@@ -17,13 +17,11 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ContiguousTable, Cuda, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.kudo.KudoGpuSerializer
-
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.internal.SQLConf
@@ -189,11 +187,34 @@ trait GpuPartitioning extends Partitioning {
     if (usesKudoGPUSlicing) {
       withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
         val dmbs = KudoGpuSerializer.splitAndSerializeToDevice(table, partitionIndexes: _*)
+        val data = dmbs(0)
+        val offsets = dmbs(1)
+        val hmb = HostMemoryBuffer.allocate(offsets.getLength)
+        // could hypothetically access the offsets directly from device but this might be
+        // faster and is easier for now anyway
+        hmb.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+        val elemSize = hmb.getLength / numPartitions // should this be numPartitions - 1
 
-        val res = new Array[ColumnarBatch](2)
-        res(0) = GpuCompressedColumnVector.from(dmbs(0), null)
-        res(1) = GpuCompressedColumnVector.from(dmbs(1), null)
-        res.zipWithIndex
+        val compressedVec = GpuCompressedColumnVector.from(data, null).column(0).
+          asInstanceOf[GpuCompressedColumnVector]
+
+        val res = new Array[ColumnarBatch](numPartitions)
+        var start = 0
+        for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
+          // elemSize should almost always be 8 (size_t) I think, but just in case
+          val idx = if (elemSize == 8) {
+            hmb.getLong((i - 1) * elemSize).toInt
+          } else {
+            hmb.getInt((i - 1) * elemSize).toInt
+          }
+          res(i - 1) = new ColumnarBatch(Array(
+            new SlicedGpuCompressedColumnVector(compressedVec, start, idx)))
+          start = idx
+        }
+        res(numPartitions - 1) = new ColumnarBatch(Array(
+          new SlicedGpuCompressedColumnVector(compressedVec, start, data.getLength.toInt)))
+
+        res.zipWithIndex.filter(_._1 != null)
       }
     } else {
       val sliceOnGpu = usesGPUShuffle
