@@ -550,7 +550,7 @@ object GpuCast {
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (StringType, ByteType | ShortType | IntegerType | LongType) =>
-        fixupToNumException(input, toDataType) { strings =>
+        fixupStrToNumException(input, toDataType) { strings =>
           CastStrings.toInteger(strings, ansiMode,
             GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
@@ -565,8 +565,9 @@ object GpuCast {
       case (StringType, DateType) =>
         castStringToDate(input, options.useAnsiStringToDateMode && ansiMode)
       case (StringType, dt: DecimalType) =>
-        CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
-
+        fixupStrToDecException(input, dt) { strings =>
+          CastStrings.toDecimal(strings, ansiMode, dt.precision, -dt.scale)
+        }
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
 
@@ -641,7 +642,20 @@ object GpuCast {
     }
   }
 
-  private def fixupToNumException[A](input: ColumnView, to: DataType)(f: ColumnView => A): A = {
+  private def fixupStrToDecException[A](
+      input: ColumnView, to: DecimalType)(f: ColumnView => A): A = {
+    try {
+      f(input)
+    } catch {
+      case c: CastException =>
+        val s = withResource(input.getScalarElement(c.getRowWithError)) { errScalar =>
+          errScalar.getJavaString
+        }
+        throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(s), to)
+    }
+  }
+
+  private def fixupStrToNumException[A](input: ColumnView, to: DataType)(f: ColumnView => A): A = {
     try {
       f(input)
     } catch {
