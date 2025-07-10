@@ -122,4 +122,17 @@ object Delta33xProvider extends DeltaIOProvider {
       cpuExec.orCreate,
       cpuExec.invalidateCache)
   }
+
+  override def convertToGpu(
+      cpuExec: AppendDataExecV1,
+      meta: AppendDataExecV1Meta): GpuExec = {
+    cpuExec.table match {
+      case _: DeltaTableV2 =>
+        super.convertToGpu(cpuExec, meta)
+      case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
+        GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, cpuExec.write)
+      case unknown => throw new IllegalStateException(s"$unknown doesn't match any of the known ")
+    }
+  }
 }
+
