@@ -598,6 +598,7 @@ class RowToColumnarIterator(
     opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
+  private var initialRows = 0
   private var targetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
@@ -612,7 +613,6 @@ class RowToColumnarIterator(
   }
 
   private def buildBatch(): ColumnarBatch = {
-    var initialRows = 0
     withResource(new NvtxRange("RowToColumnar", NvtxColor.CYAN)) { _ =>
       val streamStart = System.nanoTime()
       // estimate the size of the first batch based on the schema
@@ -620,7 +620,9 @@ class RowToColumnarIterator(
         if (localSchema.fields.isEmpty) {
           // if there are no columns then we just default to a small number
           // of rows for the first batch
+          // TODO do we even need to allocate anything here?
           targetRows = 1024
+          initialRows = targetRows
         } else {
           val sampleRows = GpuBatchUtils.VALIDITY_BUFFER_BOUNDARY_ROWS
           val sampleBytes = GpuBatchUtils.estimateGpuMemory(localSchema, sampleRows)
