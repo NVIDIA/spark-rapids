@@ -509,21 +509,26 @@ private class KudoGpuSerializerInstance(
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
       val numColumns = batch.numCols()
-      withResource(new ArrayBuffer[AutoCloseable](numColumns)) { toClose =>
+      withResource(new ArrayBuffer[AutoCloseable](numColumns)) { _ =>
         if (batch.numCols() > 0) {
           val firstCol = batch.column(0)
-          // TODO: handle secondCol
           firstCol match {
-            case vector: SlicedGpuCompressedColumnVector =>
-              withResource(vector.getWrap.getTableBuffer) { buf =>
+            case vector: SlicedSerializedColumnVector =>
+              withResource(vector.getWrap) { buf =>
                 val start = vector.getStart
                 val len = vector.getEnd - start
                 val data = buf.slice(start, len)
-                val hostBuffer = HostMemoryBuffer.allocate(data.getLength)
-                hostBuffer.copyFromDeviceBuffer(data);
-                val ret: Array[Byte] = new Array(hostBuffer.getLength.toInt)
-                hostBuffer.getBytes(ret, 0, 0, ret.length)
-                out.write(ret)
+
+                var remaining = data.getLength.toInt
+                val temp = new Array[Byte](math.min(8192, remaining))
+                var at = 0
+                while (remaining > 0) {
+                  val read = math.min(remaining, temp.length)
+                  data.getBytes(temp, 0, at, read)
+                  out.write(temp, 0, read)
+                  at = at + read
+                  remaining = remaining - read
+                }
               }
             case _ =>
           }

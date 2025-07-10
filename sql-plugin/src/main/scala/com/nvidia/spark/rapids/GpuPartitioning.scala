@@ -189,30 +189,29 @@ trait GpuPartitioning extends Partitioning {
         val dmbs = KudoGpuSerializer.splitAndSerializeToDevice(table, partitionIndexes: _*)
         val data = dmbs(0)
         val offsets = dmbs(1)
-        val hmb = HostMemoryBuffer.allocate(offsets.getLength)
+        val dataHost = HostMemoryBuffer.allocate(data.getLength)
+        val offsetsHost = HostMemoryBuffer.allocate(offsets.getLength)
         // could hypothetically access the offsets directly from device but this might be
         // faster and is easier for now anyway
-        hmb.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
-        val elemSize = hmb.getLength / numPartitions // should this be numPartitions - 1
-
-        val compressedVec = GpuCompressedColumnVector.from(data, null).column(0).
-          asInstanceOf[GpuCompressedColumnVector]
+        dataHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+        offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+        val elemSize = offsetsHost.getLength / numPartitions // should this be numPartitions - 1
 
         val res = new Array[ColumnarBatch](numPartitions)
         var start = 0
         for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
           // elemSize should almost always be 8 (size_t) I think, but just in case
           val idx = if (elemSize == 8) {
-            hmb.getLong((i - 1) * elemSize).toInt
+            offsetsHost.getLong((i - 1) * elemSize).toInt
           } else {
-            hmb.getInt((i - 1) * elemSize).toInt
+            offsetsHost.getInt((i - 1) * elemSize)
           }
           res(i - 1) = new ColumnarBatch(Array(
-            new SlicedGpuCompressedColumnVector(compressedVec, start, idx)))
+            new SlicedSerializedColumnVector(dataHost, start, idx)))
           start = idx
         }
         res(numPartitions - 1) = new ColumnarBatch(Array(
-          new SlicedGpuCompressedColumnVector(compressedVec, start, data.getLength.toInt)))
+          new SlicedSerializedColumnVector(dataHost, start, data.getLength.toInt)))
 
         res.zipWithIndex.filter(_._1 != null)
       }

@@ -16,33 +16,38 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.HostMemoryBuffer;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
+import static org.apache.spark.sql.types.DataTypes.NullType;
+
 /**
  * Wraps a GpuColumnVector but only points to a slice of it.  This is intended to only be used
  * during shuffle after the data is partitioned and before it is serialized.
  */
-public class SlicedGpuCompressedColumnVector extends ColumnVector {
-  private final GpuCompressedColumnVector wrap;
+public class SlicedSerializedColumnVector extends ColumnVector {
+  private final HostMemoryBuffer wrap;
   private final int start;
   private final int end;
+
+  private static final String BAD_ACCESS_MSG = "Column is serialized";
 
   /**
    * Sets up the data type of this column vector.
    */
-  protected SlicedGpuCompressedColumnVector(GpuCompressedColumnVector w, int start, int end) {
-    super(w.dataType());
+  protected SlicedSerializedColumnVector(HostMemoryBuffer w, int start, int end) {
+    super(NullType);
     this.wrap = w;
     this.start = start;
     this.end = end;
     assert start >= 0;
     assert end > start; // we don't support empty slices, it should be a null
-    assert end <= w.getTableBuffer().getLength();
-    w.getTableBuffer().incRefCount();
+    assert end <= wrap.getLength();
+    wrap.incRefCount();
   }
 
   @Override
@@ -52,92 +57,77 @@ public class SlicedGpuCompressedColumnVector extends ColumnVector {
 
   @Override
   public boolean hasNull() {
-    // This is a hack, we don't really know...
-    return wrap.hasNull();
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public int numNulls() {
-    // This is a hack, we don't really know...
-    return wrap.numNulls();
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public boolean isNullAt(int rowId) {
-    assert rowId + start < end;
-    return wrap.isNullAt(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public boolean getBoolean(int rowId) {
-    assert rowId + start < end;
-    return wrap.getBoolean(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public byte getByte(int rowId) {
-    assert rowId + start < end;
-    return wrap.getByte(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public short getShort(int rowId) {
-    assert rowId + start < end;
-    return wrap.getShort(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public int getInt(int rowId) {
-    assert rowId + start < end;
-    return wrap.getInt(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public long getLong(int rowId) {
-    assert rowId + start < end;
-    return wrap.getLong(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public float getFloat(int rowId) {
-    assert rowId + start < end;
-    return wrap.getFloat(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public double getDouble(int rowId) {
-    assert rowId + start < end;
-    return wrap.getDouble(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public ColumnarArray getArray(int rowId) {
-    assert rowId + start < end;
-    return wrap.getArray(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public ColumnarMap getMap(int rowId) {
-    assert rowId + start < end;
-    return wrap.getMap(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public Decimal getDecimal(int rowId, int precision, int scale) {
-    assert rowId + start < end;
-    return wrap.getDecimal(rowId + start, precision, scale);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public UTF8String getUTF8String(int rowId) {
-    assert rowId + start < end;
-    return wrap.getUTF8String(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
   public byte[] getBinary(int rowId) {
-    assert rowId + start < end;
-    return wrap.getBinary(rowId + start);
+    throw new IllegalStateException(BAD_ACCESS_MSG);
   }
 
   @Override
@@ -145,7 +135,7 @@ public class SlicedGpuCompressedColumnVector extends ColumnVector {
     throw new UnsupportedOperationException("Children for a slice are not currently supported...");
   }
 
-  public GpuCompressedColumnVector getWrap() {
+  public HostMemoryBuffer getWrap() {
     return wrap;
   }
 
