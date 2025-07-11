@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -586,6 +586,114 @@ case class GpuTransformValues(
     }
   }
 }
+
+trait GpuMapComplexHigherOrderFunction extends GpuSimpleHigherOrderFunction with GpuBind {
+
+  protected def isBound: Boolean
+  protected def boundIntermediate: Seq[GpuExpression]
+
+  protected lazy val inputToLambda: Seq[DataType] = {
+    assert(isBound)
+    boundIntermediate.map(_.dataType) ++ lambdaFunction.arguments.map(_.dataType)
+  }
+
+  protected def makeElementProjectBatch(
+      inputBatch: ColumnarBatch,
+      listColumn: cudf.ColumnVector): ColumnarBatch = {
+    assert(listColumn.getType.equals(DType.LIST))
+    assert(isBound, "Trying to execute an un-bound transform value expression")
+
+    // Need to do an explode followed by pulling out the key/value columns
+    val boundProject = boundIntermediate :+ argument
+    val explodedTable = withResource(GpuProjectExec.project(inputBatch, boundProject)) {
+      projectedBatch =>
+        withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+          projectedTable.explode(boundIntermediate.length)
+        }
+    }
+    val moddedTable = withResource(explodedTable) { explodedTable =>
+      // The last column is a struct column with key/values pairs in it. We need to pull them
+      // out into stand alone columns
+      val cols = new Array[cudf.ColumnVector](explodedTable.getNumberOfColumns + 2)
+      val numOtherColumns = explodedTable.getNumberOfColumns - 1
+      (0 until numOtherColumns).foreach { index =>
+        cols(index) = explodedTable.getColumn(index)
+      }
+      val keyValuePairColumn = explodedTable.getColumn(numOtherColumns)
+      val keyCol = withResource(
+        keyValuePairColumn.getChildColumnView(GpuMapUtils.KEY_INDEX)) { keyView =>
+        keyView.copyToColumnVector()
+      }
+      withResource(keyCol) { keyCol =>
+        val val1Col = withResource(
+          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(0)) 
+          { valueView =>
+          valueView.copyToColumnVector()
+        }
+        val val2Col = withResource(
+          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(1)) 
+          { valueView =>
+          valueView.copyToColumnVector()
+        }
+        withResource(val1Col) { val1Col =>
+          withResource(val2Col) { val2Col =>
+            cols(numOtherColumns) = keyCol
+            cols(numOtherColumns + 1) = val1Col
+            cols(numOtherColumns + 2) = val2Col
+            new cudf.Table(cols: _*)
+          }
+        }
+      }
+    }
+    withResource(moddedTable) { moddedTable =>
+      GpuColumnVector.from(moddedTable, inputToLambda.toArray)
+    }
+  }
+}
+
+case class GpuMapZipWith(
+    argument1: Expression,
+    argument2: Expression,
+    function: Expression,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty)
+    extends GpuMapComplexHigherOrderFunction {
+
+  @transient lazy val MapType(keyType, valueType1, valueContainsNull) = argument1.dataType
+
+  override def dataType: DataType = MapType(keyType, function.dataType, function.nullable)
+
+  override def prettyName: String = "map_zip_with"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArgs, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuMapZipWith(boundArgs(0), boundArgs(1), boundFunc, isBound = true, boundIntermediate)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(argument1.columnarEval(batch)) { arg1 =>
+      withResource(argument2.columnarEval(batch)) { arg2 =>
+        val zippedMap = withResource(cudf.map_zip(arg1.getBase, arg2.getBase)) { zippedMap =>
+          zippedMap.copyToColumnVector()
+        }
+        withResource(zippedMap) { zippedMap =>
+          val newValueCol = withResource(makeElementProjectBatch(batch, zippedMap.getBase)) { cb =>
+            function.columnarEval(cb)
+          }
+          withResource(newValueCol) { newValueCol =>
+            withResource(GpuMapUtils.replaceExplodedValueAsView(arg1.getBase,
+             arg2.getBase, newValueCol.getBase)) {
+              updatedMapView =>
+                GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 
 case class GpuMapFilter(argument: Expression,
     function: Expression,
