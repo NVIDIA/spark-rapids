@@ -1066,6 +1066,7 @@
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
         <nonfail.errors.quiet>false</nonfail.errors.quiet>
         <rapids.source.jar.phase>package</rapids.source.jar.phase>
+        <ap.loader.version>3.0-9</ap.loader.version>
     </properties>
 
     <dependencyManagement>
