@@ -288,7 +288,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
-      taskContext,
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
@@ -317,7 +316,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       val writer = new RapidsShuffleThreadedWriter[Int, Int](
         blockManager,
         shuffleHandle,
-        taskContext,
         0L, // MapId
         transferConf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
@@ -356,7 +354,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
-      taskContext,
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
@@ -381,7 +378,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
-      taskContext,
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
@@ -439,7 +435,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     val writer = new RapidsShuffleThreadedWriter[Int, Int](
       blockManager,
       shuffleHandle,
-      taskContext,
       mapId,
       conf,
       new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
@@ -471,7 +466,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       val writer = new RapidsShuffleThreadedWriter[Int, BadSerializable](
         blockManager,
         shuffleHandle,
-        taskContext,
         0L, // MapId
         conf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),

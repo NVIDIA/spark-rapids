@@ -30,7 +30,6 @@ import com.nvidia.spark.rapids.NvtxRegistry
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
@@ -238,7 +237,6 @@ trait RapidsShuffleWriterShimHelper {
 abstract class RapidsShuffleThreadedWriterBase[K, V](
     blockManager: BlockManager,
     handle: ShuffleHandleWithMetrics[K, V, V],
-    context: TaskContext,
     mapId: Long,
     sparkConf: SparkConf,
     writeMetrics: ShuffleWriteMetricsReporter,
@@ -366,13 +364,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
                   withResource(cb) { _ =>
                     try {
-                      RmmSpark.shuffleThreadWorkingOnTasks(Array(context.taskAttemptId()))
                       val recordWriteTimeStart = System.nanoTime()
                       myWriter.write(key, value)
                       recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
                     } finally {
                       limiter.release(size)
-                      RmmSpark.shuffleThreadFinishedForTasks(Array(context.taskAttemptId()))
                     }
                   }
                 })
@@ -879,7 +875,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
         var success = false
         try {
-          RmmSpark.shuffleThreadWorkingOnTasks(Array(context.taskAttemptId()))
           var currentBatchSize = blockState.getNextBatchSize
           var didFit = true
           while (blockState.hasNext && didFit) {
@@ -899,7 +894,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           if (!success) {
             blockState.close()
           }
-          RmmSpark.shuffleThreadFinishedForTasks(Array(context.taskAttemptId()))
         }
       })
     }
@@ -1363,7 +1357,6 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
             new RapidsShuffleThreadedWriter[K, V](
               blockManager,
               handleWithMetrics,
-              context,
               mapId,
               conf,
               new ThreadSafeShuffleWriteMetricsReporter(metricsReporter),
