@@ -298,6 +298,43 @@ def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_pat
     """
     _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'ITERATOR', conf=conf)
 
+def assert_gpu_and_cpu_save_as_table_are_equal_collect(table_name_factory, write_func, conf={}):
+    """
+    Assert when running write_func on both the CPU and the GPU and reading
+    on the CPU that the results are equal.
+    In this case the data is collected back to the driver and compared here, so be
+    careful about the amount of data returned.
+    """
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    cpu_table = table_name_factory.get() + '_cpu'
+    with_cpu_session(lambda spark : write_func(spark, cpu_table), conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    gpu_table = table_name_factory.get() + '_gpu'
+    with_gpu_session(lambda spark : write_func(spark, gpu_table), conf=conf)
+    gpu_end = time.time()
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+        gpu_end - gpu_start, cpu_end - cpu_start))
+
+    mode = "COLLECT"
+    (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
+        lambda spark: spark.sql("SELECT * FROM {}".format(cpu_table)), mode)
+    (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
+        lambda spark: spark.sql("SELECT * FROM {}".format(gpu_table)), mode)
+
+    from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
+    from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
+    if should_sort_locally():
+        _sort_locally(from_cpu, from_gpu)
+
+    assert_equal(from_cpu, from_gpu)
+
+    return (cpu_table, gpu_table)
+
 def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sql_func, conf={}):
     """
     Assert when running SQL text from write_sql_func on both the CPU and the GPU and reading
