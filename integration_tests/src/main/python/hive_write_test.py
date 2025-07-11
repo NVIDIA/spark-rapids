@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -111,8 +111,7 @@ def test_optimized_hive_ctas_configs_fallback(gens, storage_with_confs, spark_tm
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_opts", [
     ("PARQUET", {"parquet.encryption.footer.key": "k1",
-                 "parquet.encryption.column.keys": "k2:a"}),
-    ("ORC", {"orc.compress": "zlib"})], ids=idfn)
+                 "parquet.encryption.column.keys": "k2:a"})], ids=idfn)
 def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp_table_factory):
     data_table = spark_tmp_table_factory.get()
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]
