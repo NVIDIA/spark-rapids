@@ -128,7 +128,8 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
  * @note The RAPIDS shuffle does not use this code.
  */
 class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Array[DataType],
-    useKudo: Boolean, kudoMeasureBufferCopy: Boolean)
+                                 useGpuKudo: Boolean, useKudo: Boolean,
+                                 kudoMeasureBufferCopy: Boolean)
   extends Serializer with Serializable {
 
   private lazy val kudo = {
@@ -140,7 +141,9 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
   }
 
   override def newInstance(): SerializerInstance = {
-    if (useKudo) {
+    if (useGpuKudo) {
+      new KudoGpuSerializerInstance(metrics, dataTypes)
+    } else if (useKudo) {
       new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
@@ -414,6 +417,120 @@ private class KudoSerializerInstance(
         } else {
           withResource(new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)) { _ =>
             dataSize += KudoSerializer.writeRowCountToStream(out, numRows)
+          }
+        }
+        this
+      }
+    }
+
+    override def writeKey[T: ClassTag](key: T): SerializationStream = {
+      // The key is only needed on the map side when computing partition ids. It does not need to
+      // be shuffled.
+      assert(null == key || key.isInstanceOf[Int])
+      this
+    }
+
+    override def writeAll[T: ClassTag](iter: Iterator[T]): SerializationStream = {
+      // This method is never called by shuffle code.
+      throw new UnsupportedOperationException
+    }
+
+    override def writeObject[T: ClassTag](t: T): SerializationStream = {
+      // This method is never called by shuffle code.
+      throw new UnsupportedOperationException
+    }
+
+    override def flush(): Unit = {
+      out.flush()
+    }
+
+    override def close(): Unit = {
+      out.close()
+    }
+  }
+
+  override def deserializeStream(in: InputStream): DeserializationStream = {
+    new DeserializationStream {
+      private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
+
+      override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
+        new KudoSerializedBatchIterator(dIn, deserTime)
+      }
+
+      override def asIterator: Iterator[Any] = {
+        // This method is never called by shuffle code.
+        throw new UnsupportedOperationException
+      }
+
+      override def readKey[T]()(implicit classType: ClassTag[T]): T = {
+        // We skipped serialization of the key in writeKey(), so just return a dummy value since
+        // this is going to be discarded anyways.
+        null.asInstanceOf[T]
+      }
+
+      override def readValue[T]()(implicit classType: ClassTag[T]): T = {
+        // This method should never be called by shuffle code.
+        throw new UnsupportedOperationException
+      }
+
+      override def readObject[T]()(implicit classType: ClassTag[T]): T = {
+        // This method is never called by shuffle code.
+        throw new UnsupportedOperationException
+      }
+
+      override def close(): Unit = {
+        dIn.close()
+      }
+    }
+  }
+
+  // These methods are never called by shuffle code.
+  override def serialize[T: ClassTag](t: T): ByteBuffer = throw new UnsupportedOperationException
+
+  override def deserialize[T: ClassTag](bytes: ByteBuffer): T =
+    throw new UnsupportedOperationException
+
+  override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
+    throw new UnsupportedOperationException
+}
+
+
+
+
+private class KudoGpuSerializerInstance(
+    val metrics: Map[String, GpuMetric],
+    val dataTypes: Array[DataType],
+) extends SerializerInstance {
+  private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
+  private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
+
+  override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
+
+    override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
+      val batch = value.asInstanceOf[ColumnarBatch]
+      val numColumns = batch.numCols()
+      withResource(new ArrayBuffer[AutoCloseable](numColumns)) { _ =>
+        if (batch.numCols() > 0) {
+          val firstCol = batch.column(0)
+          firstCol match {
+            case vector: SlicedSerializedColumnVector =>
+              withResource(vector.getWrap) { buf =>
+                val start = vector.getStart
+                val len = vector.getEnd - start
+                val data = buf.slice(start, len)
+
+                var remaining = data.getLength.toInt
+                val temp = new Array[Byte](math.min(8192, remaining))
+                var at = 0
+                while (remaining > 0) {
+                  val read = math.min(remaining, temp.length)
+                  data.getBytes(temp, 0, at, read)
+                  out.write(temp, 0, read)
+                  at = at + read
+                  remaining = remaining - read
+                }
+              }
+            case _ =>
           }
         }
         this

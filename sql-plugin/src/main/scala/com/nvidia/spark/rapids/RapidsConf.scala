@@ -2108,6 +2108,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(true)
 
+  val SHUFFLE_KUDO_GPU_SERIALIZER_ENABLED = conf("spark.rapids.shuffle.kudo.gpu.serializer.enabled")
+    .doc("Enable or disable the Kudo gpu serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   val SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED =
     conf("spark.rapids.shuffle.kudo.serializer.measure.buffer.copy.enabled")
     .doc("Enable or disable measuring buffer copy time when using Kudo serializer for the shuffle.")
@@ -3283,6 +3290,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleParitioningMaxCpuBatchSize: Long = get(SHUFFLE_PARTITIONING_MAX_CPU_BATCH_SIZE)
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
+
+  lazy val shuffleKudoGpuSerializerEnabled: Boolean = get(SHUFFLE_KUDO_GPU_SERIALIZER_ENABLED)
 
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
