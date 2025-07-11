@@ -80,6 +80,7 @@ pipeline {
         CLASSIFIER = 'cuda12'
         PVC_MOUNT_PATH = "/pvc"
         PVC_WORKSPACE = "/pvc/workspace/${BUILD_TAG}"
+        LIBCUDF_NVCOMP_POLICY='ALWAYS'
     }
 
     stages {
