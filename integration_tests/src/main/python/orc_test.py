@@ -88,14 +88,11 @@ reader_opt_confs = __reader_opt_confs_no_chunked + __reader_opt_confs_chunked
 # The Count result can not be sorted, so local sort can not be used.
 reader_opt_confs_for_count = __reader_opt_confs_common + [__multithreaded_orc_file_reader_combine_unordered_conf_no_chunked]
 
-non_utc_allow_orc_file_source_scan=['ColumnarToRowExec', 'FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
-
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
-@allow_non_gpu(*non_utc_allow_orc_file_source_scan)
 def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, reader_confs):
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -1053,3 +1050,24 @@ def test_orc_version_V_0_11_and_V_0_12(std_input_path):
         lambda spark: spark.read.orc(std_input_path + "/V_0_12.orc"),
         "v12_table",
         "select * from v12_table")
+
+@pytest.mark.parametrize('v1_enabled_list', ["","orc"])
+@pytest.mark.parametrize("timezone_pair", [("UTC", "Asia/Shanghai"), ("Asia/Shanghai", "UTC"), ("Asia/Shanghai", "America/Los_Angeles")], ids=idfn)
+def test_orc_non_utc_timezone(spark_tmp_path, v1_enabled_list, timezone_pair):
+    data_path = spark_tmp_path + "/ORC_DATA"
+    write_confs = {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.session.timeZone': timezone_pair[0]  # write with a timezone
+    }
+    read_confs = {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.session.timeZone': timezone_pair[1]  # read with another timezone
+    }
+    date_timestamp_gens = [('c1', DateGen(start=date(1590, 1, 1))), ('c2', orc_timestamp_gen)]
+
+    # check read: write with a timezone on CPU, read with another timezone
+    with_cpu_session(lambda spark: gen_df(spark, date_timestamp_gens).write.orc(data_path), conf=write_confs)
+    assert_gpu_and_cpu_are_equal_collect(read_orc_df(data_path), conf=read_confs)
+
+    # TODO test write with GPU
+
