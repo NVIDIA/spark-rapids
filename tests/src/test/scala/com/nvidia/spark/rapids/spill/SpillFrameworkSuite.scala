@@ -43,6 +43,7 @@ class SpillFrameworkSuite
     super.beforeEach()
     val sc = new SparkConf
     sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, "1024")
+    sc.set(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "false")
     SpillFramework.initialize(new RapidsConf(sc))
   }
 
@@ -650,6 +651,7 @@ class SpillFrameworkSuite
     val sc = new SparkConf
     // set a very small store size
     sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, "1KB")
+    sc.set(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "false")
     SpillFramework.initialize(new RapidsConf(sc))
 
     try {
@@ -768,6 +770,7 @@ class SpillFrameworkSuite
             sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, hostSpillStorageSize)
             sc.set(RapidsConf.CHUNKED_PACK_BOUNCE_BUFFER_SIZE.key, chunkedPackBounceBufferSize)
             sc.set(RapidsConf.SPILL_TO_DISK_BOUNCE_BUFFER_SIZE.key, spillToDiskBounceBufferSize)
+            sc.set(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "false")
             SpillFramework.initialize(new RapidsConf(sc))
             val (largeTable, dataTypes) = buildNonContiguousTableOfLongs(numRows = 1000000)
             val handle = SpillableColumnarBatchHandle(largeTable, dataTypes)
@@ -968,6 +971,7 @@ class SpillFrameworkSuite
       val sc = new SparkConf
       // disables the host store limit
       sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, "1KB")
+      sc.set(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "false")
       SpillFramework.initialize(new RapidsConf(sc))
       // buffer is too big for host store limit, so we will skip host
       val handle = SpillableDeviceBufferHandle(DeviceMemoryBuffer.allocate(1025))
@@ -1001,6 +1005,7 @@ class SpillFrameworkSuite
     try {
       val sc = new SparkConf
       sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, "1KB")
+      sc.set(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "false")
       SpillFramework.initialize(new RapidsConf(sc))
       // fill up the host store
       withResource(SpillableHostBufferHandle(HostMemoryBuffer.allocate(1024))) { hostHandle =>
@@ -1039,6 +1044,7 @@ class SpillFrameworkSuite
       sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, "1")
       sc.set(RapidsConf.SPILL_TO_DISK_BOUNCE_BUFFER_SIZE.key, "10")
       sc.set(RapidsConf.CHUNKED_PACK_BOUNCE_BUFFER_SIZE.key, "1MB")
+      sc.set(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "false")
       val rapidsConf = new RapidsConf(sc)
       SpillFramework.initialize(rapidsConf)
       val (handle, _) = addTableToFramework()
