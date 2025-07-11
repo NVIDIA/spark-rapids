@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,7 +85,7 @@ case class GpuExpandExec(
   private val PRE_PROJECT_TIME = "preprojectTime"
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     PRE_PROJECT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, "pre-projection time"),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
@@ -101,7 +101,7 @@ case class GpuExpandExec(
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // cache in a local to avoid serializing the plan
-    val metricsMap = allMetrics
+    val metricsMap = opMetrics
 
     var projectionsForBind = projections
     var attributesForBind = child.output
@@ -201,9 +201,7 @@ class GpuExpandIterator(
   private var sb: Option[SpillableColumnarBatch] = None
   private var projectionIndex = 0
   private val numInputBatches = metrics(NUM_INPUT_BATCHES)
-  private val numOutputBatches = metrics(NUM_OUTPUT_BATCHES)
   private val numInputRows = metrics(NUM_INPUT_ROWS)
-  private val numOutputRows = metrics(NUM_OUTPUT_ROWS)
   private val opTime = metrics(OP_TIME)
 
   // Don't install the callback if in a unit test
@@ -228,9 +226,6 @@ class GpuExpandIterator(
       "ExpandExec projections", NvtxColor.GREEN, opTime)) { _ =>
       boundProjections(projectionIndex).projectWithRetrySingleBatch(sb.get)
     }
-
-    numOutputBatches += 1
-    numOutputRows += projectedBatch.numRows()
 
     projectionIndex += 1
     if (projectionIndex == boundProjections.length) {

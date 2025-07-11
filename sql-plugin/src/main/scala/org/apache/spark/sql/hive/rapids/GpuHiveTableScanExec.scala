@@ -169,7 +169,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     "numFiles" -> createMetric(ESSENTIAL_LEVEL, "number of files read"),
     "metadataTime" -> createTimingMetric(ESSENTIAL_LEVEL, "metadata time"),
     "filesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "size of files read"),
@@ -212,7 +212,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
       maxReaderBatchSizeRows = rapidsConf.maxReadBatchSizeRows,
       maxReaderBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes,
       maxGpuColumnSizeBytes = rapidsConf.maxGpuColumnSizeBytes,
-      metrics = allMetrics,
+      metrics = opMetrics,
       params = options
     )
 
@@ -359,7 +359,6 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val scanTime = gpuLongMetric(SCAN_TIME)
     inputRDD.mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
@@ -367,15 +366,12 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
         override def hasNext: Boolean = {
           // The `FileScanRDD` returns an iterator which scans the file during the `hasNext` call.
           scanTime.ns {
-            val res = batches.hasNext
-            res
+            batches.hasNext
           }
         }
 
         override def next(): ColumnarBatch = {
-          val batch = batches.next()
-          numOutputRows += batch.numRows()
-          batch
+          batches.next()
         }
       }
     }

@@ -68,7 +68,7 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       prepareSchema(fileScan.readPartitionSchema),
       pushedFilters,
       fileScan.rapidsConf,
-      fileScan.allMetrics,
+      fileScan.opMetrics,
       fileScan.queryUsesInputFile)
   }
 
