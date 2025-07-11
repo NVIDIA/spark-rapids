@@ -35,7 +35,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
-import com.nvidia.spark.rapids.shims.TryModeShim
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
@@ -1918,7 +1917,7 @@ object GpuOverrides extends Logging {
 
         override def tagExprForGpu(): Unit = {
           // Check if this Add expression is in TRY mode context
-          if (TryModeShim.isTryMode(a) && ansiEnabled) {
+          if (TryModeShim.isTryMode(a)) {
             willNotWorkOnGpu("try_add is not supported on GPU")
           }
         }
@@ -1944,6 +1943,13 @@ object GpuOverrides extends Logging {
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagExprForGpu(): Unit = {
+          // Check if this Subtract expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_subtract is not supported on GPU")
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
@@ -2295,6 +2301,11 @@ object GpuOverrides extends Logging {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
           checkAndTagFloatAgg(inputDataType, this.conf, this)
+
+          // Check if this Sum expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_sum is not supported on GPU")
+          }
         }
 
         override def needsAnsiCheck: Boolean = false

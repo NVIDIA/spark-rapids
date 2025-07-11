@@ -35,11 +35,12 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 
 object TryModeShim {
   /**
-   * Check if an expression is in TRY mode.
-   * For Spark versions before 3.4.0, TRY mode is not supported, so always returns false.
+   * Expression is wrapped under TryEval during query planning which is not supported on GPU.
+   * Example: for try_add(col1, col2) it would be <TryEval> tryeval((col1#0 + col2#1))
+   * So the return value from this function does not matter.
    */
+
   def isTryMode(expr: Expression): Boolean = {
-    // Pre-3.4.0 versions don't have EvalMode.TRY support
     false
   }
-} 
+}

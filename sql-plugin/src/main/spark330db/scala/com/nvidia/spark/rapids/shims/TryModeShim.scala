@@ -40,15 +40,17 @@ import org.apache.spark.sql.catalyst.expressions.{Add, Divide, EvalMode, Express
 object TryModeShim {
   /**
    * Check if an expression is in TRY mode.
-   * For Spark versions 3.4.0+, check the evalMode field directly.
+   * For Spark versions 3.4.0+, use reflection to check evalMode field.
    */
   def isTryMode(expr: Expression): Boolean = {
-    expr match {
-      case a: Add => a.evalMode == EvalMode.TRY
-      case s: Subtract => s.evalMode == EvalMode.TRY
-      case m: Multiply => m.evalMode == EvalMode.TRY
-      case d: Divide => d.evalMode == EvalMode.TRY
-      case _ => false
+    try {
+      // Use reflection to access evalMode field if it exists
+      val evalModeField = expr.getClass.getDeclaredField("evalMode")
+      evalModeField.setAccessible(true)
+      val evalMode = evalModeField.get(expr)
+      evalMode == EvalMode.TRY
+    } catch {
+      case _: Exception => false // Return false if any exception occurs
     }
   }
-} 
+}
