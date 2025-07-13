@@ -32,7 +32,6 @@ import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.internal.SQLConf
 
 object RmmRapidsRetryIterator extends Logging {
 
@@ -586,13 +585,6 @@ object RmmRapidsRetryIterator extends Logging {
     }
   }
 
-  // Used to figure out if we should inject an OOM (only for tests)
-  // We assume that runtime change of spark.rapids.sql.test.injectRetryOOM is not supported, so
-  // we can just use a cached value, in order to save the cost of creating new RapidsConf, which
-  // is quite expensive when we're constantly invoking RmmRapidsRetryIterator in a long loop, e.g.
-  // KudoSerializedBatchIterator.
-  private lazy val injectMode = Option(SQLConf.get).map(new RapidsConf(_).testRetryOOMInjectionMode)
-
   /**
    * RmmRapidsRetryIterator exposes an iterator that can retry work,
    * specified by `fn`, abstracting away the retry specifics.
@@ -658,7 +650,7 @@ object RmmRapidsRetryIterator extends Logging {
         splitReason = SplitReason.NONE
         try {
           // call the user's function
-          injectMode.foreach {
+          RapidsConf.testRetryOOMInjectionMode() match {
             case mode if !injectedOOM && mode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
