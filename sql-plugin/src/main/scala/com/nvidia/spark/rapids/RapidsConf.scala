@@ -2586,8 +2586,8 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .toLowerCase.toBoolean
     if (!res) {
       logDebug("OOM injection in tests disable. To enable, set java property " +
-        s"`-Dcom.nvidia.spark.rapids.runningTest=true`, and configure using " +
-        "${TEST_RETRY_OOM_INJECTION_MODE.key}.")
+        "`-Dcom.nvidia.spark.rapids.runningTest=true`, and configure using " +
+        s"${TEST_RETRY_OOM_INJECTION_MODE.key}.")
     }
     res
   }
