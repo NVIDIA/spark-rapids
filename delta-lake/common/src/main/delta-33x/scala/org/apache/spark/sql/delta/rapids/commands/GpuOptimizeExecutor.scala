@@ -71,7 +71,7 @@ class GpuOptimizeExecutor(
   private def ensureDeletionVectorDisabled(): Unit = {
     val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(snapshot)
 
-    // Currently optimize executor will only be triggerred by auto compaction, and we should
+    // Currently optimize executor will only be triggered by auto compaction, and we should
     // already fallback to cpu when deletion vector enabled. This check ensures that the fallback
     // actually works.
     if (dvFeatureEnabled) {
