@@ -37,7 +37,7 @@ import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaOperations.Operation
 import org.apache.spark.sql.delta.actions.{Action, AddFile, DeletionVectorDescriptor, FileAction, RemoveFile}
 import org.apache.spark.sql.delta.actions.InMemoryLogReplay.UniqueFileActionTuple
-import org.apache.spark.sql.delta.commands.{Batch, Bin, ClusteringStrategy, CompactionStrategy, DeltaCommand, DeltaOptimizeContext, OptimizeTableStrategy, ZOrderStrategy}
+import org.apache.spark.sql.delta.commands.{Batch, Bin, ClusteringStrategy, CompactionStrategy, DeletionVectorUtils, DeltaCommand, DeltaOptimizeContext, OptimizeTableStrategy, ZOrderStrategy}
 import org.apache.spark.sql.delta.commands.optimize._
 import org.apache.spark.sql.delta.files.SQLMetricsReporting
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
@@ -67,6 +67,22 @@ class GpuOptimizeExecutor(
     isAutoCompact: Boolean,
     optimizeContext: DeltaOptimizeContext)
   extends DeltaCommand with SQLMetricsReporting with Serializable {
+
+  private def ensureDeletionVectorDisabled(): Unit = {
+    val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(snapshot)
+    val dvPersistConfEnabled = sparkSession.sessionState.conf
+      .getConf(DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)
+
+    // Currently optimize executor will only be triggerred by auto compaction, and we should
+    // already fallback to cpu when deletion vector enabled. This check ensures that the fallback
+    // actually works.
+    if (dvFeatureEnabled || dvPersistConfEnabled) {
+      throw new IllegalStateException("Deletion vector not supported in gpu, we should have " +
+        "fallback to cpu in GpuOptimizeExecutor")
+    }
+  }
+
+  ensureDeletionVectorDisabled()
 
   private val rapidsConf = new RapidsConf(sparkSession.sessionState.conf)
 
