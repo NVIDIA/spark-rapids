@@ -89,22 +89,38 @@ def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
-@pytest.mark.parametrize("storage_with_confs", [
-    ("PARQUET", {"parquet.encryption.footer.key": "k1",
-                 "parquet.encryption.column.keys": "k2:a"}),
-    ("PARQUET", {"spark.sql.parquet.compression.codec": "gzip"}),
-    ("PARQUET", {"spark.sql.parquet.writeLegacyFormat": "true"}),
-    ("ORC", {"spark.sql.orc.compression.codec": "zlib"})], ids=idfn)
-def test_optimized_hive_ctas_configs_fallback(gens, storage_with_confs, spark_tmp_table_factory):
+@pytest.mark.parametrize("parquet_confs", [
+    {"parquet.encryption.footer.key": "k1",
+     "parquet.encryption.column.keys": "k2:a"},
+    {"spark.sql.parquet.compression.codec": "gzip"},
+    {"spark.sql.parquet.writeLegacyFormat": "true"}
+], ids=idfn)
+def test_optimized_hive_ctas_configs_fallback_parquet(gens, parquet_confs, spark_tmp_table_factory):
     data_table = spark_tmp_table_factory.get()
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]
     with_cpu_session(lambda spark: gen_df(spark, gen_list).createOrReplaceTempView(data_table))
-    storage, confs = storage_with_confs
     fallback_class = "ExecutedCommandExec" if is_spark_340_or_later() or is_databricks122_or_later() else "DataWritingCommandExec"
     assert_gpu_fallback_collect(
-        lambda spark: spark.sql("CREATE TABLE {} STORED AS {} AS SELECT * FROM {}".format(
-            spark_tmp_table_factory.get(), storage, data_table)),
-        fallback_class, conf=confs)
+        lambda spark: spark.sql("CREATE TABLE {} STORED AS PARQUET AS SELECT * FROM {}".format(
+            spark_tmp_table_factory.get(), data_table)),
+        fallback_class, conf=parquet_confs)
+
+
+@pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
+@pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
+@pytest.mark.parametrize("orc_confs", [
+    {"spark.sql.orc.compression.codec": "zlib"}
+], ids=idfn)
+@ignore_order(local=True)
+def test_optimized_hive_ctas_configs_orc(gens, orc_confs, spark_tmp_table_factory):
+    data_table = spark_tmp_table_factory.get()
+    gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).createOrReplaceTempView(data_table))
+    assert_gpu_and_cpu_sql_writes_are_equal_collect(
+        spark_tmp_table_factory,
+        lambda spark, table_name: "CREATE TABLE {} STORED AS ORC AS SELECT * FROM {}".format(
+            table_name, data_table),
+        conf=orc_confs)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
