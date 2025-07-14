@@ -70,13 +70,11 @@ class GpuOptimizeExecutor(
 
   private def ensureDeletionVectorDisabled(): Unit = {
     val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(snapshot)
-    val dvPersistConfEnabled = sparkSession.sessionState.conf
-      .getConf(DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)
 
     // Currently optimize executor will only be triggerred by auto compaction, and we should
     // already fallback to cpu when deletion vector enabled. This check ensures that the fallback
     // actually works.
-    if (dvFeatureEnabled || dvPersistConfEnabled) {
+    if (dvFeatureEnabled) {
       throw new IllegalStateException("Deletion vector not supported in gpu, we should have " +
         "fallback to cpu in GpuOptimizeExecutor")
     }
