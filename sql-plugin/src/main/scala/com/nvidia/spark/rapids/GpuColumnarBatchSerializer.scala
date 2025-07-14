@@ -514,21 +514,22 @@ private class KudoGpuSerializerInstance(
           val firstCol = batch.column(0)
           firstCol match {
             case vector: SlicedSerializedColumnVector =>
-              withResource(vector.getWrap) { buf =>
-                val start = vector.getStart
-                val len = vector.getEnd - start
-                val data = buf.slice(start, len)
+              // TODO figure out how to close the buf correctly
+              val buf = vector.getWrap
+              val start = vector.getStart
+              val len = vector.getEnd - start
+              val data = buf.slice(start, len)
 
-                var remaining = data.getLength.toInt
-                val temp = new Array[Byte](math.min(8192, remaining))
-                var at = 0
-                while (remaining > 0) {
-                  val read = math.min(remaining, temp.length)
-                  data.getBytes(temp, 0, at, read)
-                  out.write(temp, 0, read)
-                  at = at + read
-                  remaining = remaining - read
-                }
+              var remaining = data.getLength.toInt
+              val temp = new Array[Byte](math.min(8192, remaining))
+              var at = 0
+              while (remaining > 0) {
+                val read = math.min(remaining, temp.length)
+                data.getBytes(temp, 0, at, read)
+                out.write(temp, 0, read)
+                at = at + read
+                remaining = remaining - read
+                out.flush()
               }
             case _ =>
           }

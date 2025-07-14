@@ -202,9 +202,9 @@ trait GpuPartitioning extends Partitioning {
         for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
           // elemSize should almost always be 8 (size_t) I think, but just in case
           val idx = if (elemSize == 8) {
-            offsetsHost.getLong((i - 1) * elemSize).toInt
+            offsetsHost.getLong((i) * elemSize).toInt
           } else {
-            offsetsHost.getInt((i - 1) * elemSize)
+            offsetsHost.getInt((i) * elemSize)
           }
           res(i - 1) = new ColumnarBatch(Array(
             new SlicedSerializedColumnVector(dataHost, start, idx)))
