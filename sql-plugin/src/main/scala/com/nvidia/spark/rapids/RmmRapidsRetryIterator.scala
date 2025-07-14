@@ -654,7 +654,7 @@ object RmmRapidsRetryIterator extends Logging {
             case mode if !injectedOOM && mode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
-              // `forceRetryOOM` requires a prior association.v
+              // `forceRetryOOM` requires a prior association.
               var threadAssociated = true
               if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
                 // If RmmSpark isn't aware of this thread, we are going to
