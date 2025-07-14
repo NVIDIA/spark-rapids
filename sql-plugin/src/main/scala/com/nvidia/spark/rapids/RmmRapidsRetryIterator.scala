@@ -654,20 +654,36 @@ object RmmRapidsRetryIterator extends Logging {
             case mode if !injectedOOM && mode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
-              // `forceRetryOOM` requires a prior association.
+              // `forceRetryOOM` requires a prior association.v
+              var threadAssociated = true
               if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
-                RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+                // If RmmSpark isn't aware of this thread, we are going to
+                // try to find the TaskContext and use it to register it for a taskID.
+                // However, TaskContext is not going to work for a pool thread that isn't
+                // managed by Spark, so we are going to skip registration, and skip the OOM.
+                // This is a temporary workaround, see:
+                // https://github.com/NVIDIA/spark-rapids/issues/13098
+                threadAssociated = false
+                Option(TaskContext.get()).foreach { tc =>
+                  threadAssociated = true
+                  RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
+                }
               }
-              if (mode.withSplit) {
-                RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
-                  mode.numOoms,
-                  mode.oomInjectionFilter.ordinal,
-                  mode.skipCount)
+              if (threadAssociated) {
+                if (mode.withSplit) {
+                  RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                } else {
+                  RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                }
               } else {
-                RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                  mode.numOoms,
-                  mode.oomInjectionFilter.ordinal,
-                  mode.skipCount)
+                log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
+                  "https://github.com/NVIDIA/spark-rapids/issues/13098")
               }
             case _ => ()
           }
