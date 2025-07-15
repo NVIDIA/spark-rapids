@@ -533,6 +533,9 @@ private class KudoGpuSerializerInstance(
               }
             case _ =>
           }
+        } else {
+          // is this a hack?
+          KudoSerializer.writeRowCountToStream(out, batch.numRows())
         }
         this
       }
