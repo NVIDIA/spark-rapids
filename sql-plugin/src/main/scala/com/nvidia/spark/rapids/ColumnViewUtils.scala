@@ -19,9 +19,17 @@ import ai.rapids.cudf.ColumnView
 import com.nvidia.spark.rapids.Arm.withResource
 
 object ColumnViewUtils {
+  /**
+   * Get the `toString` on the scalar element at the specified row index in a column view.
+   * E.g., returns: Scalar{type=INT32 value=-1250858453} (ID: 143 7149580cdd60)
+   */
   def getElementStringFromColumnView(cv: ColumnView, rowIndex: Int): String = {
     withResource(cv.getScalarElement(rowIndex)) { scalar =>
-      scalar.toString
+      if (scalar.isValid) {
+        scalar.toString
+      } else {
+        "null"
+      }
     }
   }
 }
