@@ -15,8 +15,19 @@
 import sys
 import xml.etree.ElementTree as ET
 
-
+# This method is used by shimplify.py and various build scripts. The build scripts use the 
+# default values for the `logger` and `ignore_excluded_shims`
 def _get_buildvers(buildvers, pom_file, logger=None, ignore_excluded_shims=False):
+    """Returns the spark versions supported for the specified arguments
+
+    Positional Arguments:
+    buildvers -- no_snap_with_databricks, snap_and_no_snap_with_databricks, no_snapshots, snap_and_no_snap, databricks
+    pom_file -- The POM file to use to get the release profiles
+
+    Keyword arguments:
+    logger -- logger to use for logging
+    ignore_excluded_shims -- Whether to honor the dyn.shim.excluded.releases defined in the pom
+    """
     pom = ET.parse(pom_file)
     ns = {"pom": "http://maven.apache.org/POM/4.0.0"}
     releases = []

@@ -31,5 +31,8 @@ buildvers = project.getProperty("dyn.shim.buildver")
 
 sys.path.append("{}/build/".format(spark_rapids_source_basedir))
 from get_buildvers import _get_buildvers
+# Because we need all versions to generate new shims correctly, we get all the supported plugin 
+# versions, including the ones that have been asked to be ignored by the setting 
+# `dyn.shim.excluded.releases` in the POM.xml
 value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log, ignore_excluded_shims=True)
 project.setProperty("included_buildvers", value)
