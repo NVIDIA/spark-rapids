@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.DeltaIOProvider
+import com.nvidia.spark.rapids.delta.{DeltaCreatableRelationProviderMetaBase, DeltaIOProvider}
+import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
@@ -25,16 +26,51 @@ import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
+import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils.PROP_CLUSTERING_COLUMNS
+import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterByTransform
+import org.apache.spark.sql.delta.sources.DeltaDataSource
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.rapids.ExternalSource
+import org.apache.spark.sql.sources.CreatableRelationProvider
 
 object Delta33xProvider extends DeltaIOProvider {
 
+  override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
+    CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
+    Seq(
+      ExternalSource.toCreatableRelationProviderRule[DeltaDataSource](
+        "Write to Delta Lake table",
+        (a, conf, p, r) => {
+          require(p.isDefined, "Must provide parent meta")
+          new DeltaCreatableRelationProviderMeta(a, conf, p, r)
+        })
+    ).map(r => (r.getClassFor.asSubclass(classOf[CreatableRelationProvider]), r)).toMap
+  }
+
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
     write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
+  }
+
+  override def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    super.tagForGpu(cpuExec, meta)
+
+    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
+      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
+    }
+  }
+
+  override def tagForGpu(cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
+    super.tagForGpu(cpuExec, meta)
+
+    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
+      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
+    }
   }
 
   override def tagForGpu(
@@ -45,10 +81,23 @@ object Delta33xProvider extends DeltaIOProvider {
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
 
+    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
+      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
+    }
+
     cpuExec.table match {
       case _: DeltaTableV2 => super.tagForGpu(cpuExec, meta)
       case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
       case _ => meta.willNotWorkOnGpu(s"${cpuExec.table} table class not supported on GPU")
+    }
+  }
+
+  override def tagForGpu(cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): Unit = {
+    super.tagForGpu(cpuExec, meta)
+
+    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
+      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
     }
   }
 
@@ -136,3 +185,18 @@ object Delta33xProvider extends DeltaIOProvider {
   }
 }
 
+class DeltaCreatableRelationProviderMeta(
+    source: DeltaDataSource,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule) extends
+  DeltaCreatableRelationProviderMetaBase(source, conf, parent, rule) {
+  override def tagSelfForGpu(): Unit = {
+    super.tagSelfForGpu()
+
+    val table = source.getTable(saveCmd.schema, Array.empty, saveCmd.options.asJava)
+    if (table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
+      willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
+    }
+  }
+}

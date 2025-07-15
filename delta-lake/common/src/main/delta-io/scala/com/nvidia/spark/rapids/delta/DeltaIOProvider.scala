@@ -36,9 +36,8 @@ import org.apache.spark.sql.delta.sources.{DeltaDataSource, DeltaSourceUtils}
 import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
-import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelation}
+import org.apache.spark.sql.sources.InsertableRelation
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 
@@ -46,17 +45,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
  * Implements the DeltaProvider interface for open source delta.io Delta Lake.
  */
 abstract class DeltaIOProvider extends DeltaProviderImplBase {
-  override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
-      CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
-    Seq(
-      ExternalSource.toCreatableRelationProviderRule[DeltaDataSource](
-        "Write to Delta Lake table",
-        (a, conf, p, r) => {
-          require(p.isDefined, "Must provide parent meta")
-          new DeltaCreatableRelationProviderMeta(a, conf, p, r)
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[CreatableRelationProvider]), r)).toMap
-  }
+
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
     format == classOf[DeltaParquetFileFormat]
@@ -265,14 +254,14 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
   }
 }
 
-class DeltaCreatableRelationProviderMeta(
+abstract class DeltaCreatableRelationProviderMetaBase(
     source: DeltaDataSource,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends CreatableRelationProviderMeta[DeltaDataSource](source, conf, parent, rule) {
   require(parent.isDefined, "Must provide parent meta")
-  private val saveCmd = parent.get.wrapped match {
+  protected val saveCmd = parent.get.wrapped match {
     case s: SaveIntoDataSourceCommand => s
     case s =>
       throw new IllegalStateException(s"Expected SaveIntoDataSourceCommand, found ${s.getClass}")
