@@ -50,7 +50,8 @@ object TryModeShim {
       val evalMode = evalModeField.get(expr)
       evalMode == EvalMode.TRY
     } catch {
-      case _: Exception => false // Return false if any exception occurs
+      case ex: Exception =>
+        throw new RuntimeException(s"Unexpected error accessing evalMode field: $ex")
     }
   }
 }
