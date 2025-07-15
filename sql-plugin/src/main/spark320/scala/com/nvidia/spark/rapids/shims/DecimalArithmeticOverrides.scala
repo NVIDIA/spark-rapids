@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -158,9 +158,11 @@ object DecimalArithmeticOverrides {
         ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+
+        override def tagSelfForAst(): Unit = {
+          super.tagSelfForAst();
           if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
+            willNotWorkInAst("AST binary multiplication does not support ANSI mode.")
           }
         }
 

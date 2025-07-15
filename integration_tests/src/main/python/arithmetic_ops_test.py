@@ -198,12 +198,49 @@ def test_multiplication_ansi_enabled(data_gen):
                 f.col('a') * f.col('b')),
             conf=ansi_enabled_conf)
 
-def test_multiplication_ansi_overflow():
+def test_multiplication_ansi_overflow_for_decimal():
     exception_str = 'ArithmeticException'
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, DecimalGen(38, 0)).selectExpr("a * " + "9"*38 + " as ret").collect(),
         ansi_enabled_conf,
         exception_str)
+
+_gen_gen_lit_tuple_list_overflow_for_multiply = [
+    (ByteGen(min_val=30, max_val=50, special_cases=[]), ByteGen(min_val=50, max_val=127, special_cases=[]), -50),  # 30 * 50 > 127 (Byte.MaxValue)
+    (ShortGen(min_val=-32768, max_val=-30000, special_cases=[]), ShortGen(min_val=2, max_val=32767, special_cases=[]), 2), # 30000 * 2 > 32767 (Short.MaxValue)
+    (IntegerGen(min_val=2147483647//2, max_val=2147483647, special_cases=[]), IntegerGen(min_val=3, max_val=2147483647, special_cases=[]), 3) , # 2147483647//2 * 3 > 2147483647 (Int.MaxValue)
+    (LongGen(min_val=9223372036854775807//2, max_val=9223372036854775807, special_cases=[]), LongGen(min_val=3, max_val=9223372036854775807, special_cases=[]), 2147483647)] # 9223372036854775807//2 * 3 > 9223372036854775807(Long.MaxValue)
+@pytest.mark.parametrize('gen_gen_lit', _gen_gen_lit_tuple_list_overflow_for_multiply, ids=idfn)
+def test_multiplication_ansi_overflow_for_integer(gen_gen_lit):
+    (gen1, gen2, lit) = gen_gen_lit
+    data_type = gen1.data_type
+    exception_str = 'ArithmeticException'
+    assert_gpu_and_cpu_error(
+        lambda spark : two_col_df(spark, gen1, gen2).select(
+            f.lit(lit).cast(data_type) * f.col('a'),
+            f.col('a') * f.lit(lit).cast(data_type),
+            f.col('a') * f.col('b')).collect(),
+        ansi_enabled_conf,
+        exception_str)
+
+_gen_lit_pair_list_without_overflow_for_multiply = [
+    (ByteGen(min_val=-11, max_val=11, special_cases=[]), 11),  # 11 * 11 < 127 (Byte.MaxValue)
+    (ShortGen(min_val=-181, max_val=181, special_cases=[]), 181), # 181 * 181 < 32767 (Short.MaxValue)
+    (IntegerGen(min_val=-46340, max_val=46340, special_cases=[]), 46340) , # 46340 * 46340 < 2147483647 (Int.MaxValue)
+    (LongGen(min_val=-3037000499, max_val=3037000499, special_cases=[]), 3037000499), # 3037000499 * 3037000499 < 9223372036854775807(Long.MaxValue)
+    (float_gen, 12),
+    (double_gen, 12)]
+@pytest.mark.parametrize('data_gen_lit_pair', _gen_lit_pair_list_without_overflow_for_multiply, ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', [True, False])
+def test_multiplication_without_overflow_for_numeric_ansi_on_off(data_gen_lit_pair, ansi_enabled):
+    (data_gen, lit) = data_gen_lit_pair
+    data_type = data_gen.data_type
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, data_gen).select(
+            f.lit(lit).cast(data_type) * f.col('a'),
+            f.col('a') * f.lit(lit).cast(data_type),
+            f.col('a') * f.col('b')),
+        conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
     DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),

@@ -57,9 +57,11 @@ object DecimalArithmeticOverrides {
           ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
           ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
+
+          override def tagSelfForAst(): Unit = {
+            super.tagSelfForAst();
             if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-              willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
+              willNotWorkInAst("AST binary multiplication does not support ANSI mode.")
             }
           }
 

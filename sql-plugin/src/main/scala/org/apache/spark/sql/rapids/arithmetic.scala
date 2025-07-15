@@ -23,6 +23,7 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.{Arithmetic, ExceptionWithRowIndex}
 import com.nvidia.spark.rapids.shims.{DecimalMultiply128, GpuTypeShims, NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -760,6 +761,37 @@ case class GpuMultiply(
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        throw new RuntimeException("ArithmeticException: failed in ANSI mode.", rowException)
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        throw new RuntimeException("ArithmeticException: failed in ANSI mode.", rowException)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        throw new RuntimeException("ArithmeticException: failed in ANSI mode.", rowException)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    throw new RuntimeException("Logic error: Spark already did the constant folding")
+  }
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
