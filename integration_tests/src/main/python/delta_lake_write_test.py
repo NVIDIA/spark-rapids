@@ -98,10 +98,12 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf, enable_dele
         delta_write_fallback_check,
         conf=copy_and_update(writer_confs, disable_conf))
 
-
+# unsupported WriteIntoDeltaCommand tracked by https://github.com/NVIDIA/spark-rapids/issues/11169
+@allow_non_gpu_conditional(is_databricks143_or_later(), "DataWritingCommandExec, WriteFilesExec")
 @allow_non_gpu("AppendDataExecV1", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.xfail(is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/13106")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
     enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
 def test_delta_write_round_trip_managed(spark_tmp_table_factory, enable_deletion_vectors):
