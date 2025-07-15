@@ -827,7 +827,6 @@ object RoundingErrorUtil {
     val value = withResource(values.copyToHost()){hcv =>
       hcv.getBigDecimal(row_id)
     }
-    RapidsErrorUtils.cannotChangeDecimalPrecisionError(
-      Decimal(value, fromType.precision, fromType.scale), toType)
+    RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(value), toType)
   }
 }
