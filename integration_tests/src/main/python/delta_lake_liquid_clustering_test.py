@@ -44,7 +44,7 @@ from spark_session import is_databricks133_or_later, is_spark_353_or_later
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="CTAS with cluster by is only supported on delta 3.3+")
 def test_delta_ctas_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_table_factory):
@@ -105,7 +105,7 @@ def gen_df_and_replace_view(spark, view_name):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="RTAS with cluster by is only supported on delta 3.3+")
 def test_delta_rtas_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_table_factory):
@@ -144,7 +144,7 @@ def test_delta_rtas_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_tab
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_append_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_table_factory):
@@ -178,7 +178,7 @@ def test_delta_append_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_t
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_insert_overwrite_static_sql_liquid_clustering_fallback(spark_tmp_path,
@@ -210,7 +210,7 @@ def test_delta_insert_overwrite_static_sql_liquid_clustering_fallback(spark_tmp_
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_insert_overwrite_dynamic_sql_liquid_clustering_fallback(spark_tmp_path,
@@ -247,7 +247,7 @@ def test_delta_insert_overwrite_dynamic_sql_liquid_clustering_fallback(spark_tmp
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_insert_overwrite_replace_where_sql_liquid_clustering_fallback(
@@ -311,7 +311,7 @@ def write_to_delta_table_df(spark, path, mode, opts= None):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_append_df_liquid_clustering_fallback(spark_tmp_path, spark_tmp_table_factory):
@@ -341,7 +341,7 @@ def test_delta_append_df_liquid_clustering_fallback(spark_tmp_path, spark_tmp_ta
 @pytest.mark.parametrize("overwrite_mode", ["STATIC", "DYNAMIC"],
                          ids = lambda val: f"overwrite_mode={val}")
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_insert_overwrite_df_liquid_clustering_fallback(spark_tmp_path,
@@ -367,7 +367,7 @@ def test_delta_insert_overwrite_df_liquid_clustering_fallback(spark_tmp_path,
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
-                    reason="Delta Lakeiquid clustering is only supported on Databricks 13.3+")
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_insert_overwrite_replace_where_df_liquid_clustering_fallback(
