@@ -162,7 +162,7 @@ object DecimalArithmeticOverrides {
         override def tagSelfForAst(): Unit = {
           super.tagSelfForAst();
           if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkInAst("AST binary multiplication does not support ANSI mode.")
+            willNotWorkInAst("GPU AST multiplication does not support ANSI mode")
           }
         }
 
