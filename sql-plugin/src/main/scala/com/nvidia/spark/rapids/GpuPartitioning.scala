@@ -193,7 +193,7 @@ trait GpuPartitioning extends Partitioning {
         val offsetsHost = HostMemoryBuffer.allocate(offsets.getLength)
         // could hypothetically access the offsets directly from device but this might be
         // faster and is easier for now anyway
-        dataHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+        dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
         offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
         val elemSize = offsetsHost.getLength / numPartitions // should this be numPartitions - 1
 
