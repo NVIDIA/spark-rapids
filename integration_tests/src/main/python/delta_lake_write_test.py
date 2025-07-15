@@ -99,7 +99,7 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf, enable_dele
         conf=copy_and_update(writer_confs, disable_conf))
 
 
-@allow_non_gpu("AppendDataExecV1", *delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
