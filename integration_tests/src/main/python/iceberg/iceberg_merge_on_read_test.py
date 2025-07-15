@@ -122,9 +122,12 @@ def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reade
 
 
     # Trigger a count operation to verify that it works
-    count = with_gpu_session(lambda spark: spark.table(table_name).count(),
+    gpu_count = with_gpu_session(lambda spark: spark.table(table_name).count(),
                      conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
-    logging.info(f"Count is {count}")
+    cpu_count = with_cpu_session(lambda spark: spark.table(table_name).count(),
+                                 conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+    assert cpu_count == cpu_count, f"Result count diverges, cpu: {cpu_count}, gpu: {gpu_count}"
+    logging.info(f"Count is {cpu_count}")
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),
