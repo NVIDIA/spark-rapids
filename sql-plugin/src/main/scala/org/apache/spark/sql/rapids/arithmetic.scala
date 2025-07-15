@@ -767,7 +767,11 @@ case class GpuMultiply(
       Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
     } catch {
       case rowException: ExceptionWithRowIndex =>
-        throw new RuntimeException("ArithmeticException: failed in ANSI mode.", rowException)
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
     }
   }
 
@@ -776,7 +780,11 @@ case class GpuMultiply(
       Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
     } catch {
       case rowException: ExceptionWithRowIndex =>
-        throw new RuntimeException("ArithmeticException: failed in ANSI mode.", rowException)
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = lhs.getBase.toString
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
     }
   }
 
@@ -785,12 +793,16 @@ case class GpuMultiply(
       Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
     } catch {
       case rowException: ExceptionWithRowIndex =>
-        throw new RuntimeException("ArithmeticException: failed in ANSI mode.", rowException)
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
+        val rightValue = rhs.getBase.toString
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    throw new RuntimeException("Logic error: Spark already did the constant folding")
+    throw new RuntimeException("Error in multiplication: Spark already did the constant folding")
   }
 }
 
