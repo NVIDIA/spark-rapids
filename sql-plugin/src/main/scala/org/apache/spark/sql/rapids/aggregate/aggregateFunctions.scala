@@ -1028,9 +1028,11 @@ case class GpuBasicSum(
     failOnErrorOverride: Boolean)
     extends GpuSum(child, resultType, failOnErrorOverride) {
 
-  // TODO this should probably go away too...
+  val needsLongOverflowCheck: Boolean =
+    failOnErrorOverride && GpuAnsi.needBasicOpOverflowCheck(resultType)
+
   override val internalSumForWindowDataType: DataType = {
-    if (failOnErrorOverride && GpuAnsi.needBasicOpOverflowCheck(resultType)) {
+    if (needsLongOverflowCheck) {
       // In order to be able to detect overflow errors we need to have a size that
       // can handle the sum without actually overflowing until we can check it.
       DecimalType(38, 0)
@@ -1038,9 +1040,6 @@ case class GpuBasicSum(
       resultType
     }
   }
-
-  val needsLongOverflowCheck: Boolean =
-    failOnErrorOverride && GpuAnsi.needBasicOpOverflowCheck(resultType)
 
   override lazy val inputProjection: Seq[Expression] = if (needsLongOverflowCheck) {
     (0 until 2).map {
