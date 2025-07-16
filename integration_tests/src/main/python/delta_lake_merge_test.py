@@ -146,7 +146,7 @@ def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_facto
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_before_spark_353(), reason="The conf merge.materializeSource isn't available before Delta 3.3.x")
 # As part of the merge command, Delta Lake will try to materialize tables in the process.
 # This materialize will not show up as part of the original plan as it's done dynamically from GpuMergeIntoCommand
 # therefore we will use the same technique OSS is using to assert it was materialized
