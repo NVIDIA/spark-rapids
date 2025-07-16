@@ -1516,13 +1516,14 @@ object GpuCast {
       input: ColumnView,
       fromType: DecimalType,
       toType: DecimalType,
-      ansiMode: Boolean): ColumnVector = {
+      ansiMode: Boolean,
+      originCol: ColumnView): ColumnVector = {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, toType)) { outOfBounds =>
       if (ansiMode) {
         withResource(outOfBounds.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
-            throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(input, outOfBounds,
+            throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(originCol, outOfBounds,
               fromType, toType)
           }
         }
@@ -1576,7 +1577,7 @@ object GpuCast {
           // We need to check for out of bound values.
           // The wholeNumberUpcast is obvious why we have to check, but we also have to check it
           // when we rounded, because rounding can add a digit to the effective precision.
-          checkNFixDecimalBounds(rounded, from, to, ansiMode)
+          checkNFixDecimalBounds(rounded, from, to, ansiMode, input)
         } else {
           rounded.incRefCount()
         }
