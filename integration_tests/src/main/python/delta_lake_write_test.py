@@ -100,7 +100,7 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf, enable_dele
 
 # unsupported WriteIntoDeltaCommand tracked by https://github.com/NVIDIA/spark-rapids/issues/11169
 @allow_non_gpu_conditional(is_databricks143_or_later(), "DataWritingCommandExec, WriteFilesExec")
-@allow_non_gpu("AppendDataExecV1", *delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.xfail(is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/13106")
