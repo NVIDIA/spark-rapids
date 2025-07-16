@@ -94,10 +94,3 @@ object Delta22xProvider extends Delta2xProviderBase {
       cpuExec.invalidateCache)
   }
 }
-
-class DeltaCreatableRelationProviderMeta(
-    source: DeltaDataSource,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule) extends
-  DeltaCreatableRelationProviderMetaBase(source, conf, parent, rule)
