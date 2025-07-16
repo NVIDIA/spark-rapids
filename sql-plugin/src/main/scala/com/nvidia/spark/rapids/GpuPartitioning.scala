@@ -185,35 +185,46 @@ trait GpuPartitioning extends Partitioning {
   def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
     if (usesKudoGPUSlicing) {
-      withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
-        val dmbs = KudoGpuSerializer.splitAndSerializeToDevice(table, partitionIndexes: _*)
-        val data = dmbs(0)
-        val offsets = dmbs(1)
-        val dataHost = HostMemoryBuffer.allocate(data.getLength)
-        val offsetsHost = HostMemoryBuffer.allocate(offsets.getLength)
-        // could hypothetically access the offsets directly from device but this might be
-        // faster and is easier for now anyway
-        dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
-        offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
-        val elemSize = offsetsHost.getLength / numPartitions // should this be numPartitions - 1
-
-        val res = new Array[ColumnarBatch](numPartitions)
-        var start = 0
-        for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
-          // elemSize should almost always be 8 (size_t) I think, but just in case
-          val idx = if (elemSize == 8) {
-            offsetsHost.getLong((i) * elemSize).toInt
-          } else {
-            offsetsHost.getInt((i) * elemSize)
-          }
-          res(i - 1) = new ColumnarBatch(Array(
-            new SlicedSerializedColumnVector(dataHost, start, idx)))
-          start = idx
+      val dmbs = withResource(partitionColumns) { _ =>
+        withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
+          KudoGpuSerializer.splitAndSerializeToDevice(table, partitionIndexes: _*)
         }
-        res(numPartitions - 1) = new ColumnarBatch(Array(
-          new SlicedSerializedColumnVector(dataHost, start, data.getLength.toInt)))
+      }
+      val data = dmbs(0)
+      val offsets = dmbs(1)
+      val dataHost = HostMemoryBuffer.allocate(data.getLength)
+      val offsetsHost = HostMemoryBuffer.allocate(offsets.getLength)
+      // could hypothetically access the offsets directly from device but this might be
+      // faster and is easier for now anyway
+      withResource(data) { _ =>
+        dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
+      }
+      withResource(offsets) { _ =>
+        offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+      }
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+      withResource(dataHost) { _ =>
+        withResource(offsetsHost) { _ =>
+          val elemSize = offsetsHost.getLength / numPartitions // should this be numPartitions - 1
 
-        res.zipWithIndex.filter(_._1 != null)
+          val res = new Array[ColumnarBatch](numPartitions)
+          var start = 0
+          for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
+            // elemSize should almost always be 8 (size_t) I think, but just in case
+            val idx = if (elemSize == 8) {
+              offsetsHost.getLong((i) * elemSize).toInt
+            } else {
+              offsetsHost.getInt((i) * elemSize)
+            }
+            res(i - 1) = new ColumnarBatch(Array(
+              new SlicedSerializedColumnVector(dataHost, start, idx)))
+            start = idx
+          }
+          res(numPartitions - 1) = new ColumnarBatch(Array(
+            new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+
+          res.zipWithIndex.filter(_._1 != null)
+        }
       }
     } else {
       val sliceOnGpu = usesGPUShuffle
