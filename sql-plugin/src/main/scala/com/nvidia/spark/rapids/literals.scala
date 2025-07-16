@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -718,7 +718,17 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     // Returns a Scalar instead of the value to support the scalar of nested type, and
     // simplify the handling of result from a `expr.columnarEval`.
-    GpuScalar(value, dataType)
+    dataType match {
+      // For literal wraps an JAVA object, GPULiteral is just a placeholder,
+      // does not really run on GPU. E.g.:
+      // For the conversion of Invoke(Literal(xxEvaluator ObjectType), "evaluate", type, arguments),
+      // GpuInvoke will not call `GpuLiteral.columnarEvalAny`
+      case _: ObjectType => throw new UnsupportedOperationException(
+        "Unsupported GpuLiteral running on GPU with an ObjectType in it")
+
+      // for regular literal, return a scalar
+      case _ => GpuScalar(value, dataType)
+    }
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {

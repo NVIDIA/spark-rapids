@@ -26,45 +26,11 @@ import org.apache.spark.sql.types._
 
 /** Trait of TypeSigUtil for different spark versions */
 trait TypeSigUtilBase {
-
-  /**
-   * Check if this type of Spark-specific is supported by the plugin or not.
-   * @param check the Supported Types
-   * @param dataType the data type to be checked
-   * @return true if it is allowed else false.
-   */
-  def isSupported(check: TypeEnum.ValueSet, dataType: DataType): Boolean
-
   /**
    * Get all supported types for the spark-specific
    * @return the all supported typ
    */
   def getAllSupportedTypes: TypeEnum.ValueSet
-
-  /**
-   * Return the reason why this type is not supported.\
-   * @param check the Supported Types
-   * @param dataType the data type to be checked
-   * @param notSupportedReason the reason for not supporting
-   * @return the reason
-   */
-  def reasonNotSupported(
-    check: TypeEnum.ValueSet,
-    dataType: DataType,
-    notSupportedReason: Seq[String]): Seq[String]
-
-  /**
-   * Map DataType to TypeEnum
-   * @param dataType the data type to be mapped
-   * @return the TypeEnum
-   */
-  def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value
-
-  /** Get numeric and interval TypeSig */
-  def getNumericAndInterval: TypeSig
-
-  /** Get Ansi year-month and day-time TypeSig */
-  def getAnsiInterval: TypeSig
 }
 
 /**
@@ -158,6 +124,7 @@ object TypeEnum extends Enumeration {
   val UDT: Value = Value
   val DAYTIME: Value = Value
   val YEARMONTH: Value = Value
+  val OBJECT: Value = Value
 }
 
 /**
@@ -342,7 +309,10 @@ final class TypeSig private(
     case _: ArrayType => litOnlyTypes.contains(TypeEnum.ARRAY)
     case _: MapType => litOnlyTypes.contains(TypeEnum.MAP)
     case _: StructType => litOnlyTypes.contains(TypeEnum.STRUCT)
-    case _ => TypeSigUtil.isSupported(litOnlyTypes, dataType)
+    case _: DayTimeIntervalType => litOnlyTypes.contains(TypeEnum.DAYTIME)
+    case _: YearMonthIntervalType => litOnlyTypes.contains(TypeEnum.YEARMONTH)
+    case _: ObjectType => litOnlyTypes.contains(TypeEnum.OBJECT)
+    case _ => false
   }
 
   def isSupportedBySpark(dataType: DataType): Boolean =
@@ -377,7 +347,8 @@ final class TypeSig private(
         fields.map(_.dataType).forall { t =>
           isSupported(childTypes, t)
         }
-      case _ => TypeSigUtil.isSupported(check, dataType)
+      case _: ObjectType => check.contains(TypeEnum.OBJECT)
+      case _ => false
     }
 
   def reasonNotSupported(dataType: DataType): Seq[String] =
@@ -461,8 +432,12 @@ final class TypeSig private(
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.STRUCT, check, isChild)
         }
-      case _ => TypeSigUtil.reasonNotSupported(check, dataType,
-        Seq(withChild(isChild, s"$dataType is not supported")))
+      case _: DayTimeIntervalType =>
+        basicNotSupportedMessage(dataType, TypeEnum.DAYTIME, check, isChild)
+      case _: YearMonthIntervalType =>
+        basicNotSupportedMessage(dataType, TypeEnum.YEARMONTH, check, isChild)
+      case _: ObjectType => basicNotSupportedMessage(dataType, TypeEnum.OBJECT, check, isChild)
+      case _ => Seq(withChild(isChild, s"$dataType is not supported"))
     }
 
   def areAllSupportedByPlugin(types: Seq[DataType]): Boolean =
@@ -644,6 +619,8 @@ object TypeSig {
    */
   val YEARMONTH: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.YEARMONTH))
 
+  val OBJECT: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.OBJECT))
+
   /**
    * A signature for types that are generally supported by the plugin/CUDF. Please make sure to
    * check what Spark actually supports instead of blindly using this in a signature.
@@ -689,12 +666,13 @@ object TypeSig {
   /**
    * numeric + CALENDAR
    */
-  val numericAndInterval: TypeSig = TypeSigUtil.getNumericAndInterval()
+  val numericAndInterval: TypeSig = TypeSig.cpuNumeric + TypeSig.CALENDAR + TypeSig.DAYTIME +
+    TypeSig.YEARMONTH
 
   /**
-   * ANSI year-month and day-time interval for Spark 320+
+   * ANSI year-month and day-time interval
    */
-  val ansiIntervals: TypeSig = TypeSigUtil.getAnsiInterval
+  val ansiIntervals: TypeSig = TypeSig.DAYTIME + TypeSig.YEARMONTH
 
   /**
    * All types that CUDF supports sorting/ordering on.
@@ -848,9 +826,11 @@ case class ContextChecks(
       check.cudf.tagExprParam(meta, children(i), check.name, willNotWork)
     }
     if (repeatingParamCheck.isEmpty) {
-      assert(fixedChecks.length == children.length,
-        s"${expr.getClass.getSimpleName} expected ${fixedChecks.length} but " +
+      if (!meta.isChildExprsCountDynamic) {
+        assert(fixedChecks.length == children.length,
+          s"${expr.getClass.getSimpleName} expected ${fixedChecks.length} but " +
             s"found ${children.length}")
+      }
     } else {
       val check = repeatingParamCheck.get
       (fixedChecks.length until children.length).foreach { i =>
@@ -1356,6 +1336,8 @@ class CastChecks extends ExprChecks {
   val yearmonthChecks: TypeSig = CastCheckShims.typesYearMonthCanCastTo
   val sparkYearmonthChecks: TypeSig = CastCheckShims.typesYearMonthCanCastToOnSpark
 
+  val objectChecks: TypeSig = none
+
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
     case NullType => (nullChecks, sparkNullSig)
     case BooleanType => (booleanChecks, sparkBooleanSig)
@@ -1370,7 +1352,10 @@ class CastChecks extends ExprChecks {
     case _: ArrayType => (arrayChecks, sparkArraySig)
     case _: MapType => (mapChecks, sparkMapSig)
     case _: StructType => (structChecks, sparkStructSig)
-    case _ => getChecksAndSigs(TypeSigUtil.mapDataTypeToTypeEnum(from))
+    case _: DayTimeIntervalType => getChecksAndSigs(TypeEnum.DAYTIME)
+    case _: YearMonthIntervalType => getChecksAndSigs(TypeEnum.YEARMONTH)
+    case _: ObjectType => getChecksAndSigs(TypeEnum.OBJECT)
+    case _ => getChecksAndSigs(TypeEnum.UDT) // default to UDT
   }
 
   private[this] def getChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) = from match {
@@ -1391,6 +1376,7 @@ class CastChecks extends ExprChecks {
     case TypeEnum.UDT => (udtChecks, sparkUdtSig)
     case TypeEnum.DAYTIME => (daytimeChecks, sparkDaytimeChecks)
     case TypeEnum.YEARMONTH => (yearmonthChecks, sparkYearmonthChecks)
+    case TypeEnum.OBJECT =>(objectChecks, objectChecks)
   }
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {

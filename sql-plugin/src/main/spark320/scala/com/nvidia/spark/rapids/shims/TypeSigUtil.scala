@@ -44,56 +44,20 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{TypeEnum, TypeSig, TypeSigUtilBase}
-
-import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
+import com.nvidia.spark.rapids.{TypeEnum, TypeSigUtilBase}
 
 /**
- * Add DayTimeIntervalType and YearMonthIntervalType support
+ * Placeholder for `TypeSigUtil` Shim
  */
 object TypeSigUtil extends TypeSigUtilBase {
 
-  override def isSupported(
-    check: TypeEnum.ValueSet,
-    dataType: DataType): Boolean = {
-    dataType match {
-      case _: DayTimeIntervalType => check.contains(TypeEnum.DAYTIME)
-      case _: YearMonthIntervalType => check.contains(TypeEnum.YEARMONTH)
-      case _ => false
-    }
-  }
-
-  override def getAllSupportedTypes(): TypeEnum.ValueSet = TypeEnum.values
-
-  override def reasonNotSupported(
-    check: TypeEnum.ValueSet,
-    dataType: DataType,
-    notSupportedReason: Seq[String]): Seq[String] = {
-    dataType match {
-      case _: DayTimeIntervalType =>
-        if (check.contains(TypeEnum.DAYTIME)) Seq.empty else notSupportedReason
-      case _: YearMonthIntervalType =>
-        if (check.contains(TypeEnum.YEARMONTH)) Seq.empty else notSupportedReason
-      case _ => notSupportedReason
-    }
-  }
-
-  override def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value = {
-    dataType match {
-      case _: DayTimeIntervalType => TypeEnum.DAYTIME
-      case _: YearMonthIntervalType => TypeEnum.YEARMONTH
-      case _ => TypeEnum.UDT // default to UDT
-    }
-  }
-
-  /** Get numeric and interval TypeSig */
-  override def getNumericAndInterval(): TypeSig =
-    TypeSig.cpuNumeric + TypeSig.CALENDAR + TypeSig.DAYTIME + TypeSig.YEARMONTH
-
-  /** Get Ansi year-month and day-time TypeSig */
-  override def getAnsiInterval: TypeSig = TypeSig.DAYTIME + TypeSig.YEARMONTH
+  /**
+   * `ObjectType` exists in Spark320 and Spark320+, but does not see any need to support it on GPU
+   * for the Spark versions before Spark 400, so remote it.
+   * @return the all supported type.
+   */
+  override def getAllSupportedTypes(): TypeEnum.ValueSet = TypeEnum.values - TypeEnum.OBJECT
 }
