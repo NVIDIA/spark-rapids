@@ -45,6 +45,7 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
+import org.apache.spark.unsafe.types.UTF8String
 
 trait RapidsErrorUtilsFor330plus {
 
@@ -70,12 +71,7 @@ trait RapidsErrorUtilsFor330plus {
     QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
   }
 
-  def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String, 
-      errorContext: String): RuntimeException = {
-    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, null)
+  def invalidInputSyntaxForBooleanError(s: UTF8String): RuntimeException = {
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, context=null)
   }
-
-  // def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String): RuntimeException = {
-  //   QueryExecutionErrors.invalidInputSyntaxForBooleanError(s)
-  // }
 }
