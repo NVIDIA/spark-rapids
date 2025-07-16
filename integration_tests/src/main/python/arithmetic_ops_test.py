@@ -1470,6 +1470,7 @@ def test_try_divide_fallback_to_cpu(data_gen):
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_divide(a, b) as result"), "Divide")
 
+@pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
 @allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_try_sum_fallback_to_cpu(data_gen):
@@ -1477,6 +1478,7 @@ def test_try_sum_fallback_to_cpu(data_gen):
         lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
                      .selectExpr("try_sum(b) as result"),'HashAggregateExec')
 
+@pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
