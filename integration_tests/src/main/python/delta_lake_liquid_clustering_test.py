@@ -28,16 +28,18 @@
 # limitations under the License.
 
 import pytest
+from typing import Callable, Dict
 from pyspark.sql.types import StringType, IntegerType
 
 from asserts import assert_gpu_fallback_write
 from conftest import is_databricks_runtime
 from data_gen import unary_op_df, int_gen, copy_and_update, SetValuesGen, string_gen, long_gen, \
     gen_df
+from delta_lake_delete_test import delta_delete_enabled_conf
 from delta_lake_utils import delta_meta_allow, \
-    delta_writes_enabled_conf, delta_write_fallback_allow
+    delta_writes_enabled_conf, delta_write_fallback_allow, setup_delta_dest_tables
 from marks import allow_non_gpu, delta_lake, ignore_order
-from spark_session import is_databricks133_or_later, is_spark_353_or_later
+from spark_session import is_databricks133_or_later, is_spark_353_or_later, with_cpu_session
 
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "AtomicCreateTableAsSelectExec", "AppendDataExecV1")
@@ -98,6 +100,16 @@ def gen_df_and_replace_view(spark, view_name):
     df.coalesce(1).createOrReplaceTempView(view_name)
 
 
+def setup_clustered_table_sql(spark, path, table_name, view_name):
+    create_clustered_table_sql(spark, table_name, path)
+    gen_df_and_replace_view(spark, view_name)
+    spark.sql(f"""
+            INSERT INTO {table_name}
+            SELECT * FROM {view_name}
+        """)
+
+
+
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
                "AtomicReplaceTableAsSelectExec",
@@ -135,7 +147,6 @@ def test_delta_rtas_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_tab
         data_path,
         "AtomicReplaceTableAsSelectExec",
         conf=delta_writes_enabled_conf)
-
 
 
 
@@ -250,8 +261,8 @@ def test_delta_insert_overwrite_dynamic_sql_liquid_clustering_fallback(spark_tmp
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
-def test_delta_insert_overwrite_replace_where_sql_liquid_clustering_fallback(
-        spark_tmp_path, spark_tmp_table_factory):
+def test_delta_insert_overwrite_replace_where_sql_liquid_clustering_fallback(spark_tmp_path,
+                                                                             spark_tmp_table_factory):
 
     def write_func(spark, path):
         table_name = spark_tmp_table_factory.get()
@@ -272,6 +283,54 @@ def test_delta_insert_overwrite_replace_where_sql_liquid_clustering_fallback(
         data_path,
         "OverwriteByExpressionExecV1",
         conf=delta_writes_enabled_conf)
+
+
+def do_test_delta_dml_sql_liquid_clustering_fallback(spark_tmp_path,
+                                                     spark_tmp_table_factory,
+                                                     conf: Dict[str, str],
+                                                     sql_func: Callable[[str], str]):
+
+    base_data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
+    cpu_data_path = f"{base_data_path}/CPU"
+    cpu_table_name = spark_tmp_table_factory.get()
+    gpu_data_path = f"{base_data_path}/GPU"
+    gpu_table_name = spark_tmp_table_factory.get()
+
+    with_cpu_session(lambda spark: setup_clustered_table_sql(spark, cpu_data_path,
+                                                             cpu_table_name,
+                                                             spark_tmp_table_factory.get()))
+    with_cpu_session(lambda spark: setup_clustered_table_sql(spark, gpu_data_path,
+                                                             gpu_table_name,
+                                                             spark_tmp_table_factory.get()))
+
+    def modify_table(spark, path):
+        table_name = cpu_table_name if path == cpu_data_path else gpu_table_name
+        spark.sql(sql_func(table_name))
+
+    assert_gpu_fallback_write(modify_table,
+                              lambda spark, path: spark.read.format("delta").load(path),
+                              base_data_path,
+                              "ExecutedCommandExec",
+                              conf=conf)
+
+
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
+               "AppendDataExecV1")
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
+@pytest.mark.skipif(not is_spark_353_or_later(),
+                    reason="Create table with cluster by is only supported on delta 3.1+")
+def test_delta_delete_sql_liquid_clustering_fallback(spark_tmp_path,
+                                                     spark_tmp_table_factory):
+
+    do_test_delta_dml_sql_liquid_clustering_fallback(spark_tmp_path,
+                                                     spark_tmp_table_factory,
+                                                     delta_delete_enabled_conf,
+                                                     lambda table_name: f"DELETE FROM {table_name} WHERE a > 0")
+
+
 
 
 def create_clustered_delta_table_df(table_name, table_path):
