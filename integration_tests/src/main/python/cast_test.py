@@ -49,6 +49,35 @@ def test_cast_empty_string_to_int_ansi_on():
         conf=ansi_enabled_conf,
         error_message="cannot be cast to ")
 
+
+valid_bool_strings = ['true', 'false', 't', 'f', 'y', 'n', 'yes', 'no', '1', '0',
+                      'TRUE', 'FALSE', 'True', 'False', ' true ', ' false ']
+invalid_bool_strings = ['maybe', 'invalid', '2', '-1', 'on', 'off',
+                        '1.0', '0.0', 'tr', 'fa', '', 'null']
+
+def test_cast_string_to_boolean_ansi_off():
+    data_rows = [(s,) for s in valid_bool_strings + invalid_bool_strings]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "str_col string")
+                           .selectExpr("str_col", "CAST(str_col AS BOOLEAN) as bool_col"),
+        conf=ansi_disabled_conf)
+
+def test_cast_string_to_boolean_valid_ansi_on():
+    data_rows = [(s,) for s in valid_bool_strings]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "str_col string")
+                           .selectExpr("str_col", "CAST(str_col AS BOOLEAN) as bool_col"),
+        conf=ansi_enabled_conf)
+
+
+@pytest.mark.parametrize('invalid_value', invalid_bool_strings)
+def test_cast_string_to_boolean_invalid_ansi_on(invalid_value):
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([(invalid_value,)], "str_col string")
+                           .selectExpr("CAST(str_col AS BOOLEAN) as bool_col").collect(),
+        conf=ansi_enabled_conf,
+        error_message="invalid input syntax" if is_before_spark_330() else "SparkRuntimeException")
+
 # These tests are not intended to be exhaustive. The scala test CastOpSuite should cover
 # just about everything for non-nested values. This is intended to check that the
 # recursive code in nested type checks, like arrays, is working properly. So we are going
