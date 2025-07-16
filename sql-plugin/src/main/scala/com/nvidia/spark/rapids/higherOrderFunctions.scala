@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -770,8 +770,7 @@ case class GpuMapZipWith(
   @transient lazy val MapType(keyType1, valueType1, valueContainsNull1) = argument1.dataType
   @transient lazy val MapType(keyType2, valueType2, valueContainsNull2) = argument2.dataType
 
-  override def dataType: DataType = MapType(keyType1, StructType(Seq(StructField("value1", 
-  valueType1), StructField("value2", valueType2))),
+  override def dataType: DataType = MapType(keyType1, function.dataType,
    valueContainsNull1 || valueContainsNull2)
 
   override def prettyName: String = "map_zip_with"
