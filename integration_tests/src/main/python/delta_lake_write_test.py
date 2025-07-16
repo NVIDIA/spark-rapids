@@ -989,7 +989,7 @@ def test_delta_write_optimized_supported_types(spark_tmp_path):
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(not is_databricks_runtime() and not is_before_spark_353(), reason="Delta Lake optimized writes are not supported before Spark 3.5.3 on Apache Spark")
+@pytest.mark.skipif(not is_databricks_runtime() and is_spark_353_or_later(), reason="Delta Lake optimized writes are not supported before Spark 3.5.3 on Apache Spark")
 def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(writer_confs, delta_writes_enabled_conf, {
@@ -1009,8 +1009,7 @@ def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_353(), reason="Delta Lake optimized writes are only supported on Databricks")
-@pytest.mark.xfail(is_spark_353_or_later(), reason="We support Optimized write on GPU for Spark 3.5.3+")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 @pytest.mark.parametrize("gen", [
     simple_string_to_string_map_gen,
     StructGen([("x", ArrayGen(int_gen))]),
