@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{CreatableRelationProviderMeta, CreatableRelationProviderRule, DataFromReplacementRule, GpuCreatableRelationProvider, GpuOverrides, RapidsConf, RapidsMeta, RunnableCommandRule}
+import com.nvidia.spark.rapids.{CreatableRelationProviderMeta, CreatableRelationProviderRule, DataFromReplacementRule, GpuCreatableRelationProvider, RapidsConf, RapidsMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
