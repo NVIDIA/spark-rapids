@@ -366,7 +366,6 @@ def test_delta_merge_sql_liquid_clustering_fallback(spark_tmp_path,
 
 
 
-
 def create_clustered_delta_table_df(table_name, table_path):
     from delta.tables import DeltaTable
     (DeltaTable.create()
