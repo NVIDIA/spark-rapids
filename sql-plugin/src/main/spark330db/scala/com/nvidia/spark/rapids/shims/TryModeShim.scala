@@ -51,7 +51,7 @@ object TryModeShim {
       evalMode == EvalMode.TRY
     } catch {
       case ex: Exception =>
-        throw new RuntimeException(s"Unexpected error accessing evalMode field: $ex")
+        throw new RuntimeException("Unexpected error accessing evalMode field", ex)
     }
   }
 }
