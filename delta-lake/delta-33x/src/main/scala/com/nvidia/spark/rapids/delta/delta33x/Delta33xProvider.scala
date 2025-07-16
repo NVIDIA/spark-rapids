@@ -189,14 +189,35 @@ class DeltaCreatableRelationProviderMeta(
     source: DeltaDataSource,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule) extends
-  DeltaCreatableRelationProviderMetaBase(source, conf, parent, rule) {
-  override def tagSelfForGpu(): Unit = {
-    super.tagSelfForGpu()
-
-    val table = source.getTable(saveCmd.schema, Array.empty, saveCmd.options.asJava)
-    if (table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-      willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
+    rule: DataFromReplacementRule)
+  extends CreatableRelationProviderMeta[DeltaDataSource](source, conf, parent, rule) {
+  require(parent.isDefined, "Must provide parent meta")
+  protected val saveCmd = parent.get.wrapped match {
+    case s: SaveIntoDataSourceCommand => s
+    case s =>
+      throw new IllegalStateException(s"Expected SaveIntoDataSourceCommand, found ${s.getClass}")
   }
+
+  override def tagSelfForGpu(): Unit = {
+    if (!conf.isDeltaWriteEnabled) {
+      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+    val path = saveCmd.options.get("path")
+    if (path.isDefined) {
+      val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
+      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
+        saveCmd.options, SparkSession.active)
+
+      val table = source.getTable(saveCmd.schema, Array.empty, saveCmd.options.asJava)
+      if (table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
+        willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
+      }
+    } else {
+      willNotWorkOnGpu("no path specified for Delta Lake table")
+    }
+
+  }
+
+  override def convertToGpu(): GpuCreatableRelationProvider = new GpuDeltaDataSource(conf)
 }

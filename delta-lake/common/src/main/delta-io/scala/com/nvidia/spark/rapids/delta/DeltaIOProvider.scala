@@ -46,7 +46,6 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
  */
 abstract class DeltaIOProvider extends DeltaProviderImplBase {
 
-
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
     format == classOf[DeltaParquetFileFormat]
   }
@@ -254,36 +253,6 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
   }
 }
 
-abstract class DeltaCreatableRelationProviderMetaBase(
-    source: DeltaDataSource,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends CreatableRelationProviderMeta[DeltaDataSource](source, conf, parent, rule) {
-  require(parent.isDefined, "Must provide parent meta")
-  protected val saveCmd = parent.get.wrapped match {
-    case s: SaveIntoDataSourceCommand => s
-    case s =>
-      throw new IllegalStateException(s"Expected SaveIntoDataSourceCommand, found ${s.getClass}")
-  }
-
-  override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaWriteEnabled) {
-      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-          s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-    val path = saveCmd.options.get("path")
-    if (path.isDefined) {
-      val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
-      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
-        saveCmd.options, SparkSession.active)
-    } else {
-      willNotWorkOnGpu("no path specified for Delta Lake table")
-    }
-  }
-
-  override def convertToGpu(): GpuCreatableRelationProvider = new GpuDeltaDataSource(conf)
-}
 
 /**
  * Implements the Delta Probe interface for probing the Delta Lake provider for
