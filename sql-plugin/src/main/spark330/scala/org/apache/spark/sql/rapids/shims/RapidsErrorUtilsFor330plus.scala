@@ -72,6 +72,6 @@ trait RapidsErrorUtilsFor330plus {
   }
 
   def invalidInputSyntaxForBooleanError(s: UTF8String): RuntimeException = {
-    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, context=null)
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, null)
   }
 }
