@@ -360,8 +360,8 @@ def test_delta_merge_sql_liquid_clustering_fallback(spark_tmp_path,
     do_test_delta_dml_sql_liquid_clustering_fallback(
         spark_tmp_path, spark_tmp_table_factory, delta_merge_enabled_conf,
         lambda table_name: f"MERGE INTO {table_name} "
-                           f"USING {table_name} "
-                           f"ON {table_name}.a == {table_name}.a "
+                           f"USING {table_name} as dest_table "
+                           f"ON {table_name}.a == dest_table.a "
                            f"WHEN NOT MATCHED THEN INSERT *")
 
 
