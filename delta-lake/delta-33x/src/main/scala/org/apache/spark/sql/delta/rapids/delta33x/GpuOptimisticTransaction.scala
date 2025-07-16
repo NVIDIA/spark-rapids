@@ -36,6 +36,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
+import org.apache.spark.sql.delta.hooks.GpuAutoCompact
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.InvariantViolationException
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
@@ -43,9 +44,10 @@ import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuWriteJobStatsTracker}
+import org.apache.spark.sql.rapids.delta.GpuIdentityColumn
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.{Clock, SerializableConfiguration}
+import org.apache.spark.util.SerializableConfiguration
 
 /**
  * Used to perform a set of reads in a transaction and then commit a set of updates to the
@@ -59,19 +61,19 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param snapshot The snapshot that this transaction is reading at.
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
-class GpuOptimisticTransaction
-    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
-    (implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog,
-    Option.empty[CatalogTable], snapshot, rapidsConf)(clock) {
+class GpuOptimisticTransaction(deltaLog: DeltaLog,
+    catalogTable: Option[CatalogTable],
+    snapshot: Option[Snapshot],
+    rapidsConf: RapidsConf)
+  extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf) {
 
   /** Creates a new OptimisticTransaction.
    *
    * @param deltaLog The Delta Log for the table this transaction is modifying.
    * @param rapidsConf RAPIDS Accelerator config settings
    */
-  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
-    this(deltaLog, deltaLog.update(), rapidsConf)
+  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf) = {
+    this(deltaLog, Option.empty[CatalogTable], Some(deltaLog.update()), rapidsConf)
   }
 
   private def getGpuStatsColExpr(
@@ -144,8 +146,11 @@ class GpuOptimisticTransaction
     val (data, partitionSchema) = performCDCPartition(inputData)
     val outputPath = deltaLog.dataPath
 
-    val (normalizedQueryExecution, output, generatedColumnConstraints, _) =
+    val (normalizedQueryExecution, output, generatedColumnConstraints, trackFromData) =
       normalizeData(deltaLog, writeOptions, data)
+    // Use the track set from the transaction if set,
+    // otherwise use the track set from `normalizeData()`.
+    val trackIdentityHighWaterMarks = trackHighWaterMarks.getOrElse(trackFromData)
 
     // Build a new plan with a stub GpuDeltaWrite node to work around undesired transitions between
     // columns and rows when AQE is involved. Without this node in the plan, AdaptiveSparkPlanExec
@@ -164,6 +169,8 @@ class GpuOptimisticTransaction
 
     val committer = getCommitter(outputPath)
 
+    val (statsDataSchema, _) = getStatsSchema(output, partitionSchema)
+
     // If Statistics Collection is enabled, then create a stats tracker that will be injected during
     // the FileFormatWriter.write call below and will collect per-file stats using
     // StatisticsCollection
@@ -172,6 +179,13 @@ class GpuOptimisticTransaction
 
     val constraints =
       Constraints.getAll(metadata, spark) ++ generatedColumnConstraints ++ additionalConstraints
+
+    val identityTrackerOpt = GpuIdentityColumn.createIdentityColumnStatsTracker(
+      spark,
+      metadata.schema,
+      statsDataSchema,
+      trackIdentityHighWaterMarks
+    )
 
     SQLExecution.withNewExecutionId(queryExecution, Option("deltaTransactionalWrite")) {
       val outputSpec = FileFormatWriter.OutputSpec(
@@ -243,7 +257,7 @@ class GpuOptimisticTransaction
           hadoopConf = hadoopConf,
           partitionColumns = partitioningColumns,
           bucketSpec = None,
-          statsTrackers = optionalStatsTracker.toSeq ++ statsTrackers,
+          statsTrackers = optionalStatsTracker.toSeq ++ statsTrackers ++ identityTrackerOpt.toSeq,
           options = options,
           useStableSort = rapidsConf.stableSort,
           concurrentWriterPartitionFlushSize = rapidsConf.concurrentWriterPartitionFlushSize,
@@ -280,6 +294,13 @@ class GpuOptimisticTransaction
         case a: AddFile => a.numLogicalRecords.forall(_ > 0)
         case _ => true
       }
+
+    if (resultFiles.nonEmpty && !isOptimize) registerPostCommitHook(GpuAutoCompact)
+
+     // Record the updated high water marks to be used during transaction commit.
+    identityTrackerOpt.foreach { tracker =>
+      updatedIdentityHighWaterMarks.appendAll(tracker.highWaterMarks.toSeq)
+    }
 
     resultFiles.toSeq ++ committer.changeFiles
   }

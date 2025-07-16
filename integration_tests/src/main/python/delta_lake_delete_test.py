@@ -130,9 +130,6 @@ def test_delta_deletion_vector(spark_tmp_path):
     def read_parquet_sql(data_path):
         return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
 
-    disable_conf = copy_and_update(delta_delete_enabled_conf,
-        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
-
     with_cpu_session(setup_tables)
     with_cpu_session(write_func(data_path))
 

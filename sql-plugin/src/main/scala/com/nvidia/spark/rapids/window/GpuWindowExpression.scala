@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, CollectList, CollectSet, Count, Max, Min, Sum}
-import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAnsi, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
 import org.apache.spark.sql.rapids.aggregate.{GpuAggregateExpression, GpuAggregateFunction, GpuCount}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -1374,6 +1374,9 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
   private var checkpointResult: Option[Scalar] = None
   private var checkpointOverflow: Option[Scalar] = None
 
+  private val needsBasicOverflowCheck = isAnsi &&
+    GpuAnsi.needBasicOpOverflowCheck(toType)
+
   override def checkpoint(): Unit = {
     checkpointOverflow = previousOverflow
     checkpointResult = previousResult
@@ -1434,7 +1437,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
 
   private[this] def fixUpNonDecimal(samePartitionMask: Either[cudf.ColumnVector, Boolean],
       windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector = {
-    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    logDebug(s"$name: fix up $previousResult $samePartitionMask $isAnsi")
     val ret = (previousResult, samePartitionMask) match {
       case (None, _) => incRef(windowedColumnOutput)
       case (Some(prev), scala.util.Right(mask)) =>
@@ -1448,7 +1451,14 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
               }
             }
             withResource(nullsReplaced) { nullsReplaced =>
-              nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)
+              if (needsBasicOverflowCheck) {
+                closeOnExcept(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { ret =>
+                  AddOverflowChecks.basicOpOverflowCheck(nullsReplaced, prev, ret)
+                  ret
+                }
+              } else {
+                nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)
+              }
             }
           } else {
             // prev is NULL but NULL + something == NULL which we don't want
@@ -1468,8 +1478,17 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
             }
           }
           withResource(nullsReplaced) { nullsReplaced =>
-            withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
-              mask.ifElse(updated, windowedColumnOutput)
+            if (needsBasicOverflowCheck) {
+              withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
+                closeOnExcept(mask.ifElse(updated, windowedColumnOutput)) { ret =>
+                  AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, Some(mask))
+                  ret
+                }
+              }
+            } else {
+              withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
+                mask.ifElse(updated, windowedColumnOutput)
+              }
             }
           }
         } else {

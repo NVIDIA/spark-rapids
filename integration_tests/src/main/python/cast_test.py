@@ -38,16 +38,15 @@ def test_cast_empty_string_to_int_ansi_off():
                 conf=ansi_disabled_conf)
 
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11552")
-def test_cast_empty_string_to_int_ansi_on():
+@pytest.mark.parametrize('to_type', ['BYTE', 'SHORT', 'INTEGER', 'LONG'])
+def test_cast_empty_string_to_int_ansi_on(to_type):
+    err_mess = "invalid input syntax for type numeric" if is_before_spark_330() \
+        else "cannot be cast to "
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
-            'CAST(a as BYTE)',
-            'CAST(a as SHORT)',
-            'CAST(a as INTEGER)',
-            'CAST(a as LONG)').collect(),
+            'CAST(a as {})'.format(to_type)).collect(),
         conf=ansi_enabled_conf,
-        error_message="cannot be cast to ")
+        error_message=err_mess)
 
 
 valid_bool_strings = ['true', 'false', 't', 'f', 'y', 'n', 'yes', 'no', '1', '0',
@@ -494,13 +493,31 @@ def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
 
 # The bug SPARK-37451 only affects the following versions
 def is_neg_dec_scale_bug_version():
-    return ("3.1.1" <= spark_version() < "3.1.3") or ("3.2.0" <= spark_version() < "3.2.1")
+    return "3.2.0" <= spark_version() < "3.2.1"
 
 @pytest.mark.skipif(is_neg_dec_scale_bug_version(), reason="RAPIDS doesn't support casting string to decimal for negative scale decimal in this version of Spark because of SPARK-37451")
 def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
             f.col('a').cast(DecimalType(8, -3))))
+
+
+@pytest.mark.skipif(is_neg_dec_scale_bug_version(),
+                    reason="Negative scale isn't supported in this Spark version due to SPARK-37451")
+@pytest.mark.parametrize('ansi_on', [True, False], ids=idfn)
+def test_cast_string_to_negative_scale_decimal_overflow(ansi_on):
+    def test_overflow(spark):
+        return unary_op_df(spark, StringGen("[0-9]{9}")).select(
+            f.col('a').cast(DecimalType(4, -3)))
+
+    if ansi_on:
+        assert_gpu_and_cpu_error(lambda spark: test_overflow(spark).collect(),
+                                 conf=ansi_enabled_conf,
+                                 error_message="cannot be represented as Decimal")
+    else:
+        assert_gpu_and_cpu_are_equal_collect(test_overflow,
+                                             conf=ansi_disabled_conf)
+
 
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)

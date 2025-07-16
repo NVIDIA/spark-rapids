@@ -38,8 +38,7 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
       "Test CSV count chunked by rows",
       intsFromCsv,
       conf = new SparkConf()
-          .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1"),
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+          .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")) {
     frameCount
   }
 
@@ -47,8 +46,7 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
       "Test CSV count chunked by bytes",
       intsFromCsv,
       conf = new SparkConf()
-          .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0"),
-      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114")) {
+          .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "0")) {
     frameCount
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -242,9 +242,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     /**
      * A collection of builders for building up columnar data.
      * @param schema the schema of the batch.
-     * @param rows the maximum number of rows in this batch.
+     * @param initialRows the initial number of rows to allocate for this batch.
      */
-    public GpuColumnarBatchBuilder(StructType schema, int rows) {
+    public GpuColumnarBatchBuilder(StructType schema, int initialRows) {
       fields = schema.fields();
       int len = fields.length;
       builders = new RapidsHostColumnBuilder[len];
@@ -253,7 +253,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           builders[i] =
-              new RapidsHostColumnBuilder(convertFrom(field.dataType(), field.nullable()), rows);
+              new RapidsHostColumnBuilder(convertFrom(field.dataType(), field.nullable()), initialRows);
         }
         success = true;
       } finally {
