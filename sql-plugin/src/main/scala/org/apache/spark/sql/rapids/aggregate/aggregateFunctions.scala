@@ -21,6 +21,7 @@ import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, Group
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.jni.Aggregation64Utils
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, TypeUtilsShims}
 import com.nvidia.spark.rapids.window._
 
@@ -606,17 +607,31 @@ case class GpuFloatMax(child: Expression) extends GpuMax(child)
 case class GpuExtractChunk32(
     data: Expression,
     chunkIdx: Int,
-    replaceNullsWithZero: Boolean) extends GpuExpression with ShimExpression {
+    replaceNullsWithZero: Boolean,
+    isForDecimal: Boolean) extends GpuExpression with ShimExpression {
   override def nullable: Boolean = true
 
-  override def dataType: DataType = if (chunkIdx < 3) GpuUnsignedIntegerType else IntegerType
+  override def dataType: DataType =
+    if ((isForDecimal && chunkIdx < 3) || (!isForDecimal && chunkIdx < 1)) {
+      GpuUnsignedIntegerType
+    } else {
+      IntegerType
+    }
 
   override def sql: String = data.sql
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(data.columnarEval(batch)) { dataCol =>
-      val dtype = if (chunkIdx < 3) DType.UINT32 else DType.INT32
-      val chunkCol = Aggregation128Utils.extractInt32Chunk(dataCol.getBase, dtype, chunkIdx)
+      val dtype = if ((isForDecimal && chunkIdx < 3) || (!isForDecimal && chunkIdx < 1)) {
+        DType.UINT32
+      } else {
+        DType.INT32
+      }
+      val chunkCol = if (isForDecimal) {
+        Aggregation128Utils.extractInt32Chunk(dataCol.getBase, dtype, chunkIdx)
+      } else {
+        Aggregation64Utils.extractInt32Chunk(dataCol.getBase, dtype, chunkIdx)
+      }
       val replacedCol = if (replaceNullsWithZero) {
         withResource(chunkCol) { chunkCol =>
           val zero = dtype match {
@@ -646,19 +661,28 @@ case class GpuExtractChunk32(
  */
 case class GpuAssembleSumChunks(
     chunkAttrs: Seq[Expression],
-    dataType: DecimalType,
+    dataType: DataType,
     nullOnOverflow: Boolean,
-    extOverflow: Option[Expression]) extends GpuExpression with ShimExpression {
+    extOverflow: Option[Expression],
+    isForDecimal: Boolean) extends GpuExpression with ShimExpression {
 
   override def hasSideEffects: Boolean = !nullOnOverflow || super.hasSideEffects
 
   override def nullable: Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    val cudfType = DecimalUtil.createCudfDecimal(dataType)
+    val cudfType = dataType match {
+      case dt: DecimalType => DecimalUtil.createCudfDecimal(dt)
+      case LongType => DType.INT64
+      case other => throw new IllegalArgumentException(s"$other is not supported here")
+    }
     val assembledTable = withResource(GpuProjectExec.project(batch, chunkAttrs)) { dataCol =>
       withResource(GpuColumnVector.from(dataCol)) { chunkTable =>
-        Aggregation128Utils.combineInt64SumChunks(chunkTable, cudfType)
+        if (isForDecimal) {
+          Aggregation128Utils.combineInt64SumChunks(chunkTable, cudfType)
+        } else {
+          Aggregation64Utils.combineInt64SumChunks(chunkTable, cudfType)
+        }
       }
     }
     withResource(assembledTable) { assembledTable =>
@@ -675,20 +699,28 @@ case class GpuAssembleSumChunks(
         }
       }
       withResource(hasOverflowed) { _ =>
-        val decimalData = assembledTable.getColumn(1)
-        assert(decimalData.getType.getTypeId == DType.DTypeEnum.DECIMAL128)
+        val data = assembledTable.getColumn(1)
+        if (isForDecimal) {
+          assert(data.getType.getTypeId == DType.DTypeEnum.DECIMAL128)
+        } else {
+          assert(data.getType.getTypeId == DType.DTypeEnum.INT64)
+        }
         if (nullOnOverflow) {
           withResource(Scalar.fromNull(cudfType)) { nullScalar =>
-            GpuColumnVector.from(hasOverflowed.ifElse(nullScalar, decimalData), dataType)
+            GpuColumnVector.from(hasOverflowed.ifElse(nullScalar, data), dataType)
           }
         } else {
           // ANSI MODE
           withResource(hasOverflowed.any) { anyProblem =>
             if (anyProblem.isValid && anyProblem.getBoolean) {
-              throw new ArithmeticException("Overflow in sum of decimals.")
+              if (isForDecimal) {
+                throw new ArithmeticException("Overflow in sum of decimals.")
+              } else {
+                throw new ArithmeticException("overflow in sum")
+              }
             }
           }
-          GpuColumnVector.from(decimalData.incRefCount(), dataType)
+          GpuColumnVector.from(data.incRefCount(), dataType)
         }
       }
     }
@@ -895,34 +927,34 @@ abstract class GpuSum(
         with GpuRunningWindowFunction
         with Serializable {
 
-  val internalSumDataType: DataType = resultType
-
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, resultType))
 
-  override lazy val inputProjection: Seq[Expression] =
-    Seq(GpuCast(child, internalSumDataType, ansiMode = failOnErrorOverride))
+  def inputProjectionImpl: Seq[Expression] = if (child.dataType != resultType) {
+    Seq(GpuCast(child, resultType, ansiMode = failOnErrorOverride))
+  } else {
+    Seq(child)
+  }
 
-  protected lazy val updateSum: CudfAggregate = new CudfSum(internalSumDataType)
+  override lazy val inputProjection: Seq[Expression] = inputProjectionImpl
 
-  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateSum)
+  protected lazy val updateSum: CudfAggregate = new CudfSum(resultType)
 
-  override lazy val postUpdate: Seq[Expression] =
+  def updateAggregatesImpl: Seq[CudfAggregate] = Seq(updateSum)
+  override lazy val updateAggregates: Seq[CudfAggregate] = updateAggregatesImpl
+
+  def postUpdateImpl: Seq[Expression] =
     Seq(GpuCast(updateAggregates.head.attr, resultType, ansiMode = failOnErrorOverride))
+  override lazy val postUpdate: Seq[Expression] = postUpdateImpl
 
   // output of GpuSum
   protected lazy val sum: AttributeReference = AttributeReference("sum", resultType)()
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = sum :: Nil
 
-  override lazy val preMerge: Seq[Expression] =
-    Seq(GpuCast(sum, internalSumDataType, ansiMode = failOnErrorOverride))
+  protected lazy val mergeSum: CudfAggregate = new CudfSum(resultType)
 
-  protected lazy val mergeSum: CudfAggregate = new CudfSum(internalSumDataType)
-
-  override lazy val postMerge: Seq[Expression] =
-    Seq(GpuCast(mergeSum.attr, resultType, ansiMode = failOnErrorOverride))
-
-  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeSum)
+  def mergeAggregatesImpl: Seq[CudfAggregate] = Seq(mergeSum)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = mergeAggregatesImpl
 
   override lazy val evaluateExpression: Expression = sum
 
@@ -935,9 +967,11 @@ abstract class GpuSum(
     TypeUtilsShims.checkForNumericExpr(child.dataType, "function gpu sum")
 
   // GENERAL WINDOW FUNCTION
+  val internalSumForWindowDataType: DataType = resultType
+
   override lazy val windowInputProjection: Seq[Expression] = {
-    if (child.dataType != internalSumDataType) {
-      Seq(GpuCast(child, internalSumDataType, ansiMode = failOnErrorOverride))
+    if (child.dataType != internalSumForWindowDataType) {
+      Seq(GpuCast(child, internalSumForWindowDataType, ansiMode = failOnErrorOverride))
     } else {
       Seq(child)
     }
@@ -954,8 +988,8 @@ abstract class GpuSum(
   }
 
   override def windowOutput(result: ColumnVector): ColumnVector = {
-    if (internalSumDataType != resultType) {
-      GpuCast.doCast(result, internalSumDataType, resultType, castOptions)
+    if (internalSumForWindowDataType != resultType) {
+      GpuCast.doCast(result, internalSumForWindowDataType, resultType, castOptions)
     } else {
       result.incRefCount()
     }
@@ -979,8 +1013,8 @@ abstract class GpuSum(
     Seq(AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
-    if (internalSumDataType != resultType) {
-      GpuCast.doCast(cols.head, internalSumDataType, resultType, castOptions)
+    if (internalSumForWindowDataType != resultType) {
+      GpuCast.doCast(cols.head, internalSumForWindowDataType, resultType, castOptions)
     } else {
       cols.head.incRefCount()
     }
@@ -994,7 +1028,8 @@ case class GpuBasicSum(
     failOnErrorOverride: Boolean)
     extends GpuSum(child, resultType, failOnErrorOverride) {
 
-  override val internalSumDataType: DataType = {
+  // TODO this should probably go away too...
+  override val internalSumForWindowDataType: DataType = {
     if (failOnErrorOverride && GpuAnsi.needBasicOpOverflowCheck(resultType)) {
       // In order to be able to detect overflow errors we need to have a size that
       // can handle the sum without actually overflowing until we can check it.
@@ -1002,6 +1037,56 @@ case class GpuBasicSum(
     } else {
       resultType
     }
+  }
+
+  val needsLongOverflowCheck: Boolean =
+    failOnErrorOverride && GpuAnsi.needBasicOpOverflowCheck(resultType)
+
+  override lazy val inputProjection: Seq[Expression] = if (needsLongOverflowCheck) {
+    (0 until 2).map {
+      GpuExtractChunk32(GpuCast(child, LongType), _, replaceNullsWithZero = false,
+        isForDecimal = false)
+    }
+  } else {
+    inputProjectionImpl
+  }
+
+  private lazy val updateSumChunks = Seq(new CudfSum(LongType), new CudfSum(LongType))
+
+  override lazy val updateAggregates: Seq[CudfAggregate] = if (needsLongOverflowCheck) {
+    updateSumChunks
+  } else {
+    updateAggregatesImpl
+  }
+
+  override lazy val postUpdate: Seq[Expression] = if (needsLongOverflowCheck) {
+    Seq(
+      GpuAssembleSumChunks(updateSumChunks.map(_.attr), LongType, nullOnOverflow = false,
+        None, isForDecimal = false))
+  } else {
+    postUpdateImpl
+  }
+
+  override lazy val preMerge: Seq[Expression] = if (needsLongOverflowCheck) {
+    (0 until 2).map {
+      GpuExtractChunk32(sum, _, replaceNullsWithZero = false, isForDecimal = false)
+    }
+  } else {
+    aggBufferAttributes
+  }
+
+  private lazy val mergeSumChunks = Seq(new CudfSum(LongType), new CudfSum(LongType))
+  override lazy val mergeAggregates: Seq[CudfAggregate] = if (needsLongOverflowCheck) {
+    mergeSumChunks
+  } else {
+    mergeAggregatesImpl
+  }
+
+  override lazy val postMerge: Seq[Expression] = if (needsLongOverflowCheck) {
+    Seq(GpuAssembleSumChunks(mergeSumChunks.map(_.attr), LongType,
+      nullOnOverflow = false, None, isForDecimal = false))
+  } else {
+    postMergeAttr
   }
 }
 
@@ -1147,7 +1232,7 @@ case class GpuDecimal128Sum(
 
   override lazy val inputProjection: Seq[Expression] = {
     val chunks = (0 until 4).map {
-      GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true)
+      GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true, isForDecimal = true)
     }
     // Spark tracks null columns through a second column isEmpty for decimal. So null values
     // are replaced with 0, and a separate boolean column for isNull is added
@@ -1161,13 +1246,14 @@ case class GpuDecimal128Sum(
   override lazy val postUpdate: Seq[Expression] = {
     Seq(
       // No merge overflow check yet...
-      GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, !failOnErrorOverride, None),
+      GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, !failOnErrorOverride,
+        None, isForDecimal = true),
       updateIsEmpty.attr)
   }
 
   override lazy val preMerge: Seq[Expression] = {
     val chunks = (0 until 4).map {
-      GpuExtractChunk32(sum, _, replaceNullsWithZero = false)
+      GpuExtractChunk32(sum, _, replaceNullsWithZero = false, isForDecimal = true)
     }
     // Spark tracks null columns through a second column isEmpty for decimal. So null values
     // are replaced with 0, and a separate boolean column for isNull is added
@@ -1185,7 +1271,7 @@ case class GpuDecimal128Sum(
 
   override lazy val postMerge: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt,
-      !failOnErrorOverride, Some(mergeIsOverflow.attr))
+      !failOnErrorOverride, Some(mergeIsOverflow.attr), isForDecimal = true)
 
     Seq(assembleExpr, mergeIsEmpty.attr)
   }
@@ -1233,7 +1319,7 @@ case class GpuDecimal128Sum(
  * updateExpressions - In the partial_pivot stage, new columns are created based on
  * pivotColumnValues one for each of the aggregation. Last aggregation on these columns grouped by
  * `type` and convert into an array( as per Spark's expectation). Last aggregation(excluding nulls)
- * works here as there would be atmost one entry in new columns when grouped by `type`.
+ * works here as there would be at most one entry in new columns when grouped by `type`.
  * After CudfLastExcludeNulls, the intermediate result would be
  *
  * type | x | y
@@ -1532,7 +1618,8 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
     // decimal aggregations.  The null gets inserted back in with evaluateExpression where
     // a divide by 0 gets replaced with a null.
     val chunks = (0 until 4).map { chunkIdx =>
-      val extract = GpuExtractChunk32(GpuCast(child, dt), chunkIdx, replaceNullsWithZero = false)
+      val extract = GpuExtractChunk32(GpuCast(child, dt), chunkIdx,
+        replaceNullsWithZero = false, isForDecimal = true)
       GpuCoalesce(Seq(extract, GpuLiteral.default(extract.dataType)))
     }
     val forCount = GpuCast(GpuIsNotNull(child), LongType)
@@ -1545,7 +1632,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
 
   override lazy val postUpdate: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, nullOnOverflow = true,
-      None)
+      None, isForDecimal = true)
     Seq(GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = true), updateCount.attr)
   }
 
@@ -1554,7 +1641,8 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
   // isOverflow column.  We only do this for Decimal because that is the only one that can have a
   // null inserted as a part of overflow checks. Spark does this for all overflow columns.
   override lazy val preMerge: Seq[Expression] = {
-    val chunks = (0 until 4).map(GpuExtractChunk32(sum, _, replaceNullsWithZero = false))
+    val chunks = (0 until 4).map(GpuExtractChunk32(sum, _, replaceNullsWithZero = false,
+      isForDecimal = true))
     chunks ++ Seq(count, GpuIsNull(sum))
   }
 
@@ -1565,7 +1653,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
 
   override lazy val postMerge: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt, nullOnOverflow = true,
-      Some(mergeIsOverflow.attr))
+      Some(mergeIsOverflow.attr), isForDecimal = true)
     Seq(
       GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = true),
       mergeCount.attr)
