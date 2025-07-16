@@ -55,8 +55,8 @@ class MergeIntoCommandMeta(
     }
 
     val isClusteredTable = ClusteredTableUtils.getClusterBySpecOptional(
-      mergeCmd.targetFileIndex.deltaLog.unsafeVolatileSnapshot)
-    if (isClusteredTable.isDefined) {
+      mergeCmd.targetFileIndex.deltaLog.unsafeVolatileSnapshot).isDefined
+    if (isClusteredTable) {
       willNotWorkOnGpu("Liquid clustering is not supported on GPU")
     }
 

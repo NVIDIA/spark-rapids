@@ -49,8 +49,8 @@ class UpdateCommandMeta(
     }
 
     val isClusteredTable = ClusteredTableUtils.getClusterBySpecOptional(
-      updateCmd.tahoeFileIndex.deltaLog.unsafeVolatileSnapshot)
-    if (isClusteredTable.isDefined) {
+      updateCmd.tahoeFileIndex.deltaLog.unsafeVolatileSnapshot).isDefined
+    if (isClusteredTable) {
       willNotWorkOnGpu("Liquid clustering is not supported on GPU")
     }
 

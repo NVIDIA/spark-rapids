@@ -48,8 +48,8 @@ class DeleteCommandMeta(
     }
 
     val isClusteredTable = ClusteredTableUtils.getClusterBySpecOptional(
-      deleteCmd.deltaLog.unsafeVolatileSnapshot)
-    if (isClusteredTable.isDefined) {
+      deleteCmd.deltaLog.unsafeVolatileSnapshot).isDefined
+    if (isClusteredTable) {
       willNotWorkOnGpu("Liquid clustering is not supported on GPU")
     }
 
