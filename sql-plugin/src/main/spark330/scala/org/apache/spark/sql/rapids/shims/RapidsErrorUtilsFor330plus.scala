@@ -72,7 +72,7 @@ trait RapidsErrorUtilsFor330plus {
 
   def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String, 
       errorContext: String): RuntimeException = {
-    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, null)
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, context=null)
   }
 
   // def invalidInputSyntaxForBooleanError(s: org.apache.spark.unsafe.types.UTF8String): RuntimeException = {
