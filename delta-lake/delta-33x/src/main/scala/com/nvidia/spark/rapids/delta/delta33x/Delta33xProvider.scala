@@ -17,11 +17,13 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.{DeltaCreatableRelationProviderMetaBase, DeltaIOProvider}
+import com.nvidia.spark.rapids.delta.{DeltaIOProvider, GpuDeltaDataSource, RapidsDeltaUtils}
+import org.apache.hadoop.fs.Path
 import scala.collection.JavaConverters._
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.SupportsWrite
-import org.apache.spark.sql.delta.DeltaParquetFileFormat
+import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
@@ -31,7 +33,7 @@ import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterByTransform
 import org.apache.spark.sql.delta.sources.DeltaDataSource
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.ExternalSource
@@ -192,7 +194,7 @@ class DeltaCreatableRelationProviderMeta(
     rule: DataFromReplacementRule)
   extends CreatableRelationProviderMeta[DeltaDataSource](source, conf, parent, rule) {
   require(parent.isDefined, "Must provide parent meta")
-  protected val saveCmd = parent.get.wrapped match {
+  private val saveCmd = parent.get.wrapped match {
     case s: SaveIntoDataSourceCommand => s
     case s =>
       throw new IllegalStateException(s"Expected SaveIntoDataSourceCommand, found ${s.getClass}")

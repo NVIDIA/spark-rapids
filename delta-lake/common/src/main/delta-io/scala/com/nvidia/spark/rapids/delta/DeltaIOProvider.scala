@@ -25,7 +25,7 @@ import scala.util.Try
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode}
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.delta.{DeltaLog, DeltaOptions, DeltaParquetFileFormat}
@@ -33,7 +33,7 @@ import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.WriteIntoDelta
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuDeltaLog, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.sources.{DeltaDataSource, DeltaSourceUtils}
-import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
