@@ -36,6 +36,8 @@ from conftest import is_databricks_runtime
 from data_gen import unary_op_df, int_gen, copy_and_update, SetValuesGen, string_gen, long_gen, \
     gen_df
 from delta_lake_delete_test import delta_delete_enabled_conf
+from delta_lake_merge_test import delta_merge_enabled_conf
+from delta_lake_update_test import delta_update_enabled_conf
 from delta_lake_utils import delta_meta_allow, \
     delta_writes_enabled_conf, delta_write_fallback_allow, setup_delta_dest_tables
 from marks import allow_non_gpu, delta_lake, ignore_order
@@ -325,10 +327,42 @@ def do_test_delta_dml_sql_liquid_clustering_fallback(spark_tmp_path,
 def test_delta_delete_sql_liquid_clustering_fallback(spark_tmp_path,
                                                      spark_tmp_table_factory):
 
-    do_test_delta_dml_sql_liquid_clustering_fallback(spark_tmp_path,
-                                                     spark_tmp_table_factory,
-                                                     delta_delete_enabled_conf,
-                                                     lambda table_name: f"DELETE FROM {table_name} WHERE a > 0")
+    do_test_delta_dml_sql_liquid_clustering_fallback(
+        spark_tmp_path, spark_tmp_table_factory, delta_delete_enabled_conf,
+        lambda table_name: f"DELETE FROM {table_name} WHERE a > 0")
+
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
+               "AppendDataExecV1")
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
+@pytest.mark.skipif(not is_spark_353_or_later(),
+                    reason="Create table with cluster by is only supported on delta 3.1+")
+def test_delta_update_sql_liquid_clustering_fallback(spark_tmp_path,
+                                                     spark_tmp_table_factory):
+
+    do_test_delta_dml_sql_liquid_clustering_fallback(
+        spark_tmp_path, spark_tmp_table_factory, delta_update_enabled_conf,
+        lambda table_name: f"UPDATE {table_name} SET e = e+1 WHERE a > 0")
+
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
+               "AppendDataExecV1")
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
+                    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
+@pytest.mark.skipif(not is_spark_353_or_later(),
+                    reason="Create table with cluster by is only supported on delta 3.1+")
+def test_delta_merge_sql_liquid_clustering_fallback(spark_tmp_path,
+                                                     spark_tmp_table_factory):
+
+    do_test_delta_dml_sql_liquid_clustering_fallback(
+        spark_tmp_path, spark_tmp_table_factory, delta_merge_enabled_conf,
+        lambda table_name: f"MERGE INTO {table_name} "
+                           f"USING {table_name} "
+                           f"ON {table_name}.a == {table_name}.a "
+                           f"WHEN NOT MATCHED THEN INSERT *")
 
 
 
