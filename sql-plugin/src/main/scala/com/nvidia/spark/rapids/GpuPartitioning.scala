@@ -17,11 +17,13 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.kudo.KudoGpuSerializer
+
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.internal.SQLConf
@@ -185,9 +187,10 @@ trait GpuPartitioning extends Partitioning {
   def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
     if (usesKudoGPUSlicing) {
+      partitionColumns.foreach(_.getBase.getNullCount)
       val dmbs = withResource(partitionColumns) { _ =>
         withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
-          KudoGpuSerializer.splitAndSerializeToDevice(table, partitionIndexes: _*)
+          KudoGpuSerializer.splitAndSerializeToDevice(table, partitionIndexes.tail: _*)
         }
       }
       val data = dmbs(0)
@@ -205,23 +208,31 @@ trait GpuPartitioning extends Partitioning {
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
       withResource(dataHost) { _ =>
         withResource(offsetsHost) { _ =>
-          val elemSize = offsetsHost.getLength / numPartitions // should this be numPartitions - 1
+//          val elemSize = offsetsHost.getLength / numPartitions // should this be numPartitions - 1
+          val elemSize = 8
+          val numSlices = (offsetsHost.getLength / elemSize).toInt
 
-          val res = new Array[ColumnarBatch](numPartitions)
+          val res = new Array[ColumnarBatch](numSlices - 1)
           var start = 0
-          for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
+          for (i <- 1 until numSlices) {
             // elemSize should almost always be 8 (size_t) I think, but just in case
             val idx = if (elemSize == 8) {
               offsetsHost.getLong((i) * elemSize).toInt
             } else {
               offsetsHost.getInt((i) * elemSize)
             }
-            res(i - 1) = new ColumnarBatch(Array(
+            res(i-1) = new ColumnarBatch(Array(
               new SlicedSerializedColumnVector(dataHost, start, idx)))
+            val partNumRows = if (i == partitionIndexes.length) {
+              numRows
+            } else {
+              partitionIndexes(i)
+            }
+            res(i-1).setNumRows(partNumRows)
             start = idx
           }
-          res(numPartitions - 1) = new ColumnarBatch(Array(
-            new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+//          res(numPartitions - 1) = new ColumnarBatch(Array(
+//            new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
 
           res.zipWithIndex.filter(_._1 != null)
         }
