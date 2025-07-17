@@ -589,6 +589,7 @@ class RowToColumnarIterator(
     rowIter: Iterator[InternalRow],
     localSchema: StructType,
     localGoal: CoalesceSizeGoal,
+    batchSizeBytes: Long,
     converters: GpuRowToColumnConverter,
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
@@ -597,6 +598,7 @@ class RowToColumnarIterator(
     opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
+  private var initialRows = 0
   private var targetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
@@ -618,15 +620,18 @@ class RowToColumnarIterator(
         if (localSchema.fields.isEmpty) {
           // if there are no columns then we just default to a small number
           // of rows for the first batch
+          // TODO do we even need to allocate anything here?
           targetRows = 1024
+          initialRows = targetRows
         } else {
           val sampleRows = GpuBatchUtils.VALIDITY_BUFFER_BOUNDARY_ROWS
           val sampleBytes = GpuBatchUtils.estimateGpuMemory(localSchema, sampleRows)
           targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
+          initialRows = GpuBatchUtils.estimateRowCount(batchSizeBytes, sampleBytes, sampleRows)
         }
       }
 
-      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows)) { builders =>
+      withResource(new GpuColumnarBatchBuilder(localSchema, initialRows)) { builders =>
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
@@ -909,8 +914,10 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
         numInputRows, NoopMetric, NoopMetric))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
+      val conf = new RapidsConf(child.conf)
+      val batchSizeBytes = conf.gpuTargetBatchSizeBytes
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, converters,
+        localSchema, localGoal, batchSizeBytes, converters,
         numInputRows, NoopMetric, NoopMetric, streamTime, opTime))
     }
   }

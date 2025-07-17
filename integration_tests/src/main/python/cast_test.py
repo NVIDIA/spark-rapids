@@ -38,16 +38,15 @@ def test_cast_empty_string_to_int_ansi_off():
                 conf=ansi_disabled_conf)
 
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11552")
-def test_cast_empty_string_to_int_ansi_on():
+@pytest.mark.parametrize('to_type', ['BYTE', 'SHORT', 'INTEGER', 'LONG'])
+def test_cast_empty_string_to_int_ansi_on(to_type):
+    err_mess = "invalid input syntax for type numeric" if is_before_spark_330() \
+        else "cannot be cast to "
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
-            'CAST(a as BYTE)',
-            'CAST(a as SHORT)',
-            'CAST(a as INTEGER)',
-            'CAST(a as LONG)').collect(),
+            'CAST(a as {})'.format(to_type)).collect(),
         conf=ansi_enabled_conf,
-        error_message="cannot be cast to ")
+        error_message=err_mess)
 
 # These tests are not intended to be exhaustive. The scala test CastOpSuite should cover
 # just about everything for non-nested values. This is intended to check that the
@@ -210,7 +209,6 @@ def test_with_ansi_disabled_cast_decimal_to_decimal(data_gen, to_type):
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')))
 
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11550")
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(3, 0)], ids=meta_idfn('from:'))
@@ -220,7 +218,7 @@ def test_ansi_cast_failures_decimal_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')).collect(),
         conf=ansi_enabled_conf,
-        error_message="overflow occurred")
+        error_message="cannot be represented as Decimal")
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
@@ -240,14 +238,14 @@ def test_cast_integral_to_decimal_ansi_off(data_gen, to_type):
         conf=ansi_disabled_conf)
 
 
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [LongGen(min_val=100)], ids=idfn)
 @pytest.mark.parametrize('to_type', [DecimalType(2, 0)], ids=idfn)
 def test_cast_integral_to_decimal_ansi_on(data_gen, to_type):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(
-                f.col('a').cast(to_type)),
-        conf=ansi_enabled_conf)
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)).collect(),
+        conf=ansi_enabled_conf,
+        error_message="cannot be represented as Decimal")
+
 
 def test_cast_byte_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
@@ -291,7 +289,19 @@ def test_cast_floating_point_to_decimal_ansi_off(data_gen, to_type):
                {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
 
 
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
+@pytest.mark.parametrize('d_gen', [
+    SetValuesGen(FloatType(), [float('nan'), float('-inf'), float('inf')]),
+    SetValuesGen(DoubleType(), [float('nan'), float('-inf'), float('inf')])])
+def test_cast_floating_point_to_decimal_specials_ansi_on(d_gen):
+    # Spark always returns a null for a NaN, an inf, or an -inf.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, d_gen).select(
+            f.col('a'), f.col('a').cast(DecimalType(7, 1))),
+        conf=copy_and_update(
+            ansi_enabled_conf,
+            {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
+
+
 @pytest.mark.parametrize('data_gen', [FloatGen(special_cases=_float_special_cases)])
 @pytest.mark.parametrize('to_type', [DecimalType(7, 1)])
 def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
@@ -302,7 +312,7 @@ def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
         conf=copy_and_update(
             ansi_enabled_conf,
             {'spark.rapids.sql.castFloatToDecimal.enabled': True}),
-        error_message="[NUMERIC_VALUE_OUT_OF_RANGE.WITH_SUGGESTION]")
+        error_message="cannot be represented as Decimal")
 
 
 # casting these types to string should be passed
@@ -454,13 +464,31 @@ def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
 
 # The bug SPARK-37451 only affects the following versions
 def is_neg_dec_scale_bug_version():
-    return ("3.1.1" <= spark_version() < "3.1.3") or ("3.2.0" <= spark_version() < "3.2.1")
+    return "3.2.0" <= spark_version() < "3.2.1"
 
 @pytest.mark.skipif(is_neg_dec_scale_bug_version(), reason="RAPIDS doesn't support casting string to decimal for negative scale decimal in this version of Spark because of SPARK-37451")
 def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
             f.col('a').cast(DecimalType(8, -3))))
+
+
+@pytest.mark.skipif(is_neg_dec_scale_bug_version(),
+                    reason="Negative scale isn't supported in this Spark version due to SPARK-37451")
+@pytest.mark.parametrize('ansi_on', [True, False], ids=idfn)
+def test_cast_string_to_negative_scale_decimal_overflow(ansi_on):
+    def test_overflow(spark):
+        return unary_op_df(spark, StringGen("[0-9]{9}")).select(
+            f.col('a').cast(DecimalType(4, -3)))
+
+    if ansi_on:
+        assert_gpu_and_cpu_error(lambda spark: test_overflow(spark).collect(),
+                                 conf=ansi_enabled_conf,
+                                 error_message="cannot be represented as Decimal")
+    else:
+        assert_gpu_and_cpu_are_equal_collect(test_overflow,
+                                             conf=ansi_disabled_conf)
+
 
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
@@ -580,10 +608,6 @@ def test_cast_timestamp_to_numeric_ansi_no_overflow():
         conf=ansi_enabled_conf)
 
 
-@pytest.mark.skipif(is_databricks_runtime() and is_databricks_version_or_later(14, 3),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
-@pytest.mark.skipif(not is_databricks_runtime() and is_spark_400_or_later(),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
 def test_cast_timestamp_to_numeric_non_ansi():
     """
     Test timestamp->numeric conversions with ANSI off.

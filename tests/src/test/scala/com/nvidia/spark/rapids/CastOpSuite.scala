@@ -576,16 +576,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual(
-    "Test cast from timestamp", timestampDatesMsecParquet,
-      assumeCondition = _ => (!isSpark400OrLater,
-        "Spark version not before 4.0.0, " +
-        "non-ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12019," +
-        "ansi issue: https://github.com/NVIDIA/spark-rapids/issues/12714"))(timestampCastFn)
+    "Test cast from timestamp",
+    timestampDatesMsecParquet,
+    assumeCondition = spark =>
+      ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")(spark)
+  )(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
     skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12714")
-    // issue: https://github.com/NVIDIA/spark-rapids/issues/12019
-    assumePriorToSpark400
     val oldtz = TimeZone.getDefault
     try {
       TimeZone.setDefault(TimeZone.getTimeZone("Etc/UTC-0"))
@@ -706,11 +704,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.FloatType, scale,
         customDataGenerator = Some(floatsIncludeNaNs))
-      assertThrows[Throwable] {
-        testCastToDecimal(DataTypes.FloatType, scale,
-          customDataGenerator = Some(floatsIncludeNaNs),
-          ansiEnabled = true)
-      }
+      testCastToDecimal(DataTypes.FloatType, scale,
+        customDataGenerator = Some(floatsIncludeNaNs),
+        ansiEnabled = true)
     }
   }
 
@@ -728,11 +724,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.DoubleType, scale,
         customDataGenerator = Some(doublesIncludeNaNs))
-      assertThrows[Throwable] {
-        testCastToDecimal(DataTypes.DoubleType, scale,
-          customDataGenerator = Some(doublesIncludeNaNs),
-          ansiEnabled = true)
-      }
+      testCastToDecimal(DataTypes.DoubleType, scale,
+        customDataGenerator = Some(doublesIncludeNaNs),
+        ansiEnabled = true)
     }
   }
 
@@ -896,7 +890,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
               nonOverflowCase(dataType, generator, precision, scale)
             }
           },
-        GpuCast.OVERFLOW_MESSAGE)
+          "cannot be represented as Decimal")
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
       testCastToDecimal(dataType,

@@ -1496,6 +1496,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitAndAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitAndAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[BitOrAgg](
       "Returns the bitwise OR of all non-null input values",
@@ -1505,6 +1507,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitOrAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitOrAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[BitXorAgg](
       "Returns the bitwise XOR of all non-null input values",
@@ -1514,6 +1518,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitXorAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitXorAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
@@ -2288,6 +2294,8 @@ object GpuOverrides extends Logging {
           val inputDataType = a.child.dataType
           checkAndTagFloatAgg(inputDataType, this.conf, this)
         }
+
+        override def needsAnsiCheck: Boolean = false
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuSum(childExprs.head, a.dataType)

@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -87,10 +88,11 @@ case class GpuSortExec(
     gpuSortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan,
-    sortType: SortExecType)(cpuSortOrder: Seq[SortOrder])
+    sortType: SortExecType)(
+    cpuSortOrder: Seq[SortOrder], writeTrackers: Option[Seq[GpuWriteJobStatsTracker]] = None)
   extends ShimUnaryExecNode with GpuExec {
 
-  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
+  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: writeTrackers :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
     case FullSortSingleBatch => Seq(RequireSingleBatch)
@@ -133,7 +135,10 @@ case class GpuSortExec(
     val outOfCore = sortType == OutOfCoreSort
     val singleBatch = sortType == FullSortSingleBatch
     child.executeColumnar().mapPartitions { cbIter =>
-      if (outOfCore) {
+      val taskTrackers = writeTrackers.map { tcs =>
+        tcs.map(_.newTaskInstance().asInstanceOf[GpuWriteTaskStatsTracker])
+      }
+      val finalIter = if (outOfCore) {
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter,
           targetSize, opTime, sortTime, NoopMetric, NoopMetric)
         onTaskCompletion(iter.close())
@@ -142,6 +147,18 @@ case class GpuSortExec(
         GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
           opTime, sortTime, NoopMetric, NoopMetric)
       }
+      if (taskTrackers.exists(_.nonEmpty)) {
+        finalIter.map { cb =>
+          taskTrackers.get.foreach { tc =>
+            tc.setSortTime(sortTime.value)
+            tc.setSortOpTime(opTime.value)
+          }
+          cb
+        }
+      } else {
+        finalIter
+      }
+
     }
   }
 }
