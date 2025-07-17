@@ -36,16 +36,13 @@ object Delta20xProvider extends Delta2xProviderBase {
     Seq(
       GpuOverrides.runnableCmd[DeleteCommand](
         "Delete rows from a Delta Lake table",
-        (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r))
-          .disabledByDefault("Delta Lake delete support is experimental"),
+        (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r)),
       GpuOverrides.runnableCmd[MergeIntoCommand](
         "Merge of a source query/table into a Delta Lake table",
-        (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
-          .disabledByDefault("Delta Lake merge support is experimental"),
+        (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r)),
       GpuOverrides.runnableCmd[UpdateCommand](
         "Update rows in a Delta Lake table",
         (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r))
-          .disabledByDefault("Delta Lake update support is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
