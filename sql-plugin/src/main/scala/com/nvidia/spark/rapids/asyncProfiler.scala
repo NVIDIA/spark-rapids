@@ -53,7 +53,11 @@ object AsyncProfilerOnExecutor extends Logging {
   private var asyncProfiler: Option[AsyncProfiler] = None
   private var pluginCtx: PluginContext = _
   private var profileOptions: String = _
-  @volatile private var currentProfilingStage = -1
+  // Only track active running tasks
+  private var activeTasksAndStages: Map[Long, Int] = Map.empty
+  // How many reports each stage has been profiled
+  private var stageEpochs: Map[Int, Long] = Map.empty
+  private var currentProfilingStage: Option[Int] = None
 
   private var needMoveFile: Boolean = false // true when `asyncProfilerPathPrefix` is non-local
   private var tempFilePath: java.nio.file.Path = _
@@ -86,13 +90,39 @@ object AsyncProfilerOnExecutor extends Logging {
   }
 
 
+  def onTaskEnd(): Unit = {
+    asyncProfiler.foreach(profiler => {
+      activeTasksAndStages -= TaskContext.get.taskAttemptId()
+    }
+  }
+
+  private def getMajorityStageId: Option[Int] = {
+    // Get the stage ID that has the most tasks running
+    if (activeTasksAndStages.isEmpty) {
+      None
+    } else {
+      val majorityStageOccurence = activeTasksAndStages.groupBy(_._2).maxBy(_._2.size)
+      // The majority stage is the one that has more than half of the tasks running
+      if (majorityStageOccurence._2.size > activeTasksAndStages.size / 2) {
+        Some(majorityStageOccurence._1)
+      } else {
+        None
+      }
+    }
+  }
+
   def onTaskStart(): Unit = {
     asyncProfiler.foreach(profiler => {
 
       val stageId = TaskContext.get.stageId()
-      if (stageId > currentProfilingStage) {
+      activeTasksAndStages += (TaskContext.get.taskAttemptId() -> stageId)
+      val majorityStageId = getMajorityStageId
+
+      if (majorityStageId.nonEmpty && currentProfilingStage != majorityStageId) {
+        // If the majority stage has changed, we need to update the current profiling stage
+
         asyncProfiler.synchronized {
-          if (stageId > currentProfilingStage) {
+          if (majorityStageId.nonEmpty && currentProfilingStage != majorityStageId) {
 
             log.debug(s"In onTaskStart(), stageId: $stageId, " +
               s"currentProfilingStage: $currentProfilingStage")
