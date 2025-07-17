@@ -47,7 +47,7 @@ class DeltaCreatableRelationProviderMeta(
     rule: DataFromReplacementRule)
   extends CreatableRelationProviderMeta[DeltaDataSource](source, conf, parent, rule) {
   require(parent.isDefined, "Must provide parent meta")
-  protected val saveCmd = parent.get.wrapped match {
+  private val saveCmd = parent.get.wrapped match {
     case s: SaveIntoDataSourceCommand => s
     case s =>
       throw new IllegalStateException(s"Expected SaveIntoDataSourceCommand, found ${s.getClass}")
