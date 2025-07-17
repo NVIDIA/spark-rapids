@@ -853,7 +853,6 @@ case class GpuStringReplace(
       with HasGpuStringReplace {
 
   override def dataType: DataType = srcExpr.dataType
-
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
   override def first: Expression = srcExpr
@@ -1529,6 +1528,8 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
+    // TODO: this workaround can be removed for versions of the plugin using
+    //   cuDF that include https://github.com/rapidsai/cudf/pull/19398
     if (str.getRowCount == 0) {
       ColumnVector.fromStrings()
     } else {

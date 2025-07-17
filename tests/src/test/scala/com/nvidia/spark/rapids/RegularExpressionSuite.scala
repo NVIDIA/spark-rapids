@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 import java.nio.charset.Charset
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 class RegularExpressionSuite extends SparkQueryCompareTestSuite {
@@ -77,6 +78,21 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
       "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'','D')")
+  }
+
+  testSparkResultsAreEqual("String empty regexp_extract returns empty table",
+    nullableStringsFromCsv, conf = conf) { frame =>
+    assume(isUnicodeEnabled())
+    // this overpartitions that we will guarantee some empty slices
+    // and is essential to the test executing cases where batches are
+    // 0 rows when going into the regexp_extract.
+    val lhs = frame.repartition(100).alias("lhs")
+    val rhs = frame.repartition(100).alias("rhs")
+    val joinCondition = when(
+      col("lhs.strings").like("%-test-%"),
+      regexp_extract(col("lhs.strings"), "(\\d+)-test-(\\d+)", 1))
+      .otherwise(col("lhs.strings"))
+    lhs.join(rhs, col("rhs.strings") === joinCondition, "inner")
   }
 
   testSparkResultsAreEqual("String regexp_replace regex 1",
