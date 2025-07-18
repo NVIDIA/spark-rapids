@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.net.URI
 
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpExec}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
