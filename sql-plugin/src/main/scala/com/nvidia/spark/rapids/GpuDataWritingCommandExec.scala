@@ -20,6 +20,7 @@ import java.net.URI
 
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpExec}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -38,6 +39,8 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
+import org.apache.spark.internal.Logging
 
 /**
  * An extension of `DataWritingCommand` that allows columnar execution.
@@ -113,15 +116,48 @@ object GpuDataWritingCommand {
 }
 
 case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPlan)
-    extends ShimUnaryExecNode with GpuExec {
+    extends ShimUnaryExecNode with GpuExec with Logging {
   override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
   private lazy val sideEffectResult: Seq[ColumnarBatch] = {
-    // Dump LoRE meta info if needed
-    dumpLoreMetaInfo()
-    // Execute the command with LoRE dumping if needed
-    val childWithDumping = dumpLoreRDD(child)
-    cmd.runColumnar(sparkSession, childWithDumping)
+    // Check if we need to handle AdaptiveSparkPlanExec that's not yet finalized
+    val needsAqeTrigger = child match {
+      case aqe: AdaptiveSparkPlanExec =>
+        val planString = aqe.toString
+        !planString.contains("isFinalPlan=true")
+      case _ => false
+    }
+    if (needsAqeTrigger) {
+      // First execution: trigger AQE to get the final physical plan
+      // This execution won't have LORE dump enabled, just to materialize the final plan
+      logInfo("LORE: Triggering AQE execution to materialize final physical plan")
+      val firstRunResult = cmd.runColumnar(sparkSession, child)
+      // Verify that the plan is now finalized
+      val isNowFinalized = child match {
+        case aqe: AdaptiveSparkPlanExec =>
+          val planString = aqe.toString
+          planString.contains("isFinalPlan=true")
+        case _ => true
+      }
+      if (!isNowFinalized) {
+        logWarning("LORE: AQE plan is still not finalized after first execution")
+      }
+      // Second execution: with LORE dump enabled on the now-finalized plan
+      logInfo("LORE: Executing with LORE dump on finalized physical plan")
+      // Dump LoRE meta info if needed
+      dumpLoreMetaInfo()
+      val childWithDumping = dumpLoreRDD(child)
+      // Safely execute with AutoCloseableSeq for proper resource management
+      safeExecuteColumnarWithLoreDump(childWithDumping)
+      firstRunResult
+    } else {
+      // Normal execution: execute the command with LoRE dumping if needed
+      logInfo("LORE: Executing with LORE dump (plan already finalized)")
+      // Dump LoRE meta info if needed
+      dumpLoreMetaInfo()
+      val childWithDumping = dumpLoreRDD(child)
+      cmd.runColumnar(sparkSession, childWithDumping)
+    }
   }
 
   override def output: Seq[Attribute] = cmd.output
@@ -180,16 +216,60 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   }
 
   private def dumpLoreRDD(inputChild: SparkPlan): SparkPlan = {
-    getTagValue(LORE_DUMP_RDD_TAG).map { info =>
-      // Check if child is supported in LORE before creating GpuLoreDumpExec
-      if (!inputChild.isInstanceOf[GpuExec]) {
-        throw new UnsupportedOperationException(
-          s"LoRE dump is not supported for child of type ${inputChild.getClass.getSimpleName}. " +
-          s"Only GpuExec instances are supported in LORE.")
+    inputChild.getTagValue(LORE_DUMP_RDD_TAG).map { info =>
+      // Handle AdaptiveSparkPlanExec by applying LORE dump to its childPlan
+      inputChild match {
+        case aqe: AdaptiveSparkPlanExec =>
+          val planString = aqe.toString
+          if (planString.contains("isFinalPlan=true")) {
+            // For final AQE plan, apply LORE dump to its executedPlan
+            val executedPlan = aqe.executedPlan
+            // Check if the executedPlan is supported in LORE
+            if (!executedPlan.isInstanceOf[GpuExec]) {
+              val errorMsg = s"LoRE dump is not supported for executedPlan of type " +
+                s"${executedPlan.getClass.getSimpleName}. " +
+                s"Only GpuExec instances are supported in LORE."
+              throw new UnsupportedOperationException(errorMsg)
+            }
+            // Create GpuLoreDumpExec for the executedPlan
+            GpuLoreDumpExec(aqe, info)
+          } else {
+            // If not a final plan, return the original AdaptiveSparkPlanExec
+            logInfo("LORE: Skipping LORE dump for non-final AdaptiveSparkPlanExec")
+            inputChild
+          }
+        case _ =>
+          // For non-AQE plans, check if it's supported in LORE
+          if (!inputChild.isInstanceOf[GpuExec]) {
+            val errorMsg = s"LoRE dump is not supported for child of type " +
+              s"${inputChild.getClass.getSimpleName}. Only GpuExec instances are supported in LORE."
+            throw new UnsupportedOperationException(errorMsg)
+          }
+          // Create a new exec that wraps the child with LoRE dumping capability
+          GpuLoreDumpExec(inputChild.asInstanceOf[GpuExec], info)
       }
-      // Create a new exec that wraps the child with LoRE dumping capability
-      GpuLoreDumpExec(inputChild.asInstanceOf[GpuExec], info)
     }.getOrElse(inputChild)
+  }
+
+  /**
+   * Safely execute columnar plan with LORE dump, ensuring proper resource management.
+   * This method uses AutoCloseableSeq to safely close ColumnarBatch resources.
+   */
+  private def safeExecuteColumnarWithLoreDump(plan: SparkPlan): Unit = {
+    val rdd = plan.executeColumnar()
+    rdd.foreachPartition { iter =>
+      // Convert iterator to Seq and use AutoCloseableSeq for safe resource management
+      val batches = iter.toSeq
+      try {
+        // Process all batches for LORE dump
+        batches.foreach { batch =>
+          // LORE dump processing happens in GpuLoreDumpRDD during iteration
+        }
+      } finally {
+        // Use AutoCloseableSeq to safely close all batches
+        batches.safeClose()
+      }
+    }
   }
 }
 
