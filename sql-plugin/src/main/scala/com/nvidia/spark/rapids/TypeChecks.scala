@@ -19,18 +19,18 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims, TypeSigUtil}
+import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-/** Trait of TypeSigUtil for different spark versions */
-trait TypeSigUtilBase {
+object TypeSigUtil {
   /**
-   * Get all supported types for the spark-specific
-   * @return the all supported typ
+   * `ObjectType` exists in Spark320 and Spark320+, it not for GPU columnar computation,
+   * so remove it.
+   * @return the all supported type.
    */
-  def getAllSupportedTypes: TypeEnum.ValueSet
+  def getAllSupportedTypes: TypeEnum.ValueSet = TypeEnum.values - TypeEnum.OBJECT
 }
 
 /**
