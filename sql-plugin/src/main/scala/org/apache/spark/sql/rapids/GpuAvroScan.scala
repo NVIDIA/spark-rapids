@@ -18,19 +18,19 @@ package org.apache.spark.sql.rapids
 
 import java.io.{FileNotFoundException, IOException, OutputStream}
 import java.net.URI
-import java.util.concurrent.{Callable}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 
-import ai.rapids.cudf.{AvroOptions => CudfAvroOptions,HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, SCAN_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.io.async.{AsyncTask, UnboundedAsyncTask}
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -211,7 +211,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
-  private val numThreads = rapidsConf.multiThreadReadNumThreads
+  private val poolConf = ResourcePoolConf.parse(rapidsConf)
   private val maxNumFileProcessed = rapidsConf.maxNumAvroFilesParallel
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
@@ -243,7 +243,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
       partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
     val reader = new GpuMultiFileCloudAvroPartitionReader(
-      conf, files, numThreads, maxNumFileProcessed,
+      conf, files, poolConf, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
       readDataSchema, partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       maxGpuColumnSizeBytes)
@@ -303,7 +303,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-      numThreads, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
+      poolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
   }
 
 }
@@ -648,7 +648,7 @@ class GpuAvroPartitionReader(
 class GpuMultiFileCloudAvroPartitionReader(
     override val conf: Configuration,
     files: Array[PartitionedFile],
-    numThreads: Int,
+    resourceConf: ResourcePoolConf,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
@@ -661,7 +661,8 @@ class GpuMultiFileCloudAvroPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long)
-  extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
+  extends MultiFileCloudPartitionReaderBase(conf,
+    files, resourceConf, maxNumFileProcessed, filters,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
     ignoreCorruptFiles) with MultiFileReaderFunctions with GpuAvroReaderBase {
 
@@ -710,7 +711,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       tc: TaskContext,
       file: PartitionedFile,
       config: Configuration,
-      filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] =
+      filters: Array[Filter]): AsyncTask[HostMemoryBuffersWithMetaDataBase] =
     new ReadBatchRunner(tc, file, config, filters)
 
   /** Two utils classes */
@@ -723,9 +724,9 @@ class GpuMultiFileCloudAvroPartitionReader(
       taskContext: TaskContext,
       partFile: PartitionedFile,
       config: Configuration,
-      filters: Array[Filter]) extends Callable[HostMemoryBuffersWithMetaDataBase] with Logging {
+      filters: Array[Filter]) extends UnboundedAsyncTask[BufferResult] with Logging {
 
-    override def call(): HostMemoryBuffersWithMetaDataBase = {
+    override def callImpl(): BufferResult = {
       TrampolineUtil.setTaskContext(taskContext)
       // Mark the async thread as a pool thread within the RetryFramework
       RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
@@ -907,14 +908,14 @@ class GpuMultiFileAvroPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
-    numThreads: Int,
+    resourceConf: ResourcePoolConf,
     override val debugDumpPrefix: Option[String],
     override val debugDumpAlways: Boolean,
     execMetrics: Map[String, GpuMetric],
     mapPathHeader: Map[Path, Header])
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
-    partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes, numThreads,
-    execMetrics) with GpuAvroReaderBase {
+    partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
+    resourceConf, execMetrics) with GpuAvroReaderBase {
 
   override def checkIfNeedToSplitDataBlock(
       currentBlockInfo: SingleDataBlockInfo,
@@ -994,7 +995,7 @@ class GpuMultiFileAvroPartitionReader(
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
-      batchContext: BatchContext): Callable[(Seq[DataBlockBase], Long)] =
+      batchContext: BatchContext): AsyncTask[(Seq[DataBlockBase], Long)] =
     new AvroCopyBlocksRunner(tc, file, outhmb, blocks, offset, batchContext)
 
   // The runner to copy blocks to offset of HostMemoryBuffer
@@ -1004,11 +1005,11 @@ class GpuMultiFileAvroPartitionReader(
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
-      batchContext: BatchContext) extends Callable[(Seq[DataBlockBase], Long)] {
+      batchContext: BatchContext) extends UnboundedAsyncTask[(Seq[DataBlockBase], Long)] {
 
     private val headerSync = Some(batchContext.mergedHeader.sync)
 
-    override def call(): (Seq[DataBlockBase], Long) = {
+    override def callImpl(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
       try {
         val startBytesRead = fileSystemBytesRead()
