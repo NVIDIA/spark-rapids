@@ -559,7 +559,7 @@ object TypeSig {
    * All types nested and not nested
    */
   val all: TypeSig = {
-    val allSupportedTypes = TypeSigUtil.getAllSupportedTypes()
+    val allSupportedTypes = TypeSigUtil.getAllSupportedTypes
     new TypeSig(allSupportedTypes, DecimalType.MAX_PRECISION, allSupportedTypes)
   }
 
@@ -1693,8 +1693,7 @@ object ExprChecks {
  * Used for generating the support docs.
  */
 object SupportedOpsDocs {
-  private lazy val allSupportedTypes =
-    TypeSigUtil.getAllSupportedTypes()
+  private lazy val allSupportedTypes = TypeSigUtil.getAllSupportedTypes
 
   private def execChecksHeaderLine(): Unit = {
     println("<tr>")
@@ -2148,8 +2147,7 @@ object SupportedOpsDocs {
 
 object SupportedOpsForTools {
 
-  private lazy val allSupportedTypes =
-    TypeSigUtil.getAllSupportedTypes()
+  private lazy val allSupportedTypes = TypeSigUtil.getAllSupportedTypes
 
   // if a string contains what we are going to use for a delimiter, replace
   // it with something else
