@@ -42,6 +42,8 @@ object SparkShimImpl extends Spark350PlusNonDBShims {
         (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
       GpuOverrides.expr[Invoke](
         "Calls the specified function on an object",
+        // Does not know Invoke wrap what expression, so use lenient checks.
+        // `InvokeExprMeta` is responding to do the checking case by case
         ExprChecks.projectOnly(TypeSig.all, TypeSig.all),
         (invoke, conf, p, r) => new InvokeExprMeta(invoke, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
