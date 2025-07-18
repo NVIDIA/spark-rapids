@@ -36,22 +36,23 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions.{EvalMode, Expression}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{Average, Sum}
+import org.apache.spark.sql.catalyst.expressions.{Add, Divide, Multiply, Remainder, Subtract}
 
 object TryModeShim {
   /**
    * Check if an expression is in TRY mode.
-   * For Spark versions 3.4.0+, use reflection to check evalMode field.
    */
   def isTryMode(expr: Expression): Boolean = {
-    try {
-      // Use reflection to access evalMode field if it exists
-      val evalModeField = expr.getClass.getDeclaredField("evalMode")
-      evalModeField.setAccessible(true)
-      val evalMode = evalModeField.get(expr)
-      evalMode == EvalMode.TRY
-    } catch {
-      case ex: Exception =>
-        throw new RuntimeException("Unexpected error accessing evalMode field", ex)
+    expr match {
+      case add: Add => add.evalMode == EvalMode.TRY
+      case sub: Subtract => sub.evalMode == EvalMode.TRY
+      case mul: Multiply => mul.evalMode == EvalMode.TRY
+      case div: Divide => div.evalMode == EvalMode.TRY
+      case mod: Remainder => mod.evalMode == EvalMode.TRY
+      case avg: Average => avg.evalMode == EvalMode.TRY
+      case sum: Sum => sum.evalMode == EvalMode.TRY
+      case _ => throw new RuntimeException(s"Unsupported expression $expr in TRY mode")
     }
   }
 }
