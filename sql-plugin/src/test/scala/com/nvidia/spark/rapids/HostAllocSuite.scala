@@ -702,7 +702,13 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
           val w = SpillableHostBuffer.apply(HostAlloc.alloc(1024, preferPinned),
             1024, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
 
-          Thread.sleep(1000)
+          // Why can't we just use Thread.sleep here? Because TIMED_WAITING is a special state
+          // treated as BUFN in spark_resource_adaptor::is_thread_bufn_or_above, this will cause
+          // issues like https://github.com/NVIDIA/spark-rapids/issues/12883
+          val startTime = System.currentTimeMillis
+          while (System.currentTimeMillis < startTime + 100) {
+            Thread.`yield`() // when yielding, the thread is in RUNNABLE state
+          }
 
           // let's say we will do sth with the shuffle data read, e.g. concat them
           // for simplicity, we just have one SpillableHostBuffer as input, in real case there

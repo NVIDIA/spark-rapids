@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
 import java.util.concurrent.{CompletionService, ConcurrentLinkedQueue, Future, ThreadPoolExecutor, TimeUnit}
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -45,7 +45,7 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.InputFileUtils
+import org.apache.spark.sql.rapids.{GpuTaskMetrics, InputFileUtils}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
@@ -418,6 +418,9 @@ abstract class MultiFileCloudPartitionReaderBase(
   // like in the case of a limit call and we don't read all files
   private var fcs: CompletionService[AsyncTaskResult] = null
 
+  // Tracking the number of running tasks in the thread pool.
+  private val runningTaskNum = new AtomicInteger(0)
+
   // If I/O eager prefetch is enabled, submit async reading tasks eagerly instead of triggering
   // async reading tasks when the first batch is requested.
   // TODO: manage the priority of the read tasks, on-demand tasks should have the highest priority
@@ -451,6 +454,19 @@ abstract class MultiFileCloudPartitionReaderBase(
       logDebug("Keeping reads in same order")
     }
 
+    // An AsyncTask wrapper used to update related metrics
+    val newTaskRunner = (file: PartitionedFile) => {
+      val runner = getBatchRunner(tc, file, conf, filters)
+      val metrics = GpuTaskMetrics.get
+      runner.setBeforeHook(() => {
+        metrics.updateMultithreadReaderMaxParallelism(runningTaskNum.incrementAndGet())
+      })
+      runner.setAfterHook(() => {
+        runningTaskNum.decrementAndGet()
+      })
+      runner
+    }
+
     // Currently just add the files in order, we may consider doing something with the size of
     // the files in the future. ie try to start some of the larger files but we may not want
     // them all to be large
@@ -458,19 +474,19 @@ abstract class MultiFileCloudPartitionReaderBase(
       val file = inputFiles(i)
       logDebug(s"MultiFile reader using file $file")
       if (!keepReadsInOrder) {
-        val futureRunner = fcs.submit(getBatchRunner(tc, file, conf, filters))
+        val futureRunner = fcs.submit(newTaskRunner(file))
         tasks.add(futureRunner)
       } else {
         // Add these in the order as we got them so that we can make sure
         // we process them in the same order as CPU would.
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(resourceConf)
-        tasks.add(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
+        tasks.add(threadPool.submit(newTaskRunner(file)))
       }
     }
     // queue up any left to add once others finish
     for (i <- limit until inputFiles.length) {
       val file = inputFiles(i)
-      tasksToRun.enqueue(getBatchRunner(tc, file, conf, filters))
+      tasksToRun.enqueue(newTaskRunner(file))
     }
     filesToRead = inputFiles.length
     limit

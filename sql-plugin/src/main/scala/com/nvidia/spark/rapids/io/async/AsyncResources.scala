@@ -62,15 +62,27 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
   protected def callImpl(): T
 
   def call(): AsyncResult[T] = {
-    val result = callImpl()
-    if (holdResourceAfterCompletion) {
-      require(releaseResourceCallback != null,
-        "Release callback is not set, please set it before calling fetchReleaseCallback")
-      AsyncResult(result, Some(releaseResource))
-    } else {
-      AsyncResult(result, None)
+    try {
+      beforeExecuteHook.foreach { hook => hook() }
+      val result = callImpl()
+      if (holdResourceAfterCompletion) {
+        require(releaseResourceCallback != null,
+          "Release callback is not set, please set it before calling fetchReleaseCallback")
+        AsyncResult(result, Some(releaseResource))
+      } else {
+        AsyncResult(result, None)
+      }
+    } finally {
+      afterExecuteHook.foreach { hook => hook() }
     }
   }
+
+  protected var beforeExecuteHook: Option[() => Unit] = None
+  protected var afterExecuteHook: Option[() => Unit] = None
+
+  def setBeforeHook(hook: () => Unit): Unit = beforeExecuteHook = Some(hook)
+
+  def setAfterHook(hook: () => Unit): Unit = afterExecuteHook = Some(hook)
 
   /**
    * This method is called when the required resource has been just acquired from pool.

@@ -732,6 +732,19 @@ object GpuDivModLike {
       }
     }
   }
+
+
+  /**
+   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" is null, otherwise
+   * return the row from the "dataCol".
+   */
+  def mergeNulls(dataCol: ColumnView, nullFlagCol: ColumnView): ColumnVector = {
+    withResource(nullFlagCol.isNull) { isNull =>
+      withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
+        isNull.ifElse(nullScalar, dataCol)
+      }
+    }
+  }
 }
 
 case class GpuMultiply(
@@ -760,15 +773,19 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     if (failOnError) {
-      withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
-        if (rhs.getBase.contains(zeroScalar)) {
-          throw RapidsErrorUtils.divByZeroError(origin)
+      // Throw out a "divByZeroError" only when the row in "rhs" is zero and the
+      // corresponding row in "lhs" is not null. So need to merge nulls first.
+      withResource(mergeNulls(rhs.getBase, lhs.getBase)) { nullMergedRhs =>
+        withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
+          if (nullMergedRhs.contains(zeroScalar)) {
+            throw RapidsErrorUtils.divByZeroError(origin)
+          }
         }
-        if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
-          throw RapidsErrorUtils.divOverflowError(origin)
-        }
-        super.doColumnar(lhs, rhs)
       }
+      if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+        throw RapidsErrorUtils.divOverflowError(origin)
+      }
+      super.doColumnar(lhs, rhs)
     } else {
       if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
         throw RapidsErrorUtils.divOverflowError(origin)
@@ -780,17 +797,31 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
-      throw RapidsErrorUtils.divOverflowError(origin)
-    }
-    withResource(replaceZeroWithNull(rhs.getBase)) { replaced =>
-      super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
+    if (failOnError) {
+      if (lhs.isValid) {
+        withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
+          if (rhs.getBase.contains(zeroScalar)) {
+            throw RapidsErrorUtils.divByZeroError(origin)
+          }
+        }
+      }
+      if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+        throw RapidsErrorUtils.divOverflowError(origin)
+      }
+      super.doColumnar(lhs, rhs)
+    } else {
+      if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+        throw RapidsErrorUtils.divOverflowError(origin)
+      }
+      withResource(replaceZeroWithNull(rhs.getBase)) { replaced =>
+        super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
+      }
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (isScalarZero(rhs.getBase)) {
-      if (failOnError) {
+      if (failOnError && lhs.numNulls() != lhs.getRowCount) {
         throw RapidsErrorUtils.divByZeroError(origin)
       } else {
         withResource(Scalar.fromNull(outputType(lhs.getBase, rhs.getBase))) { nullScalar =>
@@ -849,11 +880,13 @@ trait GpuDecimalDivideBase extends GpuExpression {
   private[this] lazy val intermediateResultType =
     DecimalDivideChecks.intermediateResultType(decimalType)
 
-  private[this] def divByZeroFixes(rhs: ColumnVector): ColumnVector = {
+  private[this] def divByZeroFixes(lhs: ColumnView, rhs: ColumnVector): ColumnVector = {
     if (failOnError) {
-      withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
-        if (rhs.contains(zeroScalar)) {
-          throw RapidsErrorUtils.divByZeroError(origin)
+      withResource(GpuDivModLike.mergeNulls(rhs, lhs)) { nullMergedRhs =>
+        withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
+          if (nullMergedRhs.contains(zeroScalar)) {
+            throw RapidsErrorUtils.divByZeroError(origin)
+          }
         }
       }
       rhs.incRefCount()
@@ -873,7 +906,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
-        withResource(divByZeroFixes(rhs.getBase)) { fixed =>
+        withResource(divByZeroFixes(castLhs, rhs.getBase)) { fixed =>
           GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType,
             CastOptions.getArithmeticCastOptions(failOnError))
         }
@@ -899,7 +932,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
     }
     val retTab = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
-        withResource(divByZeroFixes(rhs.getBase)) { fixed =>
+        withResource(divByZeroFixes(castLhs, rhs.getBase)) { fixed =>
           fixed.castTo(DType.create(DType.DTypeEnum.DECIMAL128, fixed.getType.getScale))
         }
       }

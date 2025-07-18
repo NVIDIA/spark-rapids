@@ -45,24 +45,6 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
   }
 
   /**
-   * Execute a piece of code within a new GpuOptimisticTransaction. Reads/write sets will
-   * be recorded for this table, and all other tables will be read
-   * at a snapshot that is pinned on the first access.
-   *
-   * @note This uses thread-local variable to make the active transaction visible. So do not use
-   *       multi-threaded code in the provided thunk.
-   */
-  def withNewTransaction[T](thunk: GpuOptimisticTransactionBase => T): T = {
-    try {
-      val txn = startTransaction()
-      OptimisticTransaction.setActive(txn)
-      thunk(txn)
-    } finally {
-      OptimisticTransaction.clearActive()
-    }
-  }
-
-  /**
    * Returns a new [[GpuOptimisticTransactionBase]] that can be used to read the current state of
    * the log
    * and then commit updates. The reads and updates will be checked for logical conflicts with any
@@ -82,6 +64,24 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
       snapshotOpt: Option[Snapshot] = None): GpuOptimisticTransactionBase = {
     DeltaRuntimeShim.startTransaction(StartTransactionArg(deltaLog, rapidsConf, _clock,
       catalogTableOpt, snapshotOpt))
+  }
+
+  /**
+   * Execute a piece of code within a new GpuOptimisticTransaction. Reads/write sets will
+   * be recorded for this table, and all other tables will be read
+   * at a snapshot that is pinned on the first access.
+   *
+   * @note This uses thread-local variable to make the active transaction visible. So do not use
+   *       multi-threaded code in the provided thunk.
+   */
+  def withNewTransaction[T](thunk: GpuOptimisticTransactionBase => T): T = {
+    try {
+      val txn = startTransaction()
+      OptimisticTransaction.setActive(txn)
+      thunk(txn)
+    } finally {
+      OptimisticTransaction.clearActive()
+    }
   }
 
   /**
@@ -118,6 +118,15 @@ object GpuDeltaLog {
       options: Map[String, String],
       rapidsConf: RapidsConf): GpuDeltaLog = {
     val deltaLog = DeltaLog.forTable(spark, new Path(dataPath), options)
+    new GpuDeltaLog(deltaLog, rapidsConf)
+  }
+
+  def forTable(
+      spark: SparkSession,
+      tableLocation: Path,
+      options: Map[String, String],
+      rapidsConf: RapidsConf): GpuDeltaLog = {
+    val deltaLog = DeltaLog.forTable(spark, tableLocation, options)
     new GpuDeltaLog(deltaLog, rapidsConf)
   }
 

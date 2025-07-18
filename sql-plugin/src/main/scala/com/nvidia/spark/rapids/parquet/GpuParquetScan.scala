@@ -1921,6 +1921,15 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       clippedSchema: MessageType,
       filePath: Path): (SpillableHostBuffer, Seq[BlockMetaData]) = {
     withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
+      // Track the actual read buffer size, since some columns or partitions may be pruned
+      execMetrics.get("readBufferSize").foreach { metric =>
+        blocks.foreach { block =>
+          block.getColumns.asScala.foreach { column =>
+            metric += column.getTotalSize
+          }
+        }
+      }
+
       val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema)
       val outHostBuf = withRetryNoSplit[HostMemoryBuffer] {
         HostMemoryBuffer.allocate(estTotalSize)
@@ -2239,6 +2248,15 @@ class MultiFileParquetPartitionReader(
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
       batchContext: BatchContext): AsyncTask[(Seq[DataBlockBase], Long)] = {
+    // Track the actual read buffer size, since some columns or partitions may be pruned
+    execMetrics.get("readBufferSize").foreach { metric =>
+      blocks.foreach { block =>
+        block.getColumns.asScala.foreach { column =>
+          metric += column.getTotalSize
+        }
+      }
+    }
+
     new ParquetCopyBlocksRunner(taskContext, file, outhmb, blocks, offset, compressCfg)
   }
 

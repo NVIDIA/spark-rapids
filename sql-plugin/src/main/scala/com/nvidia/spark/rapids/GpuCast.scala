@@ -550,7 +550,7 @@ object GpuCast {
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (StringType, ByteType | ShortType | IntegerType | LongType) =>
-        fixupToNumException(input, toDataType) { strings =>
+        fixupStrToNumException(input, toDataType) { strings =>
           CastStrings.toInteger(strings, ansiMode,
             GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
@@ -565,8 +565,9 @@ object GpuCast {
       case (StringType, DateType) =>
         castStringToDate(input, options.useAnsiStringToDateMode && ansiMode)
       case (StringType, dt: DecimalType) =>
-        CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
-
+        fixupStrToDecException(input, dt) { strings =>
+          CastStrings.toDecimal(strings, ansiMode, dt.precision, -dt.scale)
+        }
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
 
@@ -641,13 +642,26 @@ object GpuCast {
     }
   }
 
-  private def fixupToNumException[A](input: ColumnView, to: DataType)(f: ColumnView => A): A = {
+  private def fixupStrToDecException[A](
+      input: ColumnView, to: DecimalType)(f: ColumnView => A): A = {
     try {
       f(input)
     } catch {
       case c: CastException =>
-        val s = withResource(input.copyToHost()) { hcv =>
-          UTF8String.fromString(hcv.getJavaString(c.getRowWithError.toLong))
+        val s = withResource(input.getScalarElement(c.getRowWithError)) { errScalar =>
+          errScalar.getJavaString
+        }
+        throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(s), to)
+    }
+  }
+
+  private def fixupStrToNumException[A](input: ColumnView, to: DataType)(f: ColumnView => A): A = {
+    try {
+      f(input)
+    } catch {
+      case c: CastException =>
+        val s = withResource(input.getScalarElement(c.getRowWithError)) { errScalar =>
+          UTF8String.fromString(errScalar.getJavaString)
         }
         throw GpuCastToNumberErrorShim.invalidInputInCastToNumberError(to, s)
     }
@@ -1459,14 +1473,14 @@ object GpuCast {
     val converted = DecimalUtils.floatingPointToDecimal(input, targetType, dt.precision)
     if (ansiMode && converted.failureRowId >= 0L) {
       converted.result.close()
-      val failedValue = withResource(input.copyToHost()) { hcv =>
+      val failedVal = withResource(input.getScalarElement(converted.failureRowId.toInt)) { s =>
         fromType match {
-          case FloatType => hcv.getFloat(converted.failureRowId).toDouble
-          case DoubleType => hcv.getDouble(converted.failureRowId)
+          case FloatType => s.getFloat.toDouble
+          case DoubleType => s.getDouble
           case _ => throw new IllegalArgumentException(s"unsupported type $fromType")
         }
       }
-      throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(failedValue), dt)
+      throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(failedVal), dt)
     }
     converted.result
   }
@@ -1502,13 +1516,14 @@ object GpuCast {
       input: ColumnView,
       fromType: DecimalType,
       toType: DecimalType,
-      ansiMode: Boolean): ColumnVector = {
+      ansiMode: Boolean,
+      originCol: ColumnView): ColumnVector = {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, toType)) { outOfBounds =>
       if (ansiMode) {
         withResource(outOfBounds.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
-            throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(input, outOfBounds,
+            throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(originCol, outOfBounds,
               fromType, toType)
           }
         }
@@ -1562,7 +1577,7 @@ object GpuCast {
           // We need to check for out of bound values.
           // The wholeNumberUpcast is obvious why we have to check, but we also have to check it
           // when we rounded, because rounding can add a digit to the effective precision.
-          checkNFixDecimalBounds(rounded, from, to, ansiMode)
+          checkNFixDecimalBounds(rounded, from, to, ansiMode, input)
         } else {
           rounded.incRefCount()
         }
