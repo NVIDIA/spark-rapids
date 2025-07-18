@@ -30,6 +30,7 @@ import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.unsafe.types.UTF8String
 
 trait RapidsErrorUtils330To334Base extends RapidsErrorUtilsFor330plus with RapidsQueryErrorUtils {
 
@@ -80,5 +81,9 @@ trait RapidsErrorUtils330To334Base extends RapidsErrorUtilsFor330plus with Rapid
 
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+  }
+
+  def invalidInputSyntaxForBooleanError(s: UTF8String): RuntimeException = {
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, "")
   }
 }
