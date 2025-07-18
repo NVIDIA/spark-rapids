@@ -261,10 +261,8 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
       // Convert iterator to Seq and use AutoCloseableSeq for safe resource management
       val batches = iter.toSeq
       try {
-        // Process all batches for LORE dump
-        batches.foreach { batch =>
-          // LORE dump processing happens in GpuLoreDumpRDD during iteration
-        }
+        // Trigger computation of all batches for LORE dump
+        batches.foreach(_ => {})
       } finally {
         // Use AutoCloseableSeq to safely close all batches
         batches.safeClose()
