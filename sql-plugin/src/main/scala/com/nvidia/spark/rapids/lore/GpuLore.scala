@@ -24,16 +24,18 @@ import scala.reflect.ClassTag
 
 import com.nvidia.spark.rapids.{DatabricksShimVersion, GpuColumnarToRowExec, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader, ShimVersion, SparkShimVersion}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuExec.TASK_METRICS_TAG
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.SparkEnv
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, ReusedSubqueryExec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
+import org.apache.spark.sql.execution.SparkPlan.{LOGICAL_PLAN_INHERITED_TAG, LOGICAL_PLAN_TAG}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec}
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.DataType
@@ -78,12 +80,24 @@ object GpuLore {
   val LORE_DUMP_RDD_TAG: TreeNodeTag[LoreDumpRDDInfo] = new TreeNodeTag[LoreDumpRDDInfo](
     "rapids.gpu.lore.dump.rdd.info")
 
+
+  private def cleanUpPlanForDump(p: SparkPlan): SparkPlan = {
+    p.unsetTagValue(LOGICAL_PLAN_TAG)
+    p.unsetTagValue(LOGICAL_PLAN_INHERITED_TAG)
+    p.unsetTagValue(TASK_METRICS_TAG)
+    p
+  }
+
   def pathOfRootPlanMeta(rootPath: Path): Path = {
     new Path(rootPath, "plan.meta")
   }
 
   def dumpPlan[T <: SparkPlan : ClassTag](plan: T, rootPath: Path): Unit = {
-    dumpObject(plan, pathOfRootPlanMeta(rootPath),
+    val newPlan = {
+      plan.canonicalized.clone()
+      cleanUpPlanForDump(plan)
+    }
+    dumpObject(newPlan, pathOfRootPlanMeta(rootPath),
       SparkSessionUtils.sessionFromPlan(plan).sparkContext.hadoopConfiguration)
   }
 
@@ -141,7 +155,7 @@ object GpuLore {
         case b: GpuBroadcastExchangeExec =>
           b.withNewChildren(Seq(newChild))
         case b: BroadcastQueryStageExec =>
-          b.broadcast.withNewChildren(Seq(newChild))
+          b.plan.withNewChildren(Seq(newChild))
         case _ => newChild
       }
     }
@@ -180,20 +194,34 @@ object GpuLore {
   }
 
   /**
-   * Lore id generator. Key is [[SQLExecution.EXECUTION_ID_KEY]].
+   * Lore id dir generator. Key is Lore id, value is how many times it appeared.
    */
-  private val idGen: ConcurrentMap[String, AtomicInteger] =
-    new ConcurrentHashMap[String, AtomicInteger]()
+  private val loreIdDirGen: ConcurrentMap[Int, AtomicInteger] =
+    new ConcurrentHashMap[Int, AtomicInteger]()
 
-  private def nextLoreIdOf(plan: SparkPlan): Option[Int] = {
+  /**
+   * This method is used for tests
+   */
+  private[lore] def cleanUpLoreIdDirGen(): Unit = {
+    loreIdDirGen.clear()
+  }
+
+  private def computeLoreIdOf(plan: SparkPlan): Option[Int] = {
     // When the execution id is not set, it means there is no actual execution happening, in this
     // case we don't need to generate lore id.
     Option(SparkSessionUtils.sessionFromPlan(plan)
       .sparkContext
       .getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
-      .map { executionId =>
-        idGen.computeIfAbsent(executionId, _ => new AtomicInteger(0)).getAndIncrement()
+      .map { _ =>
+        plan.canonicalized.asInstanceOf[GpuLoreSupport].loreId()
       }
+  }
+
+  private def loreIdDirOf(loreId: Int): String = {
+    val rank = loreIdDirGen.computeIfAbsent(loreId, _ => new AtomicInteger(0))
+      .getAndIncrement()
+
+    s"lore_${loreId}_$rank"
   }
   /**
    * Executions that have checked the lore output root path.
@@ -235,12 +263,12 @@ object GpuLore {
 
       sparkPlan.foreachUp {
         case g: GpuExec =>
-          nextLoreIdOf(g).foreach { loreId =>
+          computeLoreIdOf(g).foreach { loreId =>
             g.setTagValue(LORE_ID_TAG, loreId.toString)
 
             loreDumpIds.get(loreId).foreach { outputLoreIds =>
               checkUnsupportedOperator(g)
-              val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
+              val currentExecRootPath = new Path(loreOutputRootPath, loreIdDirOf(loreId))
               g.setTagValue(LORE_DUMP_PATH_TAG, currentExecRootPath.toString)
               val loreOutputInfo = LoreOutputInfo(outputLoreIds,
                 currentExecRootPath.toString)
@@ -276,12 +304,11 @@ object GpuLore {
       }
 
       sparkPlan
-
     } else {
       // We don't need to dump the output of the nodes, just tag the lore id
-      sparkPlan.foreachUp {
+      sparkPlan.canonicalized.foreachUp {
         case g: GpuExec =>
-          nextLoreIdOf(g).foreach { loreId =>
+          computeLoreIdOf(g).foreach { loreId =>
             g.setTagValue(LORE_ID_TAG, loreId.toString)
           }
         case _ =>

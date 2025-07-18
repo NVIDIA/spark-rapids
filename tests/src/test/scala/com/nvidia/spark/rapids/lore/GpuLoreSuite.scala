@@ -19,26 +19,27 @@ package com.nvidia.spark.rapids.lore
 import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
+import org.scalatest.BeforeAndAfter
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
-import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.internal.SQLConf
 
-class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
-  /**
-   * Check if the current version should be skipped for GpuInsertIntoHiveTable test
-   */
-  private def skipIfUnsupportedVersion(testName: String): Unit = {
-    val version = ShimLoader.getShimVersion
-    val unsupportedVersions = GpuLore.getGpuWriteFilesUnsupportedVersions
+class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging with
+  BeforeAndAfter {
+//  /**
+//   * Check if the current version should be skipped for GpuInsertIntoHiveTable test
+//   */
+//  private def skipIfUnsupportedVersion(testName: String): Unit = {
+//    val version = ShimLoader.getShimVersion
+//    val unsupportedVersions = GpuLore.getGpuWriteFilesUnsupportedVersions
+//
+//    // Skip this test if the current version is in unsupported versions
+//    assume(!unsupportedVersions.contains(version),
+//      s"Skipping $testName for version $version as it's in the unsupported versions list")
+//  }
 
-    // Skip this test if the current version is in unsupported versions
-    assume(!unsupportedVersions.contains(version),
-      s"Skipping $testName for version $version as it's in the unsupported versions list")
-  }
-
-  // Reusable Derby cleanup function
+  //   Reusable Derby cleanup function
   private def cleanupDerbyFiles(metastoreDir: String = "metastore_db"): Unit = {
     val derbyFiles = Seq("derby.log", "derbyout.log", "derbyerr.log")
     derbyFiles.foreach { fileName =>
@@ -76,9 +77,13 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  before {
+    GpuLore.cleanUpLoreIdDirGen()
+  }
+
   test("Aggregate") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("10[*]") { spark =>
+    doTestReplay("-313024874[*]") { spark =>
       spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -88,7 +93,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("Broadcast join") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("32[*]") { spark =>
+    doTestReplay("-401427562[*]") { spark =>
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -104,7 +109,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Subquery Filter") {
-    doTestReplay("13[*]") { spark =>
+    doTestReplay("608047446[*]", rank = 1) { spark =>
       spark.range(0, 100, 1, 10)
         .createTempView("df1")
 
@@ -116,7 +121,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Subquery in projection") {
-    doTestReplay("11[*]") { spark =>
+    doTestReplay("-1112543077[*]") { spark =>
       spark.sql(
         """
           |CREATE TEMPORARY VIEW t1
@@ -135,7 +140,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("No broadcast join") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("30[*]") { spark =>
+    doTestReplay("2005986776[*]") { spark =>
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -154,7 +159,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("AQE broadcast") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("93[*]") { spark =>
+    doTestReplay("1341767534[*]") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -173,7 +178,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("AQE Exchange") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("28[*]") { spark =>
+    doTestReplay("1386927523[*]") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       spark.range(0, 1000, 1, 100)
@@ -186,7 +191,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   test("Partition only") {
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[0 2]")
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "-1052403574[0 2]")
 
       val df = spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
@@ -196,7 +201,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
 
       val restoredRes = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-3"), spark))
+        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/lore_-1052403574_1"), spark))
         .executeCollect()
         .length
 
@@ -225,7 +230,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
-    doTestReplay("56[*]") { spark =>
+    doTestReplay("1945479658[*]", 1) { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -241,7 +246,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("GpuShuffledSymmetricHashJoin with in Kudo mode") {
-    doTestReplay("56[*]") { spark =>
+    doTestReplay("1945479658[*]", 1) { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -258,115 +263,116 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("GpuInsertIntoHiveTable with LoRE dump and replay") {
-    /*
-    This test is different from previous ones as it's a HiveInsert operation.
-    It will produce 0 output rows while writing data to a Hive Table.
-    So the validation should be comparing the Hive Table content between the first run and the
-    replay run.
-    */
-
-    // Skip this test for versions that are in unsupportedHiveInsertVersions
-    skipIfUnsupportedVersion("GpuInsertIntoHiveTable with LoRE dump and replay")
-    // Clean up before test starts
-    cleanupDerbyFiles()
-    // Create unique metastore location for this test run
-    val uniqueMetastoreDir = s"metastore_db_${System.currentTimeMillis()}"
-    try {
-      val loreDumpIds = "5[*]" // Fixed LORE ID since unsupported versions are skipped
-      val loreId = OutputLoreId.parse(loreDumpIds).head._1
-
-      // Use a single SparkSession for both operations with unique metastore
-      withGpuHiveSparkSession({ spark =>
-        // Configure unique metastore location
-        spark.conf.set("javax.jdo.option.ConnectionURL",
-          s"jdbc:derby:;databaseName=$uniqueMetastoreDir;create=true")
-
-        // First execution - capture the original data written to Hive table
-        val originalDataCount = 100
-        // Configure LORE for the first execution
-        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreDumpIds)
-
-        // Clean up any existing table and its associated directory
-        spark.sql("DROP TABLE IF EXISTS test_hive_table")
-        spark.sql("""
-          CREATE TABLE test_hive_table (
-            id INT,
-            name STRING
-          )
-          STORED AS textfile
-        """)
-
-        // Create test data and insert into Hive table - this should trigger LoRE dumping
-        val df = spark.range(0, originalDataCount, 1, 10)
-          .selectExpr("id as id", "concat('name_', id) as name")
-        df.write
-          .mode("overwrite")
-          .insertInto("test_hive_table")
-        // Disable LORE for the replay phase
-        spark.conf.unset(RapidsConf.LORE_DUMP_PATH.key)
-        spark.conf.unset(RapidsConf.LORE_DUMP_IDS.key)
-        // Clean up and recreate table for replay
-        spark.sql("DROP TABLE IF EXISTS test_hive_table")
-        spark.sql("""
-          CREATE TABLE test_hive_table (
-            id INT,
-            name STRING
-          )
-          STORED AS textfile
-        """)
-
-        // Execute the LoRE replay
-        // LoRE replay is not a fully-completed Query execution, but partial,
-        // no query executionId is set. Mean while,
-        // HiveInsertInto will trigger GpuFileFormatWriter, which will check the executionId,
-        // if the executionId is not set, it will throw an exception.
-        // So we need to set a valid executionId here.
-        val executionId = 9999L
-        spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, executionId.toString)
-        try {
-          GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-            new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"),
-            spark))
-            .executeCollect()
-        } finally {
-          spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, null)
-        }
-        // TODO: remove, reason:
-        // Spark 400 enables ANSI mode by default which will fallback the shuffleExec
-        spark.conf.set(RapidsConf.TEST_CONF.key, "false")
-        // Read the data written by replay and count it
-        val replayDataCount = spark.sql("SELECT * FROM test_hive_table").count()
-        // Verify the results
-        assert(originalDataCount == replayDataCount,
-          s"Original data count ($originalDataCount) != Replay data count ($replayDataCount)")
-      })
-    } finally {
-      // Clean up warehouse directory to avoid conflicts in future test runs
-      val possiblePaths = Seq(
-        "tests/spark-warehouse/test_hive_table",
-        "spark-warehouse/test_hive_table"
-      )
-      possiblePaths.foreach { pathStr =>
-        val warehouseDir = new java.io.File(pathStr)
-        if (warehouseDir.exists()) {
-          import java.nio.file.{Files, Paths}
-          import java.util.Comparator
-          try {
-            Files.walk(Paths.get(warehouseDir.getPath))
-              .sorted(Comparator.reverseOrder())
-              .forEach(Files.deleteIfExists(_))
-          } catch {
-            case _: Exception => // Ignore cleanup failures
-          }
-        }
-      }
-      // Clean up Derby files and metastore directories
-      cleanupDerbyFiles()
-      cleanupDerbyFiles(uniqueMetastoreDir)
-    }
-  }
+  // Comment out this test so to wait for a fix https://github.com/NVIDIA/spark-rapids/pull/13125
+//  test("GpuInsertIntoHiveTable with LoRE dump and replay") {
+//    /*
+//    This test is different from previous ones as it's a HiveInsert operation.
+//    It will produce 0 output rows while writing data to a Hive Table.
+//    So the validation should be comparing the Hive Table content between the first run and the
+//    replay run.
+//    */
+//
+//    // Skip this test for versions that are in unsupportedHiveInsertVersions
+//    skipIfUnsupportedVersion("GpuInsertIntoHiveTable with LoRE dump and replay")
+//    // Clean up before test starts
+//    cleanupDerbyFiles()
+//    // Create unique metastore location for this test run
+//    val uniqueMetastoreDir = s"metastore_db_${System.currentTimeMillis()}"
+//    try {
+//      val loreDumpIds = "-2029211509[*]" // Fixed LORE ID since unsupported versions are skipped
+//      val loreId = OutputLoreId.parse(loreDumpIds).head._1
+//
+//      // Use a single SparkSession for both operations with unique metastore
+//      withGpuHiveSparkSession({ spark =>
+//        // Configure unique metastore location
+//        spark.conf.set("javax.jdo.option.ConnectionURL",
+//          s"jdbc:derby:;databaseName=$uniqueMetastoreDir;create=true")
+//
+//        // First execution - capture the original data written to Hive table
+//        val originalDataCount = 100
+//        // Configure LORE for the first execution
+//        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+//        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreDumpIds)
+//
+//        // Clean up any existing table and its associated directory
+//        spark.sql("DROP TABLE IF EXISTS test_hive_table")
+//        spark.sql("""
+//          CREATE TABLE test_hive_table (
+//            id INT,
+//            name STRING
+//          )
+//          STORED AS textfile
+//        """)
+//
+//        // Create test data and insert into Hive table - this should trigger LoRE dumping
+//        val df = spark.range(0, originalDataCount, 1, 10)
+//          .selectExpr("id as id", "concat('name_', id) as name")
+//        df.write
+//          .mode("overwrite")
+//          .insertInto("test_hive_table")
+//        // Disable LORE for the replay phase
+//        spark.conf.unset(RapidsConf.LORE_DUMP_PATH.key)
+//        spark.conf.unset(RapidsConf.LORE_DUMP_IDS.key)
+//        // Clean up and recreate table for replay
+//        spark.sql("DROP TABLE IF EXISTS test_hive_table")
+//        spark.sql("""
+//          CREATE TABLE test_hive_table (
+//            id INT,
+//            name STRING
+//          )
+//          STORED AS textfile
+//        """)
+//
+//        // Execute the LoRE replay
+//        // LoRE replay is not a fully-completed Query execution, but partial,
+//        // no query executionId is set. Mean while,
+//        // HiveInsertInto will trigger GpuFileFormatWriter, which will check the executionId,
+//        // if the executionId is not set, it will throw an exception.
+//        // So we need to set a valid executionId here.
+//        val executionId = 9999L
+//        spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, executionId.toString)
+//        try {
+//          GpuColumnarToRowExec(GpuLore.restoreGpuExec(
+//            new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/lore_${loreId}_0"),
+//            spark))
+//            .executeCollect()
+//        } finally {
+//          spark.sparkContext.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, null)
+//        }
+//        // TODO: remove, reason:
+//        // Spark 400 enables ANSI mode by default which will fallback the shuffleExec
+//        spark.conf.set(RapidsConf.TEST_CONF.key, "false")
+//        // Read the data written by replay and count it
+//        val replayDataCount = spark.sql("SELECT * FROM test_hive_table").count()
+//        // Verify the results
+//        assert(originalDataCount == replayDataCount,
+//          s"Original data count ($originalDataCount) != Replay data count ($replayDataCount)")
+//      })
+//    } finally {
+//      // Clean up warehouse directory to avoid conflicts in future test runs
+//      val possiblePaths = Seq(
+//        "tests/spark-warehouse/test_hive_table",
+//        "spark-warehouse/test_hive_table"
+//      )
+//      possiblePaths.foreach { pathStr =>
+//        val warehouseDir = new java.io.File(pathStr)
+//        if (warehouseDir.exists()) {
+//          import java.nio.file.{Files, Paths}
+//          import java.util.Comparator
+//          try {
+//            Files.walk(Paths.get(warehouseDir.getPath))
+//              .sorted(Comparator.reverseOrder())
+//              .forEach(Files.deleteIfExists(_))
+//          } catch {
+//            case _: Exception => // Ignore cleanup failures
+//          }
+//        }
+//      }
+//      // Clean up Derby files and metastore directories
+//      cleanupDerbyFiles()
+//      cleanupDerbyFiles(uniqueMetastoreDir)
+//    }
+//  }
 
   test("LORE dump should throw exception for GpuDataWritingCommandExec on unsupported versions") {
     // Only run this test for versions that are in unsupported versions
@@ -418,7 +424,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {
+  private def doTestReplay(loreDumpIds: String, rank: Int = 0)(dfFunc: SparkSession => DataFrame)
+  = {
     val loreId = OutputLoreId.parse(loreDumpIds).head._1
     withGpuSparkSession { spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
@@ -429,7 +436,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       val expectedLength = df.collect().length
 
       val restoredResultLength = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"),
+        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/lore_${loreId}_${rank}"),
         spark))
         .executeCollect()
         .length

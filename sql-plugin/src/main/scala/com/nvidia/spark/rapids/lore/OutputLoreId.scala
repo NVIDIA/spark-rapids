@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ object OutputLoreId {
 
   private val OUTPUT_LORE_ID_SEP_REGEX = ", *".r
   private val OUTPUT_LORE_ID_REGEX =
-    raw"(?<loreId>\d+)(\[(?<partitionIds>.*)\])?".r
+    raw"(?<loreId>-?\d+)(\[(?<partitionIds>.*)\])?".r
 
   def apply(loreId: Int): OutputLoreId = OutputLoreId(loreId, Set.empty)
 
