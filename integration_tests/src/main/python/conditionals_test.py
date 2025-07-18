@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from spark_session import is_before_spark_320, is_jvm_charset_utf8
+from spark_session import is_before_spark_320, is_jvm_charset_utf8, is_before_spark_400
 from pyspark.sql.types import *
 from marks import datagen_overrides, allow_non_gpu, disable_ansi_mode
 import pyspark.sql.functions as f
@@ -416,3 +416,8 @@ def test_combine_string_contains_in_case_when(combine_string_contains_enabled):
         sql,
         { "spark.rapids.sql.expression.combined.GpuContains" : combine_string_contains_enabled}
     )
+
+@pytest.mark.skipif(is_before_spark_400(), reason="Only supports Spark versions: 400 and 400+")
+def test_between():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, int_gen).selectExpr('between(a, 1, 1024)'))
