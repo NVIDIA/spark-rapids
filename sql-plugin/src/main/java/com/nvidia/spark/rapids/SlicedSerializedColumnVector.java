@@ -31,8 +31,6 @@ import static org.apache.spark.sql.types.DataTypes.NullType;
  */
 public class SlicedSerializedColumnVector extends ColumnVector {
   private final HostMemoryBuffer wrap;
-  private final int start;
-  private final int end;
 
   private static final String BAD_ACCESS_MSG = "Column is serialized";
 
@@ -41,13 +39,10 @@ public class SlicedSerializedColumnVector extends ColumnVector {
    */
   protected SlicedSerializedColumnVector(HostMemoryBuffer w, int start, int end) {
     super(NullType);
-    this.wrap = w;
-    this.start = start;
-    this.end = end;
+    this.wrap = w.slice(start, end - start);
     assert start >= 0;
     assert end > start; // we don't support empty slices, it should be a null
     assert end <= wrap.getLength();
-    wrap.incRefCount();
   }
 
   @Override
@@ -139,11 +134,5 @@ public class SlicedSerializedColumnVector extends ColumnVector {
     return wrap;
   }
 
-  public int getStart() {
-    return start;
-  }
-
-  public int getEnd() {
-    return end;
-  }
+  public long getLength() { return this.wrap.getLength(); }
 }

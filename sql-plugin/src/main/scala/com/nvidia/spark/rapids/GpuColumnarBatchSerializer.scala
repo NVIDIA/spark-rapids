@@ -508,40 +508,29 @@ private class KudoGpuSerializerInstance(
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
-      val numColumns = batch.numCols()
-      withResource(new ArrayBuffer[AutoCloseable](numColumns)) { toClose =>
-        if (batch.numCols() > 0) {
-          val firstCol = batch.column(0)
-          firstCol match {
-            case vector: SlicedSerializedColumnVector =>
-              // think we actually don't need to close because the returned CB gets closed
-              // it's only done like this above because they're making an additional copy
-//              toClose += vector
-              val buf = vector.getWrap
-              val start = vector.getStart
-              val len = vector.getEnd - start
-
-              withResource(buf.slice(start, len)) { data =>
-                var remaining = data.getLength.toInt
-                val temp = new Array[Byte](math.min(8192, remaining))
-                var at = 0
-                while (remaining > 0) {
-                  val read = math.min(remaining, temp.length)
-                  data.getBytes(temp, 0, at, read)
-                  out.write(temp, 0, read)
-                  at = at + read
-                  remaining = remaining - read
-                  out.flush()
-                }
-              }
-            case _ =>
-          }
-        } else {
-          // is this a hack?
-          KudoSerializer.writeRowCountToStream(out, batch.numRows())
+      if (batch.numCols() > 0) {
+        val firstCol = batch.column(0)
+        firstCol match {
+          case vector: SlicedSerializedColumnVector =>
+            val data = vector.getWrap
+            var remaining = data.getLength.toInt
+            val temp = new Array[Byte](math.min(8192, remaining))
+            var at = 0
+            while (remaining > 0) {
+              val read = math.min(remaining, temp.length)
+              data.getBytes(temp, 0, at, read)
+              out.write(temp, 0, read)
+              at = at + read
+              remaining = remaining - read
+              out.flush()
+            }
+          case _ =>
         }
-        this
+      } else {
+        // is this a hack?
+        KudoSerializer.writeRowCountToStream(out, batch.numRows())
       }
+      this
     }
 
     override def writeKey[T: ClassTag](key: T): SerializationStream = {

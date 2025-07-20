@@ -229,7 +229,7 @@ public class SlicedGpuColumnVector extends ColumnVector {
           sum += getSizeOf(scv.getBase(), scv.getStart(), scv.getEnd());
         } else if (tmp instanceof SlicedSerializedColumnVector) {
             SlicedSerializedColumnVector scv = (SlicedSerializedColumnVector) tmp;
-            sum += scv.getEnd() - scv.getStart();
+            sum += scv.getLength();
           } else {
           throw new RuntimeException(tmp + " is not supported for this");
         }
