@@ -199,45 +199,42 @@ trait GpuPartitioning extends Partitioning {
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
     if (usesKudoGPUSlicing) {
       partitionColumns.foreach(_.getBase.getNullCount)
-      val dmbs = withResource(partitionColumns) { _ =>
+      val (dataHost, offsetsHost) = withResource(partitionColumns) { _ =>
         withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
-          KudoGpuSerializer.splitAndSerializeToDevice(table, partitionIndexes.tail: _*)
+          withResource(KudoGpuSerializer.splitAndSerializeToDevice(table,
+              partitionIndexes.tail: _*)) { dmbs =>
+            val data = dmbs(0)
+            val offsets = dmbs(1)
+            val dataHost = HostMemoryBuffer.allocate(data.getLength)
+            val offsetsHost = HostMemoryBuffer.allocate(offsets.getLength)
+            dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
+            offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+
+            (dataHost, offsetsHost)
+          }
         }
-      }
-      val data = dmbs(0)
-      val offsets = dmbs(1)
-      val dataHost = HostMemoryBuffer.allocate(data.getLength)
-      val offsetsHost = HostMemoryBuffer.allocate(offsets.getLength)
-      // could hypothetically access the offsets directly from device but this might be
-      // faster and is easier for now anyway
-      withResource(data) { _ =>
-        dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
-      }
-      withResource(offsets) { _ =>
-        offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
       }
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
-      withResource(dataHost) { _ =>
-        withResource(offsetsHost) { _ =>
-          val numSlices = numPartitions + 1
-          val elemSize = offsetsHost.getLength / numSlices
 
-          val res = new Array[ColumnarBatch](numPartitions)
-          var start = 0
-          for (i <- 1 until numPartitions) {
-            val idx = offsetsHost.getLong((i) * elemSize).toInt
-            res(i - 1) = new ColumnarBatch(Array(
-              new SlicedSerializedColumnVector(dataHost, start, idx)))
-            val partNumRows = partitionIndexes(i)
-            res(i - 1).setNumRows(partNumRows)
-            start = idx
-          }
-          res(numPartitions - 1) = new ColumnarBatch(Array(
-            new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
-          res(numPartitions - 1).setNumRows(numRows)
+      withResource(Seq(dataHost, offsetsHost)) { _ =>
+        val numSlices = numPartitions + 1
+        val elemSize = offsetsHost.getLength / numSlices
 
-          res.zipWithIndex.filter(_._1 != null)
+        val res = new Array[ColumnarBatch](numPartitions)
+        var start = 0
+        for (i <- 1 until numPartitions) {
+          val idx = offsetsHost.getLong((i) * elemSize).toInt
+          res(i - 1) = new ColumnarBatch(Array(
+            new SlicedSerializedColumnVector(dataHost, start, idx)))
+          val partNumRows = partitionIndexes(i)
+          res(i - 1).setNumRows(partNumRows)
+          start = idx
         }
+        res(numPartitions - 1) = new ColumnarBatch(Array(
+          new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+        res(numPartitions - 1).setNumRows(numRows)
+
+        res.zipWithIndex.filter(_._1 != null)
       }
     } else {
       val sliceOnGpu = usesGPUShuffle
