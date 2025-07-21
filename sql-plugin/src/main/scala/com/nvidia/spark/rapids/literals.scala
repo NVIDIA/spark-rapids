@@ -722,7 +722,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       // For a literal that wraps a JAVA object, GPULiteral is just a placeholder,
       // does not really run on GPU. E.g.:
       // For the conversion of Invoke(Literal(xxEvaluator ObjectType), "evaluate", type, arguments),
-      // GpuInvoke will not call `GpuLiteral.columnarEvalAny`
+      // Invoke on GPU  will not call `GpuLiteral.columnarEvalAny`
       case _: ObjectType => throw new UnsupportedOperationException(
         "Unsupported GpuLiteral running on GPU with an ObjectType in it")
 
