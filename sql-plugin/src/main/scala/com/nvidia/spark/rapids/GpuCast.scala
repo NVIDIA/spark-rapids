@@ -1240,7 +1240,8 @@ object GpuCast {
           if (ansiEnabled) {
             withResource(validBools.all()) { isAllBool =>
               if (isAllBool.isValid && !isAllBool.getBoolean) {
-                throw new IllegalStateException(INVALID_INPUT_MESSAGE)
+                throw RapidsErrorUtils.invalidInputSyntaxForBooleanError(
+                  UTF8String.fromString("in the input column has atleast one invalid value"))
               }
             }
           }
