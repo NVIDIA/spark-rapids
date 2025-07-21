@@ -48,6 +48,35 @@ def test_cast_empty_string_to_int_ansi_on(to_type):
         conf=ansi_enabled_conf,
         error_message=err_mess)
 
+
+valid_bool_strings = ['true', 'false', 't', 'f', 'y', 'n', 'yes', 'no', '1', '0',
+                      'TRUE', 'FALSE', 'True', 'False', ' true ', ' false ']
+invalid_bool_strings = ['maybe', 'invalid', '2', '-1', 'on', 'off',
+                        '1.0', '0.0', 'tr', 'fa', '', 'null']
+
+def test_cast_string_to_boolean_ansi_off():
+    data_rows = [(s,) for s in valid_bool_strings + invalid_bool_strings]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "str_col string")
+                           .selectExpr("str_col", "CAST(str_col AS BOOLEAN) as bool_col"),
+        conf=ansi_disabled_conf)
+
+def test_cast_string_to_boolean_valid_ansi_on():
+    data_rows = [(s,) for s in valid_bool_strings]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "str_col string")
+                           .selectExpr("str_col", "CAST(str_col AS BOOLEAN) as bool_col"),
+        conf=ansi_enabled_conf)
+
+
+@pytest.mark.parametrize('invalid_value', invalid_bool_strings)
+def test_cast_string_to_boolean_invalid_ansi_on(invalid_value):
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([(invalid_value,)], "str_col string")
+                           .selectExpr("CAST(str_col AS BOOLEAN) as bool_col").collect(),
+        conf=ansi_enabled_conf,
+        error_message="invalid input syntax" if is_before_spark_330() else "SparkRuntimeException")
+
 # These tests are not intended to be exhaustive. The scala test CastOpSuite should cover
 # just about everything for non-nested values. This is intended to check that the
 # recursive code in nested type checks, like arrays, is working properly. So we are going
@@ -464,13 +493,31 @@ def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
 
 # The bug SPARK-37451 only affects the following versions
 def is_neg_dec_scale_bug_version():
-    return ("3.1.1" <= spark_version() < "3.1.3") or ("3.2.0" <= spark_version() < "3.2.1")
+    return "3.2.0" <= spark_version() < "3.2.1"
 
 @pytest.mark.skipif(is_neg_dec_scale_bug_version(), reason="RAPIDS doesn't support casting string to decimal for negative scale decimal in this version of Spark because of SPARK-37451")
 def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
             f.col('a').cast(DecimalType(8, -3))))
+
+
+@pytest.mark.skipif(is_neg_dec_scale_bug_version(),
+                    reason="Negative scale isn't supported in this Spark version due to SPARK-37451")
+@pytest.mark.parametrize('ansi_on', [True, False], ids=idfn)
+def test_cast_string_to_negative_scale_decimal_overflow(ansi_on):
+    def test_overflow(spark):
+        return unary_op_df(spark, StringGen("[0-9]{9}")).select(
+            f.col('a').cast(DecimalType(4, -3)))
+
+    if ansi_on:
+        assert_gpu_and_cpu_error(lambda spark: test_overflow(spark).collect(),
+                                 conf=ansi_enabled_conf,
+                                 error_message="cannot be represented as Decimal")
+    else:
+        assert_gpu_and_cpu_are_equal_collect(test_overflow,
+                                             conf=ansi_disabled_conf)
+
 
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)

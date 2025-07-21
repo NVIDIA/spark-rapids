@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.delta.delta22x
 
 import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuOverrides, GpuReadParquetFileFormat, RunnableCommandRule, SparkPlanMeta}
-import com.nvidia.spark.rapids.delta.DeltaIOProvider
+import com.nvidia.spark.rapids.delta.Delta2xProviderBase
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
-object Delta22xProvider extends DeltaIOProvider {
+object Delta22xProvider extends Delta2xProviderBase {
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {

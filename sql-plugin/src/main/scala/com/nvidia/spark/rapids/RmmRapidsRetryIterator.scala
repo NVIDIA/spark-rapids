@@ -32,7 +32,6 @@ import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.internal.SQLConf
 
 object RmmRapidsRetryIterator extends Logging {
 
@@ -586,13 +585,6 @@ object RmmRapidsRetryIterator extends Logging {
     }
   }
 
-  // Used to figure out if we should inject an OOM (only for tests)
-  // We assume that runtime change of spark.rapids.sql.test.injectRetryOOM is not supported, so
-  // we can just use a cached value, in order to save the cost of creating new RapidsConf, which
-  // is quite expensive when we're constantly invoking RmmRapidsRetryIterator in a long loop, e.g.
-  // KudoSerializedBatchIterator.
-  private lazy val injectMode = Option(SQLConf.get).map(new RapidsConf(_).testRetryOOMInjectionMode)
-
   /**
    * RmmRapidsRetryIterator exposes an iterator that can retry work,
    * specified by `fn`, abstracting away the retry specifics.
@@ -658,24 +650,40 @@ object RmmRapidsRetryIterator extends Logging {
         splitReason = SplitReason.NONE
         try {
           // call the user's function
-          injectMode.foreach {
+          RapidsConf.testRetryOOMInjectionMode() match {
             case mode if !injectedOOM && mode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
               // `forceRetryOOM` requires a prior association.
+              var threadAssociated = true
               if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
-                RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+                // If RmmSpark isn't aware of this thread, we are going to
+                // try to find the TaskContext and use it to register it for a taskID.
+                // However, TaskContext is not going to work for a pool thread that isn't
+                // managed by Spark, so we are going to skip registration, and skip the OOM.
+                // This is a temporary workaround, see:
+                // https://github.com/NVIDIA/spark-rapids/issues/13098
+                threadAssociated = false
+                Option(TaskContext.get()).foreach { tc =>
+                  threadAssociated = true
+                  RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
+                }
               }
-              if (mode.withSplit) {
-                RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
-                  mode.numOoms,
-                  mode.oomInjectionFilter.ordinal,
-                  mode.skipCount)
+              if (threadAssociated) {
+                if (mode.withSplit) {
+                  RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                } else {
+                  RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                }
               } else {
-                RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                  mode.numOoms,
-                  mode.oomInjectionFilter.ordinal,
-                  mode.skipCount)
+                log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
+                  "https://github.com/NVIDIA/spark-rapids/issues/13098")
               }
             case _ => ()
           }
