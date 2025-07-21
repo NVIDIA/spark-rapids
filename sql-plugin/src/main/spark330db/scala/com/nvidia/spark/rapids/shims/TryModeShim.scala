@@ -43,15 +43,16 @@ object TryModeShim {
    * Check if an expression is in TRY mode.
    */
   def isTryMode(expr: Expression): Boolean = {
-    expr match {
-      case add: Add => add.evalMode == EvalMode.TRY
-      case sub: Subtract => sub.evalMode == EvalMode.TRY
-      case mul: Multiply => mul.evalMode == EvalMode.TRY
-      case div: Divide => div.evalMode == EvalMode.TRY
-      case mod: Remainder => mod.evalMode == EvalMode.TRY
-      case avg: Average => avg.evalMode == EvalMode.TRY
-      case sum: Sum => sum.evalMode == EvalMode.TRY
+    val evalMode = expr match {
+      case add: Add => add.evalMode
+      case sub: Subtract => sub.evalMode
+      case mul: Multiply => mul.evalMode
+      case div: Divide => div.evalMode
+      case mod: Remainder => mod.evalMode
+      case avg: Average => avg.evalMode
+      case sum: Sum => sum.evalMode
       case _ => throw new RuntimeException(s"Unsupported expression $expr in TRY mode")
     }
+    evalMode == EvalMode.TRY
   }
 }
