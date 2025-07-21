@@ -59,9 +59,9 @@ class InvokeExprMeta(
       val child = invoke.arguments(0)
       val stj = StructsToJson(eval.options, child, eval.timeZoneId)
       val stjMeta = GpuOverrides.wrapExpr(stj, conf, None)
-        stjMeta.initReasons()
-        stjMeta.tagForGpu()
-      if(!stjMeta.canThisBeReplaced) {
+      stjMeta.initReasons()
+      stjMeta.tagForGpu()
+      if (!stjMeta.canThisBeReplaced) {
         val sb = new StringBuilder()
         stjMeta.print(sb, depth = 0, all = false)
         willNotWorkOnGpu(sb.toString())

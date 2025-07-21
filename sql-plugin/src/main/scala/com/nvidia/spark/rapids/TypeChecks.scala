@@ -26,8 +26,8 @@ import org.apache.spark.sql.types._
 
 object TypeSigUtil {
   /**
-   * `ObjectType` exists in Spark320 and Spark320+, it not for GPU columnar computation,
-   * so remove it.
+   * `ObjectType` exists in Spark320 and Spark320+, it's not for GPU columnar computation,
+   * so remove it, or the auto-generated documents will have `Object` column.
    * @return the all supported type.
    */
   def getAllSupportedTypes: TypeEnum.ValueSet = TypeEnum.values - TypeEnum.OBJECT

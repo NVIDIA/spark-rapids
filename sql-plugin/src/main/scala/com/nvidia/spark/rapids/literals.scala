@@ -719,7 +719,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
     // Returns a Scalar instead of the value to support the scalar of nested type, and
     // simplify the handling of result from a `expr.columnarEval`.
     dataType match {
-      // For literal wraps an JAVA object, GPULiteral is just a placeholder,
+      // For a literal that wraps a JAVA object, GPULiteral is just a placeholder,
       // does not really run on GPU. E.g.:
       // For the conversion of Invoke(Literal(xxEvaluator ObjectType), "evaluate", type, arguments),
       // GpuInvoke will not call `GpuLiteral.columnarEvalAny`
