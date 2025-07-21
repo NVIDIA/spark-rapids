@@ -20,6 +20,7 @@ import ai.rapids.cudf.HostMemoryBuffer;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
+import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -48,6 +49,15 @@ public class SlicedSerializedColumnVector extends ColumnVector {
   @Override
   public void close() {
     wrap.close();
+  }
+
+  public static ColumnarBatch incRefCount(ColumnarBatch batch) {
+    for (int i = 0; i < batch.numCols(); i++) {
+      if (batch.column(i) instanceof SlicedSerializedColumnVector) {
+        ((SlicedSerializedColumnVector)batch.column(i)).getWrap().incRefCount();
+      }
+    }
+    return batch;
   }
 
   @Override
@@ -135,4 +145,20 @@ public class SlicedSerializedColumnVector extends ColumnVector {
   }
 
   public long getLength() { return this.wrap.getLength(); }
+
+  public static long getTotalHostMemoryUsed(ColumnarBatch batch) {
+    long sum = 0;
+    if (batch.numCols() > 0) {
+      for (int i = 0; i < batch.numCols(); i++) {
+        ColumnVector tmp = batch.column(i);
+        if (tmp instanceof SlicedSerializedColumnVector) {
+          SlicedSerializedColumnVector scv = (SlicedSerializedColumnVector) tmp;
+          sum += scv.getLength();
+        } else {
+          throw new RuntimeException(tmp + " is not supported for this");
+        }
+      }
+    }
+    return sum;
+  }
 }

@@ -164,7 +164,18 @@ trait GpuPartitioning extends Partitioning {
       if (mightNeedToSplit) {
         tmp.flatMap {
           case (batch, part) =>
-            val totalSize = SlicedGpuColumnVector.getTotalHostMemoryUsed(batch)
+            val totalSize = if (batch.numCols() > 0) {
+              batch.column(0) match {
+                case _: SlicedGpuColumnVector =>
+                  SlicedGpuColumnVector.getTotalHostMemoryUsed(batch)
+                case _: SlicedSerializedColumnVector =>
+                  SlicedSerializedColumnVector.getTotalHostMemoryUsed(batch)
+                case _ =>
+                  0L
+              }
+            } else {
+              0L
+            }
             val numOutputBatches =
               math.ceil(totalSize.toDouble / maxCpuBatchSize).toInt
             if (numOutputBatches > 1) {

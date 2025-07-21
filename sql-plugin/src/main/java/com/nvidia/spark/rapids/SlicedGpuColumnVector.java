@@ -57,8 +57,6 @@ public class SlicedGpuColumnVector extends ColumnVector {
     for (int i = 0; i < batch.numCols(); i++) {
       if (batch.column(i) instanceof SlicedGpuColumnVector) {
         ((SlicedGpuColumnVector)batch.column(i)).getBase().incRefCount();
-      } else if (batch.column(i) instanceof SlicedSerializedColumnVector) {
-        ((SlicedSerializedColumnVector)batch.column(i)).getWrap().incRefCount();
       }
     }
     return batch;
@@ -227,10 +225,7 @@ public class SlicedGpuColumnVector extends ColumnVector {
         if (tmp instanceof SlicedGpuColumnVector) {
           SlicedGpuColumnVector scv = (SlicedGpuColumnVector) tmp;
           sum += getSizeOf(scv.getBase(), scv.getStart(), scv.getEnd());
-        } else if (tmp instanceof SlicedSerializedColumnVector) {
-            SlicedSerializedColumnVector scv = (SlicedSerializedColumnVector) tmp;
-            sum += scv.getLength();
-          } else {
+        } else {
           throw new RuntimeException(tmp + " is not supported for this");
         }
       }

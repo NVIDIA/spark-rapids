@@ -354,8 +354,20 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 val sizeComputeStart = System.nanoTime()
                 val (cb, size) = value match {
                   case columnarBatch: ColumnarBatch =>
-                    (SlicedGpuColumnVector.incRefCount(columnarBatch),
-                      SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
+                    if (columnarBatch.numCols() > 0) {
+                      columnarBatch.column(0) match {
+                        case _: SlicedGpuColumnVector =>
+                          (SlicedGpuColumnVector.incRefCount(columnarBatch),
+                            SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
+                        case _: SlicedSerializedColumnVector =>
+                          (SlicedSerializedColumnVector.incRefCount(columnarBatch),
+                           SlicedSerializedColumnVector.getTotalHostMemoryUsed(columnarBatch))
+                        case _ =>
+                          (null, 0L)
+                      }
+                    } else {
+                      (columnarBatch, 0L)
+                    }
                   case _ =>
                     (null, 0L)
                 }
