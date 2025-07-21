@@ -753,6 +753,18 @@ def test_sql_map_scalars(query):
             lambda spark: spark.sql('SELECT {}'.format(query)))
 
 
+@disable_ansi_mode  # ANSI mode failures are tested separately.
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(nullable=False), IntegerGen(nullable=False))], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                    'map_zip_with(a, b, (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',]
+
+        return two_col_df(spark, data_gen, data_gen, length=100).selectExpr(columns)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_filter(data_gen):

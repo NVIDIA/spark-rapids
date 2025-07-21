@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -695,6 +695,42 @@ trait GpuComplexHigherOrderFunction extends GpuHigherOrderFunction with GpuBind 
 }
 
 
+/**
+ * Expression that performs mapZip operation on two map columns.
+ * This expression takes two map columns and zips them together using the GpuMapZipWithUtils.
+ */
+case class GpuMapZipExpression(
+    leftMap: Expression,
+    rightMap: Expression)
+    extends GpuExpression with ShimExpression {
+
+  override def children: Seq[Expression] = Seq(leftMap, rightMap)
+
+  @transient lazy val MapType(leftKeyType, leftValueType, leftValueContainsNull) = leftMap.dataType
+  @transient lazy val MapType(rightKeyType, rightValueType, rightValueContainsNull) 
+  = rightMap.dataType
+
+  override def dataType: DataType = {
+    MapType(leftKeyType, StructType(Seq(
+      StructField("left", leftValueType),
+      StructField("right", rightValueType)
+    )), leftValueContainsNull || rightValueContainsNull)
+  }
+
+  override def nullable: Boolean = leftMap.nullable || rightMap.nullable
+
+  override def prettyName: String = "map_zip"
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(leftMap.columnarEval(batch)) { leftCol =>
+      withResource(rightMap.columnarEval(batch)) { rightCol =>
+        val result = GpuMapZipWithUtils.mapZip(leftCol.getBase, rightCol.getBase)
+        GpuColumnVector.from(result, dataType)
+      }
+    }
+  }
+}
+
 trait GpuMapComplexHigherOrderFunction extends GpuComplexHigherOrderFunction with GpuBind {
 
   protected def isBound: Boolean
@@ -706,13 +742,12 @@ trait GpuMapComplexHigherOrderFunction extends GpuComplexHigherOrderFunction wit
   }
 
   protected def makeElementProjectBatch(
-      inputBatch: ColumnarBatch,
-      listColumn: cudf.ColumnVector): ColumnarBatch = {
-    assert(listColumn.getType.equals(DType.LIST))
+      inputBatch: ColumnarBatch): (ColumnarBatch, cudf.ColumnVector) = {
     assert(isBound, "Trying to execute an un-bound transform value expression")
 
-    // Need to do an explode followed by pulling out the key/value columns
-    val boundProject = boundIntermediate ++ arguments
+    val mapZipExpr = GpuMapZipExpression(arguments(0), arguments(1))
+
+    val boundProject = boundIntermediate :+ mapZipExpr
     val explodedTable = withResource(GpuProjectExec.project(inputBatch, boundProject)) {
       projectedBatch =>
         withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
@@ -740,7 +775,7 @@ trait GpuMapComplexHigherOrderFunction extends GpuComplexHigherOrderFunction wit
         }
         val val2Col = withResource(
           keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(1)) 
-          { valueView =>
+         { valueView =>
           valueView.copyToColumnVector()
         }
         withResource(val1Col) { val1Col =>
@@ -753,9 +788,20 @@ trait GpuMapComplexHigherOrderFunction extends GpuComplexHigherOrderFunction wit
         }
       }
     }
-    withResource(moddedTable) { moddedTable =>
+    
+    // Get the original map structure for reconstruction
+    val zippedMap = withResource(GpuProjectExec.project(inputBatch, Seq(mapZipExpr))) {
+      projectedBatch =>
+        withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+          projectedTable.getColumn(0).copyToColumnVector()
+        }
+    }
+    
+    val lambdaBatch = withResource(moddedTable) { moddedTable =>
       GpuColumnVector.from(moddedTable, inputToLambda.toArray)
     }
+    
+    (lambdaBatch, zippedMap)
   }
 }
 
@@ -770,12 +816,10 @@ case class GpuMapZipWith(
   @transient lazy val MapType(keyType1, valueType1, valueContainsNull1) = argument1.dataType
   @transient lazy val MapType(keyType2, valueType2, valueContainsNull2) = argument2.dataType
 
-  override def dataType: DataType = MapType(keyType1, function.dataType,
-   valueContainsNull1 || valueContainsNull2)
+  override def dataType: DataType = MapType(keyType1, function.dataType, 
+    valueContainsNull1 || valueContainsNull2)
 
   override def prettyName: String = "map_zip_with"
-
-  override def arguments: Seq[Expression] = Seq(argument1, argument2)
 
   override def bind(input: AttributeSeq): GpuExpression = {
     val (boundFunc, boundArgs, boundIntermediate) = bindLambdaFunc(input)
@@ -783,21 +827,22 @@ case class GpuMapZipWith(
     GpuMapZipWith(boundArgs(0), boundArgs(1), boundFunc, isBound = true, boundIntermediate)
   }
 
+  override def arguments: Seq[Expression] = Seq(argument1, argument2)
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(argument1.columnarEval(batch)) { arg1 =>
       withResource(argument2.columnarEval(batch)) { arg2 =>
-        val zippedMap = withResource(GpuMapZipWithUtils.mapZip(arg1.getBase, arg2.getBase)) 
-        { zippedMap =>
-          zippedMap.copyToColumnVector()
-        }
-        val newValueCol = withResource(makeElementProjectBatch(batch, zippedMap)) { cb =>
-          function.columnarEval(cb)
-        }
-        withResource(newValueCol) { newValueCol =>
-          withResource(GpuMapUtils.replaceExplodedValueAsView(arg1.getBase,
-           newValueCol.getBase)) {
-            updatedMapView =>
-              GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+        val (lambdaBatch, zippedMap) = makeElementProjectBatch(batch)
+        withResource(lambdaBatch) { lambdaBatch =>
+          withResource(zippedMap) { zippedMap =>
+            val newValueCol = function.columnarEval(lambdaBatch)
+            withResource(newValueCol) { newValueCol =>
+              withResource(GpuMapUtils.replaceExplodedValueAsView(zippedMap,
+               newValueCol.getBase)) {
+                updatedMapView =>
+                  GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+              }
+            }
           }
         }
       }
