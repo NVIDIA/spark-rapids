@@ -42,7 +42,7 @@ public class SlicedSerializedColumnVector extends ColumnVector {
     this.wrap = w.slice(start, end - start);
     assert start >= 0;
     assert end > start; // we don't support empty slices, it should be a null
-    assert end <= wrap.getLength();
+    assert end <= w.getLength();
   }
 
   @Override

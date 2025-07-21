@@ -208,31 +208,22 @@ trait GpuPartitioning extends Partitioning {
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
       withResource(dataHost) { _ =>
         withResource(offsetsHost) { _ =>
-//          val elemSize = offsetsHost.getLength / numPartitions // should this be numPartitions - 1
-          val elemSize = 8
-          val numSlices = (offsetsHost.getLength / elemSize).toInt
+          val numSlices = numPartitions + 1
+          val elemSize = offsetsHost.getLength / numSlices
 
-          val res = new Array[ColumnarBatch](numSlices - 1)
+          val res = new Array[ColumnarBatch](numPartitions)
           var start = 0
-          for (i <- 1 until numSlices) {
-            // elemSize should almost always be 8 (size_t) I think, but just in case
-            val idx = if (elemSize == 8) {
-              offsetsHost.getLong((i) * elemSize).toInt
-            } else {
-              offsetsHost.getInt((i) * elemSize)
-            }
-            res(i-1) = new ColumnarBatch(Array(
+          for (i <- 1 until numPartitions) {
+            val idx = offsetsHost.getLong((i) * elemSize).toInt
+            res(i - 1) = new ColumnarBatch(Array(
               new SlicedSerializedColumnVector(dataHost, start, idx)))
-            val partNumRows = if (i == partitionIndexes.length) {
-              numRows
-            } else {
-              partitionIndexes(i)
-            }
-            res(i-1).setNumRows(partNumRows)
+            val partNumRows = partitionIndexes(i)
+            res(i - 1).setNumRows(partNumRows)
             start = idx
           }
-//          res(numPartitions - 1) = new ColumnarBatch(Array(
-//            new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+          res(numPartitions - 1) = new ColumnarBatch(Array(
+            new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+          res(numPartitions - 1).setNumRows(numRows)
 
           res.zipWithIndex.filter(_._1 != null)
         }
