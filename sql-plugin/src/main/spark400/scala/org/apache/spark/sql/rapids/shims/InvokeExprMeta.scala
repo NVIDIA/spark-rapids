@@ -34,6 +34,15 @@ class InvokeExprMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends ExprMeta[Invoke](invoke, conf, p, r) {
 
+  private object SupportedTargetEnum extends Enumeration {
+    type SupportedTargetEnum = Value
+
+    val UNSUPPORTED: Value = Value
+    val STRUCTS_TO_JSON_EVALUATOR: Value = Value
+  }
+
+  private var targetType: SupportedTargetEnum.Value = SupportedTargetEnum.UNSUPPORTED
+
   /**
    * Return the warped children.
    * Note: `childExprs` ignored the first child of Spark `invoke`: literal(xxEvaluator).
@@ -50,7 +59,7 @@ class InvokeExprMeta(
   override final def tagExprForGpu(): Unit = {
     invoke match {
       case Invoke(
-      Literal(eval: StructsToJsonEvaluator, _: ObjectType),
+      Literal(_: StructsToJsonEvaluator, _: ObjectType),
       functionName: String,
       _: StringType,
       arguments: Seq[Expression],
@@ -60,40 +69,43 @@ class InvokeExprMeta(
       _: Boolean) if (functionName == "evaluate"
         && arguments.size == 1
         && methodInputTypes.size == 1) =>
-      // StructsToJson is equivalent to
-      // invoke(literal(StructsToJsonEvaluator), "evaluate", string_type, arguments, ...)
-      // here forward the checking to `StructsToJson`, in this way we can avoid duplicated checks
-      // definition
-      val child = invoke.arguments(0)
-      val stj = StructsToJson(eval.options, child, eval.timeZoneId)
-      val stjMeta = GpuOverrides.wrapExpr(stj, conf, None)
-      stjMeta.initReasons()
-      stjMeta.tagForGpu()
-      if (!stjMeta.canThisBeReplaced) {
-        val sb = new StringBuilder()
-        stjMeta.print(sb, depth = 0, all = false)
-        willNotWorkOnGpu(sb.toString())
-      }
+        tagStructsToJson(invoke)
+        targetType = SupportedTargetEnum.STRUCTS_TO_JSON_EVALUATOR
       case _ =>
         // Unsupported invoke expr
         willNotWorkOnGpu(s"Unsupported invoke expr: $invoke")
     }
   }
 
+  /**
+   * Invoke this tag for `invoke` if it's expected to do `StructsToJson`.
+   * It reuses the existing tag code. First construct `StructsToJson`/`StructsToJson`, then tag and
+   * copy the messages into this meta.
+   * `StructsToJson` is replaced to
+   * invoke(literal(StructsToJsonEvaluator), "evaluate", string_type, arguments, ...)
+   * From Spark 400, we can only see the replaced expressions, and can not see `StructsToJson`
+   * @param invoke the replaced expressions for `StructsToJson`
+   */
+  private def tagStructsToJson(invoke: Invoke): Unit = {
+    val child = invoke.arguments(0)
+    val evaluator = invoke.targetObject.eval(null).asInstanceOf[StructsToJsonEvaluator]
+    val stj = StructsToJson(evaluator.options, child, evaluator.timeZoneId)
+    val stjMeta = GpuOverrides.wrapExpr(stj, conf, None)
+    // forward the tag
+    stjMeta.initReasons()
+    stjMeta.tagForGpu()
+    if (!stjMeta.canThisBeReplaced) {
+      val sb = new StringBuilder()
+      stjMeta.print(sb, depth = 0, all = false)
+      // copy the messages to this meta
+      willNotWorkOnGpu(sb.toString())
+    }
+  }
+
   override def convertToGpu(): GpuExpression = {
-    invoke match {
-      case Invoke(
-      Literal(evaluator: StructsToJsonEvaluator, _: ObjectType),
-      functionName: String,
-      _: StringType,
-      arguments: Seq[Expression],
-      methodInputTypes: Seq[AbstractDataType],
-      _: Boolean,
-      _: Boolean,
-      _: Boolean) if (functionName == "evaluate"
-        && arguments.size == 1
-        && methodInputTypes.size == 1) =>
-        // Supported invoke expr which wraps an StructsToJsonEvaluator
+    targetType match {
+      case SupportedTargetEnum.STRUCTS_TO_JSON_EVALUATOR =>
+        val evaluator = invoke.targetObject.eval(null).asInstanceOf[StructsToJsonEvaluator]
         val child = childExprs.head.convertToGpu().asInstanceOf[Expression]
         GpuStructsToJson(evaluator.options, child, evaluator.timeZoneId)
       case _ =>
