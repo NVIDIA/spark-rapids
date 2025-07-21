@@ -29,17 +29,6 @@ import org.apache.spark.sql.rapids.shims.InvokeExprMeta
 object SparkShimImpl extends Spark350PlusNonDBShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[Literal](
-        "Holds a static value from the query",
-        ExprChecks.projectAndAst(
-          TypeSig.astTypes,
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
-            + TypeSig.ansiIntervals + TypeSig.OBJECT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-              TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
-          TypeSig.all),
-        (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
       GpuOverrides.expr[Invoke](
         "Calls the specified function on an object. This is a wrapper to other expressions, so " +
           "can not know the details in advance. E.g.: between is replaced by " +

@@ -24,15 +24,6 @@ import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-object TypeSigUtil {
-  /**
-   * `ObjectType` exists in Spark320 and Spark320+, but it's not for GPU columnar computation,
-   * so remove it, or the auto-generated documents will have `Object` column.
-   * @return the all supported type.
-   */
-  def getAllSupportedTypes: TypeEnum.ValueSet = TypeEnum.values - TypeEnum.OBJECT
-}
-
 /**
  * The level of support that the plugin has for a given type.  Used for documentation generation.
  */
@@ -124,7 +115,6 @@ object TypeEnum extends Enumeration {
   val UDT: Value = Value
   val DAYTIME: Value = Value
   val YEARMONTH: Value = Value
-  val OBJECT: Value = Value
 }
 
 /**
@@ -311,7 +301,6 @@ final class TypeSig private(
     case _: StructType => litOnlyTypes.contains(TypeEnum.STRUCT)
     case _: DayTimeIntervalType => litOnlyTypes.contains(TypeEnum.DAYTIME)
     case _: YearMonthIntervalType => litOnlyTypes.contains(TypeEnum.YEARMONTH)
-    case _: ObjectType => litOnlyTypes.contains(TypeEnum.OBJECT)
     case _ => false
   }
 
@@ -347,7 +336,6 @@ final class TypeSig private(
         fields.map(_.dataType).forall { t =>
           isSupported(childTypes, t)
         }
-      case _: ObjectType => check.contains(TypeEnum.OBJECT)
       case _ => false
     }
 
@@ -436,7 +424,6 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DAYTIME, check, isChild)
       case _: YearMonthIntervalType =>
         basicNotSupportedMessage(dataType, TypeEnum.YEARMONTH, check, isChild)
-      case _: ObjectType => basicNotSupportedMessage(dataType, TypeEnum.OBJECT, check, isChild)
       case _ => Seq(withChild(isChild, s"$dataType is not supported"))
     }
 
@@ -559,7 +546,7 @@ object TypeSig {
    * All types nested and not nested
    */
   val all: TypeSig = {
-    val allSupportedTypes = TypeSigUtil.getAllSupportedTypes
+    val allSupportedTypes: TypeEnum.ValueSet = TypeEnum.values
     new TypeSig(allSupportedTypes, DecimalType.MAX_PRECISION, allSupportedTypes)
   }
 
@@ -618,8 +605,6 @@ object TypeSig {
    * YearMonthIntervalType of Spark 3.2.0+ support
    */
   val YEARMONTH: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.YEARMONTH))
-
-  val OBJECT: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.OBJECT))
 
   /**
    * A signature for types that are generally supported by the plugin/CUDF. Please make sure to
@@ -1382,7 +1367,6 @@ class CastChecks extends ExprChecks {
     case _: StructType => (structChecks, sparkStructSig)
     case _: DayTimeIntervalType => getChecksAndSigs(TypeEnum.DAYTIME)
     case _: YearMonthIntervalType => getChecksAndSigs(TypeEnum.YEARMONTH)
-    case _: ObjectType => getChecksAndSigs(TypeEnum.OBJECT)
     case _ => getChecksAndSigs(TypeEnum.UDT) // default to UDT
   }
 
@@ -1404,7 +1388,6 @@ class CastChecks extends ExprChecks {
     case TypeEnum.UDT => (udtChecks, sparkUdtSig)
     case TypeEnum.DAYTIME => (daytimeChecks, sparkDaytimeChecks)
     case TypeEnum.YEARMONTH => (yearmonthChecks, sparkYearmonthChecks)
-    case TypeEnum.OBJECT =>(objectChecks, objectChecks)
   }
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
@@ -1721,7 +1704,7 @@ object ExprChecks {
  * Used for generating the support docs.
  */
 object SupportedOpsDocs {
-  private lazy val allSupportedTypes = TypeSigUtil.getAllSupportedTypes
+  private lazy val allSupportedTypes: TypeEnum.ValueSet = TypeEnum.values
 
   private def execChecksHeaderLine(): Unit = {
     println("<tr>")
@@ -2175,7 +2158,7 @@ object SupportedOpsDocs {
 
 object SupportedOpsForTools {
 
-  private lazy val allSupportedTypes = TypeSigUtil.getAllSupportedTypes
+  private lazy val allSupportedTypes: TypeEnum.ValueSet = TypeEnum.values
 
   // if a string contains what we are going to use for a delimiter, replace
   // it with something else

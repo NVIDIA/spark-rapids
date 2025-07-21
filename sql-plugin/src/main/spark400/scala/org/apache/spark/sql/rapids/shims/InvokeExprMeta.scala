@@ -36,8 +36,9 @@ class InvokeExprMeta(
 
   /**
    * Return the warped children.
-   * Note: It is different between Spark invoke children and this `childExprs`,
-   * `childExprs` ignored the first child: literal(xxEvaluator).
+   * Note: `childExprs` ignored the first child of Spark `invoke`: literal(xxEvaluator).
+   * If `literal` is not ignored, we need to add type check for ObjectType since `literal` wraps
+   * a ObjectType `xxEvaluator`.
    * E.g.: StructsToJson is replaced by
    * invoke(literal(StructsToJsonEvaluator), "evaluate", string_type, arguments, ...)
    * The children of Spark invoke is: literal, arguments
