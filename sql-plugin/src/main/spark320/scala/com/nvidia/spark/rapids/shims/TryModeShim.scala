@@ -39,7 +39,6 @@ object TryModeShim {
    * Example: for try_add(col1, col2) it would be <TryEval> tryeval((col1#0 + col2#1))
    * So the return value from this function does not matter.
    */
-
   def isTryMode(expr: Expression): Boolean = {
     false
   }
