@@ -45,9 +45,7 @@ object SparkShimImpl extends Spark350PlusNonDBShims {
           "can not know the details in advance. E.g.: between is replaced by " +
           "And(GreaterThanOrEqual(ref, lower), LessThanOrEqual(ref, upper);  StructToJson is " +
           "replaced by Invoke(Literal(StructToJsonEvaluator), evaluate, string_type, arguments)",
-        // Does not know Invoke wrap what expression, so use lenient checks.
-        // `InvokeExprMeta` is responding to do the checking case by case
-        ExprChecks.projectOnly(TypeSig.all, TypeSig.all),
+        InvokeCheck,
         (invoke, conf, p, r) => new InvokeExprMeta(invoke, conf, p, r))
       .note("Please ignore the supported types: It's a dynamic expression, the supported types " +
         "are not deterministic.")

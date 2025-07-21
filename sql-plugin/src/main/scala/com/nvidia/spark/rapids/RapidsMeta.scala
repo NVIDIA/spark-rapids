@@ -99,15 +99,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   val childExprs: Seq[BaseExprMeta[_]]
 
   /**
-   * If the count of `childExprs` is dynamic.
-   * E.g.: `Invoke` is a dynamic expression and can have different children
-   * Refer to the `children` function in `Invoke`:
-   *   // the arguments length is dynamic
-   *   override def children: Seq[Expression] = targetObject +: arguments
-   */
-  def isChildExprsCountDynamic: Boolean = false
-
-  /**
    * The wrapped scans that should be examined
    */
   val childScans: Seq[ScanMeta[_]]

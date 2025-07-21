@@ -26,7 +26,7 @@ import org.apache.spark.sql.types._
 
 object TypeSigUtil {
   /**
-   * `ObjectType` exists in Spark320 and Spark320+, it's not for GPU columnar computation,
+   * `ObjectType` exists in Spark320 and Spark320+, but it's not for GPU columnar computation,
    * so remove it, or the auto-generated documents will have `Object` column.
    * @return the all supported type.
    */
@@ -826,11 +826,9 @@ case class ContextChecks(
       check.cudf.tagExprParam(meta, children(i), check.name, willNotWork)
     }
     if (repeatingParamCheck.isEmpty) {
-      if (!meta.isChildExprsCountDynamic) {
-        assert(fixedChecks.length == children.length,
-          s"${expr.getClass.getSimpleName} expected ${fixedChecks.length} but " +
+      assert(fixedChecks.length == children.length,
+        s"${expr.getClass.getSimpleName} expected ${fixedChecks.length} but " +
             s"found ${children.length}")
-      }
     } else {
       val check = repeatingParamCheck.get
       (fixedChecks.length until children.length).foreach { i =>
@@ -1119,6 +1117,36 @@ object CaseWhenCheck extends ExprChecks {
           ("predicate", projectPredSupport),
           ("value", projectSupport),
           ("result", projectSupport))))
+  }
+}
+
+/**
+ * This is specific to Invoke, because it does not follow the typical parameter convention.
+ * Invoke is a dynamic expression, it can wrap arbitrary expressions.
+ * This check does very little check, the main checks are in the `InvokeExprMeta` class
+ */
+object InvokeCheck extends ExprChecks {
+
+  // Does not know Invoke wraps what expression, so use lenient checks.
+  val check: TypeSig = TypeSig.all
+
+  val sparkSig: TypeSig = TypeSig.all
+
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+  }
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
+    if (exprMeta.context != ProjectExprContext) {
+      meta.willNotWorkOnGpu(s"this is not supported in the ${exprMeta.context} context")
+    }
+  }
+
+  override def support(dataType: TypeEnum.Value):
+  Map[ExpressionContext, Map[String, SupportLevel]] = {
+    val projectSupport = check.getSupportLevel(dataType, sparkSig)
+    Map((ProjectExprContext, Map(("result", projectSupport))))
   }
 }
 

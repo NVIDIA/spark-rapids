@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, StructsToJson}
 import org.apache.spark.sql.catalyst.expressions.json.StructsToJsonEvaluator
@@ -35,9 +35,16 @@ class InvokeExprMeta(
     r: DataFromReplacementRule) extends ExprMeta[Invoke](invoke, conf, p, r) {
 
   /**
-   * Invoke is a dynamic expression, it can have different children.
+   * Return the warped children.
+   * Note: It is different between Spark invoke children and this `childExprs`,
+   * `childExprs` ignored the first child: literal(xxEvaluator).
+   * E.g.: StructsToJson is replaced by
+   * invoke(literal(StructsToJsonEvaluator), "evaluate", string_type, arguments, ...)
+   * The children of Spark invoke is: literal, arguments
+   * The `childExprs` only uses arguments
    */
-  override def isChildExprsCountDynamic: Boolean = true
+  override val childExprs: Seq[BaseExprMeta[_]] =
+    invoke.arguments.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override final def tagExprForGpu(): Unit = {
     invoke match {
@@ -86,7 +93,7 @@ class InvokeExprMeta(
         && arguments.size == 1
         && methodInputTypes.size == 1) =>
         // Supported invoke expr which wraps an StructsToJsonEvaluator
-        val child = childExprs(1).convertToGpu().asInstanceOf[Expression]
+        val child = childExprs.head.convertToGpu().asInstanceOf[Expression]
         GpuStructsToJson(evaluator.options, child, evaluator.timeZoneId)
       case _ =>
         throw new UnsupportedOperationException(s"Unsupported invoke expr: $invoke")
