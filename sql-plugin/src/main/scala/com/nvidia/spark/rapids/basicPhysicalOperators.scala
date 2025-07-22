@@ -59,7 +59,7 @@ class GpuProjectExecMeta(
     if (conf.isProjectAstEnabled) {
       // cuDF requires return column is fixed width
       val allReturnTypesFixedWidth = gpuExprs.forall(e => GpuBatchUtils.isFixedWidth(e.dataType))
-      if (childExprs.forall(_.canThisBeAst) && allReturnTypesFixedWidth) {
+      if (allReturnTypesFixedWidth && childExprs.forall(_.canThisBeAst)) {
         return GpuProjectAstExec(gpuExprs, gpuChild)
       }
       // explain AST because this is optional and it is sometimes hard to debug
