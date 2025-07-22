@@ -169,12 +169,14 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.NULL,
           TypeSig.numericAndInterval + TypeSig.NULL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+        private val ansiEnabled = SQLConf.get.ansiEnabled
+
         override def tagAggForGpu(): Unit = {
           GpuOverrides.checkAndTagFloatAgg(a.child.dataType, this.conf, this)
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuAverage(childExprs.head, a.evalMode == EvalMode.ANSI)
+          GpuAverage(childExprs.head, ansiEnabled)
 
         override def needsAnsiCheck: Boolean = false
       }),
