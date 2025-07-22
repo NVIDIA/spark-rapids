@@ -41,6 +41,8 @@ import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, Strin
 
 trait DataFromReplacementRule {
   val operationName: String
+
+  def noteDoc: Option[String] = None
   def incompatDoc: Option[String] = None
   def disabledMsg: Option[String] = None
 
