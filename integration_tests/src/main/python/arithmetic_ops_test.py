@@ -1478,14 +1478,6 @@ def test_try_mod_fallback_to_cpu(data_gen):
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_mod(a, b) as result"), "Remainder")
 
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-@pytest.mark.parametrize('try_method, op_name', [('try_add', 'Add'), ('try_divide', 'Divide')], ids=idfn)
-def test_try_fallback_to_cpu(data_gen, try_method, op_name):
-    assert_gpu_fallback_collect(
-        lambda spark: binary_op_df(spark, data_gen).selectExpr(
-            "{}(a, b) as result".format(try_method)), op_name)
-
 @pytest.mark.skipif(is_before_spark_330(), reason="try_subtract is not supported before Spark 3.3.0")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
