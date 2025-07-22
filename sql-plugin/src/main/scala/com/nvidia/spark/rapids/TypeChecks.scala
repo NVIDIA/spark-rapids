@@ -1110,14 +1110,9 @@ object CaseWhenCheck extends ExprChecks {
 /**
  * This is specific to Invoke, because it does not follow the typical parameter convention.
  * Invoke is a dynamic expression, it can wrap arbitrary expressions.
- * This check does very little check, the main checks are in the `InvokeExprMeta` class
+ * This does very few checks, the main checks are in the `InvokeExprMeta` class.
  */
 object InvokeCheck extends ExprChecks {
-
-  // Does not know Invoke wraps what expression, so use lenient checks.
-  val check: TypeSig = TypeSig.all
-
-  val sparkSig: TypeSig = TypeSig.all
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
     meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
@@ -1130,9 +1125,13 @@ object InvokeCheck extends ExprChecks {
     }
   }
 
+  /**
+   * Partially supports all the output types since `Invoke` is a dynamic expression.
+   */
   override def support(dataType: TypeEnum.Value):
   Map[ExpressionContext, Map[String, SupportLevel]] = {
-    val projectSupport = check.getSupportLevel(dataType, sparkSig)
+    val projectSupport = new PartiallySupported(
+      note = Some("Invoke is a dynamic expression, all types are partially supported."))
     Map((ProjectExprContext, Map(("result", projectSupport))))
   }
 }

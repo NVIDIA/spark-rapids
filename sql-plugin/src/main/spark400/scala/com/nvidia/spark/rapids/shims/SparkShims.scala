@@ -36,8 +36,7 @@ object SparkShimImpl extends Spark350PlusNonDBShims {
           "replaced by Invoke(Literal(StructToJsonEvaluator), evaluate, string_type, arguments)",
         InvokeCheck,
         (invoke, conf, p, r) => new InvokeExprMeta(invoke, conf, p, r))
-      .note("Please ignore the supported types: It's a dynamic expression, the supported types " +
-        "are not deterministic.")
+      .note("The supported types are not deterministic since it's a dynamic expression")
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
   }

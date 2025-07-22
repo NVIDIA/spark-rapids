@@ -834,7 +834,7 @@ VarianceSamp,S,`var_samp`; `variance`,None,aggregation,input,NA,NA,NA,NA,NA,NA,S
 VarianceSamp,S,`var_samp`; `variance`,None,aggregation,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 VarianceSamp,S,`var_samp`; `variance`,None,window,input,NA,NA,NA,NA,NA,NA,NS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 VarianceSamp,S,`var_samp`; `variance`,None,window,result,NA,NA,NA,NA,NA,NA,NS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
-Invoke,S, ,Please ignore the supported types: It's a dynamic expression; the supported types are not deterministic.,project,result,S,S,S,S,S,S,S,S,PS,S,S,S,S,S,PS,PS,PS,S,S,S
+Invoke,S, ,The supported types are not deterministic since it's a dynamic expression,project,result,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS,PS
 NormalizeNaNAndZero,S, ,None,project,input,NA,NA,NA,NA,NA,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 NormalizeNaNAndZero,S, ,None,project,result,NA,NA,NA,NA,NA,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 InSubqueryExec,S, ,None,project,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,NS,NS,NA,NA
