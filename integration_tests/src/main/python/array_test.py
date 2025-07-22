@@ -192,7 +192,13 @@ def test_try_element_at_invalid_index(index):
 @pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
 @pytest.mark.parametrize('index', [0, array_zero_index_gen], ids=idfn)
 def test_try_element_at_zero_index_throws_error(index):
-    """Test try_element_at with zero index - should throw same error on both CPU and GPU"""
+    if is_spark_340_or_later():
+        message = "SparkRuntimeException: [INVALID_INDEX_OF_ZERO] The index 0 is invalid"
+    elif is_databricks113_or_later():
+        message = "org.apache.spark.SparkRuntimeException: [ELEMENT_AT_BY_INDEX_ZERO] The index 0 is invalid"
+    else:
+        message = "SQL array indices start at 1"
+
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).selectExpr(
             f'try_element_at(a, {index})').collect()
@@ -200,7 +206,6 @@ def test_try_element_at_zero_index_throws_error(index):
         test_func = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr(
             'try_element_at(a, b)').collect()
 
-    message = "ArrayIndexOutOfBoundsException" if is_before_spark_340() else "SparkRuntimeException"
     assert_gpu_and_cpu_error(
         test_func,
         conf=ansi_enabled_conf,
