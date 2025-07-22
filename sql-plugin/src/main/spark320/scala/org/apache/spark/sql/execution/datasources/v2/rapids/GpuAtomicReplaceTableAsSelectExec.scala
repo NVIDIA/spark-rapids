@@ -66,8 +66,6 @@ case class GpuAtomicReplaceTableAsSelectExec(
     invalidateCache: (TableCatalog, Table, Identifier) => Unit)
   extends TableWriteExecHelper with GpuExec with ColumnarToRowTransition {
 
-  throw new IllegalStateException("Gpu RTAS should not be called!")
-
   override def supportsColumnar: Boolean = false
 
   override protected def run(): Seq[InternalRow] = {
