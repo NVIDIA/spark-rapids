@@ -847,6 +847,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
   def left: Expression
   def right: Expression
   def failOnError: Boolean
+  def failOnDivideByZero: Boolean
   def integerDivide: Boolean
 
   // For all decimal128 output we will use the long division version.
@@ -881,7 +882,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
     DecimalDivideChecks.intermediateResultType(decimalType)
 
   private[this] def divByZeroFixes(lhs: ColumnView, rhs: ColumnVector): ColumnVector = {
-    if (failOnError) {
+    if (failOnDivideByZero) {
       withResource(GpuDivModLike.mergeNulls(rhs, lhs)) { nullMergedRhs =>
         withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {

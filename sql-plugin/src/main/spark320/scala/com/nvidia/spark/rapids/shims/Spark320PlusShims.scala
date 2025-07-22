@@ -174,10 +174,9 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuAverage(childExprs.head)
+          GpuAverage(childExprs.head, a.evalMode == EvalMode.ANSI)
 
-        // Average is not supported in ANSI mode right now, no matter the type
-        override val ansiTypeToCheck: Option[DataType] = None
+        override def needsAnsiCheck: Boolean = false
       }),
     GpuOverrides.expr[Abs](
       "Absolute value",

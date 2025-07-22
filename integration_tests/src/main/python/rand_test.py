@@ -23,7 +23,6 @@ import pyspark.sql.functions as f
 
 
 @ignore_order(local=True)
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 def test_group_agg_with_rand():
     # GPU and CPU produce the same grouping rows but in different orders after Shuffle,
     # while the rand() always generates the same sequence. Then CPU and GPU will produce

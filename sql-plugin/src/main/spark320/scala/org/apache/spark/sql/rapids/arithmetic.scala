@@ -54,11 +54,23 @@ case class GpuIntegralDivide(
     right: Expression,
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuIntegralDivideParent(left, right)
 
+object GpuDecimalDivide {
+  def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
+    val ansi = SQLConf.get.ansiEnabled
+    GpuDecimalDivide(left, right, dataType, ansi, ansi)
+  }
+
+  def apply(left: Expression, right: Expression, dataType: DecimalType,
+            failOnError: Boolean): GpuDecimalDivide =
+    GpuDecimalDivide(left, right, dataType, failOnError, failOnError)
+}
+
 case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
     override val dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends ShimExpression
+    override val failOnError: Boolean,
+    override val failOnDivideByZero: Boolean) extends ShimExpression
     with GpuDecimalDivideBase {
   override def integerDivide = false
 
