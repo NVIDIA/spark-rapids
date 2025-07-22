@@ -336,6 +336,8 @@ final class TypeSig private(
         fields.map(_.dataType).forall { t =>
           isSupported(childTypes, t)
         }
+      case _: DayTimeIntervalType => check.contains(TypeEnum.DAYTIME)
+      case _: YearMonthIntervalType => check.contains(TypeEnum.YEARMONTH)
       case _ => false
     }
 
@@ -1348,8 +1350,6 @@ class CastChecks extends ExprChecks {
 
   val yearmonthChecks: TypeSig = CastCheckShims.typesYearMonthCanCastTo
   val sparkYearmonthChecks: TypeSig = CastCheckShims.typesYearMonthCanCastToOnSpark
-
-  val objectChecks: TypeSig = none
 
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
     case NullType => (nullChecks, sparkNullSig)
