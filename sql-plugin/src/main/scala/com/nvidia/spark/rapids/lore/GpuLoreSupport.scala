@@ -16,7 +16,10 @@
 
 package com.nvidia.spark.rapids.lore
 
+import scala.collection.mutable
+
 import java.util
+import org.apache.commons.lang3.reflect.FieldUtils
 
 import org.apache.spark.sql.execution.SparkPlan
 
@@ -62,5 +65,29 @@ trait GpuLoreSupport {
 
   def loreId(): Int = {
     _gpuLoreId
+  }
+
+  def prepareForLoreSerialization(): SparkPlan = {
+    val newPlan = this.clone()
+
+    doCleanUpTagsForLoreDump(newPlan)
+    doReplaceInputForLoreDump(newPlan)
+  }
+
+  protected def doCleanUpTagsForLoreDump(p: SparkPlan): Unit = {
+    FieldUtils.getField(classOf[SparkPlan], "tags", true)
+      .get(p)
+      .asInstanceOf[mutable.Map[_, _]]
+      .clear()
+  }
+
+  protected def doReplaceInputForLoreDump(p: SparkPlan): SparkPlan = {
+    val childrenCount = p.children.length
+
+    if (childrenCount > 0) {
+      p.withNewChildren((0 until childrenCount).map(_ => GpuNoopExec()))
+    } else {
+      p
+    }
   }
 }

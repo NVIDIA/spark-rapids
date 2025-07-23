@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.lore.GpuNoopExec
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.rdd.RDD
@@ -127,6 +128,19 @@ abstract class GpuBroadcastHashJoinExecBase(
       bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
+  }
+
+  override protected def doReplaceInputForLoreDump(p: SparkPlan): SparkPlan = {
+    val broadcastJoin = p.asInstanceOf[GpuBroadcastHashJoinExecBase]
+    val newBuildPlan = broadcastJoin.broadcastExchange.withNewChildren(Seq(GpuNoopExec()))
+    val newStreamPlan = GpuNoopExec()
+
+    val newChildren = buildSide match {
+      case GpuBuildLeft => Seq(newBuildPlan, newStreamPlan)
+      case GpuBuildRight => Seq(newStreamPlan, newBuildPlan)
+    }
+
+    p.withNewChildren(newChildren)
   }
 
   override def doExecute(): RDD[InternalRow] =
