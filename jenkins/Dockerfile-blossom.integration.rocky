@@ -45,7 +45,7 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     /bin/bash ~/miniconda.sh -b -p /opt/conda && \
     rm -f ~/miniconda.sh
 ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
-RUN conda tos accept --override-channels -c conda-forge -c defaults
+ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS="yes"
 RUN conda init && conda install -n base -c conda-forge mamba
 
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
