@@ -497,10 +497,9 @@ object GpuDeviceManager extends Logging {
         lazy val basedOnHostMemory = (hostMemUsageFraction * ((1.0 * availableHostMemory /
           deviceCount) - heapSize - pysparkOverhead - sparkOffHeapSize)).toLong
         if (executorOverhead.isDefined) {
-          val basedOnConfiguredOverhead = executorOverhead.get - sparkOffHeapSize
+          val basedOnConfiguredOverhead = executorOverhead.get
           logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
-            s"a memory limit from ($executorOverheadKey - " + s"$sparkOffHeapSizeKey) = " +
-            s"(${executorOverhead.get} - " + s"$sparkOffHeapSize) = $basedOnConfiguredOverhead")
+            s"a memory limit from ($executorOverheadKey = ${executorOverhead.get}")
           if (basedOnConfiguredOverhead < minMemoryLimit) {
             logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
               s"$minMemoryLimit; using the latter")
