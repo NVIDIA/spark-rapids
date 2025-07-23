@@ -25,7 +25,7 @@ from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import is_databricks104_or_later, with_cpu_session, is_before_spark_330
+from spark_session import is_databricks104_or_later, with_cpu_session, is_before_spark_330, is_spark_340_or_later
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -330,7 +330,13 @@ def test_hash_reduction_decimal_near_overflow_sum(precision, kudo_enabled, ansi)
 # or results in using too much memory on the GPU
 @nightly_gpu_mem_consuming_case
 @approximate_float
-@pytest.mark.parametrize('precision', [38, 37, 36, 35], ids=idfn)
+@pytest.mark.parametrize('precision', [
+    # https://issues.apache.org/jira/browse/SPARK-39316 changed how divide works in 3.4.0
+    # which made it so divide can work on larger ranges. For older Spark versions this test
+    # just does not work for precision 38 and 37, even though the SUM does not overflow.
+    pytest.param(38, marks=pytest.mark.skipif(not is_spark_340_or_later(), reason='overflow on older spark versions')),
+    pytest.param(37, marks=pytest.mark.skipif(not is_spark_340_or_later(), reason='overflow on older spark versions')),
+    36, 35], ids=idfn)
 @pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NOT_ANSI"])
 def test_hash_reduction_decimal_near_overflow_avg(precision, ansi):
     # This is not exactly the same as SUM because of the divide afterwards
