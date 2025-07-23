@@ -205,12 +205,14 @@ trait GpuPartitioning extends Partitioning {
               partitionIndexes.tail: _*)) { dmbs =>
             val data = dmbs(0)
             val offsets = dmbs(1)
-            val dataHost = HostMemoryBuffer.allocate(data.getLength)
-            val offsetsHost = HostMemoryBuffer.allocate(offsets.getLength)
-            dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
-            offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
-
-            (dataHost, offsetsHost)
+            closeOnExcept(Seq(HostMemoryBuffer.allocate(data.getLength),
+              HostMemoryBuffer.allocate(offsets.getLength))) { seq =>
+              val dataHost = seq(0)
+              val offsetsHost = seq(1)
+              dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
+              offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+              (dataHost, offsetsHost)
+            }
           }
         }
       }
