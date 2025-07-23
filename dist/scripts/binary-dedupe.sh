@@ -83,10 +83,10 @@ function retain_single_copy() {
   # declare -a path_parts='([0]="" [1]="spark320" [2]="com" [3]="nvidia" [4]="spark" [5]="udf" [6]="Repr\$UnknownCapturedArg\$.class")'
   shim="${path_parts[1]}"
 
-  package_class_parts=(${path_parts[@]:2})
+  package_class_parts=("${path_parts[@]:2}")
 
   package_len=$((${#package_class_parts[@]} - 1))
-  package_parts=(${package_class_parts[@]::$package_len})
+  package_parts=("${package_class_parts[@]::$package_len}")
 
   package_class_with_spaces="${package_class_parts[*]}"
   # com/nvidia/spark/udf/Repr\$UnknownCapturedArg\$.class
@@ -111,7 +111,7 @@ rm -rf "$SPARK_SHARED_DIR"
 mkdir -p "$SPARK_SHARED_DIR"
 
 echo "$((++STEP))/ retaining a single copy of spark-shared classes"
-while read spark_common_class; do
+while read -r spark_common_class; do
   retain_single_copy "$spark_common_class"
 done < "$SPARK_SHARED_TXT"
 
@@ -178,7 +178,7 @@ function verify_same_sha_for_unshimmed() {
 }
 
 echo "$((++STEP))/ verifying unshimmed classes have unique sha1 across shims"
-while read unshimmed_class; do
+while read -r unshimmed_class; do
   verify_same_sha_for_unshimmed "$unshimmed_class"
 done < "$UNSHIMMED_LIST_TXT"
 
@@ -186,7 +186,7 @@ done < "$UNSHIMMED_LIST_TXT"
 # TODO rework with low priority, only a few classes.
 echo "$((++STEP))/ removing duplicates of unshimmed classes"
 
-while read unshimmed_class; do
+while read -r unshimmed_class; do
   for pw in ./parallel-world/spark[34-]* ; do
     unshimmed_path="$pw/$unshimmed_class"
     [[ -f "$unshimmed_path" ]] && echo "$unshimmed_path" || true

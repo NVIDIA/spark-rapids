@@ -33,7 +33,7 @@ set -ex
 
 ABSOLUTE_PATH=$(cd $(dirname $0) && pwd)
 AUDIT_PLUGIN_LOG=${WORKSPACE}/audit-plugin.log
-if [ -e ${AUDIT_PLUGIN_LOG}]; then 
+if [ -e ${AUDIT_PLUGIN_LOG} ]; then 
   rm ${AUDIT_PLUGIN_LOG}
 fi
 

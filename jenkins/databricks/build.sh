@@ -69,13 +69,13 @@ initialize()
 
     ## '-Pfoo=1,-Dbar=2,...' to '-Pfoo=1 -Dbar=2 ...'
     MVN_OPT=${MVN_OPT//','/' '}
-    BUILDVER=$(echo ${BASE_SPARK_VERSION} | sed 's/\.//g')db
+    BUILDVER=${BASE_SPARK_VERSION//./}db
     # the version of Spark used when we install the Databricks jars in .m2
     BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
     SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}-databricks
     DBR_VER=$(cat /databricks/DBR_VERSION)
     if [ $DBR_VER == '14.3' ]; then 
-        DBR_VER=$(echo $DBR_VER | sed 's/\.//g')
+        DBR_VER=${DBR_VER//./}
         # We are appending 143 in addition to the base spark version because Databricks 14.3
         # and Databricks 15.4 are both based on spark version 3.5.0
         BUILDVER="$BUILDVER$DBR_VER"
@@ -165,7 +165,7 @@ if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_PHASES="clean install"
     for jdk_ver in 17 11 8; do
       if [[ $jdk_ver == 8 ]]; then
-        echo >2 "WARNING: could not find an 11+ JDK. Bloop Project might not be fully functional"
+        echo "WARNING: could not find an 11+ JDK. Bloop Project might not be fully functional" >&2
         exit 1
       fi
 
