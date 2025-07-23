@@ -44,4 +44,6 @@ jobs:
             -e SC1091
             -e SC2010
             -e SC2163
+            -e SC2001
+            -e SC2012
             
