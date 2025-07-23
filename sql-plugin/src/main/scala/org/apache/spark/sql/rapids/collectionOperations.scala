@@ -441,7 +441,7 @@ object GpuElementAtMeta {
 case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ExpectsInputTypes {
 
-  // It always blow up whenever there is at least one "0" as the index regardless of
+  // It always throws exception when the index is 0 even it's non-ANSI mode.
   // whether "failOnError" is true or not, so "hasSideEffects" should be true.
   override def hasSideEffects: Boolean = true
 
