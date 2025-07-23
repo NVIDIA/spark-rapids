@@ -98,7 +98,7 @@ case $PHASE_TYPE in
         ;;
 
     *)
-        SPARK_SHIM_VERSIONS=($PHASE_TYPE)
+        SPARK_SHIM_VERSIONS=($(echo $PHASE_TYPE))
         ;;
 esac
 # base version
