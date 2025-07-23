@@ -428,7 +428,7 @@ def test_case_when_with_side_effect_in_else():
             END
         FROM else_side_effect
     """
-    # spark.rapids.sql.combined.expressions.enabled is true by default
+
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark,
                                  SetValuesGen(ArrayType(IntegerType()), [[1, 2, 3]]),
