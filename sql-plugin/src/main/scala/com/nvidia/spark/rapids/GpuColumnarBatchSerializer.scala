@@ -525,8 +525,8 @@ private class KudoGpuSerializerInstance(
               out.write(temp, 0, read)
               at = at + read
               remaining = remaining - read
-              out.flush()
             }
+            flush()
           case _ =>
         }
       } else {

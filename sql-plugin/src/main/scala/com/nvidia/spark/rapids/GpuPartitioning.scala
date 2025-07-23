@@ -195,49 +195,54 @@ trait GpuPartitioning extends Partitioning {
     }
   }
 
-  def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
+  def sliceAndSerializeOnGpu(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
-    if (usesKudoGPUSlicing) {
-      partitionColumns.foreach(_.getBase.getNullCount)
-      val (dataHost, offsetsHost) = withResource(partitionColumns) { _ =>
-        withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
-          withResource(KudoGpuSerializer.splitAndSerializeToDevice(table,
-              partitionIndexes.tail: _*)) { dmbs =>
-            val data = dmbs(0)
-            val offsets = dmbs(1)
-            closeOnExcept(Seq(HostMemoryBuffer.allocate(data.getLength),
-              HostMemoryBuffer.allocate(offsets.getLength))) { seq =>
-              val dataHost = seq(0)
-              val offsetsHost = seq(1)
-              dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
-              offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
-              (dataHost, offsetsHost)
-            }
+    partitionColumns.foreach(_.getBase.getNullCount)
+    val (dataHost, offsetsHost) = withResource(partitionColumns) { _ =>
+      withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
+        withResource(KudoGpuSerializer.splitAndSerializeToDevice(table,
+          partitionIndexes.tail: _*)) { dmbs =>
+          val data = dmbs(0)
+          val offsets = dmbs(1)
+          closeOnExcept(Seq(HostMemoryBuffer.allocate(data.getLength),
+            HostMemoryBuffer.allocate(offsets.getLength))) { seq =>
+            val dataHost = seq(0)
+            val offsetsHost = seq(1)
+            dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
+            offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+            (dataHost, offsetsHost)
           }
         }
       }
-      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+    }
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
-      withResource(Seq(dataHost, offsetsHost)) { _ =>
-        val numSlices = numPartitions + 1
-        val elemSize = offsetsHost.getLength / numSlices
+    withResource(Seq(dataHost, offsetsHost)) { _ =>
+      val numSlices = numPartitions + 1
+      val elemSize = offsetsHost.getLength / numSlices
 
-        val res = new Array[ColumnarBatch](numPartitions)
-        var start = 0
-        for (i <- 1 until numPartitions) {
-          val idx = offsetsHost.getLong((i) * elemSize).toInt
-          res(i - 1) = new ColumnarBatch(Array(
-            new SlicedSerializedColumnVector(dataHost, start, idx)))
-          val partNumRows = partitionIndexes(i)
-          res(i - 1).setNumRows(partNumRows)
-          start = idx
-        }
-        res(numPartitions - 1) = new ColumnarBatch(Array(
-          new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
-        res(numPartitions - 1).setNumRows(numRows)
-
-        res.zipWithIndex.filter(_._1 != null)
+      val res = new Array[ColumnarBatch](numPartitions)
+      var start = 0
+      for (i <- 1 until numPartitions) {
+        val idx = offsetsHost.getLong((i) * elemSize).toInt
+        res(i - 1) = new ColumnarBatch(Array(
+          new SlicedSerializedColumnVector(dataHost, start, idx)))
+        val partNumRows = partitionIndexes(i)
+        res(i - 1).setNumRows(partNumRows)
+        start = idx
       }
+      res(numPartitions - 1) = new ColumnarBatch(Array(
+        new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+      res(numPartitions - 1).setNumRows(numRows)
+
+      res.zipWithIndex.filter(_._1 != null)
+    }
+  }
+
+  def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
+      partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
+    if (usesKudoGPUSlicing) {
+      sliceAndSerializeOnGpu(numRows, partitionIndexes, partitionColumns)
     } else {
       val sliceOnGpu = usesGPUShuffle
       val nvtxRangeKey = if (sliceOnGpu) {
