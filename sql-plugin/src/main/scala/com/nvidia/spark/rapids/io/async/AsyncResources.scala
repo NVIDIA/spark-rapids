@@ -22,27 +22,52 @@ import java.util.concurrent.locks.ReentrantLock
 
 import org.apache.spark.internal.Logging
 
-case class TaskResource(hostMemoryBytes: Long,
-    requireGpuSemaphore: Boolean,
-    groupedHostMemoryBytes: Option[Long] = None)
+sealed trait TaskResource
+
+case class HostResource(
+    hostMemoryBytes: Long,
+    groupedHostMemoryBytes: Option[Long] = None) extends TaskResource
+
+// DeviceResource is a marker object for GPU resources, no additional fields needed.
+object DeviceResource extends TaskResource
 
 object TaskResource {
   def newCpuResource(hostMemoryBytes: Long,
       groupedMemoryBytes: Option[Long] = None): TaskResource = {
-    TaskResource(hostMemoryBytes,
-      requireGpuSemaphore = false,
-      groupedHostMemoryBytes = groupedMemoryBytes)
+    HostResource(hostMemoryBytes, groupedHostMemoryBytes = groupedMemoryBytes)
   }
 
-  def newGpuResource(): TaskResource = TaskResource(0L, requireGpuSemaphore = true)
+  def newGpuResource(): TaskResource = DeviceResource
 }
 
-case class AsyncResult[T](
-    result: T,
-    releaseResourceCallback: Option[() => Unit])
+/**
+ * Result wrapper for AsyncTask execution that carries the task's output data and optional
+ * resource release callback for deferred resource management.
+ */
+trait AsyncResult[T] {
+  def data: T
+
+  def releaseResourceCallback(): Unit = {}
+
+  def hasReleaseCallback: Boolean = false
+}
+
+class SimpleAsyncResult[T](override val data: T) extends AsyncResult[T]
+
+class AsyncResultDecayRelease[T](override val data: T,
+    private val releaseCallback: () => Unit) extends AsyncResult[T] {
+  override val hasReleaseCallback: Boolean = true
+
+  override def releaseResourceCallback(): Unit = releaseCallback()
+}
 
 /**
- * The AsyncTask interface represents a task that can be scheduled by Resource.
+ * The AsyncTask interface represents a resource-aware task that can be scheduled by
+ * ResourceBoundedThreadExecutor. Tasks define their resource requirements, execution priority,
+ * and can optionally hold resources after completion for deferred release.
+ *
+ * AsyncTask provides hooks for resource lifecycle management and supports both immediate
+ * and deferred resource release patterns based on the task's holdResourceAfterCompletion flag.
  */
 trait AsyncTask[T] extends Callable[AsyncResult[T]] {
   /**
@@ -61,17 +86,24 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
    */
   protected def callImpl(): T
 
+  /**
+   * Builds the result of the task execution, which includes the data and a callback to release
+   * resources if needed. This method can be overridden by subclasses to customize the result
+   * format to carry additional metadata or state.
+   */
+  protected def buildResult(resultData: T): AsyncResult[T] = {
+    if (!holdResourceAfterCompletion) {
+      new SimpleAsyncResult(resultData)
+    } else {
+      new AsyncResultDecayRelease(resultData, releaseResource)
+    }
+  }
+
   def call(): AsyncResult[T] = {
     try {
       beforeExecuteHook.foreach { hook => hook() }
-      val result = callImpl()
-      if (holdResourceAfterCompletion) {
-        require(releaseResourceCallback != null,
-          "Release callback is not set, please set it before calling fetchReleaseCallback")
-        AsyncResult(result, Some(releaseResource))
-      } else {
-        AsyncResult(result, None)
-      }
+      val resultData = callImpl()
+      buildResult(resultData)
     } finally {
       afterExecuteHook.foreach { hook => hook() }
     }
@@ -80,8 +112,10 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
   protected var beforeExecuteHook: Option[() => Unit] = None
   protected var afterExecuteHook: Option[() => Unit] = None
 
+  // Set hooks to be executed right before the task execution.
   def setBeforeHook(hook: () => Unit): Unit = beforeExecuteHook = Some(hook)
 
+  // Set hooks to be executed right after the task execution.
   def setAfterHook(hook: () => Unit): Unit = afterExecuteHook = Some(hook)
 
   /**
@@ -92,7 +126,7 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
   }
 
   /**
-   * This method is called when the acquired resource has been just returned back into pool.
+   * This method is called when the acquired resource has been just released back into pool.
    * It can be overridden by subclasses to perform actions right after the release.
    */
   def onRelease(): Unit = {
@@ -107,8 +141,9 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
 
   /**
    * Guarantees the release callback will NOT be called unless the task holds the resource.
+   * This method is protected not private, so it can be called by subclasses to build own result.
    */
-  private def releaseResource(): Unit = {
+  protected def releaseResource(): Unit = {
     require(holdResource, "Task does NOT hold resource after completion")
     require(releaseResourceCallback != null, "releaseResourceCallback is not registered")
     releaseResourceCallback()
@@ -120,16 +155,15 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
   private[async] var holdResource = false
 }
 
+/**
+ * An AsyncTask that requires no resource limits and has the highest scheduling priority.
+ * Useful for lightweight tasks that should execute immediately without resource constraints.
+ */
 abstract class UnboundedAsyncTask[T] extends AsyncTask[T] {
-  /**
-   * Unbounded tasks do not have a resource limit, so they can be scheduled without any
-   * restrictions.
-   */
+  // Unbounded tasks do not have a resource limit.
   override val resource: TaskResource = TaskResource.newCpuResource(0L)
 
-  /**
-   * Unbounded tasks have the highest priority.
-   */
+  // Unbounded tasks have the highest priority.
   override val priority: Float = Float.MaxValue
 }
 
@@ -144,14 +178,32 @@ object GroupTaskHelpers {
       new AtomicInteger(0), new AtomicInteger(0), new AtomicBoolean(false))
   }
 
-  def getGroupPriority: Float = {
-    globalPriorityCounter.getAndAdd(-10L).toFloat
+  /*
+   * Returns a nearly unique priority value for GroupedAsyncTask instance.
+   * With group-based priorities, we can ensure that tasks in the same group are scheduled in the
+   * same time window as possible, in case that only a part of tasks in the group get scheduled
+   * while the rest are blocked because of the schedule order.
+   */
+  def generateGroupPriority: Float = {
+    groupwisePriorityCounter.compareAndSet(0L, 1000000000L)
+    // As for cpu tasks, 20 is big enough difference to divide different groups, considering that
+    // the default memory penality is log10(MemoryBytes).
+    groupwisePriorityCounter.getAndAdd(-20L).toFloat
   }
 
-  private lazy val globalPriorityCounter = new AtomicLong(1000000000L)
+  private lazy val groupwisePriorityCounter = new AtomicLong(1000000000L)
 }
 
+/**
+ * An AsyncTask that shares resource allocation with other tasks in the same group.
+ * When any task in the group requests resources, it requests the total amount needed for the
+ * entire group. Once one task successfully acquires the group's resources, other tasks in the
+ * same group can proceed without additional resource allocation. This pattern is useful for
+ * coordinated async tasks which are consumed by the same consumer, such as multithreaded reader.
+ */
 abstract class GroupedAsyncTask[T] extends AsyncTask[T] {
+  // The shared state for the group, which should be defined by the subclass.
+  protected val sharedState: GroupSharedState
 
   override def call(): AsyncResult[T] = {
     sharedState.launchedTasks.incrementAndGet()
@@ -164,18 +216,14 @@ abstract class GroupedAsyncTask[T] extends AsyncTask[T] {
 
   override def onRelease(): Unit = {
     val numReleased = sharedState.releasedTasks.incrementAndGet()
+    // If all tasks in the group have released their resources, we can reset the holding state.
     if (numReleased == sharedState.groupSize) {
       sharedState.holdingResource.set(false)
     }
   }
 
-  protected val sharedState: GroupSharedState
-
+  // The core method to query if the group behind the task is holding the resource.
   def isHoldingResource: Boolean = sharedState.holdingResource.get()
-
-  def isNoneLaunched: Boolean = sharedState.launchedTasks.get() == 0
-
-  def isAllReleased: Boolean = sharedState.groupSize == sharedState.releasedTasks.get()
 }
 
 class AsyncFunctor[T](
@@ -238,7 +286,15 @@ trait ResourcePool {
 }
 
 /**
- * Throttle implementation that limits the total host memory used by the in-flight tasks.
+ * HostMemoryPool enforces a maximum limit on total host memory bytes that can be held
+ * by in-flight tasks simultaneously. It provides blocking resource acquisition with
+ * configurable timeout and supports both individual and grouped task allocation patterns.
+ *
+ * For grouped tasks, the pool recognizes when tasks share resource allocation and avoids
+ * double-counting memory usage within the same group.
+ *
+ * The implementation uses condition variables to efficiently block and wake up waiting
+ * tasks when resources become available through task completion and resource release.
  */
 class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Logging {
 
@@ -253,9 +309,12 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
   private val holdingGroups: AtomicInteger = new AtomicInteger(0)
 
   override def acquireResource[T](task: AsyncTask[T], timeoutMs: Long): AcquireStatus = {
-    val requiredAmount = task match {
-      case _: GroupedAsyncTask[T] => task.resource.groupedHostMemoryBytes.get
-      case _ => task.resource.hostMemoryBytes
+    val resource = extractResource(task)
+    val requiredAmount: Long = task match {
+      case _: GroupedAsyncTask[T] => resource.groupedHostMemoryBytes.getOrElse(
+          throw new InvalidResourceRequest(
+            s"GroupedAsyncTask must have groupedHostMemoryBytes defined, but got $resource"))
+      case _ => resource.hostMemoryBytes
     }
     requiredAmount match {
       case 0 =>
@@ -310,7 +369,8 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
   }
 
   override def releaseResource[T](task: AsyncTask[T]): Unit = {
-    val toRelease = task.resource.hostMemoryBytes
+    // Even for grouped tasks, we release the resource separately,
+    val toRelease = extractResource(task).hostMemoryBytes
     if (toRelease > 0) {
       val newVal = remaining.addAndGet(toRelease)
       task.onRelease()
@@ -331,5 +391,13 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
 
   override def toString: String = {
     s"HostMemoryPool(maxHostMemoryBytes=${maxHostMemoryBytes >> 20}MB)"
+  }
+
+  private def extractResource(task: AsyncTask[_]): HostResource = {
+    task.resource match {
+      case r: HostResource => r
+      case r => throw new InvalidResourceRequest(
+        s"Task ${task.getClass.getName} does not require HostResource, but got $r")
+    }
   }
 }

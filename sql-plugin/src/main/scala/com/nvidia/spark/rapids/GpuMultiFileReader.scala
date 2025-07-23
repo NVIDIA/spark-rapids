@@ -510,7 +510,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   protected lazy val groupPriority: Float = {
     if (inputFiles.length <= maxNumFileProcessed) {
-      GroupTaskHelpers.getGroupPriority
+      GroupTaskHelpers.generateGroupPriority
     } else {
       0
     }
@@ -592,17 +592,17 @@ abstract class MultiFileCloudPartitionReaderBase(
     if (taskResult == null) {
       return null
     }
-    taskResult.releaseResourceCallback.foreach { cb =>
-        taskResult.result match {
+    if (taskResult.hasReleaseCallback) {
+        taskResult.data match {
           // If the task result is empty, call the release callback ASAP.
           case bufWithMeta if bufWithMeta.bytesRead == 0 =>
-            cb()
+            taskResult.releaseResourceCallback()
           // inject the release callback for deferred release
           case bufWithMeta =>
-            bufWithMeta.addReleaseResourceCallback(cb)
+            bufWithMeta.addReleaseResourceCallback(taskResult.releaseResourceCallback)
         }
     }
-    taskResult.result
+    taskResult.data
   }
 
   /**
@@ -858,11 +858,11 @@ abstract class MultiFileCloudPartitionReaderBase(
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
         val taskResult = task.get
-        taskResult.result.memBuffersAndSizes.foreach { hmbInfo =>
+        taskResult.data.memBuffersAndSizes.foreach { hmbInfo =>
           hmbInfo.hmbs.safeClose()
         }
-        taskResult.releaseResourceCallback.foreach { cb =>
-          cb()
+        if (taskResult.hasReleaseCallback) {
+          taskResult.releaseResourceCallback()
         }
       } else {
         // Note we are not interrupting thread here so it
@@ -1250,7 +1250,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           }
 
           for (future <- tasks.asScala) {
-            val (blocks, bytesRead) = future.get().result
+            val (blocks, bytesRead) = future.get().data
             allOutputBlocks ++= blocks
             TrampolineUtil.incBytesRead(inputMetrics, bytesRead)
           }

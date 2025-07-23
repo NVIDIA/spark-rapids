@@ -22,6 +22,17 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 
 import org.apache.spark.internal.Logging
 
+/**
+ * A FutureTask wrapper is used by ResourceBoundedThreadExecutor to manage the execution of
+ * resource-aware asynchronous tasks. It allows the executor to:
+ *   - Track whether the task is currently holding a resource.
+ *   - Adjust the task's scheduling priority dynamically.
+ *   - Mark completion and exception state for robust scheduling and error handling.
+ *   - Integrate with resource management callbacks for proper resource release.
+ *
+ * @param task the AsyncTask to be executed and tracked
+ * @tparam T the result type returned by the AsyncTask
+ */
 class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult[T]](task) {
   private[async] var priority: Float = task.priority
   private var heldResource: Boolean = false
@@ -64,12 +75,47 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
   def isCompleted: Boolean = completed
 }
 
+/**
+ * Comparator for RapidsFutureTask that orders tasks by priority in descending order.
+ * Higher priority tasks (larger priority values) are ordered before lower priority tasks.
+ * This enables priority-based scheduling in PriorityBlockingQueue where tasks with
+ * higher priority are executed first.
+ *
+ * @tparam T the result type of the RapidsFutureTask
+ */
 class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTask[T]] {
   override def compare(o1: RapidsFutureTask[T], o2: RapidsFutureTask[T]): Int = {
     (-o1.priority).compareTo(-o2.priority)
   }
 }
 
+/**
+ * A thread pool executor that integrates with resource management for executing AsyncTasks.
+ *
+ * This executor provides resource-aware task scheduling by:
+ *   - Acquiring resources before task execution through the ResourcePool
+ *   - Tracking resource usage and releasing resources after task completion
+ *   - Supporting priority-based task ordering via PriorityBlockingQueue
+ *   - Retrying tasks that fail to acquire resources with adjusted priority
+ *   - Managing resource lifecycles including immediate and deferred release strategies
+ *
+ * Tasks that cannot acquire sufficient resources within timeout are bypassed during execution and
+ * re-queued with adjusted priority to prevent starvation. The executor works exclusively
+ * with AsyncTask instances and their corresponding RapidsFutureTask wrappers.
+ *
+ * Resource release timing is controlled by the AsyncTask's `holdResourceAfterCompletion` flag:
+ * immediate release when false (default) or deferred release when true, with exceptions always
+ * triggering immediate release regardless of the flag.
+ *
+ * @param mgr the ResourcePool for managing resource acquisition and release
+ * @param waitResourceTimeoutMs timeout in milliseconds for resource acquisition
+ * @param retryPriorAdjust priority adjustment applied to tasks that failed resource acquisition
+ * @param corePoolSize the core number of threads in the pool
+ * @param maximumPoolSize the maximum number of threads in the pool
+ * @param workQueue the queue for holding tasks before execution
+ * @param threadFactory the factory for creating new threads
+ * @param keepAliveTime the time to keep idle threads alive
+ */
 class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     waitResourceTimeoutMs: Long,
     retryPriorAdjust: Float,

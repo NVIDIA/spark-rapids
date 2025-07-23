@@ -1227,7 +1227,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
               new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
                 filters, readDataSchema))
           }.toArray.flatMap { future =>
-            future.get().result
+            future.get().data
           }
         } else {
           // We need to copy the Hadoop Configuration because filter push down can mutate it. In

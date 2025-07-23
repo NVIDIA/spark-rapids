@@ -14,11 +14,25 @@
  * limitations under the License.
  */
 
-
 package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.{Callable, CompletionService, Future, LinkedBlockingQueue, TimeUnit}
 
+/**
+ * A CompletionService implementation specialized for ResourceBoundedThreadExecutor that provides
+ * resource-aware async task execution and completion handling. This service extends the standard
+ * Java CompletionService pattern by accepting only AsyncTask instances, wrapping them in
+ * RapidsFutureTask for resource tracking, and maintaining completion order through a completion
+ * queue for efficient result polling.
+ *
+ * The service is particularly useful for scenarios where multiple async tasks need to be
+ * submitted and their results processed as they complete, without blocking on any specific
+ * task completion order. This pattern is commonly used in multi-file readers and other
+ * batch processing scenarios where work can be parallelized effectively.
+ *
+ * @param executor the ResourceBoundedThreadExecutor to use for task execution
+ * @tparam V the result type of the AsyncTasks
+ */
 class BoundedCompletionService[V](
     executor: ResourceBoundedThreadExecutor) extends CompletionService[AsyncResult[V]] {
 
