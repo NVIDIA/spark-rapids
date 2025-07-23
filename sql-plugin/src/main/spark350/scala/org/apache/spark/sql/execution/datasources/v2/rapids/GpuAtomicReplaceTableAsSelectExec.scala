@@ -62,8 +62,6 @@ case class GpuAtomicReplaceTableAsSelectExec(
     invalidateCache: (TableCatalog, Table, Identifier) => Unit)
   extends V2CreateTableAsSelectBaseExec with GpuExec {
 
-  throw new IllegalStateException("Gpu RTAS should not be called")
-
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
   override def supportsColumnar: Boolean = false

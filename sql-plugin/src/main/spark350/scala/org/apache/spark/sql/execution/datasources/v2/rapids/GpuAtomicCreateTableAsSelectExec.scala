@@ -58,8 +58,6 @@ case class GpuAtomicCreateTableAsSelectExec(
     ifNotExists: Boolean)
   extends V2CreateTableAsSelectBaseExec with GpuExec {
 
-  throw new IllegalStateException("GpuCTAS should not be called!")
-
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
   override def supportsColumnar: Boolean = false
