@@ -123,11 +123,8 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
 
   test("get host memory limits zero config with host mem") {
     val pySparkOverheadStr = "2g"
-    val sparkOffHeapSizeStr = "1g"
     val sparkConf = new SparkConf()
       .set("spark.executor.pyspark.memory", pySparkOverheadStr)
-      .set("spark.memory.offHeap.enabled", "true")
-      .set("spark.memory.offHeap.size", sparkOffHeapSizeStr)
     val rapidsConf = new RapidsConf(sparkConf)
     val availableHostMem = toBytes("16g")
     TestMemoryChecker.setAvailableMemoryBytes(Some(availableHostMem))
@@ -138,10 +135,9 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
 
     val heapSize = toBytes("1g") // default
     val pySparkOverhead = toBytes(pySparkOverheadStr)
-    val sparkOffHeapSize = toBytes(sparkOffHeapSizeStr)
     val totalOverhead = toBytes("15m") // default
-    val expectedNonPinned = (.8 * (availableHostMem - heapSize - pySparkOverhead -
-      sparkOffHeapSize)).toLong - totalOverhead
+    val expectedNonPinned = (.8 * (availableHostMem - heapSize - pySparkOverhead)).toLong -
+      totalOverhead
 
     assertResult(0)(pinnedSize)
     assertResult(expectedNonPinned)(nonPinnedSize)
@@ -165,12 +161,9 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits memoryOverhead configured") {
-    val sparkOffHeapSizeStr = "1g"
     val sparkOverheadStr = "8g"
     val sparkConf = new SparkConf()
       .set("spark.executor.memoryOverhead", sparkOverheadStr)
-      .set("spark.memory.offHeap.enabled", "true")
-      .set("spark.memory.offHeap.size", sparkOffHeapSizeStr)
       .set("spark.executor.pyspark.memory", "1g") // should be ignored here
     val rapidsConf = new RapidsConf(sparkConf)
     val (pinnedSize, nonPinnedSize) =
@@ -178,9 +171,8 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
         TestMemoryChecker)
 
     val sparkOverhead = toBytes(sparkOverheadStr)
-    val sparkOffHeapSize = toBytes(sparkOffHeapSizeStr)
     val totalOverhead = toBytes("15m") // default
-    val expectedNonPinned = sparkOverhead - sparkOffHeapSize - totalOverhead
+    val expectedNonPinned = sparkOverhead - totalOverhead
 
     assertResult(0)(pinnedSize)
     assertResult(expectedNonPinned)(nonPinnedSize)
