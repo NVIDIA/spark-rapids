@@ -27,6 +27,7 @@ import scala.collection.mutable.ListBuffer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.NvtxRegistry
+import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta

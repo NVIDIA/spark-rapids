@@ -35,7 +35,7 @@ package org.apache.spark.sql.rapids
 import java.io.{ByteArrayOutputStream, InputStream}
 import java.nio.ByteBuffer
 
-import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuColumnVector, NoopMetric, SparkSessionHolder}
+import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuColumnVector, NoopMetric, RapidsConf, SparkSessionHolder}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.mockito.ArgumentMatchers.{eq => meq}
 import org.mockito.Mockito.{mock, when}
@@ -114,7 +114,7 @@ class RapidsShuffleThreadedReaderSuite
       val numMaps = 6
       val keyValuePairsPerMap = 10
       val serializer = new GpuColumnarBatchSerializer(Map.empty.withDefaultValue(NoopMetric),
-        Array.empty, false, false, false)
+        Array.empty, RapidsConf.ShuffleKudoMode.CPU, false, false)
 
       // Make a mock BlockManager that will return RecordingManagedByteBuffers of data, so that we
       // can ensure retain() and release() are properly called.

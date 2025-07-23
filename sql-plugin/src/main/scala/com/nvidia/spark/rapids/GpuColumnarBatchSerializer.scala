@@ -25,6 +25,7 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit, SizeProvider}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -128,7 +129,7 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
  * @note The RAPIDS shuffle does not use this code.
  */
 class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Array[DataType],
-                                 useGpuKudo: Boolean, useKudo: Boolean,
+                                 kudoMode: ShuffleKudoMode.Value, useKudo: Boolean,
                                  kudoMeasureBufferCopy: Boolean)
   extends Serializer with Serializable {
 
@@ -141,10 +142,12 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
   }
 
   override def newInstance(): SerializerInstance = {
-    if (useGpuKudo) {
-      new KudoGpuSerializerInstance(metrics, dataTypes)
-    } else if (useKudo) {
-      new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
+    if (useKudo) {
+      if (kudoMode == ShuffleKudoMode.GPU) {
+        new KudoGpuSerializerInstance(metrics, dataTypes)
+      } else {
+        new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
+      }
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
     }

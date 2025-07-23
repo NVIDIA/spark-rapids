@@ -94,7 +94,7 @@ case class GpuOptimizeWriteExchangeExec(
   private lazy val serializer: Serializer =
     new GpuColumnarBatchSerializer(allMetrics,
       child.output.map(_.dataType).toArray,
-      RapidsConf.SHUFFLE_KUDO_GPU_SERIALIZER_ENABLED.get(child.conf),
+      RapidsConf.ShuffleKudoMode.withName(RapidsConf.SHUFFLE_KUDO_MODE.get(child.conf)),
       RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf),
       RapidsConf.SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED.get(child.conf))
 
