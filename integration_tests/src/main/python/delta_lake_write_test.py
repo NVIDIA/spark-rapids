@@ -279,7 +279,7 @@ def _atomic_write_table_as_select_sql(gens, spark_tmp_table_factory, spark_tmp_p
         if supports_delta_lake_deletion_vectors():
             table_props['delta.enableDeletionVectors'] = f'{str(enable_deletion_vectors).lower()}'
 
-        table_props_str = ",\n".join([ f"'{k}' = '{v}'" for k, v in table_props.items() ])
+        table_props_str = ",\n".join([f"'{k}' = '{v}'" for k, v in table_props.items()])
 
         if replace:
             df.coalesce(1).write.format("delta").option('path', path).saveAsTable(table)
