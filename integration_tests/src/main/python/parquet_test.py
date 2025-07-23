@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import re
 
 import pytest
 
@@ -1550,6 +1551,108 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path), conf=spark_conf)
 
+# These are based on tests from https://issues.apache.org/jira/browse/SPARK-40876
+# TODO test this on lots of versions of Spark as it is not supported on all of them...
+@pytest.mark.parametrize('from_gen, to_gen', [
+    (byte_gen, short_gen),
+    (byte_gen, int_gen),
+    pytest.param(byte_gen, long_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(byte_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    (short_gen, int_gen),
+    pytest.param(short_gen, long_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(short_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    # Int->Short/Byte isn't a widening conversion but Parquet stores both as INT32 so it just works.
+    (IntegerGen(min_val=-128, max_val=127, special_cases=[]), byte_gen),
+    (IntegerGen(min_val=-32768, max_val=32767, special_cases=[]), short_gen),
+    # Verify that if the values are outside of the allowed range that we overflow in
+    # the same way...
+    (int_gen, byte_gen),
+    (int_gen, short_gen),
+    pytest.param(int_gen, long_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(int_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    (int_gen, date_gen),
+    pytest.param(float_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    # tzinfo=None makes it timestamp_ntz
+    # We don't support reading TimestampNTZ yet, but when we do add it.
+    #pytest.param(DateGen(start=date(1970, 1, 1)), TimestampGen(tzinfo=None), 
+    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark'))
+], ids=idfn)
+def test_parquet_supported_read_type_changes(spark_tmp_path, from_gen, to_gen):
+    data_path = f"{spark_tmp_path}/PARQUET_MAKE_WIDER"
+
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_gen)
+        .coalesce(1)
+        .write.parquet(data_path)
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_gen.data_type)
+    ])
+
+    spark_conf = {}
+    # The vectorized Parquet reader throws an exception in some cases where the
+    # read scale differs from the write scale. We disable the vectorized reader,
+    # forcing Spark to use the non-vectorized path for CPU case. This configuration
+    # is ignored by the plugin.
+    spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path), conf=spark_conf)
+
+# These are based on tests from https://issues.apache.org/jira/browse/SPARK-40876
+# TODO test this on lots of versions of Spark as it is not supported on all of them...
+@pytest.mark.parametrize('from_gen, to_gen, conf', [
+    (long_gen, int_gen, {}),
+    (double_gen, float_gen, {}),
+    (float_gen, long_gen, {}),
+    (long_gen, date_gen, {}),
+    (int_gen, timestamp_gen, {}),
+    # tzinfo=None makes it timestamp_ntz
+    # We don't support reading TimestampNTZ yet, but when we do add it.
+    #pytest.param(int_gen, TimestampGen(tzinfo=None), {}, 
+    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+    (DateGen(start=date(1600,1,1)), timestamp_gen, {}),
+    # Start with 1970 to avoid issues with CORRECTED vs NOT when writing...
+    (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'INT96'}),
+    (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}),
+    (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MILLIS'}),
+    # tzinfo=None makes it timestamp_ntz
+    pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'INT96'}, 
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+    pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}, 
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+    pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MILLIS'}, 
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+], ids=idfn)
+def test_parquet_unsupported_read_type_changes(spark_tmp_path, from_gen, to_gen, conf):
+    data_path = f"{spark_tmp_path}/PARQUET_MAKE_WORSE"
+
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_gen)
+        .coalesce(1)
+        .write.parquet(data_path),
+        conf=conf
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_gen.data_type)
+    ])
+
+    # The vectorized Parquet reader throws an exception in some cases where the
+    # read scale differs from the write scale. We disable the vectorized reader,
+    # forcing Spark to use the non-vectorized path for CPU case. This configuration
+    # is ignored by the plugin.
+    spark_conf= copy_and_update(conf, {'spark.sql.parquet.enableVectorizedReader': False})
+
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(), 
+        conf=spark_conf,
+        error_message=re.compile(r"SchemaColumnConvertNotSupportedException|ParquetDecodingException|PARQUET_CONVERSION_FAILURE|(no valid casts are found)|(Unable to create Parquet converter for data type)"))
 
 @pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
 @pytest.mark.skipif(os.environ.get('INCLUDE_PARQUET_HADOOP_TEST_JAR', 'false') == 'false', reason='INCLUDE_PARQUET_HADOOP_TEST_JAR is disabled')
