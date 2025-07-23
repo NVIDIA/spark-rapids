@@ -1453,3 +1453,71 @@ def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
     # not we want for this test.
     conf_no_ansi = {"spark.sql.ansi.enabled": "false"}
     assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
+
+
+# Test that try_* functions falls back to CPU when TRY mode is used
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_try_add_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_add(a, b) as result"), "Add")
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_divide_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_divide(a, b) as result"), "Divide")
+
+@pytest.mark.skipif(is_before_spark_400(), reason="try_mod is not supported before Spark 4.0.0")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_mod_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_mod(a, b) as result"), "Remainder")
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_subtract is not supported before Spark 3.3.0")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_subtract_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_subtract(a, b) as result"), "Subtract")
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_multiply is not supported before Spark 3.3.0")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_multiply_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_multiply(a, b) as result"), "Multiply")
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_try_sum_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
+                     .selectExpr("try_sum(b) as result"),'HashAggregateExec')
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_try_sum_groupby_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
+                     .groupBy('a').agg(f.expr("try_sum(b)").alias("result")),
+        'HashAggregateExec')
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_avg is not supported before Spark 3.3.0")
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_avg_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
+                     .groupBy('a').agg(f.expr("try_avg(b)").alias("result")),
+        'HashAggregateExec')
