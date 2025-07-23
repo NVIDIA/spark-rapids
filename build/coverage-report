@@ -46,7 +46,7 @@ if [ ! -f "$JDEST" ]; then
 fi
 
 if [ "$#" != "0" ]; then
-  ARGS=$@
+  ARGS=("$@")
 else
   ARGS=$(find . -name "jacoco.exec" -printf "%p ")
 fi

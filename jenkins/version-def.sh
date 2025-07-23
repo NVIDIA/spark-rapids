@@ -55,8 +55,7 @@ echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER, CLASSIFIER: $CLASSIFIER, PROJECT_VER: $
 # get Spark shim versions from pom
 function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     PROFILE_OPT=$1
-    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
-    SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
+    SPARK_SHIM_VERSIONS_STR=$(echo -n $(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout))
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
 
@@ -97,7 +96,7 @@ case $PHASE_TYPE in
         ;;
 
     *)
-        SPARK_SHIM_VERSIONS=(`echo "$PHASE_TYPE"`)
+        SPARK_SHIM_VERSIONS=($PHASE_TYPE)
         ;;
 esac
 # base version
