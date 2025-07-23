@@ -70,7 +70,6 @@ case class GpuAtomicCreateTableAsSelectExec(
 
       throw QueryCompilationErrors.tableAlreadyExistsError(ident)
     }
-
     val stagedTable = catalog.stageCreate(
       ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
       partitioning.toArray, properties.asJava)
