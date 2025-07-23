@@ -417,7 +417,40 @@ def test_combine_string_contains_in_case_when(combine_string_contains_enabled):
         { "spark.rapids.sql.expression.combined.GpuContains" : combine_string_contains_enabled}
     )
 
+_data_gen_for_between = [("c1", string_gen), ("c2", byte_gen), ("c3", short_gen), ("c4", int_gen),
+                         ("c5", long_gen), ("c6", float_gen), ("c7", double_gen)]
+
+# test between expr:  between(x, min, max)
 @pytest.mark.skipif(is_before_spark_400(), reason="Only supports Spark versions: 400 and 400+")
-def test_between():
+def test_between_expr():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, int_gen).selectExpr('between(a, 1, 1024)'))
+        lambda spark : gen_df(spark, _data_gen_for_between).selectExpr(
+            """
+                BETWEEN(c1, 'a', null),
+                BETWEEN(c1, 'a', 'Z'),
+                BETWEEN(c2, CAST(1 as byte), cast(127 as byte)),
+                BETWEEN(c3, cast(-1 as short), cast(1024 as short)),
+                BETWEEN(c4, 2048, 4096),
+                BETWEEN(c5, cast(4096 as long), cast(1000000 as long)),
+                BETWEEN(c6, CAST(1.1 as float), CAST(90000.02 as float)),
+                BETWEEN(c7, 1.2, 1234576.11)
+            """))
+
+# test between sql:  x between min and max
+def test_between_sql():
+    sql =  """
+        SELECT
+            c1 BETWEEN 'a' AND 'Z',
+            c2 BETWEEN CAST(1 as byte) AND cast(127 as byte),
+            c3 BETWEEN cast(-1 as short) AND cast(1024 as short),
+            c4 BETWEEN 2048 AND 4096,
+            c5 BETWEEN cast(4096 as long) AND cast(1000000 as long),
+            c6 BETWEEN CAST(1.1 as float) AND CAST(90000.02 as float),
+            c7 BETWEEN 1.2 AND 1234576.11,
+            c1 BETWEEN 'a' AND null
+        from tab
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, _data_gen_for_between),
+        "tab",
+        sql)
