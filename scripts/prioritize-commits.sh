@@ -59,7 +59,7 @@ if [ -e ${PRIORITIZED_COMMITS} ]; then
   rm ${PRIORITIZED_COMMITS}
 fi  
 # Read each commit and commit message
-while read COMMIT_ID COMMIT_MSG
+while read -r COMMIT_ID COMMIT_MSG
 do
   echo checking commit $COMMIT_ID
   # Get the scala and java files changed in this commit
@@ -88,7 +88,7 @@ do
   # dedupe
   for CLASS in $(echo -e $CLASSES|sort|uniq|xargs)
   do
-  if [ ! -z "${CLASS}" ]; then
+  if [ -n "${CLASS}" ]; then
     # Look for the class name in the dependencies to determine if this change affects us
     set +ex
     FOUND=$(grep -c ${CLASS} <<< ${DEPS})
@@ -99,7 +99,7 @@ do
     fi
   fi
   done
-  if [ ! -z "${FOUND_REFS}" ]; then
+  if [ -n "${FOUND_REFS}" ]; then
     printf "%s\t%s\t%s\n" "P1" "${COMMIT_ID}" "${COMMIT_MSG}" >> ${PRIORITIZED_COMMITS}
     printf "%s\t%s\t%s\n" "${COMMIT_ID}" "${FOUND_REFS}" >> ${AUDIT_PLUGIN_LOG}
   else 
