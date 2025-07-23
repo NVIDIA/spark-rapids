@@ -430,9 +430,7 @@ def test_case_when_with_side_effect_in_else():
     """
 
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: unary_op_df(spark,
-                                  SetValuesGen(ArrayType(IntegerType()), [[1, 2, 3]]),
-                                  length=10),
+        lambda spark: unary_op_df(spark, SetValuesGen(ArrayType(IntegerType()), [[1, 2, 3]]), 10),
         "else_side_effect",
         sql
     )
