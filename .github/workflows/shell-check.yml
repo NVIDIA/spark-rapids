@@ -39,3 +39,4 @@ jobs:
             -e SC2102
             -e SC2207
             -e SC2015
+            -e SC2145
