@@ -1463,7 +1463,6 @@ def test_try_add_fallback_to_cpu(data_gen):
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_add(a, b) as result"), "Add")
 
-@approximate_float
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_divide_fallback_to_cpu(data_gen):
@@ -1472,7 +1471,6 @@ def test_try_divide_fallback_to_cpu(data_gen):
             "try_divide(a, b) as result"), "Divide")
 
 @pytest.mark.skipif(is_before_spark_400(), reason="try_mod is not supported before Spark 4.0.0")
-@approximate_float
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_mod_fallback_to_cpu(data_gen):
@@ -1481,7 +1479,6 @@ def test_try_mod_fallback_to_cpu(data_gen):
             "try_mod(a, b) as result"), "Remainder")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_subtract is not supported before Spark 3.3.0")
-@approximate_float
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_subtract_fallback_to_cpu(data_gen):
@@ -1490,7 +1487,6 @@ def test_try_subtract_fallback_to_cpu(data_gen):
             "try_subtract(a, b) as result"), "Subtract")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_multiply is not supported before Spark 3.3.0")
-@approximate_float
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_multiply_fallback_to_cpu(data_gen):
