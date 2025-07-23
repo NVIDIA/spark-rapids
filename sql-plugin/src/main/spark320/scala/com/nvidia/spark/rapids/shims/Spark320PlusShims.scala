@@ -171,6 +171,11 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           GpuOverrides.checkAndTagFloatAgg(a.child.dataType, this.conf, this)
+
+          // Check if this Average expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_avg is not supported on GPU")
+          }
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
