@@ -1513,6 +1513,7 @@ def test_try_sum_groupby_fallback_to_cpu(data_gen):
         'HashAggregateExec')
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_avg is not supported before Spark 3.3.0")
+@approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
