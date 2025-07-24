@@ -332,7 +332,7 @@ case class GpuCaseWhen(
     branches.map(_._2.dataType) ++ elseValue.map(_.dataType)
   }
 
-  private lazy val hasSideEffects =
+  private lazy val haveSideEffects =
     branches.exists(_._2.asInstanceOf[GpuExpression].hasSideEffects) ||
       elseValue.exists(_.asInstanceOf[GpuExpression].hasSideEffects)
 
@@ -367,7 +367,7 @@ case class GpuCaseWhen(
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    if (hasSideEffects) {
+    if (haveSideEffects) {
       columnarEvalWithSideEffects(batch)
     } else {
       if (useFusion) {

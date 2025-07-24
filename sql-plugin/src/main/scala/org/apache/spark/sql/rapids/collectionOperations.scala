@@ -443,7 +443,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
 
   override def hasSideEffects: Boolean = super.hasSideEffects || failOnError || {
     right match {
-      case GpuLiteral(index, _) if index != 0 => false
+      case GpuLiteral(index: Int, _) if index != 0 => false
       case _ => true
     }
   }
