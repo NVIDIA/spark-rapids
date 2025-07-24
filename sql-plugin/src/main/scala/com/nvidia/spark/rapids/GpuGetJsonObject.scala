@@ -23,7 +23,7 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.JSONUtils
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{GetJsonObjectShim, ShimExpression}
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, ExpectsInputTypes, Expression, GetJsonObject}
@@ -66,7 +66,7 @@ object JsonPathParser extends RegexParsers {
   // parse `.name` or `['name']` child expressions
   def named: Parser[List[PathInstruction]] =
     for {
-      name <- '.' ~> "[^\\.\\[]+".r | "['" ~> "[^\\'\\?]+".r <~ "']"
+      name <- '.' ~> "[^\\.\\[]+".r | "['" ~> GetJsonObjectShim.partRegexpInNamed.r <~ "']"
     } yield {
       Key :: Named(name) :: Nil
     }

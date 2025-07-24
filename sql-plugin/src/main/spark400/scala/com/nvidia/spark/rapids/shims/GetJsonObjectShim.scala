@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark350PlusNonDBShims
+object GetJsonObjectShim {
+  /**
+   * Return a shim string for a part in named Regexp.
+   * For Spark versions before 400, named Regexp is:
+   *   name <- '.' ~> "[^\\.\\[]+".r | "['" ~> "[^\\'\\?]+".r <~ "']"
+   * For Spark versions 400 and 400+, named Regexp is:
+   *   name <- '.' ~> "[^\\.\\[]+".r | "['" ~> "[^\\']+".r <~ "']"
+   * This is the shim to distinct "[^\\'\\?]+" and "[^\\']+"
+   *
+   * "[^\\'\\?]+" : One or more chars which are not: ' or ?
+   * "[^\\']+"    : One or more chars which are not: '
+   */
+  def partRegexpInNamed: String = "[^\\']+"
+}

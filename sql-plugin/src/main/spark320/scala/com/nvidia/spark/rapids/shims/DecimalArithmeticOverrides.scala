@@ -158,6 +158,12 @@ object DecimalArithmeticOverrides {
         ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // Check if this Multiply expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_multiply is not supported on GPU")
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           super.tagSelfForAst();
@@ -187,6 +193,13 @@ object DecimalArithmeticOverrides {
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
         // Division of Decimal types is a little odd. To work around some issues with
         // what Spark does the tagging/checks are in CheckOverflow instead of here.
+        override def tagExprForGpu(): Unit = {
+          // Check if this Divide expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_divide is not supported on GPU")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           a.dataType match {
             case _: DecimalType =>
@@ -213,6 +226,13 @@ object DecimalArithmeticOverrides {
         ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // Check if this Remainder expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_mod is not supported on GPU")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRemainder(lhs, rhs)
       })

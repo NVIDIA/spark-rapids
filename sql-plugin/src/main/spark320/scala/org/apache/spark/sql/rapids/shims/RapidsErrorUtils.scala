@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.unsafe.types.UTF8String
 
 object RapidsErrorUtils extends RapidsQueryErrorUtils
   with SequenceSizeTooLongErrorBuilder with ArrayInvalidArgumentErrorUtils {
@@ -86,5 +87,9 @@ object RapidsErrorUtils extends RapidsQueryErrorUtils
 
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
+  }
+
+  def invalidInputSyntaxForBooleanError(s: UTF8String): RuntimeException = {
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s)
   }
 }
