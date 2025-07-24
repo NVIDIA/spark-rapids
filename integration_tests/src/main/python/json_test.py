@@ -1120,6 +1120,7 @@ _to_json_datagens=[byte_gen,
     'UTC',
     'Etc/UTC'
 ])
+@allow_non_gpu(*non_utc_project_allow)
 def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     struct_gen = StructGen([
         ('a', data_gen),
@@ -1152,6 +1153,7 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone)
     'UTC',
     'Etc/UTC'
 ])
+@allow_non_gpu(*non_utc_project_allow)
 def test_arrays_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     array_gen = ArrayGen(data_gen, nullable=True)
     gen = StructGen([("my_array", array_gen)], nullable=False)
@@ -1177,6 +1179,7 @@ def test_arrays_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     'UTC',
     'Etc/UTC'
 ])
+@allow_non_gpu(*non_utc_project_allow)
 def test_maps_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     map_gen = MapGen(StringGen('[A-Z]{1,10}', nullable=False), data_gen, nullable=True)
     gen = StructGen([("my_map", map_gen)], nullable=False)
@@ -1204,6 +1207,7 @@ def test_maps_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     'UTC',
     'Etc/UTC'
 ])
+@allow_non_gpu(*non_utc_project_allow)
 def test_structs_to_json_timestamp(spark_tmp_path, data_gen, timestamp_format, timezone):
     struct_gen = StructGen([
         ("b", StructGen([('child', data_gen)], nullable=True)),
