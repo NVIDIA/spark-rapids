@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import DateType, TimestampType, NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later, is_databricks133_or_later, is_spark_350_or_later, spark_version, with_cpu_session
+from spark_session import is_before_spark_320, is_databricks113_or_later, is_databricks133_or_later, is_spark_350_or_later, spark_version, with_cpu_session, is_spark_340_or_later
 import warnings
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -272,6 +272,10 @@ def test_window_decimal_near_overflow_sum(precision, ansi):
 # Window uses a lot of memory, so we are only going to do a few here, even less for avg
 # because of how many rows we need for a SUM overflow to happen.
 @nightly_gpu_mem_consuming_case
+# https://issues.apache.org/jira/browse/SPARK-39316 changed how divide works in 3.4.0
+# which made it so divide can work on larger ranges. For older Spark versions this test
+# just does not work for precision 38 and 37, even though the SUM does not overflow.
+@pytest.mark.skipif(not is_spark_340_or_later(), reason='overflow on older spark versions')
 @pytest.mark.parametrize('precision', [38, 37], ids=idfn)
 @pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NOT_ANSI"])
 def test_window_decimal_near_overflow_avg(precision, ansi):
