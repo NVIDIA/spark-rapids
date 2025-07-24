@@ -165,12 +165,10 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits memoryOverhead configured") {
-    val sparkOffHeapSizeStr = "1g"
     val sparkOverheadStr = "8g"
     val sparkConf = new SparkConf()
       .set("spark.executor.memoryOverhead", sparkOverheadStr)
       .set("spark.memory.offHeap.enabled", "true")
-      .set("spark.memory.offHeap.size", sparkOffHeapSizeStr)
       .set("spark.executor.pyspark.memory", "1g") // should be ignored here
     val rapidsConf = new RapidsConf(sparkConf)
     val (pinnedSize, nonPinnedSize) =
@@ -178,9 +176,8 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
         TestMemoryChecker)
 
     val sparkOverhead = toBytes(sparkOverheadStr)
-    val sparkOffHeapSize = toBytes(sparkOffHeapSizeStr)
     val totalOverhead = toBytes("15m") // default
-    val expectedNonPinned = sparkOverhead - sparkOffHeapSize - totalOverhead
+    val expectedNonPinned = sparkOverhead - totalOverhead
 
     assertResult(0)(pinnedSize)
     assertResult(expectedNonPinned)(nonPinnedSize)
