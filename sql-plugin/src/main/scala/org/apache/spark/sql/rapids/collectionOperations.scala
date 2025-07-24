@@ -441,9 +441,12 @@ object GpuElementAtMeta {
 case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ExpectsInputTypes {
 
-  // It always throws exception when the index is 0 even it's non-ANSI mode.
-  // whether "failOnError" is true or not, so "hasSideEffects" should be true.
-  override def hasSideEffects: Boolean = true
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError || {
+    right match {
+      case GpuLiteral(index, _) if index != 0 => false
+      case _ => true
+    }
+  }
 
   override lazy val dataType: DataType = left.dataType match {
     case ArrayType(elementType, _) => elementType
