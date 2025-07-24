@@ -171,6 +171,11 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           GpuOverrides.checkAndTagFloatAgg(a.child.dataType, this.conf, this)
+
+          // Check if this Average expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_avg is not supported on GPU")
+          }
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -196,17 +201,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
       }),
-    GpuOverrides.expr[Literal](
-      "Holds a static value from the query",
-      ExprChecks.projectAndAst(
-        TypeSig.astTypes,
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
-            + TypeSig.ansiIntervals)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-                TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
-        TypeSig.all),
-      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     GpuOverrides.expr[TimeAdd](
       "Adds interval to timestamp",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,

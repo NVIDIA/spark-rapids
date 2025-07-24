@@ -24,6 +24,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.commands.{DeletionVectorUtils, MergeIntoCommand}
 import org.apache.spark.sql.delta.rapids.GpuDeltaLog
 import org.apache.spark.sql.delta.rapids.delta33x.GpuMergeIntoCommand
+import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.command.RunnableCommand
 
@@ -52,6 +53,13 @@ class MergeIntoCommandMeta(
       // https://github.com/NVIDIA/spark-rapids/issues/8654
       willNotWorkOnGpu("Deletion vectors are not supported on GPU")
     }
+
+    val isClusteredTable = ClusteredTableUtils.getClusterBySpecOptional(
+      mergeCmd.targetFileIndex.deltaLog.unsafeVolatileSnapshot).isDefined
+    if (isClusteredTable) {
+      willNotWorkOnGpu("Liquid clustering is not supported on GPU")
+    }
+
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, Some(deltaLog), Map.empty,
       SparkSession.active)
