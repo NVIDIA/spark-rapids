@@ -494,13 +494,21 @@ object GpuDeviceManager extends Logging {
         // constraints, we can fall back to minMemoryLimit via saying there's no available
         lazy val availableHostMemory = memCheck.getAvailableMemoryBytes(conf).getOrElse(0L)
         val hostMemUsageFraction = .8
+        // Spark calculates the total mem to allocate to the job as
+        // val totalMemMiB =
+        //      executorMemoryMiB + memoryOverheadMiB + memoryOffHeapMiB + pysparkMemToUseMiB
+        // and RAPIDS uses memory from the overhead portion here. Therefore, if the overhead is
+        // set we can just use that, otherwise we can infer it from the above as
+        // val memoryOverheadMiB =
+        //      totalMemMiB - executorMemoryMiB - memoryOffHeapMiB - pysparkMemToUseMiB
+        // where totalMemMiB is instead derived from the actual mem limits we can observe
+        // directly from the system
         lazy val basedOnHostMemory = (hostMemUsageFraction * ((1.0 * availableHostMemory /
           deviceCount) - heapSize - pysparkOverhead - sparkOffHeapSize)).toLong
         if (executorOverhead.isDefined) {
-          val basedOnConfiguredOverhead = executorOverhead.get - sparkOffHeapSize
+          val basedOnConfiguredOverhead = executorOverhead.get
           logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
-            s"a memory limit from ($executorOverheadKey - " + s"$sparkOffHeapSizeKey) = " +
-            s"(${executorOverhead.get} - " + s"$sparkOffHeapSize) = $basedOnConfiguredOverhead")
+            s"a memory limit from ($executorOverheadKey = ${executorOverhead.get}")
           if (basedOnConfiguredOverhead < minMemoryLimit) {
             logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
               s"$minMemoryLimit; using the latter")
