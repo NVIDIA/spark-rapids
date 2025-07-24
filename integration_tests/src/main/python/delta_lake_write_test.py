@@ -282,7 +282,12 @@ def _atomic_write_table_as_select_sql(gens, spark_tmp_table_factory, spark_tmp_p
         table_props_str = ",\n".join([f"'{k}' = '{v}'" for k, v in table_props.items()])
 
         if replace:
-            df.coalesce(1).write.format("delta").option('path', path).saveAsTable(table)
+            (df.coalesce(1)
+             .write
+             .format("delta")
+             .option('path', path)
+             .partitionBy("p1")
+             .saveAsTable(table))
             ddl = (f"CREATE OR REPLACE TABLE {table} "
                    f"USING DELTA "
                    f"LOCATION '{path}' "
