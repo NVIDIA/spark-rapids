@@ -180,13 +180,11 @@ def test_multiplication(data_gen):
                 f.col('a') * f.col('b')
                 ))
 
-@allow_non_gpu('ProjectExec', 'Alias', 'Multiply', 'Cast')
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback, ids=idfn)
-def test_multiplication_fallback_when_ansi_enabled(data_gen):
-    assert_gpu_fallback_collect(
+def test_multiplication_no_overflow_and_ansi_enabled(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') * f.col('b')),
-            'Multiply',
             conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen, decimal_gen_32bit, DecimalGen(19, 0)], ids=idfn)
