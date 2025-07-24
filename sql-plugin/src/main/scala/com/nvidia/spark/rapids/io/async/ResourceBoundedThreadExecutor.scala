@@ -42,15 +42,18 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
   override def run(): Unit = if (!caughtException) {
     require(!completed, "Task has already been completed")
     if (heldResource) {
+      // pass the schedule time to the task metrics builder
+      task.metricsBuilder.setScheduleTimeMs(scheduleTime)
       super.run()
       completed = true
     }
   }
 
-  def holdResource(): Unit = {
+  def holdResource(elapsedNs: Long): Unit = {
     require(!completed, "Task has already been completed")
     require(!heldResource, "Cannot hold resource that is already held")
     heldResource = true
+    scheduleTime += elapsedNs
   }
 
   def releaseResource(): Unit = {
@@ -58,8 +61,9 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
     heldResource = false
   }
 
-  def adjustPriority(delta: Float): Float = {
+  def adjustPriority(delta: Float, timeoutNs: Long): Float = {
     require(!completed, "Task has already been completed")
+    scheduleTime += timeoutNs
     priority += delta
     priority
   }
@@ -73,6 +77,8 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
   def isHeldResource: Boolean = heldResource
 
   def isCompleted: Boolean = completed
+
+  private[async] var scheduleTime: Long = 0L
 }
 
 /**
@@ -85,7 +91,16 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
  */
 class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTask[T]] {
   override def compare(o1: RapidsFutureTask[T], o2: RapidsFutureTask[T]): Int = {
-    (-o1.priority).compareTo(-o2.priority)
+    if (o1.isHeldResource) {
+      // o1 is holding resource, so o1 should come before o2
+      -1
+    } else if (o2.isHeldResource) {
+      // o2 is holding resource, so o2 should come before o1
+      1
+    } else {
+      // both tasks are not holding resources, compare by priority
+      (-o1.priority).compareTo(-o2.priority)
+    }
   }
 }
 
@@ -126,7 +141,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     keepAliveTime: Long = 100L) extends ThreadPoolExecutor(corePoolSize,
   maximumPoolSize, keepAliveTime, TimeUnit.SECONDS, workQueue, threadFactory) with Logging {
 
-  logWarning(s"Creating ResourceBoundedThreadExecutor with resourcePool: ${mgr.toString}, " +
+  logInfo(s"Creating ResourceBoundedThreadExecutor with resourcePool: ${mgr.toString}, " +
     s"corePoolSize: $corePoolSize, maximumPoolSize: $maximumPoolSize, " +
     s"waitResourceTimeoutMs: $waitResourceTimeoutMs, retryPriorityAdjustment: $retryPriorAdjust")
 
@@ -182,8 +197,8 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     r match {
       case fut: RapidsFutureTask[_] =>
         mgr.acquireResource(fut.task, waitResourceTimeoutMs) match {
-          case AcquireSuccessful =>
-            fut.holdResource()
+          case s: AcquireSuccessful =>
+            fut.holdResource(s.elapsedTime)
           case AcquireFailed =>
             // bypass the execution via not holding the resource
           case AcquireExcepted(exception) =>
@@ -212,7 +227,13 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
         // If the task failed to acquire enough resource, we bypass the execution and re-add it to
         // the task queue with a priority penalty to avoid starvation.
         if (t == null && !fut.isCompleted) {
-          fut.adjustPriority(retryPriorAdjust)
+          // IMPORTANT: Ensure the priority penalty >=1000 in case the timeout task being
+          // polled recursively.
+          val priorPenalty = -retryPriorAdjust min -1e3f
+          fut.adjustPriority(priorPenalty, waitResourceTimeoutMs * 1000000L)
+          val holdingResource = fut.task.asInstanceOf[GroupedAsyncTask[_]].isHoldingResource
+          logWarning(s"Re-add timeout task: scheduleTime(${fut.scheduleTime / 1e9}s), " +
+              s"new priority(${fut.priority}), holdingResource($holdingResource)")
           require(workQueue.add(fut),
             s"Failed to re-add task ${fut.task} to the work queue after execution")
         }

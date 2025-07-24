@@ -2486,7 +2486,9 @@ class MultiFileCloudParquetPartitionReader(
       // Combine the metrics from all the parts
       val filterTime = combinedMeta.toCombine.map(_.getFilterTime).sum
       val bufferTime = combinedMeta.toCombine.map(_.getBufferTime).sum
-      newHmbMeta.setMetrics(filterTime, bufferTime)
+      newHmbMeta.setExecutionTime(filterTime, bufferTime)
+      val scheduleTime = combinedMeta.toCombine.map(_.getScheduleTime).sum
+      newHmbMeta.setScheduleTime(scheduleTime)
       // Combine the release callbacks from all the parts
       combinedMeta.toCombine.foreach { hmb =>
         hmb.combineReleaseCallbacks(newHmbMeta)
@@ -2748,7 +2750,7 @@ class MultiFileCloudParquetPartitionReader(
           throw e
       }
       val bufferTime = System.nanoTime() - bufferStartTime
-      result.setMetrics(filterTime, bufferTime)
+      result.setExecutionTime(filterTime, bufferTime)
       result
     }
   }

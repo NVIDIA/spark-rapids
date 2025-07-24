@@ -887,7 +887,7 @@ class GpuMultiFileCloudAvroPartitionReader(
         } // end of withResource(reader)
       val bufferTime = System.nanoTime() - bufferStartTime
       // multi-file avro scanner does not filter and then buffer, it just buffers
-      result.setMetrics(0, bufferTime)
+      result.setExecutionTime(0, bufferTime)
       result
     } // end of doRead
   } // end of Class ReadBatchRunner

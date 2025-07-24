@@ -40,6 +40,27 @@ object TaskResource {
   def newGpuResource(): TaskResource = DeviceResource
 }
 
+case class AsyncMetrics(scheduleTimeMs: Long, executionTimeMs: Long)
+
+class AsyncMetricsBuilder {
+  private var scheduleTimeMs: Long = 0L
+  private var executionTimeMs: Long = 0L
+
+  def setScheduleTimeMs(time: Long): AsyncMetricsBuilder = {
+    this.scheduleTimeMs = time
+    this
+  }
+
+  def setExecutionTimeMs(time: Long): AsyncMetricsBuilder = {
+    this.executionTimeMs = time
+    this
+  }
+
+  def build(): AsyncMetrics = {
+    AsyncMetrics(scheduleTimeMs, executionTimeMs)
+  }
+}
+
 /**
  * Result wrapper for AsyncTask execution that carries the task's output data and optional
  * resource release callback for deferred resource management.
@@ -50,11 +71,15 @@ trait AsyncResult[T] {
   def releaseResourceCallback(): Unit = {}
 
   def hasReleaseCallback: Boolean = false
+
+  def metrics: AsyncMetrics
 }
 
-class SimpleAsyncResult[T](override val data: T) extends AsyncResult[T]
+class SimpleAsyncResult[T](override val data: T,
+    override val metrics: AsyncMetrics) extends AsyncResult[T]
 
 class AsyncResultDecayRelease[T](override val data: T,
+    override val metrics: AsyncMetrics,
     private val releaseCallback: () => Unit) extends AsyncResult[T] {
   override val hasReleaseCallback: Boolean = true
 
@@ -91,22 +116,24 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
    * resources if needed. This method can be overridden by subclasses to customize the result
    * format to carry additional metadata or state.
    */
-  protected def buildResult(resultData: T): AsyncResult[T] = {
+  protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T] = {
     if (!holdResourceAfterCompletion) {
-      new SimpleAsyncResult(resultData)
+      new SimpleAsyncResult(resultData, metrics)
     } else {
-      new AsyncResultDecayRelease(resultData, releaseResource)
+      new AsyncResultDecayRelease(resultData, metrics, releaseResource)
     }
   }
 
   def call(): AsyncResult[T] = {
-    try {
+    val startTime = System.nanoTime()
+    val resultData = try {
       beforeExecuteHook.foreach { hook => hook() }
-      val resultData = callImpl()
-      buildResult(resultData)
+      callImpl()
     } finally {
       afterExecuteHook.foreach { hook => hook() }
     }
+    metricsBuilder.setExecutionTimeMs(System.nanoTime() - startTime)
+    buildResult(resultData, metricsBuilder.build())
   }
 
   protected var beforeExecuteHook: Option[() => Unit] = None
@@ -153,6 +180,8 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
   private[async] var releaseResourceCallback: () => Unit = _
 
   private[async] var holdResource = false
+
+  private[async] lazy val metricsBuilder = new AsyncMetricsBuilder
 }
 
 /**
@@ -259,7 +288,7 @@ class InvalidResourceRequest(msg: String) extends RuntimeException(
 
 // Represents the status of acquiring resources for a task
 sealed trait AcquireStatus
-case object AcquireSuccessful extends AcquireStatus
+case class AcquireSuccessful(elapsedTime: Long) extends AcquireStatus
 // AcquireFailed indicates that the task could not be scheduled due to resource constraints
 case object AcquireFailed extends AcquireStatus
 // AcquireExcepted indicates that an exception occurred while trying to acquire resources
@@ -318,7 +347,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
     }
     requiredAmount match {
       case 0 =>
-        AcquireSuccessful
+        AcquireSuccessful(elapsedTime = 0L)
       case required if required > maxHostMemoryBytes =>
         // Call the failure callback to notify the caller about the failure
         AcquireExcepted(
@@ -327,7 +356,8 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
       case required: Long =>
         var isDone = false
         var isTimeout = false
-        var waitTimeNs = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        val timeoutNs = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        var waitTimeNs = timeoutNs
         lock.lockInterruptibly()
         try {
           while (!isDone && !isTimeout) {
@@ -356,7 +386,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
               case _ => // No action needed for non-grouped tasks
             }
             task.onAcquire()
-            AcquireSuccessful
+            AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
           } else {
             AcquireFailed
           }
@@ -381,7 +411,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
         case _ =>
           holdingGroups.get()
       }
-      logWarning(s"Release HostMemory(${toRelease >> 20}MB), remaining=${newVal >> 20}MB, " +
+      logDebug(s"Release HostMemory(${toRelease >> 20}MB), remaining=${newVal >> 20}MB, " +
           s"pending $pendingTaskNum tasks($pendingGroupNum groups)")
       lock.lock()
       condition.signalAll()

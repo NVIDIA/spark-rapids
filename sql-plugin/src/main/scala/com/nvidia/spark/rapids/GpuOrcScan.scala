@@ -2138,7 +2138,7 @@ class MultiFileCloudOrcPartitionReader(
           throw e
       }
       val bufferTime = System.nanoTime() - bufferTimeStart
-      result.setMetrics(filterTime, bufferTime)
+      result.setExecutionTime(filterTime, bufferTime)
       result
     }
   }
@@ -2388,7 +2388,7 @@ class MultiFileCloudOrcPartitionReader(
             allPartValues = Some(combinedMeta.allPartValues))
           val filterTime = combinedMeta.toCombine.map(_.getFilterTime).sum
           val bufferTime = combinedMeta.toCombine.map(_.getBufferTime).sum
-          newHmbWithMeta.setMetrics(filterTime, bufferTime)
+          newHmbWithMeta.setExecutionTime(filterTime, bufferTime)
           newHmbWithMeta
         }
       }

@@ -81,6 +81,8 @@ trait HostMemoryBuffersWithMetaDataBase {
   private var _filterTime: Long = 0L
   // Time spent on buffering
   private var _bufferTime: Long = 0L
+  // Time spent on waiting for (virtual) resource
+  private var _scheduleTime: Long = 0L
 
   // The partition values which are needed if combining host memory buffers
   // after read by the multithreaded reader but before sending to GPU.
@@ -88,22 +90,30 @@ trait HostMemoryBuffersWithMetaDataBase {
 
   // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)
   // that filtering and buffering incurred in one of the scan runners.
-  def setMetrics(filterTime: Long, bufferTime: Long): Unit = {
+  def setExecutionTime(filterTime: Long, bufferTime: Long): Unit = {
     _bufferTime = bufferTime
     _filterTime = filterTime
   }
 
+  def setScheduleTime(time: Long): Unit = _scheduleTime = time
+
   def getBufferTime: Long = _bufferTime
   def getFilterTime: Long = _filterTime
+  def getScheduleTime: Long = _scheduleTime
 
   def getBufferTimePct: Double = {
-    val totalTime = _filterTime + _bufferTime
+    val totalTime = _filterTime + _bufferTime + _scheduleTime
     _bufferTime.toDouble / totalTime
   }
 
   def getFilterTimePct: Double = {
-    val totalTime = _filterTime + _bufferTime
+    val totalTime = _filterTime + _bufferTime + _scheduleTime
     _filterTime.toDouble / totalTime
+  }
+
+  def getScheduleTimePct: Double = {
+    val totalTime = _filterTime + _bufferTime + _scheduleTime
+    _scheduleTime.toDouble / totalTime
   }
 
   def releaseResource(): Unit = {
@@ -363,7 +373,8 @@ object ResourcePoolConf {
     ResourcePoolConf(
       rapidsConf.multiThreadMemoryLimit,
       rapidsConf.multiThreadReadTaskTimeout,
-      2.0f, // The default retry priority adjust is 2.0f
+      // Currently we hardcode the retry penalty as -1000f inside ResourceBoundedThreadExecutor
+      0.0f,
       rapidsConf.multiThreadReadNumThreads,
       rapidsConf.multiThreadReadStageLevelPool)
   }
@@ -436,6 +447,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     if (!isInit.compareAndSet(false, true)) {
       return 0
     }
+    metrics.get("numPartedFiles").foreach(_ += inputFiles.length)
 
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, inputFiles.length)
@@ -588,21 +600,22 @@ abstract class MultiFileCloudPartitionReaderBase(
   }
 
   // Unwrap AsyncTaskResult to facilitate the combination of file buffers.
-  protected def convertAsyncResult(taskResult: AsyncTaskResult): BufferResult = {
-    if (taskResult == null) {
+  private def convertAsyncResult(taskRet: AsyncTaskResult): BufferResult = {
+    if (taskRet == null) {
       return null
     }
-    if (taskResult.hasReleaseCallback) {
-        taskResult.data match {
+    if (taskRet.hasReleaseCallback) {
+        taskRet.data match {
           // If the task result is empty, call the release callback ASAP.
           case bufWithMeta if bufWithMeta.bytesRead == 0 =>
-            taskResult.releaseResourceCallback()
+            taskRet.releaseResourceCallback()
           // inject the release callback for deferred release
           case bufWithMeta =>
-            bufWithMeta.addReleaseResourceCallback(taskResult.releaseResourceCallback)
+            bufWithMeta.addReleaseResourceCallback(taskRet.releaseResourceCallback)
         }
     }
-    taskResult.data
+    taskRet.data.setScheduleTime(taskRet.metrics.scheduleTimeMs)
+    taskRet.data
   }
 
   /**
@@ -762,8 +775,10 @@ abstract class MultiFileCloudPartitionReaderBase(
           // clock as we can get right now without further work.
           val bufTime = metrics.getOrElse(BUFFER_TIME, NoopMetric)
           val filterTime = metrics.getOrElse(FILTER_TIME, NoopMetric)
+          val scheduleTime = metrics.getOrElse(SCHEDULE_TIME, NoopMetric)
           val bufWithSem = metrics.getOrElse(BUFFER_TIME_WITH_SEM, NoopMetric)
           val filterWithSem = metrics.getOrElse(FILTER_TIME_WITH_SEM, NoopMetric)
+          val scheduleWithSem = metrics.getOrElse(SCHEDULE_TIME_WITH_SEM, NoopMetric)
 
           val fileBufsAndMeta = {
             if (GpuMetric.isTimeMetric(bufTime) && GpuMetric.isTimeMetric(filterTime) &&
@@ -779,10 +794,13 @@ abstract class MultiFileCloudPartitionReaderBase(
               }
               val filterPct = ret.getFilterTimePct
               val bufferPct = ret.getBufferTimePct
+              val schedulePct = ret.getScheduleTimePct
               filterTime += (wallClockInc.value * filterPct).toLong
               bufTime += (wallClockInc.value * bufferPct).toLong
+              scheduleTime += (wallClockInc.value * schedulePct).toLong
               filterWithSem += (semInc.value * filterPct).toLong
               bufWithSem += (semInc.value * bufferPct).toLong
+              scheduleWithSem += (semInc.value * schedulePct).toLong
               ret
             } else {
               // Collect wall clock time only
@@ -791,6 +809,7 @@ abstract class MultiFileCloudPartitionReaderBase(
               val blockedTime = System.nanoTime() - startTime
               filterTime += (blockedTime * ret.getFilterTimePct).toLong
               bufTime += (blockedTime * ret.getBufferTimePct).toLong
+              scheduleTime += (blockedTime * ret.getScheduleTimePct).toLong
               ret
             }
           }
