@@ -257,20 +257,16 @@ def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
                                   overwrite=True, enable_deletion_vectors=enable_deletion_vectors)
 
-def _atomic_write_table_as_select_sql(gens, spark_tmp_table_factory, spark_tmp_path, replace,
+def _atomic_write_table_as_select_sql(gens, spark_tmp_table_factory, replace,
                                       enable_deletion_vectors, use_cdf):
     gen_list = ([("p1", SetValuesGen(IntegerType(), [1, 2, 3]))] +
                 [("c" + str(i), gen) for (i, gen) in enumerate(gens)])
-    data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
-    path_to_table = {}
 
-    def do_write(spark, path):
-        table = spark_tmp_table_factory.get()
+    def do_write(spark, table):
         view = spark_tmp_table_factory.get()
         df = gen_df(spark, gen_list)
         df.createOrReplaceTempView(view)
-        path_to_table[path] = table
 
         table_props = {
             'delta.enableChangeDataFeed': f'{str(use_cdf).lower()}'
@@ -285,29 +281,25 @@ def _atomic_write_table_as_select_sql(gens, spark_tmp_table_factory, spark_tmp_p
             (df.coalesce(1)
              .write
              .format("delta")
-             .option('path', path)
              .partitionBy("p1")
              .saveAsTable(table))
             ddl = (f"CREATE OR REPLACE TABLE {table} "
                    f"USING DELTA "
-                   f"LOCATION '{path}' "
                    f"PARTITIONED BY (p1) "
                    f"TBLPROPERTIES ( {table_props_str} )"
                    f"AS SELECT * FROM {view}")
         else:
             ddl = (f"CREATE TABLE {table} "
                    f"USING DELTA "
-                   f"LOCATION '{path}' "
                    f"PARTITIONED BY (p1) "
                    f"TBLPROPERTIES ( {table_props_str} )"
                    f"AS SELECT * FROM {view}")
 
         spark.sql(ddl)
 
-    assert_gpu_and_cpu_writes_are_equal_collect(
+    assert_gpu_and_cpu_save_as_table_are_equal_collect(
+        spark_tmp_table_factory,
         do_write,
-        lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
-        data_path,
         conf=confs)
 
 
@@ -318,9 +310,8 @@ def _atomic_write_table_as_select_sql(gens, spark_tmp_table_factory, spark_tmp_p
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
     enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-def test_delta_ctas_sql(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors,
-                        use_cdf):
-    _atomic_write_table_as_select_sql(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
+def test_delta_ctas_sql(spark_tmp_table_factory, enable_deletion_vectors, use_cdf):
+    _atomic_write_table_as_select_sql(delta_write_gens, spark_tmp_table_factory,
                                       False, enable_deletion_vectors, use_cdf)
 
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
@@ -331,9 +322,8 @@ def test_delta_ctas_sql(spark_tmp_table_factory, spark_tmp_path, enable_deletion
     enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.xfail(is_spark_356_or_later(), reason="https://github.com/delta-io/delta/issues/4671")
-def test_delta_rtas_sql(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors,
-                        use_cdf):
-    _atomic_write_table_as_select_sql(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
+def test_delta_rtas_sql(spark_tmp_table_factory, enable_deletion_vectors, use_cdf):
+    _atomic_write_table_as_select_sql(delta_write_gens, spark_tmp_table_factory,
                                       True, enable_deletion_vectors, use_cdf)
 
 
