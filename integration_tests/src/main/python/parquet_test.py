@@ -1575,7 +1575,7 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
     # tzinfo=None makes it timestamp_ntz
     # We don't support reading TimestampNTZ yet, but when we do add it.
     #pytest.param(DateGen(start=date(1970, 1, 1)), TimestampGen(tzinfo=None), 
-    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark'))
+    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark'))
 ], ids=idfn)
 def test_parquet_supported_read_type_changes(spark_tmp_path, from_gen, to_gen):
     data_path = f"{spark_tmp_path}/PARQUET_MAKE_WIDER"
@@ -1613,7 +1613,7 @@ def test_parquet_supported_read_type_changes(spark_tmp_path, from_gen, to_gen):
     # tzinfo=None makes it timestamp_ntz
     # We don't support reading TimestampNTZ yet, but when we do add it.
     #pytest.param(int_gen, TimestampGen(tzinfo=None), {}, 
-    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
     (DateGen(start=date(1600,1,1)), timestamp_gen, {}),
     # Start with 1970 to avoid issues with CORRECTED vs NOT when writing...
     (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'INT96'}),
@@ -1621,11 +1621,11 @@ def test_parquet_supported_read_type_changes(spark_tmp_path, from_gen, to_gen):
     (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MILLIS'}),
     # tzinfo=None makes it timestamp_ntz
     pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'INT96'}, 
-        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
     pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}, 
-        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
     pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MILLIS'}, 
-        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TypestampNTZType is not supported in this version of pyspark')),
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
 ], ids=idfn)
 def test_parquet_unsupported_read_type_changes(spark_tmp_path, from_gen, to_gen, conf):
     data_path = f"{spark_tmp_path}/PARQUET_MAKE_WORSE"
