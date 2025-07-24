@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,31 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark350PlusNonDBShims
+import org.apache.spark.sql.catalyst.expressions.Expression
+
+object TryModeShim {
+  /**
+   * Expression is wrapped under TryEval during query planning which is not supported on GPU.
+   * Example: for try_add(col1, col2) it would be <TryEval> tryeval((col1#0 + col2#1))
+   * So the return value from this function does not matter.
+   */
+  def isTryMode(expr: Expression): Boolean = {
+    false
+  }
+}

@@ -417,6 +417,24 @@ def test_combine_string_contains_in_case_when(combine_string_contains_enabled):
         { "spark.rapids.sql.expression.combined.GpuContains" : combine_string_contains_enabled}
     )
 
+
+def test_case_when_with_side_effect_in_else():
+    sql = """
+        SELECT
+            a,
+            CASE
+                WHEN size(a) > 0 THEN NULL
+                ELSE element_at(a, 0)
+            END
+        FROM else_side_effect
+    """
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: unary_op_df(spark, SetValuesGen(ArrayType(IntegerType()), [[1, 2, 3]]), 10),
+        "else_side_effect",
+        sql
+    )
+
 _data_gen_for_between = [("c1", string_gen), ("c2", byte_gen), ("c3", short_gen), ("c4", int_gen),
                          ("c5", long_gen), ("c6", float_gen), ("c7", double_gen)]
 

@@ -19,7 +19,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_340, is_spark_400_or_later
+from spark_session import is_before_spark_340, is_spark_400_or_later, is_before_spark_400
 
 # regex to generate limit length urls with HOST, PATH, QUERY, REF, PROTOCOL, FILE, AUTHORITY, USERINFO
 url_pattern = r'((http|https|ftp)://)(([a-zA-Z][a-zA-Z0-9]{0,2}\.){0,3}([a-zA-Z][a-zA-Z0-9]{0,2})\.([a-zA-Z][a-zA-Z0-9]{0,2}))' \
@@ -194,6 +194,16 @@ def test_parse_url_query_ansi_mode():
         conf = ansi_enabled_conf
     )
 
+@pytest.mark.skipif(is_before_spark_400(), reason="try_parse_url is not supported before Spark 4.0.0")
+# Add support for parse_url() in ANSI mode https://github.com/NVIDIA/spark-rapids/issues/11193
+@allow_non_gpu('ProjectExec')
+def test_try_parse_url_query_ansi_mode():
+    url_gen = StringGen(url_pattern_with_key)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, url_gen)
+        .selectExpr("a", "try_parse_url(a, 'QUERY', 'abc')", "try_parse_url(a, 'QUERY', 'a')"),
+        conf = ansi_enabled_conf
+    )
 
 @pytest.mark.xfail(is_spark_400_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/12941")
 def test_parse_url_query_with_key_column():

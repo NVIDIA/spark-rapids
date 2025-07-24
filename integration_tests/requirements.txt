@@ -21,3 +21,4 @@ findspark
 fsspec == 2025.3.0
 fastparquet == 0.8.3 ; python_version == '3.8'
 fastparquet == 2024.5.0 ; python_version >= '3.9'
+setuptools ; python_version >= '3.12'
