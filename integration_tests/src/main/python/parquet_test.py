@@ -1514,7 +1514,7 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
     pytest.param(int_gen, long_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
     pytest.param(ArrayGen(ArrayGen(int_gen)), ArrayGen(ArrayGen(long_gen)), marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
     pytest.param(int_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
-    (int_gen, date_gen),
+    pytest.param(int_gen, date_gen, marks=pytest.mark.skipif(is_databricks_version(12,2) or is_databricks_version(13,3), reason='older databricks versions compute this differently from open source and newer versions')),
     pytest.param(float_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
     # tzinfo=None makes it timestamp_ntz
     # We don't support reading TimestampNTZ yet, but when we do add it.
