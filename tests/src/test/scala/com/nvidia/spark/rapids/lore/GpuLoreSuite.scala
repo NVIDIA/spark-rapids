@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.lore
 
-
 import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
