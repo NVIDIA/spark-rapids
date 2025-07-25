@@ -18,14 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.net.URI
 
+import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpExec}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
-import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.spark.SparkContext
 
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SaveMode}
 import org.apache.spark.sql.catalyst.InternalRow

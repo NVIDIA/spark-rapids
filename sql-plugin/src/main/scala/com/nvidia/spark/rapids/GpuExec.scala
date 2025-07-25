@@ -16,10 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
-import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
