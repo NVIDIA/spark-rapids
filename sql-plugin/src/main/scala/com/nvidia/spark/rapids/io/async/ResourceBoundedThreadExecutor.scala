@@ -124,7 +124,7 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
  *
  * @param mgr the ResourcePool for managing resource acquisition and release
  * @param waitResourceTimeoutMs timeout in milliseconds for resource acquisition
- * @param retryPriorAdjust priority adjustment applied to tasks that failed resource acquisition
+ * @param retryPriorityAdjust priority adjustment applied to tasks that fail resource acquisition
  * @param corePoolSize the core number of threads in the pool
  * @param maximumPoolSize the maximum number of threads in the pool
  * @param workQueue the queue for holding tasks before execution
