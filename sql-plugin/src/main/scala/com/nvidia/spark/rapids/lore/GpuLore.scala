@@ -29,6 +29,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -61,7 +62,7 @@ trait GpuLoreRDD {
   }
 }
 
-object GpuLore {
+object GpuLore extends Logging {
   /**
    * Lore id of a plan node.
    */
@@ -83,6 +84,7 @@ object GpuLore {
   }
 
   def dumpPlan[T <: SparkPlan : ClassTag](plan: T, rootPath: Path): Unit = {
+    logInfo(s"LORE: Dumping plan ${plan.getClass.getSimpleName} to ${pathOfRootPlanMeta(rootPath)}")
     dumpObject(plan, pathOfRootPlanMeta(rootPath),
       SparkSessionUtils.sessionFromPlan(plan).sparkContext.hadoopConfiguration)
   }

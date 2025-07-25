@@ -116,3 +116,25 @@ restored data to console.
 
    When attempting to dump a `GpuDataWritingCommandExec` on these versions, LORE will throw an
    `UnsupportedOperationException` with a clear error message indicating the unsupported version.
+
+## Performance Considerations with AQE
+
+When using LORE with Adaptive Query Execution (AQE), there are important performance considerations:
+
+### Double Execution Impact
+
+If the child of a `GpuDataWritingCommandExec` is an unfinalized `AdaptiveSparkPlanExec`, LORE performs **two executions**:
+
+1. **First execution**: Triggers AQE finalization without LORE dump
+2. **Second execution**: Performs LORE dump on the finalized plan
+
+This results in:
+- **~2x execution time** compared to queries without LORE
+- **Double resource usage** (I/O, GPU memory, network)
+- **Increased latency** for AQE queries with LORE enabled
+
+### Mitigation Strategies
+
+- **Selective usage**: Enable LORE only when debugging is necessary
+- **Query planning**: Consider disabling AQE (`spark.sql.adaptive.enabled=false`) for LORE dumps
+- **Performance awareness**: Monitor execution times when LORE is enabled on AQE queries
