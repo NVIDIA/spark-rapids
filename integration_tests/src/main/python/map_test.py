@@ -754,15 +754,15 @@ def test_sql_map_scalars(query):
 
 
 @disable_ansi_mode  # ANSI mode failures are tested separately.
-@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(nullable=False), IntegerGen(nullable=False))], ids=idfn)
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(nullable=False, min_val=0, max_val=10), IntegerGen(nullable=False, min_val=0, max_val=100), nullable=False)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_zip_with(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
-                    'map_zip_with(a, b, (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',]
-
-        return two_col_df(spark, data_gen, data_gen, length=100).selectExpr(columns)
-
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',]
+        df = two_col_df(spark, data_gen, data_gen, length=100)
+        df.write.parquet("/home/raprabhu/dev/data/nulls.parquet", mode="overwrite")
+        return df.selectExpr(columns)
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
