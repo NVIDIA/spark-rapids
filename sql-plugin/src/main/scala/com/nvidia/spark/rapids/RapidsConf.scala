@@ -2539,6 +2539,12 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .stringConf
     .createOptional
 
+  val LORE_SKIP_DUMPING_PLAN = conf("spark.rapids.sql.lore.skip.plan.dump")
+    .doc("Skip dumping plan metadata when doing lore dump")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val CASE_WHEN_FUSE =
     conf("spark.rapids.sql.case_when.fuse")
       .doc("If when branches is greater than 2 and all then/else values in case when are string " +
@@ -3514,6 +3520,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     .getOrElse(Map.empty)
 
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
+
+  lazy val loreSkipDumpingPlan: Boolean = get(LORE_SKIP_DUMPING_PLAN)
 
   lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 
