@@ -339,12 +339,12 @@ case class GpuConcatWs(children: Seq[Expression])
     withResourceIfAllowed(expr.columnarEvalAny(batch)) {
       case vector: GpuColumnVector =>
         vector.dataType() match {
-          case ArrayType(_: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
+          case ArrayType(StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
           case _ => vector.incRefCount()
         }
       case s: GpuScalar =>
         s.dataType match {
-          case ArrayType(_: StringType, _) =>
+          case ArrayType(StringType, _) =>
             // we have to first concatenate any array types
             withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
               concatArrayCol(colOrScalarSep, cv)

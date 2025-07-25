@@ -26,7 +26,7 @@ object DataTypeUtils {
   }
 
   def hasOffset(dataType: DataType): Boolean = dataType match {
-    case _: ArrayType | _: StringType | _: BinaryType => true
+    case _: ArrayType | StringType | _: BinaryType => true
     case _ => false
   }
 
