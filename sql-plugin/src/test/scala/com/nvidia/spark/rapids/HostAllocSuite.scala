@@ -689,6 +689,8 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   }
 
   test("split should not happen immediately after fallback on memory contention") {
+    // Set system property to enable stack trace printing for blocked threads
+    System.setProperty("com.nvidia.spark.rapids.printStackTraceCausingThreadBlocked", "true")
 
     // It allocates a small piece of memory (1024) as a warmup, sleep 1s,
     // then allocates a large piece of memory
@@ -759,6 +761,8 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       } finally {
         thread1.done.get(1, TimeUnit.SECONDS)
         thread2.done.get(1, TimeUnit.SECONDS)
+        // Clear the system property after test completion
+        System.clearProperty("com.nvidia.spark.rapids.printStackTraceCausingThreadBlocked")
       }
     }
   }
