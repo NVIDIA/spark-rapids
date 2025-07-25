@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
@@ -211,8 +212,10 @@ trait GpuExec extends SparkPlan {
   }
 
   private def dumpLoreMetaInfo(): Unit = {
-    getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
-      GpuLore.dumpPlan(this, new Path(rootPath))
+    if (!LORE_SKIP_DUMPING_PLAN.get(conf)) {
+      getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
+        GpuLore.dumpPlan(this, new Path(rootPath))
+      }
     }
   }
 
