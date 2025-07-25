@@ -433,7 +433,8 @@ object GpuDeviceManager extends Logging {
 
   private def initializePinnedPoolAndOffHeapLimits(gpuId: Int, conf: RapidsConf,
                                                    sparkConf: SparkConf): Unit = {
-    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(conf, sparkConf)
+    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(
+      conf, sparkConf, Cuda.getDeviceCount)
     // disable the cuDF provided default pinned pool for now
     if (!PinnedMemoryPool.configureDefaultCudfPinnedPoolSize(0L)) {
       // This is OK in tests because they don't unload/reload our shared
@@ -449,7 +450,7 @@ object GpuDeviceManager extends Logging {
   }
 
   // visible for testing
-  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf, sparkConf: SparkConf,
+  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf, sparkConf: SparkConf, deviceCount: Int,
       memCheck: MemoryChecker =
       MemoryCheckerImpl): (Long, Long) = {
     val perTaskOverhead = conf.perTaskOverhead
@@ -461,8 +462,6 @@ object GpuDeviceManager extends Logging {
     // that the previous minimum of 15 MB * num cores was too little for certain benchmark
     // queries to complete, whereas this limit was sufficient.
     val minMemoryLimit = 4L * 1024 * 1024 * 1024
-
-    val deviceCount: Int = Cuda.getDeviceCount()
 
     val executorOverheadKey = "spark.executor.memoryOverhead"
     val pysparkOverheadKey = "spark.executor.pyspark.memory"
