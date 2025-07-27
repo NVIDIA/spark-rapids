@@ -754,14 +754,28 @@ def test_sql_map_scalars(query):
 
 
 @disable_ansi_mode  # ANSI mode failures are tested separately.
-@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(nullable=False, min_val=0, max_val=10), IntegerGen(nullable=False, min_val=0, max_val=100), nullable=False)], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_zip_with(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
-                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',]
-        df = two_col_df(spark, data_gen, data_gen, length=100)
-        df.write.parquet("/home/raprabhu/dev/data/nulls.parquet", mode="overwrite")
+                    'map_zip_with(a, b,  (key, value1, value2) -> value1) as ident1',
+                    'map_zip_with(a, b,  (key, value1, value2) -> value2) as ident2',
+                    'map_zip_with(a, b,  (key, value1, value2) -> null) as n',
+                    'map_zip_with(a, b,  (key, value1, value2) -> 1) as one',
+                    'map_zip_with(a, b,  (key, value1, value2) -> key) as indexed',]
+        value_type = data_gen.data_type.valueType
+        if isinstance(value_type, IntegralType):
+            columns.extend(['a', 'b',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) * coalesce(value2, 0)) as mul',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) - coalesce(value2, 0)) as sub',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 1) / coalesce(value2, 1)) as div',])
+        if isinstance(value_type, StringType):
+            columns.extend(['a', 'b',
+                    'map_zip_with(a, b,  (key, value1, value2) -> concat(coalesce(value1, ""), "-test-", coalesce(value2, ""))) as concat',])
+
+        df = two_col_df(spark, data_gen, data_gen)
         return df.selectExpr(columns)
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
