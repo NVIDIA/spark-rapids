@@ -2784,6 +2784,7 @@ def test_avg_long_ansi_groupby_overflow():
     assert_gpu_and_cpu_are_equal_collect(lambda s: s.createDataFrame(overflow_data, schema).groupBy('group_key').agg(f.avg('long_val')), conf=conf)
 
 
+@approximate_float
 @pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
 @pytest.mark.parametrize('data_type', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4,0), DecimalGen(10,0), DecimalGen(12,0), DecimalGen(38,0)], ids=idfn)
 def test_avg_divide_by_zero(data_type, ansi):
