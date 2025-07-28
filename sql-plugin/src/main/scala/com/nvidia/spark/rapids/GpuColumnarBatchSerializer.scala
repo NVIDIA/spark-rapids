@@ -504,36 +504,40 @@ private class KudoGpuSerializerInstance(
     val metrics: Map[String, GpuMetric],
     val dataTypes: Array[DataType],
 ) extends SerializerInstance {
+  private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
-      val batch = value.asInstanceOf[ColumnarBatch]
-      if (batch.numCols() > 0) {
-        val firstCol = batch.column(0)
-        firstCol match {
-          case vector: SlicedSerializedColumnVector =>
-            val data = vector.getWrap
-            var remaining = data.getLength.toInt
-            val temp = new Array[Byte](math.min(8192, remaining))
-            var at = 0
-            while (remaining > 0) {
-              val read = math.min(remaining, temp.length)
-              data.getBytes(temp, 0, at, read)
-              out.write(temp, 0, read)
-              at = at + read
-              remaining = remaining - read
-            }
-            flush()
-          case _ =>
+      NvtxRegistry.GPU_KUDO_WRITE_BUFFERS{
+        val batch = value.asInstanceOf[ColumnarBatch]
+        if (batch.numCols() > 0) {
+          val firstCol = batch.column(0)
+          firstCol match {
+            case vector: SlicedSerializedColumnVector =>
+              val data = vector.getWrap
+              val dataLen = data.getLength
+              dataSize += dataLen
+              var remaining = dataLen.toInt
+              val temp = new Array[Byte](math.min(8192, remaining))
+              var at = 0
+              while (remaining > 0) {
+                val read = math.min(remaining, temp.length)
+                data.getBytes(temp, 0, at, read)
+                out.write(temp, 0, read)
+                at = at + read
+                remaining = remaining - read
+              }
+              flush()
+            case _ =>
+          }
+        } else {
+          dataSize += KudoSerializer.writeRowCountToStream(out, batch.numRows())
         }
-      } else {
-        // is this a hack?
-        KudoSerializer.writeRowCountToStream(out, batch.numRows())
+        this
       }
-      this
     }
 
     override def writeKey[T: ClassTag](key: T): SerializationStream = {

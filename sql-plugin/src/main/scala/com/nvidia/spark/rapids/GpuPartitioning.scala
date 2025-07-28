@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -195,12 +195,18 @@ trait GpuPartitioning extends Partitioning {
     }
   }
 
-  def sliceAndSerializeOnGpu(numRows: Int, partitionIndexes: Array[Int],
+  private def gpuSplitAndSerialize(table: Table, slices: Int*): Array[DeviceMemoryBuffer] = {
+    NvtxRegistry.GPU_KUDO_SERIALIZE {
+      KudoGpuSerializer.splitAndSerializeToDevice(table, slices: _*)
+    }
+  }
+
+  private def sliceAndSerializeOnGpu(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
     partitionColumns.foreach(_.getBase.getNullCount)
     val (dataHost, offsetsHost) = withResource(partitionColumns) { _ =>
       withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
-        withResource(KudoGpuSerializer.splitAndSerializeToDevice(table,
+        withResource(gpuSplitAndSerialize(table,
           partitionIndexes.tail: _*)) { dmbs =>
           val data = dmbs(0)
           val offsets = dmbs(1)
@@ -208,8 +214,11 @@ trait GpuPartitioning extends Partitioning {
             HostMemoryBuffer.allocate(offsets.getLength))) { seq =>
             val dataHost = seq(0)
             val offsetsHost = seq(1)
-            dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
-            offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+            NvtxRegistry.GPU_KUDO_COPY_TO_HOST {
+              dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
+              offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+              Cuda.DEFAULT_STREAM.sync()
+            }
             (dataHost, offsetsHost)
           }
         }
@@ -217,25 +226,29 @@ trait GpuPartitioning extends Partitioning {
     }
     GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
-    withResource(Seq(dataHost, offsetsHost)) { _ =>
-      val numSlices = numPartitions + 1
-      val elemSize = offsetsHost.getLength / numSlices
+    NvtxRegistry.GPU_KUDO_SLICE_BUFFERS {
+      withResource(Seq(dataHost, offsetsHost)) { _ =>
+        val numSlices = numPartitions + 1
+        val elemSize = offsetsHost.getLength / numSlices
 
-      val res = new Array[ColumnarBatch](numPartitions)
-      var start = 0
-      for (i <- 1 until numPartitions) {
-        val idx = offsetsHost.getLong((i) * elemSize).toInt
-        res(i - 1) = new ColumnarBatch(Array(
-          new SlicedSerializedColumnVector(dataHost, start, idx)))
-        val partNumRows = partitionIndexes(i)
-        res(i - 1).setNumRows(partNumRows)
-        start = idx
+        val res = new Array[ColumnarBatch](numPartitions)
+        var start = 0
+        var prevIndex: Int = 0
+        for (i <- 1 until numPartitions) {
+          val idx = offsetsHost.getLong((i) * elemSize).toInt
+          res(i - 1) = new ColumnarBatch(Array(
+            new SlicedSerializedColumnVector(dataHost, start, idx)))
+          val partNumRows = partitionIndexes(i) - prevIndex
+          prevIndex = partitionIndexes(i)
+          res(i - 1).setNumRows(partNumRows)
+          start = idx
+        }
+        res(numPartitions - 1) = new ColumnarBatch(Array(
+          new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+        res(numPartitions - 1).setNumRows(numRows - prevIndex)
+
+        res.zipWithIndex.filter(_._1 != null)
       }
-      res(numPartitions - 1) = new ColumnarBatch(Array(
-        new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
-      res(numPartitions - 1).setNumRows(numRows)
-
-      res.zipWithIndex.filter(_._1 != null)
     }
   }
 
