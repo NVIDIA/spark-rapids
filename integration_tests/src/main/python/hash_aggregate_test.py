@@ -2783,3 +2783,15 @@ def test_avg_long_ansi_groupby_overflow():
     schema = StructType([StructField("group_key", IntegerType()), StructField("long_val", LongType())])
     assert_gpu_and_cpu_are_equal_collect(lambda s: s.createDataFrame(overflow_data, schema).groupBy('group_key').agg(f.avg('long_val')), conf=conf)
 
+
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
+@pytest.mark.parametrize('data_type', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4,0), DecimalGen(10,0), DecimalGen(12,0), DecimalGen(38,0)], ids=idfn)
+def test_avg_divide_by_zero(data_type, ansi):
+    conf = {'spark.sql.ansi.enabled': ansi,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    dt = data_type.data_type
+    assert_gpu_and_cpu_are_equal_collect(lambda s: s.range(127).select((f.col("id") % f.lit(2)).alias("k"), 
+        f.col("id").cast(dt).alias("v")).groupBy("k").agg(f.avg(f.when(f.col("k") > 0, f.col("v")).otherwise(None))),
+            conf=conf)
+
+
