@@ -588,7 +588,7 @@ case class GpuTransformValues(
   }
 }
 
-trait GpuComplexHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
+trait GpuTwoArgumentHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
 
   def arguments: Seq[Expression]
 
@@ -731,7 +731,7 @@ case class GpuMapZipExpression(
   }
 }
 
-trait GpuMapComplexHigherOrderFunction extends GpuComplexHigherOrderFunction with GpuBind {
+trait GpuMapTwoArgumentHigherOrderFunction extends GpuTwoArgumentHigherOrderFunction {
 
   protected def isBound: Boolean
   protected def boundIntermediate: Seq[GpuExpression]
@@ -811,7 +811,7 @@ case class GpuMapZipWith(
     function: Expression,
     isBound: Boolean = false,
     boundIntermediate: Seq[GpuExpression] = Seq.empty)
-    extends GpuMapComplexHigherOrderFunction {
+    extends GpuMapTwoArgumentHigherOrderFunction {
 
   @transient lazy val MapType(keyType1, valueType1, valueContainsNull1) = argument1.dataType
   @transient lazy val MapType(keyType2, valueType2, valueContainsNull2) = argument2.dataType

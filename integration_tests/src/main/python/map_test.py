@@ -754,7 +754,7 @@ def test_sql_map_scalars(query):
 
 
 @disable_ansi_mode  # ANSI mode failures are tested separately.
-@pytest.mark.parametrize('data_gen', all_basic_map_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + [MapGen(IntegerGen(nullable=False, min_val=-100, max_val=100), IntegerGen())], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_zip_with(data_gen):
     def do_it(spark):
@@ -773,8 +773,10 @@ def test_map_zip_with(data_gen):
                     'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 1) / coalesce(value2, 1)) as div',])
         if isinstance(value_type, StringType):
             columns.extend(['a', 'b',
-                    'map_zip_with(a, b,  (key, value1, value2) -> concat(coalesce(value1, ""), "-test-", coalesce(value2, ""))) as concat',])
-
+                    'map_zip_with(a, b,  (key, value1, value2) -> concat(coalesce(value1, ""), "-test-", coalesce(value2, ""))) as string_concat',])
+        if isinstance(value_type, ArrayType):
+            columns.extend(['a', 'b',
+                    'map_zip_with(a, b,  (key, value1, value2) -> concat(value1, value2)) as array_concat',])
         df = two_col_df(spark, data_gen, data_gen)
         return df.selectExpr(columns)
     assert_gpu_and_cpu_are_equal_collect(do_it)
