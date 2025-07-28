@@ -716,23 +716,24 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
         // The previous batches should be able to be spilled by itself.
         val buffer = {
           if (sharedBuffer.isEmpty) {
-            val allocated = allocateHostWithRetry(header.getTotalDataLen)
+            closeOnExcept(allocateHostWithRetry(header.getTotalDataLen)) { allocated =>
 
-            if (firstTenBatchesSizes.length < 10) {
-              firstTenBatchesSizes += header.getTotalDataLen
-              if (firstTenBatchesSizes.length == 10) {
-                // If we have 10 batches, we can decide if to use a shared buffer or not.
-                val maxSize = firstTenBatchesSizes.max
-                if (maxSize < sharedBufferTriggerSize) {
-                  // If the max size of the first 10 batches is less than the threshold,
-                  // we can use a shared buffer.
-                  sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
-                  sharedBufferCurrentUse = 0
+              if (firstTenBatchesSizes.length < 10) {
+                firstTenBatchesSizes += header.getTotalDataLen
+                if (firstTenBatchesSizes.length == 10) {
+                  // If we have 10 batches, we can decide if to use a shared buffer or not.
+                  val maxSize = firstTenBatchesSizes.max
+                  if (maxSize < sharedBufferTriggerSize) {
+                    // If the max size of the first 10 batches is less than the threshold,
+                    // we can use a shared buffer.
+                    sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
+                    sharedBufferCurrentUse = 0
+                  }
                 }
               }
-            }
 
-            allocated
+              allocated
+            }
           } else {
             if (header.getTotalDataLen > sharedBufferTotalSize / 2) {
               // Too big to use shared buffer, this should rarely happen since
