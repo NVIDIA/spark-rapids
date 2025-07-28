@@ -1499,7 +1499,7 @@ def test_try_multiply_fallback_to_cpu(data_gen):
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_try_sum_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
                      .selectExpr("try_sum(b) as result"),'HashAggregateExec')
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
@@ -1508,7 +1508,7 @@ def test_try_sum_fallback_to_cpu(data_gen):
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_try_sum_groupby_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
                      .groupBy('a').agg(f.expr("try_sum(b)").alias("result")),
         'HashAggregateExec')
 
@@ -1519,6 +1519,6 @@ def test_try_sum_groupby_fallback_to_cpu(data_gen):
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_avg_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
                      .groupBy('a').agg(f.expr("try_avg(b)").alias("result")),
         'HashAggregateExec')
