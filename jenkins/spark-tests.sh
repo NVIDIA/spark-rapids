@@ -184,6 +184,7 @@ run_delta_lake_tests() {
   SPARK_32X_PATTERN="(3\.2\.[0-9])"
   SPARK_33X_PATTERN="(3\.3\.[0-9])"
   SPARK_34X_PATTERN="(3\.4\.[0-9])"
+  SPARK_35X_PATTERN="(3\.5\.[3-9])"
 
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
@@ -199,12 +200,21 @@ run_delta_lake_tests() {
     DELTA_LAKE_VERSIONS="2.4.0"
   fi
 
+  if [[ $SPARK_VER =~ $SPARK_35X_PATTERN ]]; then
+    DELTA_LAKE_VERSIONS="3.3.0"
+  fi
+
   if [ -z "$DELTA_LAKE_VERSIONS" ]; then
     echo "Skipping Delta Lake tests. $SPARK_VER"
   else
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
-      PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$v" \
+      if [[ "$v" == "3.3.0" ]]; then
+        DELTA_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
+      else 
+        DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
+      fi 
+      PYSP_TEST_spark_jars_packages=${DELTA_JAR} \
         PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
         ./run_pyspark_from_build.sh -m delta_lake --delta_lake
@@ -213,22 +223,73 @@ run_delta_lake_tests() {
 }
 
 run_iceberg_tests() {
-  ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
+  # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
+  ICEBERG_VERSION=1.6.1
   # get the major/minor version of Spark
-  ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
-  IS_SPARK_33_OR_LATER=0
-  [[ "$(printf '%s\n' "3.3" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.3" ]] && IS_SPARK_33_OR_LATER=1
+  ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
+  IS_SPARK_35X=0
+  # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
+  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
+    IS_SPARK_35X=1
+  fi
 
-  # RAPIDS-iceberg does not support Spark 3.3+ yet
-  if [[ "$IS_SPARK_33_OR_LATER" = "1" ]]; then
+  # RAPIDS-iceberg only supports Spark 3.5.x yet
+  if [[ "$IS_SPARK_35X" -ne "1" ]]; then
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
-  else
+    return 0
+  fi
+
+  local test_type=${1:-'default'}
+  if [[ "$test_type" == "default" ]]; then
+    echo "!!! Running iceberg tests"
+    # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
+    # Disabling them may slow down the tests, so we increase memory here.
+    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
+    PYSP_TEST_spark_driver_memory="6G" \
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
+  elif [[ "$test_type" == "s3tables" ]]; then
+    echo "!!! Running iceberg tests with s3tables"
+    # AWS deps versions for Spark 3.5.x
+    AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
+    HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
+    AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}
+    S3TABLES_CATALOG_VERSION=${S3TABLES_CATALOG_VERSION:-"0.1.6"}
+
+    ICEBERG_S3TABLES_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
+software.amazon.s3tables:s3-tables-catalog-for-iceberg-runtime:${S3TABLES_CATALOG_VERSION},\
+software.amazon.awssdk:apache-client:${AWS_SDK_VERSION},\
+software.amazon.awssdk:aws-core:${AWS_SDK_VERSION},\
+software.amazon.awssdk:dynamodb:${AWS_SDK_VERSION},\
+software.amazon.awssdk:glue:${AWS_SDK_VERSION},\
+software.amazon.awssdk:http-client-spi:${AWS_SDK_VERSION},\
+software.amazon.awssdk:kms:${AWS_SDK_VERSION},\
+software.amazon.awssdk:s3:${AWS_SDK_VERSION},\
+software.amazon.awssdk:sdk-core:${AWS_SDK_VERSION},\
+software.amazon.awssdk:sts:${AWS_SDK_VERSION},\
+software.amazon.awssdk:url-connection-client:${AWS_SDK_VERSION},\
+software.amazon.awssdk:s3tables:${AWS_SDK_VERSION},\
+org.apache.hadoop:hadoop-aws:${HADOOP_AWS_VERSION},\
+com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
+
+    # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
+    # These steps are included in the test pipeline.
+    # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
+    ICEBERG_TEST_S3TABLES='1' \
+    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
+        PYSP_TEST_spark_driver_memory="6G" \
+        PYSP_TEST_spark_jars_packages="$ICEBERG_S3TABLES_JARS" \
+        PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
+        PYSP_TEST_spark_hadoop_fs_s3_impl="org.apache.hadoop.fs.s3a.S3AFileSystem" \
+        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="$S3TABLES_BUCKET_ARN" \
+        ./run_pyspark_from_build.sh -s -m iceberg --iceberg
   fi
 }
 
@@ -279,6 +340,7 @@ run_non_utc_time_zone_tests() {
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
 # - ICEBERG_ONLY: iceberg tests only
+# - ICEBERG_S3TABLES_ONLY: iceberg s3tables tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only
@@ -291,12 +353,15 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
   PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${SHUFFLE_SPARK_SHIM}.RapidsShuffleManager \
     ./run_pyspark_from_build.sh
 
-  # As '--packages' only works on the default cuda11 jar, it does not support classifiers
+  EXPLAIN_ONLY_CPU_SMOKE_TEST=1 \
+    ./run_pyspark_from_build.sh
+
+  # As '--packages' only works on the default cuda12 jar, it does not support classifiers
   # refer to issue : https://issues.apache.org/jira/browse/SPARK-20075
   # "$CLASSIFIER" == ''" is usally for the case running by developers,
-  # while "$CLASSIFIER" == "cuda11" is for the case running on CI.
+  # while "$CLASSIFIER" == "cuda12" is for the case running on CI.
   # We expect to run packages test for both cases
-  if [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda11" ]]; then
+  if [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda12" ]]; then
     SPARK_SHELL_SMOKE_TEST=1 \
     PYSP_TEST_spark_jars_packages=com.nvidia:rapids-4-spark_${SCALA_BINARY_VER}:${PROJECT_VER} \
     PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
@@ -316,6 +381,11 @@ fi
 # Iceberg tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
+fi
+
+# Iceberg s3tables tests
+if [[ "$TEST_MODE" == "ICEBERG_S3TABLES_ONLY" ]]; then
+  run_iceberg_tests 's3tables'
 fi
 
 # Avro tests

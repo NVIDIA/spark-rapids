@@ -31,9 +31,10 @@ import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, M
 import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.io.async.TrafficController
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -136,11 +137,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.06.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.08.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-25.06.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.08.0-cuda12.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-25.06.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.08.0-cuda12.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -531,7 +532,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Checks if the current GPU architecture is supported by the
       // spark-rapids-jni and cuDF libraries.
       // Note: We allow this check to be skipped for off-chance cases.
-      if (!conf.skipGpuArchCheck) {
+      if (!conf.skipGpuArchCheck && conf.isSqlExecuteOnGPU) {
         RapidsPluginUtils.validateGpuArchitecture()
       }
 
@@ -597,7 +598,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         logGpuDebugInfoAndExit(systemExitCode = 1)
       case e: Throwable =>
         logError("Exception in the executor plugin, shutting down!", e)
-        System.exit(1)
+        RapidsExecutorPlugin.exitWithHaltOnTimeout(1)
     }
   }
 
@@ -662,7 +663,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     try {
       val nvidiaSmiStdout = new StringBuilder
       val nvidiaSmiStderr = new StringBuilder
-      val cmd = "nvidia-smi".run(
+      val cmd = "nvidia-smi -q".run(
         ProcessLogger(s => nvidiaSmiStdout.append(s + "\n"), s => nvidiaSmiStderr.append(s + "\n")))
       waitForProcess(cmd, 10000) match {
         case Some(exitStatus) =>
@@ -677,7 +678,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       case e: Throwable =>
         logWarning("nvidia-smi process failed", e)
     }
-    System.exit(systemExitCode)
+    RapidsExecutorPlugin.exitWithHaltOnTimeout(systemExitCode)
   }
 
   override def shutdown(): Unit = {
@@ -721,7 +722,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def onTaskStart(): Unit = {
-    startTaskNvtx(TaskContext.get)
+    val tc = TaskContext.get
+    startTaskNvtx(tc)
+    // Set the priority for the task as soon as it is launched
+    TaskPriority.getTaskPriority(tc.taskAttemptId())
+    onTaskCompletion(tc, tc => {
+      TaskPriority.taskDone(tc.taskAttemptId())
+    })
     extraExecutorPlugins.foreach(_.onTaskStart())
     ProfilerOnExecutor.onTaskStart()
     // Make sure that the thread/task is registered before we try and block
@@ -751,7 +758,32 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 }
 
-object RapidsExecutorPlugin {
+object RapidsExecutorPlugin extends Logging {
+  /**
+   * Calling System.exit will trigger shutdown hooks to run.
+   * This code is intended to let them run, but then force
+   * kill the process if it takes too long to actually exit.
+   * @param exitCode the exit code to use.
+   */
+  def exitWithHaltOnTimeout(exitCode: Int): Unit = synchronized {
+    val sleepTime = 40
+    val sleepKill = new java.lang.Thread(() => {
+      try {
+        logInfo(s"Halting after $sleepTime seconds")
+        Thread.sleep(sleepTime * 1000)
+        logWarning("Forcing Halt...")
+        Runtime.getRuntime.halt(exitCode)
+      } catch {
+        case _: InterruptedException => //Ignored/expected...
+        case e: Exception =>
+          logWarning("Exception in the ShutDownHook", e)
+      }
+    }, "ShutdownHook-sleepKill-" + sleepTime + "s")
+    sleepKill.setDaemon(true)
+    sleepKill.start()
+    System.exit(exitCode)
+  }
+
   /**
    * Return true if the expected cudf version is satisfied by the actual version found.
    * The version is satisfied if the major and minor versions match exactly. If there is a requested

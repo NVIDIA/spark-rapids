@@ -26,6 +26,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
@@ -35,6 +36,7 @@ import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.unsafe.types.UTF8String
 
 trait RapidsErrorUtils340PlusBase extends RapidsErrorUtilsFor330plus with RapidsQueryErrorUtils {
 
@@ -96,5 +98,9 @@ trait RapidsErrorUtils340PlusBase extends RapidsErrorUtilsFor330plus with Rapids
 
   override def intervalDivByZeroError(origin: Origin): ArithmeticException = {
     QueryExecutionErrors.intervalDividedByZeroError(origin.context)
+  }
+
+  def invalidInputSyntaxForBooleanError(s: UTF8String): RuntimeException = {
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, null)
   }
 }

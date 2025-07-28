@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from pyspark.sql.types import IntegerType
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from conftest import spark_tmp_table_factory
 from data_gen import *
-from marks import ignore_order, allow_non_gpu, datagen_overrides, disable_ansi_mode
+from marks import ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later, is_databricks_version_or_later
 
 # non-positive values here can produce a degenerative join, so here we ensure that most values are
@@ -173,7 +173,6 @@ _statements = [
 # Further details are furnished at https://github.com/NVIDIA/spark-rapids/issues/11764.
 dpp_fallback_execs=["CollectLimitExec"] if is_databricks_version_or_later(14,3) else []
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # When BroadcastExchangeExec is available on filtering side, and it can be reused:
 # DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
 @ignore_order
@@ -205,7 +204,6 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
 @ignore_order
 @pytest.mark.allow_non_gpu('FileSourceScanExec')
@@ -223,7 +221,6 @@ def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
             ('spark.rapids.sql.format.parquet.read.enabled', 'false')]))
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # When BroadcastExchange is not available and non-broadcast DPPs are forbidden, Spark will bypass it:
 # DynamicPruningExpression(Literal.TrueLiteral)
 @ignore_order
@@ -247,7 +244,6 @@ def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled)
         conf=dict(_bypass_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # When BroadcastExchange is not available, but it is still worthwhile to run DPP,
 # then Spark will plan an extra Aggregate to collect filtering values:
 # DynamicPruningExpression(InSubqueryExec(value, SubqueryExec(Aggregate(...))))
@@ -272,7 +268,6 @@ def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_ind
         conf=dict(_no_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # When BroadcastExchange is not available, Spark will skip DPP if there is no potential benefit
 @ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
@@ -335,7 +330,6 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @allow_non_gpu(*dpp_fallback_execs)
 # Test handling DPP expressions from a HashedRelation that rearranges columns
 @pytest.mark.parametrize('aqe_enabled', [
@@ -368,7 +362,7 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
                                ("spark.rapids.sql.hasExtendedYearValues", "false")]))
 
 
-@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@allow_non_gpu("EmptyRelationExec")  # 'EmptyRelationExec' is introduced from Spark 400
 # Test handling DPP subquery that could broadcast EmptyRelation rather than a GPU serialized batch
 @pytest.mark.parametrize('aqe_enabled', [
     'false',

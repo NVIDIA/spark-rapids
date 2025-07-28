@@ -30,6 +30,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -57,6 +58,10 @@ object DecimalArithmeticOverrides {
           ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
+            // Check if this Multiply expression is in TRY mode context
+            if (TryModeShim.isTryMode(a)) {
+              willNotWorkOnGpu("try_multiply is not supported on GPU")
+            }
             if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
               willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
             }
@@ -90,6 +95,13 @@ object DecimalArithmeticOverrides {
           ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
               TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
         (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            // Check if this Divide expression is in TRY mode context
+            if (TryModeShim.isTryMode(a)) {
+              willNotWorkOnGpu("try_divide is not supported on GPU")
+            }
+          }
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             a.dataType match {
               case d: DecimalType =>
@@ -120,6 +132,13 @@ object DecimalArithmeticOverrides {
           ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
           ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            // Check if this Remainder expression is in TRY mode context
+            if (TryModeShim.isTryMode(a)) {
+              willNotWorkOnGpu("try_mod is not supported on GPU")
+            }
+          }
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
               GpuDecimalRemainder(lhs, rhs)

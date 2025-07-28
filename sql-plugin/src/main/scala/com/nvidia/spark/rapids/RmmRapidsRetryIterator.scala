@@ -32,7 +32,6 @@ import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.internal.SQLConf
 
 object RmmRapidsRetryIterator extends Logging {
 
@@ -598,8 +597,6 @@ object RmmRapidsRetryIterator extends Logging {
       extends Iterator[K] {
     // We want to be sure that retry will work in all cases
     TaskRegistryTracker.registerThreadForRetry()
-    // used to figure out if we should inject an OOM (only for tests)
-    private val config = Option(SQLConf.get).map(new RapidsConf(_))
 
     // this is true if an OOM was injected (only for tests)
     private var injectedOOM = false
@@ -647,33 +644,46 @@ object RmmRapidsRetryIterator extends Logging {
         }
         firstAttempt = false
         if (splitReason != SplitReason.NONE) {
-          if (BOOKKEEP_MEMORY) {
-            logMemoryBookkeeping()
-          }
+          preSplitLogging()
           attemptIter.split(splitReason)
         }
         splitReason = SplitReason.NONE
         try {
           // call the user's function
-          config.foreach {
-            case rapidsConf if !injectedOOM && rapidsConf.testRetryOOMInjectionMode.numOoms > 0 =>
+          RapidsConf.testRetryOOMInjectionMode() match {
+            case mode if !injectedOOM && mode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
               // `forceRetryOOM` requires a prior association.
+              var threadAssociated = true
               if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
-                RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+                // If RmmSpark isn't aware of this thread, we are going to
+                // try to find the TaskContext and use it to register it for a taskID.
+                // However, TaskContext is not going to work for a pool thread that isn't
+                // managed by Spark, so we are going to skip registration, and skip the OOM.
+                // This is a temporary workaround, see:
+                // https://github.com/NVIDIA/spark-rapids/issues/13098
+                threadAssociated = false
+                Option(TaskContext.get()).foreach { tc =>
+                  threadAssociated = true
+                  RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
+                }
               }
-              val injectConf = rapidsConf.testRetryOOMInjectionMode
-              if (injectConf.withSplit) {
-                RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
-                          injectConf.numOoms,
-                          injectConf.oomInjectionFilter.ordinal,
-                          injectConf.skipCount)
+              if (threadAssociated) {
+                if (mode.withSplit) {
+                  RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                } else {
+                  RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                }
               } else {
-                RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                  injectConf.numOoms,
-                  injectConf.oomInjectionFilter.ordinal,
-                  injectConf.skipCount)
+                log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
+                  "https://github.com/NVIDIA/spark-rapids/issues/13098")
               }
             case _ => ()
           }
@@ -681,6 +691,7 @@ object RmmRapidsRetryIterator extends Logging {
           clearInjectedOOMIfNeeded()
         } catch {
           case ex: Throwable =>
+            log.info("got a throwable in RmmRapidsRetryIterator.next():", ex)
             // handle a retry as the top-level exception
             val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
             if (topLevelIsSplit) {
@@ -835,50 +846,63 @@ object RmmRapidsRetryIterator extends Logging {
   /**
    * Log memory footprint when GPU OOM or CPU OOM happens.
    */
-
   val BOOKKEEP_MEMORY: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep")
   // track the callstack for each memory allocation, don't enable it unless really needed
   val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
   // By default, only print first time to avoid too much log
-  val BOOKKEEP_MEMORY_PRINT_ALL: Boolean =
-    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.printall")
-  var bookkeepPrinted = false
+  val PRE_SPLIT_PRINT_ALL: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.preSplit.printAll")
+  var preSplitPrinted = false
 
   val threadCountBlockedUntilReady: AtomicInteger = new AtomicInteger(0)
 
-  private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
-    if (!bookkeepPrinted || BOOKKEEP_MEMORY_PRINT_ALL) {
+  private def preSplitLogging(): Unit = synchronized { // use synchronized to keep neat
+    if (!preSplitPrinted || PRE_SPLIT_PRINT_ALL) {
+      log.info(s"Current threadCountBlockedUntilReady pre split: " +
+        s"${threadCountBlockedUntilReady.get()}")
 
-      // print spillable status
-      logInfo(SpillFramework.getHostStoreSpillableSummary)
-      logInfo(SpillFramework.getDeviceStoreSpillableSummary)
-
-      // print host memory bookkeeping
-      logInfo(HostAlloc.getHostAllocBookkeepSummary())
-
-      // print device memory bookkeeping
-      // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
-      // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
-
-      // print stack trace
-      val sb = new StringBuilder("<<Jstack Details>>\n\n")
-      Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
-      => {
-        // Print the thread name and its state
-        sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
-          s"- Thread ID: ${thread.getId}\n")
-        // Print the stack trace for this thread
-        for (element <- stackTrace) {
-          sb.append(s"\tat $element")
-        }
-        sb.append("\n\n")
-      })
-      logInfo(sb.toString())
-
-      bookkeepPrinted = true
+      logSpillFrameworkSummary()
+      if (BOOKKEEP_MEMORY) {
+        logMemoryBookkeeping()
+      }
+      logStacktrace()
+      preSplitPrinted = true
     }
+  }
+
+  private def logSpillFrameworkSummary(): Unit = {
+    // print spillable status
+    logInfo(SpillFramework.getHostStoreSpillableSummary)
+    logInfo(SpillFramework.getDeviceStoreSpillableSummary)
+  }
+
+  // For GPU/CPU SplitAndRetryOOM, we are very interested what each task is doing when one
+  // of the tasks try to split and retry (in the context of WithRetryNoSplit).
+  private def logStacktrace(): Unit = {
+    val sb = new StringBuilder("<<Jstack Details>>\n\n")
+    Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
+    => {
+      // Print the thread name and its state
+      sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
+        s"- Thread ID: ${thread.getId}\n")
+      // Print the stack trace for this thread
+      for (element <- stackTrace) {
+        sb.append(s"\tat $element")
+      }
+      sb.append("\n\n")
+    })
+    logInfo(sb.toString())
+  }
+
+  private def logMemoryBookkeeping(): Unit = { // use synchronized to keep neat
+    // print host memory bookkeeping
+    logInfo(HostAlloc.getHostAllocBookkeepSummary())
+
+    // print device memory bookkeeping
+    // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
+    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
   }
 }
 

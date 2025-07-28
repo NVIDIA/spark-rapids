@@ -221,6 +221,8 @@ class GpuTaskMetrics extends Serializable {
   private val onGpuTasksInWaitingQueueAvgCount = new AvgLongAccumulator
   private val onGpuTasksInWaitingQueueMaxCount = new MaxLongAccumulator
 
+  // This is used to track the max parallelism of multithreaded readers
+  private val multithreadReaderMaxParallelism = new MaxLongAccumulator
 
   // Spill
   private val spillToHostTimeNs = new NanoSecondAccumulator
@@ -233,6 +235,8 @@ class GpuTaskMetrics extends Serializable {
   private val maxPageableMemoryBytes = new HighWatermarkAccumulator
   private val maxPinnedMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
+
+  private val maxGpuFootprint = new LongAccumulator
 
   private var maxHostBytesAllocated: Long = 0
   private var maxPageableBytesAllocated: Long = 0
@@ -289,7 +293,9 @@ class GpuTaskMetrics extends Serializable {
     "gpuMaxPageableMemoryBytes" -> maxPageableMemoryBytes,
     "gpuMaxPinnedMemoryBytes" -> maxPinnedMemoryBytes,
     "gpuOnGpuTasksWaitingGPUAvgCount" -> onGpuTasksInWaitingQueueAvgCount,
-    "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount
+    "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
+    "gpuMaxTaskFootprint" -> maxGpuFootprint,
+    "multithreadReaderMaxParallelism" -> multithreadReaderMaxParallelism
   )
 
   def register(sc: SparkContext): Unit = {
@@ -338,6 +344,8 @@ class GpuTaskMetrics extends Serializable {
       }
     }
   }
+
+  def getSemaphoreHoldingTime: Long = semaphoreHoldingTime.value.value
 
   def addSemaphoreHoldingTime(duration: Long): Unit = semaphoreHoldingTime.add(duration)
 
@@ -407,9 +415,20 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
+  def updateFootprint(taskAttemptId: Long): Unit = {
+    val maxFootprint = RmmSpark.getMaxGpuTaskMemory(taskAttemptId)
+    if (maxFootprint > 0) {
+      maxGpuFootprint.setValue(maxFootprint)
+    }
+  }
+
   def recordOnGpuTasksWaitingNumber(num: Int): Unit = {
     onGpuTasksInWaitingQueueAvgCount.add(num)
     onGpuTasksInWaitingQueueMaxCount.add(num)
+  }
+
+  def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = synchronized {
+    multithreadReaderMaxParallelism.add(parallelism)
   }
 }
 

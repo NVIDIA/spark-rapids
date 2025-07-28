@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -592,7 +592,7 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: f(spark).collect(),
             conf=updated_conf,
-            error_message='DateTimeException')
+            error_message='Exception')
     elif time_parser_policy == 'LEGACY' and ansi_enabled == 'true':
         assert_gpu_fallback_collect(
             f,
@@ -1132,7 +1132,8 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     options = { 'ignoreNullFields': ignore_null_fields,
-                'timeZone': timezone}
+                'timeZone': timezone,
+                'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"}
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,29 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.TimeUnit
-
 /**
  * Utility methods for managing spillable buffer priorities.
  * The spill priority numerical space is divided into potentially overlapping
  * ranges based on the type of buffer.
  */
 object SpillPriorities {
-  private val startTimestamp = System.nanoTime
-
   /**
    * Priorities for task output buffers intended for shuffle.
    */
-  val OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY: Long = 0
-
-  def getShuffleOutputBufferReadPriority: Long = {
-    // shuffle output buffers that have been read are likely to never be read again,
-    // so use a low value to prioritize spilling.
-    // Always prefer spilling read buffers before unread buffers, and prefer spilling
-    // buffers read a while ago to buffers more recently read.
-    val millisFromStart = TimeUnit.NANOSECONDS.toMillis(System.nanoTime - startTimestamp)
-    math.min(Long.MinValue + millisFromStart, OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY - 1)
-  }
+  val OUTPUT_FOR_SHUFFLE_INITIAL_TASK_PRIORITY: Long = Long.MinValue
 
   /**
    * Priorities for buffers received from shuffle.

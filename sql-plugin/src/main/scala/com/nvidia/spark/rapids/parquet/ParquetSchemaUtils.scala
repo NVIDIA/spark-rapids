@@ -589,9 +589,10 @@ object ParquetSchemaUtils {
       // Instead we are going to have to pull apart the string and put it back together
       // as a list.
 
-      val dataBuf = cv.getData
-      withResource(new ColumnView(DType.UINT8, dataBuf.getLength, Optional.of(0L),
-        dataBuf, null)) { data =>
+      val dataBuf = Option(cv.getData)
+      withResource(new ColumnView(DType.UINT8, dataBuf.map(_.getLength).getOrElse(0),
+        Optional.of(0L),
+        dataBuf.orNull, null)) { data =>
         withResource(new ColumnView(DType.LIST, cv.getRowCount,
           Optional.of[java.lang.Long](cv.getNullCount),
           cv.getValid, cv.getOffsets, Array(data))) { everything =>

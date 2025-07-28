@@ -307,9 +307,13 @@ else
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}
     deltaCacheSize=$PYSP_TEST_spark_databricks_delta_delta_log_cacheSize
+    # currently the only test feature this enables is OOM injection
+    # we enable the java property in the driver and executor, in case the tests are running in 
+    # local mode or in standalone mode.
+    ENABLE_TEST_FEATURES="-Dcom.nvidia.spark.rapids.runningTests=true"
     DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
-    export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
-    export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
+    export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS $ENABLE_TEST_FEATURES"
+    export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ $ENABLE_TEST_FEATURES"
 
     # TODO: https://github.com/NVIDIA/spark-rapids/issues/10940
     export PYSP_TEST_spark_driver_memory=${PYSP_TEST_spark_driver_memory:-"${MB_PER_EXEC}m"}
@@ -392,6 +396,7 @@ else
     fi
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
+    EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
     if [[ "${SPARK_SHELL_SMOKE_TEST}" != "0" ]]; then
         echo "Running spark-shell smoke test..."
         SPARK_SHELL_ARGS_ARR=(
@@ -424,6 +429,20 @@ else
             "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
             | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
         echo "SUCCESS spark-shell smoke test"
+    elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
+        echo "Running explainOnly mode on CPU smoke test..."
+        SPARK_SHELL_ARGS_ARR=(
+            --master local[2]
+            --jars "${PYSP_TEST_spark_jars}"
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --conf spark.deploy.maxExecutorRetries=0
+            --conf spark.rapids.sql.mode=explainOnly
+        )
+        output=$(<<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+            CUDA_VISIBLE_DEVICES="" "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1)
+        grep 'WARN RapidsPluginUtils: RAPIDS Accelerator is in explain only mode' <<< "$output"
+        grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])' <<< "$output"
+        echo "SUCCESS explainOnly mode on CPU smoke test"
     elif ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"

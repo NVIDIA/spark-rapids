@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,14 @@ package com.nvidia.spark.rapids.delta
 
 import java.lang.reflect.Field
 
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode}
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.delta.{DeltaLog, DeltaOptions, DeltaParquetFileFormat}
@@ -33,28 +33,18 @@ import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.WriteIntoDelta
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuDeltaLog, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.sources.{DeltaDataSource, DeltaSourceUtils}
-import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
-import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelation}
+import org.apache.spark.sql.sources.InsertableRelation
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
+
 
 /**
  * Implements the DeltaProvider interface for open source delta.io Delta Lake.
  */
 abstract class DeltaIOProvider extends DeltaProviderImplBase {
-  override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
-      CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
-    Seq(
-      ExternalSource.toCreatableRelationProviderRule[DeltaDataSource](
-        "Write to Delta Lake table",
-        (a, conf, p, r) => {
-          require(p.isDefined, "Must provide parent meta")
-          new DeltaCreatableRelationProviderMeta(a, conf, p, r)
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[CreatableRelationProvider]), r)).toMap
-  }
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
     format == classOf[DeltaParquetFileFormat]
@@ -68,6 +58,17 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     catalogClass == classOf[DeltaCatalog]
   }
 
+
+  // Cheap shims via method overload
+  @scala.annotation.nowarn("msg=method writeOptionsFromExec in class DeltaIOProvider is never used")
+  private def writeOptionsFromExec(cisMap: CaseInsensitiveStringMap): Map[String, String] = {
+    cisMap.asCaseSensitiveMap.asScala.toMap
+  }
+  @scala.annotation.nowarn("msg=method writeOptionsFromExec in class DeltaIOProvider is never used")
+  private def writeOptionsFromExec(asIsMap: Map[String, String]): Map[String, String] = {
+    asIsMap.toMap
+  }
+
   override def tagForGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): Unit = {
@@ -78,7 +79,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     }
     checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+      writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
   override def tagForGpu(
@@ -91,7 +92,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     }
     checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+      writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
   private case class DeltaWriteV1Config(
@@ -252,36 +253,6 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
   }
 }
 
-class DeltaCreatableRelationProviderMeta(
-    source: DeltaDataSource,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends CreatableRelationProviderMeta[DeltaDataSource](source, conf, parent, rule) {
-  require(parent.isDefined, "Must provide parent meta")
-  private val saveCmd = parent.get.wrapped match {
-    case s: SaveIntoDataSourceCommand => s
-    case s =>
-      throw new IllegalStateException(s"Expected SaveIntoDataSourceCommand, found ${s.getClass}")
-  }
-
-  override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaWriteEnabled) {
-      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-          s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-    val path = saveCmd.options.get("path")
-    if (path.isDefined) {
-      val deltaLog = DeltaLog.forTable(SparkSession.active, path.get, saveCmd.options)
-      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
-        saveCmd.options, SparkSession.active)
-    } else {
-      willNotWorkOnGpu("no path specified for Delta Lake table")
-    }
-  }
-
-  override def convertToGpu(): GpuCreatableRelationProvider = new GpuDeltaDataSource(conf)
-}
 
 /**
  * Implements the Delta Probe interface for probing the Delta Lake provider for

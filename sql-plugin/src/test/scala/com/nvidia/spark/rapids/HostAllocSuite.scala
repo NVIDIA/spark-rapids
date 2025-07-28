@@ -20,7 +20,7 @@ import java.util.concurrent.{ExecutionException, Future, LinkedBlockingQueue, Ti
 
 import ai.rapids.cudf.{HostMemoryBuffer, PinnedMemoryPool, Rmm, RmmAllocationMode}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState}
+import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState, TaskPriority}
 import com.nvidia.spark.rapids.spill._
 import org.mockito.Mockito.when
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
@@ -55,7 +55,10 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
         with Future[Void]{
       override def toString = "TASK DONE"
 
-      override def doIt(): Void = null
+      override def doIt(): Void = {
+        TaskPriority.taskDone(wrapped.taskId)
+        null
+      }
 
       override def cancel(b: Boolean) = false
 
@@ -126,7 +129,10 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       setDaemon(true)
       start()
       val waitForStart = doIt(new TaskThreadOp[Void]() {
-        override def doIt(): Void = null
+        override def doIt(): Void = {
+          TaskPriority.getTaskPriority(taskId)
+          null
+        }
 
         override def toString: String = s"INIT TASK $name TASK $taskId"
       })
@@ -335,24 +341,33 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     }
     // some tests need an event handler
     RmmSpark.setEventHandler(
-      new DeviceMemoryEventHandler(SpillFramework.stores.deviceStore, None, 0))
+      new DeviceMemoryEventHandler(SpillFramework.stores.deviceStore, None, 0), "STDERR")
     PinnedMemoryPool.shutdown()
     HostAlloc.initialize(-1)
   }
 
   override def afterAll(): Unit = {
-    SpillFramework.shutdown()
-    PinnedMemoryPool.shutdown()
-    Rmm.shutdown()
-    RmmSpark.clearEventHandler()
-    if (rmmWasInitialized) {
-      // put RMM back for other tests to use
-      Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    try {
+      SpillFramework.shutdown()
+      PinnedMemoryPool.shutdown()
+      Rmm.shutdown()
+      RmmSpark.clearEventHandler()
+      if (rmmWasInitialized) {
+        // put RMM back for other tests to use
+        Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+      }
+      // less than 1 GiB, see more background at:
+      // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
+      PinnedMemoryPool.initialize(500 * 1024 * 1024)
+      HostAlloc.initialize(-1)
+    } catch {
+      case t: Throwable =>
+        // if the exception does not have a message set, then scalatest fails in
+        // ways that make it so you do not see the exception at all.
+        System.err.println(t)
+        t.printStackTrace(System.err)
+        throw t
     }
-    // less than 1 GiB, see more background at:
-    // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
-    PinnedMemoryPool.initialize(500 * 1024 * 1024)
-    HostAlloc.initialize(-1)
   }
 
   test("simple pinned tryAlloc") {
@@ -687,7 +702,13 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
           val w = SpillableHostBuffer.apply(HostAlloc.alloc(1024, preferPinned),
             1024, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
 
-          Thread.sleep(1000)
+          // Why can't we just use Thread.sleep here? Because TIMED_WAITING is a special state
+          // treated as BUFN in spark_resource_adaptor::is_thread_bufn_or_above, this will cause
+          // issues like https://github.com/NVIDIA/spark-rapids/issues/12883
+          val startTime = System.currentTimeMillis
+          while (System.currentTimeMillis < startTime + 100) {
+            Thread.`yield`() // when yielding, the thread is in RUNNABLE state
+          }
 
           // let's say we will do sth with the shuffle data read, e.g. concat them
           // for simplicity, we just have one SpillableHostBuffer as input, in real case there

@@ -92,7 +92,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   }
 }
 
-/** A case class to pack some options. Now it has only one, but may have more in the future */
+/** A case class to pack some options. */
 case class CoalesceReadOption private(
   kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String],
     useAsync: Boolean)
@@ -260,7 +260,8 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
   override def close(): Unit = {}
 }
 
-class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOption)
+class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOption,
+    taskIdentifier: String)
   extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
 
@@ -276,9 +277,7 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     val dumpOption = readOption.kudoDebugMode
     val dumpPrefix = readOption.kudoDebugDumpPrefix
     if (dumpOption != DumpOption.Never && dumpPrefix.isDefined) {
-      lazy val stageId = TaskContext.get().stageId()
-      lazy val taskId = TaskContext.get().taskAttemptId()
-      lazy val updatedPrefix = s"${dumpPrefix.get}_stage_${stageId}_task_${taskId}"
+      val updatedPrefix = s"${dumpPrefix.get}_${taskIdentifier}"
       lazy val (out, path) = createTempFile(new Configuration(), updatedPrefix, ".bin")
       new MergeOptions(dumpOption, () => out, path.toString)
     } else {
@@ -334,7 +333,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
 
   private var bufferingFuture : Option[Future[_]] = None
 
-  protected def tableOperator: SerializedTableOperator[T]
+  protected val tableOperator: SerializedTableOperator[T]
 
   override def close(): Unit = {
     serializedTables.forEach(_.close())
@@ -470,7 +469,7 @@ class HostShuffleCoalesceIterator(
     inputRowsMetric: GpuMetric = NoopMetric)
   extends HostCoalesceIteratorBase[SerializedTableColumn](iter, targetBatchSize,
     concatTimeMetric, inputBatchesMetric, inputRowsMetric) {
-  override protected def tableOperator = new JCudfTableOperator
+  override protected val tableOperator = new JCudfTableOperator
 }
 
 class KudoHostShuffleCoalesceIterator(
@@ -484,13 +483,20 @@ class KudoHostShuffleCoalesceIterator(
     )
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize,
     concatTimeMetric, inputBatchesMetric, inputRowsMetric, readOption.useAsync) {
-  override protected def tableOperator = {
+
+  // Capture TaskContext info during RDD execution when it's available
+  private val taskIdentifier = Option(TaskContext.get()) match {
+    case Some(tc) => s"stage_${tc.stageId()}_task_${tc.taskAttemptId()}"
+    case None => java.util.UUID.randomUUID().toString
+  }
+
+  override protected val tableOperator = {
     val kudoSer = if (dataTypes.nonEmpty) {
       Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
     } else {
       None
     }
-    new KudoTableOperator(kudoSer, readOption)
+    new KudoTableOperator(kudoSer, readOption, taskIdentifier)
   }
 }
 

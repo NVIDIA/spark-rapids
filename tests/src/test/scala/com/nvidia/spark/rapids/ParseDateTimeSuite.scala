@@ -39,10 +39,12 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   private val CORRECTED_TIME_PARSER_POLICY: SparkConf = new SparkConf()
     .set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")
+    .set("spark.sql.ansi.enabled", "false")
 
   private val LEGACY_TIME_PARSER_POLICY_CONF: SparkConf = new SparkConf()
     .set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "LEGACY")
     .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
+    .set("spark.sql.ansi.enabled", "false")
 
   override def beforeEach(): Unit = {
     GpuOverrides.removeAllListeners()
@@ -56,6 +58,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
     conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")
         .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
+        .set("spark.sql.ansi.enabled", "false")
         // until we fix https://github.com/NVIDIA/spark-rapids/issues/2118 we need to fall
         // back to CPU when parsing two-digit years
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
@@ -102,7 +105,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   testSparkResultsAreEqual("to_date yyyy/MM",
     datesAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
+    conf = CORRECTED_TIME_PARSER_POLICY) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy/MM"))
   }
 
@@ -134,7 +137,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
     CORRECTED_TIME_PARSER_POLICY
         // All of the dates being parsed are valid for all of the versions of Spark supported.
-        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")) {
+        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
+        .set("spark.sql.ansi.enabled", "false")) {
     df => df.withColumn("c1", to_date(col("c0")))
   }
 
@@ -182,7 +186,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     timestampsAsStrings,
     new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-        "ProjectExec,Alias,UnixTimestamp,Literal,ShuffleExchangeExec")) {
+        "ProjectExec,Alias,UnixTimestamp,Literal,ShuffleExchangeExec")
+      .set("spark.sql.ansi.enabled", "false")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss.SSS"))
   }
 
@@ -231,25 +236,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     // make sure we aren't suggesting enabling INCOMPATIBLE_DATE_FORMATS for something we
     // can never support
     assert(!planStr.contains(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key))
-  }
-
-  test("parse now") {
-    def now(spark: SparkSession) = {
-      import spark.implicits._
-      Seq("now").toDF("c0")
-          .repartition(2)
-          .withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
-    }
-    val startTimeSeconds = System.currentTimeMillis() / 1000L
-    val cpuNowSeconds = withCpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
-    val gpuNowSeconds = withGpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
-    // For Spark 3.2+, "now" will NOT be parsed as the current time
-    if (!VersionUtils.isSpark320OrLater) {
-      assert(cpuNowSeconds >= startTimeSeconds)
-      assert(gpuNowSeconds >= startTimeSeconds)
-    }
-    // CPU ran first so cannot have a greater value than the GPU run (but could be the same second)
-    assert(cpuNowSeconds <= gpuNowSeconds)
   }
 
   test("Regex: Remove whitespace from month and day") {

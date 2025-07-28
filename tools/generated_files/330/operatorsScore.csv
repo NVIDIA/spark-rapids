@@ -76,8 +76,12 @@ AttributeReference,4
 Average,4
 BRound,4
 Bin,4
+BitAndAgg,4
 BitLength,4
+BitOrAgg,4
+BitXorAgg,4
 BitwiseAnd,4
+BitwiseCount,4
 BitwiseNot,4
 BitwiseOr,4
 BitwiseXor,4
