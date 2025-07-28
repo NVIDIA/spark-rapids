@@ -74,7 +74,9 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
     super.setException(e)
   }
 
-  def isHeldResource: Boolean = heldResource
+  // Indicates whether the task is ready for execution, which means it has acquired the necessary
+  // resources and is not completed.
+  def isReadyForExecution: Boolean = heldResource
 
   def isCompleted: Boolean = completed
 
@@ -91,10 +93,10 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
  */
 class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTask[T]] {
   override def compare(o1: RapidsFutureTask[T], o2: RapidsFutureTask[T]): Int = {
-    if (o1.isHeldResource) {
+    if (o1.isReadyForExecution) {
       // o1 is holding resource, so o1 should come before o2
       -1
-    } else if (o2.isHeldResource) {
+    } else if (o2.isReadyForExecution) {
       // o2 is holding resource, so o2 should come before o1
       1
     } else {
@@ -215,7 +217,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     r match {
       case fut: RapidsFutureTask[_] =>
         // Release the held resource if it was acquired.
-        if (fut.isHeldResource) {
+        if (fut.isReadyForExecution) {
           // Release intermediately if the task supports that or if an exception occurred.
           if (!fut.task.holdResourceAfterCompletion || t != null) {
             fut.task.releaseResourceCallback()
@@ -231,9 +233,9 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           // polled recursively.
           val priorPenalty = -retryPriorAdjust min -1e3f
           fut.adjustPriority(priorPenalty, waitResourceTimeoutMs * 1000000L)
-          val holdingResource = fut.task.asInstanceOf[GroupedAsyncTask[_]].isHoldingResource
+          val holdGroupResource = fut.task.asInstanceOf[GroupedAsyncTask[_]].holdSharedResource
           logWarning(s"Re-add timeout task: scheduleTime(${fut.scheduleTime / 1e9}s), " +
-              s"new priority(${fut.priority}), holdingResource($holdingResource)")
+              s"new priority(${fut.priority}), holdGroupResource($holdGroupResource)")
           require(workQueue.add(fut),
             s"Failed to re-add task ${fut.task} to the work queue after execution")
         }

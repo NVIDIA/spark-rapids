@@ -65,7 +65,7 @@ class AsyncMetricsBuilder {
  * Result wrapper for AsyncTask execution that carries the task's output data and optional
  * resource release callback for deferred resource management.
  */
-trait AsyncResult[T] {
+trait AsyncResult[T] extends AutoCloseable {
   def data: T
 
   def releaseResourceCallback(): Unit = {}
@@ -73,6 +73,16 @@ trait AsyncResult[T] {
   def hasReleaseCallback: Boolean = false
 
   def metrics: AsyncMetrics
+
+  /**
+   * Trigger release callback if it exists. Do not try to close the data itself, because
+   * the lifecycle of the data is managed by the caller.
+   */
+  override def close(): Unit = {
+    if (hasReleaseCallback) {
+      releaseResourceCallback()
+    }
+  }
 }
 
 class SimpleAsyncResult[T](override val data: T,
@@ -252,7 +262,7 @@ abstract class GroupedAsyncTask[T] extends AsyncTask[T] {
   }
 
   // The core method to query if the group behind the task is holding the resource.
-  def isHoldingResource: Boolean = sharedState.holdingResource.get()
+  def holdSharedResource: Boolean = sharedState.holdingResource.get()
 }
 
 class AsyncFunctor[T](
@@ -362,7 +372,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
         try {
           while (!isDone && !isTimeout) {
             task match {
-              case t: GroupedAsyncTask[T] if t.isHoldingResource => isDone = true
+              case t: GroupedAsyncTask[T] if t.holdSharedResource => isDone = true
               case _ =>
             }
             if (isDone) {
@@ -381,9 +391,12 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
           if (isDone) {
             holdingBuffers.incrementAndGet()
             task match {
-              case grouped: GroupedAsyncTask[_] if !grouped.isHoldingResource =>
-                holdingGroups.incrementAndGet()
-              case _ => // No action needed for non-grouped tasks
+              case grouped: GroupedAsyncTask[_] if !grouped.holdSharedResource =>
+                val numGroups = holdingGroups.incrementAndGet()
+                logDebug(s"Acquire a SharedGroup(${required >> 20}MB), " +
+                    s"remaining=${remaining.get() >> 20}MB, pending groups=$numGroups")
+              case _ =>
+              // No action needed for non-grouped tasks
             }
             task.onAcquire()
             AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
@@ -405,14 +418,14 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
       val newVal = remaining.addAndGet(toRelease)
       task.onRelease()
       val pendingTaskNum = holdingBuffers.decrementAndGet()
-      val pendingGroupNum = task match {
-        case g: GroupedAsyncTask[T] if !g.isHoldingResource =>
-          holdingGroups.decrementAndGet()
+      task match {
+        case g: GroupedAsyncTask[T] if !g.holdSharedResource =>
+          val numGroup = holdingGroups.decrementAndGet()
+          val groupSize = g.resource.asInstanceOf[HostResource].groupedHostMemoryBytes.get
+          logDebug(s"Release a SharedGroup(${groupSize >> 20}MB), remaining=${newVal >> 20}MB, " +
+              s"pending tasks=$pendingTaskNum, pending groups=$numGroup)")
         case _ =>
-          holdingGroups.get()
       }
-      logDebug(s"Release HostMemory(${toRelease >> 20}MB), remaining=${newVal >> 20}MB, " +
-          s"pending $pendingTaskNum tasks($pendingGroupNum groups)")
       lock.lock()
       condition.signalAll()
       lock.unlock()

@@ -1105,9 +1105,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .createWithDefault(MULTITHREAD_READ_MEM_LIMIT_DEFAULT)
 
   val MULTITHREAD_READ_TASK_TIMEOUT = conf("spark.rapids.sql.multiThreadedRead.taskTimeout")
-      .doc("The maximum time in milliseconds to wait for a task to finish reading " +
-        "before giving up and put off the run. This can not be changed at runtime after " +
-        "the executor has started.")
+      .doc("The maximum time in milliseconds to wait for a task to acquire required resource " +
+        "before giving up and put off the run, by re-appending the task back into the queue " +
+        "with a priority penality.")
       .startupOnly()
       .internal()
       .longConf

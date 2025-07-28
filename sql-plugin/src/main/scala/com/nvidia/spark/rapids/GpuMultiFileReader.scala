@@ -206,6 +206,9 @@ object MultiFileReaderThreadPool extends Logging {
       createThreadPool(s"stage pool of MultiFileReader for stage($stageId)", conf)
     })
   }
+
+  // Tracking the number of running tasks for the current Executor.
+  private[rapids] lazy val runningTaskNum = new AtomicInteger(0)
 }
 
 object MultiFileReaderUtils {
@@ -429,9 +432,6 @@ abstract class MultiFileCloudPartitionReaderBase(
   // like in the case of a limit call and we don't read all files
   private var fcs: CompletionService[AsyncTaskResult] = null
 
-  // Tracking the number of running tasks in the thread pool.
-  private val runningTaskNum = new AtomicInteger(0)
-
   // If I/O eager prefetch is enabled, submit async reading tasks eagerly instead of triggering
   // async reading tasks when the first batch is requested.
   // TODO: manage the priority of the read tasks, on-demand tasks should have the highest priority
@@ -471,10 +471,11 @@ abstract class MultiFileCloudPartitionReaderBase(
       val runner = getBatchRunner(tc, file, conf, filters)
       val metrics = GpuTaskMetrics.get
       runner.setBeforeHook(() => {
-        metrics.updateMultithreadReaderMaxParallelism(runningTaskNum.incrementAndGet())
+        metrics.updateMultithreadReaderMaxParallelism(
+          MultiFileReaderThreadPool.runningTaskNum.incrementAndGet())
       })
       runner.setAfterHook(() => {
-        runningTaskNum.decrementAndGet()
+        MultiFileReaderThreadPool.runningTaskNum.decrementAndGet()
       })
       runner
     }
@@ -880,9 +881,7 @@ abstract class MultiFileCloudPartitionReaderBase(
         taskResult.data.memBuffersAndSizes.foreach { hmbInfo =>
           hmbInfo.hmbs.safeClose()
         }
-        if (taskResult.hasReleaseCallback) {
-          taskResult.releaseResourceCallback()
-        }
+        taskResult.close()
       } else {
         // Note we are not interrupting thread here so it
         // will finish reading and then just discard. If we
