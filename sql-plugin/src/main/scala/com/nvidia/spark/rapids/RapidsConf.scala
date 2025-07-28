@@ -16,8 +16,8 @@
 package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
-
 import java.util
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
@@ -25,9 +25,8 @@ import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
-import com.nvidia.spark.rapids.RapidsConf.ASYNC_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES
-import org.apache.spark.SparkConf
 
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry

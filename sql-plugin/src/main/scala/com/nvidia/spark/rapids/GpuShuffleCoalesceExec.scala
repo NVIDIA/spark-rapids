@@ -26,6 +26,7 @@ import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
+import com.nvidia.spark.rapids.GpuMetric.{ASYNC_READ_TIME, SYNC_READ_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -64,8 +65,8 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
-    SYNC_READ_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESC_SYNC_READ_TIME),
-    ASYNC_READ_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESC_ASYNC_READ_TIME),
+    SYNC_READ_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SYNC_READ_TIME),
+    ASYNC_READ_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_ASYNC_READ_TIME),
     READ_THROTTLING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_THROTTLING_TIME),
   )
 
@@ -94,7 +95,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
 /** A case class to pack some options. */
 case class CoalesceReadOption private(
-  kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String],
+    kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String],
     useAsync: Boolean)
 
 object CoalesceReadOption {
@@ -189,11 +190,6 @@ object GpuShuffleCoalesceUtils {
       case o => throw new IllegalStateException(s"unsupported type: ${o.getClass}")
     }
   }
-
-  val SYNC_READ_TIME = "shuffleSyncReadTime"
-  val ASYNC_READ_TIME = "shuffleAsyncReadTime"
-  val DESC_SYNC_READ_TIME = "sync read time"
-  val DESC_ASYNC_READ_TIME = "async read time"
 }
 
 /**
@@ -313,7 +309,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     concatTimeMetric: GpuMetric,
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
-    asyncBuffering: Boolean = false
+    useAsync: Boolean = false
 ) extends Iterator[CoalescedHostResult] with AutoCloseable {
   private[this] val serializedTables = new util.ArrayDeque[T]
   @volatile private[this] var numTablesInBatch: Int = 0
@@ -331,7 +327,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   private val taskAttemptID = Option(TaskContext.get()).
     map(_.taskAttemptId().toString).getOrElse("unknown")
 
-  private var bufferingFuture : Option[Future[_]] = None
+  private var bufferingFuture: Option[Future[_]] = None
 
   protected val tableOperator: SerializedTableOperator[T]
 
@@ -361,8 +357,8 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
         numRowsInBatch = tableOperator.getNumRows(firstTable)
       }
 
-      if (asyncBuffering && iter.hasNext) {
-        if(executor.isEmpty) {
+      if (useAsync && iter.hasNext) {
+        if (executor.isEmpty) {
           executor =
             Some(new ThrottlingExecutor(
               TrampolineUtil.newDaemonCachedThreadPool(

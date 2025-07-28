@@ -126,7 +126,9 @@ class AsyncOutputStream(openFn: Callable[OutputStream], executor: ThrottlingExec
   }
 
   override def write(b: Array[Byte]): Unit = {
-    scheduleWrite(() => delegate.write(b), b.length)
+    val copy = new Array[Byte](b.length)
+    System.arraycopy(b, 0, copy, 0, b.length)
+    scheduleWrite(() => delegate.write(copy), copy.length)
   }
 
   /**
@@ -142,7 +144,9 @@ class AsyncOutputStream(openFn: Callable[OutputStream], executor: ThrottlingExec
    */
   @throws[IOException]
   override def write(b: Array[Byte], off: Int, len: Int): Unit = {
-    scheduleWrite(() => delegate.write(b, off, len), len)
+    val copy = new Array[Byte](len)
+    System.arraycopy(b, off, copy, 0, len)
+    scheduleWrite(() => delegate.write(copy, 0, len), len)
   }
 
   /**

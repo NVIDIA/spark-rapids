@@ -31,6 +31,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * Similar as GpuShuffleCoalesceIterator, but pulling in host batches asynchronously, to
  * overlap the host batch reading and the downstream GPU operations.
+ *
+ * @note this iterator is not thread safe.
  */
 class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     dataTypes: Array[DataType],

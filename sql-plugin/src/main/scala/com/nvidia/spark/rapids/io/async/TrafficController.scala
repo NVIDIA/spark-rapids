@@ -141,7 +141,9 @@ object TrafficController {
   private var readInstance: TrafficController = _
 
   /**
-   * Initializes the TrafficController singleton instance.
+   * Initializes the TrafficController. Currently we have two instances, one for
+   * write operations and one for read operations.
+   *
    * This is called once per executor.
    */
   def initialize(conf: RapidsConf): Unit = synchronized {
