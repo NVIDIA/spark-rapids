@@ -2970,54 +2970,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val asyncReadMaxInFlightHostMemoryBytes: Long =
     get(ASYNC_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
 
-  /**
-   * Convert a string value to the injection configuration OomInjection.
-   *
-   * The new format is a CSV in any order
-   *  "num_ooms=<integer>,skip=<integer>,type=<string value of OomInjectionType>"
-   *
-   * "type" maps to OomInjectionType to run count against oomCount and skipCount
-   * "num_ooms" maps to oomCount (default 1), the number of allocations resulting in an OOM
-   * "skip" maps to skipCount (default 0), the number of matching  allocations to skip before
-   * injecting an OOM at the skip+1st allocation.
-   * *split* maps to withSplit (default false), determining whether to inject
-   * *SplitAndRetryOOM instead of plain *RetryOOM exceptions
-   *
-   * For backwards compatibility support existing binary configuration
-   *   "false", disabled, i.e. oomCount=0, skipCount=0, injectionType=None
-   *   "true" or anything else but "false"  yields the default
-   *      oomCount=1, skipCount=0, injectionType=CPU_OR_GPU, withSplit=false
-   */
-  lazy val testRetryOOMInjectionMode : OomInjectionConf = {
-    get(TEST_RETRY_OOM_INJECTION_MODE).toLowerCase match {
-      case "false" =>
-        OomInjectionConf(numOoms = 0, skipCount = 0,
-        oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
-      case "true" =>
-        OomInjectionConf(numOoms = 1, skipCount = 0,
-          oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
-      case injectConfStr =>
-        val injectConfMap = injectConfStr.split(',').map(_.split('=')).collect {
-          case Array(k, v) => k -> v
-        }.toMap
-        val numOoms = injectConfMap.getOrElse("num_ooms", 1.toString)
-        val skipCount = injectConfMap.getOrElse("skip", 0.toString)
-        val oomFilterStr = injectConfMap
-          .getOrElse("type", OomInjectionType.CPU_OR_GPU.toString)
-          .toUpperCase()
-        val oomFilter = OomInjectionType.valueOf(oomFilterStr)
-        val withSplit = injectConfMap.getOrElse("split", false.toString)
-        val ret = OomInjectionConf(
-          numOoms = numOoms.toInt,
-          skipCount = skipCount.toInt,
-          oomInjectionFilter = oomFilter,
-          withSplit = withSplit.toBoolean
-        )
-        logDebug(s"Parsed ${ret} from ${injectConfStr} via injectConfMap=${injectConfMap}");
-        ret
-    }
-  }
-
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
   lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
