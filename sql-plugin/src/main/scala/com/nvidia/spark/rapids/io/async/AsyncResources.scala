@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
 import java.util.concurrent.locks.ReentrantLock
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.execution.TrampolineUtil.bytesToString
 
 sealed trait TaskResource
 
@@ -181,15 +182,15 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
    * This method is protected not private, so it can be called by subclasses to build own result.
    */
   protected def releaseResource(): Unit = {
-    require(holdResource, "Task does NOT hold resource after completion")
+    require(decayRelease, "Task does NOT hold resource after completion")
     require(releaseResourceCallback != null, "releaseResourceCallback is not registered")
     releaseResourceCallback()
-    holdResource = false
+    decayRelease = false
   }
 
   private[async] var releaseResourceCallback: () => Unit = _
 
-  private[async] var holdResource = false
+  private[async] var decayRelease = false
 
   private[async] lazy val metricsBuilder = new AsyncMetricsBuilder
 }
@@ -383,8 +384,8 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
               waitTimeNs = condition.awaitNanos(waitTimeNs)
             }  else {
               isTimeout = true
-              logWarning(s"Failed to acquire ${required >> 20}MB, remaining=" +
-                  s"${remaining.get() >> 20}MB, " +
+              logWarning(s"Failed to acquire ${bytesToString(required)}, " +
+                  s"remaining=${bytesToString(remaining.get())}, " +
                   s"pendingTasks=${holdingBuffers.get()}, pendingGroups=${holdingGroups.get()}")
             }
           }
@@ -393,8 +394,8 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
             task match {
               case grouped: GroupedAsyncTask[_] if !grouped.holdSharedResource =>
                 val numGroups = holdingGroups.incrementAndGet()
-                logDebug(s"Acquire a SharedGroup(${required >> 20}MB), " +
-                    s"remaining=${remaining.get() >> 20}MB, pending groups=$numGroups")
+                logDebug(s"Acquire a SharedGroup(${bytesToString(required)}), " +
+                    s"remaining=${bytesToString(remaining.get())}, pendingGroups=$numGroups")
               case _ =>
               // No action needed for non-grouped tasks
             }
@@ -421,9 +422,10 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
       task match {
         case g: GroupedAsyncTask[T] if !g.holdSharedResource =>
           val numGroup = holdingGroups.decrementAndGet()
-          val groupSize = g.resource.asInstanceOf[HostResource].groupedHostMemoryBytes.get
-          logDebug(s"Release a SharedGroup(${groupSize >> 20}MB), remaining=${newVal >> 20}MB, " +
-              s"pending tasks=$pendingTaskNum, pending groups=$numGroup)")
+          val groupSizeBytes = g.resource.asInstanceOf[HostResource].groupedHostMemoryBytes.get
+          logDebug(s"Release a SharedGroup(${bytesToString(groupSizeBytes)}), " +
+              s"remaining=${bytesToString(newVal)}, " +
+              s"pendingTasks=$pendingTaskNum, pendingGroups=$numGroup)")
         case _ =>
       }
       lock.lock()

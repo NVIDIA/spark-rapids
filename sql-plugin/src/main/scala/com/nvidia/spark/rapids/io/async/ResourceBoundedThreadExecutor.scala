@@ -35,13 +35,13 @@ import org.apache.spark.internal.Logging
  */
 class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult[T]](task) {
   private[async] var priority: Float = task.priority
-  private var heldResource: Boolean = false
+  private var resourceFulfilled: Boolean = false
   private var completed: Boolean = false
   private var caughtException: Boolean = false
 
   override def run(): Unit = if (!caughtException) {
     require(!completed, "Task has already been completed")
-    if (heldResource) {
+    if (resourceFulfilled) {
       // pass the schedule time to the task metrics builder
       task.metricsBuilder.setScheduleTimeMs(scheduleTime)
       super.run()
@@ -51,19 +51,30 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
 
   def holdResource(elapsedNs: Long): Unit = {
     require(!completed, "Task has already been completed")
-    require(!heldResource, "Cannot hold resource that is already held")
-    heldResource = true
+    require(!resourceFulfilled, "Cannot hold resource that is already held")
+    resourceFulfilled = true
     scheduleTime += elapsedNs
   }
 
-  def releaseResource(): Unit = {
-    require(heldResource, "Cannot release resource that was not held")
-    heldResource = false
+  def releaseResource(force: Boolean = false): Unit = {
+    require(resourceFulfilled, "Cannot release resource that was not held")
+    resourceFulfilled = false
+    // Release intermediately if the task supports that, or it has to be (like exception occurred)
+    if (force || !task.holdResourceAfterCompletion) {
+      task.releaseResourceCallback()
+    } else {
+      // Otherwise, we  mark the task for deferred release.
+      task.decayRelease = true
+    }
   }
 
-  def adjustPriority(delta: Float, timeoutNs: Long): Float = {
+  /**
+   * Adjusts the task's priority by a specified delta and appends the last wait time to the
+   * schedule time.
+   */
+  def adjustPriority(delta: Float, lastWaitTime: Long): Float = {
     require(!completed, "Task has already been completed")
-    scheduleTime += timeoutNs
+    scheduleTime += lastWaitTime
     priority += delta
     priority
   }
@@ -74,9 +85,8 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
     super.setException(e)
   }
 
-  // Indicates whether the task is ready for execution, which means it has acquired the necessary
-  // resources and is not completed.
-  def isReadyForExecution: Boolean = heldResource
+  // Indicates whether it has acquired the necessary resources to run.
+  def isResourceFulfilled: Boolean = resourceFulfilled
 
   def isCompleted: Boolean = completed
 
@@ -93,10 +103,10 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
  */
 class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTask[T]] {
   override def compare(o1: RapidsFutureTask[T], o2: RapidsFutureTask[T]): Int = {
-    if (o1.isReadyForExecution) {
+    if (o1.isResourceFulfilled) {
       // o1 is holding resource, so o1 should come before o2
       -1
-    } else if (o2.isReadyForExecution) {
+    } else if (o2.isResourceFulfilled) {
       // o2 is holding resource, so o2 should come before o1
       1
     } else {
@@ -217,14 +227,8 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     r match {
       case fut: RapidsFutureTask[_] =>
         // Release the held resource if it was acquired.
-        if (fut.isReadyForExecution) {
-          // Release intermediately if the task supports that or if an exception occurred.
-          if (!fut.task.holdResourceAfterCompletion || t != null) {
-            fut.task.releaseResourceCallback()
-            fut.releaseResource()
-          } else {
-            fut.task.holdResource = true
-          }
+        if (fut.isResourceFulfilled) {
+          fut.releaseResource(t != null)
         }
         // If the task failed to acquire enough resource, we bypass the execution and re-add it to
         // the task queue with a priority penalty to avoid starvation.
@@ -233,9 +237,8 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           // polled recursively.
           val priorPenalty = -retryPriorAdjust min -1e3f
           fut.adjustPriority(priorPenalty, waitResourceTimeoutMs * 1000000L)
-          val holdGroupResource = fut.task.asInstanceOf[GroupedAsyncTask[_]].holdSharedResource
           logWarning(s"Re-add timeout task: scheduleTime(${fut.scheduleTime / 1e9}s), " +
-              s"new priority(${fut.priority}), holdGroupResource($holdGroupResource)")
+              s"new priority(${fut.priority})")
           require(workQueue.add(fut),
             s"Failed to re-add task ${fut.task} to the work queue after execution")
         }
