@@ -25,11 +25,11 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.jni.GpuMapZipWithUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
+import org.apache.spark.sql.catalyst.analysis.TypeCoercion
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 
 /**
  * A named lambda variable. In Spark on the CPU this includes an AtomicReference to the value that
@@ -710,8 +710,11 @@ case class GpuMapZipExpression(
   @transient lazy val MapType(rightKeyType, rightValueType, rightValueContainsNull) 
   = rightMap.dataType
 
+  @transient lazy val keyType =
+    TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(leftKeyType, rightKeyType).get
+
   override def dataType: DataType = {
-    MapType(leftKeyType, StructType(Seq(
+    MapType(keyType, StructType(Seq(
       StructField("left", leftValueType),
       StructField("right", rightValueType)
     )), leftValueContainsNull || rightValueContainsNull)
@@ -816,7 +819,10 @@ case class GpuMapZipWith(
   @transient lazy val MapType(keyType1, valueType1, valueContainsNull1) = argument1.dataType
   @transient lazy val MapType(keyType2, valueType2, valueContainsNull2) = argument2.dataType
 
-  override def dataType: DataType = MapType(keyType1, function.dataType, 
+  @transient lazy val keyType =
+    TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(keyType1, keyType2).get
+
+  override def dataType: DataType = MapType(keyType, function.dataType, 
     valueContainsNull1 || valueContainsNull2)
 
   override def prettyName: String = "map_zip_with"
@@ -830,19 +836,15 @@ case class GpuMapZipWith(
   override def arguments: Seq[Expression] = Seq(argument1, argument2)
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(argument1.columnarEval(batch)) { arg1 =>
-      withResource(argument2.columnarEval(batch)) { arg2 =>
-        val (lambdaBatch, zippedMap) = makeElementProjectBatch(batch)
-        withResource(lambdaBatch) { lambdaBatch =>
-          withResource(zippedMap) { zippedMap =>
-            val newValueCol = function.columnarEval(lambdaBatch)
-            withResource(newValueCol) { newValueCol =>
-              withResource(GpuMapUtils.replaceExplodedValueAsView(zippedMap,
-               newValueCol.getBase)) {
-                updatedMapView =>
-                  GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
-              }
-            }
+    val (lambdaBatch, zippedMap) = makeElementProjectBatch(batch)
+    withResource(lambdaBatch) { lambdaBatch =>
+      withResource(zippedMap) { zippedMap =>
+        val newValueCol = function.columnarEval(lambdaBatch)
+        withResource(newValueCol) { newValueCol =>
+          withResource(GpuMapUtils.replaceExplodedValueAsView(zippedMap,
+            newValueCol.getBase)) {
+            updatedMapView =>
+              GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
           }
         }
       }
