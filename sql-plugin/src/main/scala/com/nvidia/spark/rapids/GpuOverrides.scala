@@ -3983,7 +3983,7 @@ object GpuOverrides extends Logging {
 
         override def tagExprForGpu(): Unit = {
           a.schema match {
-            case MapType(_: StringType, _: StringType, _) => ()
+            case MapType(StringType, StringType, _) => ()
             case st: StructType =>
               if (hasDuplicateFieldNames(st)) {
                 willNotWorkOnGpu("from_json on GPU does not support duplicate field " +

@@ -95,11 +95,12 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits zero config off heap disabled") {
+    val deviceCount = 1
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "false"))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
         TestMemoryChecker)
 
     assertResult(0)(pinnedSize)
@@ -107,11 +108,12 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits zero config") {
+    val deviceCount = 1
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "true"))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
         TestMemoryChecker)
 
     val minMem = toBytes("4g")
@@ -123,6 +125,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits zero config with host mem") {
+    val deviceCount = 1
     val pySparkOverheadStr = "2g"
     val sparkOffHeapSizeStr = "1g"
     val sparkConf = new SparkConf()
@@ -134,7 +137,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     val availableHostMem = toBytes("16g")
     TestMemoryChecker.setAvailableMemoryBytes(Some(availableHostMem))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
         TestMemoryChecker)
     TestMemoryChecker.setAvailableMemoryBytes(None)
 
@@ -149,14 +152,42 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     assertResult(expectedNonPinned)(nonPinnedSize)
   }
 
+  test("get host memory limits zero config with host mem - multi device") {
+    val deviceCount = 2
+    val pySparkOverheadStr = "2g"
+    val sparkOffHeapSizeStr = "1g"
+    val sparkConf = new SparkConf()
+      .set("spark.executor.pyspark.memory", pySparkOverheadStr)
+      .set("spark.memory.offHeap.enabled", "true")
+      .set("spark.memory.offHeap.size", sparkOffHeapSizeStr)
+    val rapidsConf = new RapidsConf(sparkConf)
+    val availableHostMem = toBytes("32g")
+    TestMemoryChecker.setAvailableMemoryBytes(Some(availableHostMem))
+    val (pinnedSize, nonPinnedSize) =
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
+        TestMemoryChecker)
+    TestMemoryChecker.setAvailableMemoryBytes(None)
+
+    val heapSize = toBytes("1g") // default
+    val pySparkOverhead = toBytes(pySparkOverheadStr)
+    val sparkOffHeapSize = toBytes(sparkOffHeapSizeStr)
+    val totalOverhead = toBytes("15m") // default
+    val expectedNonPinned = (.8 * ((availableHostMem / deviceCount) - heapSize - pySparkOverhead -
+      sparkOffHeapSize)).toLong - totalOverhead
+
+    assertResult(0)(pinnedSize)
+    assertResult(expectedNonPinned)(nonPinnedSize)
+  }
+
   test("get host memory limits off heap configured") {
+    val deviceCount = 1
     val offHeapLimitStr = "16g"
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "true",
       RapidsConf.OFF_HEAP_LIMIT_SIZE.key -> offHeapLimitStr))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
       TestMemoryChecker)
 
     val offHeapLimit = toBytes(offHeapLimitStr)
@@ -168,6 +199,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits memoryOverhead configured") {
+    val deviceCount = 1
     val sparkOverheadStr = "8g"
     val sparkConf = new SparkConf()
       .set("spark.executor.memoryOverhead", sparkOverheadStr)
@@ -176,7 +208,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "true"))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
         TestMemoryChecker)
 
     val sparkOverhead = toBytes(sparkOverheadStr)
@@ -188,13 +220,14 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits pinned config only") {
+    val deviceCount = 1
     val pinnedSizeStr = "2g"
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "true",
       RapidsConf.PINNED_POOL_SIZE.key -> pinnedSizeStr))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
         TestMemoryChecker)
 
     val expectedPinned = toBytes(pinnedSizeStr)
@@ -207,13 +240,14 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits pinned config above memLimit") {
+    val deviceCount = 1
     val pinnedSizeStr = "8g"
     val sparkConf = new SparkConf()
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "true",
       RapidsConf.PINNED_POOL_SIZE.key -> pinnedSizeStr))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
         TestMemoryChecker)
 
     val minMemLimit = toBytes("4g")
@@ -225,6 +259,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
   }
 
   test("get host memory limits zero config with host mem with heap size set") {
+    val deviceCount = 1
     val pySparkOverheadStr = "2g"
     val heapSizeStr = "2g"
     val sparkConf = new SparkConf()
@@ -235,7 +270,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     val hostBytes = toBytes("16g")
     TestMemoryChecker.setAvailableMemoryBytes(Some(hostBytes))
     val (pinnedSize, nonPinnedSize) =
-      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf,
+      GpuDeviceManager.getPinnedPoolAndOffHeapLimits(rapidsConf, sparkConf, deviceCount,
         TestMemoryChecker)
     TestMemoryChecker.setAvailableMemoryBytes(None)
 

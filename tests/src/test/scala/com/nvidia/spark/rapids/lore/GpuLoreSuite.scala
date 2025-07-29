@@ -224,6 +224,25 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  test("Skip dumping plan") {
+    withGpuSparkSession{ spark =>
+      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[*]")
+      spark.conf.set(RapidsConf.LORE_SKIP_DUMPING_PLAN.key, "true")
+
+      val df = spark.range(0, 1000, 1, 100)
+        .selectExpr("id % 10 as key", "id % 100 as value")
+
+      assert(1000 == df.collect().length)
+
+      val lorePath = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-3")
+      val planDataFile = GpuLore.pathOfRootPlanMeta(lorePath)
+      val fs = planDataFile.getFileSystem(spark.sparkContext.hadoopConfiguration)
+
+      assert(!fs.exists(planDataFile))
+    }
+  }
+
   test("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
     doTestReplay("56[*]") { spark =>
       // Disable broadcast join, force hash join

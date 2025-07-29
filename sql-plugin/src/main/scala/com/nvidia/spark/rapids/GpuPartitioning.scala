@@ -18,10 +18,11 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.jni.kudo.KudoGpuSerializer
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -31,11 +32,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPartitioning extends Partitioning {
   private[this] val (
-    maxCpuBatchSize, maxCompressionBatchSize, _useGPUShuffle, _useMultiThreadedShuffle) = {
+    maxCpuBatchSize, maxCompressionBatchSize, _useGPUShuffle,
+        _useKudoGPUSlicing, _useMultiThreadedShuffle) = {
     val rapidsConf = new RapidsConf(SQLConf.get)
     (rapidsConf.shuffleParitioningMaxCpuBatchSize,
       rapidsConf.shuffleCompressionMaxBatchMemory,
       GpuShuffleEnv.useGPUShuffle(rapidsConf),
+      rapidsConf.shuffleKudoGpuSerializerEnabled,
       GpuShuffleEnv.useMultiThreadedShuffle(rapidsConf))
   }
 
@@ -45,6 +48,8 @@ trait GpuPartitioning extends Partitioning {
   }
 
   def usesGPUShuffle: Boolean = _useGPUShuffle
+
+  def usesKudoGPUSlicing: Boolean = _useKudoGPUSlicing
 
   def usesMultiThreadedShuffle: Boolean = _useMultiThreadedShuffle
 
@@ -159,7 +164,18 @@ trait GpuPartitioning extends Partitioning {
       if (mightNeedToSplit) {
         tmp.flatMap {
           case (batch, part) =>
-            val totalSize = SlicedGpuColumnVector.getTotalHostMemoryUsed(batch)
+            val totalSize = if (batch.numCols() > 0) {
+              batch.column(0) match {
+                case _: SlicedGpuColumnVector =>
+                  SlicedGpuColumnVector.getTotalHostMemoryUsed(batch)
+                case _: SlicedSerializedColumnVector =>
+                  SlicedSerializedColumnVector.getTotalHostMemoryUsed(batch)
+                case _ =>
+                  0L
+              }
+            } else {
+              0L
+            }
             val numOutputBatches =
               math.ceil(totalSize.toDouble / maxCpuBatchSize).toInt
             if (numOutputBatches > 1) {
@@ -179,22 +195,70 @@ trait GpuPartitioning extends Partitioning {
     }
   }
 
+  def sliceAndSerializeOnGpu(numRows: Int, partitionIndexes: Array[Int],
+      partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
+    partitionColumns.foreach(_.getBase.getNullCount)
+    val (dataHost, offsetsHost) = withResource(partitionColumns) { _ =>
+      withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
+        withResource(KudoGpuSerializer.splitAndSerializeToDevice(table,
+          partitionIndexes.tail: _*)) { dmbs =>
+          val data = dmbs(0)
+          val offsets = dmbs(1)
+          closeOnExcept(Seq(HostMemoryBuffer.allocate(data.getLength),
+            HostMemoryBuffer.allocate(offsets.getLength))) { seq =>
+            val dataHost = seq(0)
+            val offsetsHost = seq(1)
+            dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
+            offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+            (dataHost, offsetsHost)
+          }
+        }
+      }
+    }
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
+
+    withResource(Seq(dataHost, offsetsHost)) { _ =>
+      val numSlices = numPartitions + 1
+      val elemSize = offsetsHost.getLength / numSlices
+
+      val res = new Array[ColumnarBatch](numPartitions)
+      var start = 0
+      for (i <- 1 until numPartitions) {
+        val idx = offsetsHost.getLong((i) * elemSize).toInt
+        res(i - 1) = new ColumnarBatch(Array(
+          new SlicedSerializedColumnVector(dataHost, start, idx)))
+        val partNumRows = partitionIndexes(i)
+        res(i - 1).setNumRows(partNumRows)
+        start = idx
+      }
+      res(numPartitions - 1) = new ColumnarBatch(Array(
+        new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+      res(numPartitions - 1).setNumRows(numRows)
+
+      res.zipWithIndex.filter(_._1 != null)
+    }
+  }
+
   def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
-    val sliceOnGpu = usesGPUShuffle
-    val nvtxRangeKey = if (sliceOnGpu) {
-      "sliceInternalOnGpu"
+    if (usesKudoGPUSlicing) {
+      sliceAndSerializeOnGpu(numRows, partitionIndexes, partitionColumns)
     } else {
-      "sliceInternalOnCpu"
-    }
-    // If we are not using the Rapids shuffle we fall back to CPU splits way to avoid the hit
-    // for large number of small splits.
-    withResource(new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)) { _ =>
-      if (sliceOnGpu) {
-        val tmp = sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
-        tmp.zipWithIndex.filter(_._1 != null)
+      val sliceOnGpu = usesGPUShuffle
+      val nvtxRangeKey = if (sliceOnGpu) {
+        "sliceInternalOnGpu"
       } else {
-        sliceInternalOnCpuAndClose(numRows, partitionIndexes, partitionColumns)
+        "sliceInternalOnCpu"
+      }
+      // If we are not using the Rapids shuffle we fall back to CPU splits way to avoid the hit
+      // for large number of small splits.
+      withResource(new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)) { _ =>
+        if (sliceOnGpu) {
+          val tmp = sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
+          tmp.zipWithIndex.filter(_._1 != null)
+        } else {
+          sliceInternalOnCpuAndClose(numRows, partitionIndexes, partitionColumns)
+        }
       }
     }
   }
