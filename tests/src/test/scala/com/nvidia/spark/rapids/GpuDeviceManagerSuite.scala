@@ -160,7 +160,8 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
       .set("spark.executor.pyspark.memory", pySparkOverheadStr)
       .set("spark.memory.offHeap.enabled", "true")
       .set("spark.memory.offHeap.size", sparkOffHeapSizeStr)
-    val rapidsConf = new RapidsConf(sparkConf)
+    val rapidsConf = new RapidsConf(Map(
+      RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "true"))
     val availableHostMem = toBytes("32g")
     TestMemoryChecker.setAvailableMemoryBytes(Some(availableHostMem))
     val (pinnedSize, nonPinnedSize) =
