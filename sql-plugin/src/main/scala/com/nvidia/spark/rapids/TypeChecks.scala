@@ -1434,10 +1434,15 @@ class CastChecks extends ExprChecks {
   }
 }
 
+object ToPrettyStringChecks {
+  private val BINARY_STYLE_KEY = "spark.sql.binaryOutputStyle"
+}
+
 /** 
  * This class is just restricting the 'to' dataType to a StringType in the CastChecks class
  */ 
 class ToPrettyStringChecks extends CastChecks {
+  import ToPrettyStringChecks.BINARY_STYLE_KEY
 
   override protected def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
     val cast = meta.wrapped.asInstanceOf[UnaryExpression]
@@ -1445,6 +1450,19 @@ class ToPrettyStringChecks extends CastChecks {
     val to = StringType
     if (!gpuCanCast(from, to)) {
       willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
+    }
+
+    if (from == BinaryType) {
+      // Technically this is only needed for 4.0.0+, but we are doing it for all of them
+      // because it should not hurt, and it makes the code simpler.
+      // https://github.com/NVIDIA/spark-rapids/issues/10884 and
+      // https://github.com/apache/spark/pull/46133/files
+      meta.conf.getStr(BINARY_STYLE_KEY) match {
+        case Some(style) =>
+          willNotWork(s"$style is not supported for $BINARY_STYLE_KEY")
+        case None =>
+          // Noop the only one we support (the default)
+      }
     }
   }
 }
