@@ -2139,6 +2139,19 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(true)
 
+  object ShuffleKudoMode extends Enumeration {
+    val CPU, GPU = Value
+  }
+
+  val SHUFFLE_KUDO_MODE = conf("spark.rapids.shuffle.kudo.serializer.mode")
+    .doc("Kudo serializer mode. " +
+      "\"CPU\": serialize shuffle outputs on the cpu. " +
+      "\"GPU\": serialize shuffle outputs on the gpu. ")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createWithDefault(ShuffleKudoMode.CPU.toString)
+
   val SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED =
     conf("spark.rapids.shuffle.kudo.serializer.measure.buffer.copy.enabled")
     .doc("Enable or disable measuring buffer copy time when using Kudo serializer for the shuffle.")
@@ -2557,6 +2570,12 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .stringConf
     .createOptional
 
+  val LORE_SKIP_DUMPING_PLAN = conf("spark.rapids.sql.lore.skip.plan.dump")
+    .doc("Skip dumping plan metadata when doing lore dump")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val CASE_WHEN_FUSE =
     conf("spark.rapids.sql.case_when.fuse")
       .doc("If when branches is greater than 2 and all then/else values in case when are string " +
@@ -2710,7 +2729,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.08.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -3346,6 +3365,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
+  lazy val shuffleKudoMode: String = get(SHUFFLE_KUDO_MODE)
+
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
 
@@ -3401,6 +3422,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.CACHE_ONLY
 
   def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
+
+  def shuffleKudoGpuSerializerEnabled: Boolean = shuffleKudoSerializerEnabled &&
+      ShuffleKudoMode.withName(shuffleKudoMode) == ShuffleKudoMode.GPU
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
@@ -3533,6 +3557,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     .getOrElse(Map.empty)
 
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
+
+  lazy val loreSkipDumpingPlan: Boolean = get(LORE_SKIP_DUMPING_PLAN)
 
   lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 

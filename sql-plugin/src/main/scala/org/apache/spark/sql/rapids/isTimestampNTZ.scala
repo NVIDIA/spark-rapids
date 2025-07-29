@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids
 
-object SparkShimImpl extends Spark350PlusNonDBShims
+import org.apache.spark.sql.types.{DataType, TimestampNTZType}
+
+object isTimestampNTZ {
+  // Sadly TimestampNTZType is marked as private in older versions of
+  // Spark and this is a workaround for it. We should recheck this once
+  // we drop spark_3.2.0 support.
+  def apply(dt: DataType): Boolean = dt == TimestampNTZType
+}

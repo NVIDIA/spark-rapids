@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,16 +38,16 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.rapids.GpuDecimalDivide
 import org.apache.spark.sql.types.DecimalType
 
-abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
-    extends GpuDecimalAverageBase(child, sumDataType) {
+abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType, failOnError: Boolean)
+    extends GpuDecimalAverageBase(child, sumDataType, failOnError) {
 
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: Expression = {
     GpuCast(
-      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = false),
-      dataType)
+      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = failOnError),
+      dataType, ansiMode = failOnError)
   }
 
   // Window
@@ -55,9 +55,10 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
   // recreating everything that would have to go into doing the SUM and the COUNT here.
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
     val count = GpuWindowExpression(GpuCount(Seq(child)), spec)
-    val sum = GpuWindowExpression(GpuSum(child, sumDataType, failOnErrorOverride = false), spec)
+    val sum = GpuWindowExpression(GpuSum(child, sumDataType,
+      failOnErrorOverride = failOnError), spec)
     GpuCast(
-      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = false),
-      dataType)
+      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = failOnError),
+      dataType, ansiMode = failOnError)
   }
 }

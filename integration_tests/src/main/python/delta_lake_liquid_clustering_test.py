@@ -41,7 +41,7 @@ from delta_lake_update_test import delta_update_enabled_conf
 from delta_lake_utils import delta_meta_allow, \
     delta_writes_enabled_conf, delta_write_fallback_allow, setup_delta_dest_tables
 from marks import allow_non_gpu, delta_lake, ignore_order
-from spark_session import is_databricks133_or_later, is_spark_353_or_later, with_cpu_session
+from spark_session import is_databricks133_or_later, is_spark_353_or_later, is_spark_356_or_later, with_cpu_session
 
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "AtomicCreateTableAsSelectExec", "AppendDataExecV1")
@@ -122,6 +122,8 @@ def setup_clustered_table_sql(spark, path, table_name, view_name):
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="RTAS with cluster by is only supported on delta 3.3+")
+@pytest.mark.skipif(is_spark_356_or_later(),
+                    reason="https://github.com/delta-io/delta/issues/4671")
 def test_delta_rtas_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_table_factory):
     """
     Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
