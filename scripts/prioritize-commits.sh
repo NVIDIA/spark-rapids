@@ -101,7 +101,7 @@ do
   done
   if [ -n "${FOUND_REFS}" ]; then
     printf "%s\t%s\t%s\n" "P1" "${COMMIT_ID}" "${COMMIT_MSG}" >> ${PRIORITIZED_COMMITS}
-    printf "%s\t%s\t%s\n" "${COMMIT_ID}" "${FOUND_REFS}" >> ${AUDIT_PLUGIN_LOG}
+    printf "%s\t%s\n" "${COMMIT_ID}" "${FOUND_REFS}" >> ${AUDIT_PLUGIN_LOG}
   else 
     printf "%s\t%s\t%s\n" "P?" "${COMMIT_ID}" "${COMMIT_MSG}" >> ${PRIORITIZED_COMMITS}
   fi
