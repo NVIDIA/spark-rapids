@@ -47,7 +47,7 @@ jobs:
           # SC2001: See if you can use ${variable//search/replace} instead.
           # SC2012: Use find instead of ls to better handle non-alphanumeric filenames.
           # SC2016: Expressions don't expand in single quotes, use double quotes for that.
-          SHELLCHECK_OPTS: >  
+          SHELLCHECK_OPTS: >-
             -e SC2086
             -e SC2046
             -e SC2155
@@ -63,3 +63,4 @@ jobs:
             -e SC2163
             -e SC2001
             -e SC2012
+            -e SC2016
