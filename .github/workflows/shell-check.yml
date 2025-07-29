@@ -30,6 +30,23 @@ jobs:
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
         env:
+          # Ignore following codes:
+          # SC2086: Double quote to prevent globbing and word splitting.
+          # SC2046: Quote this to prevent word splitting.
+          # SC2155: Declare and assign separately to avoid masking return values.
+          # SC2006: Use $(...) notation instead of legacy backticks `...`.
+          # SC2154: foo_var_name is referenced but not assigned.
+          # SC2102: Ranges can only match single chars (mentioned due to duplicates).
+          # SC2207: Prefer mapfile or read -a to split command output (or quote to avoid splitting).
+          # SC2015: Note that A && B || C is not if-then-else. C may run when A is true.
+          # SC2145: Argument mixes string and array. Use * or separate argument.
+          # SC2034: foo_var_name appears unused. Verify use (or export if used externally).
+          # SC1091: Not following: foo_file_name was not specified as input (see shellcheck -x).
+          # SC2010: Don't use ls | grep. Use a glob or a for loop with a condition to allow non-alphanumeric filenames.
+          # SC2163: This does not export 'VAR'. Remove $/${} for that, or use ${var?} to quiet. 
+          # SC2001: See if you can use ${variable//search/replace} instead.
+          # SC2012: Use find instead of ls to better handle non-alphanumeric filenames.
+          # SC2016: Expressions don't expand in single quotes, use double quotes for that.
           SHELLCHECK_OPTS: >
             -e SC2086 # Double quote to prevent globbing and word splitting.
             -e SC2046 # Quote this to prevent word splitting.
