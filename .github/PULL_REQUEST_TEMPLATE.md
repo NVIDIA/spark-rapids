@@ -2,32 +2,42 @@
 
 Thank you for contributing to RAPIDS Accelerator for Apache Spark!
 
-Here are some guidelines to help the review process go smoothly.
+Please read `CONTRIBUTING.md#creating-a-pull-request` in https://github.com/NVIDIA/spark-rapids before making this PR.
 
-1. Please write a description in this text box of the changes that are being
-   made.
-
-2. Please ensure that you have written units tests for the changes made/features
-   added.
-
-3. If you are closing an issue please use one of the automatic closing words as
-   noted here: https://help.github.com/articles/closing-issues-using-keywords/
-
-4. If your pull request is not ready for review but you want to make use of the
-   continuous integration testing facilities please label it with `[WIP]`.
-
-5. If your pull request is ready to be reviewed without requiring additional
-   work on top of it, then remove the `[WIP]` label (if present).
-
-6. Once all work has been done and review has taken place please do not add
-   features or make changes out of the scope of those requested by the reviewer
-   (doing this just add delays as already reviewed code ends up having to be
-   re-reviewed/it is hard to tell what is new etc!). Further, please avoid
-   rebasing your branch during the review process, as this causes the context
-   of any comments made by reviewers to be lost. If conflicts occur during
-   review then they should be resolved by merging into the branch used for
-   making the pull request.
+Followings are the guidelines to help the review process go smoothly. Please read them carefully and fill out relevant information as much as possible.
 
 Many thanks in advance for your cooperation!
 
 -->
+
+<!--
+Please replace #xxxx with the ID of the issue fixed in this PR. If such issue does not exist, please consider file one and link it here.
+-->
+Fixes #xxxx.
+
+### Description
+
+<!--
+Please provide a description of the changes proposed in this pull request. Here are some questions to help you fill out the description:
+
+- What is the problem you are trying to solve? Describe it from the user's perspective or link an existing github issue if it exists.
+- After this change, what will the user experience be like?
+- Is your change introducing any user-facing changes, such as new configurations or new behaviors? Please describe them.
+- How are you fixing the problem? Please provide a technical description of your solution. You can add or link your design doc if it exists.
+- How are the new features/behaviors tested? Please describe the test cases you added or modified. If they are tested in a cluster, please describe it as well.
+-->
+
+### Checklists
+
+<!-- Check the items below by putting "x" in the brackets for what is done. Not all of these items may be relevant to every PR. -->
+
+This PR has:
+
+- [ ] added documentation for new or modified features or behaviors.
+- [ ] updated the license in the source code files when it is required.
+- [ ] added new tests or modified existing tests to cover new code paths.
+      (Please explain in the PR description how the new code paths are tested, such as names of the tests that cover them.)
+
+Please select one of the following options:
+- [ ] Performance testing has been performed and its results are added in the PR description.
+- [ ] An issue is filed for performance testing and its link is added in the PR description.

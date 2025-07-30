@@ -599,6 +599,27 @@ brew install gnu-sed
 export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
 ```
 
+### Creating a Pull Request
+
+Here are some guidelines to follow when creating a pull request:
+
+1. If your pull request is not ready for review but you want to make use of the
+   continuous integration testing facilities, please make it as a draft and label it with `[WIP]`.
+
+2. If your pull request is ready to be reviewed without requiring additional
+   work on top of it, then convert it to a regular pull request and remove the `[WIP]` label
+   (if applicable).
+
+3. Once the review has taken place, please do not add features or make changes
+   out of the scope of those even if the reviewer requests them. Instead, please
+   consider filing new issues for those changes.
+
+4. Please avoid rebasing your branch during the review process, as this causes the context
+   of any comments made by reviewers to be lost. If conflicts occur during
+   review, then they should be resolved by merging into the branch used for
+   making the pull request.
+
+
 ### Pull request status checks
 A pull request should pass all status checks before being merged.
 #### sign-off check
