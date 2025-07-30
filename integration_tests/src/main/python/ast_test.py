@@ -365,6 +365,21 @@ def test_multiplication(data_descr):
             f.lit(-12).cast(data_type) * f.col('b'),
             f.col('a') * f.col('b')))
 
+# Each descriptor contains a list of data generators and a corresponding boolean
+# indicating whether that data type is supported by the AST
+# all the below desc are not supported by the AST because ANSI mode is on
+_ast_integral_desc_list_for_ansi_on = [
+    (ByteGen(min_val=-11, max_val=11, special_cases=[]), False),  # 11 * 11 < 127 (Byte.MaxValue)
+    (ShortGen(min_val=-181, max_val=181, special_cases=[]), False), # 181 * 181 < 32767 (Short.MaxValue)
+    (IntegerGen(min_val=-46340, max_val=46340, special_cases=[]), False) , # 46340 * 46340 < 2147483647 (Int.MaxValue)
+    (LongGen(min_val=-3037000499, max_val=3037000499, special_cases=[]), False)] # 3037000499 * 3037000499 < 9223372036854775807(Long.MaxValue)
+@pytest.mark.parametrize('data_desc', _ast_integral_desc_list_for_ansi_on, ids=idfn)
+def test_multiplication_for_integer_ansi_on(data_desc):
+    data_type = data_desc[0].data_type
+    assert_binary_ast(data_desc,
+                      lambda df: df.select(f.col('a') * f.col('b')),
+                      conf=ansi_enabled_conf)
+
 @approximate_float
 def test_scalar_pow():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a pow
