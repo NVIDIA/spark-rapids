@@ -57,6 +57,7 @@ echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER, CLASSIFIER: $CLASSIFIER, PROJECT_VER: $
 # get Spark shim versions from pom
 function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     PROFILE_OPT=$1
+    # fix SC2116 (style): Useless echo? Instead of 'cmd $(echo foo)', just use 'cmd foo'.
     SPARK_SHIM_VERSIONS_STR=$(echo -n $($MVN -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout))
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
@@ -98,7 +99,7 @@ case $PHASE_TYPE in
         ;;
 
     *)
-        SPARK_SHIM_VERSIONS=("${PHASE_TYPE[@]}")
+        IFS=" " read -ra SPARK_SHIM_VERSIONS <<< $PHASE_TYPE # fix SC2116 (style): Useless echo? Instead of 'cmd $(echo foo)', just use 'cmd foo'.
         ;;
 esac
 # base version

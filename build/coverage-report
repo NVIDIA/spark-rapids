@@ -46,9 +46,9 @@ if [ ! -f "$JDEST" ]; then
 fi
 
 if [ "$#" != "0" ]; then
-  ARGS=("$@")
+  ARGS=("$@") # fix SC2124 (warning): Assigning an array to a string! Assign as array, or use * instead of @ to concatenate.
 else
-  ARGS=($(find . -name "jacoco.exec" -printf "%p "))
+  ARGS=$(find . -name "jacoco.exec" -printf "%p ")
 fi
 
 mkdir -p $XML_LOC
