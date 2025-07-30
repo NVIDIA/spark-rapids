@@ -470,12 +470,17 @@ abstract class MultiFileCloudPartitionReaderBase(
     val newTaskRunner = (file: PartitionedFile) => {
       val runner = getBatchRunner(tc, file, conf, filters)
       val metrics = GpuTaskMetrics.get
+      val taskId = tc.taskAttemptId()
       runner.setBeforeHook(() => {
-        metrics.updateMultithreadReaderMaxParallelism(
-          MultiFileReaderThreadPool.runningTaskNum.incrementAndGet())
+        val onFlightTasks = MultiFileReaderThreadPool.runningTaskNum.incrementAndGet()
+        metrics.updateMultithreadReaderMaxParallelism(onFlightTasks)
+        logDebug(s"[$taskId] Starting a new task for file ${file.filePath} " +
+          s"with $onFlightTasks tasks running in parallel")
       })
       runner.setAfterHook(() => {
-        MultiFileReaderThreadPool.runningTaskNum.decrementAndGet()
+        val onFlightTasks = MultiFileReaderThreadPool.runningTaskNum.decrementAndGet()
+        logDebug(s"[$taskId] Finished a task for file ${file.filePath} " +
+          s"with $onFlightTasks tasks running in parallel")
       })
       runner
     }
