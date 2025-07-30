@@ -4,7 +4,7 @@ Thank you for contributing to RAPIDS Accelerator for Apache Spark!
 
 Please read `CONTRIBUTING.md#creating-a-pull-request` in https://github.com/NVIDIA/spark-rapids before making this PR.
 
-Followings are the guidelines to help the review process go smoothly. Please read them carefully and fill out relevant information as much as possible.
+The following are the guidelines to help the review process go smoothly. Please read them carefully and fill out relevant information as much as possible.
 
 Many thanks in advance for your cooperation!
 
