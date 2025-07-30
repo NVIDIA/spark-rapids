@@ -26,13 +26,15 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
+MVN=${MVN:-"mvn"}
+
 GLUTEN_VERSION=${GLUTEN_VERSION:-"1.2.0"}
 # TODO: https://github.com/NVIDIA/spark-rapids/issues/12278
 SUPPORTED_HYBRID_SHIMS=${SUPPORTED_HYBRID_SHIMS:-"3.2 3.3 3.4"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda12"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
-PROJECT_VER=${PROJECT_VER:-"25.08.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"25.08.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"25.10.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"25.10.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.2.0"}
 SPARK_VER_213=${SPARK_VER_213:-"3.3.0"}
 # Make a best attempt to set the default value for the shuffle shim.
@@ -55,7 +57,7 @@ echo "CUDA_CLASSIFIER: $CUDA_CLASSIFIER, CLASSIFIER: $CLASSIFIER, PROJECT_VER: $
 # get Spark shim versions from pom
 function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     PROFILE_OPT=$1
-    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
+    SPARK_SHIM_VERSIONS_STR=$($MVN -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
     SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }

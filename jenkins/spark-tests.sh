@@ -234,7 +234,7 @@ run_iceberg_tests() {
   fi
 
   # RAPIDS-iceberg only supports Spark 3.5.x yet
-  if [[ "IS_SPARK_35X" -ne "1" ]]; then
+  if [[ "$IS_SPARK_35X" -ne "1" ]]; then
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
   fi

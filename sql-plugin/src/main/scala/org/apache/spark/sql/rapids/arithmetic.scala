@@ -23,6 +23,7 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.{Arithmetic, ExceptionWithRowIndex}
 import com.nvidia.spark.rapids.shims.{DecimalMultiply128, GpuTypeShims, NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -760,6 +761,49 @@ case class GpuMultiply(
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = lhs.getBase.toString
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
+        val rightValue = rhs.getBase.toString
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    throw new RuntimeException("Error in multiplication: Spark already did the constant folding")
+  }
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
@@ -847,6 +891,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
   def left: Expression
   def right: Expression
   def failOnError: Boolean
+  def failOnDivideByZero: Boolean
   def integerDivide: Boolean
 
   // For all decimal128 output we will use the long division version.
@@ -881,7 +926,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
     DecimalDivideChecks.intermediateResultType(decimalType)
 
   private[this] def divByZeroFixes(lhs: ColumnView, rhs: ColumnVector): ColumnVector = {
-    if (failOnError) {
+    if (failOnDivideByZero) {
       withResource(GpuDivModLike.mergeNulls(rhs, lhs)) { nullMergedRhs =>
         withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {

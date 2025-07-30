@@ -161,6 +161,56 @@ def test_array_item_ansi_fail_invalid_index(index):
         error_message=message)
 
 
+@pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
+@pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
+def test_try_element_at_basic(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, array_no_zero_index_gen).selectExpr(
+            'try_element_at(a, cast(NULL as int))',
+            'try_element_at(a, 1)',
+            'try_element_at(a, 30)',
+            'try_element_at(a, -1)',
+            'try_element_at(a, -30)',
+            'try_element_at(a, b)'))
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
+@pytest.mark.parametrize('index', [-2, 100, array_out_index_gen], ids=idfn)
+def test_try_element_at_invalid_index(index):
+    if isinstance(index, int):
+        test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).selectExpr(
+            f'try_element_at(a, {index})')
+    else:
+        test_func = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr(
+            'try_element_at(a, b)')
+
+    # Test in both ANSI and non-ANSI modes - should return NULL in both
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=ansi_disabled_conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=ansi_enabled_conf)
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
+@pytest.mark.parametrize('index', [0, array_zero_index_gen], ids=idfn)
+def test_try_element_at_zero_index_throws_error(index):
+    if is_spark_340_or_later():
+        message = "SparkRuntimeException: [INVALID_INDEX_OF_ZERO] The index 0 is invalid"
+    elif is_databricks113_or_later():
+        message = "org.apache.spark.SparkRuntimeException: [ELEMENT_AT_BY_INDEX_ZERO] The index 0 is invalid"
+    else:
+        message = "SQL array indices start at 1"
+
+    if isinstance(index, int):
+        test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).selectExpr(
+            f'try_element_at(a, {index})').collect()
+    else:
+        test_func = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr(
+            'try_element_at(a, b)').collect()
+
+    assert_gpu_and_cpu_error(
+        test_func,
+        conf=ansi_enabled_conf,
+        error_message=message)
+
 def test_array_item_ansi_not_fail_all_null_data():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, array_all_null_gen, array_neg_index_gen, array_out_index_gen).selectExpr(

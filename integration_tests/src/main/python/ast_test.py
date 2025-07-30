@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import approximate_float, datagen_overrides, ignore_order, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330
@@ -61,13 +61,15 @@ ast_descrs = [
 ast_boolean_descr = [(boolean_gen, True)]
 ast_double_descr = [(double_gen, True)]
 
+_project_ast_enabled_conf = {"spark.rapids.sql.projectAstEnabled": "true"}
+
 def assert_gpu_ast(is_supported, func, conf={}):
     exist = "GpuProjectAstExec"
     non_exist = "GpuProjectExec"
     if not is_supported:
         exist = "GpuProjectExec"
         non_exist = "GpuProjectAstExec"
-    ast_conf = copy_and_update(conf, {"spark.rapids.sql.projectAstEnabled": "true"})
+    ast_conf = copy_and_update(conf, _project_ast_enabled_conf)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         func,
         exist_classes=exist,
@@ -365,6 +367,21 @@ def test_multiplication(data_descr):
             f.lit(-12).cast(data_type) * f.col('b'),
             f.col('a') * f.col('b')))
 
+# Each descriptor contains a list of data generators and a corresponding boolean
+# indicating whether that data type is supported by the AST
+# all the below desc are not supported by the AST because ANSI mode is on
+_ast_integral_desc_list_for_ansi_on = [
+    (ByteGen(min_val=-11, max_val=11, special_cases=[]), False),  # 11 * 11 < 127 (Byte.MaxValue)
+    (ShortGen(min_val=-181, max_val=181, special_cases=[]), False), # 181 * 181 < 32767 (Short.MaxValue)
+    (IntegerGen(min_val=-46340, max_val=46340, special_cases=[]), False) , # 46340 * 46340 < 2147483647 (Int.MaxValue)
+    (LongGen(min_val=-3037000499, max_val=3037000499, special_cases=[]), False)] # 3037000499 * 3037000499 < 9223372036854775807(Long.MaxValue)
+@pytest.mark.parametrize('data_desc', _ast_integral_desc_list_for_ansi_on, ids=idfn)
+def test_multiplication_for_integer_ansi_on(data_desc):
+    data_type = data_desc[0].data_type
+    assert_binary_ast(data_desc,
+                      lambda df: df.select(f.col('a') * f.col('b')),
+                      conf=ansi_enabled_conf)
+
 @approximate_float
 def test_scalar_pow():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a pow
@@ -406,3 +423,13 @@ def test_multi_tier_ast():
         # repartition is here to avoid Spark simplifying the expression
         func=lambda spark: spark.range(10).withColumn("x", f.col("id")).repartition(1)\
             .selectExpr("x", "(id < x) == (id < (id + x))"))
+
+
+# MUST NOT use GPU AST when project refers to string type(non-fixed-width),
+# or cudf::compute_column will throw error: Invalid, non-fixed-width type
+@ignore_order(local=True)
+def test_refer_to_non_fixed_width_column():
+    gens = [('col_int', int_gen), ('col_string', string_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gens).selectExpr("col_int * col_int", "col_string"),
+        conf=_project_ast_enabled_conf)

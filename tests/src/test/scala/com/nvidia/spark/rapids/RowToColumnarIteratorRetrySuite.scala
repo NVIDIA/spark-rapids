@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,12 @@ import org.apache.spark.sql.types._
 
 class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
   private val schema = StructType(Seq(StructField("a", IntegerType)))
+  private val batchSize = 1 * 1024 * 1024 * 1024
 
   test("test simple OOM retry") {
     val rowIter: Iterator[InternalRow] = (1 to 10).map(InternalRow(_)).toIterator
     val row2ColIter = new RowToColumnarIterator(
-      rowIter, schema, RequireSingleBatch, new GpuRowToColumnConverter(schema))
+      rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
     Arm.withResource(row2ColIter.next()) { batch =>
@@ -38,7 +39,7 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
   test("test simple OOM split and retry") {
     val rowIter: Iterator[InternalRow] = (1 to 10).map(InternalRow(_)).toIterator
     val row2ColIter = new RowToColumnarIterator(
-      rowIter, schema, RequireSingleBatch, new GpuRowToColumnConverter(schema))
+      rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
     assertThrows[GpuSplitAndRetryOOM] {

@@ -1114,13 +1114,6 @@ _to_json_datagens=[byte_gen,
         reason='https://github.com/NVIDIA/spark-rapids/issues/9705'))
 ]
 
-# From Spark 400, the plan changes due to the RuntimeReplaceable optimization
-# in "StructsToJson", and this can not be disabled. GPU does not support `Invoke` so
-# allow more non GPU operators here.
-# Tracked by https://github.com/NVIDIA/spark-rapids/issues/12941
-structs_read_allowed_non_gpu = non_utc_project_allow if is_before_spark_400() else \
-    ['ProjectExec', 'Invoke', 'Literal']
-
 @pytest.mark.parametrize('data_gen', _to_json_datagens, ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
 @pytest.mark.parametrize('timezone', [
@@ -1160,7 +1153,7 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone)
     'UTC',
     'Etc/UTC'
 ])
-@allow_non_gpu(*structs_read_allowed_non_gpu)
+@allow_non_gpu(*non_utc_project_allow)
 def test_arrays_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     array_gen = ArrayGen(data_gen, nullable=True)
     gen = StructGen([("my_array", array_gen)], nullable=False)
@@ -1186,7 +1179,7 @@ def test_arrays_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     'UTC',
     'Etc/UTC'
 ])
-@allow_non_gpu(*structs_read_allowed_non_gpu)
+@allow_non_gpu(*non_utc_project_allow)
 def test_maps_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     map_gen = MapGen(StringGen('[A-Z]{1,10}', nullable=False), data_gen, nullable=True)
     gen = StructGen([("my_map", map_gen)], nullable=False)
@@ -1214,7 +1207,7 @@ def test_maps_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     'UTC',
     'Etc/UTC'
 ])
-@allow_non_gpu(*structs_read_allowed_non_gpu)
+@allow_non_gpu(*non_utc_project_allow)
 def test_structs_to_json_timestamp(spark_tmp_path, data_gen, timestamp_format, timezone):
     struct_gen = StructGen([
         ("b", StructGen([('child', data_gen)], nullable=True)),
