@@ -60,7 +60,6 @@ set -ex
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 cd "$SCRIPTPATH"
-export LIBCUDF_NVCOMP_POLICY=ALWAYS
 # No failure message truncation in the test summary by default
 # https://github.com/NVIDIA/spark-rapids/issues/12043
 export CI=${CI:-true}
