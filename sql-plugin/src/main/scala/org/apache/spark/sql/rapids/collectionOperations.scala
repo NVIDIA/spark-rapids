@@ -188,8 +188,10 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
 
   override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
       lengthCol: GpuColumnVector): ColumnVector = {
-    // When start is null, return all nulls like the CPU does.
-    if (listCol.getRowCount == listCol.numNulls() || !startS.isValid) {
+    // When list, start or length is null, return all nulls like the CPU does.
+    if (listCol.getRowCount == listCol.numNulls() ||
+        lengthCol.getRowCount == lengthCol.numNulls() ||
+        !startS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -210,8 +212,10 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
 
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthS: GpuScalar): ColumnVector = {
-    // When length is null, return all nulls like the CPU does.
-    if (listCol.getRowCount == listCol.numNulls() || !lengthS.isValid) {
+    // When list, start or length is null, return all nulls like the CPU does.
+    if (listCol.getRowCount == listCol.numNulls() ||
+        startCol.getRowCount == startCol.numNulls() ||
+        !lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -231,24 +235,29 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
 
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthCol: GpuColumnVector): ColumnVector = {
-    if (listCol.getRowCount == listCol.numNulls()) {
+    // When list, start or length is null, return all nulls like the CPU does.
+    if (listCol.getRowCount == listCol.numNulls() ||
+        startCol.getRowCount == startCol.numNulls() ||
+        lengthCol.getRowCount == lengthCol.numNulls()) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
       val start = startCol.getBase
-      val length = lengthCol.getBase
       withResource(Scalar.fromInt(0)) { zero =>
         if (start.contains(zero)) {
           throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
         }
       }
-      withResource(length.min()) { minLen =>
-        if (minLen.isValid && minLen.getInt < 0) {
-          throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
-            minLen.getInt)
+      // keep null as original, or null it out if `list[i]` or `start[i]` is null
+      withResource(GpuDivModLike.mergeNulls(lengthCol.getBase, list, start)) { length =>
+        withResource(length.min()) { minLen =>
+          if (minLen.isValid && minLen.getInt < 0) {
+            throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
+              minLen.getInt)
+          }
         }
+        GpuListSliceUtils.listSlice(list, start, length, false)
       }
-      GpuListSliceUtils.listSlice(list, start, length, false)
     }
   }
 }

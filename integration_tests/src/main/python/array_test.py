@@ -30,6 +30,8 @@ array_out_index_gen = IntegerGen(min_val=25, max_val=100, special_cases=[None])
 array_zero_index_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
 array_no_zero_index_gen = IntegerGen(min_val=1, max_val=25,
     special_cases=[(-25, 100), (-20, 100), (-10, 100), (-4, 100), (-3, 100), (-2, 100), (-1, 100), (None, 100)])
+array_no_zero_no_null_index_gen = IntegerGen(min_val=1, max_val=25,
+    special_cases=[(-25, 100), (-20, 100), (-10, 100), (-4, 100), (-3, 100), (-2, 100), (-1, 100)])
 
 array_all_null_gen = ArrayGen(int_gen, all_null=True)
 array_item_test_gens = array_gens_sample + [array_all_null_gen,
@@ -390,13 +392,34 @@ def test_array_slice_with_negative_length(data_gen, valid_start, negative_length
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
             f"slice(a, {valid_start}, {negative_length})"))
+    # An all null start column, results in nulls in both GPU/CPU (no exception)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, null_gen, negative_length_gen, length=5).selectExpr(
+            f"slice(a, b, {negative_length})"))
+    # A null scalar for start, results in nulls for GPU/CPU (no exceptions)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
+            f"slice(a, null, {negative_length})"))
     error = "The value of parameter(s) `length` in `slice` is invalid: Expects `length` greater than or equal to 0"\
         if is_databricks143_or_later() or is_spark_400_or_later()\
         else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
-    # length can not be negative
+    # An all null length column, results in nulls in both GPU/CPU (no exception)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, null_gen, length=5).selectExpr(
+            f"slice(a, b, c)"))
+    # A null scalar for length, results in nulls for GPU/CPU (no exceptions)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
+            f"slice(a, b, null)"))
+    error = "The value of parameter(s) `length` in `slice` is invalid: Expects `length` greater than or equal to 0"\
+        if is_databricks143_or_later() or is_spark_400_or_later()\
+        else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
+    # Non-null start, length can not be negative
     assert_gpu_and_cpu_error(
-        lambda spark: three_col_df(spark, data_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
-            f"slice(a, {valid_start}, {negative_length})").collect(),
+        lambda spark: three_col_df(
+            spark, data_gen, array_no_zero_no_null_index_gen, negative_length_gen, length=5, num_slices=1)
+                .selectExpr(f"slice(a,{valid_start},{negative_length})")
+                .collect(),
         conf={},
         error_message=error)
 

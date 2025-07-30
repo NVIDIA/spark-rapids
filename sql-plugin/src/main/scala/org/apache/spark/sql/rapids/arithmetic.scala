@@ -745,6 +745,26 @@ object GpuDivModLike {
       }
     }
   }
+
+  /**
+   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol1[i]" or "nullFlagCol2[i]
+   * is null, otherwise return the row from the "dataCol".
+   */
+  def mergeNulls(
+      dataCol: ColumnView,
+      nullFlagCol1: ColumnView,
+      nullFlagCol2: ColumnView): ColumnVector = {
+    withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
+      val temp1 = withResource(nullFlagCol1.isNull) { isNull1 =>
+        isNull1.ifElse(nullScalar, dataCol)
+      }
+      withResource(temp1) { _ =>
+        withResource(nullFlagCol2.isNull) { isNull2 =>
+          isNull2.ifElse(nullScalar, temp1)
+        }
+      }
+    }
+  }
 }
 
 case class GpuMultiply(
