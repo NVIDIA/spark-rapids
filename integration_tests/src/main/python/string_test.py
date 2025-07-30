@@ -1054,3 +1054,32 @@ def test_conv_with_str_cv_all_nulls():
         lambda spark: _gen_all_null_string(spark),
         "tab",
         f"select conv(str_cv, 3, 5) from tab")
+
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_contains_basic(ansi):
+    data_gen = StringGen(r'\d{0,10}')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('a', data_gen)]).selectExpr(
+                'or(contains(a, "100"), contains(a, "200")) as result'),
+            conf = conf)
+
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_contains_conditional(ansi):
+    """
+    The point of this test is that case/when statements behave differently when an operation under
+    them can have side effects. When this happens the combining code does not combine expressions
+    that might not execute, becuase there could be exceptions thrown there too. So this purposely
+    causes a case when some can be combined, but others cannot.
+    """
+    data_gen = StringGen(r'\d{0,10}')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('a', data_gen)]).selectExpr(
+                '''CASE
+                    WHEN or(contains(a, "100"), contains(a, "101")) THEN 1
+                    WHEN contains(a, "200") THEN 2
+                    WHEN contains(a, "300") THEN 3
+                    ELSE CAST(a AS LONG)
+                END as result'''),
+            conf = conf)

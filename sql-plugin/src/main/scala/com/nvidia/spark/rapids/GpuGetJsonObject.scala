@@ -323,9 +323,10 @@ class GetJsonObjectCombiner(private val exp: GpuGetJsonObject) extends GpuExpres
     GpuMultiGetJsonObject(json, fieldsNPaths.map(_._2), dt)(targetBatchSize)
   }
 
-  override def getReplacementExpression(e: Expression): Expression = {
-    val localId = toCombine(GpuExpressionEquals(e))
-    GpuGetStructField(multiGet, localId, Some(fieldName(localId)))
+  override def getReplacementExpression(e: Expression): Option[Expression] = {
+    toCombine.get(GpuExpressionEquals(e)).map { localId =>
+      GpuGetStructField(multiGet, localId, Some(fieldName(localId)))
+    }
   }
 }
 
