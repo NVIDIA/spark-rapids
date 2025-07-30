@@ -753,7 +753,9 @@ def test_sql_map_scalars(query):
             lambda spark: spark.sql('SELECT {}'.format(query)))
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample \
+                         + [MapGen(f(nullable=False, min_val=-10, max_val=10), f(), min_length=10) for f in [ByteGen, ShortGen, IntegerGen, LongGen]] \
+                         + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), min_length=10)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_zip_with(data_gen):
     def do_it(spark):
@@ -769,18 +771,19 @@ def test_map_zip_with(data_gen):
                     'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',
                     'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) * coalesce(value2, 0)) as mul',
                     'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) - coalesce(value2, 0)) as sub',
-                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 1) / coalesce(value2, 1)) as div',])
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 1) / if(coalesce(value2, 1) == 0, 1, coalesce(value2, 1))) as div',])
         if isinstance(value_type, StringType):
             columns.extend([
                     'map_zip_with(a, b,  (key, value1, value2) -> concat(coalesce(value1, ""), "-test-", coalesce(value2, ""))) as string_concat',])
         if isinstance(value_type, ArrayType):
+            {'spark.sql.ansi.enabled': False}
             columns.extend([
                     'map_zip_with(a, b,  (key, value1, value2) -> concat(value1, value2)) as array_concat',])
         df = two_col_df(spark, data_gen, data_gen)
         return df.selectExpr(columns)
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False), ArrayGen(int_gen, max_length=5), max_length=5)], ids=idfn)
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-5, max_val=5), ArrayGen(int_gen, max_length=5), min_length=7)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_zip_with_lambda(data_gen):
     def do_it(spark):
@@ -791,7 +794,7 @@ def test_map_zip_with_lambda(data_gen):
         return df.selectExpr(columns)
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False), IntegerGen())], ids=idfn)
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-15, max_val=-5), IntegerGen(), min_length=7)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_zip_with_bind(data_gen):
     def do_it(spark):
@@ -801,7 +804,7 @@ def test_map_zip_with_bind(data_gen):
         return df.selectExpr(columns)
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False), IntegerGen())], ids=idfn)
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=5, max_val=15), IntegerGen(), min_length=7)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_zip_with_mismatch_keys(data_gen):
     def do_it(spark):
@@ -821,3 +824,4 @@ def test_map_filter(data_gen):
                'map_filter(a, (key, value) -> isnotnull(key) and isnull(value) )']
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(columns))
+    
