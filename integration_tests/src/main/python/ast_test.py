@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import approximate_float, datagen_overrides, ignore_order, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330
@@ -61,13 +61,15 @@ ast_descrs = [
 ast_boolean_descr = [(boolean_gen, True)]
 ast_double_descr = [(double_gen, True)]
 
+_project_ast_enabled_conf = {"spark.rapids.sql.projectAstEnabled": "true"}
+
 def assert_gpu_ast(is_supported, func, conf={}):
     exist = "GpuProjectAstExec"
     non_exist = "GpuProjectExec"
     if not is_supported:
         exist = "GpuProjectExec"
         non_exist = "GpuProjectAstExec"
-    ast_conf = copy_and_update(conf, {"spark.rapids.sql.projectAstEnabled": "true"})
+    ast_conf = copy_and_update(conf, _project_ast_enabled_conf)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         func,
         exist_classes=exist,
@@ -421,3 +423,13 @@ def test_multi_tier_ast():
         # repartition is here to avoid Spark simplifying the expression
         func=lambda spark: spark.range(10).withColumn("x", f.col("id")).repartition(1)\
             .selectExpr("x", "(id < x) == (id < (id + x))"))
+
+
+# MUST NOT use GPU AST when project refers to string type(non-fixed-width),
+# or cudf::compute_column will throw error: Invalid, non-fixed-width type
+@ignore_order(local=True)
+def test_refer_to_non_fixed_width_column():
+    gens = [('col_int', int_gen), ('col_string', string_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gens).selectExpr("col_int * col_int", "col_string"),
+        conf=_project_ast_enabled_conf)
