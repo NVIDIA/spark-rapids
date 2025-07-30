@@ -27,10 +27,10 @@ import scala.collection.mutable.ListBuffer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.NvtxRegistry
+import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
@@ -238,7 +238,6 @@ trait RapidsShuffleWriterShimHelper {
 abstract class RapidsShuffleThreadedWriterBase[K, V](
     blockManager: BlockManager,
     handle: ShuffleHandleWithMetrics[K, V, V],
-    context: TaskContext,
     mapId: Long,
     sparkConf: SparkConf,
     writeMetrics: ShuffleWriteMetricsReporter,
@@ -354,8 +353,20 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 val sizeComputeStart = System.nanoTime()
                 val (cb, size) = value match {
                   case columnarBatch: ColumnarBatch =>
-                    (SlicedGpuColumnVector.incRefCount(columnarBatch),
-                      SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
+                    if (columnarBatch.numCols() > 0) {
+                      columnarBatch.column(0) match {
+                        case _: SlicedGpuColumnVector =>
+                          (SlicedGpuColumnVector.incRefCount(columnarBatch),
+                            SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
+                        case _: SlicedSerializedColumnVector =>
+                          (SlicedSerializedColumnVector.incRefCount(columnarBatch),
+                           SlicedSerializedColumnVector.getTotalHostMemoryUsed(columnarBatch))
+                        case _ =>
+                          (null, 0L)
+                      }
+                    } else {
+                      (columnarBatch, 0L)
+                    }
                   case _ =>
                     (null, 0L)
                 }
@@ -366,13 +377,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
                   withResource(cb) { _ =>
                     try {
-                      RmmSpark.shuffleThreadWorkingOnTasks(Array(context.taskAttemptId()))
                       val recordWriteTimeStart = System.nanoTime()
                       myWriter.write(key, value)
                       recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
                     } finally {
                       limiter.release(size)
-                      RmmSpark.shuffleThreadFinishedForTasks(Array(context.taskAttemptId()))
                     }
                   }
                 })
@@ -879,7 +888,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
         var success = false
         try {
-          RmmSpark.shuffleThreadWorkingOnTasks(Array(context.taskAttemptId()))
           var currentBatchSize = blockState.getNextBatchSize
           var didFit = true
           while (blockState.hasNext && didFit) {
@@ -899,7 +907,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           if (!success) {
             blockState.close()
           }
-          RmmSpark.shuffleThreadFinishedForTasks(Array(context.taskAttemptId()))
         }
       })
     }
@@ -1363,7 +1370,6 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
             new RapidsShuffleThreadedWriter[K, V](
               blockManager,
               handleWithMetrics,
-              context,
               mapId,
               conf,
               new ThreadSafeShuffleWriteMetricsReporter(metricsReporter),

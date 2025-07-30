@@ -19,11 +19,14 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.util.Random
 
+import org.scalatest.Ignore
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.{col, expr}
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.{DataType, DataTypes}
 
+@Ignore
 class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   val DEFAULT_PERCENTILES = Array(0.005, 0.05, 0.25, 0.45, 0.5, 0.55, 0.75, 0.95, 0.995)

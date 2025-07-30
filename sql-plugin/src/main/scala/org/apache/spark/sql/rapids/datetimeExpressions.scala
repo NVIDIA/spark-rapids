@@ -879,7 +879,7 @@ abstract class GpuToTimestamp
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val tmp = lhs.dataType match {
-      case _: StringType =>
+      case StringType =>
         // rhs is ignored we already parsed the format
         val res = if (getTimeParserPolicy == LegacyTimeParserPolicy) {
           parseStringAsTimestampWithLegacyParserPolicy(

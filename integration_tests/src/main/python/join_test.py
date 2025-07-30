@@ -202,8 +202,6 @@ def test_empty_broadcast_hash_join(join_type, kudo_enabled):
 
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_broadcast_hash_join_constant_keys(join_type, kudo_enabled):
     def do_join(spark):
         left = spark.range(10).withColumn("s", lit(1))
@@ -456,8 +454,6 @@ def test_cartesian_join(data_gen, batch_size, kudo_enabled):
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_cartesian_join_special_case_count(batch_size, kudo_enabled):
     def do_join(spark):
         left, right = create_df(spark, int_gen, 50, 25)
@@ -475,8 +471,6 @@ def test_cartesian_join_special_case_count(batch_size, kudo_enabled):
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_cartesian_join_special_case_group_by_count(batch_size, kudo_enabled):
     def do_join(spark):
         left, right = create_df(spark, int_gen, 50, 25)
@@ -531,8 +525,6 @@ def test_broadcast_nested_loop_join(data_gen, batch_size, kudo_enabled):
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_broadcast_nested_loop_join_special_case_count(batch_size, kudo_enabled):
     def do_join(spark):
         left, right = create_df(spark, int_gen, 50, 25)
@@ -549,8 +541,6 @@ def test_broadcast_nested_loop_join_special_case_count(batch_size, kudo_enabled)
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_broadcast_nested_loop_join_special_case_group_by_count(batch_size, kudo_enabled):
     def do_join(spark):
         left, right = create_df(spark, int_gen, 50, 25)
@@ -704,8 +694,6 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type, 
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type, kudo_enabled):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -716,8 +704,6 @@ def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_left_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type, kudo_enabled):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -1607,8 +1593,6 @@ def test_sized_join_conditional(join_type, is_ast_supported, is_left_smaller, ba
 @pytest.mark.parametrize("is_conditional", [False, True], ids=idfn)
 @pytest.mark.parametrize("is_outer_side_small", [False, True], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_sized_join_high_key_replication(join_type, is_left_replicated, is_conditional,
                                          is_outer_side_small, kudo_enabled):
     join_conf = {

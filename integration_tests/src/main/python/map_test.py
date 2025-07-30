@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -762,3 +762,31 @@ def test_map_filter(data_gen):
                'map_filter(a, (key, value) -> isnotnull(key) and isnull(value) )']
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(columns))
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
+@pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
+def test_try_element_at_map_numeric_keys(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'try_element_at(a, 0)',
+            'try_element_at(a, 1)',
+            'try_element_at(a, null)',
+            'try_element_at(a, -9)',
+            'try_element_at(a, 999)'))
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_try_element_at_map_missing_keys(data_gen):
+    missing_keys = StringGen(pattern='MISSING_KEY')
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, missing_keys).selectExpr(
+            'try_element_at(a, b)'),
+        conf=ansi_disabled_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, missing_keys).selectExpr(
+            'try_element_at(a, b)'),
+        conf=ansi_enabled_conf)

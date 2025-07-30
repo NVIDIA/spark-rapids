@@ -19,7 +19,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are
 from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
 from spark_session import is_spark_400_or_later
-from marks import ignore_order, allow_non_gpu, disable_ansi_mode
+from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later, is_before_spark_330, is_databricks_version_or_later
 
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
@@ -58,8 +58,6 @@ def test_aqe_skew_join():
 # Test the computeStats(...) implementation in GpuDataSourceScanExec
 @ignore_order(local=True)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_aqe_join_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
@@ -77,8 +75,6 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
 # Test the computeStats(...) implementation in GpuBatchScanExec
 @ignore_order(local=True)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
-# https://github.com/NVIDIA/spark-rapids/issues/5114
-@disable_ansi_mode
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
     # force v2 source for parquet to use BatchScanExec
     conf = copy_and_update(_adaptive_conf, {
