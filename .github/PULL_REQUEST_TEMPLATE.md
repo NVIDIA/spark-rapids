@@ -11,7 +11,7 @@ Many thanks in advance for your cooperation!
 -->
 
 <!--
-Please replace #xxxx with the ID of the issue fixed in this PR. If such issue does not exist, please consider file one and link it here.
+Please replace #xxxx with the ID of the issue fixed in this PR. If such issue does not exist, please consider filing one and link it here.
 -->
 Fixes #xxxx.
 
@@ -20,9 +20,8 @@ Fixes #xxxx.
 <!--
 Please provide a description of the changes proposed in this pull request. Here are some questions to help you fill out the description:
 
-- What is the problem you are trying to solve? Describe it from the user's perspective or link an existing github issue if it exists.
-- After this change, what will the user experience be like?
-- Is your change introducing any user-facing changes, such as new configurations or new behaviors? Please describe them.
+- What is the problem you are trying to solve? Describe it from the user's perspective. If you have an existing github issue, please add a summary of the issue here.
+- After this change, what will the user experience be like? Please describe any user-facing changes, such as new configurations or new behaviors.
 - How are you fixing the problem? Please provide a technical description of your solution. You can add or link your design doc if it exists.
 - How are the new features/behaviors tested? Please describe the test cases you added or modified. If they are tested in a cluster, please describe it as well.
 -->
@@ -40,4 +39,4 @@ This PR has:
 
 Please select one of the following options:
 - [ ] Performance testing has been performed and its results are added in the PR description.
-- [ ] An issue is filed for performance testing and its link is added in the PR description.
+- [ ] An issue is filed for performance testing and its link is added in the PR description. (Select this if performance testing will not be completed before the PR is submitted.)
