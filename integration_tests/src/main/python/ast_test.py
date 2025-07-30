@@ -429,11 +429,7 @@ def test_multi_tier_ast():
 # or cudf::compute_column will throw error: Invalid, non-fixed-width type
 @ignore_order(local=True)
 def test_refer_to_non_fixed_width_column():
-    def _query(spark):
-        gens = [('col_int', int_gen), ('col_string', string_gen)]
-        df1 = gen_df(spark, gens)
-        df2 = gen_df(spark, gens)
-        return (df1.alias("t1")).join(df2.alias("t2"), on=["col_int"]).selectExpr("t1.col_string", "t1.col_int")
+    gens = [('col_int', int_gen), ('col_string', string_gen)]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: _query(spark),
+        lambda spark: gen_df(spark, gens).selectExpr("col_int * col_int", "col_string"),
         conf=_project_ast_enabled_conf)
