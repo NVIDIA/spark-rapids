@@ -6,7 +6,7 @@ Please read https://github.com/NVIDIA/spark-rapids/blob/HEAD/CONTRIBUTING.md#cre
 
 The following are the guidelines to help the review process go smoothly. Please read them carefully and fill out relevant information as much as possible.
 
-Many thanks in advance for your cooperation!
+Thank you for your cooperation!
 
 -->
 
@@ -35,7 +35,7 @@ This PR has:
 - [ ] added documentation for new or modified features or behaviors.
 - [ ] updated the license in the source code files when it is required.
 - [ ] added new tests or modified existing tests to cover new code paths.
-      (Please explain in the PR description how the new code paths are tested, such as names of the tests that cover them.)
+      (Please explain in the PR description how the new code paths are tested, such as names of the new/existing tests that cover them.)
 
 Please select one of the following options:
 - [ ] Performance testing has been performed and its results are added in the PR description.
