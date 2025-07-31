@@ -1134,7 +1134,7 @@ abstract class GpuIntegralDivideParent(
     case _ => false
   }
 
-  override def dataType: DataType = LongType
+  override lazy val dataType: DataType = LongType
   override def outputTypeOverride: DType = DType.INT64
   // CUDF does not support casting output implicitly for decimal binary ops, so we work around
   // it here where we want to force the output to be a Long.
@@ -1164,7 +1164,7 @@ abstract class GpuPmodBase(left: Expression, right: Expression)
 
   override def symbol: String = "pmod"
 
-  override def dataType: DataType = left.dataType
+  override lazy val dataType: DataType = left.dataType
 }
 
 trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression
