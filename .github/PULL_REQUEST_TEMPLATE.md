@@ -21,7 +21,7 @@ Fixes #xxxx.
 Please provide a description of the changes proposed in this pull request. Here are some questions to help you fill out the description:
 
 - What is the problem you are trying to solve? Describe it from the user's perspective. If you have an existing github issue, please add a summary of the issue here.
-- After this change, what will the user experience be like? Please describe any user-facing changes, such as new configurations or new behaviors.
+- After this change, what will the user experience be like? Please describe any user-facing changes, such as new configurations or new behaviors. If you are introducing new configurations, please add some guidelines on how to use them.
 - How are you fixing the problem? Please provide a technical description of your solution. You can add or link your design doc if it exists.
 - How are the new features/behaviors tested? Please describe the test cases you added or modified. If they are tested in a cluster, please describe it as well.
 -->
