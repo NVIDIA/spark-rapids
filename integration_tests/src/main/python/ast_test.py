@@ -427,6 +427,7 @@ def test_multi_tier_ast():
 
 # MUST NOT use GPU AST when project refers to string type(non-fixed-width),
 # or cudf::compute_column will throw error: Invalid, non-fixed-width type
+@disable_ansi_mode
 @ignore_order(local=True)
 def test_refer_to_non_fixed_width_column():
     gens = [('col_int', int_gen), ('col_string', string_gen)]
