@@ -377,7 +377,7 @@ def test_multi_get_json_object_conditional(ansi):
     """
     The point of this test is that case/when statements behave differently when an operation under
     them can have side effects. When this happens the combining code does not combine expressions
-    that might not execute, becuase there could be exceptions thrown there too. So this purposely
+    that might not execute, because there could be exceptions thrown there too. So this purposely
     causes a case when some can be combined, but others cannot.
     """
     data_gen = StringGen(r'''\{"num_a":[1-9]\d{0,5},"num_b":[1-9]\d{0,5},"num_c":[1-9]\d{0,5}\}''')
