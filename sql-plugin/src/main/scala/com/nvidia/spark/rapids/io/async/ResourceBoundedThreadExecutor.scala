@@ -34,7 +34,7 @@ import org.apache.spark.internal.Logging
  * @tparam T the result type returned by the AsyncTask
  */
 class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult[T]](task) {
-  private[async] var priority: Float = task.priority
+  private[async] var priority: Double = task.priority
   private var resourceFulfilled: Boolean = false
   private var completed: Boolean = false
   private var caughtException: Boolean = false
@@ -72,7 +72,7 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
    * Adjusts the task's priority by a specified delta and appends the last wait time to the
    * schedule time.
    */
-  def adjustPriority(delta: Float, lastWaitTime: Long): Float = {
+  def adjustPriority(delta: Double, lastWaitTime: Long): Double = {
     require(!completed, "Task has already been completed")
     scheduleTime += lastWaitTime
     priority += delta
@@ -145,7 +145,7 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
  */
 class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     waitResourceTimeoutMs: Long,
-    retryPriorAdjust: Float,
+    retryPriorityAdjust: Double,
     corePoolSize: Int,
     maximumPoolSize: Int,
     workQueue: BlockingQueue[Runnable],
@@ -155,7 +155,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
 
   logInfo(s"Creating ResourceBoundedThreadExecutor with resourcePool: ${mgr.toString}, " +
     s"corePoolSize: $corePoolSize, maximumPoolSize: $maximumPoolSize, " +
-    s"waitResourceTimeoutMs: $waitResourceTimeoutMs, retryPriorityAdjustment: $retryPriorAdjust")
+    s"waitResourceTimeoutMs: $waitResourceTimeoutMs, retryPriorityAdjustment: $retryPriorityAdjust")
 
   override def submit[T](fn: Callable[T]): Future[T] = {
     fn match {
@@ -235,7 +235,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
         if (t == null && !fut.isCompleted) {
           // IMPORTANT: Ensure the priority penalty >=1000 in case the timeout task being
           // polled recursively.
-          val priorPenalty = -retryPriorAdjust min -1e3f
+          val priorPenalty = -retryPriorityAdjust min -1e3
           fut.adjustPriority(priorPenalty, waitResourceTimeoutMs * 1000000L)
           logWarning(s"Re-add timeout task: scheduleTime(${fut.scheduleTime / 1e9}s), " +
               s"new priority(${fut.priority})")
@@ -253,7 +253,7 @@ object ResourceBoundedThreadExecutor {
       pool: ResourcePool,
       maxThreadNumber: Int,
       waitResourceTimeoutMs: Long = 60 * 1000L,
-      retryPriorityAdjust: Float = 0.0f): ResourceBoundedThreadExecutor = {
+      retryPriorityAdjust: Double = 0.0): ResourceBoundedThreadExecutor = {
     val taskQueue = new PriorityBlockingQueue(10000, new RapidsFutureTaskComparator[T])
     val threadFactory: ThreadFactory = new ThreadFactoryBuilder()
         .setDaemon(true)

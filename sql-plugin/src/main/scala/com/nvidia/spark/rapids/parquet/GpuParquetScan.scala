@@ -2662,7 +2662,7 @@ class MultiFileCloudParquetPartitionReader(
       TaskResource.newCpuResource(file.length, groupedMemoryOverhead)
     }
 
-    override val priority: Float = if (runnerSharedState.isDefined) {
+    override val priority: Double = if (runnerSharedState.isDefined) {
       groupPriority
     } else {
       AsyncTask.hostMemoryPenalty(memoryBytes = file.length)

@@ -114,7 +114,7 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
   /**
    * Priority of the task, higher value means higher priority.
    */
-  def priority: Float
+  def priority: Double
 
   /**
    * The abstract method defines the actual task logic, which should be implemented by the
@@ -204,7 +204,7 @@ abstract class UnboundedAsyncTask[T] extends AsyncTask[T] {
   override val resource: TaskResource = TaskResource.newCpuResource(0L)
 
   // Unbounded tasks have the highest priority.
-  override val priority: Float = Float.MaxValue
+  override val priority: Double = Double.MaxValue
 }
 
 case class GroupSharedState(groupSize: Int,
@@ -224,11 +224,11 @@ object GroupTaskHelpers {
    * same time window as possible, in case that only a part of tasks in the group get scheduled
    * while the rest are blocked because of the schedule order.
    */
-  def generateGroupPriority: Float = {
+  def generateGroupPriority: Double = {
     groupwisePriorityCounter.compareAndSet(0L, 1000000000L)
-    // As for cpu tasks, 20 is big enough difference to divide different groups, considering that
-    // the default memory penality is log10(MemoryBytes).
-    groupwisePriorityCounter.getAndAdd(-20L).toFloat
+    // As for cpu tasks, 100 is big enough difference to divide different groups, considering that
+    // the default memory penality is floor(log2(MemoryBytes)).
+    groupwisePriorityCounter.getAndAdd(-100L).toDouble
   }
 
   private lazy val groupwisePriorityCounter = new AtomicLong(1000000000L)
@@ -268,7 +268,7 @@ abstract class GroupedAsyncTask[T] extends AsyncTask[T] {
 
 class AsyncFunctor[T](
     override val resource: TaskResource,
-    override val priority: Float,
+    override val priority: Double,
     functor: () => T) extends AsyncTask[T] {
   override def callImpl(): T = functor()
 }
@@ -276,9 +276,9 @@ class AsyncFunctor[T](
 object AsyncTask {
   // Adjust the priority based on the memory overhead to minimal the potential clogging:
   // lightweight tasks should have higher priority
-  def hostMemoryPenalty(memoryBytes: Long, priority: Float = 0.0f): Float = {
+  def hostMemoryPenalty(memoryBytes: Long, priority: Double = 0.0): Double = {
     require(memoryBytes >= 0, s"Memory bytes must be non-negative, got: $memoryBytes")
-    priority - math.log10(memoryBytes).toFloat
+    priority - math.log10(memoryBytes)
   }
 
   def newCpuTask[T](fn: () => T,

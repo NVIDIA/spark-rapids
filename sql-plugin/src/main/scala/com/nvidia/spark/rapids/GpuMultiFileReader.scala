@@ -526,7 +526,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     }
   }
 
-  protected lazy val groupPriority: Float = {
+  protected lazy val groupPriority: Double = {
     if (inputFiles.length <= maxNumFileProcessed) {
       GroupTaskHelpers.generateGroupPriority
     } else {
