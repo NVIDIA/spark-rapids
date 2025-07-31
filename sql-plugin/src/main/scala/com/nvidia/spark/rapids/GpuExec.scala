@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import com.nvidia.spark.rapids.filecache.FileCacheConf
-import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD, GpuLoreSupport}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import org.apache.hadoop.fs.Path
 
@@ -43,7 +43,7 @@ object GpuExec {
   val TASK_METRICS_TAG = new TreeNodeTag[GpuTaskMetrics]("gpu_task_metrics")
 }
 
-trait GpuExec extends SparkPlan {
+trait GpuExec extends SparkPlan with GpuLoreSupport {
   import GpuMetric._
 
   def sparkSession: SparkSession = {
@@ -228,4 +228,5 @@ trait GpuExec extends SparkPlan {
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]
+
 }

@@ -16,10 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.util
-
-import scala.reflect.ClassTag
-
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -29,7 +25,10 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoHostMergeResultWrapper, KudoSerializer, MergeOptions}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import java.util
+import java.util.Objects
 import org.apache.hadoop.conf.Configuration
+import scala.reflect.ClassTag
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -86,7 +85,10 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
 /** A case class to pack some options. */
 case class CoalesceReadOption private(
-  kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String])
+  kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String]) {
+  override def hashCode(): Int = Objects.hash(kudoEnabled.toString, kudoDebugMode.name(),
+    kudoDebugDumpPrefix)
+}
 
 object CoalesceReadOption {
   def apply(conf: SQLConf): CoalesceReadOption = {
