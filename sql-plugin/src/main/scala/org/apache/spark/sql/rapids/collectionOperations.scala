@@ -216,6 +216,11 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
     } else {
       val list = listCol.getBase
       val start = startCol.getBase
+      withResource(GpuDivModLike.mergeNulls(list, start)) { mergedNulls =>
+        if (mergedNulls.getRowCount == mergedNulls.getNullCount) {
+          return GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
+        }
+      }
       val length = lengthS.getValue.asInstanceOf[Int]
       withResource(Scalar.fromInt(0)) { zero =>
         if (start.contains(zero)) {
@@ -237,6 +242,14 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
       val list = listCol.getBase
       val start = startCol.getBase
       val length = lengthCol.getBase
+      val mergedNullsList = withResource(GpuDivModLike.mergeNulls(list, start)) { mergedNulls =>
+        GpuDivModLike.mergeNulls(mergedNulls, length)
+      }
+      withResource(mergedNullsList) { _ =>
+        if (mergedNullsList.getRowCount == mergedNullsList.getNullCount) {
+          return GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
+        }
+      }
       withResource(Scalar.fromInt(0)) { zero =>
         if (start.contains(zero)) {
           throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
