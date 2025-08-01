@@ -42,6 +42,16 @@ iceberg_gens_list = [
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
+# Configuration to enable experimental Iceberg support (disabled by default)
+iceberg_enabled_conf = {'spark.rapids.sql.format.iceberg.enabled': 'true'}
+
+def iceberg_conf(reader_type):
+    """Helper function to create conf dict with iceberg enabled and reader type"""
+    return {
+        'spark.rapids.sql.format.iceberg.enabled': 'true',
+        'spark.rapids.sql.format.parquet.reader.type': reader_type
+    }
+
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
                                 reason="Current spark-rapids only support spark 3.5.x")
 
@@ -96,7 +106,7 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
     # explicitly only select 1 column to make sure we test that path in the schema parsing code
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql(f"SELECT _c0 FROM {full_table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering

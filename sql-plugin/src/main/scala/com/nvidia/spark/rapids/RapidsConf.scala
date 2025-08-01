@@ -1520,14 +1520,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .createWithDefault(true)
 
   val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
-    .doc("When set to false disables all Iceberg acceleration")
+    .doc("When set to true enables experimental Iceberg acceleration (disabled by default)")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val ENABLE_ICEBERG_READ = conf("spark.rapids.sql.format.iceberg.read.enabled")
-    .doc("When set to false disables Iceberg input acceleration")
+    .doc("When set to true enables experimental Iceberg input acceleration (disabled by default)")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")

@@ -27,6 +27,13 @@ from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
                                 reason="Current spark-rapids only support spark 3.5.x")
 
+def iceberg_conf(reader_type):
+    """Helper function to create conf dict with iceberg enabled and reader type"""
+    return {
+        'spark.rapids.sql.format.iceberg.enabled': 'true',
+        'spark.rapids.sql.format.parquet.reader.type': reader_type
+    }
+
 
 @iceberg
 @ignore_order(local=True)
@@ -49,7 +56,7 @@ def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_t
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 
 @iceberg
@@ -63,7 +70,7 @@ def test_iceberg_v2_position_delete(spark_tmp_table_factory, reader_type):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True)
@@ -85,7 +92,7 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True)
@@ -124,13 +131,13 @@ def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reade
 
     # Trigger a count operation to verify that it works
     gpu_count = with_gpu_session(lambda spark: spark.table(table_name).count(),
-                     conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+                     conf=iceberg_conf(reader_type))
     cpu_count = with_cpu_session(lambda spark: spark.table(table_name).count(),
-                                 conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+                                 conf=iceberg_conf(reader_type))
     assert gpu_count == cpu_count, f"Result count diverges, cpu: {cpu_count}, gpu: {gpu_count}"
     logging.info(f"Count is {cpu_count}")
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
