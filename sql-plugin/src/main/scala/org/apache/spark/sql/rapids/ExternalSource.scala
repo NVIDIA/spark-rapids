@@ -86,26 +86,7 @@ object ExternalSource extends Logging {
   }
 
   def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    deltaProvider.isSupportedWrite(write) || isNoopDataSource(write)
-  }
-
-  private def isNoopDataSource(write: Class[_ <: SupportsWrite]): Boolean = {
-    // The noop data source could be named in various ways depending on Spark version
-    // Common patterns include org.apache.spark.sql.execution.datasources.noop.*
-    // or other variations with "noop" in the class name or package
-    val className = write.getName.toLowerCase
-    val packageName = write.getPackage.getName.toLowerCase
-    
-    // Check for noop in class name or package name
-    val isNoop = className.contains("noop") || packageName.contains("noop") ||
-      // Also check for specific known class patterns
-      className.endsWith("noopdatasourcev2") || className.endsWith("nooptable")
-    
-    if (isNoop) {
-      logInfo(s"Detected noop data source: ${write.getName}")
-    }
-    
-    isNoop
+    deltaProvider.isSupportedWrite(write)
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
@@ -214,11 +195,7 @@ object ExternalSource extends Logging {
     val writeClass = cpuExec.table.getClass
     if (deltaProvider.isSupportedWrite(writeClass)) {
       deltaProvider.tagForGpu(cpuExec, meta)
-    } else if (isNoopDataSource(writeClass)) {
-      // Noop writes are always GPU compatible since they don't actually write data
-      // No special tagging needed
     } else {
-      logInfo(s"Unsupported data source for AppendDataExecV1: ${writeClass.getName}")
       meta.willNotWorkOnGpu(s"catalog $writeClass is not supported")
     }
   }
@@ -229,9 +206,6 @@ object ExternalSource extends Logging {
     val writeClass = cpuExec.table.getClass
     if (deltaProvider.isSupportedWrite(writeClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
-    } else if (isNoopDataSource(writeClass)) {
-      // For noop writes, create a GPU-compatible exec that discards the data
-      GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, cpuExec.write)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
@@ -243,11 +217,7 @@ object ExternalSource extends Logging {
     val writeClass = cpuExec.table.getClass
     if (deltaProvider.isSupportedWrite(writeClass)) {
       deltaProvider.tagForGpu(cpuExec, meta)
-    } else if (isNoopDataSource(writeClass)) {
-      // Noop writes are always GPU compatible since they don't actually write data
-      // No special tagging needed
     } else {
-      logInfo(s"Unsupported data source for OverwriteByExpressionExecV1: ${writeClass.getName}")
       meta.willNotWorkOnGpu(s"catalog $writeClass is not supported")
     }
   }
@@ -258,9 +228,6 @@ object ExternalSource extends Logging {
     val writeClass = cpuExec.table.getClass
     if (deltaProvider.isSupportedWrite(writeClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
-    } else if (isNoopDataSource(writeClass)) {
-      // For noop writes, create a GPU-compatible exec that discards the data
-      GpuOverwriteByExpressionExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, cpuExec.write)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }

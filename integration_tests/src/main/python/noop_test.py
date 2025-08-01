@@ -28,34 +28,23 @@ def test_noop_format_write():
         df = spark.createDataFrame(data, columns)
         # This should work on GPU after our implementation
         df.write.format("noop").mode("overwrite").save()
-        # Return a simple result for comparison
-        return [("success",)]
     
-    # Test that it runs on GPU without falling back
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: test_noop_write(spark), 
-        conf={"spark.rapids.sql.enabled": "true"}
-    )
+    # Test that it runs on GPU without falling back to CPU
+    with_gpu_session(test_noop_write, conf={"spark.rapids.sql.enabled": "true"})
 
 
-def test_noop_format_different_modes():
+@pytest.mark.parametrize("mode", ["append", "overwrite", "ignore"])
+def test_noop_format_different_modes(mode):
     """Test noop format with different write modes"""
-    def test_modes(spark):
+    def test_mode(spark):
         data = [("Alice", 34), ("Bob", 45), ("Cathy", 29)]
         columns = ["Name", "Age"]
         df = spark.createDataFrame(data, columns)
         
-        # Test different write modes - noop should handle all of them
-        df.write.format("noop").mode("append").save()
-        df.write.format("noop").mode("overwrite").save()
-        df.write.format("noop").mode("ignore").save()
-        # Return a simple result for comparison
-        return [("all_modes_success",)]
+        # Test specific write mode - noop should handle all of them
+        df.write.format("noop").mode(mode).save()
     
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: test_modes(spark),
-        conf={"spark.rapids.sql.enabled": "true"}
-    )
+    with_gpu_session(test_mode, conf={"spark.rapids.sql.enabled": "true"})
 
 
 def test_noop_format_complex_data():
@@ -70,13 +59,8 @@ def test_noop_format_complex_data():
     def write_noop(spark):
         df = gen_df(spark, data_gen, length=10)
         df.write.format("noop").mode("overwrite").save()
-        # Return a simple result for comparison
-        return [("complex_data_success",)]
     
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: write_noop(spark),
-        conf={"spark.rapids.sql.enabled": "true"}
-    )
+    with_gpu_session(write_noop, conf={"spark.rapids.sql.enabled": "true"})
 
 
 def test_noop_format_large_dataset():
@@ -89,13 +73,8 @@ def test_noop_format_large_dataset():
         df = spark.createDataFrame(data, columns)
         
         df.write.format("noop").mode("overwrite").save()
-        # Return count to verify dataset was processed
-        return [(len(data),)]
     
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: write_large_noop(spark),
-        conf={"spark.rapids.sql.enabled": "true"}
-    )
+    with_gpu_session(write_large_noop, conf={"spark.rapids.sql.enabled": "true"})
 
 
 def test_original_issue_example():
@@ -106,11 +85,6 @@ def test_original_issue_example():
         columns = ["Name", "Age"]
         df = spark.createDataFrame(data, columns)
         df.write.format("noop").mode("overwrite").save()
-        # Return success indicator
-        return [("original_issue_fixed",)]
     
     # This should now work on GPU without the OverwriteByExpressionExec fallback error
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: test_original_case(spark),
-        conf={"spark.rapids.sql.enabled": "true"}
-    )
+    with_gpu_session(test_original_case, conf={"spark.rapids.sql.enabled": "true"})
