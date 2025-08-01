@@ -386,8 +386,7 @@ def test_array_slice_with_zero_start(data_gen, zero_start, valid_length):
 
 @pytest.mark.parametrize('valid_start', [5, 'b'], ids=idfn)
 @pytest.mark.parametrize('negative_length', [-5, 'c'], ids=idfn)
-@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
-def test_array_slice_with_negative_length(data_gen, valid_start, negative_length):
+def test_array_slice_with_negative_length_error_all_null_column_list(valid_start, negative_length):
     negative_length_gen = IntegerGen(nullable=False, min_val=-25, max_val=-1, special_cases=[])
     # When the list column is all null, the result is also all null regardless of the start and length
     assert_gpu_and_cpu_are_equal_collect(
@@ -396,30 +395,43 @@ def test_array_slice_with_negative_length(data_gen, valid_start, negative_length
                 length=5)
             .selectExpr(f"slice(a, {valid_start}, {negative_length})"))
 
+@pytest.mark.parametrize('negative_length', [-5, 'c'], ids=idfn)
+def test_array_slice_with_negative_length_error_null_column_start(negative_length):
+    negative_length_gen = IntegerGen(nullable=False, min_val=-25, max_val=-1, special_cases=[])
     # A null column for start, results in nulls for GPU/CPU (no exceptions)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark,
                 array_no_null_gen, null_gen, negative_length_gen, length=5)
             .selectExpr(f"slice(a, b, {negative_length})"))
 
+@pytest.mark.parametrize('negative_length', [-5, 'c'], ids=idfn)
+def test_array_slice_with_negative_length_error_null_scalar_start(negative_length):
+    negative_length_gen = IntegerGen(nullable=False, min_val=-25, max_val=-1, special_cases=[])
     # A null scalar for start, results in nulls for GPU/CPU (no exceptions)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark,
                 array_no_null_gen, null_gen, negative_length_gen, length=5)
             .selectExpr(f"slice(a, null, {negative_length})"))
 
+def test_array_slice_with_negative_length_error_all_null_column_length():
     # An all null length column, results in nulls in both GPU/CPU (no exception)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark,
                 array_no_null_gen, array_no_zero_no_null_index_gen, null_gen, length=5)
             .selectExpr(f"slice(a, b, c)"))
 
+def test_array_slice_with_negative_length_error_null_scalar_length():
     # A null scalar for length, results in nulls for GPU/CPU (no exceptions)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark,
                 array_no_null_gen, array_no_zero_no_null_index_gen, null_gen, length=5)
             .selectExpr(f"slice(a, b, null)"))
 
+@pytest.mark.parametrize('valid_start', [5, 'b'], ids=idfn)
+@pytest.mark.parametrize('negative_length', [-5, 'c'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
+def test_array_slice_with_negative_length_error(data_gen, valid_start, negative_length):
+    negative_length_gen = IntegerGen(nullable=False, min_val=-25, max_val=-1, special_cases=[])
     error = "The value of parameter(s) `length` in `slice` is invalid: Expects `length` greater than or equal to 0"\
         if is_databricks143_or_later() or is_spark_400_or_later()\
         else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
