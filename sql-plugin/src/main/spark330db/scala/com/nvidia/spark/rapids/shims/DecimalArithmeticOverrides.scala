@@ -62,8 +62,12 @@ object DecimalArithmeticOverrides {
             if (TryModeShim.isTryMode(a)) {
               willNotWorkOnGpu("try_multiply is not supported on GPU")
             }
+          }
+
+          override def tagSelfForAst(): Unit = {
+            super.tagSelfForAst();
             if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-              willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
+              willNotWorkInAst("GPU AST multiplication does not support ANSI mode")
             }
           }
 

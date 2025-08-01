@@ -61,7 +61,7 @@ class InvokeExprMeta(
       case Invoke(
       Literal(_: StructsToJsonEvaluator, _: ObjectType),
       functionName: String,
-      _: StringType,
+      StringType,
       arguments: Seq[Expression],
       methodInputTypes: Seq[AbstractDataType],
       _: Boolean,
