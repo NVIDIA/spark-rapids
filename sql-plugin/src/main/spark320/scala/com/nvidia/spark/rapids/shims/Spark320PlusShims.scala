@@ -49,7 +49,6 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.NoopWriteSupport
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
 import org.apache.spark.internal.Logging

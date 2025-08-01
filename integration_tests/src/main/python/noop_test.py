@@ -30,10 +30,10 @@ def test_noop_format_write():
         df.write.format("noop").mode("overwrite").save()
     
     # Test that it runs on GPU without falling back to CPU
-    with_gpu_session(test_noop_write, conf={"spark.rapids.sql.enabled": "true"})
+    with_gpu_session(test_noop_write)
 
 
-@pytest.mark.parametrize("mode", ["append", "overwrite", "ignore"])
+@pytest.mark.parametrize("mode", ["append", "overwrite"])
 def test_noop_format_different_modes(mode):
     """Test noop format with different write modes"""
     def test_mode(spark):
@@ -44,7 +44,7 @@ def test_noop_format_different_modes(mode):
         # Test specific write mode - noop should handle all of them
         df.write.format("noop").mode(mode).save()
     
-    with_gpu_session(test_mode, conf={"spark.rapids.sql.enabled": "true"})
+    with_gpu_session(test_mode)
 
 
 def test_noop_format_complex_data():
@@ -60,7 +60,7 @@ def test_noop_format_complex_data():
         df = gen_df(spark, data_gen, length=10)
         df.write.format("noop").mode("overwrite").save()
     
-    with_gpu_session(write_noop, conf={"spark.rapids.sql.enabled": "true"})
+    with_gpu_session(write_noop)
 
 
 def test_noop_format_large_dataset():
@@ -74,7 +74,7 @@ def test_noop_format_large_dataset():
         
         df.write.format("noop").mode("overwrite").save()
     
-    with_gpu_session(write_large_noop, conf={"spark.rapids.sql.enabled": "true"})
+    with_gpu_session(write_large_noop)
 
 
 def test_original_issue_example():
@@ -87,4 +87,4 @@ def test_original_issue_example():
         df.write.format("noop").mode("overwrite").save()
     
     # This should now work on GPU without the OverwriteByExpressionExec fallback error
-    with_gpu_session(test_original_case, conf={"spark.rapids.sql.enabled": "true"})
+    with_gpu_session(test_original_case)

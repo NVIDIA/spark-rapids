@@ -27,7 +27,6 @@ import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.LeafV2CommandExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.Utils
 
 /**
  * Support for noop data source writes that creates non-V1 write executors.
@@ -35,33 +34,22 @@ import org.apache.spark.util.Utils
  */
 object NoopWriteSupport extends Logging {
   
-  // Class names for the non-V1 write executors
-  private val overwriteByExpressionExecClassName = 
-    "org.apache.spark.sql.execution.datasources.v2.OverwriteByExpressionExec"
-  private val appendDataExecClassName = 
-    "org.apache.spark.sql.execution.datasources.v2.AppendDataExec"
-    
+  // Try to load the non-V1 write executor classes directly
+  private val overwriteByExpressionExecClass: Option[Class[_]] = try {
+    Some(classOf[org.apache.spark.sql.execution.datasources.v2.OverwriteByExpressionExec])
+  } catch {
+    case _: ClassNotFoundException => None
+  }
+  
+  private val appendDataExecClass: Option[Class[_]] = try {
+    Some(classOf[org.apache.spark.sql.execution.datasources.v2.AppendDataExec])
+  } catch {
+    case _: ClassNotFoundException => None
+  }
+  
   // Check if the non-V1 write executors are available
   lazy val hasNonV1WriteExecs: Boolean = {
-    Utils.classIsLoadable(overwriteByExpressionExecClassName) && 
-    Utils.classIsLoadable(appendDataExecClassName)
-  }
-  
-  // Load the classes if available
-  lazy val overwriteByExpressionExecClass: Option[Class[_]] = {
-    if (hasNonV1WriteExecs) {
-      Try(ShimReflectionUtils.loadClass(overwriteByExpressionExecClassName)).toOption
-    } else {
-      None
-    }
-  }
-  
-  lazy val appendDataExecClass: Option[Class[_]] = {
-    if (hasNonV1WriteExecs) {
-      Try(ShimReflectionUtils.loadClass(appendDataExecClassName)).toOption
-    } else {
-      None
-    }
+    overwriteByExpressionExecClass.isDefined && appendDataExecClass.isDefined
   }
   
   /**
