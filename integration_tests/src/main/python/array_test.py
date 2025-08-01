@@ -426,7 +426,7 @@ def test_array_slice_with_negative_length(data_gen, valid_start, negative_length
     # Non-null start, length can not be negative
     assert_gpu_and_cpu_error(
         lambda spark: three_col_df(
-            spark, data_gen, array_no_zero_no_null_index_gen, negative_length_gen, length=5, num_slices=1)
+            spark, data_gen, array_no_zero_no_null_index_gen, negative_length_gen, length=5)
                 .selectExpr(f"slice(a,{valid_start},{negative_length})")
                 .collect(),
         conf={},
@@ -444,7 +444,7 @@ def test_array_slice_with_negative_length_fails_when_cpu_fails(data_gen, valid_s
     # Non-null start, length can not be negative
     assert_gpu_and_cpu_error(
         lambda spark: three_col_df(
-            spark, data_gen, array_no_zero_index_gen, negative_length_gen, length=5, num_slices=1)
+            spark, data_gen, array_no_zero_index_gen, negative_length_gen)
                 .selectExpr(f"slice(a,{valid_start},{negative_length})")
                 .collect(),
         conf={},
