@@ -24,7 +24,7 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later, is_before_spark_340
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_before_spark_330, is_spark_400_or_later, is_before_spark_340, is_before_spark_400
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -1054,3 +1054,108 @@ def test_conv_with_str_cv_all_nulls():
         lambda spark: _gen_all_null_string(spark),
         "tab",
         f"select conv(str_cv, 3, 5) from tab")
+
+@pytest.mark.skipif(is_before_spark_330(), reason='contains is not exposed until 3.3.0')
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_contains_basic(ansi):
+    data_gen = StringGen(r'\d{0,10}')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('a', data_gen)]).selectExpr(
+                'or(contains(a, "100"), contains(a, "200")) as result'),
+            conf = conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='contains is not exposed until 3.3.0')
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_contains_conditional(ansi):
+    """
+    The point of this test is that case/when statements behave differently when an operation under
+    them can have side effects. When this happens the combining code does not combine expressions
+    that might not execute, becuase there could be exceptions thrown there too. So this purposely
+    causes a case when some can be combined, but others cannot.
+    """
+    data_gen = StringGen(r'\d{0,10}')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('a', data_gen)]).selectExpr(
+                '''CASE
+                    WHEN or(contains(a, "100"), contains(a, "101")) THEN 1
+                    WHEN contains(a, "200") THEN 2
+                    WHEN contains(a, "300") THEN 3
+                    ELSE CAST(a AS LONG)
+                END as result'''),
+            conf = conf)
+
+# Test `preserveCharVarcharTypeInfo` is true.
+# The CPU plan is: Contains(static_invoke(CharVarcharCodegenUtils.readSidePadding(char_col#8, 5)), a).
+# Both scan and project are fallback to CPU, because scan and project input do not support CharType(5),
+# and more there is not GPU version for `static_invoke`.
+@pytest.mark.skipif(is_before_spark_400(), reason="Spark 32x, 33x do not support char/varchar type; Spark 34x, 35x throw exception")
+@pytest.mark.parametrize('char_type', ["char(5)", "varchar(5)"])
+@allow_non_gpu("ProjectExec", "ColumnarToRowExec", "FileSourceScanExec")
+def test_char_varchar_fallback_preserve_enabled(spark_tmp_path, char_type):
+    preserve_char_conf = {"spark.sql.preserveCharVarcharTypeInfo": True}
+    file_path = spark_tmp_path + '/PARQUET_DATA'
+    data = [("a",), ("ab",), ("abc",)]
+    schema = f"char_col {char_type}"
+
+    # Writing with `preserveCharVarcharTypeInfo` enabled, so reading back keeps char/varchar type.
+    # And also, set this config to avoid error: Logical plan should not have output of char/varchar
+    # type when spark.sql.preserveCharVarcharTypeInfo is false
+    with_cpu_session(
+        lambda spark: spark.createDataFrame(data, schema).write.parquet(file_path),
+        conf=preserve_char_conf)
+
+    assert_gpu_fallback_collect(
+        # when read from the Parquet file with `preserveCharVarcharTypeInfo,
+        # the char_col is still char/varchar type.
+        lambda spark : spark.read.parquet(file_path).selectExpr("contains(char_col, 'a')"),
+        cpu_fallback_class_name="Contains",
+        conf=preserve_char_conf)
+
+# Test `preserveCharVarcharTypeInfo` is false(default value)
+# The CPU plan is: Contains(static_invoke(CharVarcharCodegenUtils.readSidePadding(char_col#8, 5)), a)
+# Spark treats char as StringType.
+# Contains gets fallback because the child `static_invoke` of `Contains` is not supported by GPU.
+@pytest.mark.skipif(is_before_spark_400(), reason="Spark 32x, 33x do not support char/varchar type; Spark 34x, 35x throw exception")
+@allow_non_gpu("ProjectExec")
+def test_char_fallback_preserve_disabled(spark_tmp_path):
+    preserve_char_conf = {"spark.sql.preserveCharVarcharTypeInfo": True}
+    file_path = spark_tmp_path + '/PARQUET_DATA'
+    data = [("a",), ("ab",), ("abc",)]
+    schema = f"char_col char(5)"
+
+    # Writing with `preserveCharVarcharTypeInfo` enabled, so reading back keeps char/varchar type.
+    # And also, set this config to avoid error: Logical plan should not have output of char/varchar
+    # type when spark.sql.preserveCharVarcharTypeInfo is false
+    with_cpu_session(
+        lambda spark: spark.createDataFrame(data, schema).write.parquet(file_path),
+        conf=preserve_char_conf)
+
+    # test fallback: both scan and project fallback
+    assert_gpu_fallback_collect(
+        # when read from the Parquet file with `preserveCharVarcharTypeInfo,
+        # the char_col is still char/varchar type.
+        lambda spark : spark.read.parquet(file_path).selectExpr("contains(char_col, 'a')"),
+        cpu_fallback_class_name="Contains")
+
+# Test `preserveCharVarcharTypeInfo` is false(default value)
+# Spark treats varchar as StringType, tt's transparent to GPU, so GPU supports.
+@pytest.mark.skipif(is_before_spark_400(), reason="Spark 32x, 33x do not support char/varchar type; Spark 34x, 35x throw exception")
+@pytest.mark.parametrize('char_type', ["varchar(5)"])
+@allow_non_gpu("ProjectExec", "StaticInvoke")
+def test_varchar_preserve_disabled(spark_tmp_path, char_type):
+    preserve_char_conf = {"spark.sql.preserveCharVarcharTypeInfo": True}
+    file_path = spark_tmp_path + '/PARQUET_DATA'
+    data = [("a",), ("ab",), ("abc",)]
+    schema = f"char_col {char_type}"
+
+    # Writing with `preserveCharVarcharTypeInfo` enabled, so reading back keeps char/varchar type.
+    # And also, set this config to avoid error: Logical plan should not have output of char/varchar
+    # type when spark.sql.preserveCharVarcharTypeInfo is false
+    with_cpu_session(
+        lambda spark: spark.createDataFrame(data, schema).write.parquet(file_path),
+        conf=preserve_char_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.parquet(file_path).selectExpr("contains(char_col, 'a')"))
