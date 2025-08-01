@@ -678,6 +678,7 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
             return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
 
+
 def check_exception(actual_error, error_message):
     """
     Assert that a specific Java exception is thrown
@@ -695,7 +696,7 @@ def check_exception(actual_error, error_message):
         assert False, f"expected str or Pattern found {type(error_message)} {error_message}"
 
 
-def assert_spark_exception(func, error_message, expect_exception=None):
+def collect_data_or_exception(func, error_message, expect_exception=None):
     """
     Assert that a specific Java exception is thrown
     :param func: a function to be verified
@@ -731,26 +732,37 @@ def assert_spark_exception(func, error_message, expect_exception=None):
         assert False, f"expected exception with error message {error_message}, but the test did not throw."
     return (False, result)
 
+def assert_spark_exception(df_fun, conf, error_message): 
+    collect_data_or_exception(df_fun, conf, error_message, expect_exception=True)
 
-def assert_gpu_and_cpu_error(df_fun, conf, error_message, only_if_cpu_fails=False):
+def assert_consistent_gpu_cpu_behavior(df_fun, conf, error_message, only_if_cpu_fails=False):
     """
-    Assert that GPU and CPU execution results in a specific Java exception thrown
+    Assert that GPU and CPU execution behave consistently - either both fail with the same error
+    or both succeed with identical results.
+    
     :param df_fun: a function to be verified
     :param conf: Spark config
     :param error_message: a string such as the one produce by java.lang.Exception.toString
     :param only_if_cpu_fails: if true, we only expect the GPU job to fail if the CPU job fails,
-           otherwise we expect both CPU and GPU to fail.
-    :return: Assertion failure if either GPU or CPU versions has not generated error messages
-             expected
+           otherwise we expect both CPU and GPU to fail when error_message is provided.
+    :return: Assertion failure if GPU and CPU behaviors are inconsistent (different errors or 
+             different results when both succeed)
     """
-    (cpu_failed, from_cpu) = assert_spark_exception(
+    (cpu_failed, from_cpu) = collect_data_or_exception(
         lambda: with_cpu_session(df_fun, conf), error_message)
-    (gpu_failed, from_gpu) = assert_spark_exception(
-        lambda: with_gpu_session(df_fun, conf), error_message, expect_exception=cpu_failed)
+    (gpu_failed, from_gpu) = collect_data_or_exception(
+        lambda: with_gpu_session(df_fun, conf), error_message, 
+        expect_exception=cpu_failed or not only_if_cpu_fails)
 
     if cpu_failed is False and gpu_failed is False:
         assert_equal(from_cpu, from_gpu)
 
+# Backward compatibility alias - use assert_consistent_gpu_cpu_behavior instead
+def assert_gpu_and_cpu_error(df_fun, conf, error_message): 
+    assert_consistent_gpu_cpu_behavior(df_fun, conf, error_message, only_if_cpu_fails=False)
+
+def assert_gpu_and_cpu_same_data_or_error(df_fun, conf, error_message): 
+    assert_consistent_gpu_cpu_behavior(df_fun, conf, error_message, only_if_cpu_fails=True)
 
 def with_cpu_sql(df_fun, table_name, sql, conf=None, debug=False):
     if conf is None:

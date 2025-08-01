@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_and_cpu_same_data_or_error, assert_gpu_fallback_collect
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import incompat, allow_non_gpu, disable_ansi_mode
@@ -454,14 +454,13 @@ def test_array_slice_with_negative_length_fails_when_cpu_fails(data_gen, valid_s
         if is_databricks143_or_later() or is_spark_400_or_later()\
         else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
     # Non-null start, length can not be negative
-    assert_gpu_and_cpu_error(
+    assert_gpu_and_cpu_same_data_or_error(
         lambda spark: three_col_df(
             spark, data_gen, array_no_zero_index_gen, negative_length_gen)
                 .selectExpr(f"slice(a,{valid_start},{negative_length})")
                 .collect(),
         conf={},
-        error_message=maybe_error,
-        only_if_cpu_fails=True)
+        error_message=maybe_error)
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)

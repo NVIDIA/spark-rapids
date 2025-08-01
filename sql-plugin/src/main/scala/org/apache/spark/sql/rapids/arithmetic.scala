@@ -738,10 +738,19 @@ object GpuDivModLike {
    * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" are null, otherwise
    * return the row from the "dataCol".
    */
-  def mergeNulls(dataCol: ColumnView, nullFlagCol: ColumnView): ColumnVector = {
+  def mergeNulls(dataCol: ColumnVector, nullFlagCol: ColumnView): ColumnVector = {
     withResource(nullFlagCol.isNull) { isNull =>
-      withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
-        isNull.ifElse(nullScalar, dataCol)
+      // if we have at least 1 null, we need to merge nulls, else
+      // it is a noop
+      val needsToChange = withResource(isNull.any) { tmp => 
+        tmp.isValid && tmp.getBoolean
+      }
+      if (needsToChange) {
+        withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
+          isNull.ifElse(nullScalar, dataCol)
+        }
+      } else {
+        dataCol.incRefCount()
       }
     }
   }
@@ -751,17 +760,26 @@ object GpuDivModLike {
    * are null, otherwise return the row from the "dataCol".
    */
   def mergeNulls(
-      dataCol: ColumnView,
+      dataCol: ColumnVector,
       nullFlagCol1: ColumnView,
       nullFlagCol2: ColumnView): ColumnVector = {
-    withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
-      val temp1 = withResource(nullFlagCol1.isNull) { isNull1 =>
-        isNull1.ifElse(nullScalar, dataCol)
+    val nullFlag = withResource(nullFlagCol1.isNull) { isNull1 =>
+      withResource(nullFlagCol2.isNull) { isNull2 =>
+        isNull1.or(isNull2)
       }
-      withResource(temp1) { _ =>
-        withResource(nullFlagCol2.isNull) { isNull2 =>
-          isNull2.ifElse(nullScalar, temp1)
+    }
+    withResource(nullFlag) { _ =>
+      // if we have at least 1 null, we need to merge nulls, else
+      // it is a noop
+      val needsToChange = withResource(nullFlag.any) { tmp => 
+        tmp.isValid && tmp.getBoolean
+      }
+      if (needsToChange) {
+        withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
+          nullFlag.ifElse(nullScalar, dataCol)
         }
+      } else {
+        dataCol.incRefCount()
       }
     }
   }
