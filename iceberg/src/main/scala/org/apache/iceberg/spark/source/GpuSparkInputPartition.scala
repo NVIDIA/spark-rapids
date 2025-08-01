@@ -16,7 +16,7 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.{RapidsConf, ResourcePoolConf}
 import org.apache.iceberg.{Schema, SchemaParser}
 
 import org.apache.spark.broadcast.Broadcast
@@ -56,5 +56,9 @@ class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
 
   @transient lazy val expectedSchema: Schema = {
     SchemaParser.fromJson(expectedSchemaStr)
+  }
+
+  def createPoolConf: ResourcePoolConf = {
+    ResourcePoolConf.buildFromConf(rapidsConf, )
   }
 }

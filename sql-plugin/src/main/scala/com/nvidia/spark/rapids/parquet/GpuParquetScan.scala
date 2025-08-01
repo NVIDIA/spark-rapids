@@ -127,9 +127,12 @@ case class GpuParquetScan(
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         options.asScala.toMap)
     } else {
+      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf,
+        Some(sparkSession.sparkContext.getConf))
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        queryUsesInputFile)
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
+        resourcePoolConf,
+        metrics, queryUsesInputFile)
     }
   }
 
@@ -1092,6 +1095,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
+    resourcePoolConf: ResourcePoolConf,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
@@ -1099,7 +1103,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
-  private val poolConf = ResourcePoolConf.parse(rapidsConf)
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
@@ -1163,7 +1166,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
-      metrics, partitionSchema, poolConf, maxNumFileProcessed, ignoreMissingFiles,
+      metrics, partitionSchema, resourcePoolConf, maxNumFileProcessed, ignoreMissingFiles,
       ignoreCorruptFiles, readUseFieldId, queryUsesInputFile, keepReadsInOrderFromConf,
       combineConf)
     // NOTE: Initialize must happen after the initialization of the reader, to ensure everything
@@ -1245,7 +1248,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
         val metaAndFilesArr = if (numFilesFilterParallel > 0) {
           val tc = TaskContext.get()
-          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
+          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(resourcePoolConf)
           files.grouped(numFilesFilterParallel).map { fileGroup =>
             // we need to copy the Hadoop Configuration because filter push down can mutate it,
             // which can affect other threads.
@@ -1286,7 +1289,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
-      metrics, partitionSchema, poolConf, ignoreMissingFiles, ignoreCorruptFiles,
+      metrics, partitionSchema, resourcePoolConf, ignoreMissingFiles, ignoreCorruptFiles,
       readUseFieldId)
   }
 

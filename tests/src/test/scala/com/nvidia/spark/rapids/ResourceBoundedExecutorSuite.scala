@@ -175,19 +175,54 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     // Create a two-pipe bounded executor to simulate the simple concurrent execution.
     val executor = createSingleThreadedBoundedExecutor(maxThreadNumber = 2,
       memorySize = 100,
-      waitResourceTimeoutMs = 1000000L)
-    val asyncTasks = Seq(
-      AsyncTask.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 10), // 0 -> 3
-      AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 20), // 0 -> 5
-      AsyncTask.newCpuTask(buildDummyFn(sleepMs = 4), memoryBytes = 40), // 3 -> 7
-      AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 45), // 5 -> 10
-      AsyncTask.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 70), // 10 -> 12
+      // Set a long timeout to avoid re-adding task to the queue complicating the test.
+      waitResourceTimeoutMs = 100000L)
+
+    val t1 = Seq(
+      0 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 10), // 0 -> 3
+      1 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 20), // 0 -> 5
+      2 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 4), memoryBytes = 40), // 3 -> 7
+      3 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 45), // 5 -> 10
+      4 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 70), // 10 -> 12
     )
-    val results = asyncTasks.map(task => executor.submit(task)).map { future =>
-      future.get().data
+        .map { case (index, task) => index -> executor.submit(task) }
+        .sortBy(_._1)
+        .map { case (_, future) => future.get().data }
+    (0 until t1.length - 1).foreach { i =>
+      require(t1(i) < t1(i + 1), s"Unexpected order of wallTime: ${t1.toList}")
     }
-    (0 until results.length - 1).foreach { i =>
-      require(results(i) < results(i + 1), s"Unexpected order of wallTime: ${results.toList}")
+
+    val t2 = Seq(
+      1 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 30), // 0 -> 3
+      4 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 90), // 8 -> 13
+      0 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 40), // 0 -> 2
+      3 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 45), // 2 -> 8
+      2 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 4), memoryBytes = 55), // 3 -> 7
+    )
+        .map { case (index, task) => index -> executor.submit(task) }
+        .sortBy(_._1)
+        .map { case (_, future) => future.get().data }
+    (0 until t2.length - 1).foreach { i =>
+      require(t2(i) < t2(i + 1), s"Unexpected order of wallTime: ${t2.toList}")
+    }
+
+    val t3 = Seq(
+      0 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 60), // 0 -> 6
+      1 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 45), // 6 -> 9
+      3 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 48), // 6 -> 12
+      4 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 100), // 12 -> 14
+      2 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 1), memoryBytes = 50), // 9 -> 10
+    )
+        .map { case (index, task) =>
+          val fut = executor.submit(task)
+          // Guarantee the first task is executed first to avoid uncertain execution order.
+          Thread.sleep(1)
+          index -> fut
+        }
+        .sortBy(_._1)
+        .map { case (_, future) => future.get().data }
+    (0 until t3.length - 1).foreach { i =>
+      require(t3(i) < t3(i + 1), s"Unexpected order of wallTime: ${t3.toList}")
     }
   }
 }

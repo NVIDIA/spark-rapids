@@ -20,13 +20,11 @@ import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
 import java.util.concurrent.{CompletionService, ConcurrentLinkedQueue, Future, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
-
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.collection.mutable
 import scala.language.implicitConversions
-
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -36,8 +34,7 @@ import com.nvidia.spark.rapids.io.async._
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -367,19 +364,37 @@ case class CombineConf(
 case class ResourcePoolConf(
     hostMemoryCapacity: Long, // The maximum host memory used by in-flight tasks
     waitResourceTimeoutMs: Long, // The timeout for acquiring resources
-    retryPriorityAdjust: Float, // The penalty for task priority if failed to acquire resource
+    retryPriorityAdjust: Double, // The penalty for task priority if failed to acquire resource
     maxThreadNumber: Int, // The maximum number of threads used by the thread pool
     stageLevelPool: Boolean = false) // Only for testing, create pools for each task
 
 object ResourcePoolConf {
-  def parse(rapidsConf: RapidsConf): ResourcePoolConf = {
-    ResourcePoolConf(
-      rapidsConf.multiThreadMemoryLimit,
-      rapidsConf.multiThreadReadTaskTimeout,
-      // Currently we hardcode the retry penalty as -1000f inside ResourceBoundedThreadExecutor
-      0.0f,
-      rapidsConf.multiThreadReadNumThreads,
-      rapidsConf.multiThreadReadStageLevelPool)
+  /**
+   * Build a ResourcePoolConf from the RapidsConf and SparkConf. SparkConf is only used to
+   * determine the memory overhead if the RapidsConf is not set.
+   */
+  def buildFromConf(conf: RapidsConf,
+      sc: Option[SparkConf] = None): ResourcePoolConf = {
+    val memoryLimit: Long = conf.multiThreadMemoryLimit match {
+      case limit if limit == 0 && sc.isEmpty =>
+        throw new IllegalArgumentException(
+          "Neither SparkConf nor multiThreadMemoryLimit is known")
+      case limit if limit == 0 && sc.nonEmpty =>
+        val memoryOverhead = sc.get.getLong(
+          "spark.executor.memoryOverhead",
+          (sc.get.getLong("spark.executor.memory", 0L) * 0.3).toLong
+        )
+        // Use 90% of the memory overhead for the capacity of the HostMemoryPool
+        (memoryOverhead * 0.9).toLong
+      case limit =>
+        limit
+    }
+    ResourcePoolConf(memoryLimit,
+      conf.multiThreadReadTaskTimeout,
+      // Currently we hardcode the retry penalty as -1000 inside ResourceBoundedThreadExecutor
+      0.0,
+      conf.multiThreadReadNumThreads,
+      conf.multiThreadReadStageLevelPool)
   }
 }
 

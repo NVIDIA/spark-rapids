@@ -123,9 +123,11 @@ case class GpuAvroScan(
         dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics,
         options.asScala.toMap)
     } else {
+      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf,
+        Some(sparkSession.sparkContext.getConf))
       GpuAvroMultiFilePartitionReaderFactory(sparkSession.sessionState.conf,
         rapidsConf, broadcastedConf, dataSchema, readDataSchema, readPartitionSchema,
-        parsedOptions, metrics, pushedFilters, queryUsesInputFile)
+        parsedOptions, metrics, pushedFilters, resourcePoolConf, queryUsesInputFile)
     }
   }
 
@@ -203,6 +205,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     options: AvroOptions,
     metrics: Map[String, GpuMetric],
     filters: Array[Filter],
+    resourcePoolConf: ResourcePoolConf,
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
@@ -211,7 +214,6 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
-  private val poolConf = ResourcePoolConf.parse(rapidsConf)
   private val maxNumFileProcessed = rapidsConf.maxNumAvroFilesParallel
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
@@ -243,7 +245,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
       partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
     val reader = new GpuMultiFileCloudAvroPartitionReader(
-      conf, files, poolConf, maxNumFileProcessed,
+      conf, files, resourcePoolConf, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
       readDataSchema, partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       maxGpuColumnSizeBytes)
@@ -303,7 +305,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-      poolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
+      resourcePoolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
   }
 
 }

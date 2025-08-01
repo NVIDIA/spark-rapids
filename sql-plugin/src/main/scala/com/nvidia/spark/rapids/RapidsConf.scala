@@ -320,8 +320,6 @@ object RapidsReaderType extends Enumeration {
 
 object RapidsConf extends Logging {
   val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
-  // By default, there is no limit on memory. So, set the default value to a very large value.
-  val MULTITHREAD_READ_MEM_LIMIT_DEFAULT: Long = ByteUnit.GiB.toBytes(8096)
 
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
@@ -1097,12 +1095,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val MULTITHREAD_READ_MEM_LIMIT = conf("spark.rapids.sql.multiThreadedRead.memoryLimit")
       .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
-        "This can not be changed at runtime after the executor has started")
+        "This can not be changed at runtime after the executor has started. And if 0, it " +
+        "will be set with 90% of `spark.executor.memoryOverhead`")
       .startupOnly()
       .internal()
       .longConf
-      .checkValue(v => v > 0, s"The memory capacity must be greater than zero")
-      .createWithDefault(MULTITHREAD_READ_MEM_LIMIT_DEFAULT)
+      .checkValue(v => v >= 0, s"The memory capacity must be greatThanOrEqual zero")
+      .createWithDefault(0)
 
   val MULTITHREAD_READ_TASK_TIMEOUT = conf("spark.rapids.sql.multiThreadedRead.taskTimeout")
       .doc("The maximum time in milliseconds to wait for a task to acquire required resource " +

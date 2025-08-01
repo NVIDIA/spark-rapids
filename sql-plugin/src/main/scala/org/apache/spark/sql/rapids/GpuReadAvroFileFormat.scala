@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuMetric, GpuReadFileFormatWithMetrics, PartitionReaderIterator, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuMetric, GpuReadFileFormatWithMetrics, PartitionReaderIterator, RapidsConf, ResourcePoolConf, SparkPlanMeta}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -72,6 +72,8 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf,
+      Some(fileScan.relation.sparkSession.sparkContext.getConf))
     GpuAvroMultiFilePartitionReaderFactory(
       fileScan.relation.sparkSession.sessionState.conf,
       fileScan.rapidsConf,
@@ -82,6 +84,7 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
       fileScan.allMetrics,
       pushedFilters,
+      resourcePoolConf,
       fileScan.queryUsesInputFile)
   }
 }

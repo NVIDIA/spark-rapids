@@ -104,9 +104,12 @@ case class GpuOrcScan(
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         options.asScala.toMap)
     } else {
+      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf,
+        Some(sparkSession.sparkContext.getConf))
       GpuOrcMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        queryUsesInputFile)
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
+        resourcePoolConf,
+        metrics, queryUsesInputFile)
     }
   }
 
@@ -565,6 +568,7 @@ object GpuOrcScan {
  * @param partitionSchema     schema of partitions.
  * @param filters             filters on non-partition columns
  * @param rapidsConf          the Rapids configuration
+ * @param resourcePoolConf    the resource-bounded ThreadPool configuration
  * @param metrics             the metrics
  * @param queryUsesInputFile  this is a parameter to easily allow turning it
  *                            off in GpuTransitionOverrides if InputFileName,
@@ -578,13 +582,13 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
+    resourcePoolConf: ResourcePoolConf,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
   private val debugDumpAlways = rapidsConf.orcDebugDumpAlways
-  private val poolConf = ResourcePoolConf.parse(rapidsConf)
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, metrics, broadcastedConf, filters,
     rapidsConf.isOrcFloatTypesToStringEnable)
@@ -615,7 +619,8 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     val reader = new MultiFileCloudOrcPartitionReader(
       conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
-      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, poolConf, maxNumFileProcessed,
+      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, resourcePoolConf,
+      maxNumFileProcessed,
       debugDumpPrefix, debugDumpAlways, filters, filterHandler, metrics, ignoreMissingFiles,
       ignoreCorruptFiles, queryUsesInputFile, keepReadsInOrder, combineConf)
     // NOTE: Initialize must happen after the initialization of the reader, to ensure everything
@@ -664,7 +669,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,
       maxChunkedReaderMemoryUsageSizeBytes,
-      metrics, partitionSchema, poolConf, filterHandler.isCaseSensitive)
+      metrics, partitionSchema, resourcePoolConf, filterHandler.isCaseSensitive)
   }
 
   /**

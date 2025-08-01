@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,8 @@ class AvroProviderImpl extends AvroProvider {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf,
+      Some(fileScan.relation.sparkSession.sparkContext.getConf))
     GpuAvroMultiFilePartitionReaderFactory(
       fileScan.relation.sparkSession.sessionState.conf,
       fileScan.rapidsConf,
@@ -70,6 +72,7 @@ class AvroProviderImpl extends AvroProvider {
       new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
       fileScan.allMetrics,
       pushedFilters,
+      resourcePoolConf,
       fileScan.queryUsesInputFile)
   }
 
