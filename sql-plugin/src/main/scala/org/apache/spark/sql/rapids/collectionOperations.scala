@@ -162,8 +162,13 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listS: GpuScalar, startCol: GpuColumnVector,
       lengthCol: GpuColumnVector): ColumnVector = {
     val numRows = startCol.getRowCount.toInt
-    withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
-      doColumnar(listCol, startCol, lengthCol)
+    // When list is null, return all nulls like the CPU does.
+    if (!listS.isValid) {
+      GpuColumnVector.columnVectorFromNull(numRows, dataType)
+    } else {
+      withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+        doColumnar(listCol, startCol, lengthCol)
+      }
     }
   }
 
@@ -171,7 +176,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
       lengthS: GpuScalar): ColumnVector = {
     // When input column is all nulls or either start or length is null, return all nulls like the CPU does.
     // This matches CPU behavior for slice function with null inputs.
-    if (listCol.getRowCount == listCol.numNulls() || !startS.isValid || !lengthS.isValid) {
+    if (listCol.getRowCount == listCol.getBase.getNullCount || !startS.isValid || !lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -190,7 +195,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
       lengthCol: GpuColumnVector): ColumnVector = {
     // When start is null, return all nulls like the CPU does.
-    if (listCol.getRowCount == listCol.numNulls() || !startS.isValid) {
+    if (listCol.getRowCount == listCol.getBase.getNullCount || !startS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -212,7 +217,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthS: GpuScalar): ColumnVector = {
     // When length is null, return all nulls like the CPU does.
-    if (listCol.getRowCount == listCol.numNulls() || !lengthS.isValid) {
+    if (listCol.getRowCount == listCol.getBase.getNullCount || !lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -237,7 +242,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
 
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthCol: GpuColumnVector): ColumnVector = {
-    if (listCol.getRowCount == listCol.numNulls()) {
+    if (listCol.getRowCount == listCol.getBase.getNullCount) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
