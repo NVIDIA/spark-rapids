@@ -802,7 +802,9 @@ case class GpuMultiply(
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    throw new RuntimeException("Error in multiplication: Spark already did the constant folding")
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { lhs_cv =>
+      doColumnar(lhs_cv, rhs)
+    }
   }
 }
 
