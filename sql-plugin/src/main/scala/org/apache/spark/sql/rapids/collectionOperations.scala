@@ -196,17 +196,19 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
     } else {
       val list = listCol.getBase
       val start = startS.getValue.asInstanceOf[Int]
-      val length = lengthCol.getBase
       if (start == 0) {
         throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
       }
-      withResource(length.min()) { minLen =>
-        if (minLen.isValid && minLen.getInt < 0) {
-          throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
-            minLen.getInt)
+      // keep null as original, or null it out if `list[i]`  is null
+      withResource(GpuDivModLike.mergeNulls(lengthCol.getBase, list)) { length =>
+        withResource(length.min()) { minLen =>
+          if (minLen.isValid && minLen.getInt < 0) {
+            throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
+              minLen.getInt)
+          }
         }
+        GpuListSliceUtils.listSlice(list, start, length, false)
       }
-      GpuListSliceUtils.listSlice(list, start, length, false)
     }
   }
 
@@ -227,6 +229,9 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
         }
       }
       if (length < 0) {
+        // we know not all rows in list/start are nulls since we checked for that at the
+        // beginning of this function, and length is scalar: for _some_ rows we will have
+        // non-null list/start, and a guaranteed negative index.
         throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName, length)
       }
       GpuListSliceUtils.listSlice(list, start, length, false)
