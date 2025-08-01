@@ -735,7 +735,7 @@ object GpuDivModLike {
 
 
   /**
-   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" is null, otherwise
+   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" are null, otherwise
    * return the row from the "dataCol".
    */
   def mergeNulls(dataCol: ColumnView, nullFlagCol: ColumnView): ColumnVector = {
@@ -747,8 +747,8 @@ object GpuDivModLike {
   }
 
   /**
-   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol1[i]" or "nullFlagCol2[i]
-   * is null, otherwise return the row from the "dataCol".
+   * Return a null row at "i" if either "dataCol[i]", "nullFlagCol1[i]" or "nullFlagCol2[i]"
+   * are null, otherwise return the row from the "dataCol".
    */
   def mergeNulls(
       dataCol: ColumnView,
