@@ -802,8 +802,12 @@ case class GpuMultiply(
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { lhs_cv =>
-      doColumnar(lhs_cv, rhs)
+    if (!lhs.isValid || !rhs.isValid) {
+      GpuColumnVector.columnVectorFromNull(numRows, lhs.dataType)
+    } else {
+      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { lhs_cv =>
+        doColumnar(lhs_cv, rhs)
+      }
     }
   }
 }
