@@ -678,8 +678,15 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
             return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
 
-
 def check_exception(actual_error, error_message):
+    """
+    Assert that a specific Java exception is thrown
+    :param actual_error: the error that was caught when executing the query
+    :param error_message: a string such as the one produce by java.lang.Exception.toString
+    Assertion failure if:
+        - no exception matching error_message has occurred
+        - the error isn't a string or a regex
+    """
     if isinstance(error_message, re.Pattern):
         assert error_message.search(actual_error), f"Expected error '{error_message}' to match '{actual_error}'"
     elif isinstance(error_message, str):
