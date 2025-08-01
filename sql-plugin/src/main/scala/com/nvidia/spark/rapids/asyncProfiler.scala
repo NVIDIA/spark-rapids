@@ -16,8 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.{BufferedInputStream, BufferedOutputStream, FileInputStream, FileOutputStream}
 import java.nio.file.{Files, Paths}
+import java.util.zip.GZIPOutputStream
 
+import com.nvidia.spark.rapids.Arm.withResource
 import one.profiler.{AsyncProfiler, AsyncProfilerLoader}
 import org.apache.hadoop.fs.Path
 
@@ -53,7 +56,8 @@ object AsyncProfilerOnExecutor extends Logging {
   private var asyncProfiler: Option[AsyncProfiler] = None
   private var pluginCtx: PluginContext = _
   private var profileOptions: String = _
-  @volatile private var currentProfilingStage = -1
+  private var currentProfilingStage = -1
+  private var jfrCompressionEnabled: Boolean = false
 
   private var needMoveFile: Boolean = false // true when `asyncProfilerPathPrefix` is non-local
   private var tempFilePath: java.nio.file.Path = _
@@ -81,6 +85,7 @@ object AsyncProfilerOnExecutor extends Logging {
         }
 
         this.profileOptions = conf.asyncProfilerProfileOptions
+        this.jfrCompressionEnabled = conf.asyncProfilerJfrCompression
       })
     })
   }
@@ -151,6 +156,35 @@ object AsyncProfilerOnExecutor extends Logging {
     matcher.contains(executorId)
   }
 
+  /**
+   * Compresses a JFR file using GZIP compression.
+   *
+   * @param inputPath  Path to the input JFR file
+   * @param outputPath Path to the compressed output file (will have .gz extension)
+   * @return true if compression was successful, false otherwise
+   */
+  private def compressJfrFile(
+      inputPath: java.nio.file.Path, outputPath: java.nio.file.Path): Boolean = {
+    try {
+      val buffer = new Array[Byte](8192)
+      withResource(new BufferedInputStream(new FileInputStream(inputPath.toFile))) { in =>
+        withResource(new BufferedOutputStream(new GZIPOutputStream(
+          new FileOutputStream(outputPath.toFile)))) { out =>
+          var bytesRead = in.read(buffer)
+          while (bytesRead != -1) {
+            out.write(buffer, 0, bytesRead)
+            bytesRead = in.read(buffer)
+          }
+        }
+      }
+      log.debug(s"Successfully compressed JFR file from $inputPath to $outputPath")
+      true
+    } catch {
+      case e: Exception =>
+        log.error(s"Failed to compress JFR file from $inputPath to $outputPath", e)
+        false
+    }
+  }
 
   private def closeLastProfiler(): Unit = {
     asyncProfiler.foreach(profiler => {
@@ -162,14 +196,45 @@ object AsyncProfilerOnExecutor extends Logging {
             if (needMoveFile) {
               val executorId = pluginCtx.executorID()
 
-              val outPath = new Path(asyncProfilerPrefix.get,
-                s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
-                  s"-stage-$currentProfilingStage.jfr")
+              val baseFileName = s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
+                s"-stage-$currentProfilingStage.jfr"
+              val outPath = new Path(asyncProfilerPrefix.get, 
+                if (jfrCompressionEnabled) baseFileName + ".gz" else baseFileName)
+              
               val hadoopConf = pluginCtx.ask(ProfileInitMsg(executorId, outPath.toString))
                 .asInstanceOf[SerializableConfiguration].value
               val fs = outPath.getFileSystem(hadoopConf)
-              fs.copyFromLocalFile(new Path(tempFilePath.toString), outPath)
-              tempFilePath.toFile.delete() // delete the temp file after moving
+
+              if (jfrCompressionEnabled) {
+                // Compress the temp file first
+                val compressedTempPath = Files.createTempFile("compressed-jfr", ".gz")
+                if (compressJfrFile(tempFilePath, compressedTempPath)) {
+                  fs.copyFromLocalFile(new Path(compressedTempPath.toString), outPath)
+                  compressedTempPath.toFile.delete() // delete compressed temp file
+                } else {
+                  // If compression fails, copy the original file
+                  log.warn("JFR compression failed, copying uncompressed file")
+                  fs.copyFromLocalFile(new Path(tempFilePath.toString), 
+                    new Path(asyncProfilerPrefix.get, baseFileName))
+                }
+              } else {
+                fs.copyFromLocalFile(new Path(tempFilePath.toString), outPath)
+              }
+              tempFilePath.toFile.delete() // delete the original temp file after moving
+            } else {
+              // For local files, compress in place if enabled
+              if (jfrCompressionEnabled) {
+                val originalPath = Paths.get(asyncProfilerPrefix.get).resolve(
+                  s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
+                    s"-stage-$currentProfilingStage.jfr")
+                val compressedPath = Paths.get(originalPath.toString + ".gz")
+                
+                if (compressJfrFile(originalPath, compressedPath)) {
+                  originalPath.toFile.delete() // delete original file after successful compression
+                } else {
+                  log.warn("JFR compression failed, keeping uncompressed file")
+                }
+              }
             }
             log.info(s"successfully stopped profiling stage $currentProfilingStage")
           } catch {
