@@ -732,57 +732,6 @@ object GpuDivModLike {
       }
     }
   }
-
-
-  /**
-   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" are null, otherwise
-   * return the row from the "dataCol".
-   */
-  def mergeNulls(dataCol: ColumnVector, nullFlagCol: ColumnView): ColumnVector = {
-    withResource(nullFlagCol.isNull) { isNull =>
-      // if we have at least 1 null, we need to merge nulls, else
-      // it is a noop
-      val needsToChange = withResource(isNull.any) { tmp => 
-        tmp.isValid && tmp.getBoolean
-      }
-      if (needsToChange) {
-        withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
-          isNull.ifElse(nullScalar, dataCol)
-        }
-      } else {
-        dataCol.incRefCount()
-      }
-    }
-  }
-
-  /**
-   * Return a null row at "i" if either "dataCol[i]", "nullFlagCol1[i]" or "nullFlagCol2[i]"
-   * are null, otherwise return the row from the "dataCol".
-   */
-  def mergeNulls(
-      dataCol: ColumnVector,
-      nullFlagCol1: ColumnView,
-      nullFlagCol2: ColumnView): ColumnVector = {
-    val nullFlag = withResource(nullFlagCol1.isNull) { isNull1 =>
-      withResource(nullFlagCol2.isNull) { isNull2 =>
-        isNull1.or(isNull2)
-      }
-    }
-    withResource(nullFlag) { _ =>
-      // if we have at least 1 null, we need to merge nulls, else
-      // it is a noop
-      val needsToChange = withResource(nullFlag.any) { tmp => 
-        tmp.isValid && tmp.getBoolean
-      }
-      if (needsToChange) {
-        withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
-          nullFlag.ifElse(nullScalar, dataCol)
-        }
-      } else {
-        dataCol.incRefCount()
-      }
-    }
-  }
 }
 
 case class GpuMultiply(
@@ -813,7 +762,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
     if (failOnError) {
       // Throw out a "divByZeroError" only when the row in "rhs" is zero and the
       // corresponding row in "lhs" is not null. So need to merge nulls first.
-      withResource(mergeNulls(rhs.getBase, lhs.getBase)) { nullMergedRhs =>
+      withResource(NullUtilities.mergeNulls(rhs.getBase, lhs.getBase)) { nullMergedRhs =>
         withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {
             throw RapidsErrorUtils.divByZeroError(origin)
@@ -920,7 +869,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
 
   private[this] def divByZeroFixes(lhs: ColumnView, rhs: ColumnVector): ColumnVector = {
     if (failOnError) {
-      withResource(GpuDivModLike.mergeNulls(rhs, lhs)) { nullMergedRhs =>
+      withResource(NullUtilities.mergeNulls(rhs, lhs)) { nullMergedRhs =>
         withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {
             throw RapidsErrorUtils.divByZeroError(origin)

@@ -200,7 +200,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
         throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
       }
       // keep null as original, or null it out if `list[i]`  is null
-      withResource(GpuDivModLike.mergeNulls(lengthCol.getBase, list)) { length =>
+      withResource(NullUtilities.mergeNulls(lengthCol.getBase, list)) { length =>
         withResource(length.min()) { minLen =>
           if (minLen.isValid && minLen.getInt < 0) {
             throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
@@ -254,7 +254,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
         }
       }
       // keep null as original, or null it out if `list[i]` or `start[i]` is null
-      withResource(GpuDivModLike.mergeNulls(lengthCol.getBase, list, start)) { length =>
+      withResource(NullUtilities.mergeNulls(lengthCol.getBase, list, start)) { length =>
         withResource(length.min()) { minLen =>
           if (minLen.isValid && minLen.getInt < 0) {
             throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
