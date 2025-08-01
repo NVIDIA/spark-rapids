@@ -90,11 +90,22 @@ object ExternalSource extends Logging {
   }
 
   private def isNoopDataSource(write: Class[_ <: SupportsWrite]): Boolean = {
-    // The noop data source is typically from the org.apache.spark.sql.execution.datasources.noop package
-    // or similar. We check both the class name and package to handle different Spark versions.
-    val className = write.getName
-    className.contains("noop") || className.contains("Noop") ||
-      className.contains("org.apache.spark.sql.execution.datasources.noop")
+    // The noop data source could be named in various ways depending on Spark version
+    // Common patterns include org.apache.spark.sql.execution.datasources.noop.*
+    // or other variations with "noop" in the class name or package
+    val className = write.getName.toLowerCase
+    val packageName = write.getPackage.getName.toLowerCase
+    
+    // Check for noop in class name or package name
+    val isNoop = className.contains("noop") || packageName.contains("noop") ||
+      // Also check for specific known class patterns
+      className.endsWith("noopdatasourcev2") || className.endsWith("nooptable")
+    
+    if (isNoop) {
+      logInfo(s"Detected noop data source: ${write.getName}")
+    }
+    
+    isNoop
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
@@ -207,6 +218,7 @@ object ExternalSource extends Logging {
       // Noop writes are always GPU compatible since they don't actually write data
       // No special tagging needed
     } else {
+      logInfo(s"Unsupported data source for AppendDataExecV1: ${writeClass.getName}")
       meta.willNotWorkOnGpu(s"catalog $writeClass is not supported")
     }
   }
@@ -235,6 +247,7 @@ object ExternalSource extends Logging {
       // Noop writes are always GPU compatible since they don't actually write data
       // No special tagging needed
     } else {
+      logInfo(s"Unsupported data source for OverwriteByExpressionExecV1: ${writeClass.getName}")
       meta.willNotWorkOnGpu(s"catalog $writeClass is not supported")
     }
   }
