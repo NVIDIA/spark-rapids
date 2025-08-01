@@ -46,7 +46,7 @@ if [ ! -f "$JDEST" ]; then
 fi
 
 if [ "$#" != "0" ]; then
-  ARGS=("$@") # fix SC2124 (warning): Assigning an array to a string! Assign as array, or use * instead of @ to concatenate.
+  ARGS=("$@")
 else
   IFS=" " read -ra ARGS <<< "$(find . -name "jacoco.exec" -printf "%p ")"
 fi

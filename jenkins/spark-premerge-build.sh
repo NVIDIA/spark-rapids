@@ -51,7 +51,7 @@ mvn_verify() {
         echo "Spark version: $version"
         # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
-        match=1 # fix SC2199 (error): Arrays implicitly concatenate in [[ ]]. Use a loop (or explicit * instead of @).
+        match=1
         for element in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}"; do
             if [[ "$element" == "$version" ]]; then
                 match=0
