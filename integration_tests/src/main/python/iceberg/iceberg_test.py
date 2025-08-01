@@ -88,7 +88,8 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
                                  f"WHERE Y.a > 0"),
         conf={"spark.sql.adaptive.enabled": "true",
               "spark.rapids.sql.format.parquet.reader.type": reader_type,
-              "spark.sql.optimizer.dynamicPartitionPruning.enabled": "true"})
+              "spark.sql.optimizer.dynamicPartitionPruning.enabled": "true",
+              "spark.rapids.sql.format.iceberg.enabled": "true"})
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -123,7 +124,7 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, rea
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql(f"SELECT * FROM {full_table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -142,7 +143,7 @@ def test_iceberg_parquet_read_round_trip_all_types(spark_tmp_table_factory, data
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql(f"SELECT * FROM {full_table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @pytest.mark.parametrize("data_gens", [[long_gen]], ids=idfn)
@@ -162,7 +163,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
     assert_spark_exception(
         lambda : with_gpu_session(
             lambda spark : spark.sql(f"SELECT * FROM {full_table}").collect(),
-            conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
+            conf=iceberg_conf(reader_type)),
         "UnsupportedOperationException")
 
 @iceberg
@@ -205,7 +206,7 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
         spark.sql(f"INSERT INTO {full_table} SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     query = f"SELECT * FROM {full_table}"
-    read_conf = {'spark.rapids.sql.format.parquet.reader.type': reader_type}
+    read_conf = iceberg_conf(reader_type)
     if error_msg:
         assert_spark_exception(
             lambda : with_gpu_session(lambda spark : spark.sql(query).collect(), conf=read_conf),
@@ -228,7 +229,7 @@ def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen, reader_typ
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql(f"SELECT a FROM {full_table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -246,7 +247,7 @@ def test_iceberg_input_meta(spark_tmp_table_factory, reader_type):
         lambda spark : spark.sql(
             "SELECT a, input_file_name(), input_file_block_start(), input_file_block_length() " + \
             f"FROM {full_table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -262,7 +263,7 @@ def test_iceberg_disorder_read_schema(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql(f"SELECT b,c,a FROM {full_table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -348,7 +349,7 @@ def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.read.option("snapshot-id", first_snapshot_id) \
             .format("iceberg").load("{}".format(full_table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -378,7 +379,7 @@ def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
             .option("start-snapshot-id", start_snapshot) \
             .option("end-snapshot-id", end_snapshot) \
             .format("iceberg").load("{}".format(full_table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -399,7 +400,7 @@ def test_iceberg_reorder_columns(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -420,7 +421,7 @@ def test_iceberg_rename_column(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -443,7 +444,7 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -466,7 +467,7 @@ def test_iceberg_alter_column_type(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -487,7 +488,7 @@ def test_iceberg_add_column(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -508,7 +509,7 @@ def test_iceberg_remove_column(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -529,7 +530,7 @@ def test_iceberg_add_partition_field(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -550,7 +551,7 @@ def test_iceberg_drop_partition_field(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -567,7 +568,7 @@ def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -582,7 +583,7 @@ def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_ty
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT *, input_file_name() FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
 
 
 @iceberg
@@ -604,4 +605,4 @@ def test_iceberg_parquet_read_from_url_encoded_path(spark_tmp_table_factory, rea
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM {}".format(table)),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        conf=iceberg_conf(reader_type))
