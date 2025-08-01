@@ -86,8 +86,8 @@ Name | Description | Default Value | Applicable at
 <a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration. Array/Struct/Map columns are unsupported for read acceleration.|true|Runtime
 <a name="sql.format.hive.text.read.float.enabled"></a>spark.rapids.sql.format.hive.text.read.float.enabled|Hive text file reading is not 100% compatible when reading floats.|true|Runtime
 <a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration. Array/Struct/Map columns are unsupported for write acceleration.|true|Runtime
-<a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to false disables all Iceberg acceleration|true|Runtime
-<a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to false disables Iceberg input acceleration|true|Runtime
+<a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to true enables experimental Iceberg acceleration (disabled by default)|false|Runtime
+<a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to true enables experimental Iceberg input acceleration (disabled by default)|false|Runtime
 <a name="sql.format.json.enabled"></a>spark.rapids.sql.format.json.enabled|When set to true enables all json input and output acceleration. (only input is currently supported anyways)|true|Runtime
 <a name="sql.format.json.read.enabled"></a>spark.rapids.sql.format.json.read.enabled|When set to true enables json input acceleration|true|Runtime
 <a name="sql.format.orc.enabled"></a>spark.rapids.sql.format.orc.enabled|When set to false disables all orc input and output acceleration|true|Runtime
