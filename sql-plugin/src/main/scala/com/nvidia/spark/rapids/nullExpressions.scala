@@ -17,10 +17,12 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar, ast}
+
+import ai.rapids.cudf.{ast, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
+
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression, Predicate}
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
