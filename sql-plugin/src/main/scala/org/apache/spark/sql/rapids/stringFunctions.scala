@@ -339,12 +339,12 @@ case class GpuConcatWs(children: Seq[Expression])
     withResourceIfAllowed(expr.columnarEvalAny(batch)) {
       case vector: GpuColumnVector =>
         vector.dataType() match {
-          case ArrayType(_: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
+          case ArrayType(StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
           case _ => vector.incRefCount()
         }
       case s: GpuScalar =>
         s.dataType match {
-          case ArrayType(_: StringType, _) =>
+          case ArrayType(StringType, _) =>
             // we have to first concatenate any array types
             withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
               concatArrayCol(colOrScalarSep, cv)
@@ -513,9 +513,10 @@ class ContainsCombiner(private val exp: GpuContains) extends GpuExpressionCombin
     GpuMultiContains(input, fieldsNPaths.map(_._2), dt)
   }
 
-  override def getReplacementExpression(e: Expression): Expression = {
-    val localId = toCombine(GpuExpressionEquals(e))
-    GpuGetStructField(multiContains, localId, Some(fieldName(localId)))
+  override def getReplacementExpression(e: Expression): Option[Expression] = {
+    toCombine.get(GpuExpressionEquals(e)).map { localId =>
+      GpuGetStructField(multiContains, localId, Some(fieldName(localId)))
+    }
   }
 }
 
