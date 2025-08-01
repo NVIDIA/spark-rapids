@@ -20,11 +20,13 @@ import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
 import java.util.concurrent.{CompletionService, ConcurrentLinkedQueue, Future, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
+
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.collection.mutable
 import scala.language.implicitConversions
+
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -34,6 +36,7 @@ import com.nvidia.spark.rapids.io.async._
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
+
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -380,11 +383,12 @@ object ResourcePoolConf {
         throw new IllegalArgumentException(
           "Neither SparkConf nor multiThreadMemoryLimit is known")
       case limit if limit == 0 && sc.nonEmpty =>
+        // Use 90% of the memory overhead or 72% of the heap memory as the capacity of the
+        // HostMemoryPool and ResourceBoundedThreadExecutor.
         val memoryOverhead = sc.get.getLong(
           "spark.executor.memoryOverhead",
-          (sc.get.getLong("spark.executor.memory", 0L) * 0.3).toLong
+          (sc.get.getLong("spark.executor.memory", 0L) * 0.8).toLong
         )
-        // Use 90% of the memory overhead for the capacity of the HostMemoryPool
         (memoryOverhead * 0.9).toLong
       case limit =>
         limit

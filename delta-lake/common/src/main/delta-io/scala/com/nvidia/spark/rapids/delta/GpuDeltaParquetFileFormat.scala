@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{GpuMetric, GpuReadParquetFileFormat}
+import com.nvidia.spark.rapids.{GpuMetric, GpuReadParquetFileFormat, ResourcePoolConf}
 import com.nvidia.spark.rapids.parquet.GpuParquetMultiFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
@@ -60,6 +60,8 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf,
+      Some(fileScan.sparkSession.sparkContext.getConf))
     GpuParquetMultiFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,
@@ -68,6 +70,7 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       prepareSchema(fileScan.readPartitionSchema),
       pushedFilters,
       fileScan.rapidsConf,
+      resourcePoolConf,
       fileScan.allMetrics,
       fileScan.queryUsesInputFile)
   }
