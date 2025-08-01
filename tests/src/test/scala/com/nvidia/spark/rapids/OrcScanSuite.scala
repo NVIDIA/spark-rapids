@@ -31,12 +31,10 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test ORC count chunked by rows", fileSplitsOrc,
-    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048"), 
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114"))(frameCount)
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048"))(frameCount)
 
   testSparkResultsAreEqual("Test ORC count chunked by bytes", fileSplitsOrc,
-    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "100"),
-    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5114"))(frameCount)
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "100"))(frameCount)
 
   testSparkResultsAreEqual("schema-can-prune dis-order read schema",
     frameFromOrcWithSchema("schema-can-prune.orc", StructType(Seq(

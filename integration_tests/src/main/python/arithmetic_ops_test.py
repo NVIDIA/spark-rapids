@@ -180,13 +180,11 @@ def test_multiplication(data_gen):
                 f.col('a') * f.col('b')
                 ))
 
-@allow_non_gpu('ProjectExec', 'Alias', 'Multiply', 'Cast')
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback, ids=idfn)
-def test_multiplication_fallback_when_ansi_enabled(data_gen):
-    assert_gpu_fallback_collect(
+def test_multiplication_no_overflow_and_ansi_enabled(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') * f.col('b')),
-            'Multiply',
             conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen, decimal_gen_32bit, DecimalGen(19, 0)], ids=idfn)
@@ -198,12 +196,49 @@ def test_multiplication_ansi_enabled(data_gen):
                 f.col('a') * f.col('b')),
             conf=ansi_enabled_conf)
 
-def test_multiplication_ansi_overflow():
+def test_multiplication_ansi_overflow_for_decimal():
     exception_str = 'ArithmeticException'
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, DecimalGen(38, 0)).selectExpr("a * " + "9"*38 + " as ret").collect(),
         ansi_enabled_conf,
         exception_str)
+
+_gen_gen_lit_tuple_list_overflow_for_multiply = [
+    (ByteGen(nullable=False, min_val=30, max_val=50, special_cases=[]), ByteGen(nullable=False, min_val=50, max_val=127, special_cases=[]), -50),  # 30 * 50 > 127 (BYTE_MAX)
+    (ShortGen(nullable=False, min_val=SHORT_MIN, max_val=-30000, special_cases=[]), ShortGen(nullable=False, min_val=2, max_val=SHORT_MAX, special_cases=[]), 2), # 30000 * 2 > 32767 (SHORT_MAX)
+    (IntegerGen(nullable=False, min_val=INT_MIN, max_val=INT_MIN//2, special_cases=[]), IntegerGen(nullable=False, min_val=3, max_val=INT_MAX, special_cases=[]), 3) , # INT_MIN//2 * 3 < INT_MIN
+    (LongGen(nullable=False, min_val=LONG_MAX//2, max_val=LONG_MAX, special_cases=[]), LongGen(nullable=False, min_val=3, max_val=LONG_MAX, special_cases=[]), 3)] # LONG_MAX//2 * 3 > LONG_MAX
+@pytest.mark.parametrize('gen_gen_lit', _gen_gen_lit_tuple_list_overflow_for_multiply, ids=idfn)
+def test_multiplication_ansi_overflow_for_integer(gen_gen_lit):
+    (gen1, gen2, lit) = gen_gen_lit
+    data_type = gen1.data_type
+    exception_str = 'ArithmeticException'
+    assert_gpu_and_cpu_error(
+        lambda spark : two_col_df(spark, gen1, gen2, length=4).select(
+            f.lit(lit).cast(data_type) * f.col('a'),
+            f.col('a') * f.lit(lit).cast(data_type),
+            f.col('a') * f.col('b')).collect(),
+        ansi_enabled_conf,
+        exception_str)
+
+_gen_lit_pair_list_without_overflow_for_multiply = [
+    (ByteGen(min_val=-11, max_val=11, special_cases=[]), 11),  # 11 * 11 < 127 (BYTE_MAX)
+    (ShortGen(min_val=-181, max_val=181, special_cases=[]), 181), # 181 * 181 < 32767 (SHORT_MAX)
+    (IntegerGen(min_val=-46340, max_val=46340, special_cases=[]), 46340) , # 46340 * 46340 < 2147483647 (INT_MAX)
+    (LongGen(min_val=-3037000499, max_val=3037000499, special_cases=[]), 3037000499), # 3037000499 * 3037000499 < 9223372036854775807(LONG_MAX)
+    (float_gen, 12),
+    (double_gen, 12)]
+@pytest.mark.parametrize('data_gen_lit_pair', _gen_lit_pair_list_without_overflow_for_multiply, ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', [True, False])
+def test_multiplication_without_overflow_for_numeric_ansi_on_off(data_gen_lit_pair, ansi_enabled):
+    (data_gen, lit) = data_gen_lit_pair
+    data_type = data_gen.data_type
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, data_gen).select(
+            f.lit(lit).cast(data_type) * f.col('a'),
+            f.col('a') * f.lit(lit).cast(data_type),
+            f.col('a') * f.col('b')),
+        conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
     DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),
@@ -1089,6 +1124,15 @@ def test_div_by_zero(expr, ansi):
 def test_div_by_zero_literal(ansi):
     _test_div_by_zero(ansi_mode=ansi, expr='1/0', is_lit=True)
 
+@pytest.mark.parametrize('ansi_on', [True, False])
+def test_null_div_by_zero(ansi_on):
+    null_dividend_gen = SetValuesGen(IntegerType(), [None])
+    zero_int_gen = IntegerGen(min_val=0, max_val=0)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, null_dividend_gen, zero_int_gen).selectExpr(
+            'null/0', 'null/b', 'a/b', 'a/0'),
+        conf={'spark.sql.ansi.enabled': ansi_on})
+
 def _get_div_overflow_df(spark, expr):
     return spark.createDataFrame(
         [(LONG_MIN, -1)],
@@ -1444,3 +1488,44 @@ def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
     # not we want for this test.
     conf_no_ansi = {"spark.sql.ansi.enabled": "false"}
     assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
+
+
+# Test that try_* functions falls back to CPU when TRY mode is used
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_try_add_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_add(a, b) as result"), "Add")
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_divide_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_divide(a, b) as result"), "Divide")
+
+@pytest.mark.skipif(is_before_spark_400(), reason="try_mod is not supported before Spark 4.0.0")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_mod_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_mod(a, b) as result"), "Remainder")
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_subtract is not supported before Spark 3.3.0")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_subtract_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_subtract(a, b) as result"), "Subtract")
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_multiply is not supported before Spark 3.3.0")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_multiply_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            "try_multiply(a, b) as result"), "Multiply")
+

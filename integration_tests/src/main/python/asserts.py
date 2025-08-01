@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import types as pytypes
 import data_gen
 import difflib
 import sys
+import re
 
 def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
@@ -296,6 +297,43 @@ def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_pat
     so any amount of data can work, just be careful about how long it might take.
     """
     _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'ITERATOR', conf=conf)
+
+def assert_gpu_and_cpu_save_as_table_are_equal_collect(table_name_factory, write_func, conf={}):
+    """
+    Assert when running write_func on both the CPU and the GPU and reading
+    on the CPU that the results are equal.
+    In this case the data is collected back to the driver and compared here, so be
+    careful about the amount of data returned.
+    """
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    cpu_table = table_name_factory.get() + '_cpu'
+    with_cpu_session(lambda spark : write_func(spark, cpu_table), conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    gpu_table = table_name_factory.get() + '_gpu'
+    with_gpu_session(lambda spark : write_func(spark, gpu_table), conf=conf)
+    gpu_end = time.time()
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+        gpu_end - gpu_start, cpu_end - cpu_start))
+
+    mode = "COLLECT"
+    (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
+        lambda spark: spark.sql("SELECT * FROM {}".format(cpu_table)), mode)
+    (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
+        lambda spark: spark.sql("SELECT * FROM {}".format(gpu_table)), mode)
+
+    from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
+    from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
+    if should_sort_locally():
+        _sort_locally(from_cpu, from_gpu)
+
+    assert_equal(from_cpu, from_gpu)
+
+    return (cpu_table, gpu_table)
 
 def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sql_func, conf={}):
     """
@@ -650,7 +688,12 @@ def assert_spark_exception(func, error_message):
     with pytest.raises(Exception) as excinfo:
         func()
     actual_error = excinfo.exconly()
-    assert error_message in actual_error, f"Expected error '{error_message}' did not appear in '{actual_error}'"
+    if isinstance(error_message, re.Pattern):
+        assert error_message.search(actual_error), f"Expected error '{error_message}' to match '{actual_error}'"
+    elif isinstance(error_message, str):
+        assert error_message in actual_error, f"Expected error '{error_message}' did not appear in '{actual_error}'"
+    else:
+        assert False, f"expected str or Pattern found {type(error_message)} {error_message}"
 
 def assert_gpu_and_cpu_error(df_fun, conf, error_message):
     """

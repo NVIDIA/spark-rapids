@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,11 +54,23 @@ case class GpuIntegralDivide(
     right: Expression,
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuIntegralDivideParent(left, right)
 
+object GpuDecimalDivide {
+  def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
+    val ansi = SQLConf.get.ansiEnabled
+    GpuDecimalDivide(left, right, dataType, ansi, ansi)
+  }
+
+  def apply(left: Expression, right: Expression, dataType: DecimalType,
+            failOnError: Boolean): GpuDecimalDivide =
+    GpuDecimalDivide(left, right, dataType, failOnError, failOnError)
+}
+
 case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
     override val dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends ShimExpression
+    override val failOnError: Boolean,
+    override val failOnDivideByZero: Boolean) extends ShimExpression
     with GpuDecimalDivideBase {
   override def integerDivide = false
 

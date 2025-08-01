@@ -160,6 +160,7 @@ InputFileBlockLength,4
 InputFileBlockStart,4
 InputFileName,4
 IntegralDivide,4
+Invoke,4
 IsNaN,4
 IsNotNull,4
 IsNull,4

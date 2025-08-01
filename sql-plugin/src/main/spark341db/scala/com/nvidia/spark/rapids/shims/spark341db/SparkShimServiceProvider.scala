@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,9 @@ package com.nvidia.spark.rapids.shims.spark341db
 import com.nvidia.spark.rapids._
 
 object SparkShimServiceProvider {
-  val VERSION = DatabricksShimVersion(3, 4, 1)
+  // DB version should conform to "major.minor" and has no patch version.
+  // Refer to VersionUtils.getVersionForJni
+  val VERSION = DatabricksShimVersion(3, 4, 1, "13.3")
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {

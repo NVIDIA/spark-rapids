@@ -87,6 +87,12 @@ case class IcebergPartitionedFile(
 
   def length: Long = split.map(_._2).getOrElse(file.getLength)
 
+  def isSame(p: PartitionedFile) = {
+    this.urlEncodedPath == p.filePath.urlEncoded &&
+      this.start == p.start &&
+      this.length == p.length
+  }
+
   override def hashCode(): Int = {
     Objects.hash(urlEncodedPath, split)
   }
@@ -235,7 +241,7 @@ object GpuIcebergParquetReader {
         }
         optionsBuilder = HadoopReadOptions.builder(conf)
       case _ =>
-        throw new UnsupportedOperationException("Only Hadoop files are supported for now")
+        optionsBuilder = ParquetReadOptions.builder()
     }
     split.foreach { case (start, length) =>
       optionsBuilder = optionsBuilder.withRange(start, start + length)

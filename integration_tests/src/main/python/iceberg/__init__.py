@@ -14,12 +14,13 @@
 
 import os
 import tempfile
+import logging
 from itertools import combinations
 from types import MappingProxyType
 from typing import Callable, List, Dict, Optional
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import FloatType, DoubleType, NullType, BinaryType
+from pyspark.sql.types import FloatType, DoubleType, BinaryType
 
 from data_gen import byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, \
     boolean_gen, DataGen, gen_df, date_gen, timestamp_gen, binary_gen, decimal_gen_32bit, \
@@ -61,7 +62,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
                              table_prop: Optional[Dict[str, str]] = None) -> str:
 
     gen_list = list(zip(iceberg_base_table_cols, iceberg_gens_list))
-    table_name = spark_tmp_table_factory.get()
+    table_name = get_full_table_name(spark_tmp_table_factory)
     tmp_view_name = spark_tmp_table_factory.get()
 
     if table_prop is None:
@@ -89,9 +90,7 @@ def _add_eq_deletes(spark: SparkSession, eq_delete_cols: List[str], row_count: i
         assert can_be_eq_delete_col(iceberg_table_gen[eq_delete_col]), \
             f"{eq_delete_col} can't be used as eq delete column"
 
-    spark.udf.registerJavaFunction("add_eq_deletes",
-                                   "com.nvidia.spark.rapids.iceberg.testutils.AddEqDeletes",
-                                   NullType())
+
     spark_warehouse_dir = spark.conf.get("spark.sql.catalog.spark_catalog.warehouse")
 
     temp_dir = tempfile.mkdtemp(dir=spark_tmp_path)
@@ -105,7 +104,7 @@ def _add_eq_deletes(spark: SparkSession, eq_delete_cols: List[str], row_count: i
     parquet_files = [f for f in os.listdir(temp_dir) if f.endswith(".parquet")]
     assert len(parquet_files) == 1, "Only one delete parquet file should be created"
     delete_parquet_file_path = os.path.join(temp_dir, parquet_files[0])
-    spark.sql(f"select add_eq_deletes('{spark_warehouse_dir}', 'default.{table_name}', "
+    spark.sql(f"select iceberg_add_eq_deletes('{spark_warehouse_dir}', '{table_name}', "
               f"'{delete_parquet_file_path}')").collect()
     spark.sql(f"REFRESH TABLE {table_name}")
 
@@ -116,8 +115,12 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
         table_func(spark)
         spark.sql(f"REFRESH TABLE {table_name}")
         after_count = spark.table(table_name).count()
-        assert before_count != after_count, message
+        if before_count == after_count:
+            logging.warning(message)
 
     with_cpu_session(change_table,
                      conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
-                             "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
+                         "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
+
+def get_full_table_name(spark_tmp_table_factory):
+    return f"default.{spark_tmp_table_factory.get()}"

@@ -30,6 +30,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -406,11 +407,23 @@ case class GpuPmod(
   }
 }
 
+object GpuDecimalDivide {
+  def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
+    val ansi = SQLConf.get.ansiEnabled
+    GpuDecimalDivide(left, right, dataType, ansi, ansi)
+  }
+
+  def apply(left: Expression, right: Expression, dataType: DecimalType,
+            failOnError: Boolean): GpuDecimalDivide =
+    GpuDecimalDivide(left, right, dataType, failOnError, failOnError)
+}
+
 case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
     override val dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    override val failOnError: Boolean,
+    override val failOnDivideByZero: Boolean)
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
   override def inputType: AbstractDataType = DecimalType
 
@@ -500,8 +513,10 @@ case class GpuIntegralDivide(
 case class GpuIntegralDecimalDivide(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    override val failOnError: Boolean = SQLConf.get.ansiEnabled)
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
+  override val failOnDivideByZero: Boolean = failOnError
+
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   def integerDivide: Boolean = true
