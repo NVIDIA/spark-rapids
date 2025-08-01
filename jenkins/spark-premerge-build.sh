@@ -235,16 +235,16 @@ ci_scala213() {
 }
 
 prepare_spark() {
-    spark_ver=${1:-'3.2.0'}
+    spark_version=${1:-'3.2.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"
     rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
     # Download a full version of spark
-    . jenkins/hadoop-def.sh $spark_ver $scala_ver
-    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$spark_ver/spark-$spark_ver-$BIN_HADOOP_VER.tgz
+    . jenkins/hadoop-def.sh $spark_version $scala_ver
+    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$spark_version/spark-$spark_version-$BIN_HADOOP_VER.tgz
 
-    export SPARK_HOME="$ARTF_ROOT/spark-$spark_ver-$BIN_HADOOP_VER"
+    export SPARK_HOME="$ARTF_ROOT/spark-$spark_version-$BIN_HADOOP_VER"
     export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
     tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && rm -f $SPARK_HOME.tgz
     # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
