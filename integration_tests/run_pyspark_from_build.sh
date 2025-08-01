@@ -216,7 +216,7 @@ else
     TEST_TYPE_PARAM=""
     if [[ "${TEST_TYPE}" != "" ]];
     then
-        TEST_TYPE_PARAM="--test_type $TEST_TYPE"
+        TEST_TYPE_PARAM="--test_type=$TEST_TYPE"
     fi
 
     # We found that when parallelism > 8, as it increases, the test speed will become slower and slower. So we set the default maximum parallelism to 8.
