@@ -920,7 +920,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
 
   private[this] def divByZeroFixes(lhs: ColumnView, rhs: ColumnVector): ColumnVector = {
     if (failOnDivideByZero) {
-      withResource(GpuDivModLike.mergeNulls(rhs, lhs)) { nullMergedRhs =>
+      withResource(NullUtilities.mergeNulls(rhs, lhs)) { nullMergedRhs =>
         withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {
             throw RapidsErrorUtils.divByZeroError(origin)
