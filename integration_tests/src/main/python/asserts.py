@@ -732,8 +732,8 @@ def collect_data_or_exception(func, error_message, expect_exception=None):
         assert False, f"expected exception with error message {error_message}, but the test did not throw."
     return (False, result)
 
-def assert_spark_exception(df_fun, conf, error_message): 
-    collect_data_or_exception(df_fun, conf, error_message, expect_exception=True)
+def assert_spark_exception(df_fun, error_message):
+    collect_data_or_exception(df_fun, error_message, expect_exception=True)
 
 def assert_consistent_gpu_cpu_behavior(df_fun, conf, error_message, only_if_cpu_fails=False):
     """
