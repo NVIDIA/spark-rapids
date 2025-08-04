@@ -335,11 +335,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     serializedTables.forEach(_.close())
     serializedTables.clear()
     executor.foreach { e =>
-      val shutdownOk = e.shutdownNow(10, TimeUnit.SECONDS)
-      if (!shutdownOk) {
-        logWarning("ThrottlingExecutor did not shut down cleanly within 10 seconds. " +
-          "This may indicate a resource leak.")
-      }
+      e.shutdownNow(10, TimeUnit.SECONDS)
     }
   }
 

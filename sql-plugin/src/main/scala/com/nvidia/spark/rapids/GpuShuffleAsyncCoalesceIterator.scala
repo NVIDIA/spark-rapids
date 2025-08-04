@@ -61,11 +61,7 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     )
 
   def close(): Unit = {
-    val terminated = executor.shutdownNow(10, TimeUnit.SECONDS)
-    if (!terminated) {
-      // Use a logger if available, otherwise fallback to println
-      println("WARNING: Executor did not terminate within the timeout in GpuShuffleAsyncCoalesceIterator.close()")
-    }
+    executor.shutdownNow(10, TimeUnit.SECONDS)
   }
 
   // don't try to call TaskContext.get().taskAttemptId() in the backend thread
