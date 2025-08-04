@@ -704,7 +704,7 @@ def collect_data_or_exception(func, error_message, expect_exception=None):
     :param expect_exception:
             - if none, we check the error if and only if it was raised
             - if true, we will assert False if func() doesn't raise an exception,
-            - if false, we fail if we did not raise an exception
+            - if false, we fail if raise an exception
 
     :return: (true, None) if the code failed with an exception and the text matches `error_message`.
              (false, result) if `expect_exception` is false and the function doesn't throw
