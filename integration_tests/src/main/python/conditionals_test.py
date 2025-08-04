@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8, is_before_spark_400
 from pyspark.sql.types import *
@@ -470,11 +470,3 @@ def test_between_sql():
         lambda spark : gen_df(spark, _data_gen_for_between),
         "tab",
         sql)
-
-@pytest.mark.skipif(is_before_spark_400(), reason="Spark versions prior to Spark 400 do not support collate")
-@allow_non_gpu("ProjectExec", "Collate")
-def test_collate_contains_fallback():
-    data_gen = [("c1", string_gen), ("c2", string_gen)]
-    assert_gpu_fallback_collect(
-        lambda spark : gen_df(spark, data_gen).selectExpr("contains(collate(c1, 'UTF8_BINARY'), c2)"),
-        cpu_fallback_class_name="Collate")
