@@ -427,6 +427,8 @@ def test_multi_tier_ast():
 
 # MUST NOT use GPU AST when project refers to string type(non-fixed-width),
 # or cudf::compute_column will throw error: Invalid, non-fixed-width type
+# ANSI mode is disabled here due to an overflow issue with integer multiplication on Spark 4.0.0.
+@disable_ansi_mode
 @ignore_order(local=True)
 def test_refer_to_non_fixed_width_column():
     gens = [('col_int', int_gen), ('col_string', string_gen)]
