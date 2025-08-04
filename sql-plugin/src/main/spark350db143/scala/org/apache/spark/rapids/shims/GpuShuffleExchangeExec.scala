@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.GpuPartitioning
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
@@ -62,5 +63,5 @@ case class GpuShuffleExchangeExec(
 
   // DB SPECIFIC - not sure how it is used, so try to return one at first.
   // For more details, refer to https://github.com/NVIDIA/spark-rapids/issues/13242.
-  def ensReqDPMetricTag(): TreeNode[Object] = TreeNodeTag[Object]("GpuShuffleExchangeExec")
+  def ensReqDPMetricTag(): TreeNodeTag[Object] = TreeNodeTag[Object]("GpuShuffleExchangeExec")
 }
