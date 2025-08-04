@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{Callable, Future}
+import java.util.concurrent.{Callable, Future, TimeUnit}
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
 
 import org.apache.spark.TaskContext
@@ -44,6 +45,11 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
     readThrottlingMetric: GpuMetric = NoopMetric,
 ) extends Iterator[ColumnarBatch] {
 
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc)(close())
+  }
+
   val executor =
     new ThrottlingExecutor(
       TrampolineUtil.newDaemonCachedThreadPool(
@@ -53,6 +59,10 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
         readThrottlingMetric.add(stat.accumulatedThrottleTimeNs)
       }
     )
+
+  def close(): Unit = {
+    executor.shutdownNow(10, TimeUnit.SECONDS)
+  }
 
   // don't try to call TaskContext.get().taskAttemptId() in the backend thread
   private val taskAttemptID = Option(TaskContext.get()).

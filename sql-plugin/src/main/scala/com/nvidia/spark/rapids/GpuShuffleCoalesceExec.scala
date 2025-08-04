@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.util
-import java.util.concurrent.Future
+import java.util.concurrent.{Future, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
@@ -334,6 +334,9 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   override def close(): Unit = {
     serializedTables.forEach(_.close())
     serializedTables.clear()
+    executor.foreach { e =>
+      e.shutdownNow(10, TimeUnit.SECONDS)
+    }
   }
 
   private def concatenateTablesInHost(): CoalescedHostResult = {
