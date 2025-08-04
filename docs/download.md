@@ -97,17 +97,16 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* Enhanced ANSI mode support with ANSI multiply, AVG, and SUM aggregations with improved performance 
+* Spark 4.0 support, including ANSI mode support for multiply, AVG and SUM aggregations with improved performance.  Compatibility with Spark 4.0 exception handling and type casting.  
+* Support for Spark Connect in Spark 3.5.6 and Spark 4.0
+* Delta Lake 3.3.x open source support with read, update, merge, delete, optimized write and auto compact functionality.  Read is supported without deletion vectors.  
+* Iceberg S3 tables support
 * Support scalar * scalar overload function for enhanced mathematical operations
 * Improved expression combining and side-effect checking for GpuCaseWhen operations
-* Support for RuntimeReplaceable expressions and Invoke operations
-* Enhanced Delta Lake 3.3.x support with improved write operations and SQL compatibility
 * Better Parquet type conversion for improved data processing
 * Improved memory management with fixes for memory leaks and overflow handling
-* Enhanced Spark 4.0 compatibility with proper exception handling and type casting
-* Support for liquid clustering fallback in Delta Lake operations
 * Performance optimizations for GPU kernel usage and aggregation operations
-* Various stability improvements and bug fixes for production workloads
+* Stability improvements and bug fixes for production workloads
 
 Note: There is a known issue in the 25.08.0 release when decompressing gzip files on H100 GPUs.
 Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
