@@ -15,18 +15,23 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_gpu_sql_fallback_collect
+    assert_gpu_sql_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import allow_non_gpu
 from spark_session import is_before_spark_400
 
 
 ####################################################################################################
-# Gpu only supports StringType, aka StringType(UTF8_BINARY, NoConstraint)
+# Gpu only supports StringType, aka StringType(collate = UTF8_BINARY, constraint = NoConstraint),
+# does not support: collate = non-UTF8_BINARY
+# does not support: varchar(constraint = MaxLength), char(constraint = FixedLength)
+# does not support: Collate expression
 ####################################################################################################
 
+# Fallback reason: ! <Collate> collate(c1#3, UTF8_BINARY) cannot run on GPU because GPU does not \
+# currently support the operator class org.apache.spark.sql.catalyst.expressions.Collate
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
-@allow_non_gpu("ProjectExec", "Collate")
+@allow_non_gpu("ProjectExec")
 def test_collate_column_fallback():
     data_gen = [("c1", string_gen), ("c2", string_gen)]
     assert_gpu_fallback_collect(
@@ -35,16 +40,18 @@ def test_collate_column_fallback():
 
 
 # Test non-UTF8_BINARY string literal
+@pytest.mark.parametrize('collate_type',
+                         ["UNICODE", "UTF8_LCASE", "UNICODE_AI", "UNICODE_CI", "UNICODE_CI_AI"])
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
-@allow_non_gpu("ProjectExec", "Concat")
-def test_collate_literal_fallback():
+@allow_non_gpu("ProjectExec")
+def test_collate_literal_fallback(collate_type):
     data_gen = [("c1", string_gen)]
     assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen).selectExpr("concat(c1, '_tail' COLLATE UNICODE)"),
+        lambda spark: gen_df(spark, data_gen).selectExpr(f"concat(c1, '_tail' COLLATE {collate_type})"),
         cpu_fallback_class_name="Literal")
 
 
-# Explicitly specify StringType, aka StringType(UTF8_BINARY, NoConstraint)
+# Test UTF8_BINARY string literal
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
 def test_collate_literal():
     data_gen = [("c1", string_gen)]
@@ -63,15 +70,53 @@ def test_collate_sum_fallback():
         sql="select collate(c1, 'utf8_lcase'), count(*) from tab group by collate(c1, 'utf8_lcase')")
 
 
+@pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
+@allow_non_gpu("SortAggregateExec", "ShuffleExchangeExec", "SortExec", "ColumnarToRowExec", "FileSourceScanExec")
+def test_collate_using_table_fallback(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+
+    def setup_table(spark):
+        spark.sql(f"CREATE TABLE {table}(c STRING COLLATE UTF8_LCASE) USING PARQUET")
+        spark.sql(f"INSERT INTO {table} VALUES ('aaa')")
+
+    with_cpu_session(setup_table)
+
+    assert_gpu_sql_fallback_collect(
+        lambda spark: gen_df(spark, [('dummy_col', int_gen)]),
+        cpu_fallback_class_name="AttributeReference",
+        table_name="dummy_table",
+        sql=f"SELECT COUNT(*), c FROM {table} GROUP BY c")
+
+
+@pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
+def test_collate_using_table(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+
+    def setup_table(spark):
+        spark.sql(f"CREATE TABLE {table}(c STRING COLLATE UTF8_BINARY) USING PARQUET")
+        spark.sql(f"INSERT INTO {table} VALUES ('aaa')")
+
+    with_cpu_session(setup_table)
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, [('dummy_col', int_gen)]),
+        table_name="dummy_table",
+        sql=f"SELECT COUNT(*), c FROM {table} GROUP BY c")
+
+
 # Test `preserveCharVarcharTypeInfo` is true; char/varchar type
-# The CPU plan is: Contains(static_invoke(CharVarcharCodegenUtils.readSidePadding(char_col#8, 5)), a).
-# Both scan and project fall back to CPU, because scan and project input do not support CharType/VarcharType
-# and more Gpu does not support `static_invoke`.
+# char:
+#   The CPU plan for char is: Contains(static_invoke(CharVarcharCodegenUtils.readSidePadding(char_col#8, 5)), a).
+#   Both scan and project fall back to CPU, because scan and project input do not support CharType, \
+#     and more Gpu does not support `static_invoke`.
+# varchar:
+#   The CPU plan for varchar is: Contains(char_col#13, a)
+#   Scan and project does not support varchar type
 @pytest.mark.skipif(is_before_spark_400(),
                     reason="Spark 32x, 33x do not support char/varchar type; Spark 34x, 35x throw exception")
 @pytest.mark.parametrize('char_type', ["char(5)", "varchar(5)"])
 @allow_non_gpu("ProjectExec", "ColumnarToRowExec", "FileSourceScanExec")
-def test_char_varchar_fallback_preserve_enabled(spark_tmp_path, char_type):
+def test_constraint_char_varchar_preserve_enabled_fallback(spark_tmp_path, char_type):
     preserve_char_conf = {"spark.sql.preserveCharVarcharTypeInfo": True}
     file_path = spark_tmp_path + '/PARQUET_DATA'
     data = [("a",), ("ab",), ("abc",)]
@@ -97,7 +142,7 @@ def test_char_varchar_fallback_preserve_enabled(spark_tmp_path, char_type):
 @pytest.mark.skipif(is_before_spark_400(),
                     reason="Spark 32x, 33x do not support char/varchar type; Spark 34x, 35x throw exception")
 @allow_non_gpu("ProjectExec")
-def test_char_fallback_preserve_disabled(spark_tmp_path):
+def test_constraint_char_preserve_disabled_fallback(spark_tmp_path):
     preserve_char_conf = {"spark.sql.preserveCharVarcharTypeInfo": True}
     file_path = spark_tmp_path + '/PARQUET_DATA'
     data = [("a",), ("ab",), ("abc",)]
@@ -114,7 +159,7 @@ def test_char_fallback_preserve_disabled(spark_tmp_path):
         # when read from the Parquet file with `preserveCharVarcharTypeInfo,
         # the char_col is still char/varchar type.
         lambda spark: spark.read.parquet(file_path).selectExpr("contains(char_col, 'a')"),
-        cpu_fallback_class_name="Contains")
+        cpu_fallback_class_name="StaticInvoke")
 
 
 # Test `preserveCharVarcharTypeInfo` is false(default value); varchar type
@@ -122,8 +167,7 @@ def test_char_fallback_preserve_disabled(spark_tmp_path):
 @pytest.mark.skipif(is_before_spark_400(),
                     reason="Spark 32x, 33x do not support char/varchar type; Spark 34x, 35x throw exception")
 @pytest.mark.parametrize('char_type', ["varchar(5)"])
-@allow_non_gpu("ProjectExec", "StaticInvoke")
-def test_varchar_preserve_disabled(spark_tmp_path, char_type):
+def test_constraint_varchar_preserve_disabled(spark_tmp_path, char_type):
     preserve_char_conf = {"spark.sql.preserveCharVarcharTypeInfo": True}
     file_path = spark_tmp_path + '/PARQUET_DATA'
     data = [("a",), ("ab",), ("abc",)]
