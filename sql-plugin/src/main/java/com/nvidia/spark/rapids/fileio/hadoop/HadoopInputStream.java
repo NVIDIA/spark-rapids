@@ -2,7 +2,6 @@ package com.nvidia.spark.rapids.fileio.hadoop;
 
 import com.nvidia.spark.rapids.fileio.SeekableInputStream;
 import org.apache.hadoop.fs.FSDataInputStream;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 
@@ -34,13 +33,15 @@ public class HadoopInputStream extends SeekableInputStream {
     }
 
     @Override
-    public int read(@NotNull byte[] b, int off, int len) throws IOException {
-        return super.read(b, off, len);
+    public int read(byte[] b, int off, int len) throws IOException {
+        return in.read(b, off, len);
     }
 
     @Override
     public void close() throws IOException {
-        super.close();
-        this.closed = true;
+        if (!closed)  {
+            super.close();
+            this.closed = true;
+        }
     }
 }

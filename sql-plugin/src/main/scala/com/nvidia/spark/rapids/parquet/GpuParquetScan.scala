@@ -41,7 +41,7 @@ import java.util.{Collections, Locale}
 import java.util.concurrent._
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataInputStream, Path}
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.IOUtils
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.bytes.BytesUtils.readIntLittleEndian
@@ -57,11 +57,11 @@ import org.apache.parquet.schema.{DecimalMetadata, GroupType, LogicalTypeAnnotat
 import org.apache.parquet.schema.LogicalTypeAnnotation.{DateLogicalTypeAnnotation, IntLogicalTypeAnnotation, TimestampLogicalTypeAnnotation}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.xerial.snappy.Snappy
-
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-import scala.language.{implicitConversions, postfixOps}
+import scala.language.implicitConversions
+
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -1103,6 +1103,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
+  private val fileIO = new HadoopFileIO(broadcastedConf.value.value)
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
@@ -1110,7 +1111,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
-  private val filterHandler = GpuParquetFileFilterHandler(sqlConf, metrics)
+  private val filterHandler = GpuParquetFileFilterHandler(fileIO, sqlConf, metrics)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
     rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
@@ -1166,7 +1167,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    val reader = new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
+    val reader = new MultiFileCloudParquetPartitionReader(fileIO, conf, files, filterFunc,
+      isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
@@ -1286,7 +1288,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       }
     }
 
-    new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
+    new MultiFileParquetPartitionReader(fileIO, conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
@@ -1315,6 +1317,7 @@ case class GpuParquetPartitionReaderFactory(
     @transient params: Map[String, String])
   extends ShimFilePartitionReaderFactory(params) with Logging {
 
+  private val fileIO = new HadoopFileIO(broadcastedConf.value.value)
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
@@ -1329,7 +1332,7 @@ case class GpuParquetPartitionReaderFactory(
     } else {
       0L
     }
-  private val filterHandler = GpuParquetFileFilterHandler(sqlConf, metrics)
+  private val filterHandler = GpuParquetFileFilterHandler(fileIO, sqlConf, metrics)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
     rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
@@ -1359,7 +1362,7 @@ case class GpuParquetPartitionReaderFactory(
     metrics.get(FILTER_TIME).foreach {
       _ += (System.nanoTime() - startTime)
     }
-    new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
+    new ParquetPartitionReader(fileIO, conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema, debugDumpPrefix, debugDumpAlways,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, targetSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
@@ -2186,6 +2189,7 @@ case class ParquetSingleDataBlockMeta(
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
 class MultiFileParquetPartitionReader(
+    override val fileIO: RapidsFileIO,
     override val conf: Configuration,
     splits: Array[PartitionedFile],
     clippedBlocks: Seq[ParquetSingleDataBlockMeta],

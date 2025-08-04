@@ -33,6 +33,7 @@ import com.nvidia.spark.rapids.{GpuColumnVector, LazySpillableColumnarBatch, Noo
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.iceberg.{fieldIndex, PooledTableGen}
 import com.nvidia.spark.rapids.iceberg.data.TestGpuDeleteLoader._
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuIcebergParquetReaderConf, SingleFile}
@@ -49,8 +50,8 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.prop.TableDrivenPropertyChecks._
 import org.scalatest.prop.Tables.Table
-
 import org.apache.spark.SparkConf
+
 import org.apache.spark.sql.types.{DataType, LongType, StringType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -470,6 +471,7 @@ private object TestGpuDeleteLoader {
       deleteFiles: Seq[DeleteFile],
       deleteLoader: Option[GpuDeleteLoader]): GpuDeleteFilter = {
     new GpuDeleteFilter(
+      new HadoopFileIO(new Configuration()),
       tableSchema,
       Map.empty,
       GpuIcebergParquetReaderConf(
