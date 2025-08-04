@@ -60,8 +60,7 @@ class AvroProviderImpl extends AvroProvider {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf,
-      Some(fileScan.relation.sparkSession.sparkContext.getConf))
+    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf)
     GpuAvroMultiFilePartitionReaderFactory(
       fileScan.relation.sparkSession.sessionState.conf,
       fileScan.rapidsConf,

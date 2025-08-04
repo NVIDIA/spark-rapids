@@ -1096,7 +1096,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val MULTITHREAD_READ_MEM_LIMIT = conf("spark.rapids.sql.multiThreadedRead.memoryLimit")
       .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
         "This can not be changed at runtime after the executor has started. And if 0, it " +
-        "will be set with 90% of `spark.executor.memoryOverhead`")
+        "will be set with 90% of executor's off-heap memory")
       .startupOnly()
       .internal()
       .longConf

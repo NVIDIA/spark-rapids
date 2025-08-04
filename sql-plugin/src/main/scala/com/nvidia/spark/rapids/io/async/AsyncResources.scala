@@ -227,7 +227,7 @@ object GroupTaskHelpers {
   def generateGroupPriority: Double = {
     groupwisePriorityCounter.compareAndSet(0L, 1000000000L)
     // As for cpu tasks, 100 is big enough difference to divide different groups, considering that
-    // the default memory penality is floor(log2(MemoryBytes)).
+    // the default memory penality is floor(log10(MemoryBytes)).
     groupwisePriorityCounter.getAndAdd(-100L).toDouble
   }
 

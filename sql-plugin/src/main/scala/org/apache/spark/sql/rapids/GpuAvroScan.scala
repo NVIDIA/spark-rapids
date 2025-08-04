@@ -38,7 +38,7 @@ import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -123,8 +123,7 @@ case class GpuAvroScan(
         dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics,
         options.asScala.toMap)
     } else {
-      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf,
-        Some(sparkSession.sparkContext.getConf))
+      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf)
       GpuAvroMultiFilePartitionReaderFactory(sparkSession.sessionState.conf,
         rapidsConf, broadcastedConf, dataSchema, readDataSchema, readPartitionSchema,
         parsedOptions, metrics, pushedFilters, resourcePoolConf, queryUsesInputFile)
@@ -244,6 +243,11 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     } else {
       partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
+    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
+    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    resourcePoolConf.setMemoryCapacity(
+      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+    )
     val reader = new GpuMultiFileCloudAvroPartitionReader(
       conf, files, resourcePoolConf, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
@@ -303,6 +307,11 @@ case class GpuAvroMultiFilePartitionReaderFactory(
         }
       }
     }
+    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
+    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    resourcePoolConf.setMemoryCapacity(
+      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+    )
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
       resourcePoolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)

@@ -67,8 +67,7 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf,
-      Some(fileScan.sparkSession.sparkContext.getConf))
+    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf)
     GpuOrcMultiFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,

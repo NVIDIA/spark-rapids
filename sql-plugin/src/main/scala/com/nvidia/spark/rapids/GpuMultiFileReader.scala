@@ -169,7 +169,7 @@ object MultiFileReaderThreadPool extends Logging {
     }
     logDebug(s"Using $numThreads for the multithreaded reader thread pool")
 
-    val pool = new HostMemoryPool(conf.hostMemoryCapacity)
+    val pool = new HostMemoryPool(conf.memoryCapacity)
     val threadExecutor = ResourceBoundedThreadExecutor[HostMemoryBuffersWithMetaDataBase](
         name,
         pool,
@@ -365,35 +365,34 @@ case class CombineConf(
     combineWaitTime: Int) // The amount of time to wait for other files ready for combination.
 
 case class ResourcePoolConf(
-    hostMemoryCapacity: Long, // The maximum host memory used by in-flight tasks
     waitResourceTimeoutMs: Long, // The timeout for acquiring resources
     retryPriorityAdjust: Double, // The penalty for task priority if failed to acquire resource
     maxThreadNumber: Int, // The maximum number of threads used by the thread pool
-    stageLevelPool: Boolean = false) // Only for testing, create pools for each task
+    stageLevelPool: Boolean = false // Only for testing, create pools for each task
+) {
+  // The maximum host memory used by in-flight tasks
+  def memoryCapacity: Long = {
+    require(memCap > 0L, "Memory capacity must be set before use")
+    memCap
+  }
+
+  def setMemoryCapacity(capacity: Long): ResourcePoolConf = {
+    require(capacity > 0, "Memory capacity must be positive")
+    require(memCap == 0L, "Memory capacity can only be set once")
+    this.memCap = capacity
+    this
+  }
+
+  private var memCap: Long = 0L
+}
 
 object ResourcePoolConf {
   /**
    * Build a ResourcePoolConf from the RapidsConf and SparkConf. SparkConf is only used to
    * determine the memory overhead if the RapidsConf is not set.
    */
-  def buildFromConf(conf: RapidsConf,
-      sc: Option[SparkConf] = None): ResourcePoolConf = {
-    val memoryLimit: Long = conf.multiThreadMemoryLimit match {
-      case limit if limit == 0 && sc.isEmpty =>
-        throw new IllegalArgumentException(
-          "Neither SparkConf nor multiThreadMemoryLimit is known")
-      case limit if limit == 0 && sc.nonEmpty =>
-        // Use 90% of the memory overhead or 72% of the heap memory as the capacity of the
-        // HostMemoryPool and ResourceBoundedThreadExecutor.
-        val memoryOverhead = sc.get.getLong(
-          "spark.executor.memoryOverhead",
-          (sc.get.getLong("spark.executor.memory", 0L) * 0.8).toLong
-        )
-        (memoryOverhead * 0.9).toLong
-      case limit =>
-        limit
-    }
-    ResourcePoolConf(memoryLimit,
+  def buildFromConf(conf: RapidsConf): ResourcePoolConf = {
+    ResourcePoolConf(
       conf.multiThreadReadTaskTimeout,
       // Currently we hardcode the retry penalty as -1000 inside ResourceBoundedThreadExecutor
       0.0,

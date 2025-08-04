@@ -60,7 +60,7 @@ import org.apache.parquet.schema.LogicalTypeAnnotation.{DateLogicalTypeAnnotatio
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.xerial.snappy.Snappy
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -127,8 +127,7 @@ case class GpuParquetScan(
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         options.asScala.toMap)
     } else {
-      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf,
-        Some(sparkSession.sparkContext.getConf))
+      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf)
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
         resourcePoolConf,
@@ -1162,6 +1161,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
+    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
+    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    resourcePoolConf.setMemoryCapacity(
+      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+    )
     val reader = new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
@@ -1284,6 +1288,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         }
       }
     }
+    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
+    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    resourcePoolConf.setMemoryCapacity(
+      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+    )
 
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
@@ -2206,6 +2215,7 @@ class MultiFileParquetPartitionReader(
 
   // The runner to copy blocks to offset of HostMemoryBuffer.
   // Submit as an unbounded task since the buffer has already been allocated.
+  // TODO: Make MultiFileCoalesceReader host memory bounded
   class ParquetCopyBlocksRunner(
       taskContext: TaskContext,
       file: Path,

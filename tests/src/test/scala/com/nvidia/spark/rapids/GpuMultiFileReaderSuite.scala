@@ -38,14 +38,15 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
         SpillPriorities.ACTIVE_BATCHING_PRIORITY)
       Array(SingleHMBAndMeta(Array(singleBuf), 0L, 0, Seq.empty))
     }
+    val poolConf = ResourcePoolConf(
+      waitResourceTimeoutMs = 10 * 1000L, // 10 seconds
+      retryPriorityAdjust = 0.0f, // no penalty
+      maxThreadNumber = 1
+    ).setMemoryCapacity(1L << 20) // 1MB
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
-      resourceConf = ResourcePoolConf(
-        hostMemoryCapacity = 1L << 20, // 1MB
-        waitResourceTimeoutMs = 10 * 1000L, // 10 seconds
-        retryPriorityAdjust = 0.0f, // no penalty
-        maxThreadNumber = 1),
+      resourceConf = poolConf,
       maxNumFileProcessed = 1,
       filters = Array.empty,
       execMetrics = Map.empty,

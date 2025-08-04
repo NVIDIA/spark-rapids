@@ -52,7 +52,7 @@ import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -104,8 +104,7 @@ case class GpuOrcScan(
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         options.asScala.toMap)
     } else {
-      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf,
-        Some(sparkSession.sparkContext.getConf))
+      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf)
       GpuOrcMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
         resourcePoolConf,
@@ -616,6 +615,11 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   override def buildBaseColumnarReaderForCloud(files: Array[PartitionedFile], conf: Configuration):
       PartitionReader[ColumnarBatch] = {
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
+    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
+    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    resourcePoolConf.setMemoryCapacity(
+      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+    )
     val reader = new MultiFileCloudOrcPartitionReader(
       conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
@@ -665,6 +669,11 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     }
 
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
+    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
+    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    resourcePoolConf.setMemoryCapacity(
+      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+    )
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,

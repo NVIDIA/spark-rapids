@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.{GpuMetric, MultiFileReaderUtils, RapidsConf, Res
 import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.connector.read.PartitionReader
@@ -83,11 +84,16 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       val useMultiThread = MultiFileReaderUtils.useMultiThreadReader(canUseCoalescing,
         canUseMultiThread, files, allCloudSchemes)
 
+      val poolConf = ResourcePoolConf
+          .buildFromConf(rapidsConf)
+          .setMemoryCapacity(
+            // Fetch the memory capacity of resource pool from SparkContext, which is set during
+            // the launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+            SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L))
       if (useMultiThread) {
-        MultiThread(ResourcePoolConf.buildFromConf(rapidsConf),
-          partition.maxNumParquetFilesParallel)
+        MultiThread(poolConf, partition.maxNumParquetFilesParallel)
       } else {
-        MultiFile(ResourcePoolConf.buildFromConf(rapidsConf))
+        MultiFile(poolConf)
       }
     } else {
       throw new UnsupportedOperationException("Currently only parquet format is supported")
