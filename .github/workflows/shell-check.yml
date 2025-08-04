@@ -28,4 +28,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run ShellCheck
-        uses: YanxuanLiu/spark-rapids-common/shell-check@shellcheck
+        uses: NVIDIA/spark-rapids-common/shell-check@main
