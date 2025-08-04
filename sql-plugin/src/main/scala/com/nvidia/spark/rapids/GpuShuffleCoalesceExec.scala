@@ -334,7 +334,13 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   override def close(): Unit = {
     serializedTables.forEach(_.close())
     serializedTables.clear()
-    executor.foreach(e => e.shutdownNow(10, TimeUnit.SECONDS))
+    executor.foreach { e =>
+      val shutdownOk = e.shutdownNow(10, TimeUnit.SECONDS)
+      if (!shutdownOk) {
+        logWarning("ThrottlingExecutor did not shut down cleanly within 10 seconds. " +
+          "This may indicate a resource leak.")
+      }
+    }
   }
 
   private def concatenateTablesInHost(): CoalescedHostResult = {
