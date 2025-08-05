@@ -2004,6 +2004,41 @@ def test_agg_nested_map(kudo_enabled):
         # Disable ANSI mode to avoid issues with array indexes and map keys not being present
         'spark.sql.ansi.enabled': False})
 
+@pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_try_sum_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        # Use single partition (num_slices=1) to avoid non-deterministic
+        # results from order-dependent overflow detection.
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
+                     .selectExpr("try_sum(b) as result"),'HashAggregateExec')
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_try_sum_groupby_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        # Use single partition (num_slices=1) to avoid non-deterministic
+        # results from order-dependent overflow detection.
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
+                     .groupBy('a').agg(f.expr("try_sum(b)").alias("result")),
+        'HashAggregateExec')
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_avg is not supported before Spark 3.3.0")
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_try_avg_fallback_to_cpu(data_gen):
+    assert_gpu_fallback_collect(
+        # Use single partition (num_slices=1) to avoid non-deterministic
+        # results from order-dependent overflow detection.
+        lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
+                     .groupBy('a').agg(f.expr("try_avg(b)").alias("result")),
+        'HashAggregateExec')
+
 @incompat
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
@@ -2782,4 +2817,17 @@ def test_avg_long_ansi_groupby_overflow():
     overflow_data = [(1, _jvm_long_max - 100), (1, 101), (2, _jvm_long_max // 2 + 10), (2, _jvm_long_max // 2 + 20), (3, 100), (3, 200)]
     schema = StructType([StructField("group_key", IntegerType()), StructField("long_val", LongType())])
     assert_gpu_and_cpu_are_equal_collect(lambda s: s.createDataFrame(overflow_data, schema).groupBy('group_key').agg(f.avg('long_val')), conf=conf)
+
+
+@approximate_float
+@pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
+@pytest.mark.parametrize('data_type', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4,0), DecimalGen(10,0), DecimalGen(12,0), DecimalGen(38,0)], ids=idfn)
+def test_avg_divide_by_zero(data_type, ansi):
+    conf = {'spark.sql.ansi.enabled': ansi,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    dt = data_type.data_type
+    assert_gpu_and_cpu_are_equal_collect(lambda s: s.range(127).select((f.col("id") % f.lit(2)).alias("k"), 
+        f.col("id").cast(dt).alias("v")).groupBy("k").agg(f.avg(f.when(f.col("k") > 0, f.col("v")).otherwise(None))),
+            conf=conf)
+
 

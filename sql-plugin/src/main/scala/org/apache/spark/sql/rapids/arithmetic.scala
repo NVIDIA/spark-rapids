@@ -23,6 +23,7 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.{Arithmetic, ExceptionWithRowIndex}
 import com.nvidia.spark.rapids.shims.{DecimalMultiply128, GpuTypeShims, NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -732,19 +733,6 @@ object GpuDivModLike {
       }
     }
   }
-
-
-  /**
-   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" is null, otherwise
-   * return the row from the "dataCol".
-   */
-  def mergeNulls(dataCol: ColumnView, nullFlagCol: ColumnView): ColumnVector = {
-    withResource(nullFlagCol.isNull) { isNull =>
-      withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
-        isNull.ifElse(nullScalar, dataCol)
-      }
-    }
-  }
 }
 
 case class GpuMultiply(
@@ -760,6 +748,55 @@ case class GpuMultiply(
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = lhs.getBase.toString
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    try {
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
+    } catch {
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
+        val rightValue = rhs.getBase.toString
+        throw new ArithmeticException(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    if (!lhs.isValid || !rhs.isValid) {
+      GpuColumnVector.columnVectorFromNull(numRows, lhs.dataType)
+    } else {
+      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { lhs_cv =>
+        doColumnar(lhs_cv, rhs)
+      }
+    }
+  }
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
@@ -775,7 +812,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
     if (failOnError) {
       // Throw out a "divByZeroError" only when the row in "rhs" is zero and the
       // corresponding row in "lhs" is not null. So need to merge nulls first.
-      withResource(mergeNulls(rhs.getBase, lhs.getBase)) { nullMergedRhs =>
+      withResource(NullUtilities.mergeNulls(rhs.getBase, lhs.getBase)) { nullMergedRhs =>
         withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {
             throw RapidsErrorUtils.divByZeroError(origin)
@@ -883,7 +920,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
 
   private[this] def divByZeroFixes(lhs: ColumnView, rhs: ColumnVector): ColumnVector = {
     if (failOnDivideByZero) {
-      withResource(GpuDivModLike.mergeNulls(rhs, lhs)) { nullMergedRhs =>
+      withResource(NullUtilities.mergeNulls(rhs, lhs)) { nullMergedRhs =>
         withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {
             throw RapidsErrorUtils.divByZeroError(origin)
