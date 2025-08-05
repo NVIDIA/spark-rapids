@@ -60,8 +60,7 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf,
-      Some(fileScan.sparkSession.sparkContext.getConf))
+    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf)
     GpuParquetMultiFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,

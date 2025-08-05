@@ -21,7 +21,8 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.charset.StandardCharsets
-import java.util.{Arrays => jArrays, Collections, Locale}
+import java.util
+import java.util.{Collections, Locale}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -601,15 +602,15 @@ private case class GpuParquetFileFilterHandler(
 
 
   private def verifyParquetMagic(filePath: Path, magic: Array[Byte]): Unit = {
-    if (!jArrays.equals(MAGIC, magic)) {
-      if (jArrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
+    if (!util.Arrays.equals(MAGIC, magic)) {
+      if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
         throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
           "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
           s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
       } else {
         throw new RuntimeException(s"$filePath is not a Parquet file. " +
-          s"Expected magic number at tail ${jArrays.toString(MAGIC)} " +
-          s"but found ${jArrays.toString(magic)}")
+          s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
+          s"but found ${util.Arrays.toString(magic)}")
       }
     }
   }
