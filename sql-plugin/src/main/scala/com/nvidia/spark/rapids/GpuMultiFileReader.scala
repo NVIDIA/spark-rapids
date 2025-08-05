@@ -390,7 +390,7 @@ case class ResourcePoolConf(
         capacity
       case _ =>
         SparkEnv.get.conf.getOption(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key) match {
-          case Some(v) =>
+          case Some(v) if v.toLong > 0 =>
             v.toLong
           case _ =>
             logWarning(s"Fallback to default memory capacity for ResourcePoolConf: " +
