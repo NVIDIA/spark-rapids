@@ -17,10 +17,10 @@
 
 set -ex
 
-. jenkins/version-def.sh
-
 ## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
 export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
+
+. jenkins/version-def.sh
 
 DIST_PL="dist"
 DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
@@ -49,7 +49,7 @@ ART_ID=$(mvnEval project.artifactId)
 ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
 export DEFAULT_CUDA_CLASSIFIER=${DEFAULT_CUDA_CLASSIFIER:-$(mvnEval cuda.version)} # default cuda version
-CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"} # e.g. cuda11,cuda12
+CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"} # e.g. cuda12
 CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"}  # default as CUDA_CLASSIFIERS for compatibility
 IFS=',' read -a CLASSIFIERS_ARR <<< "$CLASSIFIERS"
 

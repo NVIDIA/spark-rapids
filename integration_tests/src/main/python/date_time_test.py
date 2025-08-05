@@ -517,6 +517,7 @@ def test_unsupported_fallback_from_unixtime(data_gen):
     ('2021-01', 'yyyy/MM'),
     ('01/02/201', 'dd/MM/yyyy'),
     ('2021-01-01 00:00', 'yyyy-MM-dd HH:mm:ss'),
+    ('19224303 22:82:35', 'yyyy-MM-dd HH:mm:ss'),
     ('01#01', 'MM-dd'),
     ('01T01', 'MM/dd'),
     ('29-02', 'dd-MM'),  # 1970-02-29 is invalid
@@ -677,6 +678,7 @@ def test_to_timestamp_tz_rules(parser_policy):
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
 # mm: minute; MM: month
+@disable_ansi_mode
 @pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd', 'yyyy-mm-dd'], ids=idfn)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
@@ -694,6 +696,7 @@ def test_formats_for_legacy_mode(format):
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 # mm: minute; MM: month
+@disable_ansi_mode
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
 def test_formats_for_legacy_mode_other_formats_runtime_fallback():
     # We will do a CPU fallback during runtime for timezones with transitions during 
@@ -713,6 +716,7 @@ def test_formats_for_legacy_mode_other_formats_runtime_fallback():
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 # mm: minute; MM: month
+@disable_ansi_mode
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
 def test_formats_for_legacy_mode_other_formats_tz_rules():
     format = "yyyyMMdd HH:mm:ss"
@@ -736,6 +740,25 @@ def test_to_date(ansi_enabled):
         lambda spark : unary_op_df(spark, date_gen)
             .select(f.to_date(f.col("a").cast('string'), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
+
+# invalid values for operators: to_date, to_timestamp; Spark 320 and 320+ do not support special datetime: e.g.: now, today, ...
+_invalid_values_for_to_datetime = ['now', 'today', '']
+
+# test ANSI mode, invalid input
+@pytest.mark.parametrize('invalid', _invalid_values_for_to_datetime)
+def test_to_date_ansi_on_invalid_value(invalid):
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.to_date(f.col("a"), "yyyy-MM-dd")).collect(),
+        conf = ansi_enabled_conf,
+        error_message="Exception")
+
+# test ANSI mode, invalid input
+@pytest.mark.parametrize('invalid', _invalid_values_for_to_datetime)
+def test_to_timestamp_ansi_on_invalid_value(invalid):
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.to_timestamp(f.col("a"), "yyyy-MM-dd")).collect(),
+        conf = ansi_enabled_conf,
+        error_message="Exception")
 
 @tz_sensitive_test
 @pytest.mark.parametrize('data_gen', [StringGen('0[1-9][0-9]{4}')], ids=idfn)

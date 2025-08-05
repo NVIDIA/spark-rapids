@@ -242,10 +242,17 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     } else {
       partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
-    new GpuMultiFileCloudAvroPartitionReader(conf, files, numThreads, maxNumFileProcessed,
+    val reader = new GpuMultiFileCloudAvroPartitionReader(
+      conf, files, numThreads, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
       readDataSchema, partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       maxGpuColumnSizeBytes)
+    // NOTE: Initialize must happen after the initialization of the reader, to ensure everything
+    // inside the reader being fully initialized.
+    if (conf.getBoolean("rapids.sql.scan.prefetch", false)) {
+      reader.eagerPrefetchInit()
+    }
+    reader
   }
 
   /**

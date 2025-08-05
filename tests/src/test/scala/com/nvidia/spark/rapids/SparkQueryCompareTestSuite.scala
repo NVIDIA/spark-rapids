@@ -205,6 +205,25 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     withSparkSession(c, f)
   }
 
+  def withGpuHiveSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
+    // Force a new session for Hive since catalogImplementation is a static config
+    TrampolineUtil.cleanupAnyExistingSession()
+    val spark = getBuilder()
+      .master("local[1]")
+      .config(conf)
+      .config(RapidsConf.SQL_ENABLED.key, "true")
+      .config(RapidsConf.TEST_CONF.key, "true")
+      .config(RapidsConf.EXPLAIN.key, "ALL")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.sql.catalogImplementation", "hive")
+      .config("spark.sql.hive.convertMetastoreParquet", "false")
+      .config("spark.sql.queryExecutionListeners",
+        "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
+      .appName("Spark Rapids plugin Hive related tests")
+      .getOrCreate()
+    f(spark)
+  }
+
   def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
     def doublesAreEqualWithinPercentage(expected: Double, actual: Double): (String, Boolean) = {
       if (!compare(expected, actual)) {

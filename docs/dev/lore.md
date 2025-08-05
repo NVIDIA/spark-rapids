@@ -93,5 +93,26 @@ restored data to console.
 # Limitations
 
 1. Currently, the LORE id is missed when the RDD of a `DataFrame` is used directly.
-2. Not all operators are supported by LORE. For example, shuffle related operator (e.g. 
+2. Not all operators are supported by LORE. For example, shuffle related operator (e.g.
    `GpuShuffleExchangeExec`), leaf operator (e.g. `GpuFileSourceScanExec`) are not supported.
+3. **GpuDataWritingCommandExec is not supported for LORE dump on certain Spark versions**.
+   The following versions are not supported due to compatibility issues with `GpuWriteFiles`:
+   - Spark 3.3.2 Databricks (`332db`)
+   - Spark 3.4.0 (`340`)
+   - Spark 3.4.1 (`341`)
+   - Spark 3.4.1 Databricks (`341db`)
+   - Spark 3.4.2 (`342`)
+   - Spark 3.4.3 (`343`)
+   - Spark 3.4.4 (`344`)
+   - Spark 3.5.0 (`350`)
+   - Spark 3.5.0 Databricks 14.3 (`350db143`)
+   - Spark 3.5.1 (`351`)
+   - Spark 3.5.2 (`352`)
+   - Spark 3.5.3 (`353`)
+   - Spark 3.5.4 (`354`)
+   - Spark 3.5.5 (`355`)
+   - Spark 3.5.6 (`356`)
+   - Spark 4.0.0 (`400`)
+
+   When attempting to dump a `GpuDataWritingCommandExec` on these versions, LORE will throw an
+   `UnsupportedOperationException` with a clear error message indicating the unsupported version.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -217,8 +217,8 @@ object SchemaUtils {
       case (fromDec: DecimalType, toDec: DecimalType) if fromDec == toDec &&
           !GpuColumnVector.getNonNestedRapidsType(fromDec).equals(col.getType) =>
         col.castTo(DecimalUtil.createCudfDecimal(fromDec))
-      case (fromChar: CharType, toStringType: StringType) =>
-        castFunc.map(f => f(col, toStringType, fromChar))
+      case (fromChar: CharType, StringType) =>
+        castFunc.map(f => f(col, StringType, fromChar))
           .getOrElse(throw new QueryExecutionException("Casting function is missing for " +
             s"type conversion from $colType to $targetType"))
       case _ if !GpuColumnVector.getNonNestedRapidsType(targetType).equals(col.getType) =>

@@ -43,7 +43,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{FoldLocalAggregate, RapidsConf, SparkShims}
+import com.nvidia.spark.rapids.{BucketJoinTwoSidesPrefetch, FoldLocalAggregate, RapidsConf, SparkShims}
 import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -91,5 +91,9 @@ trait Spark320PlusNonDBShims extends SparkShims {
     } else {
       plan
     }
+  }
+
+  override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
+    BucketJoinTwoSidesPrefetch(super.applyPostShimPlanRules(plan))
   }
 }

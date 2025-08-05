@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -419,7 +419,8 @@ object GpuEquivalentExpressions {
       exprs.map { expr =>
         expr.transform {
           case c: GpuCombinable if filtered.contains(c.getCombiner()) =>
-            filtered(c.getCombiner()).getReplacementExpression(c)
+            val replacement = filtered(c.getCombiner()).getReplacementExpression(c)
+            replacement.getOrElse(c)
         }
       }
     }
@@ -486,9 +487,12 @@ trait GpuExpressionCombiner {
    * For a specific expression return a multi-expression that can be used to replace it.
    * Note that deduplication of these will happen as a part of tiered project.
    * @param e the expression to be replaced
-   * @return the replacement expression
+   * @return the replacement expression, if one is available. It is possible for
+   *         an expression to use the same combiner, but not be added to the combiner
+   *         for numerous reasons. When this happens a None will be returned and
+   *         the expression should not be replaced.
    */
-  def getReplacementExpression(e: Expression): Expression
+  def getReplacementExpression(e: Expression): Option[Expression]
 
   /**
    * Get the number of expressions that can be combined (excluding duplicates)
