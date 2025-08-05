@@ -215,8 +215,8 @@ trait GpuPartitioning extends Partitioning {
             val dataHost = seq(0)
             val offsetsHost = seq(1)
             NvtxRegistry.GPU_KUDO_COPY_TO_HOST {
-              dataHost.copyFromDeviceBuffer(data, Cuda.DEFAULT_STREAM)
-              offsetsHost.copyFromDeviceBuffer(offsets, Cuda.DEFAULT_STREAM)
+              dataHost.copyFromDeviceBufferAsync(data, Cuda.DEFAULT_STREAM)
+              offsetsHost.copyFromDeviceBufferAsync(offsets, Cuda.DEFAULT_STREAM)
               Cuda.DEFAULT_STREAM.sync()
             }
             (dataHost, offsetsHost)
