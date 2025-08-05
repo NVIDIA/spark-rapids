@@ -74,7 +74,7 @@ initialize()
     BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
     SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}-databricks
     DBR_VER=$(cat /databricks/DBR_VERSION)
-    if [ $DBR_VER == '14.3' ]; then
+    if [ $DBR_VER == '14.3' ]; then 
         DBR_VER=$(echo $DBR_VER | sed 's/\.//g')
         # We are appending 143 in addition to the base spark version because Databricks 14.3
         # and Databricks 15.4 are both based on spark version 3.5.0
