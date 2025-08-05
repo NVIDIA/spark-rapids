@@ -19,7 +19,7 @@ from asserts import *
 from data_gen import *
 from delta_lake_utils import delta_meta_allow
 from marks import *
-from spark_session import with_gpu_session, is_spark_353_or_later, is_before_spark_330
+from spark_session import with_gpu_session, is_spark_353_or_later, is_before_spark_330, is_databricks143_or_later
 from dataclasses import dataclass
 
 
@@ -31,7 +31,8 @@ def test_time_travel_on_non_existing_table():
     def time_travel_on_non_existing_table():
         with_gpu_session(lambda spark: spark.sql("SELECT * FROM not_existing VERSION AS OF 0"))
 
-    assert_spark_exception(time_travel_on_non_existing_table, "AnalysisException")
+    err_msg = "not_existing" if is_databricks143_or_later() else "AnalysisException"
+    assert_spark_exception(time_travel_on_non_existing_table, err_msg)
 
 @dataclass
 class SetupTableResult:
