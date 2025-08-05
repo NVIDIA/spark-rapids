@@ -52,7 +52,7 @@ import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
 
-import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -620,15 +620,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   override def buildBaseColumnarReaderForCloud(files: Array[PartitionedFile], conf: Configuration):
       PartitionReader[ColumnarBatch] = {
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    // Set the appropriate capacity of the resource pool for this reader:
-    // 1. Try to get the value from the latest user defined value from driver side
-    // 2. If not set, figure out the value according to physical memory settings of current
-    // executor via `initializePinnedPoolAndOffHeapLimits`
-    val poolConf = resourcePoolConf.setMemoryCapacity(
-      poolMemCapacity.getOrElse(
-        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
-      )
-    )
+    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
     val reader = new MultiFileCloudOrcPartitionReader(
       conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
@@ -678,15 +670,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     }
 
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
-    // Set the appropriate capacity of the resource pool for this reader:
-    // 1. Try to get the value from the latest user defined value from driver side
-    // 2. If not set, figure out the value according to physical memory settings of current
-    // executor via `initializePinnedPoolAndOffHeapLimits`
-    val poolConf = resourcePoolConf.setMemoryCapacity(
-      poolMemCapacity.getOrElse(
-        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
-      )
-    )
+    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,

@@ -91,15 +91,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
 
       val poolConf = ResourcePoolConf
           .buildFromConf(rapidsConf)
-          .setMemoryCapacity(
-            // Set the appropriate capacity of the resource pool for this reader:
-            // 1. Try to get the value from the latest user defined value from driver side
-            // 2. If not set, figure out the value according to physical memory settings of current
-            // executor via `initializePinnedPoolAndOffHeapLimits`
-            poolMemCapacity.getOrElse(
-              SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
-            )
-          )
+          .setMemoryCapacity(poolMemCapacity)
       if (useMultiThread) {
         MultiThread(poolConf, partition.maxNumParquetFilesParallel)
       } else {

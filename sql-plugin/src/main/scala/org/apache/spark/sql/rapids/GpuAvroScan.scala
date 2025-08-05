@@ -38,7 +38,7 @@ import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 
-import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -249,15 +249,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     } else {
       partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
-    // Set the appropriate capacity of the resource pool for this reader:
-    // 1. Try to get the value from the latest user defined value from driver side
-    // 2. If not set, figure out the value according to physical memory settings of current
-    // executor via `initializePinnedPoolAndOffHeapLimits`
-    val poolConf = resourcePoolConf.setMemoryCapacity(
-      poolMemCapacity.getOrElse(
-        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
-      )
-    )
+    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
     val reader = new GpuMultiFileCloudAvroPartitionReader(
       conf, files, poolConf, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
@@ -317,15 +309,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
         }
       }
     }
-    // Set the appropriate capacity of the resource pool for this reader:
-    // 1. Try to get the value from the latest user defined value from driver side
-    // 2. If not set, figure out the value according to physical memory settings of current
-    // executor via `initializePinnedPoolAndOffHeapLimits`
-    val poolConf = resourcePoolConf.setMemoryCapacity(
-      poolMemCapacity.getOrElse(
-        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
-      )
-    )
+    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
       poolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)

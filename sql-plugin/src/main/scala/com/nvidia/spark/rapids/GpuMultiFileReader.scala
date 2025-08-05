@@ -37,7 +37,7 @@ import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -371,17 +371,34 @@ case class ResourcePoolConf(
     maxThreadNumber: Int, // The maximum number of threads used by the thread pool
     stageLevelPool: Boolean = false // Only for testing, create pools for each task
 ) extends Logging {
-  // The maximum host memory used by in-flight tasks
+  // Get the memory capacity: the maximum host memory used by in-flight tasks
   def memoryCapacity: Long = {
     require(memCap > 0L, "Memory capacity must be set before use")
     memCap
   }
 
-  // Return a copy of this ResourcePoolConf with the memory capacity set to the given value.
-  def setMemoryCapacity(capacity: Long): ResourcePoolConf = {
-    require(capacity > 0, s"Memory capacity must be positive: $capacity")
+  // Return a copy of this ResourcePoolConf while setting the memory capacity with the
+  // following logic:
+  // 1. Try to get the value from the latest user defined value from driver side
+  // 2. If not set, figure out the value according to physical memory settings of current
+  // executor via `initializePinnedPoolAndOffHeapLimits`
+  // 3. if still not set, use the default value `DEFAULT_MEMORY_CAPACITY`.
+  def setMemoryCapacity(valueFromDriver: Option[Long]): ResourcePoolConf = {
     val poolConf = this.copy()
-    poolConf.memCap = capacity
+    poolConf.memCap = valueFromDriver match {
+      case Some(capacity) =>
+        capacity
+      case None =>
+        SparkEnv.get.conf.getOption(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key) match {
+          case Some(v) =>
+            v.toLong
+          case None =>
+            logWarning(s"Fallback to default memory capacity for ResourcePoolConf: " +
+                s"${ResourcePoolConf.DEFAULT_MEMORY_CAPACITY}")
+            // If the memory capacity is not set, use the default value.
+            ResourcePoolConf.DEFAULT_MEMORY_CAPACITY
+        }
+    }
     logDebug(s"Setting memory capacity for ResourcePoolConf to ${memCap >> 20}MB")
     poolConf
   }
@@ -402,6 +419,10 @@ object ResourcePoolConf {
       conf.multiThreadReadNumThreads,
       conf.multiThreadReadStageLevelPool)
   }
+
+  // Set an extremely large memory capacity by default, so that the thread pool can be used
+  // without memory limit.
+  private val DEFAULT_MEMORY_CAPACITY: Long = 1L << 40 // 1 TB
 }
 
 /**

@@ -61,7 +61,7 @@ import org.apache.parquet.schema.LogicalTypeAnnotation.{DateLogicalTypeAnnotatio
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.xerial.snappy.Snappy
 
-import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -1167,15 +1167,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    // Set the appropriate capacity of the resource pool for this reader:
-    // 1. Try to get the value from the latest user defined value from driver side
-    // 2. If not set, figure out the value according to physical memory settings of current
-    // executor via `initializePinnedPoolAndOffHeapLimits`
-    val poolConf = resourcePoolConf.setMemoryCapacity(
-      poolMemCapacity.getOrElse(
-        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
-      )
-    )
+    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
     val reader = new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
@@ -1298,15 +1290,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         }
       }
     }
-    // Set the appropriate capacity of the resource pool for this reader:
-    // 1. Try to get the value from the latest user defined value from driver side
-    // 2. If not set, figure out the value according to physical memory settings of current
-    // executor via `initializePinnedPoolAndOffHeapLimits`
-    val poolConf = resourcePoolConf.setMemoryCapacity(
-      poolMemCapacity.getOrElse(
-        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
-      )
-    )
+    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
 
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
