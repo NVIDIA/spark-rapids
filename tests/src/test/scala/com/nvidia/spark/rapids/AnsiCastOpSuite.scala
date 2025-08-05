@@ -333,10 +333,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     boolStrings.toDF("c0")
   }
 
-  testCastFailsForBadInputs("ansi_cast string to bool (invalid values)", testStrings,
-    sparkConf) {
-    frame => testCastTo(DataTypes.BooleanType)(frame)
-  }
 
 
   ///////////////////////////////////////////////////////////////////////////

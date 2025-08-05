@@ -354,7 +354,7 @@ object RapidsConf extends Logging {
       // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
       .internal()
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
       .doc("The maximum amount of off heap memory that the plugin will use. " +
@@ -2108,9 +2108,31 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(true)
 
+  object ShuffleKudoMode extends Enumeration {
+    val CPU, GPU = Value
+  }
+
+  val SHUFFLE_KUDO_MODE = conf("spark.rapids.shuffle.kudo.serializer.mode")
+    .doc("Kudo serializer mode. " +
+      "\"CPU\": serialize shuffle outputs on the cpu. " +
+      "\"GPU\": serialize shuffle outputs on the gpu. ")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createWithDefault(ShuffleKudoMode.CPU.toString)
+
   val SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED =
     conf("spark.rapids.shuffle.kudo.serializer.measure.buffer.copy.enabled")
     .doc("Enable or disable measuring buffer copy time when using Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_ASYNC_READ_ENABLED = conf("spark.rapids.sql.asyncRead.shuffle.enabled")
+    .doc("Enable or disable the asynchronous read for Shuffle. If you turn this on you should " +
+      "also consider increasing spark.rapids.sql.asyncRead.maxInFlightHostMemoryBytes so that " +
+      "async threads won't be blocked by the memory limit. If By default this in off now.")
     .internal()
     .startupOnly()
     .booleanConf
@@ -2526,6 +2548,12 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .stringConf
     .createOptional
 
+  val LORE_SKIP_DUMPING_PLAN = conf("spark.rapids.sql.lore.skip.plan.dump")
+    .doc("Skip dumping plan metadata when doing lore dump")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val CASE_WHEN_FUSE =
     conf("spark.rapids.sql.case_when.fuse")
       .doc("If when branches is greater than 2 and all then/else values in case when are string " +
@@ -2565,11 +2593,36 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
   val ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
     conf("spark.rapids.sql.asyncWrite.maxInFlightHostMemoryBytes")
       .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
-        "query output write. Tasks may be blocked if the total host memory bytes in-flight " +
-        "exceeds this value.")
+        "write. Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value. Today this config only covers file output write, but in future" +
+        "it may cover other writes like shuffle write as well. If set to <= 0 it means unlimited " +
+        "memory")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(2L * 1024 * 1024 * 1024)
+
+  val ASYNC_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
+    conf("spark.rapids.sql.asyncRead.maxInFlightHostMemoryBytes")
+      .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
+        "read. Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value. Today this config only covers shuffle read, but in future" +
+        "it may cover other reads like file read as well. If set to <= 0 it means unlimited " +
+        "memory")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      // Why by default set to unlimited? The reasons are:
+      // 1. For async shuffle read (done) or async file read (already there but need to integrate
+      // into this unified throttling), the host memory usage is bounded: N * batchSize * 2, where N
+      // is the number of total task number in executor, and "*2" is for prefetch + concatenation.
+      // 2. Even without asyncRead, today each task is already allowed to use host memory to prepare
+      // its data in CPU before it acquires GPU semaphore. Take shuffle read for example
+      // the host memory usage is already high, actually async shuffle read is adding just a
+      // little more memory pressure (concurrentGpuTasks * batchSize * 2), note concurrentGpuTasks
+      // is typically much smaller than N.
+      // 3. The read in data will be spillable, so it won't have deadly consequences.
+      // 4. We have not yet implemented unified thread priority, so there's deadlock risks if this
+      // value is improperly set.
+      .createWithDefault(-1)
 
   // default value for the OOM injection logic (no injection, for regular operation)
   private val noInjection = OomInjectionConf(
@@ -2679,7 +2732,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.08.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2827,6 +2880,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     entry.get(conf)
   }
 
+  def getStr(key: String): Option[String] = conf.get(key)
+
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).toMap.asJava
 
@@ -2913,6 +2968,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val asyncWriteMaxInFlightHostMemoryBytes: Long =
     get(ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
+
+  lazy val asyncReadMaxInFlightHostMemoryBytes: Long =
+    get(ASYNC_READ_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
@@ -3309,8 +3367,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
+  lazy val shuffleKudoMode: String = get(SHUFFLE_KUDO_MODE)
+
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
+
+  lazy val shuffleAsyncReadEnabled: Boolean = get(SHUFFLE_ASYNC_READ_ENABLED)
 
   lazy val shuffleKudoSerializerDebugMode: DumpOption = {
     val mode = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE)
@@ -3364,6 +3426,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.CACHE_ONLY
 
   def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
+
+  def shuffleKudoGpuSerializerEnabled: Boolean = shuffleKudoSerializerEnabled &&
+      ShuffleKudoMode.withName(shuffleKudoMode) == ShuffleKudoMode.GPU
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
@@ -3496,6 +3561,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     .getOrElse(Map.empty)
 
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
+
+  lazy val loreSkipDumpingPlan: Boolean = get(LORE_SKIP_DUMPING_PLAN)
 
   lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 
