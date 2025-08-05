@@ -1136,6 +1136,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         deprecatedVal
       }.getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
   private val compressCfg = CpuCompressionConfig.forParquet(rapidsConf)
+  // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
+  private val poolMemCapacity = rapidsConf.multiThreadMemoryLimit match {
+    case v if v == 0 => None
+    case v => Some(v)
+  }
 
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -1162,10 +1167,14 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
-    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    // Set the appropriate capacity of the resource pool for this reader:
+    // 1. Try to get the value from the latest user defined value from driver side
+    // 2. If not set, figure out the value according to physical memory settings of current
+    // executor via `initializePinnedPoolAndOffHeapLimits`
     resourcePoolConf.setMemoryCapacity(
-      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+      poolMemCapacity.getOrElse(
+        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+      )
     )
     val reader = new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
@@ -1289,10 +1298,14 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         }
       }
     }
-    // Fetch the memory capacity of resource pool from SparkContext, which is set during the
-    // launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
+    // Set the appropriate capacity of the resource pool for this reader:
+    // 1. Try to get the value from the latest user defined value from driver side
+    // 2. If not set, figure out the value according to physical memory settings of current
+    // executor via `initializePinnedPoolAndOffHeapLimits`
     resourcePoolConf.setMemoryCapacity(
-      SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+      poolMemCapacity.getOrElse(
+        SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+      )
     )
 
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,

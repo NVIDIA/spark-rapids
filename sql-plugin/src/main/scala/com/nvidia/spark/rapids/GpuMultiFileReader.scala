@@ -369,7 +369,7 @@ case class ResourcePoolConf(
     retryPriorityAdjust: Double, // The penalty for task priority if failed to acquire resource
     maxThreadNumber: Int, // The maximum number of threads used by the thread pool
     stageLevelPool: Boolean = false // Only for testing, create pools for each task
-) {
+) extends Logging {
   // The maximum host memory used by in-flight tasks
   def memoryCapacity: Long = {
     require(memCap > 0L, "Memory capacity must be set before use")
@@ -380,6 +380,7 @@ case class ResourcePoolConf(
     require(capacity > 0, "Memory capacity must be positive")
     require(memCap == 0L, "Memory capacity can only be set once")
     this.memCap = capacity
+    logDebug(s"Setting memory capacity for ResourcePoolConf to ${memCap >> 20}MB")
     this
   }
 

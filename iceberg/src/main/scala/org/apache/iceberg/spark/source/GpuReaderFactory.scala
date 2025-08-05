@@ -41,6 +41,11 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   // not honored by Iceberg.
   private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled &&
     !queryUsesInputFile
+  // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
+  private val poolMemCapacity = rapidsConf.multiThreadMemoryLimit match {
+    case v if v == 0 => None
+    case v => Some(v)
+  }
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] =
     throw new UnsupportedOperationException("GpuReaderFactory does not support createReader()")
@@ -87,9 +92,14 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       val poolConf = ResourcePoolConf
           .buildFromConf(rapidsConf)
           .setMemoryCapacity(
-            // Fetch the memory capacity of resource pool from SparkContext, which is set during
-            // the launch of ExecutorPlugin (initializePinnedPoolAndOffHeapLimits).
-            SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L))
+            // Set the appropriate capacity of the resource pool for this reader:
+            // 1. Try to get the value from the latest user defined value from driver side
+            // 2. If not set, figure out the value according to physical memory settings of current
+            // executor via `initializePinnedPoolAndOffHeapLimits`
+            poolMemCapacity.getOrElse(
+              SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
+            )
+          )
       if (useMultiThread) {
         MultiThread(poolConf, partition.maxNumParquetFilesParallel)
       } else {
