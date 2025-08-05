@@ -153,7 +153,7 @@ object GpuShuffleCoalesceUtils {
     val readThrottlingMetric = metricsMap(GpuMetric.READ_THROTTLING_TIME)
     val hostIter = if (readOption.kudoEnabled) {
       new KudoHostShuffleCoalesceIterator(iter, targetSize, dataTypes, concatTimeMetric,
-        inBatchesMetric, inRowsMetric, readOption)
+        inBatchesMetric, inRowsMetric, readThrottlingMetric, readOption)
     } else {
       new HostShuffleCoalesceIterator(iter, targetSize, concatTimeMetric, inBatchesMetric,
         inRowsMetric)
@@ -309,6 +309,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     concatTimeMetric: GpuMetric,
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
+    readThrottlingMetric: GpuMetric,
     useAsync: Boolean = false
 ) extends Iterator[CoalescedHostResult] with AutoCloseable {
   private[this] val serializedTables = new util.ArrayDeque[T]
@@ -340,55 +341,53 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   }
 
   private def concatenateTablesInHost(): CoalescedHostResult = {
-    val result = withResource(new MetricRange(concatTimeMetric)) { _ =>
-      val input = new ArrayBuffer[T]()
-      for (_ <- 0 until numTablesInBatch)
-        input += serializedTables.removeFirst()
+    val input = new ArrayBuffer[T]()
+    for (_ <- 0 until numTablesInBatch)
+      input += serializedTables.removeFirst()
 
-      // Update the stats for the next batch in progress.
-      // Note that the modification of these variables will happen before
-      // the modifications in async bufferNextBatch(), we just need to ensure
-      // their visibility to the next thread.
-      numTablesInBatch = serializedTables.size
-      batchByteSize = 0
-      numRowsInBatch = 0
-      if (numTablesInBatch > 0) {
-        require(numTablesInBatch == 1,
-          "should only track at most one buffer that is not in a batch")
-        val firstTable = serializedTables.peekFirst()
-        batchByteSize = tableOperator.getDataLen(firstTable)
-        numRowsInBatch = tableOperator.getNumRows(firstTable)
-      }
+    // Update the stats for the next batch in progress.
+    // Note that the modification of these variables will happen before
+    // the modifications in async bufferNextBatch(), we just need to ensure
+    // their visibility to the next thread.
+    numTablesInBatch = serializedTables.size
+    batchByteSize = 0
+    numRowsInBatch = 0
+    if (numTablesInBatch > 0) {
+      require(numTablesInBatch == 1,
+        "should only track at most one buffer that is not in a batch")
+      val firstTable = serializedTables.peekFirst()
+      batchByteSize = tableOperator.getDataLen(firstTable)
+      numRowsInBatch = tableOperator.getNumRows(firstTable)
+    }
 
-      if (useAsync && iter.hasNext) {
-        if (executor.isEmpty) {
-          executor =
-            Some(new ThrottlingExecutor(
-              TrampolineUtil.newDaemonCachedThreadPool(
-                "async buffer thread for " + Thread.currentThread().getName, 1, 1),
-              TrafficController.getReadInstance,
-              _ => {
-                // This is a no-op for now, but we can add stats collection here in the future.
-              }
-            ))
-        }
-        bufferingFuture = Option(executor.get.submit(
-          () => {
-            val nvRangeName = s"Task ${taskAttemptID}-Async Buffer Next (Backend)"
-            withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
-              bufferNextBatch()
+    if (useAsync && iter.hasNext) {
+      if (executor.isEmpty) {
+        executor =
+          Some(new ThrottlingExecutor(
+            TrampolineUtil.newDaemonCachedThreadPool(
+              "async buffer thread for " + Thread.currentThread().getName, 1, 1),
+            TrafficController.getReadInstance,
+            stat => {
+              readThrottlingMetric.add(stat.accumulatedThrottleTimeNs)
             }
-          },
-          targetBatchByteSize // This is just a estimation, may overestimate.
-        ))
+          ))
       }
+      bufferingFuture = Option(executor.get.submit(
+        () => {
+          val nvRangeName = s"Task ${taskAttemptID}-Async Buffer Next (Backend)"
+          withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+            bufferNextBatch()
+          }
+        },
+        targetBatchByteSize // This is just a estimation, may overestimate.
+      ))
+    }
 
+    withResource(new MetricRange(concatTimeMetric)) { _ =>
       withRetryNoSplit(input.toSeq) { tables =>
         tableOperator.concatOnHost(tables.toArray)
       }
     }
-
-    result
   }
 
   private def bufferNextBatch(): Unit = {
@@ -478,10 +477,12 @@ class KudoHostShuffleCoalesceIterator(
     concatTimeMetric: GpuMetric = NoopMetric,
     inputBatchesMetric: GpuMetric = NoopMetric,
     inputRowsMetric: GpuMetric = NoopMetric,
+    readThrottlingMetric: GpuMetric = NoopMetric,
     readOption: CoalesceReadOption
     )
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize,
-    concatTimeMetric, inputBatchesMetric, inputRowsMetric, readOption.useAsync) {
+    concatTimeMetric, inputBatchesMetric, inputRowsMetric, readThrottlingMetric,
+    readOption.useAsync) {
 
   // Capture TaskContext info during RDD execution when it's available
   private val taskIdentifier = Option(TaskContext.get()) match {
