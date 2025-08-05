@@ -28,21 +28,46 @@ from spark_session import is_before_spark_400
 # does not support: Collate expression
 ####################################################################################################
 
-# Fallback reason: ! <Collate> collate(c1#3, UTF8_BINARY) cannot run on GPU because GPU does not \
-# currently support the operator class org.apache.spark.sql.catalyst.expressions.Collate
+# some non-UTF8_BINARY collations
+_non_utf8_binary_collations = ["UNICODE", "UTF8_LCASE", "UNICODE_CI"]
+
+
+# test Collate, currently does not have GPU version for Collate
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
 @allow_non_gpu("ProjectExec")
-def test_collate_column_fallback():
-    data_gen = [("c1", string_gen), ("c2", string_gen)]
+def test_collate_expr_fallback():
+    data_gen = [("c1", string_gen)]
     assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen).selectExpr("contains(collate(c1, 'UTF8_BINARY'), c2)"),
+        lambda spark: gen_df(spark, data_gen).selectExpr("concat(collate(c1, 'UTF8_BINARY'), 'a')"),
         cpu_fallback_class_name="Collate")
 
 
-# Test non-UTF8_BINARY string literal
-@pytest.mark.parametrize('collate_type',
-                         ["UNICODE", "UTF8_LCASE", "UNICODE_AI", "UNICODE_CI", "UNICODE_CI_AI"])
+# Concat does not support StringType with non-UTF8_BINARY collation
+# Fallback reason, i.e. !Expression <Concat> concat(c1#3, c2#4) cannot run on GPU because \
+# input expression AttributeReference c2#4 (StringType(UNICODE) is not supported); \
+# expression Concat concat(c1#3, c2#4) produces an unsupported type StringType(UNICODE); \
+# input expression AttributeReference c1#3 (StringType(UNICODE) is not supported)
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
+@pytest.mark.parametrize('collate_type', _non_utf8_binary_collations)
+@allow_non_gpu("ProjectExec")
+def test_collate_column_fallback(collate_type):
+    data_gen = [("c1", StringGen(collation=collate_type)), ("c2", StringGen(collation=collate_type))]
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr("concat(c1, c2)"),
+        cpu_fallback_class_name="Concat")
+
+
+# Concat supports StringType with `UTF8_BINARY` collation
+@pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
+def test_collate_column():
+    data_gen = data_gen = [("c1", StringGen(collation='UTF8_BINARY')), ("c2", StringGen(collation='UTF8_BINARY'))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).selectExpr("Concat(c1, c2)"))
+
+
+# Test non-UTF8_BINARY string literal, it falls back
+@pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
+@pytest.mark.parametrize('collate_type', _non_utf8_binary_collations)
 @allow_non_gpu("ProjectExec")
 def test_collate_literal_fallback(collate_type):
     data_gen = [("c1", string_gen)]
@@ -51,7 +76,7 @@ def test_collate_literal_fallback(collate_type):
         cpu_fallback_class_name="Literal")
 
 
-# Test UTF8_BINARY string literal
+# Test UTF8_BINARY string literal, it supports.
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
 def test_collate_literal():
     data_gen = [("c1", string_gen)]
@@ -60,14 +85,15 @@ def test_collate_literal():
 
 
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
-@allow_non_gpu("ProjectExec", "SortAggregateExec", "ShuffleExchangeExec", "SortExec")
-def test_collate_sum_fallback():
-    data_gen = [("c1", string_gen)]
+@allow_non_gpu("SortAggregateExec", "SortExec", "ShuffleExchangeExec",)
+@pytest.mark.parametrize('collate_type', _non_utf8_binary_collations)
+def test_collate_count_fallback(collate_type):
+    data_gen = [("c1", StringGen(collation=collate_type))]
     assert_gpu_sql_fallback_collect(
         lambda spark: gen_df(spark, data_gen),
-        cpu_fallback_class_name="Collate",
+        cpu_fallback_class_name="SortOrder",
         table_name="tab",
-        sql="select collate(c1, 'utf8_lcase'), count(*) from tab group by collate(c1, 'utf8_lcase')")
+        sql="select c1, count(*) from tab group by c1")
 
 
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")
