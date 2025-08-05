@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
 from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import *
-from spark_session import is_databricks143_or_later
+from spark_session import is_databricks133_or_later
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
@@ -151,7 +151,7 @@ def test_scalar_subquery_array_ansi_mode_failures(spark_tmp_table_factory):
         '''
         return spark.sql(query)
 
-    err_message = 'INVALID_ARRAY_INDEX' if is_databricks143_or_later() else 'ArrayIndexOutOfBoundsException'
+    err_message = 'INVALID_ARRAY_INDEX' if is_databricks133_or_later() else 'ArrayIndexOutOfBoundsException'
     assert_gpu_and_cpu_error(
         lambda spark: test_function(spark).collect(),
         conf=ansi_enabled_conf,
