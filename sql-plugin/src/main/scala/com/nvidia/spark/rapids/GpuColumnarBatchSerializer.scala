@@ -688,6 +688,8 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
             nextHeader = header
           } else {
             dIn.close()
+            sharedBuffer.foreach(_.close())
+            sharedBuffer = None
             streamClosed = true
             nextHeader = None
           }
