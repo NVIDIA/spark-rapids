@@ -511,7 +511,7 @@ private class KudoGpuSerializerInstance(
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
-      NvtxRegistry.GPU_KUDO_WRITE_BUFFERS{
+      NvtxRegistry.GPU_KUDO_WRITE_BUFFERS {
         val batch = value.asInstanceOf[ColumnarBatch]
         if (batch.numCols() > 0) {
           val firstCol = batch.column(0)
