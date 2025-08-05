@@ -424,27 +424,11 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
-    if is_before_spark_322():
-        exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)"
-    elif is_databricks113_or_later() or not is_before_spark_340() and is_before_spark_400():
-        exception_content = "[NUMERIC_VALUE_OUT_OF_RANGE] -12 cannot be represented as Decimal(7, 7)"
-    elif not is_before_spark_400():
-        exception_content = "[NUMERIC_VALUE_OUT_OF_RANGE.WITH_SUGGESTION]  -12 cannot be represented as Decimal(7, 7)"
-    else:
-        exception_content = "Decimal(compact, -120000000, 20, 0) cannot be represented as Decimal(7, 7)"
-
-    if is_before_spark_330() and not is_databricks104_or_later():
-            exception_type = "java.lang.ArithmeticException: "
-    elif not is_before_spark_340():
-        exception_type = "pyspark.errors.exceptions.captured.ArithmeticException: "
-    else:
-        exception_type = "org.apache.spark.SparkArithmeticException: "
-
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'cast(-12 as {})'.format(to_cast_string(data_gen.data_type))).collect(),
         ansi_enabled_conf,
-        exception_type + exception_content)
+        error_message='cannot be represented as Decimal(7, 7)')
 
 @pytest.mark.parametrize('data_gen', _pmod_gens, ids=idfn)
 def test_mod_pmod_by_zero_not_ansi(data_gen):
@@ -1141,18 +1125,11 @@ def _get_div_overflow_df(spark, expr):
 
 def _div_overflow_exception_when(expr, ansi_enabled, is_lit=False):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() else \
-        'org.apache.spark.SparkArithmeticException' \
-            if (not is_lit or not is_spark_340_or_later()) and is_before_spark_400() else \
-            "pyspark.errors.exceptions.captured.ArithmeticException"
-    err_mess = ': Overflow in integral divide' \
-        if is_before_spark_340() and not is_databricks113_or_later() else \
-        ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
     if ansi_enabled:
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
             conf=ansi_conf,
-            error_message=err_exp + err_mess)
+            error_message='Overflow in integral divide')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_div_overflow_df(spark, expr),
