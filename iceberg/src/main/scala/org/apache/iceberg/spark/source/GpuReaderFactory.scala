@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.{GpuMetric, MultiFileReaderUtils, RapidsConf, Res
 import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
 
-import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.connector.read.PartitionReader
