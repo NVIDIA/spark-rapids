@@ -190,6 +190,7 @@ object MultiFileReaderThreadPool extends Logging {
       val stageId = TaskContext.get().stageId()
       getOrCreateStageThreadPool(stageId, conf)
     } else {
+      // TODO: With updated PoolConf, support the extension/shrinkage of ThreadPool in flight
       threadPool.getOrElse {
         initThreadPool(conf)
       }
@@ -376,12 +377,13 @@ case class ResourcePoolConf(
     memCap
   }
 
+  // Return a copy of this ResourcePoolConf with the memory capacity set to the given value.
   def setMemoryCapacity(capacity: Long): ResourcePoolConf = {
-    require(capacity > 0, "Memory capacity must be positive")
-    require(memCap == 0L, "Memory capacity can only be set once")
-    this.memCap = capacity
+    require(capacity > 0, s"Memory capacity must be positive: $capacity")
+    val poolConf = this.copy()
+    poolConf.memCap = capacity
     logDebug(s"Setting memory capacity for ResourcePoolConf to ${memCap >> 20}MB")
-    this
+    poolConf
   }
 
   private var memCap: Long = 0L

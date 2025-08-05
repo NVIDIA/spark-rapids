@@ -1097,6 +1097,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
         "This can not be changed at runtime after the executor has started. And if 0, it " +
         "will be set with 90% of executor's off-heap memory")
+      // TODO: Memory capacity can be adjusted during the runtime
       .startupOnly()
       .internal()
       .longConf

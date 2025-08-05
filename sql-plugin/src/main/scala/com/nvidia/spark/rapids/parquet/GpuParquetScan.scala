@@ -1171,7 +1171,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     // 1. Try to get the value from the latest user defined value from driver side
     // 2. If not set, figure out the value according to physical memory settings of current
     // executor via `initializePinnedPoolAndOffHeapLimits`
-    resourcePoolConf.setMemoryCapacity(
+    val poolConf = resourcePoolConf.setMemoryCapacity(
       poolMemCapacity.getOrElse(
         SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
       )
@@ -1180,7 +1180,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
-      metrics, partitionSchema, resourcePoolConf, maxNumFileProcessed, ignoreMissingFiles,
+      metrics, partitionSchema, poolConf, maxNumFileProcessed, ignoreMissingFiles,
       ignoreCorruptFiles, readUseFieldId, queryUsesInputFile, keepReadsInOrderFromConf,
       combineConf)
     // NOTE: Initialize must happen after the initialization of the reader, to ensure everything
@@ -1302,7 +1302,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     // 1. Try to get the value from the latest user defined value from driver side
     // 2. If not set, figure out the value according to physical memory settings of current
     // executor via `initializePinnedPoolAndOffHeapLimits`
-    resourcePoolConf.setMemoryCapacity(
+    val poolConf = resourcePoolConf.setMemoryCapacity(
       poolMemCapacity.getOrElse(
         SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
       )
@@ -1312,7 +1312,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
-      metrics, partitionSchema, resourcePoolConf, ignoreMissingFiles, ignoreCorruptFiles,
+      metrics, partitionSchema, poolConf, ignoreMissingFiles, ignoreCorruptFiles,
       readUseFieldId)
   }
 

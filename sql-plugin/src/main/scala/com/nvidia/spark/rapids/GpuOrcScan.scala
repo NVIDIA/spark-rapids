@@ -624,7 +624,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     // 1. Try to get the value from the latest user defined value from driver side
     // 2. If not set, figure out the value according to physical memory settings of current
     // executor via `initializePinnedPoolAndOffHeapLimits`
-    resourcePoolConf.setMemoryCapacity(
+    val poolConf = resourcePoolConf.setMemoryCapacity(
       poolMemCapacity.getOrElse(
         SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
       )
@@ -632,7 +632,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     val reader = new MultiFileCloudOrcPartitionReader(
       conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
-      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, resourcePoolConf,
+      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, poolConf,
       maxNumFileProcessed,
       debugDumpPrefix, debugDumpAlways, filters, filterHandler, metrics, ignoreMissingFiles,
       ignoreCorruptFiles, queryUsesInputFile, keepReadsInOrder, combineConf)
@@ -682,7 +682,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     // 1. Try to get the value from the latest user defined value from driver side
     // 2. If not set, figure out the value according to physical memory settings of current
     // executor via `initializePinnedPoolAndOffHeapLimits`
-    resourcePoolConf.setMemoryCapacity(
+    val poolConf = resourcePoolConf.setMemoryCapacity(
       poolMemCapacity.getOrElse(
         SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
       )
@@ -691,7 +691,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,
       maxChunkedReaderMemoryUsageSizeBytes,
-      metrics, partitionSchema, resourcePoolConf, filterHandler.isCaseSensitive)
+      metrics, partitionSchema, poolConf, filterHandler.isCaseSensitive)
   }
 
   /**

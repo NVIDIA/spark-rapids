@@ -253,13 +253,13 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     // 1. Try to get the value from the latest user defined value from driver side
     // 2. If not set, figure out the value according to physical memory settings of current
     // executor via `initializePinnedPoolAndOffHeapLimits`
-    resourcePoolConf.setMemoryCapacity(
+    val poolConf = resourcePoolConf.setMemoryCapacity(
       poolMemCapacity.getOrElse(
         SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
       )
     )
     val reader = new GpuMultiFileCloudAvroPartitionReader(
-      conf, files, resourcePoolConf, maxNumFileProcessed,
+      conf, files, poolConf, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
       readDataSchema, partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       maxGpuColumnSizeBytes)
@@ -321,14 +321,14 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     // 1. Try to get the value from the latest user defined value from driver side
     // 2. If not set, figure out the value according to physical memory settings of current
     // executor via `initializePinnedPoolAndOffHeapLimits`
-    resourcePoolConf.setMemoryCapacity(
+    val poolConf = resourcePoolConf.setMemoryCapacity(
       poolMemCapacity.getOrElse(
         SparkEnv.get.conf.getLong(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key, 0L)
       )
     )
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-      resourcePoolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
+      poolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
   }
 
 }
