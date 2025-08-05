@@ -373,7 +373,7 @@ case class ResourcePoolConf(
 ) extends Logging {
   // Get the memory capacity: the maximum host memory used by in-flight tasks
   def memoryCapacity: Long = {
-    require(memCap > 0L, "Memory capacity must be set before use")
+    require(memCap > 0L, s"Memory capacity must be set before use: $memCap")
     memCap
   }
 
@@ -388,11 +388,11 @@ case class ResourcePoolConf(
     poolConf.memCap = valueFromDriver match {
       case Some(capacity) =>
         capacity
-      case None =>
+      case _ =>
         SparkEnv.get.conf.getOption(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key) match {
           case Some(v) =>
             v.toLong
-          case None =>
+          case _ =>
             logWarning(s"Fallback to default memory capacity for ResourcePoolConf: " +
                 s"${ResourcePoolConf.DEFAULT_MEMORY_CAPACITY}")
             // If the memory capacity is not set, use the default value.
@@ -1028,6 +1028,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     resourceConf: ResourcePoolConf,
     execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
     with MultiFileReaderFunctions {
+
+  require(resourceConf.memoryCapacity > 0,
+    "The memory capacity in ResourcePoolConf must be set before use")
 
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
     clippedBlocks.iterator.buffered
