@@ -156,7 +156,7 @@ object GpuShuffleCoalesceUtils {
         inBatchesMetric, inRowsMetric, readThrottlingMetric, readOption)
     } else {
       new HostShuffleCoalesceIterator(iter, targetSize, concatTimeMetric, inBatchesMetric,
-        inRowsMetric)
+        inRowsMetric, readThrottlingMetric)
     }
     val maybeBufferedIter = if (prefetchFirstBatch) {
       val bufferedIter = new CloseableBufferedIterator(hostIter)
@@ -464,9 +464,10 @@ class HostShuffleCoalesceIterator(
     targetBatchSize: Long,
     concatTimeMetric: GpuMetric = NoopMetric,
     inputBatchesMetric: GpuMetric = NoopMetric,
-    inputRowsMetric: GpuMetric = NoopMetric)
+    inputRowsMetric: GpuMetric = NoopMetric,
+    readThrottlingMetric: GpuMetric = NoopMetric)
   extends HostCoalesceIteratorBase[SerializedTableColumn](iter, targetBatchSize,
-    concatTimeMetric, inputBatchesMetric, inputRowsMetric) {
+    concatTimeMetric, inputBatchesMetric, inputRowsMetric, readThrottlingMetric) {
   override protected val tableOperator = new JCudfTableOperator
 }
 
