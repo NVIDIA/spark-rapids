@@ -733,19 +733,6 @@ object GpuDivModLike {
       }
     }
   }
-
-
-  /**
-   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" is null, otherwise
-   * return the row from the "dataCol".
-   */
-  def mergeNulls(dataCol: ColumnView, nullFlagCol: ColumnView): ColumnVector = {
-    withResource(nullFlagCol.isNull) { isNull =>
-      withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
-        isNull.ifElse(nullScalar, dataCol)
-      }
-    }
-  }
 }
 
 case class GpuMultiply(
@@ -802,7 +789,13 @@ case class GpuMultiply(
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    throw new RuntimeException("Error in multiplication: Spark already did the constant folding")
+    if (!lhs.isValid || !rhs.isValid) {
+      GpuColumnVector.columnVectorFromNull(numRows, lhs.dataType)
+    } else {
+      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { lhs_cv =>
+        doColumnar(lhs_cv, rhs)
+      }
+    }
   }
 }
 
@@ -819,7 +812,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
     if (failOnError) {
       // Throw out a "divByZeroError" only when the row in "rhs" is zero and the
       // corresponding row in "lhs" is not null. So need to merge nulls first.
-      withResource(mergeNulls(rhs.getBase, lhs.getBase)) { nullMergedRhs =>
+      withResource(NullUtilities.mergeNulls(rhs.getBase, lhs.getBase)) { nullMergedRhs =>
         withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {
             throw RapidsErrorUtils.divByZeroError(origin)
@@ -927,7 +920,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
 
   private[this] def divByZeroFixes(lhs: ColumnView, rhs: ColumnVector): ColumnVector = {
     if (failOnDivideByZero) {
-      withResource(GpuDivModLike.mergeNulls(rhs, lhs)) { nullMergedRhs =>
+      withResource(NullUtilities.mergeNulls(rhs, lhs)) { nullMergedRhs =>
         withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
           if (nullMergedRhs.contains(zeroScalar)) {
             throw RapidsErrorUtils.divByZeroError(origin)

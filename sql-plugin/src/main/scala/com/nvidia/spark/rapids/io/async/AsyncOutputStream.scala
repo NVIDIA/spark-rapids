@@ -42,8 +42,9 @@ object AsyncOutputStream {
       trafficController: TrafficController,
       statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): AsyncOutputStream = {
     val executor = new ThrottlingExecutor(
-      TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1), trafficController,
-      statsTrackers)
+      TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream for "
+        + Thread.currentThread().getName, 1, 1), trafficController,
+      new StatsUpdaterForWriteFunc(statsTrackers).func)
     new AsyncOutputStream(openFn, executor)
   }
 }
