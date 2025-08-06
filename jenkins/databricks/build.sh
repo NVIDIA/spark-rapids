@@ -51,6 +51,14 @@ declare -A artifacts
 # Initializes the scripts and the variables based on teh arguments passed to the script.
 initialize()
 {
+    # Print DB runtime version details
+    if [[ -f /databricks/BUILDINFO ]]; then
+        echo "DB runtime version details:"
+        cat /databricks/BUILDINFO
+    else
+        echo "No /databricks/BUILDINFO file found"
+    fi
+
     # install rsync to be used for copying onto the databricks nodes
     sudo apt install -y rsync
 
