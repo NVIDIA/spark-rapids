@@ -63,5 +63,5 @@ case class GpuShuffleExchangeExec(
 
   // DB SPECIFIC - not sure how it is used, so try to return one at first.
   // For more details, refer to https://github.com/NVIDIA/spark-rapids/issues/13242.
-  def ensReqDPMetricTag(): TreeNodeTag[Object] = TreeNodeTag[Object]("GpuShuffleExchangeExec")
+  override val ensReqDPMetricTag: TreeNodeTag[Int] = TreeNodeTag[Int]("GpuShuffleExchangeExec")
 }
