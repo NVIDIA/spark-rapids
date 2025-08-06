@@ -711,7 +711,7 @@ def make_exception_info(ex):
         return pytest.ExceptionInfo.from_exception(ex)
     except AttributeError:
         exc_info = (type(ex), ex, ex.__traceback__)
-        return pytest.ExceptionInfo.from_exc_info(exc_info).exconly()
+        return pytest.ExceptionInfo.from_exc_info(exc_info)
 
 
 def collect_data_or_exception(func, error_message, expect_exception=None):
