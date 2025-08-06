@@ -30,11 +30,11 @@ import org.apache.spark.internal.Logging
  *   - Mark completion and exception state for robust scheduling and error handling.
  *   - Integrate with resource management callbacks for proper resource release.
  *
- * @param task the AsyncTask to be executed and tracked
- * @tparam T the result type returned by the AsyncTask
+ * @param runner the AsyncRunner to be executed and tracked
+ * @tparam T the result type returned by the AsyncRunner
  */
-class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult[T]](task) {
-  private[async] var priority: Double = task.priority
+class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncResult[T]](runner) {
+  private[async] var priority: Double = runner.priority
   private var resourceFulfilled: Boolean = false
   private var completed: Boolean = false
   private var caughtException: Boolean = false
@@ -43,7 +43,7 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
     require(!completed, "Task has already been completed")
     if (resourceFulfilled) {
       // pass the schedule time to the task metrics builder
-      task.metricsBuilder.setScheduleTimeMs(scheduleTime)
+      runner.metricsBuilder.setScheduleTimeMs(scheduleTime)
       super.run()
       completed = true
     }
@@ -60,11 +60,11 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
     require(resourceFulfilled, "Cannot release resource that was not held")
     resourceFulfilled = false
     // Release intermediately if the task supports that, or it has to be (like exception occurred)
-    if (force || !task.holdResourceAfterCompletion) {
-      task.releaseResourceCallback()
+    if (force || !runner.holdResourceAfterCompletion) {
+      runner.releaseResourceCallback()
     } else {
       // Otherwise, we  mark the task for deferred release.
-      task.needDecayRelease = true
+      runner.needDecayRelease = true
     }
   }
 
@@ -81,6 +81,7 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
 
   override def setException(e: Throwable): Unit = {
     caughtException = true
+    runner.execException = Some(e)
     completed = true
     super.setException(e)
   }
@@ -117,7 +118,7 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
 }
 
 /**
- * A thread pool executor that integrates with resource management for executing AsyncTasks.
+ * A thread pool executor that integrates with resource management for executing AsyncRunners.
  *
  * This executor provides resource-aware task scheduling by:
  *   - Acquiring resources before task execution through the ResourcePool
@@ -128,9 +129,9 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
  *
  * Tasks that cannot acquire sufficient resources within timeout are bypassed during execution and
  * re-queued with adjusted priority to prevent starvation. The executor works exclusively
- * with AsyncTask instances and their corresponding RapidsFutureTask wrappers.
+ * with AsyncRunner instances and their corresponding RapidsFutureTask wrappers.
  *
- * Resource release timing is controlled by the AsyncTask's `holdResourceAfterCompletion` flag:
+ * Resource release timing is controlled by the AsyncRunner's `holdResourceAfterCompletion` flag:
  * immediate release when false (default) or deferred release when true, with exceptions always
  * triggering immediate release regardless of the flag.
  *
@@ -155,17 +156,19 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
 
   logInfo(s"Creating ResourceBoundedThreadExecutor with resourcePool: ${mgr.toString}, " +
     s"corePoolSize: $corePoolSize, maximumPoolSize: $maximumPoolSize, " +
-    s"waitResourceTimeoutMs: $waitResourceTimeoutMs, retryPriorityAdjustment: $retryPriorityAdjust")
+    s"waitResourceTimeoutMs: $waitResourceTimeoutMs," +
+      s" retryPriorityAdjustment: $retryPriorityAdjust")
 
   override def submit[T](fn: Callable[T]): Future[T] = {
     fn match {
-      case task: AsyncTask[_] =>
+      case task: AsyncRunner[_] =>
         //register the resource release callback
         task.releaseResourceCallback = () => mgr.releaseResource(task)
         super.submit(task)
       case f =>
         throw new IllegalArgumentException(
-          s"ResourceBoundedThreadExecutor only accepts AsyncTask, but got: ${f.getClass.getName}")
+          "ResourceBoundedThreadExecutor only accepts AsyncRunner," +
+              s" but got: ${f.getClass.getName}")
     }
   }
 
@@ -174,20 +177,20 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     r match {
       case futTask: RapidsFutureTask[_] =>
         //register the resource release callback
-        futTask.task.releaseResourceCallback = () => mgr.releaseResource(futTask.task)
+        futTask.runner.releaseResourceCallback = () => mgr.releaseResource(futTask.runner)
         super.submit(futTask, null.asInstanceOf[T])
       case _ =>
-        throw new UnsupportedOperationException("only accepts AsyncTask or RapidsFutureTask")
+        throw new UnsupportedOperationException("only accepts AsyncRunner or RapidsFutureTask")
     }
   }
 
   override def submit(r: Runnable): Future[_] = {
-    throw new UnsupportedOperationException("only accepts AsyncTask or RapidsFutureTask")
+    throw new UnsupportedOperationException("only accepts AsyncRunner or RapidsFutureTask")
   }
 
   override protected def newTaskFor[T](fn: Callable[T]): RunnableFuture[T] = {
     fn match {
-      case task: AsyncTask[_] =>
+      case task: AsyncRunner[_] =>
         new RapidsFutureTask(task)
       case f =>
         throw new RuntimeException(s"Unexpected functor: ${f.getClass.getName}")
@@ -198,7 +201,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     r match {
       case futTask: RapidsFutureTask[_] =>
         futTask.asInstanceOf[RunnableFuture[T]]
-      case task: AsyncTask[_] =>
+      case task: AsyncRunner[_] =>
         new RapidsFutureTask(task).asInstanceOf[RunnableFuture[T]]
       case f =>
         throw new RuntimeException(s"Unexpected runnable: ${f.getClass.getName}")
@@ -208,13 +211,13 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
   override def beforeExecute(t: Thread, r: Runnable): Unit = {
     r match {
       case fut: RapidsFutureTask[_] =>
-        mgr.acquireResource(fut.task, waitResourceTimeoutMs) match {
+        mgr.acquireResource(fut.runner, waitResourceTimeoutMs) match {
           case s: AcquireSuccessful =>
             fut.holdResource(s.elapsedTime)
           case AcquireFailed =>
             // bypass the execution via not holding the resource
           case AcquireExcepted(exception) =>
-            logError(s"Invalid resource request for task ${fut.task}: ${exception.getMessage}")
+            logError(s"Invalid resource request for task ${fut.runner}: ${exception.getMessage}")
             // setException will unblock the corresponding waiting thread by failing it
             fut.setException(exception)
         }
@@ -240,7 +243,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           logWarning(s"Re-add timeout task: scheduleTime(${fut.scheduleTime / 1e9}s), " +
               s"new priority(${fut.priority})")
           require(workQueue.add(fut),
-            s"Failed to re-add task ${fut.task} to the work queue after execution")
+            s"Failed to re-add task ${fut.runner} to the work queue after execution")
         }
       case _ =>
         throw new RuntimeException(s"Unexpected runnable: ${r.getClass.getName}")

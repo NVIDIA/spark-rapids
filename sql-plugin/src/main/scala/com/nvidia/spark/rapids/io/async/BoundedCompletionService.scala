@@ -21,7 +21,7 @@ import java.util.concurrent.{Callable, CompletionService, Future, LinkedBlocking
 /**
  * A CompletionService implementation specialized for ResourceBoundedThreadExecutor that provides
  * resource-aware async task execution and completion handling. This service extends the standard
- * Java CompletionService pattern by accepting only AsyncTask instances, wrapping them in
+ * Java CompletionService pattern by accepting only AsyncRunner instances, wrapping them in
  * RapidsFutureTask for resource tracking, and maintaining completion order through a completion
  * queue for efficient result polling.
  *
@@ -31,7 +31,7 @@ import java.util.concurrent.{Callable, CompletionService, Future, LinkedBlocking
  * batch processing scenarios where work can be parallelized effectively.
  *
  * @param executor the ResourceBoundedThreadExecutor to use for task execution
- * @tparam V the result type of the AsyncTasks
+ * @tparam V the result type of the AsyncRunners
  */
 class BoundedCompletionService[V](
     executor: ResourceBoundedThreadExecutor) extends CompletionService[AsyncResult[V]] {
@@ -39,7 +39,7 @@ class BoundedCompletionService[V](
   private val completionQueue = new LinkedBlockingQueue[Future[AsyncResult[V]]]()
 
   private class CompletionFutureTask(
-      task: AsyncTask[V]) extends RapidsFutureTask[V](task) {
+      task: AsyncRunner[V]) extends RapidsFutureTask[V](task) {
 
     override def done(): Unit = {
       completionQueue.offer(this)
@@ -49,11 +49,11 @@ class BoundedCompletionService[V](
 
   override def submit(task: Callable[AsyncResult[V]]): Future[AsyncResult[V]] = {
     task match {
-      case asyncTask: AsyncTask[V] =>
-        val futureTask = new CompletionFutureTask(asyncTask)
+      case runner: AsyncRunner[V] =>
+        val futureTask = new CompletionFutureTask(runner)
         executor.submit(futureTask, null.asInstanceOf[AsyncResult[V]])
       case _ =>
-        throw new IllegalArgumentException("Task must be an instance of AsyncTask")
+        throw new IllegalArgumentException("Task must be an instance of AsyncRunner")
     }
   }
 

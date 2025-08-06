@@ -461,21 +461,21 @@ abstract class MultiFileCloudPartitionReaderBase(
   require(resourceConf.memoryCapacity > 0,
     "The memory capacity in ResourcePoolConf must be set before use")
 
-  protected type BufferResult = HostMemoryBuffersWithMetaDataBase
-  protected type AsyncTaskResult = AsyncResult[BufferResult]
+  protected type BufferInfo = HostMemoryBuffersWithMetaDataBase
+  protected type RunnerResult = AsyncResult[BufferInfo]
 
   private var filesToRead = 0
-  protected var currentFileHostBuffers: Option[BufferResult] = None
-  protected var combineLeftOverFiles: Option[Array[BufferResult]] = None
+  protected var currentFileHostBuffers: Option[BufferInfo] = None
+  protected var combineLeftOverFiles: Option[Array[BufferInfo]] = None
   private val isInit: AtomicBoolean = new AtomicBoolean(false)
-  private val tasks = new ConcurrentLinkedQueue[Future[AsyncTaskResult]]()
-  private val tasksToRun = new Queue[AsyncTask[BufferResult]]()
+  private val tasks = new ConcurrentLinkedQueue[Future[RunnerResult]]()
+  private val tasksToRun = new Queue[AsyncRunner[BufferInfo]]()
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
     .getOrElse(TrampolineUtil.newInputMetrics())
   // this is used when the read order doesn't matter and in that case, the tasks queue
   // above is used to track any left being processed that need to be cleaned up if we exit early
   // like in the case of a limit call and we don't read all files
-  private var fcs: CompletionService[AsyncTaskResult] = null
+  private var fcs: CompletionService[RunnerResult] = null
 
   // If I/O eager prefetch is enabled, submit async reading tasks eagerly instead of triggering
   // async reading tasks when the first batch is requested.
@@ -511,7 +511,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       logDebug("Keeping reads in same order")
     }
 
-    // An AsyncTask wrapper used to update related metrics
+    // An AsyncRunner wrapper used to update related metrics
     val newTaskRunner = (file: PartitionedFile) => {
       val runner = getBatchRunner(tc, file, conf, filters)
       val metrics = GpuTaskMetrics.get
@@ -597,13 +597,13 @@ abstract class MultiFileCloudPartitionReaderBase(
    * @param file file to be read
    * @param conf the Configuration parameters
    * @param filters push down filters
-   * @return AsyncTask[HostMemoryBuffersWithMetaDataBase]
+   * @return AsyncRunner[HostMemoryBuffersWithMetaDataBase]
    */
   def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
       conf: Configuration,
-      filters: Array[Filter]): AsyncTask[HostMemoryBuffersWithMetaDataBase]
+      filters: Array[Filter]): AsyncRunner[HostMemoryBuffersWithMetaDataBase]
 
   /**
    * Decode HostMemoryBuffers in GPU
@@ -650,8 +650,8 @@ abstract class MultiFileCloudPartitionReaderBase(
       numRows >= maxReadBatchSizeRows
   }
 
-  // Unwrap AsyncTaskResult to facilitate the combination of file buffers.
-  private def convertAsyncResult(taskRet: AsyncTaskResult): BufferResult = {
+  // Unwrap RunnerResult to facilitate the combination of file buffers.
+  private def convertAsyncResult(taskRet: RunnerResult): BufferInfo = {
     if (taskRet == null) {
       return null
     }
@@ -1090,7 +1090,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       batchContext: BatchContext): Long
 
   /**
-   * The sub-class must implement the real file reading logic in an AsyncTask
+   * The sub-class must implement the real file reading logic in an AsyncRunner
    * which will be running in a MemoryBoundedThreadExecutor. Currently, the batch runners
    * are all unbounded, since the memory buffer has already been allocated.
    *
@@ -1101,7 +1101,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param blocks blocks meta info to specify which blocks to be read
    * @param offset used as the offset adjustment
    * @param batchContext the batch building context
-   * @return AsyncTask[(Seq[DataBlockBase], Long)], which will be submitted to a
+   * @return AsyncRunner[(Seq[DataBlockBase], Long)], which will be submitted to a
    *         MemoryBoundedThreadExecutor, and the task will return a tuple result and
    *         result._1 is block meta info with the offset adjusted
    *         result._2 is the bytes read
@@ -1112,7 +1112,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
-      batchContext: BatchContext): AsyncTask[(Seq[DataBlockBase], Long)]
+      batchContext: BatchContext): AsyncRunner[(Seq[DataBlockBase], Long)]
 
   /**
    * File format short name used for logging and other things to uniquely identity

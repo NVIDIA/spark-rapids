@@ -2065,7 +2065,7 @@ class MultiFileCloudOrcPartitionReader(
       taskContext: TaskContext,
       partFile: PartitionedFile,
       conf: Configuration,
-      filters: Array[Filter]) extends UnboundedAsyncTask[HostMemoryBuffersWithMetaDataBase]  {
+      filters: Array[Filter]) extends UnboundedAsyncRunner[HostMemoryBuffersWithMetaDataBase]  {
 
     private var blockChunkIter: BufferedIterator[OrcOutputStripe] = null
 
@@ -2173,7 +2173,7 @@ class MultiFileCloudOrcPartitionReader(
       tc: TaskContext,
       file: PartitionedFile,
       conf: Configuration,
-      filters: Array[Filter]): AsyncTask[HostMemoryBuffersWithMetaDataBase] = {
+      filters: Array[Filter]): AsyncRunner[HostMemoryBuffersWithMetaDataBase] = {
     new ReadBatchRunner(tc, file, conf, filters)
   }
 
@@ -2633,7 +2633,7 @@ class MultiFileOrcPartitionReader(
       outhmb: HostMemoryBuffer,
       stripes: ArrayBuffer[DataBlockBase],
       offset: Long)
-    extends UnboundedAsyncTask[(Seq[DataBlockBase], Long)] {
+    extends UnboundedAsyncRunner[(Seq[DataBlockBase], Long)] {
 
     override def callImpl(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
@@ -2749,7 +2749,7 @@ class MultiFileOrcPartitionReader(
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
-      batchContext: BatchContext): AsyncTask[(Seq[DataBlockBase], Long)] = {
+      batchContext: BatchContext): AsyncRunner[(Seq[DataBlockBase], Long)] = {
     new OrcCopyStripesRunner(tc, file, outhmb, blocks, offset)
   }
 

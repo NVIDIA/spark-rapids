@@ -1223,7 +1223,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter],
-      readDataSchema: StructType) extends UnboundedAsyncTask[Array[BlockMetaWithPartFile]]
+      readDataSchema: StructType) extends UnboundedAsyncRunner[Array[BlockMetaWithPartFile]]
       with Logging {
 
     override def callImpl(): Array[BlockMetaWithPartFile] = {
@@ -2222,7 +2222,7 @@ class MultiFileParquetPartitionReader(
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
       compressCfg: CpuCompressionConfig)
-    extends UnboundedAsyncTask[(Seq[DataBlockBase], Long)] {
+    extends UnboundedAsyncRunner[(Seq[DataBlockBase], Long)] {
 
     override def callImpl(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
@@ -2285,7 +2285,7 @@ class MultiFileParquetPartitionReader(
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
-      batchContext: BatchContext): AsyncTask[(Seq[DataBlockBase], Long)] = {
+      batchContext: BatchContext): AsyncRunner[(Seq[DataBlockBase], Long)] = {
     // Track the actual read buffer size, since some columns or partitions may be pruned
     execMetrics.get("readBufferSize").foreach { metric =>
       blocks.foreach { block =>
@@ -2668,7 +2668,7 @@ class MultiFileCloudParquetPartitionReader(
       file: PartitionedFile,
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
       taskContext: TaskContext)
-      extends GroupedAsyncTask[HostMemoryBuffersWithMetaDataBase] with Logging {
+      extends GroupedAsyncRunner[HostMemoryBuffersWithMetaDataBase] with Logging {
 
     override val resource: TaskResource = {
       TaskResource.newCpuResource(file.length, groupedMemoryOverhead)
@@ -2677,7 +2677,7 @@ class MultiFileCloudParquetPartitionReader(
     override val priority: Double = if (runnerSharedState.isDefined) {
       groupPriority
     } else {
-      AsyncTask.hostMemoryPenalty(memoryBytes = file.length)
+      AsyncRunner.hostMemoryPenalty(memoryBytes = file.length)
     }
 
     override val holdResourceAfterCompletion: Boolean = true
@@ -2801,13 +2801,13 @@ class MultiFileCloudParquetPartitionReader(
    * @param file    file to be read
    * @param conf    configuration
    * @param filters push down filters
-   * @return AsyncTask[HostMemoryBuffersWithMetaDataBase]
+   * @return AsyncRunner[HostMemoryBuffersWithMetaDataBase]
    */
   override def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
       conf: Configuration,
-      filters: Array[Filter]): AsyncTask[HostMemoryBuffersWithMetaDataBase] = {
+      filters: Array[Filter]): AsyncRunner[HostMemoryBuffersWithMetaDataBase] = {
     new ReadBatchRunner(file, filterFunc, tc)
   }
 

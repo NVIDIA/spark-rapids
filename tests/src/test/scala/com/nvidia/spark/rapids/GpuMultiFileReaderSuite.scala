@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.io.async.AsyncTask
+import com.nvidia.spark.rapids.io.async.AsyncRunner
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.funsuite.AnyFunSuite
@@ -65,8 +65,8 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
           tc: TaskContext,
           file: PartitionedFile,
           conf: Configuration,
-          filters: Array[Filter]): AsyncTask[HostMemoryBuffersWithMetaDataBase] = {
-        AsyncTask.newUnboundedTask(() => null)
+          filters: Array[Filter]): AsyncRunner[HostMemoryBuffersWithMetaDataBase] = {
+        AsyncRunner.newUnboundedTask(() => null)
       }
 
       override def readBatches(h: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch] =

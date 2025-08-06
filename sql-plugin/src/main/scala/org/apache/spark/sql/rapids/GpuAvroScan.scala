@@ -30,7 +30,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, SCAN_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
-import com.nvidia.spark.rapids.io.async.{AsyncTask, UnboundedAsyncTask}
+import com.nvidia.spark.rapids.io.async.{AsyncRunner, UnboundedAsyncRunner}
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -720,7 +720,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       tc: TaskContext,
       file: PartitionedFile,
       config: Configuration,
-      filters: Array[Filter]): AsyncTask[HostMemoryBuffersWithMetaDataBase] =
+      filters: Array[Filter]): AsyncRunner[HostMemoryBuffersWithMetaDataBase] =
     new ReadBatchRunner(tc, file, config, filters)
 
   /** Two utils classes */
@@ -733,9 +733,9 @@ class GpuMultiFileCloudAvroPartitionReader(
       taskContext: TaskContext,
       partFile: PartitionedFile,
       config: Configuration,
-      filters: Array[Filter]) extends UnboundedAsyncTask[BufferResult] with Logging {
+      filters: Array[Filter]) extends UnboundedAsyncRunner[BufferInfo] with Logging {
 
-    override def callImpl(): BufferResult = {
+    override def callImpl(): BufferInfo = {
       TrampolineUtil.setTaskContext(taskContext)
       // Mark the async thread as a pool thread within the RetryFramework
       RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
@@ -1004,7 +1004,7 @@ class GpuMultiFileAvroPartitionReader(
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
-      batchContext: BatchContext): AsyncTask[(Seq[DataBlockBase], Long)] =
+      batchContext: BatchContext): AsyncRunner[(Seq[DataBlockBase], Long)] =
     new AvroCopyBlocksRunner(tc, file, outhmb, blocks, offset, batchContext)
 
   // The runner to copy blocks to offset of HostMemoryBuffer
@@ -1014,7 +1014,7 @@ class GpuMultiFileAvroPartitionReader(
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
-      batchContext: BatchContext) extends UnboundedAsyncTask[(Seq[DataBlockBase], Long)] {
+      batchContext: BatchContext) extends UnboundedAsyncRunner[(Seq[DataBlockBase], Long)] {
 
     private val headerSync = Some(batchContext.mergedHeader.sync)
 

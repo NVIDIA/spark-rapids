@@ -60,11 +60,11 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     // Tasks with higher priority should be executed first even if they are submitted later.
     // Execution order: 4, 2, 3, 5, 1
     val executionPriority = Seq(2, 4, 3, 1, 5)
-    executor.submit(AsyncTask.newCpuTask(buildDummyFn(),1 << 20, priority = 1))
+    executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),1 << 20, priority = 1))
     // Guarantee the first task is executed first to avoid uncertain execution order.
     Thread.sleep(1)
     var results = executionPriority.map { p =>
-      p -> executor.submit(AsyncTask.newCpuTask(buildDummyFn(), 1 << 20, priority = p))
+      p -> executor.submit(AsyncRunner.newCpuTask(buildDummyFn(), 1 << 20, priority = p))
     }.sortBy(_._1).map {
       case (_, future) => future.get().data
     }
@@ -76,7 +76,7 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     // Tasks requiring less resource should be executed first even if they are submitted later.
     // Execution order: 1, 2, 3, 4, 5
     results = (1 to 5).map { i =>
-      executor.submit(AsyncTask.newCpuTask(buildDummyFn(), memoryBytes = i << 20))
+      executor.submit(AsyncRunner.newCpuTask(buildDummyFn(), memoryBytes = i << 20))
     }.map {
       future => future.get().data
     }
@@ -84,11 +84,11 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
       require(results(i) < results(i + 1), s"Unexpected order of wallTime: ${results.toList}")
     }
     // Execution order: 1, 5, 4, 3, 2
-    executor.submit(AsyncTask.newCpuTask(buildDummyFn(), memoryBytes = 5 << 20))
+    executor.submit(AsyncRunner.newCpuTask(buildDummyFn(), memoryBytes = 5 << 20))
     // Guarantee the first task is executed first to avoid uncertain execution order.
     Thread.sleep(1)
     results = (4 to 1 by -1).map { i =>
-      executor.submit(AsyncTask.newCpuTask(buildDummyFn(), memoryBytes = i << 20))
+      executor.submit(AsyncRunner.newCpuTask(buildDummyFn(), memoryBytes = i << 20))
     }.map {
       future => future.get().data
     }
@@ -100,23 +100,23 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     // Execution order: 1, 4, 6, 2, 5, 3
     val futures = mutable.ArrayBuffer[JFuture[AsyncResult[Long]]]()
     // priority = 5 - log10(1 << 20) = -1.02
-    futures += executor.submit(AsyncTask.newCpuTask(buildDummyFn(),
+    futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
       memoryBytes = 1 << 20, priority = 5.0f))
     // Guarantee the first task is executed first to avoid uncertain execution order.
     Thread.sleep(1)
     // priority = 3 - log10(1 << 10) = -0.01
-    futures += executor.submit(AsyncTask.newCpuTask(buildDummyFn(),
+    futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
       memoryBytes = 1 << 10, priority = 3.0f))
     // priority = 4 - log10(50 << 10) = -0.71
-    futures += executor.submit(AsyncTask.newCpuTask(buildDummyFn(),
+    futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
       memoryBytes = 50 << 10, priority = 4.0f))
     // Unbounded task with the highest priority
-    futures += executor.submit(AsyncTask.newUnboundedTask(buildDummyFn()))
+    futures += executor.submit(AsyncRunner.newUnboundedTask(buildDummyFn()))
     // priority = 7 - log10(10 << 20) = -0.02
-    futures += executor.submit(AsyncTask.newCpuTask(buildDummyFn(),
+    futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
       memoryBytes = 10 << 20, priority = 7.0f))
     // Unbounded task with the highest priority
-    futures += executor.submit(AsyncTask.newUnboundedTask(buildDummyFn()))
+    futures += executor.submit(AsyncRunner.newUnboundedTask(buildDummyFn()))
     results = Array(1, 4, 6, 2, 5, 3).zip(futures).sortBy(_._1).map {
       case (_, fut) => fut.get().data
     }
@@ -128,15 +128,15 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
   // The test uses a single-threaded executor to capture execution order, submitting grouped tasks
   // with globally generated GroupPriority, then verifying the actual execution sequence
   // matches the expected priority-based task scheduling behavior over grouped tasks.
-  test("GroupedAsyncTask should run in order") {
+  test("GroupedAsyncRunner should run in order") {
     // Create a single-threaded bounded executor to control the execution order of tasks.
     val executor = createSingleThreadedBoundedExecutor(maxThreadNumber = 1)
 
-    class DummyGroupedTask(
+    class DummyGroupedRunner(
         taskIndex: Int,
         groupIndex: Int,
         groupSize: Int,
-        groupPriority: Double) extends GroupedAsyncTask[Long] {
+        groupPriority: Double) extends GroupedAsyncRunner[Long] {
 
       override protected val sharedState: GroupSharedState = {
         GroupTaskHelpers.newSharedState(groupSize)
@@ -152,11 +152,11 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
       override protected def callImpl(): Long = dummyFn()
     }
 
-    val taskQueue = mutable.ArrayBuffer[(Int, DummyGroupedTask)]()
+    val taskQueue = mutable.ArrayBuffer[(Int, DummyGroupedRunner)]()
     (0 until 10).foreach { g =>
       val priority = GroupTaskHelpers.generateGroupPriority
       (0 until 5).foreach { i =>
-        taskQueue += Random.nextInt() -> new DummyGroupedTask(i, g, 5, priority)
+        taskQueue += Random.nextInt() -> new DummyGroupedRunner(i, g, 5, priority)
       }
     }
     val submits = taskQueue.zipWithIndex.sortBy(_._1._1).map { case ((_, task), i) =>
@@ -179,11 +179,11 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
       waitResourceTimeoutMs = 100000L)
 
     val t1 = Seq(
-      0 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 10), // 0 -> 3
-      1 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 20), // 0 -> 5
-      2 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 4), memoryBytes = 40), // 3 -> 7
-      3 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 45), // 5 -> 10
-      4 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 70), // 10 -> 12
+      0 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 10), // 0 -> 3
+      1 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 20), // 0 -> 5
+      2 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 4), memoryBytes = 40), // 3 -> 7
+      3 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 45), // 5 -> 10
+      4 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 70), // 10 -> 12
     )
         .map { case (index, task) => index -> executor.submit(task) }
         .sortBy(_._1)
@@ -193,11 +193,11 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     }
 
     val t2 = Seq(
-      1 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 30), // 0 -> 3
-      4 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 90), // 8 -> 13
-      0 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 40), // 0 -> 2
-      3 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 45), // 2 -> 8
-      2 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 4), memoryBytes = 55), // 3 -> 7
+      1 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 30), // 0 -> 3
+      4 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 90), // 8 -> 13
+      0 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 40), // 0 -> 2
+      3 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 45), // 2 -> 8
+      2 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 4), memoryBytes = 55), // 3 -> 7
     )
         .map { case (index, task) => index -> executor.submit(task) }
         .sortBy(_._1)
@@ -207,11 +207,11 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     }
 
     val t3 = Seq(
-      0 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 60), // 0 -> 6
-      1 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 45), // 6 -> 9
-      3 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 48), // 6 -> 12
-      4 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 100), // 12 -> 14
-      2 -> AsyncTask.newCpuTask(buildDummyFn(sleepMs = 1), memoryBytes = 50), // 9 -> 10
+      0 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 60), // 0 -> 6
+      1 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 45), // 6 -> 9
+      3 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 6), memoryBytes = 48), // 6 -> 12
+      4 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 100), // 12 -> 14
+      2 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 1), memoryBytes = 50), // 9 -> 10
     )
         .map { case (index, task) =>
           val fut = executor.submit(task)
