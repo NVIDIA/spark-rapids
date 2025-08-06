@@ -181,12 +181,10 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
    * This method is protected not private, so it can be called by subclasses to build own result.
    */
   private def callDecayReleaseCallback(): Unit = {
-    require(needDecayRelease, if (!holdResourceAfterCompletion) {
-      "This AsyncRunner does not hold resource after completion"
-    } else {
-      "The resource was somehow released forcefully, caught runtime exception: " +
-          execException.getOrElse("None")
-    })
+    require(holdResourceAfterCompletion,
+      "This AsyncRunner does not hold resource after completion")
+    require(execException.isEmpty, "The resource was somehow released forcefully, " +
+        s"caught runtime exception: ${execException.get}")
     require(releaseResourceCallback != null, "releaseResourceCallback is not registered")
     require(!hasDecayReleased, "callDecayReleaseCallback has been already called for once")
     releaseResourceCallback()
@@ -196,8 +194,6 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   private[async] var releaseResourceCallback: () => Unit = _
 
   private[async] lazy val metricsBuilder = new AsyncMetricsBuilder
-
-  private[async] var needDecayRelease = false
 
   private[async] var execException: Option[Throwable] = None
 

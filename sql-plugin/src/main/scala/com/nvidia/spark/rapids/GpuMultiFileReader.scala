@@ -652,9 +652,6 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   // Unwrap RunnerResult to facilitate the combination of file buffers.
   private def convertAsyncResult(taskRet: RunnerResult): BufferInfo = {
-    if (taskRet == null) {
-      return null
-    }
     taskRet.releaseHook.foreach { callback =>
       taskRet.data match {
         // If the task result is empty, call the release callback ASAP.
@@ -704,14 +701,14 @@ abstract class MultiFileCloudPartitionReaderBase(
               fut.get()
             }
           }
-          val hmbAndMeta = convertAsyncResult(taskResult)
-          if (hmbAndMeta != null) {
+          if (taskResult == null) {
+            // no more ready after waiting
+            takeMore = false
+          } else {
+            val hmbAndMeta = convertAsyncResult(taskResult)
             results.append(hmbAndMeta)
             currSize += hmbAndMeta.memBuffersAndSizes.map(_.bytes).sum
             filesToRead -= 1
-          } else {
-            // no more ready after waiting
-            takeMore = false
           }
         } else {
           // wait time is <= 0

@@ -62,9 +62,6 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncRe
     // Release intermediately if the task supports that, or it has to be (like exception occurred)
     if (force || !runner.holdResourceAfterCompletion) {
       runner.releaseResourceCallback()
-    } else {
-      // Otherwise, we  mark the task for deferred release.
-      runner.needDecayRelease = true
     }
   }
 
