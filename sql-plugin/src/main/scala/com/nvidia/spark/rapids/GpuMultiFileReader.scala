@@ -655,15 +655,15 @@ abstract class MultiFileCloudPartitionReaderBase(
     if (taskRet == null) {
       return null
     }
-    if (taskRet.hasReleaseCallback) {
-        taskRet.data match {
-          // If the task result is empty, call the release callback ASAP.
-          case bufWithMeta if bufWithMeta.bytesRead == 0 =>
-            taskRet.releaseResourceCallback()
-          // inject the release callback for deferred release
-          case bufWithMeta =>
-            bufWithMeta.addReleaseResourceCallback(taskRet.releaseResourceCallback)
-        }
+    taskRet.releaseHook.foreach { callback =>
+      taskRet.data match {
+        // If the task result is empty, call the release callback ASAP.
+        case bufWithMeta if bufWithMeta.bytesRead == 0 =>
+          callback()
+        // inject the release callback for deferred release
+        case bufWithMeta =>
+          bufWithMeta.addReleaseResourceCallback(callback)
+      }
     }
     taskRet.data.setScheduleTime(taskRet.metrics.scheduleTimeMs)
     taskRet.data

@@ -67,22 +67,24 @@ class AsyncMetricsBuilder {
  * resource release callback for deferred resource management.
  */
 trait AsyncResult[T] extends AutoCloseable {
-  def data: T
-
-  def releaseResourceCallback(): Unit = {}
-
-  def hasReleaseCallback: Boolean = false
-
-  def metrics: AsyncMetrics
+  val data: T
 
   /**
-   * Trigger release callback if it exists. Do not try to close the data itself, because
+   * Metrics associated with the task execution, such as scheduling and execution time.
+   */
+  val metrics: AsyncMetrics
+
+  /**
+   * Indicates whether the result holds a release hook to be executed upon closure.
+   */
+  val releaseHook: Option[() => Unit] = None
+
+  /**
+   * Trigger release hook if it exists. Do not try to close the data itself, because
    * the lifecycle of the data is managed by the caller.
    */
   override def close(): Unit = {
-    if (hasReleaseCallback) {
-      releaseResourceCallback()
-    }
+    releaseHook.foreach(callback => callback())
   }
 }
 
@@ -91,11 +93,7 @@ class SimpleAsyncResult[T](override val data: T,
 
 class AsyncResultDecayRelease[T](override val data: T,
     override val metrics: AsyncMetrics,
-    private val releaseCallback: () => Unit) extends AsyncResult[T] {
-  override val hasReleaseCallback: Boolean = true
-
-  override def releaseResourceCallback(): Unit = releaseCallback()
-}
+    override val releaseHook: Option[() => Unit]) extends AsyncResult[T]
 
 /**
  * The AsyncTask interface represents a resource-aware task that can be scheduled by
@@ -131,7 +129,8 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
     if (!holdResourceAfterCompletion) {
       new SimpleAsyncResult(resultData, metrics)
     } else {
-      new AsyncResultDecayRelease(resultData, metrics, releaseResource)
+      new AsyncResultDecayRelease(resultData, metrics,
+        releaseHook = Option(() => this.releaseResource()))
     }
   }
 
