@@ -303,6 +303,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.MapFromArrays"></a>spark.rapids.sql.expression.MapFromArrays|`map_from_arrays`|Creates a new map from two arrays|true|None|
 <a name="sql.expression.MapKeys"></a>spark.rapids.sql.expression.MapKeys|`map_keys`|Returns an unordered array containing the keys of the map|true|None|
 <a name="sql.expression.MapValues"></a>spark.rapids.sql.expression.MapValues|`map_values`|Returns an unordered array containing the values of the map|true|None|
+<a name="sql.expression.MapZipWith"></a>spark.rapids.sql.expression.MapZipWith|`map_zip_with`|Filters entries in a map using the function|true|None|
 <a name="sql.expression.Md5"></a>spark.rapids.sql.expression.Md5|`md5`|MD5 hash operator|true|None|
 <a name="sql.expression.MicrosToTimestamp"></a>spark.rapids.sql.expression.MicrosToTimestamp|`timestamp_micros`|Converts the number of microseconds from unix epoch to a timestamp|true|None|
 <a name="sql.expression.MillisToTimestamp"></a>spark.rapids.sql.expression.MillisToTimestamp|`timestamp_millis`|Converts the number of milliseconds from unix epoch to a timestamp|true|None|
