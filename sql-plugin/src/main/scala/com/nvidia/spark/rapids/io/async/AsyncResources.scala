@@ -130,7 +130,7 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
       new SimpleAsyncResult(resultData, metrics)
     } else {
       new AsyncResultDecayRelease(resultData, metrics,
-        releaseHook = Option(() => this.releaseResource()))
+        releaseHook = Option(() => this.callDecayReleaseCallback()))
     }
   }
 
@@ -180,18 +180,25 @@ trait AsyncTask[T] extends Callable[AsyncResult[T]] {
    * Guarantees the release callback will NOT be called unless the task holds the resource.
    * This method is protected not private, so it can be called by subclasses to build own result.
    */
-  protected def releaseResource(): Unit = {
-    require(decayRelease, "Task does NOT hold resource after completion")
+  private def callDecayReleaseCallback(): Unit = {
+    require(needDecayRelease, if (holdResourceAfterCompletion) {
+      "This AsyncTask does not hold resource after completion"
+    } else {
+      "The resource has somehow been released forcefully, despite it should not"
+    })
     require(releaseResourceCallback != null, "releaseResourceCallback is not registered")
+    require(!hasDecayReleased, "callDecayReleaseCallback has been already called for once")
     releaseResourceCallback()
-    decayRelease = false
+    hasDecayReleased = true
   }
 
   private[async] var releaseResourceCallback: () => Unit = _
 
-  private[async] var decayRelease = false
-
   private[async] lazy val metricsBuilder = new AsyncMetricsBuilder
+
+  private[async] var needDecayRelease = false
+
+  private var hasDecayReleased = false
 }
 
 /**

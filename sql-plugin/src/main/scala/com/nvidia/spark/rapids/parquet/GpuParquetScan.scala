@@ -2856,10 +2856,13 @@ class MultiFileCloudParquetPartitionReader(
       val memBuffersAndSize = buffer.memBuffersAndSizes
       val hmbAndInfo = memBuffersAndSize.head
 
+      // Release the virtual budget of host memory back to the resource pool.
+      // This method can be called multiple times, because the completed callbacks will be
+      // removed from the callback queue after the first call.
       def releaseBudgetHook(): Unit = {
-        // Release the virtual budget of host memory back to the resource pool
+        // If there are more buffers, we will release the resource after reading all batches,
+        // in case of releasing the resource too early.
         if (memBuffersAndSize.length == 1) {
-          // If there are more buffers, we will release the resource after reading all batches
           buffer.releaseResource()
         }
       }

@@ -64,7 +64,7 @@ class RapidsFutureTask[T](val task: AsyncTask[T]) extends FutureTask[AsyncResult
       task.releaseResourceCallback()
     } else {
       // Otherwise, we  mark the task for deferred release.
-      task.decayRelease = true
+      task.needDecayRelease = true
     }
   }
 
