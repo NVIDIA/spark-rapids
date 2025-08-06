@@ -1250,11 +1250,13 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
 
+    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
+
     metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
       metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
         val metaAndFilesArr = if (numFilesFilterParallel > 0) {
           val tc = TaskContext.get()
-          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(resourcePoolConf)
+          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
           files.grouped(numFilesFilterParallel).map { fileGroup =>
             // we need to copy the Hadoop Configuration because filter push down can mutate it,
             // which can affect other threads.
@@ -1290,7 +1292,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         }
       }
     }
-    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
 
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,

@@ -458,6 +458,9 @@ abstract class MultiFileCloudPartitionReaderBase(
     combineConf: CombineConf = CombineConf(-1, -1))
   extends FilePartitionReaderBase(conf, execMetrics) {
 
+  require(resourceConf.memoryCapacity > 0,
+    "The memory capacity in ResourcePoolConf must be set before use")
+
   protected type BufferResult = HostMemoryBuffersWithMetaDataBase
   protected type AsyncTaskResult = AsyncResult[BufferResult]
 
