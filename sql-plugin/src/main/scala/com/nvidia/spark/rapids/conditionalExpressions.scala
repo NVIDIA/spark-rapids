@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -332,8 +332,9 @@ case class GpuCaseWhen(
     branches.map(_._2.dataType) ++ elseValue.map(_.dataType)
   }
 
-  private lazy val branchesWithSideEffects =
-    branches.exists(_._2.asInstanceOf[GpuExpression].hasSideEffects)
+  private lazy val haveSideEffects =
+    branches.exists(_._2.asInstanceOf[GpuExpression].hasSideEffects) ||
+      elseValue.exists(_.asInstanceOf[GpuExpression].hasSideEffects)
 
   override def nullable: Boolean = {
     // Result is nullable if any of the branch is nullable, or if the else value is nullable
@@ -366,7 +367,7 @@ case class GpuCaseWhen(
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    if (branchesWithSideEffects) {
+    if (haveSideEffects) {
       columnarEvalWithSideEffects(batch)
     } else {
       if (useFusion) {

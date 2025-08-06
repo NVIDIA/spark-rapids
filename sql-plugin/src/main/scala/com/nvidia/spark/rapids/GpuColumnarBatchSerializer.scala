@@ -25,6 +25,7 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit, SizeProvider}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -128,7 +129,8 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
  * @note The RAPIDS shuffle does not use this code.
  */
 class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Array[DataType],
-    useKudo: Boolean, kudoMeasureBufferCopy: Boolean)
+                                 kudoMode: ShuffleKudoMode.Value, useKudo: Boolean,
+                                 kudoMeasureBufferCopy: Boolean)
   extends Serializer with Serializable {
 
   private lazy val kudo = {
@@ -141,7 +143,11 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
 
   override def newInstance(): SerializerInstance = {
     if (useKudo) {
-      new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
+      if (kudoMode == ShuffleKudoMode.GPU) {
+        new KudoGpuSerializerInstance(metrics, dataTypes)
+      } else {
+        new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
+      }
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
     }
@@ -491,6 +497,116 @@ private class KudoSerializerInstance(
     throw new UnsupportedOperationException
 }
 
+
+
+
+private class KudoGpuSerializerInstance(
+    val metrics: Map[String, GpuMetric],
+    val dataTypes: Array[DataType],
+) extends SerializerInstance {
+  private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
+  private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
+
+  override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
+
+    override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
+      val batch = value.asInstanceOf[ColumnarBatch]
+      if (batch.numCols() > 0) {
+        val firstCol = batch.column(0)
+        firstCol match {
+          case vector: SlicedSerializedColumnVector =>
+            val data = vector.getWrap
+            var remaining = data.getLength.toInt
+            val temp = new Array[Byte](math.min(8192, remaining))
+            var at = 0
+            while (remaining > 0) {
+              val read = math.min(remaining, temp.length)
+              data.getBytes(temp, 0, at, read)
+              out.write(temp, 0, read)
+              at = at + read
+              remaining = remaining - read
+            }
+            flush()
+          case _ =>
+        }
+      } else {
+        // is this a hack?
+        KudoSerializer.writeRowCountToStream(out, batch.numRows())
+      }
+      this
+    }
+
+    override def writeKey[T: ClassTag](key: T): SerializationStream = {
+      // The key is only needed on the map side when computing partition ids. It does not need to
+      // be shuffled.
+      assert(null == key || key.isInstanceOf[Int])
+      this
+    }
+
+    override def writeAll[T: ClassTag](iter: Iterator[T]): SerializationStream = {
+      // This method is never called by shuffle code.
+      throw new UnsupportedOperationException
+    }
+
+    override def writeObject[T: ClassTag](t: T): SerializationStream = {
+      // This method is never called by shuffle code.
+      throw new UnsupportedOperationException
+    }
+
+    override def flush(): Unit = {
+      out.flush()
+    }
+
+    override def close(): Unit = {
+      out.close()
+    }
+  }
+
+  override def deserializeStream(in: InputStream): DeserializationStream = {
+    new DeserializationStream {
+      private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
+
+      override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
+        new KudoSerializedBatchIterator(dIn, deserTime)
+      }
+
+      override def asIterator: Iterator[Any] = {
+        // This method is never called by shuffle code.
+        throw new UnsupportedOperationException
+      }
+
+      override def readKey[T]()(implicit classType: ClassTag[T]): T = {
+        // We skipped serialization of the key in writeKey(), so just return a dummy value since
+        // this is going to be discarded anyways.
+        null.asInstanceOf[T]
+      }
+
+      override def readValue[T]()(implicit classType: ClassTag[T]): T = {
+        // This method should never be called by shuffle code.
+        throw new UnsupportedOperationException
+      }
+
+      override def readObject[T]()(implicit classType: ClassTag[T]): T = {
+        // This method is never called by shuffle code.
+        throw new UnsupportedOperationException
+      }
+
+      override def close(): Unit = {
+        dIn.close()
+      }
+    }
+  }
+
+  // These methods are never called by shuffle code.
+  override def serialize[T: ClassTag](t: T): ByteBuffer = throw new UnsupportedOperationException
+
+  override def deserialize[T: ClassTag](bytes: ByteBuffer): T =
+    throw new UnsupportedOperationException
+
+  override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
+    throw new UnsupportedOperationException
+}
+
 /**
  * A special `ColumnVector` that describes a serialized table read from shuffle using
  * [[KudoSerializer]].
@@ -572,6 +688,8 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
             nextHeader = header
           } else {
             dIn.close()
+            sharedBuffer.foreach(_.close())
+            sharedBuffer = None
             streamClosed = true
             nextHeader = None
           }
@@ -600,23 +718,24 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
         // The previous batches should be able to be spilled by itself.
         val buffer = {
           if (sharedBuffer.isEmpty) {
-            val allocated = allocateHostWithRetry(header.getTotalDataLen)
+            closeOnExcept(allocateHostWithRetry(header.getTotalDataLen)) { allocated =>
 
-            if (firstTenBatchesSizes.length < 10) {
-              firstTenBatchesSizes += header.getTotalDataLen
-              if (firstTenBatchesSizes.length == 10) {
-                // If we have 10 batches, we can decide if to use a shared buffer or not.
-                val maxSize = firstTenBatchesSizes.max
-                if (maxSize < sharedBufferTriggerSize) {
-                  // If the max size of the first 10 batches is less than the threshold,
-                  // we can use a shared buffer.
-                  sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
-                  sharedBufferCurrentUse = 0
+              if (firstTenBatchesSizes.length < 10) {
+                firstTenBatchesSizes += header.getTotalDataLen
+                if (firstTenBatchesSizes.length == 10) {
+                  // If we have 10 batches, we can decide if to use a shared buffer or not.
+                  val maxSize = firstTenBatchesSizes.max
+                  if (maxSize < sharedBufferTriggerSize) {
+                    // If the max size of the first 10 batches is less than the threshold,
+                    // we can use a shared buffer.
+                    sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
+                    sharedBufferCurrentUse = 0
+                  }
                 }
               }
-            }
 
-            allocated
+              allocated
+            }
           } else {
             if (header.getTotalDataLen > sharedBufferTotalSize / 2) {
               // Too big to use shared buffer, this should rarely happen since
