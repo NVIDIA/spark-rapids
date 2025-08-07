@@ -181,7 +181,7 @@ class StringGen(DataGen):
         else:
             super().__init__(StringType(), nullable=nullable)
             # for Spark versions < 400, do not support collation
-            self._is_error = False if collation is None else True
+            self._is_error = collation is not None
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
         # save pattern and charset for cache repr
         charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
