@@ -344,6 +344,14 @@ final class InsertIntoHadoopFsRelationCommandMeta(
 
   private var fileFormat: Option[ColumnarFileFormat] = None
 
+  override def checkTimeZone(): Boolean =
+    if (GpuOrcFileFormat.isSparkOrcFormat(cmd.fileFormat.getClass)) {
+      // ORC always uses UTC when writing timestamps, it's irrelevant to timezone.
+      false
+    } else {
+      super.checkTimeZone()
+    }
+
   override def tagSelfForGpuInternal(): Unit = {
     if (BucketingUtilsShim.isHiveHashBucketing(cmd.options)) {
       BucketingUtilsShim.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns,
