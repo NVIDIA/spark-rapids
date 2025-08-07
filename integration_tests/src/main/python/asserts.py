@@ -696,6 +696,24 @@ def check_exception(actual_error, error_message):
         assert False, f"expected str or Pattern found {type(error_message)} {error_message}"
 
 
+def make_exception_info(ex):
+    """
+    Simulate the pytest.raises exconly call to get the same string we used to, and allowing
+    us to optionally fail (pytest.raises always calls `fail` failing the test outright).
+
+    We have comparison code in tests that rely on this output to include the classname, so we
+    want to keep the text exactly the same as pytest.raises.
+
+    We will either use the from_exc_info API, which exists since pytest 5.1, or choose
+    the newer from_exception API (pytest 7.4) if it exists.
+    """
+    try:
+        return pytest.ExceptionInfo.from_exception(ex)
+    except AttributeError:
+        exc_info = (type(ex), ex, ex.__traceback__)
+        return pytest.ExceptionInfo.from_exc_info(exc_info)
+
+
 def collect_data_or_exception(func, error_message, expect_exception=None):
     """
     Assert that a specific Java exception is thrown
@@ -718,7 +736,7 @@ def collect_data_or_exception(func, error_message, expect_exception=None):
     try:
         result = func()
     except Exception as ex:
-        thrown_ex = str(ex)
+        thrown_ex = make_exception_info(ex).exconly()
 
     if thrown_ex is not None:
         if expect_exception is not False:

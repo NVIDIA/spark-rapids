@@ -22,6 +22,13 @@ fi
 
 SPARK_VER=${SPARK_VER:-$(< /databricks/spark/VERSION)}
 
+# Print DB runtime version details
+if [[ -f /databricks/BUILDINFO ]]; then
+    echo "DB runtime version details:"
+    cat /databricks/BUILDINFO
+else
+    echo "No /databricks/BUILDINFO file found"
+fi
 
 # Extract Databricks version from deployed configs.
 # spark.databricks.clusterUsageTags.sparkVersion is set automatically on Databricks
