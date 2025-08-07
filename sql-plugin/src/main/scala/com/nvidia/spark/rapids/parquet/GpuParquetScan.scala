@@ -2855,25 +2855,17 @@ class MultiFileCloudParquetPartitionReader(
     case buffer: HostMemoryBuffersWithMetaData =>
       val memBuffersAndSize = buffer.memBuffersAndSizes
       val hmbAndInfo = memBuffersAndSize.head
-
-      // Release the virtual budget of host memory back to the resource pool.
-      // This method can be called multiple times, because the completed callbacks will be
-      // removed from the callback queue after the first call.
-      def releaseBudgetHook(): Unit = {
-        // If there are more buffers, we will release the resource after reading all batches,
-        // in case of releasing the resource too early.
-        if (memBuffersAndSize.length == 1) {
-          buffer.releaseResource()
-        }
-      }
-
       val batchIter = try {
         readBufferToBatches(buffer.dateRebaseMode,
           buffer.timestampRebaseMode, buffer.hasInt96Timestamps, buffer.clippedSchema,
-          buffer.readSchema, buffer.partitionedFile, hmbAndInfo.hmbs, buffer.allPartValues,
-          releaseBudgetHook)
+          buffer.readSchema, buffer.partitionedFile, hmbAndInfo.hmbs, buffer.allPartValues)
       } finally {
-        releaseBudgetHook()
+        // If there are more buffers, we will release the resource after reading all batches,
+        // in case of releasing the resource too early.
+        if (memBuffersAndSize.length == 1) {
+          // Release the virtual budget of host memory back to the resource pool.
+          buffer.releaseResource()
+        }
       }
       if (memBuffersAndSize.length > 1) {
         val updatedBuffers = memBuffersAndSize.drop(1)
@@ -2894,8 +2886,7 @@ class MultiFileCloudParquetPartitionReader(
       readDataSchema: StructType,
       partedFile: PartitionedFile,
       hostBuffers: Array[SpillableHostBuffer],
-      allPartValues: Option[Array[(Long, InternalRow)]],
-      releaseMemoryBudgetHook: () => Unit): Iterator[ColumnarBatch] = {
+      allPartValues: Option[Array[(Long, InternalRow)]]): Iterator[ColumnarBatch] = {
 
     val parseOpts = closeOnExcept(hostBuffers) { _ =>
       getParquetOptions(readDataSchema, clippedSchema, useFieldId)
@@ -2909,8 +2900,6 @@ class MultiFileCloudParquetPartitionReader(
         // Duplicate request is ok, and start to use the GPU just after the host
         // buffer is ready to not block CPU things.
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        // Release the virtual budget of host memory back to the resource pool
-        releaseMemoryBudgetHook()
 
         val tableReader = MakeParquetTableProducer(useChunkedReader,
           maxChunkedReaderMemoryUsageSizeBytes,
