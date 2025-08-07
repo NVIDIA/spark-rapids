@@ -63,22 +63,28 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
     Seq(
       GpuOverrides.runnableCmd[DeleteCommand](
         "Delete rows from a Delta Lake table",
-        (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r)),
+        (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r))
+        .disabledByDefault("Delta Lake delete support is experimental"),
       GpuOverrides.runnableCmd[DeleteCommandEdge](
         "Delete rows from a Delta Lake table",
-        (a, conf, p, r) => new DeleteCommandEdgeMeta(a, conf, p, r)),
+        (a, conf, p, r) => new DeleteCommandEdgeMeta(a, conf, p, r))
+        .disabledByDefault("Delta Lake delete support is experimental"),
       GpuOverrides.runnableCmd[MergeIntoCommand](
         "Merge of a source query/table into a Delta table",
-        (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r)),
+        (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake merge support is experimental"),
       GpuOverrides.runnableCmd[MergeIntoCommandEdge](
         "Merge of a source query/table into a Delta table",
-        (a, conf, p, r) => new MergeIntoCommandEdgeMeta(a, conf, p, r)),
+        (a, conf, p, r) => new MergeIntoCommandEdgeMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake merge support is experimental"),
       GpuOverrides.runnableCmd[UpdateCommand](
         "Update rows in a Delta Lake table",
-        (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r)),
+        (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake update support is experimental"),
       GpuOverrides.runnableCmd[UpdateCommandEdge](
         "Update rows in a Delta Lake table",
         (a, conf, p, r) => new UpdateCommandEdgeMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake update support is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
