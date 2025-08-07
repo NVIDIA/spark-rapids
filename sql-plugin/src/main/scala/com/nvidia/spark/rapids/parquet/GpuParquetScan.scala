@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.fileio.{RapidsFileIO, SeekableInputStream => RapidsSeekableInputStream}
+import com.nvidia.spark.rapids.fileio.{RapidsFileIO, RapidsInputFile, SeekableInputStream => RapidsSeekableInputStream}
 import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
@@ -36,9 +36,11 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.charset.StandardCharsets
+
 import java.util
 import java.util.{Collections, Locale}
 import java.util.concurrent._
+
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -63,6 +65,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
 
 import org.apache.spark.TaskContext
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -291,6 +294,13 @@ object GpuParquetScan {
     } else {
       table
     }
+  }
+
+  // With com.nvidia.spark.rapids.fileio.RapidsInputFile.readTail, we could apply optimize to
+  // all underlying storages simileer to what we did in `PerfIO`
+  def readFooter(inputFile: RapidsInputFile): HostMemoryBuffer = {
+    throw new UnsupportedOperationException(
+      "GpuParquetScan.readFooter is not implemented. Use GpuParquetPartitionReaderFactory instead.")
   }
 
   private def checkTypeRecursively(input: ColumnView, f: DType => Boolean): Boolean = {
@@ -1880,6 +1890,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 
     val coalescedRanges = coalesceReads(remoteCopies)
 
+    // We could use com.nvidia.spark.rapids.fileio.RapidsInputFile.readVectored to replace this
+    // part.
     val totalBytesCopied = if (fileIO.isInstanceOf[HadoopFileIO]) {
       // TODO: Put `PerfIO` under `RapidsFileIO` absraction
       PerfIO.readToHostMemory(
