@@ -57,7 +57,7 @@ public class HadoopInputFile implements RapidsInputFile {
         return new HadoopInputStream(fs.open(filePath));
     }
 
-    private synchronized void ensureFileStatus() throws IOException {
+    private void ensureFileStatus() throws IOException {
         if (fileStatus == null) {
             synchronized (this) {
                 if (fileStatus == null) {
