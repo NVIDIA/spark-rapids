@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>25.06.0</version>
+    <version>25.08.0</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -668,14 +668,14 @@
                 <spark.version>${spark353.version}</spark.version>
                 <spark.test.version>${spark353.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-33x</module>
                 <module>iceberg</module>
             </modules>
         </profile>
@@ -692,14 +692,14 @@
                 <spark.version>${spark354.version}</spark.version>
                 <spark.test.version>${spark354.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-33x</module>
                 <module>iceberg</module>
             </modules>
         </profile>
@@ -716,14 +716,14 @@
                 <spark.version>${spark355.version}</spark.version>
                 <spark.test.version>${spark355.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-33x</module>
                 <module>iceberg</module>
             </modules>
         </profile>
@@ -885,11 +885,11 @@
         <spark.test.version>${spark.version}</spark.test.version>
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
-        <cuda.version>cuda11</cuda.version>
+        <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>25.06.0</spark-rapids-jni.version>
-        <spark-rapids-private.version>25.06.1</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>25.06.0</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>25.08.0</spark-rapids-jni.version>
+        <spark-rapids-private.version>25.08.0</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>25.08.0</spark-rapids-hybrid.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
@@ -964,7 +964,7 @@
         <spark354.version>3.5.4</spark354.version>
         <spark355.version>3.5.5</spark355.version>
         <spark356.version>3.5.6</spark356.version>
-        <spark400.version>4.0.1-SNAPSHOT</spark400.version>
+        <spark400.version>4.0.0</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
         <scala.plugin.version>4.9.2</scala.plugin.version>
@@ -1019,14 +1019,13 @@
             330
         </premergeUT1.buildvers>
         <premergeUT2.buildvers>
-            340
+            356
         </premergeUT2.buildvers>
         <premergeUTF8.buildvers>
             320
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
-            333,
-            340
+            330
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             321,
@@ -1985,7 +1984,7 @@ This will force full Scala code rebuild in downstream modules.
     <repositories>
         <repository>
             <id>snapshots-repo</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
             <releases>
                 <enabled>false</enabled>
             </releases>

@@ -35,8 +35,20 @@ class GpuWriteTaskStatsTracker(
     taskMetrics(GpuWriteJobStatsTracker.GPU_TIME_KEY) += nanos
   }
 
+  def sortTime: GpuMetric = taskMetrics(GpuWriteJobStatsTracker.SORT_TIME_KEY)
+
+  def sortOpTime: GpuMetric = taskMetrics(GpuWriteJobStatsTracker.SORT_OP_TIME_KEY)
+
+  def setSortTime(nanos: Long): Unit = sortTime.set(nanos)
+
+  def setSortOpTime(nanos: Long): Unit = sortOpTime.set(nanos)
+
   def addWriteTime(nanos: Long): Unit = {
     taskMetrics(GpuWriteJobStatsTracker.WRITE_TIME_KEY) += nanos
+  }
+
+  def addWriteIOTime(nanos: Long): Unit = {
+    taskMetrics(GpuWriteJobStatsTracker.WRITE_IO_TIME_KEY) += nanos
   }
 
   def setAsyncWriteThrottleTimes(numTasks: Int, accumulatedThrottleTimeNs: Long, minNs: Long,
@@ -73,6 +85,9 @@ class GpuWriteJobStatsTracker(
 object GpuWriteJobStatsTracker {
   val GPU_TIME_KEY = "gpuTime"
   val WRITE_TIME_KEY = "writeTime"
+  val SORT_TIME_KEY = "writeSortTime"
+  val SORT_OP_TIME_KEY = "writeSortOpTime"
+  val WRITE_IO_TIME_KEY = "writeIOTime"
   val ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY = "asyncWriteTotalThrottleTime"
   val ASYNC_WRITE_AVG_THROTTLE_TIME_KEY = "asyncWriteAvgThrottleTime"
   val ASYNC_WRITE_MIN_THROTTLE_TIME_KEY = "asyncWriteMinThrottleTime"
@@ -86,9 +101,16 @@ object GpuWriteJobStatsTracker {
       RapidsConf.METRICS_LEVEL.defaultValue))
     val metricFactory = new GpuMetricFactory(metricsConf, sparkContext)
     Map(
-      GPU_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL, "GPU time"),
+      GPU_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL,
+        "GPU encode and buffer time"),
       WRITE_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL,
         "write time"),
+      SORT_OP_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.MODERATE_LEVEL,
+        "GPU sort op time"),
+      SORT_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.DEBUG_LEVEL,
+        "GPU sort time"),
+      WRITE_IO_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.DEBUG_LEVEL,
+        "write I/O time"),
       TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME),
       ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "total throttle time"),

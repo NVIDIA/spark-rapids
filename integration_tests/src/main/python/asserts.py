@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import types as pytypes
 import data_gen
 import difflib
 import sys
+import re
 
 def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
@@ -296,6 +297,43 @@ def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_pat
     so any amount of data can work, just be careful about how long it might take.
     """
     _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'ITERATOR', conf=conf)
+
+def assert_gpu_and_cpu_save_as_table_are_equal_collect(table_name_factory, write_func, conf={}):
+    """
+    Assert when running write_func on both the CPU and the GPU and reading
+    on the CPU that the results are equal.
+    In this case the data is collected back to the driver and compared here, so be
+    careful about the amount of data returned.
+    """
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    cpu_table = table_name_factory.get() + '_cpu'
+    with_cpu_session(lambda spark : write_func(spark, cpu_table), conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    gpu_table = table_name_factory.get() + '_gpu'
+    with_gpu_session(lambda spark : write_func(spark, gpu_table), conf=conf)
+    gpu_end = time.time()
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+        gpu_end - gpu_start, cpu_end - cpu_start))
+
+    mode = "COLLECT"
+    (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
+        lambda spark: spark.sql("SELECT * FROM {}".format(cpu_table)), mode)
+    (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
+        lambda spark: spark.sql("SELECT * FROM {}".format(gpu_table)), mode)
+
+    from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
+    from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
+    if should_sort_locally():
+        _sort_locally(from_cpu, from_gpu)
+
+    assert_equal(from_cpu, from_gpu)
+
+    return (cpu_table, gpu_table)
 
 def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sql_func, conf={}):
     """
@@ -640,29 +678,109 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
             return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
 
-def assert_spark_exception(func, error_message):
+
+def check_exception(actual_error, error_message):
+    """
+    Assert that a specific Java exception is thrown
+    :param actual_error: the error that was caught when executing the query
+    :param error_message: a string such as the one produce by java.lang.Exception.toString
+    Assertion failure if:
+        - no exception matching error_message has occurred
+        - the error isn't a string or a regex
+    """
+    if isinstance(error_message, re.Pattern):
+        assert error_message.search(actual_error), f"Expected error '{error_message}' to match '{actual_error}'"
+    elif isinstance(error_message, str):
+        assert error_message in actual_error, f"Expected error '{error_message}' did not appear in '{actual_error}'"
+    else:
+        assert False, f"expected str or Pattern found {type(error_message)} {error_message}"
+
+
+def make_exception_info(ex):
+    """
+    Simulate the pytest.raises exconly call to get the same string we used to, and allowing
+    us to optionally fail (pytest.raises always calls `fail` failing the test outright).
+
+    We have comparison code in tests that rely on this output to include the classname, so we
+    want to keep the text exactly the same as pytest.raises.
+
+    We will either use the from_exc_info API, which exists since pytest 5.1, or choose
+    the newer from_exception API (pytest 7.4) if it exists.
+    """
+    try:
+        return pytest.ExceptionInfo.from_exception(ex)
+    except AttributeError:
+        exc_info = (type(ex), ex, ex.__traceback__)
+        return pytest.ExceptionInfo.from_exc_info(exc_info)
+
+
+def collect_data_or_exception(func, error_message, expect_exception=None):
     """
     Assert that a specific Java exception is thrown
     :param func: a function to be verified
     :param error_message: a string such as the one produce by java.lang.Exception.toString
-    :return: Assertion failure if no exception matching error_message has occurred.
-    """
-    with pytest.raises(Exception) as excinfo:
-        func()
-    actual_error = excinfo.exconly()
-    assert error_message in actual_error, f"Expected error '{error_message}' did not appear in '{actual_error}'"
+    :param expect_exception:
+            - if none, we check the error if and only if it was raised
+            - if true, we will assert False if func() doesn't raise an exception,
+            - if false, we fail if we did not raise an exception
 
-def assert_gpu_and_cpu_error(df_fun, conf, error_message):
+    :return: (true, None) if the code failed with an exception and the text matches `error_message`.
+             (false, result) if `expect_exception` is false and the function doesn't throw
+             Assertion failure if:
+             - no exception matching error_message has occurred, or
+             - the code is expected to throw and doesn't, or
+             - the code throws and is not expected to throw.
     """
-    Assert that GPU and CPU execution results in a specific Java exception thrown
+    thrown_ex = None
+    result = None
+    try:
+        result = func()
+    except Exception as ex:
+        thrown_ex = make_exception_info(ex).exconly()
+
+    if thrown_ex is not None:
+        if expect_exception is not False:
+            check_exception(thrown_ex, error_message)
+            return (True, None)
+        else:
+            assert False, f"no exception was expected, but the test failed with {thrown_ex}"
+
+    elif expect_exception:
+        # we expected an exception, but func() didn't throw
+        assert False, f"expected exception with error message {error_message}, but the test did not throw."
+    return (False, result)
+
+def assert_spark_exception(df_fun, error_message):
+    collect_data_or_exception(df_fun, error_message, expect_exception=True)
+
+def assert_consistent_gpu_cpu_behavior(df_fun, conf, error_message, only_if_cpu_fails=False):
+    """
+    Assert that GPU and CPU execution behave consistently - either both fail with the same error
+    or both succeed with identical results.
+    
     :param df_fun: a function to be verified
     :param conf: Spark config
     :param error_message: a string such as the one produce by java.lang.Exception.toString
-    :return: Assertion failure if either GPU or CPU versions has not generated error messages
-             expected
+    :param only_if_cpu_fails: if true, we only expect the GPU job to fail if the CPU job fails,
+           otherwise we expect both CPU and GPU to fail when error_message is provided.
+    :return: Assertion failure if GPU and CPU behaviors are inconsistent (different errors or 
+             different results when both succeed)
     """
-    assert_spark_exception(lambda: with_cpu_session(df_fun, conf), error_message)
-    assert_spark_exception(lambda: with_gpu_session(df_fun, conf), error_message)
+    (cpu_failed, from_cpu) = collect_data_or_exception(
+        lambda: with_cpu_session(df_fun, conf), error_message)
+    (gpu_failed, from_gpu) = collect_data_or_exception(
+        lambda: with_gpu_session(df_fun, conf), error_message, 
+        expect_exception=cpu_failed or not only_if_cpu_fails)
+
+    if cpu_failed is False and gpu_failed is False:
+        assert_equal(from_cpu, from_gpu)
+
+# Backward compatibility alias - use assert_consistent_gpu_cpu_behavior instead
+def assert_gpu_and_cpu_error(df_fun, conf, error_message): 
+    assert_consistent_gpu_cpu_behavior(df_fun, conf, error_message, only_if_cpu_fails=False)
+
+def assert_gpu_and_cpu_same_data_or_error(df_fun, conf, error_message): 
+    assert_consistent_gpu_cpu_behavior(df_fun, conf, error_message, only_if_cpu_fails=True)
 
 def with_cpu_sql(df_fun, table_name, sql, conf=None, debug=False):
     if conf is None:

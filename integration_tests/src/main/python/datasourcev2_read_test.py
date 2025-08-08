@@ -45,8 +45,6 @@ def test_read_all_types():
 
 
 @allow_non_gpu('BatchScanExec')
-@disable_ansi_mode  # Cannot run in ANSI mode until COUNT aggregation is supported.
-                    # See https://github.com/NVIDIA/spark-rapids/issues/5114
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
 def test_read_all_types_count():
     assert_gpu_and_cpu_row_counts_equal(

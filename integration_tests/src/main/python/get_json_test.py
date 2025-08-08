@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -122,8 +122,6 @@ def test_get_json_object_normalize_non_string_output():
             f.col('jsonStr'),
             f.get_json_object('jsonStr', '$')))
 
-@pytest.mark.skipif(condition=not is_before_spark_400(),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11130")
 def test_get_json_object_quoted_question():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'{"?":"QUESTION"}']]
@@ -346,7 +344,6 @@ def test_unsupported_fallback_get_json_object(json_str_pattern):
                                       StringGen(r'''-?[1-9]\d{0,5}E-?\d{1,20}''', nullable=False),
                                       StringGen(r'''-?[1-9]\d{0,20}E-?\d{1,5}''', nullable=False)], ids=idfn)
 def test_get_json_object_floating_normalization(data_gen):
-    schema = StructType([StructField("jsonStr", StringType())])
     normalization = lambda spark: unary_op_df(spark, data_gen).selectExpr(
                         'a',
                         'get_json_object(a,"$")'
@@ -364,3 +361,32 @@ def test_get_json_object_floating_normalization(data_gen):
     for i in range(len(gpu_res)):
         # verify relatively diff < 1e-9 (default value for is_close)
         assert math.isclose(json_string_to_float(gpu_res[i][0]), json_string_to_float(cpu_res[i][0]))
+
+
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_get_json_object_basic(ansi):
+    data_gen = StringGen(r'''\{"num_a":[1-9]\d{0,5},"num_b":[1-9]\d{0,5}\}''')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('jsonStr', data_gen)]).selectExpr(
+                'CAST(get_json_object(jsonStr, "$.num_a") AS INTEGER) / CAST(get_json_object(jsonStr, "$.num_b") AS INTEGER) as result'),
+            conf = conf)
+
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_get_json_object_conditional(ansi):
+    """
+    The point of this test is that case/when statements behave differently when an operation under
+    them can have side effects. When this happens the combining code does not combine expressions
+    that might not execute, because there could be exceptions thrown there too. So this purposely
+    causes a case when some can be combined, but others cannot.
+    """
+    data_gen = StringGen(r'''\{"num_a":[1-9]\d{0,5},"num_b":[1-9]\d{0,5},"num_c":[1-9]\d{0,5}\}''')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('jsonStr', data_gen)]).selectExpr(
+                '''CASE
+                    WHEN CAST(get_json_object(jsonStr, "$.num_a") AS INTEGER) / CAST(get_json_object(jsonStr, "$.num_b") AS INTEGER) > 0.5 THEN 1
+                    WHEN CAST(get_json_object(jsonStr, "$.num_c") AS INTEGER) / CAST(get_json_object(jsonStr, "$.num_b") AS INTEGER) > 0.5 THEN 2
+                    ELSE 3
+                END as result'''),
+            conf = conf)

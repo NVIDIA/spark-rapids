@@ -15,8 +15,19 @@
 import sys
 import xml.etree.ElementTree as ET
 
+# This method is used by shimplify.py and various build scripts. The build scripts use the 
+# default values for the `logger` and `ignore_excluded_shims`
+def _get_buildvers(buildvers, pom_file, logger=None, ignore_excluded_shims=False):
+    """Returns the spark versions supported for the specified arguments
 
-def _get_buildvers(buildvers, pom_file, logger=None):
+    Positional Arguments:
+    buildvers -- no_snap_with_databricks, snap_and_no_snap_with_databricks, no_snapshots, snap_and_no_snap, databricks
+    pom_file -- The POM file to use to get the release profiles
+
+    Keyword arguments:
+    logger -- logger to use for logging
+    ignore_excluded_shims -- Whether to honor the dyn.shim.excluded.releases defined in the pom
+    """
     pom = ET.parse(pom_file)
     ns = {"pom": "http://maven.apache.org/POM/4.0.0"}
     releases = []
@@ -33,17 +44,18 @@ def _get_buildvers(buildvers, pom_file, logger=None):
             snapshots.append(release)
         else:
             no_snapshots.append(release)
-    excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns)
-    if excluded_shims is not None and excluded_shims.text:
-        for removed_shim in [x.strip() for x in excluded_shims.text.split(",")]:
-            if removed_shim in snapshots:
-                snapshots.remove(removed_shim)
-            elif removed_shim in no_snapshots:
-                no_snapshots.remove(removed_shim)
-            else:
-                raise Exception(
-                    "Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(
-                        removed_shim))
+    if (not ignore_excluded_shims):
+        excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns)
+        if excluded_shims is not None and excluded_shims.text:
+            for removed_shim in [x.strip() for x in excluded_shims.text.split(",")]:
+                if removed_shim in snapshots:
+                    snapshots.remove(removed_shim)
+                elif removed_shim in no_snapshots:
+                    no_snapshots.remove(removed_shim)
+                else:
+                    raise Exception(
+                        "Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(
+                            removed_shim))
 
     if "scala2.13" in pom_file:
         no_snapshots = list(filter(lambda x: not x.endswith("cdh"), no_snapshots))
@@ -67,7 +79,7 @@ def _get_buildvers(buildvers, pom_file, logger=None):
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("usage: get_buildvers.py <pom_file> <buildvers>")
+        print("usage: get_buildvers.py <buildvers> <pom_file>")
         print("  supported buildvers: databricks, no_snapshots, ...")
     else:
         print(_get_buildvers(sys.argv[1], sys.argv[2]))

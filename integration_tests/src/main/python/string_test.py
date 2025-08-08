@@ -24,7 +24,7 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later, is_before_spark_340
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_before_spark_330, is_spark_400_or_later, is_before_spark_340
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -913,7 +913,7 @@ def test_format_number_float_value():
                          [
                              pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
                              pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16'),
-                             pytest.param(36, r'-?[0-9a-zA-Z]{1,15}', id='from_36')
+                             pytest.param(36, r'-?[0-9a-zA-Z]{1,11}', id='from_36')
                          ])
 @pytest.mark.parametrize('to_base', [2, 10, 16, 21, 36, -2, -10, -16, -29, -33], ids=idfn)
 def test_conv_with_more_valid_values(from_base, to_base, pattern):
@@ -931,6 +931,7 @@ def test_conv_with_more_valid_values(from_base, to_base, pattern):
 
 # valid base range is [2, 36], to_base can be negative, out of range results nulls
 # When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
+@disable_ansi_mode
 def test_conv_with_more_invalid_values():
     gen = [
         ("str_col", mk_str_gen(r'-?[0-9a-zA-Z]{1,15}')),
@@ -1053,3 +1054,34 @@ def test_conv_with_str_cv_all_nulls():
         lambda spark: _gen_all_null_string(spark),
         "tab",
         f"select conv(str_cv, 3, 5) from tab")
+
+@pytest.mark.skipif(is_before_spark_330(), reason='contains is not exposed until 3.3.0')
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_contains_basic(ansi):
+    data_gen = StringGen(r'\d{0,10}')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('a', data_gen)]).selectExpr(
+                'or(contains(a, "100"), contains(a, "200")) as result'),
+            conf = conf)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='contains is not exposed until 3.3.0')
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_contains_conditional(ansi):
+    """
+    The point of this test is that case/when statements behave differently when an operation under
+    them can have side effects. When this happens the combining code does not combine expressions
+    that might not execute, becuase there could be exceptions thrown there too. So this purposely
+    causes a case when some can be combined, but others cannot.
+    """
+    data_gen = StringGen(r'\d{0,10}')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('a', data_gen)]).selectExpr(
+                '''CASE
+                    WHEN or(contains(a, "100"), contains(a, "101")) THEN 1
+                    WHEN contains(a, "200") THEN 2
+                    WHEN contains(a, "300") THEN 3
+                    ELSE CAST(a AS LONG)
+                END as result'''),
+            conf = conf)

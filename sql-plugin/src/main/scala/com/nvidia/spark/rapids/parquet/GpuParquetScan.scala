@@ -56,7 +56,8 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.ParquetFileWriter.MAGIC
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.io.{InputFile, SeekableInputStream}
-import org.apache.parquet.schema.{DecimalMetadata, GroupType, MessageType, OriginalType, PrimitiveType, Type}
+import org.apache.parquet.schema.{DecimalMetadata, GroupType, LogicalTypeAnnotation, MessageType, PrimitiveType, Type}
+import org.apache.parquet.schema.LogicalTypeAnnotation.{DateLogicalTypeAnnotation, IntLogicalTypeAnnotation, TimestampLogicalTypeAnnotation}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.xerial.snappy.Snappy
 
@@ -74,6 +75,7 @@ import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.isTimestampNTZ
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -330,7 +332,12 @@ case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[B
     hasInt96Timestamps: Boolean,
     // Row number of the first row in each block considering all rows in blocks.
     // If non-empty, its size should be the same as blocks.size
-    blocksFirstRowIndices: Seq[Long] = Seq.empty)
+    blocksFirstRowIndices: Seq[Long] = Seq.empty) {
+  if (blocksFirstRowIndices.nonEmpty) {
+    require(blocks.length == blocksFirstRowIndices.length, s"Blocks length ${blocks.length} not " +
+      s"matching first row length ${blocksFirstRowIndices.length}")
+  }
+}
 
 private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
 
@@ -818,7 +825,7 @@ private case class GpuParquetFileFilterHandler(
         val fieldIdToFieldMap = ParquetSchemaClipShims.fieldIdToFieldMap(useFieldId, fileType)
 
         def getParquetType(f: StructField): Option[Type] = {
-          if(useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
+          if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
             // use field ID and Spark schema specified field ID
             fieldIdToFieldMap.get(ParquetSchemaClipShims.getFieldId(f))
           } else {
@@ -941,6 +948,23 @@ private case class GpuParquetFileFilterHandler(
     }
   }
 
+  def isUnsignedIntTypeMatched(lt: LogicalTypeAnnotation,
+                               bitWidth: Int): Boolean = lt match {
+    case it: IntLogicalTypeAnnotation
+      if !it.isSigned && it.getBitWidth == bitWidth => true
+    case _ => false
+  }
+
+  def isTimestampTypeMatched(lt: LogicalTypeAnnotation,
+                             tu: LogicalTypeAnnotation.TimeUnit): Boolean = lt match {
+    case tt: TimestampLogicalTypeAnnotation
+      if tt.getUnit == tu => true
+    case _ => false
+  }
+
+  def isDateTypeMatched(lt: LogicalTypeAnnotation): Boolean =
+    lt.isInstanceOf[DateLogicalTypeAnnotation]
+
   /**
    * Check the compatibility over primitive types. This function refers to the `getUpdater` method
    * of org.apache.spark.sql.execution.datasources.parquet.ParquetVectorUpdaterFactory.
@@ -954,56 +978,63 @@ private case class GpuParquetFileFilterHandler(
   private def checkPrimitiveCompat(pt: PrimitiveType,
                                    dt: DataType,
                                    errorCallback: () => Unit): Unit = {
+    // Note that a lot of this code is based off of what is in the java class
+    // org.apache.spark.sql.execution.datasources.parquet.ParquetVectorUpdaterFactory
+    // It also needs to be kept in sync with ParquetSchemaUtils.evolveSchemaCasts
     pt.getPrimitiveTypeName match {
       case PrimitiveTypeName.BOOLEAN if dt == DataTypes.BooleanType =>
         return
 
-      case PrimitiveTypeName.INT32 =>
-        if (dt == DataTypes.IntegerType || GpuTypeShims.isSupportedYearMonthType(dt)
-          || canReadAsDecimal(pt, dt)) {
-          // Year-month interval type is stored as int32 in parquet
-          return
-        }
-        // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
-        if (dt == DataTypes.LongType && pt.getOriginalType == OriginalType.UINT_32) {
-          return
-        }
-         if (dt == DataTypes.ByteType || dt == DataTypes.ShortType || dt == DataTypes.DateType) {
-           return
-         }
-
-      case PrimitiveTypeName.INT64 =>
-        if (dt == DataTypes.LongType || GpuTypeShims.isSupportedDayTimeType(dt) ||
-            // Day-time interval type is stored as int64 in parquet
+      case PrimitiveTypeName.INT32 => {
+        val lt = pt.getLogicalTypeAnnotation
+        if (dt == DataTypes.ByteType ||
+          dt == DataTypes.ShortType ||
+          dt == DataTypes.IntegerType ||
+          dt == DataTypes.LongType ||
+          dt == DataTypes.DoubleType ||
+          dt == DataTypes.DateType ||
+          (isTimestampNTZ(dt) && isDateTypeMatched(lt)) ||
+          GpuTypeShims.isSupportedYearMonthType(dt) ||
           canReadAsDecimal(pt, dt)) {
           return
         }
-        // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
-        if (isLongDecimal(dt) && pt.getOriginalType == OriginalType.UINT_64) {
-          return
-        }
-        if (pt.getOriginalType == OriginalType.TIMESTAMP_MICROS ||
-          pt.getOriginalType == OriginalType.TIMESTAMP_MILLIS) {
+      }
+      case PrimitiveTypeName.INT64 =>
+        val lt = pt.getLogicalTypeAnnotation
+        // In the code a TimeType is also supported
+        if (dt == DataTypes.LongType ||
+          // Day-time interval type is stored as int64 in parquet
+          GpuTypeShims.isSupportedDayTimeType(dt) ||
+          canReadAsDecimal(pt, dt) ||
+          (isLongDecimal(dt) && isUnsignedIntTypeMatched(lt, 64)) ||
+          ((dt == DataTypes.TimestampType || isTimestampNTZ(dt)) &&
+            (isTimestampTypeMatched(lt, LogicalTypeAnnotation.TimeUnit.MICROS) ||
+              isTimestampTypeMatched(lt, LogicalTypeAnnotation.TimeUnit.MILLIS)))) {
           return
         }
 
-      case PrimitiveTypeName.FLOAT if dt == DataTypes.FloatType =>
+      case PrimitiveTypeName.FLOAT if dt == DataTypes.FloatType || dt == DataTypes.DoubleType =>
         return
 
       case PrimitiveTypeName.DOUBLE if dt == DataTypes.DoubleType =>
         return
 
-      case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType =>
+      case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType ||
+        isTimestampNTZ(dt) =>
         return
 
-      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType =>
-        // PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY for StringType is not supported by parquet
-        return
+      case PrimitiveTypeName.BINARY =>
+        if (dt == DataTypes.StringType ||
+          dt == DataTypes.BinaryType ||
+          canReadAsDecimal(pt, dt)) {
+          return
+        }
 
-      case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
-        if dt == DataTypes.BinaryType || canReadAsDecimal(pt, dt) =>
-        return
-
+      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY =>
+        if (canReadAsDecimal(pt, dt) ||
+          dt == DataTypes.BinaryType) {
+          return
+        }
       case _ =>
     }
 
@@ -1129,13 +1160,19 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
+    val reader = new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
       metrics, partitionSchema, numThreads, maxNumFileProcessed, ignoreMissingFiles,
       ignoreCorruptFiles, readUseFieldId, queryUsesInputFile, keepReadsInOrderFromConf,
       combineConf)
+    // NOTE: Initialize must happen after the initialization of the reader, to ensure everything
+    // inside the reader being fully initialized.
+    if (conf.getBoolean("rapids.sql.scan.prefetch", false)) {
+      reader.eagerPrefetchInit()
+    }
+    reader
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1907,6 +1944,15 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       clippedSchema: MessageType,
       filePath: Path): (SpillableHostBuffer, Seq[BlockMetaData]) = {
     withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
+      // Track the actual read buffer size, since some columns or partitions may be pruned
+      execMetrics.get("readBufferSize").foreach { metric =>
+        blocks.foreach { block =>
+          block.getColumns.asScala.foreach { column =>
+            metric += column.getTotalSize
+          }
+        }
+      }
+
       val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema)
       val outHostBuf = withRetryNoSplit[HostMemoryBuffer] {
         HostMemoryBuffer.allocate(estTotalSize)
@@ -2224,6 +2270,15 @@ class MultiFileParquetPartitionReader(
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long,
       batchContext: BatchContext): Callable[(Seq[DataBlockBase], Long)] = {
+    // Track the actual read buffer size, since some columns or partitions may be pruned
+    execMetrics.get("readBufferSize").foreach { metric =>
+      blocks.foreach { block =>
+        block.getColumns.asScala.foreach { column =>
+          metric += column.getTotalSize
+        }
+      }
+    }
+
     new ParquetCopyBlocksRunner(taskContext, file, outhmb, blocks, offset, compressCfg)
   }
 

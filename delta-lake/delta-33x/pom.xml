@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
-        <version>25.06.0</version>
+        <version>25.08.0</version>
         <relativePath>../../jdk-profiles/pom.xml</relativePath>
     </parent>
 
     <artifactId>rapids-4-spark-delta-33x_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Delta Lake 3.3.x Support</name>
-    <version>25.06.0</version>
+    <version>25.08.0</version>
 
     <properties>
         <rapids.module>../delta-lake/delta-33x</rapids.module>

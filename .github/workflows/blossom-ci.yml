@@ -75,8 +75,7 @@ jobs:
         github.actor == 'pxLi'  ||
         github.actor == 'SurajAralihalli' ||
         github.actor == 'jihoonson' ||
-        github.actor == 'knoguchi22' ||
-        github.actor == 'warrickhe'
+        github.actor == 'knoguchi22'
       )
     steps:
       - name: Check if comment is issued by authorized person

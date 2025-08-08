@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ object GpuJsonToStructsShim {
     // dateFormat is ignored in from_json in Spark 3.2.x and 3.3.x
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>
-        GpuCast.castStringToDate(trimmed)
+        GpuCast.castStringToDate(trimmed, ansiMode = false)
       }
     }
   }
@@ -63,7 +63,7 @@ object GpuJsonToStructsShim {
       case None =>
         // legacy behavior
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode =
+          GpuCast.castStringToDate(trimmed, ansiMode =
             GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case Some(fmt) =>
