@@ -117,7 +117,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   protected val conf: Configuration = context.getConfiguration
 
-  private val trafficController: TrafficController = TrafficController.getInstance
+  private val trafficController: TrafficController = TrafficController.getWriteInstance
 
   private def openOutputStream(): OutputStream = {
     val hadoopPath = new Path(path)

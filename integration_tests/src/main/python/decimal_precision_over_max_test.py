@@ -16,20 +16,24 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from spark_session import is_before_spark_400
+from spark_session import is_spark_400_or_later, is_databricks143_or_later
+
+# The following tests are designed to verify the Spark change at
+# [SPARK-45905](https://github.com/apache/spark/commit/7120e6b88f2)
 
 
-# The following tests are designed to verify the Spark change
-# at [SPARK-45905](https://github.com/apache/spark/commit/7120e6b88f2)
-
-
-@pytest.mark.skipif(is_before_spark_400(), reason="https://issues.apache.org/jira/browse/SPARK-45905")
 def test_decimal_precision_over_max():
-    # According to the decimal type computation in Spark (by widerDecimalType), the result
-    # decimal type will be: DecimalType(38, 6) = widerDecimalType(38, 8, 38, 6), not (38, 8)
-    # anymore.
-    # And the temp. precision passed into "boundedPreferIntegralDigits" is "40"(= 32 + 8),
-    # which is larger than MAX_PRECISION (=38). This is just the case we want to test.
+    dec_gen = DecimalGen(38, 8, full_precision=True)
+    dec2_gen = DecimalGen(38, 6, full_precision=True)
+    # Given two operands with decimal types DecimalType(38, 6) and DecimalType(38, 8)
+    # respectively, in Spark before 400, the result type of one binary operation is
+    # DecimalType(38, 8), while it becomes DecimalType(38, 6) from Spark 400 (with the
+    # change SPARK-45905) to keep the integral part as much as possible. See the
+    # "boundedPreferIntegralDigits()" function as below.
+    #
+    # The "overflow" here means the intermediate precision returned from ""widerDecimalType"
+    # is "40"(=32+8), which is larger than MAX_PRECISION (=38). So this is just the case
+    # we want to test.
     #
     #   def widerDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     #     val scale = max(s1, s2)
@@ -45,9 +49,8 @@ def test_decimal_precision_over_max():
     #       DecimalType(MAX_PRECISION, math.max(0, scale - diff))
     #     }
     #   }
-    dec_gen = DecimalGen(38, 8, full_precision=True)
-    dec2_gen = DecimalGen(38, 6, full_precision=True)
-    expected_dec_type = DecimalType(38, 6)
+    result_scale = 6 if is_spark_400_or_later() or is_databricks143_or_later() else 8
+    expected_dec_type = DecimalType(38, result_scale)
 
     def test_fn(spark):
         # We can not cover all the operators, but some mentioned in that Spark PR comments.

@@ -75,7 +75,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
           }
         },
         trafficController,
-        Seq.empty)
+        _ => ())
       new AsyncOutputStream(() => {
         new BufferedOutputStream(new FileOutputStream(file))
       }, executor)

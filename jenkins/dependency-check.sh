@@ -43,7 +43,7 @@ if [ "$SERVER_ID" == "snapshots" ]; then
     oss_snapshot_url="https://central.sonatype.com/repository/maven-snapshots/"
     remote_maven_repo="$remote_maven_repo,$SERVER_ID::default::$oss_snapshot_url"
 fi
-while read line; do
+while read -r line; do
     artifact=$line # artifact=groupId:artifactId:version:[[packaging]:classifier]
     # Clean up $M2_CACHE to avoid side-effect of previous dependency:get
     rm -rf $M2_CACHE/com/nvida
