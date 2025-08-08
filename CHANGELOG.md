@@ -1,13 +1,13 @@
 # Change log
-Generated on 2025-08-05
+Generated on 2025-08-08
 
 ## Release 25.08
 
 ### Features
 |||
 |:---|:---|
+|[#12720](https://github.com/NVIDIA/spark-rapids/issues/12720)|[FEA] Enable qa iceberg daily tests.|
 |[#13054](https://github.com/NVIDIA/spark-rapids/issues/13054)|[FEA] Support GpuMultiply with ANSI mode|
-|[#11100](https://github.com/NVIDIA/spark-rapids/issues/11100)|[AUDIT] [SPARK-48466][SQL] Create dedicated node for EmptyRelation in AQE|
 |[#11101](https://github.com/NVIDIA/spark-rapids/issues/11101)|[audit] [SPARK-48649][SQL] Add "ignoreInvalidPartitionPaths" and "spark.sql.files.ignoreInvalidPartitionPaths|
 |[#5114](https://github.com/NVIDIA/spark-rapids/issues/5114)|[FEA] Support aggregates when ANSI mode is enabled|
 |[#12574](https://github.com/NVIDIA/spark-rapids/issues/12574)|[FEA] Add delta-33x module with base implementation|
@@ -37,6 +37,8 @@ Generated on 2025-08-05
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#13265](https://github.com/NVIDIA/spark-rapids/issues/13265)|[BUG] test failed Expected error IllegalArgumentException/ArrayIndexOutOfBoundsException|
+|[#13254](https://github.com/NVIDIA/spark-rapids/issues/13254)|[BUG] delta_lake_time_travel_test.py::test_time_travel_on_non_existing_table failed Expected error 'AnalysisException' did not appear|
 |[#13049](https://github.com/NVIDIA/spark-rapids/issues/13049)|[BUG] hash_aggregate_test tests FAILED on [DATABRICKS]|
 |[#13164](https://github.com/NVIDIA/spark-rapids/issues/13164)|[BUG][DATAGEN_SEED=1753338612] test_array_slice_with_negative_length failed in scala 2.13 integration|
 |[#13204](https://github.com/NVIDIA/spark-rapids/issues/13204)|[BUG] multi-* expressions does not handle partial replacement within a single expression tree|
@@ -126,6 +128,13 @@ Generated on 2025-08-05
 ### PRs
 |||
 |:---|:---|
+|[#13257](https://github.com/NVIDIA/spark-rapids/pull/13257)|Update dependency version JNI, private, hybrid to 25.08.0|
+|[#13123](https://github.com/NVIDIA/spark-rapids/pull/13123)|Enable MERGE, UPDATE, DELETE by default for Delta 3.3.0|
+|[#13267](https://github.com/NVIDIA/spark-rapids/pull/13267)|Use pytest.ExceptionInfo to create the same exception text as pytest raises|
+|[#13244](https://github.com/NVIDIA/spark-rapids/pull/13244)|[DOC] update the download doc for 2508 release [skip ci]|
+|[#13261](https://github.com/NVIDIA/spark-rapids/pull/13261)|Print DB runtime version details for debugging purpose [skip ci]|
+|[#13253](https://github.com/NVIDIA/spark-rapids/pull/13253)|Add override tag to the 'ensReqDPMetricTag' and change it to a 'val'|
+|[#13248](https://github.com/NVIDIA/spark-rapids/pull/13248)|Close shared buffers at batch read completion in kudo deser stream iter|
 |[#13243](https://github.com/NVIDIA/spark-rapids/pull/13243)|Define the DB required method named 'ensReqDPMetricTag' in GpuShuffleExechangeExec.|
 |[#13236](https://github.com/NVIDIA/spark-rapids/pull/13236)|Fix case where null start index or length would throw invalid parameter, instead of returning null rows|
 |[#13211](https://github.com/NVIDIA/spark-rapids/pull/13211)|Improve the pull request template [skip ci]|
