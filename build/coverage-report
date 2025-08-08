@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,13 +46,13 @@ if [ ! -f "$JDEST" ]; then
 fi
 
 if [ "$#" != "0" ]; then
-  ARGS=$@
+  ARGS=("$@")
 else
-  ARGS=$(find . -name "jacoco.exec" -printf "%p ")
+  IFS=" " read -ra ARGS <<< "$(find . -name "jacoco.exec" -printf "%p ")"
 fi
 
 mkdir -p $XML_LOC
 # run the report
-java -jar "$JDEST" report --classfiles "$TMP_CLASS" --html "$HTML_LOC" --xml "$XML_LOC/jacoco.xml" $SOURCE_WITH_ARGS $ARGS
+java -jar "$JDEST" report --classfiles "$TMP_CLASS" --html "$HTML_LOC" --xml "$XML_LOC/jacoco.xml" $SOURCE_WITH_ARGS "${ARGS[@]}"
 
 echo "The report is at file://"$(readlink -f "$HTML_LOC"/index.html)
