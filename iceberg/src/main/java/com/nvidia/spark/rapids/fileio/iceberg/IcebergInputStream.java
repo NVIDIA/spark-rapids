@@ -54,7 +54,7 @@ public class IcebergInputStream extends SeekableInputStream {
   @Override
   public void close() throws IOException {
     if (!closed) {
-      super.close();
+      delegate.close();
       this.closed = true;
     }
   }

@@ -56,8 +56,8 @@ public class HadoopInputStream extends SeekableInputStream {
     @Override
     public void close() throws IOException {
         if (!closed) {
-            super.close();
-            this.closed = true;
+          in.close();
+          this.closed = true;
         }
     }
 }
