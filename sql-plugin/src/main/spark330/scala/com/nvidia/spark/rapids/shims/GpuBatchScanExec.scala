@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ case class GpuBatchScanExec(
               s"through HasPartitionKey remain the same but do not exactly match")
           }
 
-          groupPartitions(newPartitions).get.map(_._2)
+          groupPartitions(newPartitions).map(_._2).getOrElse(Seq.empty)
 
         case _ =>
           // no validation is needed as the data source did not report any specific partitioning
