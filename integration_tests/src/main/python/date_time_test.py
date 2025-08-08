@@ -20,7 +20,7 @@ from datetime import date, datetime, timezone
 from dateutil import tz
 from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
+from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350, is_databricks143_or_later
 import pyspark.sql.functions as f
 from timezones import all_timezones, fixed_offset_timezones, fixed_offset_timezones_iana, variable_offset_timezones, variable_offset_timezones_iana
 
@@ -69,10 +69,11 @@ def test_timeadd_daytime_column():
 
 @pytest.mark.skipif(is_before_spark_350(), reason='DayTimeInterval overflow check for seconds is not supported before Spark 3.5.0')
 def test_interval_seconds_overflow_exception():
+    err_message = 'outside range' if is_databricks143_or_later() else 'IllegalArgumentException'
     assert_gpu_and_cpu_error(
         lambda spark : spark.sql(""" select cast("interval '10 01:02:69' day to second" as interval day to second) """).collect(),
         conf={},
-        error_message="IllegalArgumentException")
+        error_message=err_message)
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
