@@ -79,7 +79,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       val canUseMultiThread = canUseParquetMultiThread
       val canUseCoalescing = canUseParquetCoalescing && hasNoDeletes
 
-      val files = scans.map(_.file.path.toString).toArray
+      val files = scans.map(_.file.location()).toArray
 
       val useMultiThread = MultiFileReaderUtils.useMultiThreadReader(canUseCoalescing,
         canUseMultiThread, files, allCloudSchemes)
