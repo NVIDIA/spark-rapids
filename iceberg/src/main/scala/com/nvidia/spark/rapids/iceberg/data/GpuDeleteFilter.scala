@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, LazySpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME}
+import com.nvidia.spark.rapids.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter2.{filterAndDrop, mergeColumn, DELETE_EXTRA_METADATA_COLUMN_IDS, DELETE_EXTRA_METADATA_COLUMNS, POS_DELETE_SCHEMA}
 import com.nvidia.spark.rapids.iceberg.fieldIndex
 import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetReaderConf
@@ -39,6 +40,7 @@ import org.apache.spark.sql.types.{BooleanType, DataType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuDeleteFilter(
+    private val rapidsFileIO: RapidsFileIO,
     private val tableSchema: Schema,
     val inputFiles: Map[String, InputFile],
     val parquetConf: GpuIcebergParquetReaderConf,
@@ -47,7 +49,7 @@ class GpuDeleteFilter(
   private lazy val readSchema = parquetConf.expectedSchema
 
   private lazy val deleteLoader = deleteLoaderProvider.getOrElse(
-    new DefaultDeleteLoader(inputFiles, parquetConf))
+    new DefaultDeleteLoader(rapidsFileIO, inputFiles, parquetConf))
 
   private lazy val (eqDeleteFiles, posDeleteFiles) = {
     deletes.find(d => d.content() != FileContent.EQUALITY_DELETES &&
