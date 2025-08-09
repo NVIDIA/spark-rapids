@@ -306,7 +306,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           }
         }).disabledByDefault("it only supports row based frame for now")
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-    maps ++ ScanExecShims.execs
+    maps ++ ScanExecShims.execs ++ NoopWriteSupport.getNonV1WriteExecRules
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
