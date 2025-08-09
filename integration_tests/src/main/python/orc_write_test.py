@@ -321,7 +321,7 @@ def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec', *non_utc_allow)
-@pytest.mark.parametrize('codec', ['zlib', 'lzo'])
+@pytest.mark.parametrize('codec', ['lzo'])
 def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/ORC_DATA'
@@ -332,6 +332,17 @@ def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_f
             data_path,
             'DataWritingCommandExec',
             conf=all_confs)
+
+@pytest.mark.parametrize('codec', ['zlib'])
+def test_orc_write_compression_zlib(spark_tmp_path, codec, spark_tmp_table_factory):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs={'spark.sql.orc.compression.codec': codec, 'spark.rapids.sql.format.orc.write.enabled': True}
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("orc").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf=all_confs)
 
 @ignore_order(local=True)
 def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
