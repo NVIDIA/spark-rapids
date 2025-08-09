@@ -19,13 +19,16 @@ package com.nvidia.spark.rapids.iceberg.parquet
 import java.util.{Map => JMap}
 
 import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, GpuColumnVector, SingleDataBlockInfo}
+import com.nvidia.spark.rapids.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, MultiFileParquetPartitionReader, ParquetDataBlock, ParquetExtraInfo, ParquetSchemaWrapper, ParquetSingleDataBlockMeta}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
+class GpuCoalescingIcebergParquetReader(
+    val rapidsFileIO: RapidsFileIO,
+    val files: Seq[IcebergPartitionedFile],
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
     override val conf: GpuIcebergParquetReaderConf) extends GpuIcebergParquetReader {
 
@@ -75,6 +78,7 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
     inited = true
 
     new MultiFileParquetPartitionReader(
+      rapidsFileIO,
       conf.conf,
       files.map(_.sparkPartitionedFile).toArray,
       clippedBlocks,
