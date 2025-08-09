@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric, MetricsOverrideGpuExec}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
@@ -30,23 +30,21 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * A wrapper of shuffle query stage, which follows the given partition arrangement.
  *
+ * NOTE: We intentionally extends MetricsOverrideGpuExec since common metrics like NUM_OUTPUT_ROWS
+ * and NUM_OUTPUT_BATCHES are unnecessary, and we would like align with vanilla Spark which does
+ * not output any metrics.
+ *
  * @param child           It is usually `ShuffleQueryStageExec`, but can be the shuffle exchange
  *                        node during canonicalization.
  * @param partitionSpecs  The partition specs that defines the arrangement.
  */
 case class GpuCustomShuffleReaderExec(
     child: SparkPlan,
-    partitionSpecs: Seq[ShufflePartitionSpec]) extends ShimUnaryExecNode with GpuExec  {
+    partitionSpecs: Seq[ShufflePartitionSpec]) extends ShimUnaryExecNode
+  with MetricsOverrideGpuExec {
   import GpuMetric._
 
-  /**
-   * We intentionally override metrics in this case rather than overriding additionalMetrics so
-   * that NUM_OUTPUT_ROWS and NUM_OUTPUT_BATCHES are removed, since this operator does not
-   * report any data for those metrics.
-   *
-   * The Spark version of this operator does not output any metrics.
-   */
-  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     PARTITION_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS)
   )

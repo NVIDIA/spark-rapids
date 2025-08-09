@@ -311,8 +311,6 @@ object AggregateUtils extends Logging {
 
 /** Utility class to hold all of the metrics related to hash aggregation */
 case class GpuHashAggregateMetrics(
-    numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric,
     numTasksRepartitioned: GpuMetric,
     numTasksSkippedAgg: GpuMetric,
     opTime: GpuMetric,
@@ -820,16 +818,11 @@ object GpuAggFinalPassIterator {
   }
 
   private[this] def reorderFinalBatch(finalBatch: SpillableColumnarBatch,
-      boundExpressions: BoundExpressionsModeAggregates,
-      metrics: GpuHashAggregateMetrics): ColumnarBatch = {
+      boundExpressions: BoundExpressionsModeAggregates): ColumnarBatch = {
     // Perform the last project to get the correct shape that Spark expects. Note this may
     // add things like literals that were not part of the aggregate into the batch.
-    closeOnExcept(GpuProjectExec.projectAndCloseWithRetrySingleBatch(finalBatch,
-      boundExpressions.boundResultReferences)) { ret =>
-      metrics.numOutputRows += ret.numRows()
-      metrics.numOutputBatches += 1
-      ret
-    }
+    GpuProjectExec.projectAndCloseWithRetrySingleBatch(finalBatch,
+      boundExpressions.boundResultReferences)
   }
 
   def makeIter(cbIter: Iterator[ColumnarBatch],
@@ -846,7 +839,7 @@ object GpuAggFinalPassIterator {
         }.getOrElse(batch)
         val finalSCB =
           SpillableColumnarBatch(finalBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-        reorderFinalBatch(finalSCB, boundExpressions, metrics)
+        reorderFinalBatch(finalSCB, boundExpressions)
       }
     }
   }
@@ -864,7 +857,7 @@ object GpuAggFinalPassIterator {
             GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs),
             SpillPriorities.ACTIVE_BATCHING_PRIORITY)
         }.getOrElse(sb)
-        reorderFinalBatch(finalBatch, boundExpressions, metrics)
+        reorderFinalBatch(finalBatch, boundExpressions)
       }
     }
   }
@@ -1879,7 +1872,7 @@ case class GpuHashAggregateExec(
 
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     NUM_TASKS_REPARTITIONED -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_REPARTITIONED),
     NUM_TASKS_SKIPPED_AGG -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_SKIPPED_AGG),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
@@ -1911,8 +1904,6 @@ case class GpuHashAggregateExec(
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val aggMetrics = GpuHashAggregateMetrics(
-      numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS),
-      numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES),
       numTasksRepartitioned = gpuLongMetric(NUM_TASKS_REPARTITIONED),
       numTasksSkippedAgg = gpuLongMetric(NUM_TASKS_SKIPPED_AGG),
       opTime = gpuLongMetric(OP_TIME),

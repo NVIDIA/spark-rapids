@@ -225,7 +225,7 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
 
   def projectList: Seq[Expression]
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
@@ -673,13 +673,11 @@ case class GpuProjectExec(
     super.outputBatching
   }
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     KEY_NUM_PRE_SPLIT -> createMetric(DEBUG_LEVEL, "num pre-splits"),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
   override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
@@ -694,16 +692,13 @@ case class GpuProjectExec(
         iter
       }
       maybeSplitIter.map { split =>
-        val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
+        withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
           val sb = SpillableColumnarBatch(split, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           // Note if this ever changes to include splitting the output we need to
           // have an option to not do this for window to work properly.
           // [Update 2024/12/24: "localEnablePreSplit" is introduced for this goal]
           boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
         }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
       }
     }
   }
@@ -733,8 +728,6 @@ case class GpuProjectAstExec(
 
   def buildRetryableAstIterator(
       input: Iterator[ColumnarBatch]): GpuColumnarBatchIterator = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val outputTypes = output.map(_.dataType).toArray
@@ -780,10 +773,7 @@ case class GpuProjectAstExec(
           }
         }
 
-        val ret = maybeSplittedItr.next()
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
+        maybeSplittedItr.next()
       }
 
       override def doClose(): Unit = {
@@ -1130,7 +1120,7 @@ case class GpuFilterExec(
   override def otherCopyArgs: Seq[AnyRef] =
     Seq[AnyRef](coalesceAfter.asInstanceOf[java.lang.Boolean])
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
   // Split out all the IsNotNulls from condition.
@@ -1163,15 +1153,12 @@ case class GpuFilterExec(
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
       conf)
     rdd.flatMap { batch =>
-      GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
-        numOutputBatches, opTime)
+      GpuFilter.filterAndClose(batch, boundCondition, NoopMetric, NoopMetric, opTime)
     }
   }
 }
@@ -1203,7 +1190,7 @@ case class GpuSampleExec(
     withReplacement: Boolean,
     seed: Long, child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
   override def output: Seq[Attribute] = {
@@ -1225,8 +1212,6 @@ case class GpuSampleExec(
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
 
     val rdd = child.executeColumnar()
@@ -1235,7 +1220,7 @@ case class GpuSampleExec(
       new GpuPartitionwiseSampledRDD(
         rdd,
         new GpuPoissonSampler(upperBound - lowerBound, useGapSamplingIfPossible = false,
-          numOutputRows, numOutputBatches, opTime),
+          NoopMetric, NoopMetric, opTime),
         preservesPartitioning = true,
         seed)
     } else {
@@ -1258,8 +1243,6 @@ case class GpuSampleExec(
                   }
                   rowIndex += 1
                 }
-                numOutputBatches += 1
-                numOutputRows += sampledRows.length
                 // gather by row indexes
                 GatherUtils.gather(cb, sampledRows)
               }
@@ -1279,7 +1262,7 @@ case class GpuFastSampleExec(
     seed: Long,
     child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
   override def output: Seq[Attribute] = {
@@ -1302,8 +1285,6 @@ case class GpuFastSampleExec(
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val rdd = child.executeColumnar()
 
@@ -1313,7 +1294,6 @@ case class GpuFastSampleExec(
         iterator.map[ColumnarBatch] { columnarBatch =>
           withResource(new NvtxWithMetrics("Fast Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
             withResource(columnarBatch) { cb =>
-              numOutputBatches += 1
               val numSampleRows = (cb.numRows() * (upperBound - lowerBound)).toLong
 
               val colTypes = GpuColumnVector.extractTypes(cb)
@@ -1328,10 +1308,7 @@ case class GpuFastSampleExec(
                 withResource(GpuColumnVector.from(cb)) { table =>
                   // GPU sample
                   withResource(table.sample(numSampleRows, withReplacement, seed + index)) {
-                    sampled =>
-                      val cb = GpuColumnVector.from(sampled, colTypes)
-                      numOutputRows += cb.numRows()
-                      cb
+                    GpuColumnVector.from(_, colTypes)
                   }
                 }
               }
@@ -1477,7 +1454,7 @@ case class GpuRangeExec(
   override protected val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
   )
 
@@ -1505,8 +1482,6 @@ case class GpuRangeExec(
   override def outputBatching: CoalesceGoal = TargetSize(targetSizeBytes)
 
   protected override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val maxRowCountPerBatch = Math.min(targetSizeBytes/8, Int.MaxValue)
 
@@ -1524,9 +1499,7 @@ case class GpuRangeExec(
 
           val rangeIter = new GpuRangeIterator(partitionStart, partitionEnd, step,
               maxRowCountPerBatch, taskContext, opTime).map { batch =>
-            numOutputRows += batch.numRows()
             TrampolineUtil.incInputRecordsRows(inputMetrics, batch.numRows())
-            numOutputBatches += 1
             batch
           }
           new InterruptibleIterator(taskContext, rangeIter)
@@ -1568,14 +1541,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-
-    sparkContext.union(children.map(_.executeColumnar())).map { batch =>
-      numOutputBatches += 1
-      numOutputRows += batch.numRows
-      batch
-    }
+    sparkContext.union(children.map(_.executeColumnar()))
   }
 }
 
@@ -1583,7 +1549,9 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     extends ShimUnaryExecNode with GpuExec {
 
   // This operator does not record any metrics
-  override lazy val allMetrics: Map[String, GpuMetric] = Map.empty
+  override protected val outputRowsLevel: MetricsLevel = GpuMetric.DISABLE_LEVEL
+  override protected val outputBatchesLevel: MetricsLevel = GpuMetric.DISABLE_LEVEL
+  override protected val outputDataSizeLevel: MetricsLevel = GpuMetric.DISABLE_LEVEL
 
   override def output: Seq[Attribute] = child.output
 

@@ -143,7 +143,7 @@ case class GpuBroadcastNestedLoopJoinExec(
     ) {
   import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
@@ -204,7 +204,7 @@ case class GpuBroadcastNestedLoopJoinExec(
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): ColumnarBatch = {
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-    val metricsMap = allMetrics
+    val metricsMap = opMetrics
     withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
       val builtBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(rdd, getBroadcastPlan
         (buildPlan).schema, getBroadcastPlan(buildPlan).output, metricsMap, targetSize)

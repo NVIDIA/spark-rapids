@@ -105,7 +105,7 @@ abstract class GpuBroadcastHashJoinExecBase(
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
@@ -134,8 +134,6 @@ abstract class GpuBroadcastHashJoinExecBase(
       "GpuBroadcastHashJoin does not support row-based processing")
 
   protected def doColumnarBroadcastJoin(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
@@ -153,7 +151,7 @@ abstract class GpuBroadcastHashJoinExecBase(
           buildSchema,
           new CollectTimeIterator("broadcast join stream", it, streamTime))
       // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+      doJoin(builtBatch, streamIter, targetSize, NoopMetric, NoopMetric, opTime, joinTime)
     }
   }
 
