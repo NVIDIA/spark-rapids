@@ -21,4 +21,5 @@ variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "Am
 
 # Dynamically get supported timezones from JVM.
 # Different JVMs can have different timezones, should not use a constant list here.
-all_timezones = spark_jvm().java.time.ZoneId.getAvailableZoneIds()
+# Note: excludes `America/Coyhaique`, refer to bug: https://github.com/NVIDIA/spark-rapids/issues/13285
+all_timezones = [tz for tz in spark_jvm().java.time.ZoneId.getAvailableZoneIds() if tz != 'America/Coyhaique']
