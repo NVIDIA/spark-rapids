@@ -98,7 +98,7 @@ if [ "$SIGN_FILE" == true ]; then
         *)
             echo "Error unsupported sign type : $SIGN_TYPE !"
             echo "Please set variable SIGN_TOOL 'nvsec'or 'gpg'"
-            exit 254
+            exit -1
             ;;
     esac
 else
@@ -125,7 +125,7 @@ $DEPLOY_CMD -DpomFile=$POM_FILE \
 
 echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar" >> $ARTIFACT_FILE
 CLASSLIST="$CLASSIFIERS,sources,javadoc"
-CLASSLIST=("${CLASSLIST//','/' '}")
-for class in "${CLASSLIST[@]}"; do
+CLASSLIST=(${CLASSLIST//','/' '})
+for class in ${CLASSLIST[@]}; do
     echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar:$class" >> $ARTIFACT_FILE
 done

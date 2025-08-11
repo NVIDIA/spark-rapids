@@ -53,7 +53,7 @@ fi
 TO_VERSION=$1
 
 check_scala_version() {
-  for i in "${VALID_VERSIONS[@]}"; do [ $i = "$1" ] && return 0; done
+  for i in ${VALID_VERSIONS[*]}; do [ $i = "$1" ] && return 0; done
   echo "Invalid Scala version: $1. Valid versions: ${VALID_VERSIONS[*]}" 1>&2
   exit 1
 }

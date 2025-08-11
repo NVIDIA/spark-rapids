@@ -173,7 +173,7 @@ if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_PHASES="clean install"
     for jdk_ver in 17 11 8; do
       if [[ $jdk_ver == 8 ]]; then
-        echo "WARNING: could not find an 11+ JDK. Bloop Project might not be fully functional" >&2
+        echo >2 "WARNING: could not find an 11+ JDK. Bloop Project might not be fully functional"
         exit 1
       fi
 

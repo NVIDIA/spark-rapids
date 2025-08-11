@@ -65,7 +65,7 @@ cd "$SCRIPTPATH"
 # https://github.com/NVIDIA/spark-rapids/issues/12043
 export CI=${CI:-true}
 
-if [[ $( echo ${SKIP_TESTS} | tr '[:upper:]' '[:lower:]' ) == "true" ]];
+if [[ $( echo ${SKIP_TESTS} | tr [:upper:] [:lower:] ) == "true" ]];
 then
     echo "PYTHON INTEGRATION TESTS SKIPPED..."
 elif [[ -z "$SPARK_HOME" ]];
@@ -91,7 +91,7 @@ else
 
     INTEGRATION_TEST_VERSION=$SPARK_SHIM_VER
 
-    if [[ -n $INTEGRATION_TEST_VERSION_OVERRIDE ]]; then
+    if [[ ! -z $INTEGRATION_TEST_VERSION_OVERRIDE ]]; then
         # Override auto detected shim version in case of non-standard version string, e.g. `spark3113172702000-53`
         INTEGRATION_TEST_VERSION=$INTEGRATION_TEST_VERSION_OVERRIDE
     fi
@@ -133,7 +133,7 @@ else
     #
     # `INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh` runs all the tests, including the tests
     #                                                           in 'avro_test.py'.
-    if [[ $( echo ${INCLUDE_SPARK_AVRO_JAR} | tr '[:upper:]' '[:lower:]' ) == "true" ]];
+    if [[ $( echo ${INCLUDE_SPARK_AVRO_JAR} | tr [:upper:] [:lower:] ) == "true" ]];
     then
         export INCLUDE_SPARK_AVRO_JAR=true
     else
@@ -177,20 +177,20 @@ else
         # below where the processes are launched.
         GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
         CPU_CORES=`nproc`
-        HOST_MEM_PARALLEL=$(awk '/MemAvailable/ {print int($2 / (8 * 1024 * 1024))}' /proc/meminfo)
-        TMP_PARALLEL=$(( GPU_MEM_PARALLEL > CPU_CORES ? CPU_CORES : GPU_MEM_PARALLEL ))
-        TMP_PARALLEL=$(( TMP_PARALLEL > HOST_MEM_PARALLEL ? HOST_MEM_PARALLEL : TMP_PARALLEL ))
+        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (8 * 1024 * 1024))}'`
+        TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
+        TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
 
         # Account for intra-Spark parallelism
         numGpuJVM=1
         if [[ "$NUM_LOCAL_EXECS" != "" ]]; then
             numGpuJVM=$NUM_LOCAL_EXECS
         elif [[ "$PYSP_TEST_spark_cores_max" != "" && "$PYSP_TEST_spark_executor_cores" != "" ]]; then
-            numGpuJVM=$(( PYSP_TEST_spark_cores_max / PYSP_TEST_spark_executor_cores ))
+            numGpuJVM=$(( $PYSP_TEST_spark_cores_max /  $PYSP_TEST_spark_executor_cores ))
         fi
-        TMP_PARALLEL=$(( TMP_PARALLEL / numGpuJVM ))
+        TMP_PARALLEL=$(( $TMP_PARALLEL / $numGpuJVM ))
 
-        if  (( TMP_PARALLEL <= 1 )); then
+        if  (( $TMP_PARALLEL <= 1 )); then
             TEST_PARALLEL=1
         else
             TEST_PARALLEL=$TMP_PARALLEL
@@ -216,7 +216,7 @@ else
     TEST_TYPE_PARAM=""
     if [[ "${TEST_TYPE}" != "" ]];
     then
-        TEST_TYPE_PARAM="--test_type=$TEST_TYPE"
+        TEST_TYPE_PARAM="--test_type $TEST_TYPE"
     fi
 
     # We found that when parallelism > 8, as it increases, the test speed will become slower and slower. So we set the default maximum parallelism to 8.
@@ -263,8 +263,8 @@ else
     if [[ "${TESTS}" == "" ]]; then
         RUN_TESTS_COMMAND+=("${LOCAL_ROOTDIR}/src/main/python")
     else
-        read -ra RAW_TESTS <<< "${TESTS}"
-        for raw_test in "${RAW_TESTS[@]}"; do
+        read -a RAW_TESTS <<< "${TESTS}"
+        for raw_test in ${RAW_TESTS[@]}; do
             RUN_TESTS_COMMAND+=("${LOCAL_ROOTDIR}/src/main/python/${raw_test}")
         done
     fi
@@ -276,9 +276,9 @@ else
           "$TEST_TAGS"
           --std_input_path="$STD_INPUT_PATH"
           --color=yes
-          "$TEST_TYPE_PARAM"
+          $TEST_TYPE_PARAM
           "$TEST_ARGS"
-          "$RUN_TEST_PARAMS"
+          $RUN_TEST_PARAMS
           --junitxml=TEST-pytest-`date +%s%N`.xml
           "$@")
 
@@ -353,7 +353,7 @@ else
         # We are limiting the number of tasks in local mode to 4 because it helps to reduce the
         # total memory usage, especially host memory usage because when copying data to the GPU
         # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
-        LOCAL_PARALLEL=$(( CPU_CORES > 4 ? 4 : CPU_CORES ))
+        LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi

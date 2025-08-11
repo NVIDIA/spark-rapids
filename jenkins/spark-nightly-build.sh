@@ -51,7 +51,7 @@ ART_VER=$(mvnEval project.version)
 export DEFAULT_CUDA_CLASSIFIER=${DEFAULT_CUDA_CLASSIFIER:-$(mvnEval cuda.version)} # default cuda version
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"} # e.g. cuda12
 CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"}  # default as CUDA_CLASSIFIERS for compatibility
-IFS=',' read -ra CLASSIFIERS_ARR <<< "$CLASSIFIERS"
+IFS=',' read -a CLASSIFIERS_ARR <<< "$CLASSIFIERS"
 
 export TMP_PATH="/tmp/$(date '+%Y%m%d')-$$"
 mkdir -p ${TMP_PATH}
