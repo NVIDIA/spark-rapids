@@ -95,7 +95,7 @@ case class GpuBatchScanExec(
               s"through HasPartitionKey remain the same but do not exactly match")
           }
 
-          groupPartitions(newPartitions).map(_._2).getOrElse(Seq.empty)
+          groupPartitions(newPartitions).map(_.map(_._2)).getOrElse(Seq.empty)
 
         case _ =>
           // no validation is needed as the data source did not report any specific partitioning
