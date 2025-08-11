@@ -145,6 +145,47 @@ object DumpUtils extends Logging {
   }
 
   /**
+   * Dump columnar batch to output stream in parquet format with original Spark schema names.
+   * Column names and nested field names are derived from the provided Spark types and names.
+   */
+  def dumpToParquet(
+      columnarBatch: ColumnarBatch,
+      outputStream: OutputStream,
+      columnNames: Seq[String],
+      sparkTypes: Seq[org.apache.spark.sql.types.DataType],
+      kudoSerializer: Option[KudoSerializer])
+  : Unit = {
+    require(columnNames.length == columnarBatch.numCols(),
+      s"Column names size ${columnNames.length} != numCols ${columnarBatch.numCols()}")
+    require(sparkTypes.length == columnarBatch.numCols(),
+      s"Spark types size ${sparkTypes.length} != numCols ${columnarBatch.numCols()}")
+
+    closeOnExcept(outputStream) { _ =>
+      val table = if (columnarBatch.numCols() == 1) {
+        columnarBatch.column(0) match {
+          case serializedCol: SerializedTableColumn =>
+            deserializeSerializedTableColumn(serializedCol)
+          case kudoCol: KudoSerializedTableColumn =>
+            require(kudoSerializer.isDefined,
+              "KudoSerializer must be provided when handling KudoSerializedTableColumn")
+            deserializeKudoSerializedTableColumn(kudoSerializer.get, kudoCol)
+          case _ =>
+            GpuColumnVector.from(columnarBatch)
+        }
+      } else {
+        GpuColumnVector.from(columnarBatch)
+      }
+
+      withResource(table) { t =>
+        withResource(new ParquetDumper(outputStream, t, Some(columnNames), Some(sparkTypes))) {
+          dumper =>
+            dumper.writeTable(t)
+        }
+      }
+    }
+  }
+
+  /**
    * Debug utility to dump table to parquet file. <br>
    * It's running on GPU. Parquet column names are generated from table column type info. <br>
    *
@@ -222,7 +263,10 @@ object DumpUtils extends Logging {
 
 
 // parquet dumper
-class ParquetDumper(private val outputStream: OutputStream, table: Table) extends HostBufferConsumer
+class ParquetDumper(private val outputStream: OutputStream, table: Table,
+    originalColumnNames: Option[Seq[String]] = None,
+    originalSparkTypes: Option[Seq[org.apache.spark.sql.types.DataType]] = None)
+  extends HostBufferConsumer
   with AutoCloseable {
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
 
@@ -231,10 +275,15 @@ class ParquetDumper(private val outputStream: OutputStream, table: Table) extend
   }
 
   private lazy val tableWriter: TableWriter = {
-    // avoid anything conversion, just dump as it is
-    val builder = ParquetDumper.parquetWriterOptionsFromTable(ParquetWriterOptions.builder(), table)
-      .withCompressionType(ParquetDumper.COMPRESS_TYPE)
-    Table.writeParquetChunked(builder.build(), this)
+    val builder = originalColumnNames match {
+      case Some(names) =>
+        ParquetDumper.parquetWriterOptionsFromSparkSchema(
+          ParquetWriterOptions.builder(), table, names, originalSparkTypes.get)
+      case None =>
+        ParquetDumper.parquetWriterOptionsFromTable(ParquetWriterOptions.builder(), table)
+    }
+    Table.writeParquetChunked(builder.withCompressionType(ParquetDumper.COMPRESS_TYPE).build(),
+      this)
   }
 
   override def handleBuffer(buffer: HostMemoryBuffer, len: Long): Unit =
@@ -279,6 +328,78 @@ object ParquetDumper {
 
       builder.asInstanceOf[T]
     }
+  }
+
+  /**
+   * Build writer options using original Spark schema names and types.
+   */
+  def parquetWriterOptionsFromSparkSchema[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
+      builder: ColumnWriterOptions.NestedBuilder[T, V],
+      table: Table,
+      columnNames: Seq[String],
+      sparkTypes: Seq[org.apache.spark.sql.types.DataType]): T = {
+    require(columnNames.length == table.getNumberOfColumns,
+      s"Column names size ${columnNames.length} != number of columns ${table.getNumberOfColumns}")
+    require(sparkTypes.length == table.getNumberOfColumns,
+      s"Spark types size ${sparkTypes.length} != number of columns ${table.getNumberOfColumns}")
+
+    withResource(new ArrayBuffer[ColumnView]) { toClose =>
+      var i = 0
+      while (i < table.getNumberOfColumns) {
+        parquetWriterOptionsFromSparkType(
+          builder,
+          table.getColumn(i),
+          columnNames(i),
+          sparkTypes(i),
+          toClose)
+        i += 1
+      }
+      builder.asInstanceOf[T]
+    }
+  }
+
+  private def parquetWriterOptionsFromSparkType[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
+      builder: ColumnWriterOptions.NestedBuilder[T, V],
+      cv: ColumnView,
+      fieldName: String,
+      sparkType: org.apache.spark.sql.types.DataType,
+      toClose: ArrayBuffer[ColumnView]): T = {
+    import org.apache.spark.sql.types._
+    sparkType match {
+      case StructType(fields) =>
+        val subBuilder = structBuilder(fieldName, true)
+        var childIndex = 0
+        fields.foreach { f =>
+          val subCv = cv.getChildColumnView(childIndex)
+          toClose += subCv
+          parquetWriterOptionsFromSparkType(subBuilder, subCv, f.name, f.dataType, toClose)
+          childIndex += 1
+        }
+        builder.withStructColumn(subBuilder.build())
+      case ArrayType(elementType, _) =>
+        val subCv = cv.getChildColumnView(0)
+        toClose += subCv
+        val lb = listBuilder(fieldName, true)
+        val built = parquetWriterOptionsFromSparkType(lb, subCv, "element", elementType, toClose)
+        builder.withListColumn(built.build())
+      case MapType(keyType, valueType, _) =>
+        // Map is represented as a list of struct<key,value>
+        val listCv = cv.getChildColumnView(0)
+        toClose += listCv
+        val structCv = listCv.getChildColumnView(0)
+        toClose += structCv
+        val lb = listBuilder(fieldName, true)
+        val sb = structBuilder("key_value", true)
+        val keyCv = structCv.getChildColumnView(0)
+        val valCv = structCv.getChildColumnView(1)
+        toClose ++= Array(keyCv, valCv)
+        parquetWriterOptionsFromSparkType(sb, keyCv, "key", keyType, toClose)
+        parquetWriterOptionsFromSparkType(sb, valCv, "value", valueType, toClose)
+        builder.withListColumn(lb.withStructColumn(sb.build()).build())
+      case _ =>
+        builder.withColumns(true, fieldName)
+    }
+    builder.asInstanceOf[T]
   }
 
   private def parquetWriterOptionsFromColumnView[T <: NestedBuilder[_, _],

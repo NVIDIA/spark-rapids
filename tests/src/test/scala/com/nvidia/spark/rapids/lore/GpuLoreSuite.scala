@@ -437,6 +437,43 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  test("Parquet original schema names") {
+    withGpuSparkSession { spark =>
+      // Enable LORE dump with original schema names for parquet
+      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "10[*]")
+      spark.conf.set(RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES.key, "true")
+
+      // Build an aggregate plan (same as Aggregate test)
+      val df = spark.range(0, 1000, 1, 100)
+        .selectExpr("id % 10 as key", "id % 100 as value")
+        .groupBy("key")
+        .agg(functions.sum("value").as("total"))
+
+      // Trigger execution to produce LORE dump
+      val _ = df.collect().length
+
+      // Inspect dumped parquet under loreId-10/input-0
+      val inputRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-10/input-0")
+      val fs = inputRoot.getFileSystem(spark.sparkContext.hadoopConfiguration)
+
+      // Read expected names from rdd.meta
+      val metaPath = new Path(inputRoot, "rdd.meta")
+      val meta = GpuLore.loadObject[LoreRDDMeta](metaPath, spark.sparkContext.hadoopConfiguration)
+      val expectedNames = meta.attrs.map(_.name)
+
+      // Find a parquet batch file in one partition folder and verify column names
+      val partDir = fs.listStatus(inputRoot).map(_.getPath)
+        .find(p => p.getName.startsWith("partition-"))
+        .get
+      val parquetFile = fs.listStatus(partDir).map(_.getPath)
+        .find(p => p.getName.endsWith(".parquet")).get
+
+      val directDf = spark.read.parquet(parquetFile.toString)
+      assert(directDf.columns.toSeq == expectedNames)
+    }
+  }
+
   private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {
     val loreId = OutputLoreId.parse(loreDumpIds).head._1
     withGpuSparkSession { spark =>
