@@ -1,5 +1,5 @@
 # Change log
-Generated on 2025-08-09
+Generated on 2025-08-11
 
 ## Release 25.08
 
@@ -74,7 +74,6 @@ Generated on 2025-08-09
 |[#12969](https://github.com/NVIDIA/spark-rapids/issues/12969)|[BUG] Multiple test failures in `src.main.python.hash_aggregate_test` across various CI jobs|
 |[#11047](https://github.com/NVIDIA/spark-rapids/issues/11047)|Revisit the ANSI tests which is enabled by default in Spark 4.0.0|
 |[#13096](https://github.com/NVIDIA/spark-rapids/issues/13096)|[BUG] [Spark-4.0] NDS query_94 and query_95 are failing with IllegalArgumentException|
-|[#12883](https://github.com/NVIDIA/spark-rapids/issues/12883)|[BUG] HostAllocSuite failed split should not happen immediately after fallback on memory contention failed|
 |[#13018](https://github.com/NVIDIA/spark-rapids/issues/13018)|[BUG] AppendDataExecV1 falls back when running CTAS/RTAS on Delta 3.3.x|
 |[#13022](https://github.com/NVIDIA/spark-rapids/issues/13022)|[BUG] GpuRowToColumnarExec with RequireSingleBatch allocates a large amount of memory|
 |[#12857](https://github.com/NVIDIA/spark-rapids/issues/12857)|[BUG] GPU generate different output as CPU|
@@ -129,6 +128,8 @@ Generated on 2025-08-09
 ### PRs
 |||
 |:---|:---|
+|[#13286](https://github.com/NVIDIA/spark-rapids/pull/13286)|Temporarily disable timezone America/Coyhaique to unblock branch-25.08 release|
+|[#13282](https://github.com/NVIDIA/spark-rapids/pull/13282)|Update changelog for the v25.08 release [skip ci]|
 |[#13280](https://github.com/NVIDIA/spark-rapids/pull/13280)|Fix fallback test params for Delta MergeCommand, UpdateCommand, and DeleteCommand|
 |[#13258](https://github.com/NVIDIA/spark-rapids/pull/13258)|Update changelog for the v25.08 release [skip ci]|
 |[#13257](https://github.com/NVIDIA/spark-rapids/pull/13257)|Update dependency version JNI, private, hybrid to 25.08.0|
