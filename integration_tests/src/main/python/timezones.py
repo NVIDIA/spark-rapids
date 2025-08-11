@@ -1,4 +1,4 @@
-# Copyright (c) 2025-2025, NVIDIA CORPORATION.
+# Copyright (c) 2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from conftest import spark_jvm
+from dateutil import tz
 
 fixed_offset_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
 variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
@@ -21,4 +22,6 @@ variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "Am
 
 # Dynamically get supported timezones from JVM.
 # Different JVMs can have different timezones, should not use a constant list here.
-all_timezones = spark_jvm().java.time.ZoneId.getAvailableZoneIds()
+# Also different Python versions can have different timezones, so we also filter out timezones not supported by Python.
+all_timezones = [zone_name for zone_name in spark_jvm().java.time.ZoneId.getAvailableZoneIds()
+                 if tz.gettz(zone_name) is not None]
