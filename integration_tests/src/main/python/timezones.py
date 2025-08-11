@@ -22,6 +22,6 @@ variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "Am
 
 # Dynamically get supported timezones from JVM.
 # Different JVMs can have different timezones, should not use a constant list here.
-# Also different Python versions can have different timezones, so we also fiter out not supported timezones for Python.
+# Also different Python versions can have different timezones, so we also filter out timezones not supported by Python.
 all_timezones = [zone_name for zone_name in spark_jvm().java.time.ZoneId.getAvailableZoneIds()
                  if tz.gettz(zone_name) is not None]
