@@ -116,7 +116,7 @@ object Delta33xProvider extends DeltaIOProvider {
           "Merge of a source query/table into a Delta Lake table",
           (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r)),
       GpuOverrides.runnableCmd[OptimizeTableCommand](
-          "Optimize (compaction) a Delta Lake table",
+          "Optimize a Delta Lake table",
           (a, conf, p, r) => new OptimizeTableCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }

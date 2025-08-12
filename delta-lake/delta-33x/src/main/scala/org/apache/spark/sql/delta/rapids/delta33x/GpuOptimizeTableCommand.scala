@@ -25,10 +25,12 @@ import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryNode}
-import org.apache.spark.sql.delta.Snapshot
-import org.apache.spark.sql.delta.commands.{DeltaCommand, DeltaOptimizeContext}
+import org.apache.spark.sql.delta.{DeltaErrors, Snapshot}
+import org.apache.spark.sql.delta.commands.{DeletionVectorUtils, DeltaCommand, DeltaOptimizeContext}
 import org.apache.spark.sql.delta.commands.optimize.OptimizeMetrics
 import org.apache.spark.sql.delta.rapids.commands.GpuOptimizeExecutor
+import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.types.StringType
 
@@ -42,9 +44,8 @@ case class GpuOptimizeTableCommand(
     override val child: LogicalPlan,
     userPartitionPredicates: Seq[String],
     optimizeContext: DeltaOptimizeContext
-  )(
-    val zOrderBy: Seq[UnresolvedAttribute]
-) extends RunnableCommand with DeltaCommand with UnaryNode {
+  )(val zOrderBy: Seq[UnresolvedAttribute])
+  extends RunnableCommand with DeltaCommand with UnaryNode {
 
   override val otherCopyArgs: Seq[AnyRef] = zOrderBy :: Nil
 
@@ -59,9 +60,23 @@ case class GpuOptimizeTableCommand(
     // Resolve the Delta table from the child plan
     val table = getDeltaTable(child, "OPTIMIZE")
     val snapshot: Snapshot = table.update()
+    if (snapshot.version == -1) {
+      throw DeltaErrors.notADeltaTableException(table.deltaLog.dataPath.toString)
+    }
 
-    // Parse user-provided partition predicates, verifying they only reference partition columns
+    // Sanity checks
+    if (zOrderBy.nonEmpty) {
+      throw new IllegalStateException("Z-Order optimize should not run on GPU")
+    }
+    val isClustered = ClusteredTableUtils.getClusterBySpecOptional(snapshot).isDefined
+    if (isClustered) {
+      throw new IllegalStateException("Liquid clustering should not run on GPU")
+    }
+
     val partitionColumns = snapshot.metadata.partitionColumns
+    // Parse the predicate expression into Catalyst expression and verify only simple filters
+    // on partition columns are present
+
     val partitionPredicates: Seq[Expression] = userPartitionPredicates.flatMap { predicate =>
       val predicates = parsePredicates(sparkSession, predicate)
       verifyPartitionPredicates(sparkSession, partitionColumns, predicates)

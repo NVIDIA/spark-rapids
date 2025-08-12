@@ -42,10 +42,9 @@ class OptimizeTableCommandMeta(
     }
 
     val table = getDeltaTable(cmd.child, "OPTIMIZE")
-    val snapshot = table.update()
 
     // DV write unsupported on GPU
-    if (DeletionVectorUtils.deletionVectorsWritable(snapshot) &&
+    if (DeletionVectorUtils.deletionVectorsWritable(table.deltaLog.unsafeVolatileSnapshot) &&
         cmd.conf.getConf(DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)) {
       willNotWorkOnGpu("Deletion vectors are not supported on GPU")
     }
@@ -54,13 +53,15 @@ class OptimizeTableCommandMeta(
     if (cmd.zOrderBy.nonEmpty) {
       willNotWorkOnGpu("Z-Order optimize is not supported on GPU")
     }
-    val isClustered = ClusteredTableUtils.getClusterBySpecOptional(snapshot).isDefined
+    val isClustered = ClusteredTableUtils.getClusterBySpecOptional(
+      table.deltaLog.unsafeVolatileSnapshot).isDefined
     if (isClustered) {
       willNotWorkOnGpu("Liquid clustering is not supported on GPU")
     }
 
     // Ensure write path generally OK
-    RapidsDeltaUtils.tagForDeltaWrite(this, snapshot.schema, Some(table.deltaLog), Map.empty,
+    RapidsDeltaUtils.tagForDeltaWrite(this,
+      table.deltaLog.unsafeVolatileSnapshot.schema, Some(table.deltaLog), Map.empty,
       SparkSession.active)
   }
 
