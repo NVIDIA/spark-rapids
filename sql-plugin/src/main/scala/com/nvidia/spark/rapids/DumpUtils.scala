@@ -119,28 +119,12 @@ object DumpUtils extends Logging {
       kudoSerializer: Option[KudoSerializer] = None)
   : Unit = {
     closeOnExcept(outputStream) { _ =>
-      // For batches from a shuffle node, convert the SerializedTableColumn or
-      // KudoSerializedTableColumn to a table first
-      val table = if (columnarBatch.numCols() == 1) {
-        columnarBatch.column(0) match {
-          case serializedCol: SerializedTableColumn =>
-            deserializeSerializedTableColumn(serializedCol)
-          case kudoCol: KudoSerializedTableColumn =>
-            require(kudoSerializer.isDefined,
-              "KudoSerializer must be provided when handling KudoSerializedTableColumn")
-            deserializeKudoSerializedTableColumn(kudoSerializer.get, kudoCol)
-          case _ =>
-            GpuColumnVector.from(columnarBatch)
-        }
-      } else {
-        GpuColumnVector.from(columnarBatch)
-      }
-
-      withResource(table) { t =>
-        withResource(new ParquetDumper(outputStream, t)) { dumper =>
-          dumper.writeTable(t)
-        }
-      }
+      dumpToParquetInternal(
+        columnarBatch = columnarBatch,
+        outputStream = outputStream,
+        kudoSerializer = kudoSerializer,
+        originalColumnNames = None,
+        originalSparkTypes = None)
     }
   }
 
@@ -161,27 +145,12 @@ object DumpUtils extends Logging {
       s"Spark types size ${sparkTypes.length} != numCols ${columnarBatch.numCols()}")
 
     closeOnExcept(outputStream) { _ =>
-      val table = if (columnarBatch.numCols() == 1) {
-        columnarBatch.column(0) match {
-          case serializedCol: SerializedTableColumn =>
-            deserializeSerializedTableColumn(serializedCol)
-          case kudoCol: KudoSerializedTableColumn =>
-            require(kudoSerializer.isDefined,
-              "KudoSerializer must be provided when handling KudoSerializedTableColumn")
-            deserializeKudoSerializedTableColumn(kudoSerializer.get, kudoCol)
-          case _ =>
-            GpuColumnVector.from(columnarBatch)
-        }
-      } else {
-        GpuColumnVector.from(columnarBatch)
-      }
-
-      withResource(table) { t =>
-        withResource(new ParquetDumper(outputStream, t, Some(columnNames), Some(sparkTypes))) {
-          dumper =>
-            dumper.writeTable(t)
-        }
-      }
+      dumpToParquetInternal(
+        columnarBatch = columnarBatch,
+        outputStream = outputStream,
+        kudoSerializer = kudoSerializer,
+        originalColumnNames = Some(columnNames),
+        originalSparkTypes = Some(sparkTypes))
     }
   }
 
@@ -259,6 +228,41 @@ object DumpUtils extends Logging {
     }
   }
 
+  private def dumpToParquetInternal(
+      columnarBatch: ColumnarBatch,
+      outputStream: OutputStream,
+      kudoSerializer: Option[KudoSerializer],
+      originalColumnNames: Option[Seq[String]],
+      originalSparkTypes: Option[org.apache.spark.sql.types.Seq[org.apache.spark.sql.types.DataType]])
+  : Unit = {
+    // KudoSerializedTableColumn to a table first
+    val table = if (columnarBatch.numCols() == 1) {
+      columnarBatch.column(0) match {
+        case serializedCol: SerializedTableColumn =>
+          deserializeSerializedTableColumn(serializedCol)
+        case kudoCol: KudoSerializedTableColumn =>
+          require(kudoSerializer.isDefined,
+            "KudoSerializer must be provided when handling KudoSerializedTableColumn")
+          deserializeKudoSerializedTableColumn(kudoSerializer.get, kudoCol)
+        case _ =>
+          GpuColumnVector.from(columnarBatch)
+      }
+    } else {
+      GpuColumnVector.from(columnarBatch)
+    }
+
+    withResource(table) { t =>
+      val dumper = originalColumnNames match {
+        case Some(names) =>
+          new ParquetDumper(outputStream, t, Some(names), originalSparkTypes)
+        case None =>
+          new ParquetDumper(outputStream, t)
+      }
+      withResource(dumper) { d =>
+        d.writeTable(t)
+      }
+    }
+  }
 }
 
 

@@ -444,11 +444,20 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "10[*]")
       spark.conf.set(RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES.key, "true")
 
-      // Build an aggregate plan (same as Aggregate test)
-      val df = spark.range(0, 1000, 1, 100)
-        .selectExpr("id % 10 as key", "id % 100 as value")
-        .groupBy("key")
-        .agg(functions.sum("value").as("total"))
+      // Build a dataframe containing various nested types to validate naming
+      import spark.implicits._
+      val df = spark.range(0, 100, 1, 10)
+        .selectExpr(
+          "id as id_col",
+          "named_struct('a', id, 'b', id + 1) as s_col",
+          "array(id, id + 2) as arr_col",
+          "map(id, id + 3) as map_col")
+        .groupByExpr("id_col")
+        .agg(
+          functions.max("s_col").as("s_max"),
+          functions.collect_list("arr_col").as("arr_list"),
+          functions.map_from_entries(functions.collect_list(functions.map_from_arrays(functions.array(functions.lit(1)), functions.array(functions.lit(2))))).as("map_agg")
+        )
 
       // Trigger execution to produce LORE dump
       val _ = df.collect().length
@@ -464,8 +473,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
       // Find a parquet batch file in one partition folder and verify column names
       val partDir = fs.listStatus(inputRoot).map(_.getPath)
-        .find(p => p.getName.startsWith("partition-"))
-        .get
+        .find(p => p.getName.startsWith("partition-")).get
       val parquetFile = fs.listStatus(partDir).map(_.getPath)
         .find(p => p.getName.endsWith(".parquet")).get
 

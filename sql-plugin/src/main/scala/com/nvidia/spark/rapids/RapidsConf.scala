@@ -2560,7 +2560,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         "instead of auto-generated type-based names. This makes the dumped Parquet data " +
         "easier to consume directly via Spark/other tools.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val CASE_WHEN_FUSE =
     conf("spark.rapids.sql.case_when.fuse")
