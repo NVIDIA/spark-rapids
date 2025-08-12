@@ -68,7 +68,10 @@ def _fixup_operation_metrics(opm):
     # between CPU and GPU.
     metrics_to_remove = ["executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs",
                          "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted",
-                         "numTargetBytesUpdated", "numTargetBytesRemoved", "materializeSourceTimeMs"]
+                         "numTargetBytesUpdated", "numTargetBytesRemoved", "materializeSourceTimeMs",
+                         # For OPTIMIZE compaction, file size distribution can legitimately differ
+                         # across CPU and GPU implementations. Ignore percentile and min/max metrics.
+                         "p25FileSize", "p50FileSize", "p75FileSize", "minFileSize", "maxFileSize"]
     for k in metrics_to_remove:
         opm.pop(k, None)
 
