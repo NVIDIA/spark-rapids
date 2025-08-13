@@ -26,11 +26,10 @@ import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryNode}
 import org.apache.spark.sql.delta.{DeltaErrors, Snapshot}
-import org.apache.spark.sql.delta.commands.{DeletionVectorUtils, DeltaCommand, DeltaOptimizeContext}
+import org.apache.spark.sql.delta.commands.{DeltaCommand, DeltaOptimizeContext}
 import org.apache.spark.sql.delta.commands.optimize.OptimizeMetrics
 import org.apache.spark.sql.delta.rapids.commands.GpuOptimizeExecutor
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
-import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.types.StringType
 
