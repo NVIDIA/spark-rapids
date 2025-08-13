@@ -101,7 +101,6 @@ def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_c
     gpu_data = with_cpu_session(lambda s: _read_sorted(s, gpu_path).collect())
     assert_equal(cpu_data, gpu_data)
 
-    # Compare logs when not on Databricks
     with_cpu_session(lambda s: assert_gpu_and_cpu_delta_logs_equivalent(s, data_path))
 
 
@@ -123,3 +122,40 @@ def test_delta_optimize_unpartitioned_table(spark_tmp_path, enable_deletion_vect
     enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
 def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vectors):
     _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=["a"])
+
+
+@delta_lake
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "AtomicReplaceTableAsSelectExec", "AppendDataExecV1")
+@pytest.mark.skipif(is_before_spark_353(), reason="Liquid clustering (CLUSTER BY) requires Delta 3.3+")
+def test_delta_optimize_fallback_on_clustered_table(spark_tmp_path, spark_tmp_table_factory):
+    view_name = spark_tmp_table_factory.get()
+    data_path = spark_tmp_path + "/DELTA_OPT_CLUSTERED"
+
+    def write_base_data(spark):
+        df = unary_op_df(spark, int_gen, seed=1234).coalesce(1)
+        df.createOrReplaceTempView(view_name)
+
+    def write_clustered_then_optimize(spark, path):
+        spark.sql(f"""
+            CREATE OR REPLACE TABLE delta.`{path}`
+            USING DELTA
+            CLUSTER BY (a)
+            AS SELECT * FROM {view_name}
+        """)
+        spark.sql(_optimize_sql(path))
+
+    # Enable OptimizeTableCommand explicitly to make sure that the fallback will happen
+    # when the command is enabled.
+    conf = copy_and_update(delta_writes_enabled_conf, {
+        "spark.rapids.sql.command.OptimizeTableCommand": "true",
+    })
+
+    with_cpu_session(write_base_data, conf=conf)
+
+    assert_gpu_fallback_write(
+        write_clustered_then_optimize,
+        lambda spark, path: _read_sorted(spark, path),
+        data_path,
+        "ExecutedCommandExec",
+        conf=conf
+    )
