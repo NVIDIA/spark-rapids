@@ -125,7 +125,7 @@ $DEPLOY_CMD -DpomFile=$POM_FILE \
 
 echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar" >> $ARTIFACT_FILE
 CLASSLIST="$CLASSIFIERS,sources,javadoc"
-CLASSLIST=("${CLASSLIST//','/' '}")
+IFS=", " read -ra CLASSLIST <<< "$CLASSLIST"
 for class in "${CLASSLIST[@]}"; do
     echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar:$class" >> $ARTIFACT_FILE
 done
