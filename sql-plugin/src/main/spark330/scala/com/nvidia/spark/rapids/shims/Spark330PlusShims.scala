@@ -45,6 +45,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, OverwriteByExpressionExec}
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.rapids.shims.{GpuDivideYMInterval, GpuMultiplyYMInterval}
 import org.apache.spark.sql.types.StructType
@@ -93,8 +94,25 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
   }
 
   // GPU support ANSI interval types from 330
-  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ PythonMapInArrowExecShims.execs
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    val newExecs = Seq(
+      GpuOverrides.exec[OverwriteByExpressionExec](
+        "Overwrite into a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+            GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new OverwriteByExpressionExecMeta(p, conf, parent, r)),
+      GpuOverrides.exec[AppendDataExec](
+        "Append data into a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+            GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    super.getExecs ++ PythonMapInArrowExecShims.execs ++ newExecs
+  }
 
 }
 
