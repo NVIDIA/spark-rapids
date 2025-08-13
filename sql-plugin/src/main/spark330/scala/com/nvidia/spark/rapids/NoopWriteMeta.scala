@@ -14,10 +14,31 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
+{"spark": "350"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "400"}
+spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, OverwriteByExpressionExec}
-import org.apache.spark.sql.execution.datasources.v2.noop.NoopTable
 import org.apache.spark.sql.rapids.ExternalSource
 
 class OverwriteByExpressionExecMeta(
@@ -28,8 +49,12 @@ class OverwriteByExpressionExecMeta(
   extends SparkPlanMeta[OverwriteByExpressionExec](wrapped, conf, parent, rule)
   with HasCustomTaggingData {
 
+  //This is a private class so check with reflection
+  val noopClassName = "org.apache.spark.sql.execution.datasources.v2.noop.NoopTable"
+  lazy val noopClass = Class.forName(noopClassName)
+
   override def tagPlanForGpu(): Unit = {
-    if (wrapped.table.isInstanceOf[NoopTable]) {
+    if (noopClass.isAssignableFrom(wrapped.table.getClass)) {
       // This is a no-op write, we can handle it on the GPU by just consuming the data
     } else {
       ExternalSource.tagForGpu(wrapped, this)
@@ -37,7 +62,7 @@ class OverwriteByExpressionExecMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    if (wrapped.table.isInstanceOf[NoopTable]) {
+    if (noopClass.isAssignableFrom(wrapped.table.getClass)) {
       GpuOverwriteByExpressionExec(childPlans.head.convertIfNeeded())
     } else {
       ExternalSource.convertToGpu(wrapped, this)

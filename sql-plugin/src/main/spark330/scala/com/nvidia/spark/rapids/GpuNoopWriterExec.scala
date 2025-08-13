@@ -14,6 +14,28 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
+{"spark": "350"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "400"}
+spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
 import org.apache.spark.rdd.RDD
@@ -27,7 +49,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * A trait for GPU commands that write to a no-op data source.
  * The data is consumed and discarded.
  */
-trait GpuNoopWriterExec extends V2CommandExec with GpuExec {
+abstract class GpuNoopWriterExec(child: SparkPlan) extends V2CommandExec with GpuExec {
   override def output: Seq[Attribute] = Nil
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -47,7 +69,7 @@ trait GpuNoopWriterExec extends V2CommandExec with GpuExec {
 }
 
 case class GpuOverwriteByExpressionExec(
-    child: SparkPlan) extends GpuNoopWriterExec
+    child: SparkPlan) extends GpuNoopWriterExec(child)
 
 case class GpuAppendDataExec(
-    child: SparkPlan) extends GpuNoopWriterExec
+    child: SparkPlan) extends GpuNoopWriterExec(child)
