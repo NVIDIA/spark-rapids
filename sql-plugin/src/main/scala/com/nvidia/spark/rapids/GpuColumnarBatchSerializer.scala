@@ -500,7 +500,7 @@ private class KudoSerializerInstance(
         new DataInputStream(new BufferedInputStream(wrappedIn))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
-        new KudoSerializedBatchIterator(dIn, deserTime, stalledByInputStream)
+        new KudoSerializedBatchIterator(dIn, deserTime)
       }
 
       override def asIterator: Iterator[Any] = {
@@ -609,7 +609,8 @@ private class KudoGpuSerializerInstance(
   override def deserializeStream(in: InputStream): DeserializationStream = {
     new DeserializationStream {
       private[this] val wrappedIn = new InputStreamWrapper(in, stalledByInputStream)
-      private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(wrappedIn))
+      private[this] val dIn: DataInputStream =
+        new DataInputStream(new BufferedInputStream(wrappedIn))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         new KudoSerializedBatchIterator(dIn, deserTime)
