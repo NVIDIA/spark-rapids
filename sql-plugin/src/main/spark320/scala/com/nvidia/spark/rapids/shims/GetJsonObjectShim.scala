@@ -45,11 +45,19 @@
 {"spark": "355"}
 {"spark": "356"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.SparkPlan
-
-object PreRuleShims {
-  def getPreRules: Seq[Rule[SparkPlan]] = Nil
+object GetJsonObjectShim {
+  /**
+   * Return a shim string for a part in named Regexp.
+   * For Spark versions before 400, named Regexp is:
+   *   name <- '.' ~> "[^\\.\\[]+".r | "['" ~> "[^\\'\\?]+".r <~ "']"
+   * For Spark versions 400 and 400+, named Regexp is:
+   *   name <- '.' ~> "[^\\.\\[]+".r | "['" ~> "[^\\']+".r <~ "']"
+   * This is the shim to distinct "[^\\'\\?]+" and "[^\\']+"
+   *
+   * "[^\\'\\?]+" : One or more chars which are not: ' or ?
+   * "[^\\']+"    : One or more chars which are not: '
+   */
+  def partRegexpInNamed: String = "[^\\'\\?]+"
 }

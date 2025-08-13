@@ -77,7 +77,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Aggregate") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
+    // The max value and number of values make it so that SUM will not overflow, so ANIS is good
     doTestReplay("10[*]") { spark =>
       spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
@@ -87,7 +87,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Broadcast join") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
+    // The max value and number of values make it so that SUM will not overflow, so ANIS is good
     doTestReplay("32[*]") { spark =>
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
@@ -104,7 +104,6 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Subquery Filter") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     doTestReplay("13[*]") { spark =>
       spark.range(0, 100, 1, 10)
         .createTempView("df1")
@@ -117,7 +116,6 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Subquery in projection") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     doTestReplay("11[*]") { spark =>
       spark.sql(
         """
@@ -136,7 +134,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("No broadcast join") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
+    // The max value and number of values make it so that SUM will not overflow, so ANIS is good
     doTestReplay("30[*]") { spark =>
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
 
@@ -155,7 +153,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("AQE broadcast") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
+    // The max value and number of values make it so that SUM will not overflow, so ANIS is good
     doTestReplay("93[*]") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
@@ -174,7 +172,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("AQE Exchange") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
+    // The max value and number of values make it so that SUM will not overflow, so ANIS is good
     doTestReplay("28[*]") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
@@ -186,7 +184,6 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Partition only") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[0 2]")
@@ -208,7 +205,6 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Non-empty lore dump path") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[*]")
@@ -228,8 +224,26 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  test("Skip dumping plan") {
+    withGpuSparkSession{ spark =>
+      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[*]")
+      spark.conf.set(RapidsConf.LORE_SKIP_DUMPING_PLAN.key, "true")
+
+      val df = spark.range(0, 1000, 1, 100)
+        .selectExpr("id % 10 as key", "id % 100 as value")
+
+      assert(1000 == df.collect().length)
+
+      val lorePath = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-3")
+      val planDataFile = GpuLore.pathOfRootPlanMeta(lorePath)
+      val fs = planDataFile.getFileSystem(spark.sparkContext.hadoopConfiguration)
+
+      assert(!fs.exists(planDataFile))
+    }
+  }
+
   test("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     doTestReplay("56[*]") { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
@@ -246,7 +260,6 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("GpuShuffledSymmetricHashJoin with in Kudo mode") {
-    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/5114")
     doTestReplay("56[*]") { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")

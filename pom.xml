@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>25.08.0-SNAPSHOT</version>
+    <version>25.10.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -887,9 +887,9 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>25.08.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>25.08.0-SNAPSHOT</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>25.08.0-SNAPSHOT</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>25.10.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>25.10.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>25.10.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>

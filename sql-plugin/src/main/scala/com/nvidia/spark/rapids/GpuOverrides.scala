@@ -70,7 +70,7 @@ import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.GpuFlatMapGroupsInPandasExecMeta
-import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuMapInPandasExecMeta, GpuTimeAdd, PreRuleShims}
+import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuMapInPandasExecMeta, GpuTimeAdd}
 import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -94,6 +94,7 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     protected val checks: Option[TypeChecks[_]],
     final val tag: ClassTag[INPUT]) extends DataFromReplacementRule {
 
+  private var _noteDoc: Option[String] = None
   private var _incompatDoc: Option[String] = None
   private var _disabledDoc: Option[String] = None
   private var _visible: Boolean = true
@@ -101,9 +102,20 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
   def isVisible: Boolean = _visible
   def description: String = desc
 
+  override def noteDoc: Option[String] = _noteDoc
   override def incompatDoc: Option[String] = _incompatDoc
   override def disabledMsg: Option[String] = _disabledDoc
   override def getChecks: Option[TypeChecks[_]] = checks
+
+  /**
+   * Mark this expression with an extra note.
+   * @param str a description of the extra note.
+   * @return this for chaining.
+   */
+  final def note(str: String) : this.type = {
+    _noteDoc = Some(str)
+    this
+  }
 
   /**
    * Mark this expression as incompatible with the original Spark version
@@ -165,12 +177,20 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     confKeyCache
   }
 
-  def notes(): Option[String] = if (incompatDoc.isDefined) {
-    Some(s"This is not 100% compatible with the Spark version because ${incompatDoc.get}")
-  } else if (disabledMsg.isDefined) {
-    Some(s"This is disabled by default because ${disabledMsg.get}")
-  } else {
-    None
+  def notes(): Option[String] = {
+    val msg = if (incompatDoc.isDefined) {
+      Some(s"This is not 100% compatible with the Spark version because ${incompatDoc.get}")
+    } else if (disabledMsg.isDefined) {
+      Some(s"This is disabled by default because ${disabledMsg.get}")
+    } else {
+      None
+    }
+
+    if (msg.isEmpty && noteDoc.isEmpty) {
+      None
+    } else {
+      Some(noteDoc.getOrElse("") + msg.getOrElse(""))
+    }
   }
 
   def confHelp(asTable: Boolean = false, sparkSQLFunctions: Option[String] = None): Unit = {
@@ -915,9 +935,9 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-                TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
+          + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.ansiIntervals)
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](
@@ -1496,6 +1516,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitAndAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitAndAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[BitOrAgg](
       "Returns the bitwise OR of all non-null input values",
@@ -1505,6 +1527,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitOrAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitOrAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[BitXorAgg](
       "Returns the bitwise XOR of all non-null input values",
@@ -1514,6 +1538,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitXorAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitXorAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
@@ -1915,6 +1941,13 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
 
+        override def tagExprForGpu(): Unit = {
+          // Check if this Add expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_add is not supported on GPU")
+          }
+        }
+
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
             willNotWorkInAst("AST Addition does not support ANSI mode.")
@@ -1936,6 +1969,13 @@ object GpuOverrides extends Logging {
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagExprForGpu(): Unit = {
+          // Check if this Subtract expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_subtract is not supported on GPU")
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
@@ -2287,6 +2327,11 @@ object GpuOverrides extends Logging {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
           checkAndTagFloatAgg(inputDataType, this.conf, this)
+
+          // Check if this Sum expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_sum is not supported on GPU")
+          }
         }
 
         override def needsAnsiCheck: Boolean = false
@@ -3938,7 +3983,7 @@ object GpuOverrides extends Logging {
 
         override def tagExprForGpu(): Unit = {
           a.schema match {
-            case MapType(_: StringType, _: StringType, _) => ()
+            case MapType(StringType, StringType, _) => ()
             case st: StructType =>
               if (hasDuplicateFieldNames(st)) {
                 willNotWorkOnGpu("from_json on GPU does not support duplicate field " +
@@ -4896,7 +4941,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         var updatedPlan = updateForAdaptivePlan(plan, conf)
         updatedPlan = HybridExecutionUtils.tryToApplyHybridScanRules(updatedPlan, conf)
         updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
-        updatedPlan = applyOverridesWithPreRules(updatedPlan, conf)
+        updatedPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
@@ -5015,11 +5060,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         false
     })
     deltaLogScans.nonEmpty
-  }
-
-  private def applyOverridesWithPreRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    val p = PreRuleShims.getPreRules.foldLeft(plan) { (tmpPlan, rule) => rule.apply(tmpPlan) }
-    applyOverrides(p, conf)
   }
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import tempfile
 
 import pytest
@@ -21,7 +22,7 @@ from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
     all_eq_column_combinations
 from marks import iceberg, ignore_order
-from spark_session import is_spark_35x, with_gpu_session
+from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
                                 reason="Current spark-rapids only support spark 3.5.x")
@@ -38,7 +39,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 # This does not work with aws s3tables, which is a managed table service.
 @pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
-                               eq_delete_cols):
+                               eq_delete_cols, register_iceberg_add_eq_deletes_udf):
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
 
     _change_table(table_name,
@@ -90,7 +91,12 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
-def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type):
+@pytest.mark.xfail(reason = "https://github.com/NVIDIA/spark-rapids/issues/12885")
+# When using this datagen, local run is 784 rows
+@pytest.mark.datagen_overrides(seed=1749483297, permanent=True,
+                               reason="Debug https://github.com/NVIDIA/spark-rapids/issues/12885")
+def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
+                                  register_iceberg_add_eq_deletes_udf):
     # We use a fixed seed here to ensure that data deletion vector has been generated
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
     # Equation deletes
@@ -115,9 +121,14 @@ def test_iceberg_v2_mixed_deletes(spark_tmp_table_factory, spark_tmp_path, reade
                                                 spark_tmp_path),
                   "No equation deletes generated")
 
+
     # Trigger a count operation to verify that it works
-    with_gpu_session(lambda spark: spark.table(table_name).count(),
+    gpu_count = with_gpu_session(lambda spark: spark.table(table_name).count(),
                      conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+    cpu_count = with_cpu_session(lambda spark: spark.table(table_name).count(),
+                                 conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+    assert gpu_count == cpu_count, f"Result count diverges, cpu: {cpu_count}, gpu: {gpu_count}"
+    logging.info(f"Count is {cpu_count}")
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),

@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,5 +31,8 @@ buildvers = project.getProperty("dyn.shim.buildver")
 
 sys.path.append("{}/build/".format(spark_rapids_source_basedir))
 from get_buildvers import _get_buildvers
-value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log)
+# Because we need all versions to generate new shims correctly, we get all the supported plugin 
+# versions, including the ones that have been asked to be ignored by the setting 
+# `dyn.shim.excluded.releases` in the POM.xml
+value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log, ignore_excluded_shims=True)
 project.setProperty("included_buildvers", value)

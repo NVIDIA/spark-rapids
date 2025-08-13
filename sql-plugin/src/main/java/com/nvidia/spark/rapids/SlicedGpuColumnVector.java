@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,9 @@ public class SlicedGpuColumnVector extends ColumnVector {
 
   public static ColumnarBatch incRefCount(ColumnarBatch batch) {
     for (int i = 0; i < batch.numCols(); i++) {
-      ((SlicedGpuColumnVector)batch.column(i)).getBase().incRefCount();
+      if (batch.column(i) instanceof SlicedGpuColumnVector) {
+        ((SlicedGpuColumnVector)batch.column(i)).getBase().incRefCount();
+      }
     }
     return batch;
   }
