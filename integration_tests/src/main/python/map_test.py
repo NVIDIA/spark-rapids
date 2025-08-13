@@ -753,6 +753,68 @@ def test_sql_map_scalars(query):
             lambda spark: spark.sql('SELECT {}'.format(query)))
 
 
+@pytest.mark.parametrize('data_gen', map_gens_sample \
+                         + [MapGen(f(nullable=False, min_val=-10, max_val=10), f(), min_length=10) for f in [ByteGen, ShortGen, IntegerGen, LongGen]] \
+                         + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), min_length=10)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                    'map_zip_with(a, b,  (key, value1, value2) -> value1) as ident1',
+                    'map_zip_with(a, b,  (key, value1, value2) -> value2) as ident2',
+                    'map_zip_with(a, b,  (key, value1, value2) -> null) as n',
+                    'map_zip_with(a, b,  (key, value1, value2) -> 1) as one',
+                    'map_zip_with(a, b,  (key, value1, value2) -> key) as indexed',]
+        value_type = data_gen.data_type.valueType
+        if isinstance(value_type, IntegralType):
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) * coalesce(value2, 0)) as mul',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) - coalesce(value2, 0)) as sub',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 1) / if(coalesce(value2, 1) == 0, 1, coalesce(value2, 1))) as div',])
+        if isinstance(value_type, StringType):
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> concat(coalesce(value1, ""), "-test-", coalesce(value2, ""))) as string_concat',])
+        if isinstance(value_type, ArrayType):
+            {'spark.sql.ansi.enabled': False}
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> concat(value1, value2)) as array_concat',])
+        df = two_col_df(spark, data_gen, data_gen)
+        return df.selectExpr(columns)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-5, max_val=5), ArrayGen(int_gen, max_length=5), min_length=7)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with_lambda(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                    'map_zip_with(a, b, (k, arr, v2) -> exists(arr, v1 -> v1 = v2)) as lambdatest',]
+        b_gen = MapGen(IntegerGen(False), IntegerGen())
+        df = two_col_df(spark, data_gen, b_gen)
+        return df.selectExpr(columns)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-15, max_val=-5), IntegerGen(), min_length=7)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with_bind(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b', 'c',
+                    'map_zip_with(a, b, (k, v1, v2) -> (v1 | v2) & c) as bindtest',]
+        df = three_col_df(spark, data_gen, data_gen, int_gen)
+        return df.selectExpr(columns)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=5, max_val=15), IntegerGen(), min_length=7)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with_mismatch_keys(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                    'map_zip_with(a, b, (k, v1, v2) -> v1 + v2) as mismatch',]
+        b_gen = MapGen(ByteGen(False), ByteGen())
+        df = two_col_df(spark, data_gen, b_gen)
+        return df.selectExpr(columns)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_filter(data_gen):
@@ -762,7 +824,6 @@ def test_map_filter(data_gen):
                'map_filter(a, (key, value) -> isnotnull(key) and isnull(value) )']
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(columns))
-
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
