@@ -39,7 +39,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.io.async._
-import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
+import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
@@ -2421,6 +2421,11 @@ class MultiFileCloudParquetPartitionReader(
     keepReadsInOrder, combineConf)
   with ParquetPartitionReaderBase {
 
+  // TODO: replace the config maxNumFileProcessed with the dynamic resource bounded controller,
+  // after the ResourceBoundedThreadPool are supported for all readers.
+  require(files.length <= maxNumFileProcessed,
+    "maxNumFileProcessed should be NOT applied for MultiFileCloudParquetPartitionReader")
+
   def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
       next: HostMemoryBuffersWithMetaData): Boolean = {
 
@@ -2663,6 +2668,24 @@ class MultiFileCloudParquetPartitionReader(
       override val allPartValues: Option[Array[(Long, InternalRow)]]
   ) extends HostMemoryBuffersWithMetaDataBase
 
+  // The total size of file data in bytes that will be processed by this Spark task
+  // NOTE: This is driver metric, which may be much larger than the actual size of file buffer,
+  // since row-group filters and column pruning will be applied before the actual I/O.
+  private lazy val taskTotalReadSize: Long = {
+    files.foldLeft(0L) { (acc, file) =>
+      acc + file.length
+    }
+  }
+
+  private lazy val runnerSharedState: GroupSharedState = {
+    GroupTaskHelpers.newSharedState(files.length)
+  }
+
+  // Fetch the universal task priority for this TaskAttempt.
+  private lazy val taskPriority: Long = {
+    val taskAttemptID = TaskContext.get().taskAttemptId()
+    TaskPriority.getTaskPriority(taskAttemptID)
+  }
 
   private class ReadBatchRunner(
       file: PartitionedFile,
@@ -2670,21 +2693,16 @@ class MultiFileCloudParquetPartitionReader(
       taskContext: TaskContext)
       extends GroupedAsyncRunner[HostMemoryBuffersWithMetaDataBase] with Logging {
 
-    override val resource: TaskResource = {
-      TaskResource.newCpuResource(file.length, groupedMemoryOverhead)
-    }
-
-    override val priority: Double = if (runnerSharedState.isDefined) {
-      groupPriority
-    } else {
-      AsyncRunner.hostMemoryPenalty(memoryBytes = file.length)
-    }
-
     override val holdResourceAfterCompletion: Boolean = true
 
-    override protected val sharedState: GroupSharedState = {
-      runnerSharedState.getOrElse(GroupTaskHelpers.newSharedState(1))
+    override val resource: TaskResource = {
+      TaskResource.newCpuResource(file.length, Some(taskTotalReadSize))
     }
+
+    // Use the priority of caller as the initial priority of async sub readers.
+    override val priority: Double = taskPriority.toDouble
+
+    override protected val sharedState: GroupSharedState = runnerSharedState
 
     private var blockChunkIter: BufferedIterator[BlockMetaData] = null
 

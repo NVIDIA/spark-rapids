@@ -555,30 +555,6 @@ abstract class MultiFileCloudPartitionReaderBase(
     limit
   }
 
-  protected lazy val runnerSharedState: Option[GroupSharedState] = {
-    if (inputFiles.length <= maxNumFileProcessed) {
-      Some(GroupTaskHelpers.newSharedState(inputFiles.length))
-    } else {
-      None
-    }
-  }
-
-  protected lazy val groupedMemoryOverhead: Option[Long] = {
-    if (inputFiles.length <= maxNumFileProcessed) {
-      Some(inputFiles.foldLeft(0L) { (acc, file) => acc + file.length })
-    } else {
-      None
-    }
-  }
-
-  protected lazy val groupPriority: Double = {
-    if (inputFiles.length <= maxNumFileProcessed) {
-      GroupTaskHelpers.generateGroupPriority
-    } else {
-      0
-    }
-  }
-
   // Each format should implement combineHMBs and canUseCombine if they support combining
   def combineHMBs(
       results: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {

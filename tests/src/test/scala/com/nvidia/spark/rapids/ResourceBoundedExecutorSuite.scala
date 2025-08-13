@@ -154,7 +154,7 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
 
     val taskQueue = mutable.ArrayBuffer[(Int, DummyGroupedRunner)]()
     (0 until 10).foreach { g =>
-      val priority = GroupTaskHelpers.generateGroupPriority
+      val priority = -g * 1000 // mock descend TaskAttemptId
       (0 until 5).foreach { i =>
         taskQueue += Random.nextInt() -> new DummyGroupedRunner(i, g, 5, priority)
       }
