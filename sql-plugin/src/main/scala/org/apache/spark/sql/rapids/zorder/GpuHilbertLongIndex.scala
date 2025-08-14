@@ -29,7 +29,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * Expression used to replace DataBrick's HilbertLongIndex operator for zorder. We don't know
  * exactly what their code is doing, so this is a lot of guess work based off of the
- * InterleaveBits implementation in newInputFile source.
+ * InterleaveBits implementation in open source.
  */
 case class GpuHilbertLongIndex(numBits: Int, children: Seq[Expression])
     extends GpuExpression with ShimExpression with ExpectsInputTypes {

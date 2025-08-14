@@ -309,7 +309,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
         } else {
           // per reduce partition id
-          // newInputFile all the writers ahead of time (Spark does this already)
+          // open all the writers ahead of time (Spark does this already)
           val openStartTime = System.nanoTime()
           (0 until numPartitions).map { i =>
             val (blockId, file) = blockManager.diskBlockManager.createTempShuffleBlock()

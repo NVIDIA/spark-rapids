@@ -358,7 +358,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         verify(mockOutputWriter, times(9))
           .writeSpillableAndClose(any())
         verify(dynamicSingleWriter, times(9)).newWriter(any(), any(), any())
-        // it uses 9 writers because the single writer mode only keeps one writer newInputFile at a time
+        // it uses 9 writers because the single writer mode only keeps one writer open at a time
         // and once a new partition is seen, the old writer is closed and a new one is opened.
         verify(mockOutputWriter, times(9)).close()
       }
@@ -491,7 +491,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
             .writeSpillableAndClose(any())
         verify(dynamicConcurrentWriter, times(13)).newWriter(any(), any(), any())
 
-        // we have to newInputFile 13 writers (1 per row) given the record limit of 1
+        // we have to open 13 writers (1 per row) given the record limit of 1
         verify(mockOutputWriter, times(13)).close()
       }
     }

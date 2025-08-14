@@ -123,7 +123,7 @@ abstract class GpuOrcDataReaderBase(
   protected def parseStripeFooter(buf: ByteBuffer, size: Int): OrcProto.StripeFooter
 
   override def open(): Unit = {
-    // File cache may preclude need to newInputFile remote file, so newInputFile remote file lazily.
+    // File cache may preclude need to open remote file, so open remote file lazily.
   }
 
   override def readStripeFooter(stripe: StripeInformation): OrcProto.StripeFooter = {
