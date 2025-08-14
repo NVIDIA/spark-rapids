@@ -16,19 +16,62 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import java.io.{File, FileOutputStream}
+
 import scala.collection.mutable
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+
+import org.apache.spark.internal.Logging
+
+object RangeDebugger extends Logging {
+  val threadLocalStack = new ThreadLocal[List[String]] {
+    override def initialValue(): List[String] = List.empty
+  }
+
+  private def dumpOrderErrorMessage(popped: String, elem: String): Unit = {
+    logError(s"OUT OF ORDER POP of $elem")
+    logError(s"TOP OF STACK IS $popped")
+    val stackTrace = Thread.currentThread.getStackTrace
+    stackTrace.foreach(elem => logError(elem.toString))
+  }
+
+  def push(elem: String): Unit = {
+    threadLocalStack.set(elem :: threadLocalStack.get())
+  }
+
+  def pop(elem: String): Unit = {
+    threadLocalStack.get() match {
+      case popped :: tail =>
+        threadLocalStack.set(tail)
+        if (!popped.equals(elem)) {
+          dumpOrderErrorMessage(popped, elem)
+        }
+      case Nil =>
+        dumpOrderErrorMessage("<nil>", elem)
+    }
+  }
+}
+
 sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
+  private val isEnabled = java.lang.Boolean.getBoolean("ai.rapids.cudf.nvtx.enabled")
+
   def help(): Unit = println(s"$name|$doc")
 
   def push(): NvtxId = {
-    NvtxRange.pushRange(name, color)
+    if (isEnabled) {
+      NvtxRange.pushRange(name, color)
+      RangeDebugger.push(name)
+    }
     this
   }
 
-  def pop(): Unit = NvtxRange.popRange()
+  def pop(): Unit = {
+    if (isEnabled) {
+      RangeDebugger.pop(name)
+      NvtxRange.popRange()
+    }
+  }
 
   def apply[V](block: => V): V = {
     try {
