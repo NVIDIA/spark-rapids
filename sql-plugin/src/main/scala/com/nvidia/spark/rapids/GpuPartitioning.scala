@@ -236,18 +236,23 @@ trait GpuPartitioning extends Partitioning {
         var prevIndex: Int = 0
         for (i <- 1 until numPartitions) {
           val idx = offsetsHost.getLong((i) * elemSize).toInt
-          res(i - 1) = new ColumnarBatch(Array(
-            new SlicedSerializedColumnVector(dataHost, start, idx)))
           val partNumRows = partitionIndexes(i) - prevIndex
+          if (partNumRows > 0) {
+            res(i - 1) = new ColumnarBatch(Array(
+              new SlicedSerializedColumnVector(dataHost, start, idx)))
+            res(i - 1).setNumRows(partNumRows)
+          }
           prevIndex = partitionIndexes(i)
-          res(i - 1).setNumRows(partNumRows)
           start = idx
         }
-        res(numPartitions - 1) = new ColumnarBatch(Array(
-          new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
-        res(numPartitions - 1).setNumRows(numRows - prevIndex)
+        val partNumRows = numRows - prevIndex
+        if (partNumRows > 0) {
+          res(numPartitions - 1) = new ColumnarBatch(Array(
+            new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
+          res(numPartitions - 1).setNumRows(partNumRows)
+        }
 
-        res.zipWithIndex.filter(_._1 != null).filter(_._1.numRows() > 0)
+        res.zipWithIndex.filter(_._1 != null)
       }
     }
   }

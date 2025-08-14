@@ -153,6 +153,30 @@ class GpuPartitioningSuite extends AnyFunSuite with BeforeAndAfterEach {
     testGpuPartitionWithCompression("zstd")
   }
 
+  test("GPU kudo partitioning with serialization") {
+    TrampolineUtil.cleanupAnyExistingSession()
+    val conf = new SparkConf()
+        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
+        .set(RapidsConf.SHUFFLE_KUDO_MODE.key, "GPU")
+    TestUtils.withGpuSparkSession(conf) { _ =>
+      GpuShuffleEnv.init(new RapidsConf(conf))
+      val partitionIndices = Array(0, 2, 2)
+      val gp = new GpuPartitioning {
+        override val numPartitions: Int = partitionIndices.length
+      }
+      withResource(buildBatch()) { batch =>
+        GpuColumnVector.incRefCounts(batch)
+        val columns = GpuColumnVector.extractColumns(batch)
+        val numRows = batch.numRows
+        withResource(gp.sliceInternalGpuOrCpuAndClose(
+          numRows, partitionIndices, columns).map(_._1)) { partitions =>
+          assertResult(2)(partitions(0).numRows())
+          assertResult(8)(partitions(1).numRows())
+        }
+      }
+    }
+  }
+
   private def testGpuPartitionWithCompression(codecName: String): Unit = {
     val conf = new SparkConf()
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, codecName)
