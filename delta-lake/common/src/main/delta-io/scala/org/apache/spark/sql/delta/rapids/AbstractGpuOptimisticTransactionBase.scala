@@ -29,7 +29,7 @@ import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.util.Clock
 
-/** Common type from which all newInputFile-source Delta Lake implementations derive. */
+/** Common type from which all open-source Delta Lake implementations derive. */
 abstract class AbstractGpuOptimisticTransactionBase(
     deltaLog: DeltaLog,
     catalog: Option[CatalogTable],

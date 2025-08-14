@@ -42,7 +42,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 
 /**
- * Implements the DeltaProvider interface for newInputFile source delta.io Delta Lake.
+ * Implements the DeltaProvider interface for open source delta.io Delta Lake.
  */
 abstract class DeltaIOProvider extends DeltaProviderImplBase {
 
@@ -256,7 +256,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
 
 /**
  * Implements the Delta Probe interface for probing the Delta Lake provider for
- * newInputFile source delta.io Delta Lake.
+ * open source delta.io Delta Lake.
  * @note This is instantiated via reflection from ShimLoader.
  */
 class DeltaProbeImpl extends DeltaProbe {

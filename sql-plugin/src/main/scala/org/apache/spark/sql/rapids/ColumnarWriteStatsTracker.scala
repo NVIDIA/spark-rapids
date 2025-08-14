@@ -63,7 +63,7 @@ trait ColumnarWriteTaskStatsTracker {
 
   /**
    * Process the fact that how many writers are currently opened.
-   * @param numWriters the current number of newInputFile writers
+   * @param numWriters the current number of open writers
    */
   def writersNumber(numWriters: Int): Unit
 

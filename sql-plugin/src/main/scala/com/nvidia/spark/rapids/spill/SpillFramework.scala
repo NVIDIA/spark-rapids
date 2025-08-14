@@ -394,7 +394,7 @@ class SpillableHostBufferHandle private (
         materialized.incRefCount()
       } else {
         throw new IllegalStateException(
-          "newInputFile handle has no underlying buffer")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -568,7 +568,7 @@ class SpillableDeviceBufferHandle private (
         materialized.incRefCount()
       } else {
         throw new IllegalStateException(
-          "newInputFile handle has no underlying buffer")
+          "open handle has no underlying buffer")
       }
     }
     // if `materialized` is null, we spilled. This is a terminal
@@ -676,7 +676,7 @@ class SpillableColumnarBatchHandle private (
         materialized = GpuColumnVector.incRefCounts(dev.get)
       } else {
         throw new IllegalStateException(
-          "newInputFile handle has no underlying buffer")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -827,7 +827,7 @@ class SpillableColumnarBatchFromBufferHandle private (
         materialized = GpuColumnVector.incRefCounts(dev.get)
       } else {
         throw new IllegalStateException(
-          "newInputFile handle has no underlying buffer")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -946,7 +946,7 @@ class SpillableCompressedColumnarBatchHandle private (
         materialized = GpuCompressedColumnVector.incRefCounts(dev.get)
       } else {
         throw new IllegalStateException(
-          "newInputFile handle has no underlying buffer")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -1063,7 +1063,7 @@ class SpillableHostColumnarBatchHandle private (
         materialized = RapidsHostColumnVector.incRefCounts(host.get)
       } else {
         throw new IllegalStateException(
-          "newInputFile handle has no underlying buffer")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
