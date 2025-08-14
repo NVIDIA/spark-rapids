@@ -247,7 +247,7 @@ trait GpuPartitioning extends Partitioning {
           new SlicedSerializedColumnVector(dataHost, start, dataHost.getLength.toInt)))
         res(numPartitions - 1).setNumRows(numRows - prevIndex)
 
-        res.zipWithIndex.filter(_._1 != null)
+        res.zipWithIndex.filter(_._1 != null).filter(_._1.numRows() > 0)
       }
     }
   }
