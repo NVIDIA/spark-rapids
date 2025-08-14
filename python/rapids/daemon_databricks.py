@@ -29,8 +29,8 @@
 # without an express license agreement from NVIDIA CORPORATION or
 # its affiliates is strictly prohibited.
 
-import os
 import numbers
+import os
 import signal
 import select
 import socket
