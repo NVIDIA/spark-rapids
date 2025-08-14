@@ -776,12 +776,11 @@ def test_map_zip_with(data_gen):
             columns.extend([
                     'map_zip_with(a, b,  (key, value1, value2) -> concat(coalesce(value1, ""), "-test-", coalesce(value2, ""))) as string_concat',])
         if isinstance(value_type, ArrayType):
-            {'spark.sql.ansi.enabled': False}
             columns.extend([
                     'map_zip_with(a, b,  (key, value1, value2) -> concat(value1, value2)) as array_concat',])
         df = two_col_df(spark, data_gen, data_gen)
         return df.selectExpr(columns)
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
 
 @pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-5, max_val=5), ArrayGen(int_gen, max_length=5), min_length=7)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -813,7 +812,7 @@ def test_map_zip_with_mismatch_keys(data_gen):
         b_gen = MapGen(ByteGen(False), ByteGen())
         df = two_col_df(spark, data_gen, b_gen)
         return df.selectExpr(columns)
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
