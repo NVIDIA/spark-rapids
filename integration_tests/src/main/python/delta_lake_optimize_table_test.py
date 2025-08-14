@@ -19,13 +19,14 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_353, \
-    supports_delta_lake_deletion_vectors
+    supports_delta_lake_deletion_vectors, is_databricks_runtime
 from pyspark.sql.types import IntegerType, StringType
 
 
 @delta_lake
 @allow_non_gpu('ExecutedCommandExec', *delta_meta_allow)
-@pytest.mark.skipif(is_before_spark_353(), reason="OPTIMIZE is supported in Spark 3.5.3+")
+@pytest.mark.skipif(is_before_spark_353(), reason="OPTIMIZE table command is supported in Spark 3.5.3+")
+@pytest.mark.skipif(is_databricks_runtime(), reason="OPTIMIZE table command is not supported for Databricks")
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors aren't supported")
 def test_delta_optimize_fallback_with_deletion_vectors(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_OPT_DV"
@@ -107,7 +108,8 @@ def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_c
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_353(), reason="OPTIMIZE is supported in Spark 3.5.3+")
+@pytest.mark.skipif(is_before_spark_353(), reason="OPTIMIZE table command is supported in Spark 3.5.3+")
+@pytest.mark.skipif(is_databricks_runtime(), reason="OPTIMIZE table command is not supported for Databricks")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
     enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
 def test_delta_optimize_unpartitioned_table(spark_tmp_path, enable_deletion_vectors):
@@ -117,7 +119,8 @@ def test_delta_optimize_unpartitioned_table(spark_tmp_path, enable_deletion_vect
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_353(), reason="OPTIMIZE is supported in Spark 3.5.3+")
+@pytest.mark.skipif(is_before_spark_353(), reason="OPTIMIZE table command is supported in Spark 3.5.3+")
+@pytest.mark.skipif(is_databricks_runtime(), reason="OPTIMIZE table command is not supported for Databricks")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
     enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
 def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vectors):
@@ -126,13 +129,14 @@ def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vector
 
 @delta_lake
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "AtomicReplaceTableAsSelectExec", "AppendDataExecV1")
-@pytest.mark.skipif(is_before_spark_353(), reason="Liquid clustering (CLUSTER BY) requires Delta 3.3+")
+@pytest.mark.skipif(is_before_spark_353(), reason="Liquid clustering requires Delta 3.3+")
+@pytest.mark.skipif(is_databricks_runtime(), reason="OPTIMIZE table command is not supported for Databricks")
 def test_delta_optimize_fallback_on_clustered_table(spark_tmp_path, spark_tmp_table_factory):
     view_name = spark_tmp_table_factory.get()
     data_path = spark_tmp_path + "/DELTA_OPT_CLUSTERED"
 
     def write_base_data(spark):
-        df = unary_op_df(spark, int_gen, seed=1234).coalesce(1)
+        df = unary_op_df(spark, int_gen).coalesce(1)
         df.createOrReplaceTempView(view_name)
 
     def write_clustered_then_optimize(spark, path):
