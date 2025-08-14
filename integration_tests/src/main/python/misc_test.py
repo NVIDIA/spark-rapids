@@ -12,26 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-
 from data_gen import *
 from spark_session import with_gpu_session
 
+
+# GPU uuid function does not guarantee the result is the same as CPU,
+# only guarantee it produces unique UUIDs
 def test_uuid():
+    def gen_uuids(spark):
+        return unary_op_df(spark, int_gen, length=num_rows).selectExpr(["a", "uuid() as b"]).collect()
+
+    def _verify_unique(uuids):
+        uuid_set = set()
+        for row in uuids:
+            uuid_set.add(row.b)
+        assert len(uuid_set) == len(uuids), "all the UUIDs should be different"
+
     num_rows = 2048
 
-    # first run
-    uuids_round1 = with_gpu_session(
-        lambda spark: unary_op_df(spark, int_gen, length=num_rows)
-            .selectExpr(["a", "uuid() as b"]).collect())
+    # verify uniqueness across two rounds on GPU
+    uuids_round1_gpu = with_gpu_session(lambda spark: gen_uuids(spark))
+    uuids_round2_gpu = with_gpu_session(lambda spark: gen_uuids(spark))
+    _verify_unique(uuids_round1_gpu + uuids_round2_gpu)
 
-    # second run
-    uuids_round2 = with_gpu_session(
-        lambda spark: unary_op_df(spark, int_gen, length=num_rows).repartition(1)
-            .selectExpr(["a", "uuid() as b"]).collect())
-
-    # assert all the UUIDs of the two rounds are different
-    uuid_set = set()
-    for row in uuids_round1 + uuids_round2:
-        uuid_set.add(row.b)
-    assert len(uuid_set) == (2 * num_rows), "all the the UUIDs should be different"
+    # verify uniqueness across two rounds on CPU
+    uuids_round1_cpu = with_cpu_session(lambda spark: gen_uuids(spark))
+    uuids_round2_cpu = with_cpu_session(lambda spark: gen_uuids(spark))
+    _verify_unique(uuids_round1_cpu + uuids_round2_cpu)

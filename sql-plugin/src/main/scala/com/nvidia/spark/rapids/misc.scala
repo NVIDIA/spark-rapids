@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.Misc
+import com.nvidia.spark.rapids.jni.StringUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Uuid}
@@ -32,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuUuid() extends GpuExpression with ShimExpression {
 
-  override def hasSideEffects: Boolean = true
+  override def hasSideEffects: Boolean = false
 
   override def dataType: DataType = StringType
 
@@ -41,7 +41,7 @@ case class GpuUuid() extends GpuExpression with ShimExpression {
   override def children: Seq[Expression] = Nil
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    GpuColumnVector.from(Misc.randomUuid(batch.numRows), dataType)
+    GpuColumnVector.from(StringUtils.randomUuid(batch.numRows), dataType)
   }
 }
 
