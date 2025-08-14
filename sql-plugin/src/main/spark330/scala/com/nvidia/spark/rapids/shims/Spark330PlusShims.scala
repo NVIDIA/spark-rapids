@@ -93,25 +93,33 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
     super.getExprs ++ map ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
 
-  // GPU support ANSI interval types from 330
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    val newExecs = Seq(
-      GpuOverrides.exec[OverwriteByExpressionExec](
-        "Overwrite into a datasource V2 table",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
-            GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (p, conf, parent, r) => new OverwriteByExpressionExecMeta(p, conf, parent, r)),
-      GpuOverrides.exec[AppendDataExec](
-        "Append data into a datasource V2 table",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
-            GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-    super.getExecs ++ PythonMapInArrowExecShims.execs ++ newExecs
+    val overwriteByExpressionRule = GpuOverrides.exec[OverwriteByExpressionExec](
+      "Overwrite into a datasource V2 table",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+        TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+        GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+        TypeSig.all),
+      (p, conf, parent, r) => new OverwriteByExpressionExecMeta(p, conf, parent, r))
+
+    val appendDataRule = GpuOverrides.exec[AppendDataExec](
+      "Append data into a datasource V2 table",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+        TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+        GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+        TypeSig.all),
+      (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r))
+
+    // Create a sequence of tuples, explicitly casting to the common type,
+    // because we got some compile errors without this
+    val newExecs: Seq[(Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan])] = Seq(
+      (overwriteByExpressionRule.getClassFor.asSubclass(classOf[SparkPlan]),
+        overwriteByExpressionRule),
+      (appendDataRule.getClassFor.asSubclass(classOf[SparkPlan]), appendDataRule)
+    )
+
+    val newExecsMap = newExecs.toMap
+    super.getExecs ++ PythonMapInArrowExecShims.execs ++ newExecsMap
   }
 
 }

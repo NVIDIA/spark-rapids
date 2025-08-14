@@ -38,6 +38,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.ShimSparkPlan
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -46,10 +48,13 @@ import org.apache.spark.sql.execution.datasources.v2.V2CommandExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * A trait for GPU commands that write to a no-op data source.
+ * An trait for GPU commands that write to a no-op data source.
  * The data is consumed and discarded.
  */
-abstract class GpuNoopWriterExec(child: SparkPlan) extends V2CommandExec with GpuExec {
+trait GpuNoopWriterExec extends V2CommandExec with GpuExec with ShimSparkPlan {
+  val child: SparkPlan
+  override def children: Seq[SparkPlan] = Seq(child)
+
   override def output: Seq[Attribute] = Nil
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -69,7 +74,7 @@ abstract class GpuNoopWriterExec(child: SparkPlan) extends V2CommandExec with Gp
 }
 
 case class GpuOverwriteByExpressionExec(
-    child: SparkPlan) extends GpuNoopWriterExec(child)
+    override val child: SparkPlan) extends GpuNoopWriterExec
 
 case class GpuAppendDataExec(
-    child: SparkPlan) extends GpuNoopWriterExec(child)
+    override val child: SparkPlan) extends GpuNoopWriterExec

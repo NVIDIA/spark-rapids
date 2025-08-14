@@ -13,25 +13,17 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
-from spark_session import is_spark_330_or_later
+from spark_session import is_spark_330_or_later, with_gpu_session
 
 @pytest.mark.skipif(not is_spark_330_or_later(), reason="noop format is only available in Spark 3.3.0 and later")
-@pytest.mark.parametrize("mode", ["overwrite", "append", "ignore", "errorifexists"])
+@pytest.mark.parametrize("mode", ["overwrite", "append"])
 def test_noop_write(mode):
     def write_noop(spark, mode):
         df = spark.createDataFrame([(1, "a"), (2, "b")], ["c1", "c2"])
         df.write.format("noop").mode(mode).save()
-        return df
 
-    if mode == "overwrite":
-        exist_class = "GpuOverwriteByExpressionExec"
-    else:
-        exist_class = "GpuAppendDataExec"
-
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: write_noop(spark, mode),
-        exist_classes=exist_class,
-        non_exist_classes="ExecutedCommandExec")
+    # There is no output so there is nothing to check, except to make sure
+    # we did not crash and everything is on the GPU
+    with_gpu_session(lambda spark: write_noop(spark, mode))

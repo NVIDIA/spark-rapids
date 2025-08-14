@@ -38,8 +38,17 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, OverwriteByExpressionExec}
-import org.apache.spark.sql.rapids.ExternalSource
+
+trait NoopWriteHelper {
+  // NoopTable is a private class, so we have to use reflection
+  private val noopClassNames = Seq("org.apache.spark.sql.execution.datasources.noop.NoopWrite$")
+
+  def isNoopWrite(write: Write): Boolean = {
+    noopClassNames.contains(write.getClass.getName)
+  }
+}
 
 class OverwriteByExpressionExecMeta(
     wrapped: OverwriteByExpressionExec,
@@ -47,26 +56,17 @@ class OverwriteByExpressionExecMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[OverwriteByExpressionExec](wrapped, conf, parent, rule)
-  with HasCustomTaggingData {
-
-  //This is a private class so check with reflection
-  val noopClassName = "org.apache.spark.sql.execution.datasources.v2.noop.NoopTable"
-  lazy val noopClass = Class.forName(noopClassName)
+  with HasCustomTaggingData with NoopWriteHelper {
 
   override def tagPlanForGpu(): Unit = {
-    if (noopClass.isAssignableFrom(wrapped.table.getClass)) {
-      // This is a no-op write, we can handle it on the GPU by just consuming the data
-    } else {
-      ExternalSource.tagForGpu(wrapped, this)
+    if (!isNoopWrite(wrapped.write)) {
+      willNotWorkOnGpu(s"Only NoopWrite is currently supported " +
+        s"found ${wrapped.write.getClass.getName}")
     }
   }
 
   override def convertToGpu(): GpuExec = {
-    if (noopClass.isAssignableFrom(wrapped.table.getClass)) {
-      GpuOverwriteByExpressionExec(childPlans.head.convertIfNeeded())
-    } else {
-      ExternalSource.convertToGpu(wrapped, this)
-    }
+    GpuOverwriteByExpressionExec(childPlans.head.convertIfNeeded())
   }
 }
 
@@ -76,21 +76,16 @@ class AppendDataExecMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[AppendDataExec](wrapped, conf, parent, rule)
-  with HasCustomTaggingData {
+  with HasCustomTaggingData with NoopWriteHelper {
 
   override def tagPlanForGpu(): Unit = {
-    if (wrapped.table.isInstanceOf[NoopTable]) {
-      // This is a no-op write, we can handle it on the GPU by just consuming the data
-    } else {
-      ExternalSource.tagForGpu(wrapped, this)
+    if (!isNoopWrite(wrapped.write)) {
+      willNotWorkOnGpu(s"Only NoopWrite is currently supported " +
+        s"found ${wrapped.write.getClass.getName}")
     }
   }
 
   override def convertToGpu(): GpuExec = {
-    if (wrapped.table.isInstanceOf[NoopTable]) {
-      GpuAppendDataExec(childPlans.head.convertIfNeeded())
-    } else {
-      ExternalSource.convertToGpu(wrapped, this)
-    }
+    GpuAppendDataExec(childPlans.head.convertIfNeeded())
   }
 }
