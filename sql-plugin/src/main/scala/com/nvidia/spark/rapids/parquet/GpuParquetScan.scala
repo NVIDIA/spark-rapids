@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.fileio.{RapidsFileIO, SeekableInputStream => RapidsSeekableInputStream}
+import com.nvidia.spark.rapids.fileio.{RapidsFileIO, SeekableInputStream}
 import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
@@ -52,7 +52,7 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.ParquetFileWriter.MAGIC
 import org.apache.parquet.hadoop.metadata._
-import org.apache.parquet.io.{InputFile, SeekableInputStream}
+import org.apache.parquet.io.{InputFile, SeekableInputStream => ParquetSeekableInputStream}
 import org.apache.parquet.schema.{DecimalMetadata, GroupType, LogicalTypeAnnotation, MessageType, PrimitiveType, Type}
 import org.apache.parquet.schema.LogicalTypeAnnotation.{DateLogicalTypeAnnotation, IntLogicalTypeAnnotation, TimestampLogicalTypeAnnotation}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
@@ -350,7 +350,7 @@ private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, fil
  */
 class HMBSeekableInputStream(
     val hmb: HostMemoryBuffer,
-    val hmbLength: Long) extends SeekableInputStream
+    val hmbLength: Long) extends ParquetSeekableInputStream
     with HostMemoryInputStreamMixIn {
   private val temp = new Array[Byte](8192)
 
@@ -456,7 +456,8 @@ class HMBInputFile(buffer: HostMemoryBuffer) extends InputFile {
 
   override def getLength: Long = buffer.getLength
 
-  override def newStream(): SeekableInputStream = new HMBSeekableInputStream(buffer, getLength)
+  override def newStream(): ParquetSeekableInputStream = new HMBSeekableInputStream(buffer,
+    getLength)
 }
 
 private case class GpuParquetFileFilterHandler(
@@ -554,7 +555,8 @@ private case class GpuParquetFileFilterHandler(
       filePath: Path,
       conf: Configuration): HostMemoryBuffer = {
     if (fileIO.isInstanceOf[HadoopFileIO]) {
-      // TODO: Remove this when PerfIO has been refactored to use `RapidsFileIO`
+      // We should remove this after https://github.com/NVIDIA/spark-rapids/issues/13306 is
+      // implemented.
       PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
         .getOrElse(readFooterBufUsingHadoop(filePath))
     } else {
@@ -563,7 +565,7 @@ private case class GpuParquetFileFilterHandler(
   }
 
   private def readFooterBufUsingHadoop(filePath: Path): HostMemoryBuffer = {
-    val inputFile = fileIO.open(filePath)
+    val inputFile = fileIO.newInputFile(filePath)
     // Much of this code came from the parquet_mr projects ParquetFileReader, and was modified
     // to match our needs
     val fileLen = inputFile.getLength
@@ -1490,7 +1492,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 
   private def copyDataRange(
       range: CopyRange,
-      in: RapidsSeekableInputStream,
+      in: SeekableInputStream,
       out: HostMemoryOutputStream,
       copyBuffer: Array[Byte]): Long = {
     var readTime = 0L
@@ -1620,7 +1622,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       filePath: Path,
       blocks: Seq[BlockMetaData],
       metrics: Map[String, GpuMetric]) extends InputStream {
-    private[this] val in = fileIO.open(filePath).open()
+    private[this] val in = fileIO.newInputFile(filePath).open()
     private[this] val buffer: Array[Byte] = new Array[Byte](copyBufferSize)
     private[this] var bufferSize: Int = 0
     private[this] var bufferFilePos: Long = in.getPos
@@ -1881,12 +1883,12 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     val coalescedRanges = coalesceReads(remoteCopies)
 
     val totalBytesCopied = if (fileIO.isInstanceOf[HadoopFileIO]) {
-      // TODO: Put `PerfIO` under `RapidsFileIO` absraction
+      // Fix this after https://github.com/NVIDIA/spark-rapids/issues/13306 is resolved
       PerfIO.readToHostMemory(
         conf, out.buffer, filePath.toUri,
         coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
       ).getOrElse {
-        withResource(fileIO.open(filePath).open()) { in =>
+        withResource(fileIO.newInputFile(filePath).open()) { in =>
           val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
           coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
             acc + copyDataRange(blockCopy, in, out, copyBuffer)
@@ -1894,7 +1896,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         }
       }
     } else {
-      withResource(fileIO.open(filePath).open()) { in =>
+      withResource(fileIO.newInputFile(filePath).open()) { in =>
         val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
         coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
           acc + copyDataRange(blockCopy, in, out, copyBuffer)

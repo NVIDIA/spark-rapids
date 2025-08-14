@@ -23,6 +23,12 @@ import org.apache.iceberg.io.InputFile;
 import java.io.IOException;
 import java.util.Objects;
 
+/**
+ * Implementation of {@link RapidsInputFile} using the Iceberg {@link InputFile}.
+ * <br/>
+ * This class wraps an Iceberg {@link InputFile} and provides methods to get the file length
+ * and open a stream for reading.
+ */
 public class IcebergInputFile implements RapidsInputFile {
   private final InputFile delegate;
 
@@ -39,5 +45,14 @@ public class IcebergInputFile implements RapidsInputFile {
   @Override
   public SeekableInputStream open() throws IOException {
     return new IcebergInputStream(delegate.newStream());
+  }
+
+  /**
+   * Returns the underlying Iceberg InputFile delegate.
+   *
+   * @return the Iceberg InputFile delegate
+   */
+  public InputFile getDelegate() {
+    return delegate;
   }
 }

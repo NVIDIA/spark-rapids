@@ -323,7 +323,7 @@ object SchemaUtils {
   /**
    * Build writer options from schema for both ORC and Parquet writers.
    *
-   * (There is an open issue "https://github.com/rapidsai/cudf/issues/7654" for Parquet writer,
+   * (There is an newInputFile issue "https://github.com/rapidsai/cudf/issues/7654" for Parquet writer,
    * but it is circumvented by https://github.com/rapidsai/cudf/pull/9061, so the nullable can
    * go back to the actual setting, instead of the hard-coded nullable=true before.)
    */

@@ -26,6 +26,12 @@ import org.apache.hadoop.fs.Path;
 import java.io.IOException;
 import java.util.Objects;
 
+/**
+ * Implementation of {@link RapidsInputFile} using the Hadoop file system.
+ * <br/>
+ * This class provides methods to get the length of the file and to open a seekable input stream
+ * for reading the file.
+ */
 public class HadoopInputFile implements RapidsInputFile {
     private final Path filePath;
     private final FileSystem fs;

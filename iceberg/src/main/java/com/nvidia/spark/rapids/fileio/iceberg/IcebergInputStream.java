@@ -21,6 +21,12 @@ import com.nvidia.spark.rapids.fileio.SeekableInputStream;
 import java.io.IOException;
 import java.util.Objects;
 
+/**
+ * Implementation of {@link SeekableInputStream} using the Iceberg {@link org.apache.iceberg.io.SeekableInputStream}.
+ * <br/>
+ * This class wraps an Iceberg {@link org.apache.iceberg.io.SeekableInputStream} and provides methods to read
+ * data from the stream, seek to a position, and close the stream.
+ */
 public class IcebergInputStream extends SeekableInputStream {
   private final org.apache.iceberg.io.SeekableInputStream delegate;
   private boolean closed;

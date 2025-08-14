@@ -83,7 +83,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
     (stream, file.getAbsolutePath)
   }
 
-  test("open, write, and close") {
+  test("newInputFile, write, and close") {
     val numBufs = 1000
     val (stream, _) = openStream()
     withResource(stream) { os =>

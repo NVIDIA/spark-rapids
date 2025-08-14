@@ -20,8 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * {@code SeekableInputStream} is an interface with the methods needed to read data from a file or
- * Hadoop data stream.
+ * An {@code Inputstream}` that offers random access interface. 
  *
  */
 public abstract class SeekableInputStream extends InputStream {

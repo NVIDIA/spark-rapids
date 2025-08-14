@@ -23,9 +23,20 @@ import org.apache.iceberg.io.FileIO;
 import java.io.IOException;
 import java.util.Objects;
 
+/**
+ * Implementation of {@link RapidsFileIO} using the Iceberg {@link FileIO}.
+ * <br/>
+ * This class wraps an Iceberg {@link FileIO} and provides a method to create
+ * {@link RapidsInputFile} instances.
+ */
 public class IcebergFileIO implements RapidsFileIO {
   private final FileIO delegate;
 
+  /**
+   * Constructs an IcebergFileIO with the given Iceberg FileIO delegate.
+   *
+   * @param delegate the Iceberg FileIO to delegate to
+   */
   public IcebergFileIO(FileIO delegate) {
     Objects.requireNonNull(delegate, "delegate can't be null");
     this.delegate = delegate;
@@ -33,12 +44,7 @@ public class IcebergFileIO implements RapidsFileIO {
 
 
   @Override
-  public RapidsInputFile open(String path) throws IOException {
+  public RapidsInputFile newInputFile(String path) throws IOException {
     return new IcebergInputFile(delegate.newInputFile(path));
-  }
-
-  @Override
-  public void close() throws IOException {
-    delegate.close();
   }
 }

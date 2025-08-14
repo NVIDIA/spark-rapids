@@ -16,20 +16,18 @@
 
 package org.apache.iceberg.spark.source
 
-import java.util.{Map => JMap}
-
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.GpuMetric
 import com.nvidia.spark.rapids.MapUtil.toMapStrict
-import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
+import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuCoalescingIcebergParquetReader, GpuIcebergParquetReader, GpuIcebergParquetReaderConf, GpuMultiThreadIcebergParquetReader, GpuSingleThreadIcebergParquetReader, IcebergPartitionedFile, MultiFile, MultiThread, SingleFile, ThreadConf}
+import java.util.{Map => JMap}
 import org.apache.iceberg.{FileFormat, FileScanTask, MetadataColumns, Partitioning, ScanTask, ScanTaskGroup, Schema, Table, TableProperties}
 import org.apache.iceberg.encryption.EncryptedFiles
 import org.apache.iceberg.mapping.NameMappingParser
 import org.apache.iceberg.types.Types
 import org.apache.iceberg.util.PartitionUtil
+import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -111,7 +109,7 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
     val inputFiles = table.encryption()
       .decrypt(encryptedFiles.asJava)
       .asScala
-      .map(f => f.location() -> f)
+      .map(f => f.location() -> new IcebergInputFile(f))
       .toMap
 
     val taskMap = toMapStrict(tasks.map(t => {

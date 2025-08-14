@@ -880,10 +880,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     // called from the progress thread
     private def handleConnectedPeerFromRequest(executorId: Long, newEp: UcpEndpoint,
         peerRkeys: Seq[ByteBuffer]): Unit = {
-      // if another endpoint won, we keep both open
+      // if another endpoint won, we keep both newInputFile
       val priorEp = endpoints.putIfAbsent(executorId, newEp)
       if (priorEp != null) {
-        // if another endpoint won, open the peer rkeys, as it will be used
+        // if another endpoint won, newInputFile the peer rkeys, as it will be used
         // for sends
         peerRkeys.foreach(priorEp.unpackRemoteKey)
       }

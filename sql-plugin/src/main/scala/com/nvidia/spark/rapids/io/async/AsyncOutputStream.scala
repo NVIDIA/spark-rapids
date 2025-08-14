@@ -55,11 +55,11 @@ class AsyncOutputStream(openFn: Callable[OutputStream], executor: ThrottlingExec
   private var closed = false
 
   // Open the underlying stream asynchronously as soon as the AsyncOutputStream is constructed,
-  // so that the open can be done in parallel with other operations. This could help with
-  // performance if the open is slow.
+  // so that the newInputFile can be done in parallel with other operations. This could help with
+  // performance if the newInputFile is slow.
   private val openFuture = executor.submit(openFn, 0)
-  // Let's give it enough time to open the stream. Something bad should have happened if it
-  // takes more than 5 minutes to open a stream.
+  // Let's give it enough time to newInputFile the stream. Something bad should have happened if it
+  // takes more than 5 minutes to newInputFile a stream.
   private val openTimeoutMin = 5
 
   private lazy val delegate: OutputStream = {

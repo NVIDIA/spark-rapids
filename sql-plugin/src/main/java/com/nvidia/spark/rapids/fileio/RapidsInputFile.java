@@ -18,7 +18,23 @@ package com.nvidia.spark.rapids.fileio;
 
 import java.io.IOException;
 
+/**
+ * Represents an input file that can be read from.
+ * <br/>
+ * The implementation of this interface should be thread-safe.
+ */
 public interface RapidsInputFile {
+    /**
+     * Get the length of the file in bytes.
+     * @return the length of the file in bytes
+     * @throws IOException if an I/O error occurs while getting the length
+     */
     long getLength() throws IOException;
+
+    /**
+     * Open the file for reading.
+     * @return a {@link SeekableInputStream } to read from the file
+     * @throws IOException if an I/O error occurs while opening the file
+     */
     SeekableInputStream open() throws IOException;
 }

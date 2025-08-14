@@ -23,19 +23,26 @@ import java.io.IOException;
 import java.io.Serializable;
 
 /**
- * An io layer to access different underlying storages such as hdfs, aws s3.
+ * An io layer to access different underlying storages such as hdfs, aws s3, etc.
  *<br/>
- *<br/>
- * This layer is heavily inspired by io abstractions layers like
- * <a href="https://github.com/apache/iceberg/blob/50d310aef17908f03f595d520cd751527483752a/api/src/main/java/org/apache/iceberg/io/FileIO.java#L36">iceberg's FileIO</a>,
- * <a href="https://github.com/apache/parquet-java/tree/master/parquet-common/src/main/java/org/apache/parquet/io">parquet io</a>,
- * <a href="https://github.com/trinodb/trino/blob/master/lib/trino-filesystem/src/main/java/io/trino/filesystem/TrinoFileSystem.java">trino filesystem</a>
  */
-public interface RapidsFileIO extends Serializable, Closeable {
-    RapidsInputFile open(String path) throws IOException;
+public interface RapidsFileIO extends Serializable{
+    /**
+     * Creates a new {@link RapidsInputFile} for the given path.
+     * @param path The absolute path to the file.
+     * @return a new {@link RapidsInputFile} for the given path
+     * @throws IOException If the underlying file system throws IOException
+     */
+    RapidsInputFile newInputFile(String path) throws IOException;
 
 
-    default RapidsInputFile open(Path path) throws IOException {
-        return open(path.toString());
+    /**
+     * Creates a new {@link RapidsInputFile} for the given path.
+     * @param path The absolute path to the file.
+     * @return a new {@link RapidsInputFile} for the given path
+     * @throws IOException If the underlying file system throws IOException
+     */
+    default RapidsInputFile newInputFile(Path path) throws IOException {
+        return newInputFile(path.toString());
     }
 }

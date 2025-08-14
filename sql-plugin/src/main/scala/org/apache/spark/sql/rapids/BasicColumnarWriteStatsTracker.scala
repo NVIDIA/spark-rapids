@@ -162,7 +162,7 @@ class BasicColumnarWriteTaskStatsTracker(
   }
 
   /**
-   * Update the number of open writers.
+   * Update the number of newInputFile writers.
    * It will be a noop if the given number is not larger than the current one. Since
    * only the max value is needed. This is designed for the concurrent writers case.
    */

@@ -739,7 +739,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
     }
 
   // Pending split batches that are not cached for the concurrent write because
-  // there are too many open writers, and it is going to fall back to the sorted
+  // there are too many newInputFile writers, and it is going to fall back to the sorted
   // sequential write.
   private val pendingBatches: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
 
@@ -912,7 +912,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
           idx += 1
         }
         if (idx < groups.length) {
-          // The open writers number reaches the limit, and still some partitions are
+          // The newInputFile writers number reaches the limit, and still some partitions are
           // not cached. Append to the queue for the coming fallback to the sorted
           // sequential write.
           groups.drop(idx).foreach(g => pendingBatches.enqueue(g))

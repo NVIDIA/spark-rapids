@@ -38,16 +38,12 @@ public class HadoopFileIO implements RapidsFileIO {
     }
 
     @Override
-    public RapidsInputFile open(String path) throws IOException {
-        return this.open(new Path(path));
+    public RapidsInputFile newInputFile(String path) throws IOException {
+        return this.newInputFile(new Path(path));
     }
 
     @Override
-    public RapidsInputFile open(Path path) throws IOException {
+    public RapidsInputFile newInputFile(Path path) throws IOException {
         return HadoopInputFile.create(path, hadoopConf.value());
-    }
-
-    @Override
-    public void close() throws IOException {
     }
 }

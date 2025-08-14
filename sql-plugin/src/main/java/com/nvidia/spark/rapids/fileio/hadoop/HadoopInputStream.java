@@ -23,6 +23,11 @@ import java.io.IOException;
 
 import static java.util.Objects.requireNonNull;
 
+/**
+ * A {@link SeekableInputStream} implementation that wraps a Hadoop {@link FSDataInputStream}.
+ * <br/>
+ * This class provides methods to read from the input stream and to seek to a specific position.
+ */
 public class HadoopInputStream extends SeekableInputStream {
     private final FSDataInputStream in;
     private boolean closed;
