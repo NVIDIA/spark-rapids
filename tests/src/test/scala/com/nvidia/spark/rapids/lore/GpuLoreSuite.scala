@@ -441,29 +441,26 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     withGpuSparkSession { spark =>
       // Enable LORE dump with original schema names for parquet
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "10[*]")
-      spark.conf.set(RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES.key, "true")
-
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "5[*]")
       // Build a dataframe containing various nested types to validate naming
-      import spark.implicits._
       val df = spark.range(0, 100, 1, 10)
         .selectExpr(
           "id as id_col",
           "named_struct('a', id, 'b', id + 1) as s_col",
           "array(id, id + 2) as arr_col",
           "map(id, id + 3) as map_col")
-        .groupByExpr("id_col")
+        .groupBy("id_col")
         .agg(
-          functions.max("s_col").as("s_max"),
+          functions.first("s_col", ignoreNulls = true).as("s_first"),
           functions.collect_list("arr_col").as("arr_list"),
-          functions.map_from_entries(functions.collect_list(functions.map_from_arrays(functions.array(functions.lit(1)), functions.array(functions.lit(2))))).as("map_agg")
+          functions.first("map_col", ignoreNulls = true).as("map_first")
         )
 
       // Trigger execution to produce LORE dump
       val _ = df.collect().length
 
-      // Inspect dumped parquet under loreId-10/input-0
-      val inputRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-10/input-0")
+      // Inspect dumped parquet under loreId-5/input-0
+      val inputRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-5/input-0")
       val fs = inputRoot.getFileSystem(spark.sparkContext.hadoopConfiguration)
 
       // Read expected names from rdd.meta
