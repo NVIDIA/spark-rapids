@@ -18,7 +18,9 @@ package com.nvidia.spark.rapids.iceberg.testutils
 
 import java.io.File
 import java.util.UUID
+
 import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.IcebergPartitionedFile
@@ -33,6 +35,7 @@ import org.apache.iceberg.mapping.{MappedField, MappedFields, NameMapping}
 import org.apache.iceberg.parquet.{Parquet, ParquetValueReader}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
 import org.apache.iceberg.types.Types.{NestedField, StructType}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.api.java.UDF3
 

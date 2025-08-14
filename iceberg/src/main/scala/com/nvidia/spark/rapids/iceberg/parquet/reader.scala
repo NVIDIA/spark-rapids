@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.iceberg.parquet
 import java.io.{IOException, UncheckedIOException}
 import java.net.URI
 import java.util.Objects
+
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
