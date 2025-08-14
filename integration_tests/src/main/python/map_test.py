@@ -782,8 +782,7 @@ def test_map_zip_with(data_gen):
         return df.selectExpr(columns)
     # ANSI mode is disabled since this test verifies the behaviour of map_zip_with and the evaluation of the associated lambda. 
     # Exceptions during overflow conditions are tested in the arithmetic-ops tests.
-    # Furthermore, we disable ansi here to force the test to run with ANSI disabled. 
-    # Skipping tests on versions of Spark with ANSI on by default causes us to lose test coverage.
+    # Not using @disable_ansi_mode because of https://github.com/NVIDIA/spark-rapids/issues/13214.  Using explicit setting instead.
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
 
 @pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-5, max_val=5), ArrayGen(int_gen, max_length=5), min_length=7)], ids=idfn)
@@ -818,8 +817,7 @@ def test_map_zip_with_mismatch_keys(data_gen):
         return df.selectExpr(columns)
     # ANSI mode is disabled since this test verifies the behaviour of map_zip_with and the evaluation of the associated lambda. 
     # Exceptions during overflow conditions are tested in the arithmetic-ops tests.
-    # Furthermore, we disable ansi here to force the test to run with ANSI disabled. 
-    # Skipping tests on versions of Spark with ANSI on by default causes us to lose test coverage.
+    # Not using @disable_ansi_mode because of https://github.com/NVIDIA/spark-rapids/issues/13214.  Using explicit setting instead.
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
