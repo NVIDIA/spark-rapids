@@ -110,7 +110,7 @@ export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$PY4J_FILE
 
 # Extract 'value' from conda config string 'key: value'
 CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
-if [[ x"$CONDA_ROOT" != x ]]; then
+if [[ -n "$CONDA_ROOT" ]]; then
   # Put conda package path ahead of the env 'PYTHONPATH',
   # to import the right pandas from conda instead of spark binary path.
   PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
