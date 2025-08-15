@@ -185,7 +185,13 @@ class StringGen(DataGen):
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
         # save pattern and charset for cache repr
         charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
-        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
+        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr + ',' + str(collation)
+
+    def __repr__(self):
+        name = f"StringType(collation={collation})" if collation is not None else "StringType"
+        if not self.nullable:
+            return name + '(not_null)'
+        return name
 
     def _cache_repr(self):
         return super()._cache_repr() + '(' + self.stringrepr + ')'
