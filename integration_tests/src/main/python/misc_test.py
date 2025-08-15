@@ -37,9 +37,13 @@ def test_uuid():
     # verify uniqueness across two rounds on GPU
     uuids_round1_gpu = with_gpu_session(lambda spark: gen_uuids(spark))
     uuids_round2_gpu = with_gpu_session(lambda spark: gen_uuids(spark))
-    _verify_unique_and_format(uuids_round1_gpu + uuids_round2_gpu)
+    uuids_gpu = uuids_round1_gpu + uuids_round2_gpu
+    assert len(uuids_gpu) == 2 * num_rows
+    _verify_unique_and_format(uuids_gpu)
 
     # verify uniqueness across two rounds on CPU
     uuids_round1_cpu = with_cpu_session(lambda spark: gen_uuids(spark))
     uuids_round2_cpu = with_cpu_session(lambda spark: gen_uuids(spark))
-    _verify_unique_and_format(uuids_round1_cpu + uuids_round2_cpu)
+    uuids_cpu = uuids_round1_cpu + uuids_round2_cpu
+    assert len(uuids_cpu) == 2 * num_rows
+    _verify_unique_and_format(uuids_cpu)
