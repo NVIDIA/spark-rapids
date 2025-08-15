@@ -75,7 +75,7 @@ function bloopInstall() {
       rm -rf $bloopDir
       mv $bloopTmpConfigDir $bloopDir
       echo "generated bloop files under $bloopDir"
-      bloopDirsGenerated+=("$bloopDir")
+      bloopDirsGenerated+=($bloopDir)
     done
     echo "#### Created bloop projects ${bloopDirsGenerated[@]}"
     echo "Execute"

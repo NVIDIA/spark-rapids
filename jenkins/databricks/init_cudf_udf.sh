@@ -34,7 +34,7 @@ if [[ "$(printf '%s\n' "3.10" "${PYTHON_VERSION}" | sort -V | head -n1)" == "3.1
     [[ -n "$(which lsb_release)" ]] && mv $(which lsb_release) $(which lsb_release)"-bak"
 else
     echo "Rapids 24.10+ drops python 3.9 or below versions of conda packages"
-    exit 254
+    exit -1
 fi
 
 REQUIRED_PACKAGES=(
@@ -61,9 +61,9 @@ if command -v conda >/dev/null 2>&1; then
   ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas || true
 
   REQUIRED_PACKAGES=(
-    "cuda-version=$CUDA_VER"
-    "cudf=$CUDF_VER"
-    "${REQUIRED_PACKAGES[@]}"
+    cuda-version=$CUDA_VER
+    cudf=$CUDF_VER
+    ${REQUIRED_PACKAGES[@]}
   )
 
   ${base}/envs/cudf-udf/bin/mamba install -y \
@@ -80,9 +80,9 @@ else
       "cudf-cu11>=${CUDF_VER}.0a0,<=${CUDF_VER}"
 
   REQUIRED_PACKAGES=(
-    "${REQUIRED_PACKAGES[@]}"
+    ${REQUIRED_PACKAGES[@]}
     scipy
     numexpr
   )
-pip install --target=${PYTHON_SITE_PACKAGES} "${REQUIRED_PACKAGES[@]}"
+  pip install --target=${PYTHON_SITE_PACKAGES} ${REQUIRED_PACKAGES[@]}
 fi
