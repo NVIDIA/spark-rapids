@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,8 +52,6 @@ class WindowRetrySuite
       boundPartitionSpec,
       boundOrderSpec = orderSpec,
       outputTypes = Array(DataTypes.LongType),
-      numOutputBatches = NoopMetric,
-      numOutputRows = NoopMetric,
       opTime = NoopMetric
     )
     // pre-load a spillable batch before injecting the OOM
@@ -191,7 +189,7 @@ class WindowRetrySuite
 
     val runningIter = new GpuRunningWindowIterator(
       Seq(cb).iterator, Seq(GpuAlias(count, "count")()), boundPartSpec, boundOrderSpec,
-      Array(LongType), NoopMetric, NoopMetric, NoopMetric)
+      Array(LongType), NoopMetric)
     withResource(runningIter) { _ =>
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.GPU.ordinal, 0)

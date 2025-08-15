@@ -2939,7 +2939,6 @@ object MakeParquetTableProducer extends Logging {
             s"but read ${table.getNumberOfColumns} from ${splits.mkString("; ")}")
         }
       }
-      metrics(NUM_OUTPUT_BATCHES) += 1
       val evolvedSchemaTable = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
         clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
       val outputTable = GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode,
@@ -2999,7 +2998,6 @@ case class ParquetTableReader(
           s"but read ${table.getNumberOfColumns} from $splitsString")
       }
     }
-    metrics(NUM_OUTPUT_BATCHES) += 1
     val evolvedSchemaTable = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
       clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
     GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode, timestampRebaseMode)

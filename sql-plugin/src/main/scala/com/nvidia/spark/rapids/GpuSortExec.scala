@@ -120,7 +120,7 @@ case class GpuSortExec(
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] =
+  override lazy val opMetrics: Map[String, GpuMetric] =
     Map(
       OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
       SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME))
@@ -132,8 +132,6 @@ case class GpuSortExec(
 
     val sortTime = gpuLongMetric(SORT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
-    val outputBatch = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val outOfCore = sortType == OutOfCoreSort
     val singleBatch = sortType == FullSortSingleBatch
     child.executeColumnar().mapPartitions { cbIter =>
@@ -142,12 +140,12 @@ case class GpuSortExec(
       }
       val finalIter = if (outOfCore) {
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter,
-          targetSize, opTime, sortTime, outputBatch, outputRows)
+          targetSize, opTime, sortTime, NoopMetric, NoopMetric)
         onTaskCompletion(iter.close())
         iter
       } else {
         GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
-          opTime, sortTime, outputBatch, outputRows)
+          opTime, sortTime, NoopMetric, NoopMetric)
       }
       if (taskTrackers.exists(_.nonEmpty)) {
         finalIter.map { cb =>

@@ -75,7 +75,7 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
       fileScan.readPartitionSchema,
       pushedFilters,
       fileScan.rapidsConf,
-      fileScan.allMetrics,
+      fileScan.opMetrics,
       fileScan.queryUsesInputFile)
   }
 }
