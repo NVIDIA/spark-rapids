@@ -44,32 +44,21 @@ public class HadoopInputFile implements RapidsInputFile {
         return new HadoopInputFile(filePath, fs);
     }
 
-    private HadoopInputFile(Path filePath, FileSystem fs) {
+    private HadoopInputFile(Path filePath, FileSystem fs) throws IOException {
         Objects.requireNonNull(filePath, "filePath can't be null!");
         Objects.requireNonNull(fs, "FileSystem can't be null");
         this.filePath = filePath;
         this.fs = fs;
-        this.fileStatus = null;
+        this.fileStatus = fs.getFileStatus(filePath);
     }
 
     @Override
     public long getLength() throws IOException {
-        ensureFileStatus();
         return fileStatus.getLen();
     }
 
     @Override
     public SeekableInputStream open() throws IOException {
         return new HadoopInputStream(fs.open(filePath));
-    }
-
-    private void ensureFileStatus() throws IOException {
-        if (fileStatus == null) {
-            synchronized (this) {
-                if (fileStatus == null) {
-                    fileStatus = fs.getFileStatus(filePath);
-                }
-            }
-        }
     }
 }
