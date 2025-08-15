@@ -20,7 +20,7 @@ import java.util.concurrent.{ExecutionException, Future, LinkedBlockingQueue, Ti
 
 import ai.rapids.cudf.{HostMemoryBuffer, PinnedMemoryPool, Rmm, RmmAllocationMode}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState, TaskPriority}
+import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState, TaskPriority, ThreadStateRegistry}
 import com.nvidia.spark.rapids.spill._
 import org.mockito.Mockito.when
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
@@ -690,6 +690,8 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
 
   test("split should not happen immediately after fallback on memory contention") {
 
+    ThreadStateRegistry.enablePrintStackTraceCausingThreadBlocked()
+
     // It allocates a small piece of memory (1024) as a warmup, sleep 1s,
     // then allocates a large piece of memory
     class AllocOnAnotherThreadWithWarmup(override val thread: TaskThread,
@@ -759,6 +761,8 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       } finally {
         thread1.done.get(1, TimeUnit.SECONDS)
         thread2.done.get(1, TimeUnit.SECONDS)
+
+        ThreadStateRegistry.disablePrintStackTraceCausingThreadBlocked()
       }
     }
   }
