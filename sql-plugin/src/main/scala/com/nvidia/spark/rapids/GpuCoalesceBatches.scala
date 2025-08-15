@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -245,6 +245,15 @@ case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
   override def children: Seq[Expression] = gpuOrder
 }
 
+object OpNameNvtxMap {
+  private val map = Map(
+    "GpuCoalesceBatches: collect" -> NvtxRegistry.GPU_COALESCE_BATCHES_COLLECT,
+    "build batch: collect" -> NvtxRegistry.BUILD_BATCH_COLLECT
+  )
+
+  def get(opName: String): Option[NvtxId] = map.get(opName)
+}
+
 abstract class AbstractGpuCoalesceIterator(
     inputIter: Iterator[ColumnarBatch],
     goal: CoalesceSizeGoal,
@@ -257,7 +266,9 @@ abstract class AbstractGpuCoalesceIterator(
     opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Logging {
 
-  private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
+  private val iter = new CollectTimeIterator(
+    OpNameNvtxMap.get(s"$opName: collect").getOrElse(NvtxRegistry.GPU_COALESCE_ITERATOR),
+    inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
 
