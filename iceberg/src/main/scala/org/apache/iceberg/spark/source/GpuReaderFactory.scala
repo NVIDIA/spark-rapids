@@ -16,12 +16,11 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids.GpuMetric
-import com.nvidia.spark.rapids.MultiFileReaderUtils
-import com.nvidia.spark.rapids.RapidsConf
+import scala.collection.JavaConverters._
+
+import com.nvidia.spark.rapids.{GpuMetric, MultiFileReaderUtils, RapidsConf, ResourcePoolConf}
 import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
-import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.InputPartition
@@ -41,6 +40,11 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   // not honored by Iceberg.
   private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled &&
     !queryUsesInputFile
+  // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
+  private val poolMemCapacity = rapidsConf.multiThreadMemoryLimit match {
+    case v if v == 0 => None
+    case v => Some(v)
+  }
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] =
     throw new UnsupportedOperationException("GpuReaderFactory does not support createReader()")
@@ -84,11 +88,13 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       val useMultiThread = MultiFileReaderUtils.useMultiThreadReader(canUseCoalescing,
         canUseMultiThread, files, allCloudSchemes)
 
+      val poolConf = ResourcePoolConf
+          .buildFromConf(rapidsConf)
+          .setMemoryCapacity(poolMemCapacity)
       if (useMultiThread) {
-        MultiThread(partition.multiThreadReadNumThreads,
-          partition.maxNumParquetFilesParallel)
+        MultiThread(poolConf, partition.maxNumParquetFilesParallel)
       } else {
-        MultiFile(partition.multiThreadReadNumThreads)
+        MultiFile(poolConf)
       }
     } else {
       throw new UnsupportedOperationException("Currently only parquet format is supported")

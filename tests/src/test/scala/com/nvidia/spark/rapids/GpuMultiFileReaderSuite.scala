@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.Callable
-
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.io.async.AsyncRunner
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.funsuite.AnyFunSuite
@@ -39,10 +38,15 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
         SpillPriorities.ACTIVE_BATCHING_PRIORITY)
       Array(SingleHMBAndMeta(Array(singleBuf), 0L, 0, Seq.empty))
     }
+    val poolConf = ResourcePoolConf(
+      waitResourceTimeoutMs = 10 * 1000L, // 10 seconds
+      retryPriorityAdjust = 0.0f, // no penalty
+      maxThreadNumber = 1
+    ).setMemoryCapacity(Some(1L << 20)) // 1MB
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
-      numThreads = 1,
+      resourceConf = poolConf,
       maxNumFileProcessed = 1,
       filters = Array.empty,
       execMetrics = Map.empty,
@@ -61,8 +65,8 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
           tc: TaskContext,
           file: PartitionedFile,
           conf: Configuration,
-          filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
-        () => null
+          filters: Array[Filter]): AsyncRunner[HostMemoryBuffersWithMetaDataBase] = {
+        AsyncRunner.newUnboundedTask(() => null)
       }
 
       override def readBatches(h: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch] =

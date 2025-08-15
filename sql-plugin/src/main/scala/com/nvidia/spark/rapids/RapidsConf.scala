@@ -320,6 +320,7 @@ object RapidsReaderType extends Enumeration {
 
 object RapidsConf extends Logging {
   val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
+
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
   private def register(entry: ConfEntry[_]): Unit = {
@@ -1091,6 +1092,36 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
+
+  val MULTITHREAD_READ_MEM_LIMIT = conf("spark.rapids.sql.multiThreadedRead.memoryLimit")
+      .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
+        "This can not be changed at runtime after the executor has started. And if 0, it " +
+        "will be set with 90% of executor's off-heap memory")
+      // TODO: Memory capacity can be adjusted during the runtime
+      .startupOnly()
+      .internal()
+      .longConf
+      .checkValue(v => v >= 0, s"The memory capacity must be greatThanOrEqual zero")
+      .createWithDefault(0)
+
+  val MULTITHREAD_READ_TASK_TIMEOUT = conf("spark.rapids.sql.multiThreadedRead.taskTimeout")
+      .doc("The maximum time in milliseconds to wait for a task to acquire required resource " +
+        "before giving up and put off the run, by re-appending the task back into the queue " +
+        "with a priority penality.")
+      .startupOnly()
+      .internal()
+      .longConf
+      .checkValue(v => v >= 0, "The timeout must be greater than zero")
+      .createWithDefault(5 * 1000L) // 5 seconds
+
+  val MULTITHREAD_READ_STAGE_LEVEL_POOL = conf("spark.rapids.sql.multiThreadedRead.stageLevelPool")
+      .doc("Enable test mode for the multi-threaded read. This will create different " +
+        "threadpools for each stage, so as to verify threadpools with different configs " +
+        "as independent test cases which can be run in parallel.")
+      .startupOnly()
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -3172,6 +3203,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   lazy val numFilesFilterParallel: Int = get(NUM_FILES_FILTER_PARALLEL)
+
+  lazy val multiThreadMemoryLimit: Long = get(MULTITHREAD_READ_MEM_LIMIT)
+
+  lazy val multiThreadReadTaskTimeout: Long = get(MULTITHREAD_READ_TASK_TIMEOUT)
+
+  lazy val multiThreadReadStageLevelPool: Boolean = get(MULTITHREAD_READ_STAGE_LEVEL_POOL)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
