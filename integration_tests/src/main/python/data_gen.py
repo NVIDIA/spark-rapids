@@ -174,6 +174,7 @@ _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
     """Generate strings that match a pattern"""
     def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True, collation=None):
+        self._collation = collation
         if is_spark_400_or_later():
             data_type = StringType(collation=collation) if collation is not None else StringType()
             super().__init__(data_type, nullable=nullable)
@@ -188,7 +189,7 @@ class StringGen(DataGen):
         self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr + ',' + str(collation)
 
     def __repr__(self):
-        name = f"String(collation={self.collation})" if self.collation is not None else "String"
+        name = f"String(collation={self._collation})" if self._collation is not None else "String"
         if not self.nullable:
             return name + '(not_null)'
         return name
