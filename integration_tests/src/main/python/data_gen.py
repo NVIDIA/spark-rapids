@@ -188,7 +188,7 @@ class StringGen(DataGen):
         self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr + ',' + str(collation)
 
     def __repr__(self):
-        name = f"StringType(collation={collation})" if collation is not None else "StringType"
+        name = f"StringType(collation={self.collation})" if self.collation is not None else "StringType"
         if not self.nullable:
             return name + '(not_null)'
         return name
