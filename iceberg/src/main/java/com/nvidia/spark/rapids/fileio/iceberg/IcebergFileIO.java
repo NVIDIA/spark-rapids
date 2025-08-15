@@ -36,7 +36,7 @@ public class IcebergFileIO implements RapidsFileIO {
    * Constructs an IcebergFileIO with the given Iceberg FileIO delegate.
    *
    * @param delegate the Iceberg FileIO to delegate to. It's the caller's responsibility to ensure
-   *                 that the delegate is close when no longer used, e.g., iceberg table/catalog close.
+   *                 that the delegate is closed when no longer used, e.g., iceberg table/catalog close.
    */
   public IcebergFileIO(FileIO delegate) {
     Objects.requireNonNull(delegate, "delegate can't be null");
