@@ -16,15 +16,18 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import java.util.concurrent.{Callable, Future, TimeUnit}
+
 import scala.collection.AbstractIterator
-import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
-import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency, TaskContext}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -155,9 +158,9 @@ abstract class GpuShuffleExchangeExecBaseWithMetrics(
     child: SparkPlan) extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child) {
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
-  @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
+  @transient lazy val mapOutputStatisticsFuture: scala.concurrent.Future[MapOutputStatistics] = {
     if (inputBatchRDD.getNumPartitions == 0) {
-      Future.successful(null)
+      scala.concurrent.Future.successful(null)
     } else {
       sparkContext.submitMapStage(shuffleDependencyColumnar)
     }
@@ -178,6 +181,8 @@ abstract class GpuShuffleExchangeExecBase(
   private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
     .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
     .get(child.conf)
+  private lazy val asyncWriteEnabled = RapidsConf.SHUFFLE_ASYNC_WRITE_ENABLED.get(child.conf)
+  private lazy val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(child.conf)
 
   private lazy val useGPUShuffle = {
     gpuOutputPartitioning match {
@@ -250,7 +255,9 @@ abstract class GpuShuffleExchangeExecBase(
       useMultiThreadedShuffle,
       allMetrics,
       writeMetrics,
-      additionalMetrics)
+      additionalMetrics,
+      asyncWriteEnabled,
+      targetBatchSize)
   }
 
   /**
@@ -339,7 +346,9 @@ object GpuShuffleExchangeExecBase {
       useMultiThreadedShuffle: Boolean,
       metrics: Map[String, GpuMetric],
       writeMetrics: Map[String, SQLMetric],
-      additionalMetrics: Map[String, GpuMetric])
+      additionalMetrics: Map[String, GpuMetric],
+      asyncWriteEnabled: Boolean,
+      targetBatchSize: Long)
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
       case _: GpuRoundRobinPartitioning => true
@@ -387,29 +396,99 @@ object GpuShuffleExchangeExecBase {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
+          
+          // Async prefetch related variables
+          private var executor: Option[ThrottlingExecutor] = None
+          private var prefetchFuture: Option[Future[Option[ColumnarBatch]]] = None
+          
+          // Initialize async executor if enabled
+          if (asyncWriteEnabled) {
+            // Don't install the callback if in a unit test
+            Option(TaskContext.get()).foreach { tc =>
+              onTaskCompletion(tc)(close())
+            }
+            
+            executor = Some(new ThrottlingExecutor(
+              TrampolineUtil.newDaemonCachedThreadPool(
+                "async shuffle write thread for " + Thread.currentThread().getName, 1, 1),
+              TrafficController.getWriteInstance,
+              _ => () // No stats update needed
+            ))
+          }
+          
+          def close(): Unit = {
+            executor.foreach(_.shutdownNow(10, TimeUnit.SECONDS))
+          }
+          
+          // Start async prefetch
+          private def startPrefetch(): Unit = {
+            if (asyncWriteEnabled && executor.isDefined && prefetchFuture.isEmpty) {
+              val callable = new Callable[Option[ColumnarBatch]]() {
+                override def call(): Option[ColumnarBatch] = {
+                  if (iter.hasNext) {
+                    var batch = iter.next()
+                    while (batch.numRows == 0 && iter.hasNext) {
+                      batch.close()
+                      batch = iter.next()
+                    }
+                    if (batch.numRows > 0) {
+                      Some(batch)
+                    } else {
+                      batch.close()
+                      None
+                    }
+                  } else {
+                    None
+                  }
+                }
+              }
+              // Use targetBatchSize as memory estimate for the prefetch task
+              prefetchFuture = Some(executor.get.submit(callable, targetBatchSize))
+            }
+          }
+          
           private def partNextBatch(): Unit = {
             if (partitioned != null) {
               partitioned.map(_._1).safeClose()
               partitioned = null
               at = 0
             }
-            if (iter.hasNext) {
-              var batch = iter.next()
-              while (batch.numRows == 0 && iter.hasNext) {
-                batch.close()
-                batch = iter.next()
-              }
-              // Get a non-empty batch or the last batch. So still need to
-              // check if it is empty for the later case.
-              if (batch.numRows > 0) {
-                partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-                partitioned.foreach(batches => {
-                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                })
-                metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-                at = 0
+            
+            val batch = if (asyncWriteEnabled && prefetchFuture.isDefined) {
+              // Get the prefetched batch
+              val batchOpt = prefetchFuture.get.get()
+              prefetchFuture = None
+              batchOpt
+            } else {
+              // Synchronous path
+              if (iter.hasNext) {
+                var batch = iter.next()
+                while (batch.numRows == 0 && iter.hasNext) {
+                  batch.close()
+                  batch = iter.next()
+                }
+                if (batch.numRows > 0) {
+                  Some(batch)
+                } else {
+                  batch.close()
+                  None
+                }
               } else {
-                batch.close()
+                None
+              }
+            }
+            
+            batch.foreach { b =>
+              partitioned = getParts(b).asInstanceOf[Array[(ColumnarBatch, Int)]]
+              partitioned.foreach(batches => {
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+              })
+              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+              at = 0
+              
+              // Start next prefetch after processing current batch
+              if (asyncWriteEnabled) {
+                startPrefetch()
               }
             }
           }
