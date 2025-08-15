@@ -2138,6 +2138,16 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val SHUFFLE_ASYNC_WRITE_ENABLED = conf("spark.rapids.sql.asyncWrite.shuffle.enabled")
+    .doc("Enable or disable the asynchronous write for Shuffle. When enabled, a background " +
+      "thread will be started after each partNextBatch() call to prefetch data from the " +
+      "underlying iterator by calling hasNext() and next(), as these operations can be " +
+      "time-consuming. This allows overlapping of data processing with downstream operations.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   // ["NEVER", "ALWAYS", "ONFAILURE"]
   private val KudoDebugModes = 
     DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
@@ -3373,6 +3383,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
 
   lazy val shuffleAsyncReadEnabled: Boolean = get(SHUFFLE_ASYNC_READ_ENABLED)
+
+  lazy val shuffleAsyncWriteEnabled: Boolean = get(SHUFFLE_ASYNC_WRITE_ENABLED)
 
   lazy val shuffleKudoSerializerDebugMode: DumpOption = {
     val mode = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE)
