@@ -86,6 +86,18 @@ object NvtxRegistry {
   val GET_MAP_SIZES_BY_EXEC_ID: NvtxId = NvtxId("getMapSizesByExecId", NvtxColor.CYAN,
     "Call to internal Spark API for retrieving size and location of shuffle map output blocks")
 
+  val GPU_KUDO_SERIALIZE: NvtxId = NvtxId("gpuKudoSerialize", NvtxColor.YELLOW,
+    "Perform kudo serialization on the gpu")
+
+  val GPU_KUDO_COPY_TO_HOST: NvtxId = NvtxId("gpuKudoCopyToHost", NvtxColor.GREEN,
+    "copy gpu kudo serialized outputs back to the host")
+
+  val GPU_KUDO_SLICE_BUFFERS: NvtxId = NvtxId("gpuKudoSliceBuffers", NvtxColor.RED,
+    "slice kudo serialized buffers on host into partitions")
+
+  val GPU_KUDO_WRITE_BUFFERS: NvtxId = NvtxId("gpuKudoWriteBuffers", NvtxColor.CYAN,
+    "write sliced kudo serialized buffers to output blocks")
+
   def init(): Unit = {
     register(ACQUIRE_GPU)
     register(RELEASE_GPU)
@@ -98,6 +110,9 @@ object NvtxRegistry {
     register(QUEUE_FETCHED)
     register(RAPIDS_CACHING_WRITER_WRITE)
     register(GET_MAP_SIZES_BY_EXEC_ID)
+    register(GPU_KUDO_SERIALIZE)
+    register(GPU_KUDO_COPY_TO_HOST)
+    register(GPU_KUDO_SLICE_BUFFERS)
   }
 }
 

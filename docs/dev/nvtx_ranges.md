@@ -20,13 +20,16 @@ See [nvtx_profiling.md](https://nvidia.github.io/spark-rapids/docs/dev/nvtx_prof
 Name | Description
 -----|-------------
 getMapSizesByExecId|Call to internal Spark API for retrieving size and location of shuffle map output blocks
-Release GPU|Releasing the GPU semaphore
+gpuKudoSerialize|Perform kudo serialization on the gpu
 Acquire GPU|Time waiting for GPU semaphore to be acquired
-ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
+Release GPU|Releasing the GPU semaphore
+gpuKudoSliceBuffers|slice kudo serialized buffers on host into partitions
 CommitShuffle|After all temporary shuffle writes are done, produce a single file (shuffle_[map_id]_0) in the commit phase
+ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
 queueFetched|MT shuffle manager is using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results
 WaitingForWrites|Rapids Shuffle Manager (multi threaded) is waiting for any queued writes to finish before finalizing the map output writer
-ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
 ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
-RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing
+ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
+gpuKudoCopyToHost|copy gpu kudo serialized outputs back to the host
 BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
+RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing
