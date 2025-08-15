@@ -20,10 +20,9 @@ import java.io.{IOException, UncheckedIOException}
 import java.net.URI
 import java.util.Objects
 
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
 import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
@@ -40,6 +39,7 @@ import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
 import org.apache.parquet.hadoop.metadata.BlockMetaData
+import scala.collection.JavaConverters._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -48,23 +48,24 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class IcebergPartitionedFile(
-    file: InputFile,
+    file: IcebergInputFile,
     split: Option[(Long, Long)] = None,
     filter: Option[Expression] = None) {
 
-  lazy val urlEncodedPath: String = new Path(file.location()).toUri.toString
+  lazy val urlEncodedPath: String = new Path(file.getDelegate.location()).toUri.toString
   lazy val path: Path = new Path(new URI(urlEncodedPath))
 
   def parquetReadOptions: ParquetReadOptions = {
-    GpuIcebergParquetReader.buildReaderOptions(file, split)
+    GpuIcebergParquetReader.buildReaderOptions(file.getDelegate, split)
   }
 
   def newReader: ParquetFileReader = {
     try {
-      ParquetFileReader.open(GpuParquetIO.file(file), parquetReadOptions)
+      ParquetFileReader.open(GpuParquetIO.file(file.getDelegate), parquetReadOptions)
     } catch {
       case e: IOException =>
-        throw new UncheckedIOException(s"Failed to open Parquet file: ${file.location()}", e)
+        throw new UncheckedIOException(s"Failed to newInputFile Parquet file: " +
+          s"${file.getDelegate.location()}", e)
     }
   }
 
@@ -72,12 +73,12 @@ case class IcebergPartitionedFile(
     split match {
       case Some((start, length)) =>
         PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty,
-          file.location(),
+          file.getDelegate.location(),
           start,
           length)
       case None =>
         PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty,
-          file.location(),
+          file.getDelegate.location(),
           0,
           file.getLength)
     }
