@@ -33,10 +33,11 @@ def read_orc_sql(data_path):
     return lambda spark : spark.sql('select * from orc.`{}`'.format(data_path))
 
 # Using timestamps from 1590 to work around a cudf ORC bug
-# https://github.com/NVIDIA/spark-rapids/issues/131.
+# https://github.com/NVIDIA/spark-rapids/issues/131
+# https://github.com/NVIDIA/spark-rapids/issues/13272
 # Once the bug is fixed we should remove this and use timestamp_gen.
 def get_orc_timestamp_gen(nullable=True):
-    return TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc), nullable=nullable)
+    return TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc), nullable=nullable)
 
 orc_timestamp_gen = get_orc_timestamp_gen()
 
