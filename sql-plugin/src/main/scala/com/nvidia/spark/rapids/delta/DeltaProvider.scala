@@ -16,8 +16,21 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, OverwriteByExpressionExecV1Meta, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
+import com.nvidia.spark.rapids.{
+  AppendDataExecV1Meta, 
+  AtomicCreateTableAsSelectExecMeta, 
+  AtomicReplaceTableAsSelectExecMeta, 
+  CreatableRelationProviderRule, 
+  ExecRule, 
+  ExprRule, 
+  GpuExec, 
+  OverwriteByExpressionExecV1Meta, 
+  RunnableCommandRule, 
+  ShimLoaderTemp, 
+  SparkPlanMeta
+}
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -41,6 +54,8 @@ trait DeltaProvider {
       RunnableCommandRule[_ <: RunnableCommand]]
 
   def getStrategyRules: Seq[SparkStrategy]
+
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
 
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
@@ -95,6 +110,8 @@ object NoDeltaProvider extends DeltaProvider {
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 
   override def getStrategyRules: Seq[SparkStrategy] = Nil
 

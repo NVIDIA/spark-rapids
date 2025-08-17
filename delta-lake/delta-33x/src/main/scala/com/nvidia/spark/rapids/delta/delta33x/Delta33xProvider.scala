@@ -17,16 +17,20 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.{DeltaIOProvider, GpuDeltaDataSource, RapidsDeltaUtils}
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.fs.Path
 import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
+import org.apache.spark.sql.delta.metric.IncrementMetric
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils.PROP_CLUSTERING_COLUMNS
 import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterByTransform
@@ -38,6 +42,8 @@ import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCr
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object Delta33xProvider extends DeltaIOProvider {
 
@@ -117,6 +123,37 @@ object Delta33xProvider extends DeltaIOProvider {
           (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
+
+  case class GpuIncrementMeticMeta(
+    cpuInc: IncrementMetric,
+    override val conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) {
+    override def convertToGpu(): GpuExpression = {
+      val gpuChild = childExprs.head.convertToGpu()
+      GpuIncrementMetic(cpuInc, gpuChild)
+    }
+  }
+
+  case class GpuIncrementMetic(cpuInc: IncrementMetric, override val child: Expression) 
+    extends ShimUnaryExpression with GpuExpression {
+    override def dataType: DataType = child.dataType
+
+    override def prettyName: String = "gpu_" + cpuInc.prettyName
+
+    override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+      cpuInc.metric.add(batch.numRows())
+      child.columnarEval(batch)
+    }
+  }
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[IncrementMetric](
+      "IncrementMetric",
+      ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.all, TypeSig.all),
+      GpuIncrementMeticMeta
+    )
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
