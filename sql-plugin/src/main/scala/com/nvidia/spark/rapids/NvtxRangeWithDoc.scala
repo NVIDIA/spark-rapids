@@ -25,50 +25,55 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import org.apache.spark.internal.Logging
 
 object RangeDebugger extends Logging {
-  val threadLocalStack = new ThreadLocal[List[String]] {
-    override def initialValue(): List[String] = List.empty
+  val threadLocalStack = new ThreadLocal[mutable.ArrayStack[NvtxId]] {
+    override def initialValue(): mutable.ArrayStack[NvtxId] = mutable.ArrayStack[NvtxId]()
   }
 
-  private def dumpOrderErrorMessage(popped: String, elem: String): Unit = {
+  private def dumpOrderErrorMessage(popped: Option[NvtxId], elem: NvtxId): Unit = {
     logError(s"OUT OF ORDER POP of $elem")
-    logError(s"TOP OF STACK IS $popped")
+    logError(s"TOP OF STACK IS ${popped.getOrElse("<nil>")}")
     val stackTrace = Thread.currentThread.getStackTrace
     stackTrace.foreach(elem => logError(elem.toString))
   }
 
-  def push(elem: String): Unit = {
-    threadLocalStack.set(elem :: threadLocalStack.get())
+  def push(elem: NvtxId): Unit = {
+    threadLocalStack.get().push(elem)
   }
 
-  def pop(elem: String): Unit = {
-    threadLocalStack.get() match {
-      case popped :: tail =>
-        threadLocalStack.set(tail)
-        if (!popped.equals(elem)) {
-          dumpOrderErrorMessage(popped, elem)
-        }
-      case Nil =>
-        dumpOrderErrorMessage("<nil>", elem)
+  def pop(elem: NvtxId): Unit = {
+    val stack = threadLocalStack.get()
+    if (stack.nonEmpty) {
+      val popped = stack.pop()
+      if (!popped.equals(elem)) {
+        dumpOrderErrorMessage(Some(popped), elem)
+      }
+    } else {
+      dumpOrderErrorMessage(None, elem)
     }
   }
 }
 
 sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
   private val isEnabled = java.lang.Boolean.getBoolean("ai.rapids.cudf.nvtx.enabled")
+  private val isDebug = java.lang.Boolean.getBoolean("ai.rapids.cudf.nvtx.debug")
 
   def help(): Unit = println(s"$name|$doc")
 
   def push(): NvtxId = {
     if (isEnabled) {
       NvtxRange.pushRange(name, color)
-      RangeDebugger.push(name)
+      if (isDebug) {
+        RangeDebugger.push(this)
+      }
     }
     this
   }
 
   def pop(): Unit = {
     if (isEnabled) {
-      RangeDebugger.pop(name)
+      if (isDebug) {
+        RangeDebugger.pop(this)
+      }
       NvtxRange.popRange()
     }
   }
