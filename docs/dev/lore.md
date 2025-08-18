@@ -42,11 +42,14 @@ directory. Note, the directory may either not exist, in which case it will be cr
 If the directory exists and contains files, an `IllegalArgumentException` will be thrown to prevent overwriting existing data.
 ### Preserve original schema names in Parquet
 
-By default, Parquet files dumped by LORE use auto-generated column names derived from types.
-To make the dumped Parquet files easier to consume directly with Spark or other tools, enable:
+By default, LORE writes Parquet files using the original Spark schema names (including nested
+field names for structures, arrays, and maps, following Spark-compat naming such as `element`,
+`key`, and `value` where applicable).
+
+You can disable this behavior if you prefer auto-generated type-based names by setting:
 
 ```
-spark.rapids.sql.lore.parquet.useOriginalSchemaNames = true
+spark.rapids.sql.lore.parquet.useOriginalSchemaNames = false
 ```
 
 When enabled, LORE writes Parquet files with the original Spark schema names (including nested

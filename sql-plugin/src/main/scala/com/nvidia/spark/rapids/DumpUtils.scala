@@ -485,8 +485,8 @@ object ParquetDumper extends Logging {
         builder.withListColumn(built.build())
         
       case MapType(keyType, valueType, _) =>
-        // MapType 在 cuDF 中表示为 List<Struct<key, value>>
-        // cv 是 List 列，其子列是 Struct 列
+        // MapType is represented in cuDF as List<Struct<key, value>>
+        // cv is a LIST column whose child is a STRUCT column
         if (cv.getNumChildren < 1) {
           throw new IllegalStateException(
             s"MapType column '$fieldName' has no children. Expected at least 1 " +
@@ -494,10 +494,10 @@ object ParquetDumper extends Logging {
             s"ColumnView type: ${cv.getType}, Spark type: $sparkType")
         }
         
-        val structCv = cv.getChildColumnView(0)  // 获取 Struct 列
+        val structCv = cv.getChildColumnView(0)  // Get the STRUCT column
         toClose += structCv
         
-        // Struct 列应该有 2 个子列：key 和 value
+        // The STRUCT column should have 2 child columns: key and value
         if (structCv.getNumChildren < 2) {
           throw new IllegalStateException(
             s"MapType struct column '$fieldName' has ${structCv.getNumChildren} children. " +
@@ -507,11 +507,11 @@ object ParquetDumper extends Logging {
         
         val lb = listBuilder(fieldName, true)
         val sb = structBuilder("key_value", true)
-        val keyCv = structCv.getChildColumnView(0)  // 获取 key 列
-        val valCv = structCv.getChildColumnView(1)  // 获取 value 列
+        val keyCv = structCv.getChildColumnView(0)  // Get the key column
+        val valCv = structCv.getChildColumnView(1)  // Get the value column
         toClose ++= Array(keyCv, valCv)
         
-        // key 和 value 都是基本类型，直接调用 withColumns
+        // Both key and value are primitive types; call withColumns directly
         parquetWriterOptionsFromSparkType(sb, keyCv, "key", keyType, toClose)
         parquetWriterOptionsFromSparkType(sb, valCv, "value", valueType, toClose)
         builder.withListColumn(lb.withStructColumn(sb.build()).build())

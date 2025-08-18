@@ -303,9 +303,9 @@ object GpuLore {
     val innerPlan = sub.plan.child
     if (innerPlan.isInstanceOf[GpuExec]) {
       val dumpRDDInfo = LoreDumpRDDInfo(id, loreOutputInfo, innerPlan.output,
-        hadoopConf, useOriginalSchemaNames = new RapidsConf(
-          SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf)
-          .loreParquetUseOriginalNames)
+        hadoopConf,
+        useOriginalSchemaNames = RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES
+          .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf))
       innerPlan match {
         case p: GpuColumnarToRowExec => p.child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
         case c => c.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
