@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ echo "Setting up iceberg rest catalog"
 
 docker compose up -d --wait --wait-timeout 300
 
-# Install uv first
+# Run bootstrap script using uv
 uv run bootstrap.py
 
 echo "Iceberg rest catalog setup complete"

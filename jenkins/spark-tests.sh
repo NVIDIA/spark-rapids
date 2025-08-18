@@ -403,6 +403,7 @@ fi
 # Iceberg tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
+  run_iceberg_tests 'rest'
 fi
 
 # Iceberg s3tables tests
