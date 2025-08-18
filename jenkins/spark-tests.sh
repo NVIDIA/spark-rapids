@@ -252,6 +252,28 @@ run_iceberg_tests() {
       PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
+  elif [[ "$test_type" == "rest" ]]; then
+    echo "!!! Running iceberg tests with rest catalog"
+    bash jenkins/iceberg/rest/setup.sh
+    ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
+    org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
+        # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
+        # Disabling them may slow down the tests, so we increase memory here.
+        ICEBERG_TEST_REMOTE_CATALOG='1' \
+        env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
+        PYSP_TEST_spark_driver_memory="6G" \
+        PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
+          PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_uri="http://localhost:8181/catalog/" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_credential="spark:2OR3eRvYfSZzzZ16MlPd95jhLnOaLM52" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri="http://localhost:8080/realms/iceberg/protocol/openid-connect/token" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_scope="lakekeeper" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="demo" \
+          ./run_pyspark_from_build.sh -m iceberg --iceberg
+
+    bash jenkins/iceberg/rest/teardown.sh
   elif [[ "$test_type" == "s3tables" ]]; then
     echo "!!! Running iceberg tests with s3tables"
     # AWS deps versions for Spark 3.5.x
@@ -279,7 +301,7 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
     # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
     # These steps are included in the test pipeline.
     # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
-    ICEBERG_TEST_S3TABLES='1' \
+    ICEBERG_TEST_REMOTE_CATALOG='1' \
     env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
         PYSP_TEST_spark_driver_memory="6G" \
         PYSP_TEST_spark_jars_packages="$ICEBERG_S3TABLES_JARS" \
