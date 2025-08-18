@@ -869,6 +869,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val ASYNC_PROFILER_STAGE_EPOCH_INTERVAL = conf("spark.rapids.flameGraph.stageEpochInterval")
+    .doc("Interval in seconds to determine the current stage epoch based on running task " +
+      "counts. The profiler will check which stage has the most running tasks and profile " +
+      "that stage during each epoch. This allows profiling when multiple stages run " +
+      "concurrently even if FIFO scheduling is already chosen.")
+    .internal()
+    .integerConf
+    .createWithDefault(5)
+
   // ENABLE/DISABLE PROCESSING
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
@@ -2956,6 +2965,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val asyncProfilerProfileOptions: String = get(ASYNC_PROFILER_PROFILE_OPTIONS)
 
   lazy val asyncProfilerJfrCompression: Boolean = get(ASYNC_PROFILER_JFR_COMPRESSION)
+
+  lazy val asyncProfilerStageEpochInterval: Int = get(ASYNC_PROFILER_STAGE_EPOCH_INTERVAL)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
