@@ -73,7 +73,6 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
       }
 
     inited = true
-
     new MultiFileParquetPartitionReader(
       conf.conf,
       files.map(_.sparkPartitionedFile).toArray,
@@ -90,7 +89,7 @@ class GpuCoalescingIcebergParquetReader(val files: Seq[IcebergPartitionedFile],
       CpuCompressionConfig.disabled(),
       conf.metrics,
       new StructType(), // partitionSchema
-      conf.threadConf.asInstanceOf[MultiFile].numThreads,
+      conf.threadConf.asInstanceOf[MultiFile].poolConf,
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
       false) // useFieldId
