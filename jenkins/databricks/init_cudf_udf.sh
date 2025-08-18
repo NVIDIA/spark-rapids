@@ -34,7 +34,7 @@ if [[ "$(printf '%s\n' "3.10" "${PYTHON_VERSION}" | sort -V | head -n1)" == "3.1
     [[ -n "$(which lsb_release)" ]] && mv $(which lsb_release) $(which lsb_release)"-bak"
 else
     echo "Rapids 24.10+ drops python 3.9 or below versions of conda packages"
-    exit 254
+    exit 255
 fi
 
 REQUIRED_PACKAGES=(
@@ -84,5 +84,5 @@ else
     scipy
     numexpr
   )
-pip install --target=${PYTHON_SITE_PACKAGES} "${REQUIRED_PACKAGES[@]}"
+  pip install --target=${PYTHON_SITE_PACKAGES} "${REQUIRED_PACKAGES[@]}"
 fi
