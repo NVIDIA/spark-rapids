@@ -33,9 +33,46 @@ import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTableHeader, WriteI
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE, METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_STREAM_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE, METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_STREAM_TIME, METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM}
 import org.apache.spark.sql.types.{DataType, NullType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+/**
+ * A wrapper around InputStream that tracks time spent on all operations
+ * to measure how much time is stalled by input stream operations.
+ * 
+ * This wrapper uses manual timing with += instead of the .ns{} method for better performance.
+ * The .ns{} method has function call overhead and additional logic for semaphore wait time
+ * tracking, while manual timing with System.nanoTime() and += is more lightweight for
+ * high-frequency operations like InputStream reads.
+ * 
+ * Note: We wrap at the InputStream level (not DataInputStream) because DataInputStream
+ * methods are mostly final and cannot be overridden.
+ */
+class InputStreamWrapper(underlying: InputStream, stalledByInputStreamMetric: GpuMetric)
+  extends InputStream {
+  
+  @inline
+  private def timeOperation[T](operation: => T): T = {
+    val start = System.nanoTime()
+    try {
+      operation
+    } finally {
+      stalledByInputStreamMetric += (System.nanoTime() - start)
+    }
+  }
+  
+  override def read(): Int = timeOperation(underlying.read())
+  override def read(b: Array[Byte]): Int = timeOperation(underlying.read(b))
+  override def read(b: Array[Byte], off: Int, len: Int): Int =
+    timeOperation(underlying.read(b, off, len))
+  override def skip(n: Long): Long = timeOperation(underlying.skip(n))
+  override def available(): Int = timeOperation(underlying.available())
+  override def close(): Unit = timeOperation(underlying.close())
+  override def mark(readlimit: Int): Unit = timeOperation(underlying.mark(readlimit))
+  override def reset(): Unit = timeOperation(underlying.reset())
+  override def markSupported(): Boolean = timeOperation(underlying.markSupported())
+}
 
 /**
  * Iterator that reads serialized tables from a stream.
@@ -161,6 +198,7 @@ private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]
   private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
+  private val stalledByInputStream = metrics(METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM)
 
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
@@ -247,7 +285,9 @@ private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]
 
   override def deserializeStream(in: InputStream): DeserializationStream = {
     new DeserializationStream {
-      private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
+      private[this] val wrappedIn = new InputStreamWrapper(in, stalledByInputStream)
+      private[this] val dIn: DataInputStream =
+        new DataInputStream(new BufferedInputStream(wrappedIn))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         new SerializedBatchIterator(dIn, deserTime)
@@ -365,6 +405,7 @@ private class KudoSerializerInstance(
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
   private val serCopyBufferTime = metrics(METRIC_SHUFFLE_SER_COPY_BUFFER_TIME)
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
+  private val stalledByInputStream = metrics(METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM)
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
 
@@ -454,7 +495,9 @@ private class KudoSerializerInstance(
 
   override def deserializeStream(in: InputStream): DeserializationStream = {
     new DeserializationStream {
-      private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
+      private[this] val wrappedIn = new InputStreamWrapper(in, stalledByInputStream)
+      private[this] val dIn: DataInputStream =
+        new DataInputStream(new BufferedInputStream(wrappedIn))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         new KudoSerializedBatchIterator(dIn, deserTime)
@@ -506,6 +549,7 @@ private class KudoGpuSerializerInstance(
 ) extends SerializerInstance {
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
+  private val stalledByInputStream = metrics(METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM)
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
 
@@ -564,7 +608,9 @@ private class KudoGpuSerializerInstance(
 
   override def deserializeStream(in: InputStream): DeserializationStream = {
     new DeserializationStream {
-      private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
+      private[this] val wrappedIn = new InputStreamWrapper(in, stalledByInputStream)
+      private[this] val dIn: DataInputStream =
+        new DataInputStream(new BufferedInputStream(wrappedIn))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         new KudoSerializedBatchIterator(dIn, deserTime)
@@ -688,6 +734,8 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
             nextHeader = header
           } else {
             dIn.close()
+            sharedBuffer.foreach(_.close())
+            sharedBuffer = None
             streamClosed = true
             nextHeader = None
           }
@@ -716,23 +764,24 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
         // The previous batches should be able to be spilled by itself.
         val buffer = {
           if (sharedBuffer.isEmpty) {
-            val allocated = allocateHostWithRetry(header.getTotalDataLen)
+            closeOnExcept(allocateHostWithRetry(header.getTotalDataLen)) { allocated =>
 
-            if (firstTenBatchesSizes.length < 10) {
-              firstTenBatchesSizes += header.getTotalDataLen
-              if (firstTenBatchesSizes.length == 10) {
-                // If we have 10 batches, we can decide if to use a shared buffer or not.
-                val maxSize = firstTenBatchesSizes.max
-                if (maxSize < sharedBufferTriggerSize) {
-                  // If the max size of the first 10 batches is less than the threshold,
-                  // we can use a shared buffer.
-                  sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
-                  sharedBufferCurrentUse = 0
+              if (firstTenBatchesSizes.length < 10) {
+                firstTenBatchesSizes += header.getTotalDataLen
+                if (firstTenBatchesSizes.length == 10) {
+                  // If we have 10 batches, we can decide if to use a shared buffer or not.
+                  val maxSize = firstTenBatchesSizes.max
+                  if (maxSize < sharedBufferTriggerSize) {
+                    // If the max size of the first 10 batches is less than the threshold,
+                    // we can use a shared buffer.
+                    sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
+                    sharedBufferCurrentUse = 0
+                  }
                 }
               }
-            }
 
-            allocated
+              allocated
+            }
           } else {
             if (header.getTotalDataLen > sharedBufferTotalSize / 2) {
               // Too big to use shared buffer, this should rarely happen since

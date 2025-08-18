@@ -1114,6 +1114,10 @@ _to_json_datagens=[byte_gen,
         reason='https://github.com/NVIDIA/spark-rapids/issues/9705'))
 ]
 
+# Spark 400 changed the default timestamp format to "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXXXX]"
+# We need to explicitly specify the format for Spark 400
+_gpu_supported_timestamp_format_conf = {'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"}
+
 @pytest.mark.parametrize('data_gen', _to_json_datagens, ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
 @pytest.mark.parametrize('timezone', [
@@ -1132,8 +1136,8 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     options = { 'ignoreNullFields': ignore_null_fields,
-                'timeZone': timezone,
-                'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"}
+                'timeZone': timezone}
+    options.update(_gpu_supported_timestamp_format_conf)
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)
@@ -1160,6 +1164,7 @@ def test_arrays_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
 
     options = { 'ignoreNullFields': ignore_null_fields,
                 'timeZone': timezone}
+    options.update(_gpu_supported_timestamp_format_conf)
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)
@@ -1186,6 +1191,7 @@ def test_maps_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
 
     options = { 'ignoreNullFields': ignore_null_fields,
                 'timeZone': timezone}
+    options.update(_gpu_supported_timestamp_format_conf)
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)

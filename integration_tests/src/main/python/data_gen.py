@@ -22,7 +22,7 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_before_spark_340, with_cpu_session
+from spark_session import is_before_spark_340, with_cpu_session, is_spark_341_or_later, is_spark_400_or_later
 import sre_yield
 import struct
 from conftest import skip_unless_precommit_tests, get_datagen_seed, is_not_utc, is_supported_time_zone
@@ -173,13 +173,27 @@ class ConvertGen(DataGen):
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
     """Generate strings that match a pattern"""
-    def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
-        super().__init__(StringType(), nullable=nullable)
+    def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True, collation=None):
+        self._collation = collation
+        if is_spark_400_or_later():
+            data_type = StringType(collation=collation) if collation is not None else StringType()
+            super().__init__(data_type, nullable=nullable)
+            self._is_error = False
+        else:
+            super().__init__(StringType(), nullable=nullable)
+            # for Spark versions < 400, do not support collation
+            self._is_error = collation is not None
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
         # save pattern and charset for cache repr
         charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
-        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
-    
+        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr + ',' + str(collation)
+
+    def __repr__(self):
+        name = f"String(collation={self._collation})" if self._collation is not None else "String"
+        if not self.nullable:
+            return name + '(not_null)'
+        return name
+
     def _cache_repr(self):
         return super()._cache_repr() + '(' + self.stringrepr + ')'
 
@@ -193,6 +207,8 @@ class StringGen(DataGen):
         return self.with_special_case(lambda rand : strs[rand.randint(0, length-1)], weight=weight)
 
     def start(self, rand):
+        if self._is_error:
+            raise NotSupportedInSparkVersion("Collation is only supported on Spark 4.0.0+ in python. All tests that use this feature must have a skipif on them...")
         strs = self.base_strs
         length = strs.__len__()
         self._start(rand, lambda : strs[rand.randint(0, length-1)])
@@ -604,10 +620,22 @@ class DateGen(DataGen):
         end = self._end_day
         self._start(rand, lambda : self._from_days_since_epoch(rand.randint(start, end)))
 
+class NotSupportedInSparkVersion(Exception):
+    pass
+
 class TimestampGen(DataGen):
     """Generate Timestamps in a given range. All timezones are UTC by default."""
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
-        super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
+        if is_spark_341_or_later():
+            super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
+            self._is_error = False
+        elif tzinfo==None:
+            super().__init__(TimestampType(), nullable=nullable)
+            self._is_error = True
+        else:
+            super().__init__(TimestampType(), nullable=nullable)
+            self._is_error = False
+
         if start is None:
             # If set to (1,1,1), a timezone with a negative offset would cause an out of bound error with Python
             # Valid range of time: date.min = datetime.date(1, 1, 1)
@@ -640,6 +668,16 @@ class TimestampGen(DataGen):
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
+    def __repr__(self):
+        if self._tzinfo==None:
+            name="TimestampNTZ"
+        else:
+            name="Timestamp"
+
+        if not self.nullable:
+            return name + '(not_null)'
+        return name
+
     def _cache_repr(self):
         return super()._cache_repr() + '(' + str(self._start_time) + ',' + str(self._end_time) + ',' + str(self._tzinfo) + ')'
 
@@ -652,6 +690,8 @@ class TimestampGen(DataGen):
         return self._epoch + timedelta(microseconds=us)
 
     def start(self, rand):
+        if self._is_error:
+            raise NotSupportedInSparkVersion("TimestampNTZ is only supported on Spark 3.4.1+ in python. All tests that use this feature must have a skipif on them...")
         start = self._start_time
         end = self._end_time
         self._start(rand, lambda : self._from_us_since_epoch(rand.randint(start, end)))
