@@ -23,6 +23,8 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParseURI
 import com.nvidia.spark.rapids.shims.ShimExpression
 
+import scala.annotation.nowarn
+
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -58,6 +60,7 @@ case class GpuParseUrl(children: Seq[Expression])
 
   import GpuParseUrl._
 
+  @nowarn("msg=in class ParseURI is deprecated")
   def doColumnar(url: GpuColumnVector, partToExtract: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
     part match {
@@ -77,6 +80,7 @@ case class GpuParseUrl(children: Seq[Expression])
     }
   }
 
+  @nowarn("msg=in class ParseURI is deprecated")
   def doColumnar(col: GpuColumnVector, partToExtract: GpuScalar, key: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
     if (part != QUERY || key == null || !key.isValid) {
@@ -87,6 +91,7 @@ case class GpuParseUrl(children: Seq[Expression])
     ParseURI.parseURIQueryWithLiteral(col.getBase, keyStr)
   }
 
+  @nowarn("msg=in class ParseURI is deprecated")
   def doColumnar(col: GpuColumnVector, partToExtract: GpuScalar, 
       key: GpuColumnVector): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
