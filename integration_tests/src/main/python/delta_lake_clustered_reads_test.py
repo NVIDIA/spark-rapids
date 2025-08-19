@@ -28,43 +28,26 @@ from spark_session import (
 )
 
 
-def setup_clustered_table_with_no_dv(spark, path, table_name):
-    sql = f"""
-            CREATE TABLE {table_name}
-            (a long,
-             b string,
-             c string,
-             d int,
-             e long)
-            USING DELTA
-            LOCATION '{path}'
-            CLUSTER BY (a, d)
-        """
-    setup_clustered_table(spark, sql, table_name)
+def setup_clustered_table(spark, path, table_name, enable_dv):
+    """
+    Set up a Delta Lake clustered table with/without deletion vectors (DV).
+    Ideally, we should be able to just use `setup_delta_dest_table()` in delta_lake_utils,
+    but the `save()` python API does not support clustered tables, which is used in
+    `setup_delta_dest_table()`.
+    """
 
-
-def setup_clustered_table_with_dv(spark, path, table_name):
-    sql = f"""
+    create_tbl_sql = f"""
                 CREATE TABLE {table_name}
-                (a long,
+                (a int,
                  b string,
                  c string,
                  d int,
                  e long)
                 USING DELTA
                 LOCATION '{path}'
-                TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')
+                TBLPROPERTIES ('delta.enableDeletionVectors' = '{str(enable_dv).lower()}')
                 CLUSTER BY (a, d)
             """
-    setup_clustered_table(spark, sql, table_name)
-
-
-def setup_clustered_table(spark, create_tbl_sql, table_name):
-    """
-    Set up a Delta Lake clustered table with the specified SQL.
-    Ideally, we should just use setup_delta_dest_table() in delta_lake_utils,
-    but the `save()` python API does not support clustered tables.
-    """
     spark.sql(create_tbl_sql)
 
     gen_list = [
@@ -74,19 +57,15 @@ def setup_clustered_table(spark, create_tbl_sql, table_name):
         ("d", SetValuesGen(IntegerType(), [1, 2, 3])),
         ("e", long_gen),
     ]
-    view_name = "temp_view_for_clustered_table_insert"
     df = gen_df(spark, gen_list)
-    df.coalesce(1).createOrReplaceTempView(view_name)
+    df.write.format("delta").mode("append").saveAsTable(table_name)
 
-    spark.sql(
-        f"""
-            INSERT INTO {table_name}
-            SELECT * FROM {view_name}
-        """
-    )
+    desc = spark.sql(f"DESCRIBE DETAIL {table_name}").collect()
+    # Ensure the table is clustered as expected
+    assert desc[0].clusteringColumns == ["a", "d"]
 
 
-@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(
@@ -99,19 +78,19 @@ def setup_clustered_table(spark, create_tbl_sql, table_name):
 )
 def test_delta_clustered_read_sql(spark_tmp_path, spark_tmp_table_factory):
     """
-    Happy-path clustered table read (no DV): ensure GPU and CPU results match.
+    Happy-path clustered table read using SQL (no DV): ensure GPU parity.
     """
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER_READ_SQL"
+    table_name = spark_tmp_table_factory.get()
     def setup_tables(spark):
-        table_name = spark_tmp_table_factory.get()
-        setup_clustered_table_with_no_dv(spark, data_path, table_name)
+        setup_clustered_table(spark, data_path, table_name, enable_dv=False)
     with_cpu_session(setup_tables)
 
     def read_query(spark):
         return spark.sql(
             f"""
-                SELECT a, b, COUNT(*) cnt
-                FROM delta.`{data_path}`
+                SELECT a, b, sum(e) cnt
+                FROM {table_name}
                 WHERE a = 1 AND d = 3
                 GROUP BY a, b
             """
@@ -120,7 +99,7 @@ def test_delta_clustered_read_sql(spark_tmp_path, spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(read_query)
 
 
-@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(
@@ -133,24 +112,25 @@ def test_delta_clustered_read_sql(spark_tmp_path, spark_tmp_table_factory):
 )
 def test_delta_clustered_read_df(spark_tmp_path, spark_tmp_table_factory):
     """
-    Happy-path clustered table read using DeltaTable builder (no DV): GPU parity.
+    Happy-path clustered table read using dataframe API (no DV): GPU parity.
     """
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER_READ_DF"
+    table_name = spark_tmp_table_factory.get()
     def setup_tables(spark):
-        table_name = spark_tmp_table_factory.get()
-        setup_clustered_table_with_no_dv(spark, data_path, table_name)
+        setup_clustered_table(spark, data_path, table_name, enable_dv=False)
     with_cpu_session(setup_tables)
 
     assert_gpu_and_cpu_are_equal_collect(
         # same query as in test_delta_clustered_read_sql
-        lambda spark: spark.read.format("delta").load(data_path) \
+        lambda spark: spark.read.table(table_name) \
             .filter("a = 1 AND d = 3") \
             .groupBy("a", "b") \
-            .count()
+            .sum("e") \
+            .select("a", "b", "sum(e)")
     )
 
 
-@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@allow_non_gpu("FileSourceScanExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(
@@ -167,19 +147,21 @@ def test_delta_clustered_read_df(spark_tmp_path, spark_tmp_table_factory):
 )
 def test_delta_clustered_read_with_deletion_vectors_fallback(spark_tmp_path, spark_tmp_table_factory):
     """
-    When DV is present on a clustered table, ensure plan falls back to CPU.
+    When DV is present on a clustered table, ensure the plan falls back to CPU.
     """
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER_READ_DV"
+    table_name = spark_tmp_table_factory.get()
 
     def setup_tables(spark):
-        table_name = spark_tmp_table_factory.get()
-        setup_clustered_table_with_dv(spark, data_path, table_name)
-        # materialize a DV by deleting a subset
-        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a IS NOT NULL")
+        setup_clustered_table(spark, data_path, table_name, enable_dv=True)
+        # Materialize a DV by deleting a subset.
+        # Note that we should use a filter that matches some rows
+        # to ensure the DV is created.
+        spark.sql(f"DELETE FROM {table_name} WHERE b = 'x'")
 
     with_cpu_session(setup_tables)
 
     assert_gpu_fallback_collect(
-        lambda spark: spark.read.format("delta").load(data_path),
+        lambda spark: spark.read.table(table_name),
         "FileSourceScanExec"
     )
