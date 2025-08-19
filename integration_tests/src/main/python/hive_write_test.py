@@ -126,7 +126,8 @@ def test_optimized_hive_ctas_configs_orc(gens, orc_confs, spark_tmp_table_factor
             table_name, data_table),
         conf=orc_confs)
 
-@pytest.mark.skipif(not is_hive_available() or is_utc(), reason="Hive is missing or TZ is UTC")
+@pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
+@pytest.mark.skipif(is_utc(), reason="TZ is UTC")
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize("gens", _write_gens_dates_ts_only, ids=idfn)
 @pytest.mark.parametrize("orc_confs", [
