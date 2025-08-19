@@ -19,9 +19,9 @@ package com.nvidia.spark.rapids.iceberg.data
 import ai.rapids.cudf.{Table => CudfTable}
 import com.nvidia.spark.rapids.{GpuColumnVector, LazySpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuCoalescingIcebergParquetReader, GpuIcebergParquetReader, GpuIcebergParquetReaderConf, GpuMultiThreadIcebergParquetReader, GpuSingleThreadIcebergParquetReader, IcebergPartitionedFile, MultiFile, MultiThread, SingleFile}
 import org.apache.iceberg.{DeleteFile, Schema}
-import org.apache.iceberg.io.InputFile
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
@@ -35,7 +35,8 @@ trait GpuDeleteLoader {
 }
 
 class DefaultDeleteLoader(
-    private val inputFiles: Map[String, InputFile],
+    private val rapidsFileIO: IcebergFileIO,
+    private val inputFiles: Map[String, IcebergInputFile],
     private val parquetConf: GpuIcebergParquetReaderConf) extends GpuDeleteLoader {
 
   def loadDeletes(deletes: Seq[DeleteFile],
@@ -74,17 +75,21 @@ class DefaultDeleteLoader(
     val newConf = parquetConf.copy(expectedSchema = schema)
     newConf.threadConf match {
       case SingleFile =>
-        new GpuSingleThreadIcebergParquetReader(files,
+        new GpuSingleThreadIcebergParquetReader(
+          rapidsFileIO,
+          files,
           _ => Map.empty[Integer, Any].asJava,
           _ => None,
           newConf)
       case MultiThread(_, _) =>
-        new GpuMultiThreadIcebergParquetReader(files,
+        new GpuMultiThreadIcebergParquetReader(
+          rapidsFileIO,
+          files,
           _ => Map.empty[Integer, Any].asJava,
           _ => None,
           newConf)
       case MultiFile(_) =>
-        new GpuCoalescingIcebergParquetReader(files,
+        new GpuCoalescingIcebergParquetReader(rapidsFileIO, files,
           _ => Map.empty[Integer, Any].asJava,
           newConf)
     }
