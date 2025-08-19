@@ -35,7 +35,6 @@ import java.util.Objects;
 public class HadoopInputFile implements RapidsInputFile {
     private final Path filePath;
     private final FileSystem fs;
-    private volatile FileStatus fileStatus;
 
     public static HadoopInputFile create(Path filePath, Configuration conf) throws IOException {
         Objects.requireNonNull(filePath, "filePath can't be null!");
@@ -44,17 +43,16 @@ public class HadoopInputFile implements RapidsInputFile {
         return new HadoopInputFile(filePath, fs);
     }
 
-    private HadoopInputFile(Path filePath, FileSystem fs) throws IOException {
+    private HadoopInputFile(Path filePath, FileSystem fs) {
         Objects.requireNonNull(filePath, "filePath can't be null!");
         Objects.requireNonNull(fs, "FileSystem can't be null");
         this.filePath = filePath;
         this.fs = fs;
-        this.fileStatus = fs.getFileStatus(filePath);
     }
 
     @Override
     public long getLength() throws IOException {
-        return fileStatus.getLen();
+        return fs.getFileStatus(this.filePath).getLen();
     }
 
     @Override
