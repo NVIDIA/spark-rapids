@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParseURI
 import com.nvidia.spark.rapids.shims.ShimExpression
-
 import scala.annotation.nowarn
 
 import org.apache.spark.sql.catalyst.expressions._
