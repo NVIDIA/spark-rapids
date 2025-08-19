@@ -128,7 +128,7 @@ def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vector
 
 
 @delta_lake
-@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "AtomicReplaceTableAsSelectExec", "AppendDataExecV1")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "AtomicCreateTableAsSelectExec", "AppendDataExecV1")
 @pytest.mark.skipif(is_before_spark_353(), reason="Liquid clustering requires Delta 3.3+")
 @pytest.mark.skipif(is_databricks_runtime(), reason="OPTIMIZE table command is not supported for Databricks")
 def test_delta_optimize_fallback_on_clustered_table(spark_tmp_path, spark_tmp_table_factory):
@@ -141,7 +141,7 @@ def test_delta_optimize_fallback_on_clustered_table(spark_tmp_path, spark_tmp_ta
 
     def write_clustered_then_optimize(spark, path):
         spark.sql(f"""
-            CREATE OR REPLACE TABLE delta.`{path}`
+            CREATE TABLE delta.`{path}`
             USING DELTA
             CLUSTER BY (a)
             AS SELECT * FROM {view_name}
