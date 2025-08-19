@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets
 import java.time.ZoneId
 import java.util
 import java.util.Optional
+import java.util.TimeZone
 import java.util.concurrent.Callable
 import java.util.regex.Pattern
 
@@ -156,6 +157,19 @@ object GpuOrcScan {
 
     if (ColumnDefaultValuesShims.hasExistenceDefaultValues(schema)) {
       meta.willNotWorkOnGpu("GpuOrcScan does not support default values in schema")
+    }
+
+    // When reading timestamp type from an ORC file, it's not related to the
+    // Spark session timezone but the JVM timezone. Currently only supports
+    // UTC and Shanghai timezone.
+    val types = schema.map(_.dataType).toSet
+    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp)) {
+      val defaultJvmTimeZone = TimeZone.getDefault
+      if (defaultJvmTimeZone != TimeZone.getTimeZone("UTC")
+        && defaultJvmTimeZone != TimeZone.getTimeZone("Asia/Shanghai")) {
+        meta.willNotWorkOnGpu("Only UTC and Asia/Shanghai timezone are supported for ORC. " +
+          s"Current timezone settings: (JVM : $defaultJvmTimeZone).")
+      }
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)

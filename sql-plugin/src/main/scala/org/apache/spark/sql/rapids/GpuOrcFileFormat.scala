@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OrcShims
+import java.util.TimeZone
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.orc.OrcConf
@@ -76,9 +77,19 @@ object GpuOrcFileFormat extends Logging {
         "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
     }
 
+    val types = schema.map(_.dataType).toSet
     val hasBools = schema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
         t.isInstanceOf[BooleanType])
+    }
+
+    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp)) {
+      val defaultJvmTimeZone = TimeZone.getDefault
+      if (defaultJvmTimeZone != TimeZone.getTimeZone("UTC")
+        && defaultJvmTimeZone != TimeZone.getTimeZone("Asia/Shanghai")) {
+        meta.willNotWorkOnGpu("Only UTC and Asia/Shanghai timezone are supported for ORC. " +
+          s"Current timezone settings: (JVM : $defaultJvmTimeZone).")
+      }
     }
 
     if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
