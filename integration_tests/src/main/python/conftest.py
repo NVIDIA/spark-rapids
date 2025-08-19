@@ -100,6 +100,9 @@ def is_utc():
 def is_not_utc():
     return not is_utc()
 
+def is_Shanghai_timezone():
+    return get_test_tz() == "Asia/Shanghai"
+
 def is_iceberg_s3tables():
     v = os.environ.get('ICEBERG_TEST_S3TABLES')
     return v == "1"
