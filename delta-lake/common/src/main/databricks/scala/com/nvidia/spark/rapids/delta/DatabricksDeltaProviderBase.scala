@@ -21,8 +21,8 @@ import java.lang.reflect.Field
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 
-import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.execution.metric.IncrementMetric
+import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge}
