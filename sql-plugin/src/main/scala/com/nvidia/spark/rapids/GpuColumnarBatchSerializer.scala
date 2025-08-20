@@ -806,6 +806,9 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
           }
         }
 
+        // TODO so for the gpu case, should we just get the whole stream
+        // to one buffer in one go? we don't necessarily know the size ahead of time
+        // but maybe we can at least convert the stream to a ByteArrayInputStream
         closeOnExcept(buffer) { _ =>
           buffer.copyFromStream(0, dIn, header.getTotalDataLen)
           KudoSerializedTableColumn.from(header, buffer)
