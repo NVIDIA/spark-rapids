@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import spark_jvm, is_not_utc
+from conftest import spark_jvm, is_utc
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
@@ -36,6 +36,10 @@ _basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                      string_gen, DateGen(start=date(1590, 1, 1)),
                      _restricted_timestamp()
                ] + decimal_gens
+_write_gens_no_dates_ts = [[gen] for gen in _basic_gens
+                            if gen != _restricted_timestamp() and not isinstance(gen, DateGen)]
+
+_write_gens_dates_ts_only = [[_restricted_timestamp(), DateGen(start=date(1590, 1, 1))]]
 
 _basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(_basic_gens)])
 
@@ -107,7 +111,7 @@ def test_optimized_hive_ctas_configs_fallback_parquet(gens, parquet_confs, spark
 
 
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
-@pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
+@pytest.mark.parametrize("gens", _write_gens_no_dates_ts, ids=idfn)
 @pytest.mark.parametrize("orc_confs", [
     {"spark.sql.orc.compression.codec": "zlib"}
 ], ids=idfn)
@@ -120,6 +124,24 @@ def test_optimized_hive_ctas_configs_orc(gens, orc_confs, spark_tmp_table_factor
         spark_tmp_table_factory,
         lambda spark, table_name: "CREATE TABLE {} STORED AS ORC AS SELECT * FROM {}".format(
             table_name, data_table),
+        conf=orc_confs)
+
+@pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
+@pytest.mark.skipif(is_utc(), reason="TZ is UTC")
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
+@pytest.mark.parametrize("gens", _write_gens_dates_ts_only, ids=idfn)
+@pytest.mark.parametrize("orc_confs", [
+    {"spark.sql.orc.compression.codec": "zlib"}
+], ids=idfn)
+@ignore_order(local=True)
+def test_optimized_hive_ctas_configs_orc_fallback(gens, orc_confs, spark_tmp_table_factory):
+    data_table = spark_tmp_table_factory.get()
+    gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).createOrReplaceTempView(data_table))
+    fallback_class = "ExecutedCommandExec" if is_spark_340_or_later() or is_databricks122_or_later() else "DataWritingCommandExec"
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql("CREATE TABLE {} STORED AS ORC AS SELECT * FROM {}".format(
+            spark_tmp_table_factory.get(), data_table)), fallback_class,
         conf=orc_confs)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
