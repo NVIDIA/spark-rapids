@@ -16,19 +16,67 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import java.io.{File, FileOutputStream}
+
 import scala.collection.mutable
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+
+import org.apache.spark.internal.Logging
+
+object RangeDebugger extends Logging {
+  val threadLocalStack = new ThreadLocal[mutable.ArrayStack[NvtxId]] {
+    override def initialValue(): mutable.ArrayStack[NvtxId] = mutable.ArrayStack[NvtxId]()
+  }
+
+  private def dumpOrderErrorMessage(popped: Option[NvtxId], elem: NvtxId): Unit = {
+    logError(s"OUT OF ORDER POP of $elem")
+    logError(s"TOP OF STACK IS ${popped.getOrElse("<nil>")}")
+    val stackTrace = Thread.currentThread.getStackTrace
+    stackTrace.foreach(elem => logError(elem.toString))
+  }
+
+  def push(elem: NvtxId): Unit = {
+    threadLocalStack.get().push(elem)
+  }
+
+  def pop(elem: NvtxId): Unit = {
+    val stack = threadLocalStack.get()
+    if (stack.nonEmpty) {
+      val popped = stack.pop()
+      if (!popped.equals(elem)) {
+        dumpOrderErrorMessage(Some(popped), elem)
+      }
+    } else {
+      dumpOrderErrorMessage(None, elem)
+    }
+  }
+}
+
 sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
+  private val isEnabled = java.lang.Boolean.getBoolean("ai.rapids.cudf.nvtx.enabled")
+  private val isDebug = java.lang.Boolean.getBoolean("ai.rapids.cudf.nvtx.debug")
+
   def help(): Unit = println(s"$name|$doc")
 
   def push(): NvtxId = {
-    NvtxRange.pushRange(name, color)
+    if (isEnabled) {
+      NvtxRange.pushRange(name, color)
+      if (isDebug) {
+        RangeDebugger.push(this)
+      }
+    }
     this
   }
 
-  def pop(): Unit = NvtxRange.popRange()
+  def pop(): Unit = {
+    if (isEnabled) {
+      if (isDebug) {
+        RangeDebugger.pop(this)
+      }
+      NvtxRange.popRange()
+    }
+  }
 
   def apply[V](block: => V): V = {
     try {
@@ -86,6 +134,18 @@ object NvtxRegistry {
   val GET_MAP_SIZES_BY_EXEC_ID: NvtxId = NvtxId("getMapSizesByExecId", NvtxColor.CYAN,
     "Call to internal Spark API for retrieving size and location of shuffle map output blocks")
 
+  val GPU_KUDO_SERIALIZE: NvtxId = NvtxId("gpuKudoSerialize", NvtxColor.YELLOW,
+    "Perform kudo serialization on the gpu")
+
+  val GPU_KUDO_COPY_TO_HOST: NvtxId = NvtxId("gpuKudoCopyToHost", NvtxColor.GREEN,
+    "copy gpu kudo serialized outputs back to the host")
+
+  val GPU_KUDO_SLICE_BUFFERS: NvtxId = NvtxId("gpuKudoSliceBuffers", NvtxColor.RED,
+    "slice kudo serialized buffers on host into partitions")
+
+  val GPU_KUDO_WRITE_BUFFERS: NvtxId = NvtxId("gpuKudoWriteBuffers", NvtxColor.CYAN,
+    "write sliced kudo serialized buffers to output blocks")
+
   def init(): Unit = {
     register(ACQUIRE_GPU)
     register(RELEASE_GPU)
@@ -98,6 +158,9 @@ object NvtxRegistry {
     register(QUEUE_FETCHED)
     register(RAPIDS_CACHING_WRITER_WRITE)
     register(GET_MAP_SIZES_BY_EXEC_ID)
+    register(GPU_KUDO_SERIALIZE)
+    register(GPU_KUDO_COPY_TO_HOST)
+    register(GPU_KUDO_SLICE_BUFFERS)
   }
 }
 

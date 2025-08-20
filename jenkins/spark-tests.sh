@@ -110,7 +110,7 @@ export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$PY4J_FILE
 
 # Extract 'value' from conda config string 'key: value'
 CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
-if [[ x"$CONDA_ROOT" != x ]]; then
+if [[ -n "$CONDA_ROOT" ]]; then
   # Put conda package path ahead of the env 'PYTHONPATH',
   # to import the right pandas from conda instead of spark binary path.
   PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
@@ -284,7 +284,6 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
         PYSP_TEST_spark_driver_memory="6G" \
         PYSP_TEST_spark_jars_packages="$ICEBERG_S3TABLES_JARS" \
         PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
-        PYSP_TEST_spark_hadoop_fs_s3_impl="org.apache.hadoop.fs.s3a.S3AFileSystem" \
         PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
         PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
