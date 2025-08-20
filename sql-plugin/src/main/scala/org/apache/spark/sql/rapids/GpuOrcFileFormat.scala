@@ -84,11 +84,9 @@ object GpuOrcFileFormat extends Logging {
     }
 
     if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp)) {
-      val defaultJvmTimeZone = TimeZone.getDefault
-      if (defaultJvmTimeZone != TimeZone.getTimeZone("UTC")
-        && defaultJvmTimeZone != TimeZone.getTimeZone("Asia/Shanghai")) {
-        meta.willNotWorkOnGpu("Only UTC and Asia/Shanghai timezone are supported for ORC. " +
-          s"Current timezone settings: (JVM : $defaultJvmTimeZone).")
+      val jvmTimeZone = TimeZone.getDefault
+      if (!GpuOrcTimezoneUtils.isGpuOrcSupportedTimeZone(jvmTimeZone)) {
+        meta.willNotWorkOnGpu(GpuOrcTimezoneUtils.getTimezoneNotSupportedMessage(jvmTimeZone))
       }
     }
 
