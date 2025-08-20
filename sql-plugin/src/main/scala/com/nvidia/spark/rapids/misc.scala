@@ -41,7 +41,7 @@ case class GpuUuid() extends GpuExpression with ShimExpression {
   override def children: Seq[Expression] = Nil
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    GpuColumnVector.from(StringUtils.randomUuid(batch.numRows), dataType)
+    GpuColumnVector.from(StringUtils.randomUUIDs(batch.numRows), dataType)
   }
 }
 
