@@ -64,18 +64,18 @@ case class GpuParseUrl(children: Seq[Expression])
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
     part match {
       case PROTOCOL =>
-        ParseURI.parseURIProtocol(url.getBase)
+        ParseURI.parseURIProtocol(url.getBase, false)
       case HOST =>
-        ParseURI.parseURIHost(url.getBase)
+        ParseURI.parseURIHost(url.getBase, false)
       case QUERY =>
-        ParseURI.parseURIQuery(url.getBase)
+        ParseURI.parseURIQuery(url.getBase, false)
       case PATH =>
-        ParseURI.parseURIPath(url.getBase)
+        ParseURI.parseURIPath(url.getBase, false)
       case REF | FILE | AUTHORITY | USERINFO =>
         throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
             s"Only PROTOCOL, HOST, QUERY and PATH are supported")
       case _ =>
-        return GpuColumnVector.columnVectorFromNull(url.getRowCount.toInt, StringType)
+        GpuColumnVector.columnVectorFromNull(url.getRowCount.toInt, StringType)
     }
   }
 
@@ -87,7 +87,7 @@ case class GpuParseUrl(children: Seq[Expression])
       return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
     }
     val keyStr = key.getValue.asInstanceOf[UTF8String].toString
-    ParseURI.parseURIQueryWithLiteral(col.getBase, keyStr)
+    ParseURI.parseURIQueryWithLiteral(col.getBase, keyStr, false)
   }
 
   @nowarn("msg=in class ParseURI is deprecated")
@@ -98,7 +98,7 @@ case class GpuParseUrl(children: Seq[Expression])
       // return a null columnvector
       return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
     }
-    ParseURI.parseURIQueryWithColumn(col.getBase, key.getBase)
+    ParseURI.parseURIQueryWithColumn(col.getBase, key.getBase, false)
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
