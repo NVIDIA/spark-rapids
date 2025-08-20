@@ -21,8 +21,10 @@ import uuid
 # GPU uuid function does not guarantee the result is the same as CPU,
 # only guarantee it produces unique UUIDs
 def test_uuid():
-    def gen_uuids(spark):
-        return unary_op_df(spark, int_gen, length=num_rows).selectExpr(["a", "uuid() as uuid"]).collect()
+    num_rows = 2048
+
+    def _gen_uuids(spark):
+        return spark.range(num_rows).selectExpr("uuid() as uuid").collect()
 
     def _verify_unique_and_format(rows):
         uuid_set = set()
@@ -32,18 +34,16 @@ def test_uuid():
             uuid_set.add(row.uuid)
         assert len(uuid_set) == len(rows), "all the UUIDs should be different"
 
-    num_rows = 2048
-
     # verify uniqueness across two rounds on GPU
-    uuids_round1_gpu = with_gpu_session(lambda spark: gen_uuids(spark))
-    uuids_round2_gpu = with_gpu_session(lambda spark: gen_uuids(spark))
+    uuids_round1_gpu = with_gpu_session(lambda spark: _gen_uuids(spark))
+    uuids_round2_gpu = with_gpu_session(lambda spark: _gen_uuids(spark))
     uuids_gpu = uuids_round1_gpu + uuids_round2_gpu
     assert len(uuids_gpu) == 2 * num_rows
     _verify_unique_and_format(uuids_gpu)
 
     # verify uniqueness across two rounds on CPU
-    uuids_round1_cpu = with_cpu_session(lambda spark: gen_uuids(spark))
-    uuids_round2_cpu = with_cpu_session(lambda spark: gen_uuids(spark))
+    uuids_round1_cpu = with_cpu_session(lambda spark: _gen_uuids(spark))
+    uuids_round2_cpu = with_cpu_session(lambda spark: _gen_uuids(spark))
     uuids_cpu = uuids_round1_cpu + uuids_round2_cpu
     assert len(uuids_cpu) == 2 * num_rows
     _verify_unique_and_format(uuids_cpu)
