@@ -73,6 +73,9 @@ object AsyncProfilerOnExecutor extends Logging {
   private var epochScheduler: Option[ScheduledExecutorService] = None
   private var epochTask: Option[ScheduledFuture[_]] = None
   private var isShutdown = false
+  
+  // Epoch tracking for same stage multiple executions
+  private val stageEpochCounters = new ConcurrentHashMap[Int, Int]() // stageId -> epochCount
 
   def init(ctx: PluginContext, conf: RapidsConf): Unit = {
     pluginCtx = ctx
@@ -254,6 +257,11 @@ object AsyncProfilerOnExecutor extends Logging {
   private def startProfilingForStage(stageId: Int): Unit = {
     asyncProfiler.foreach(profiler => {
       try {
+        // Increment epoch counter for this stage
+        val currentEpoch = stageEpochCounters.compute(stageId, (_, currentCount) => {
+          Option(currentCount).map(_ + 1).getOrElse(1)
+        })
+        
         val filePath = {
           if (needMoveFile) {
             // if the asyncProfilerPathPrefix is non-local, we first write to a temp file
@@ -265,11 +273,11 @@ object AsyncProfilerOnExecutor extends Logging {
             val parentPath: java.nio.file.Path = Paths.get(asyncProfilerPrefix.get)
             parentPath.resolve(
               s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
-                s"-stage-$stageId.jfr").toString
+                s"-stage-$stageId-epoch-$currentEpoch.jfr").toString
           }
         }
         profiler.execute(s"start,$profileOptions,file=$filePath")
-        log.info(s"Successfully started profiling for stage $stageId")
+        log.info(s"Successfully started profiling for stage $stageId epoch $currentEpoch")
       } catch {
         case e: Exception =>
           log.error(s"Error starting profiling for stage $stageId", e)
@@ -326,9 +334,10 @@ object AsyncProfilerOnExecutor extends Logging {
             profiler.execute("stop")
             if (needMoveFile) {
               val executorId = pluginCtx.executorID()
+              val currentEpoch = stageEpochCounters.getOrDefault(currentProfilingStage, 1)
 
               val baseFileName = s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
-                s"-stage-$currentProfilingStage.jfr"
+                s"-stage-$currentProfilingStage-epoch-$currentEpoch.jfr"
               val outPath = new Path(asyncProfilerPrefix.get, 
                 if (jfrCompressionEnabled) baseFileName + ".gz" else baseFileName)
               
@@ -355,9 +364,10 @@ object AsyncProfilerOnExecutor extends Logging {
             } else {
               // For local files, compress in place if enabled
               if (jfrCompressionEnabled) {
+                val currentEpoch = stageEpochCounters.getOrDefault(currentProfilingStage, 0)
                 val originalPath = Paths.get(asyncProfilerPrefix.get).resolve(
                   s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
-                    s"-stage-$currentProfilingStage.jfr")
+                    s"-stage-$currentProfilingStage-epoch-$currentEpoch.jfr")
                 val compressedPath = Paths.get(originalPath.toString + ".gz")
                 
                 if (compressJfrFile(originalPath, compressedPath)) {
