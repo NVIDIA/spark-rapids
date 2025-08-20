@@ -1402,28 +1402,27 @@ private[rapids] class GpuRangeIterator(
           }
         }
       }
-      assert(iter.hasNext)
-      closeOnExcept(iter.next()) { batch =>
-        // This "iter" returned from the "withRetry" block above has only one batch,
-        // because the split function "reduceRowsNumberByHalf" returns a Seq with a single
-        // element inside.
-        // By doing this, we can pull out this single batch directly without maintaining
-        // this extra `iter` for the next loop.
-        assert(iter.isEmpty)
-        val endInclusive = start + ((batch.numRows() - 1) * step)
-        currentPosition = endInclusive + step
-        if (currentPosition < endInclusive ^ step < 0) {
-          // we have Long.MaxValue + Long.MaxValue < Long.MaxValue
-          // and Long.MinValue + Long.MinValue > Long.MinValue, so iff the step causes a
-          // step back, we are pretty sure that we have an overflow.
-          done = true
+      if (iter.hasNext) {
+        closeOnExcept(iter.next()) { batch =>
+          // This "iter" returned from the "withRetry" block above has only one batch,
+          // because the split function "reduceRowsNumberByHalf" returns a Seq with a single
+          // element inside.
+          // By doing this, we can pull out this single batch directly without maintaining
+          // this extra `iter` for the next loop.
+          val endInclusive = start + ((batch.numRows() - 1) * step)
+          currentPosition = endInclusive + step
+          if (currentPosition < endInclusive ^ step < 0) {
+            // we have Long.MaxValue + Long.MaxValue < Long.MaxValue
+            // and Long.MinValue + Long.MinValue > Long.MinValue, so iff the step causes a
+            // step back, we are pretty sure that we have an overflow.
+            done = true
+          }
+          if (batch.numRows() < rowsExpected) {
+            logDebug(s"Retried with ${batch.numRows()} rows when expected $rowsExpected rows")
+          }
+          batch
         }
-        if (batch.numRows() < rowsExpected) {
-          logDebug(s"Retried with ${batch.numRows()} rows when expected $rowsExpected rows")
-        }
-        batch
       }
-    }
   }
 
   /**
