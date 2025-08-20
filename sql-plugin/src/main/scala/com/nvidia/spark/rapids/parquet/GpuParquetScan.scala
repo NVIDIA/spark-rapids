@@ -1109,6 +1109,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
+  // we make sure we mark this as a transient lazy val, so we only materialize it
+  // from a task when we need to create the fileIO instance. This stops a regression
+  // when we materialize the hadoop conf eagerly, see:
+  // https://github.com/NVIDIA/spark-rapids/issues/13353
   @transient private lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
@@ -1323,6 +1327,10 @@ case class GpuParquetPartitionReaderFactory(
     @transient params: Map[String, String])
   extends ShimFilePartitionReaderFactory(params) with Logging {
 
+  // we make sure we mark this as a transient lazy val, so we only materialize it
+  // from a task when we need to create the fileIO instance. This stops a regression
+  // when we materialize the hadoop conf eagerly, see:
+  // https://github.com/NVIDIA/spark-rapids/issues/13353
   @transient private lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
