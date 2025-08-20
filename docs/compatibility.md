@@ -753,12 +753,6 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 | `"tomorrow"`          | Yes               |
 | `"yesterday"`         | Yes               |
 
-### String to Timestamp
-GPU Aligns to Spark except a known case which is actually a Spark bug.
-Spark 35x supports the following case(spaces + Thh:mm:ss) while Spark 400 does not:
-cast('      T00:00:00' as timestamp)
-For more details, refer to [bug link](https://github.com/NVIDIA/spark-rapids-jni/issues/3401)
-
 ### Constant Folding
 
 ConstantFolding is an operator optimization rule in Catalyst that replaces expressions that can
