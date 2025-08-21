@@ -257,16 +257,16 @@ object AsyncProfilerOnExecutor extends Logging {
   private def startProfilingForStage(stageId: Int): Unit = {
     asyncProfiler.foreach(profiler => {
       try {
-        // Increment epoch counter for this stage
+        // Get current epoch (starting from 0) and increment for next time
         val currentEpoch = stageEpochCounters.compute(stageId, (_, currentCount) => {
-          Option(currentCount).map(_ + 1).getOrElse(1)
-        })
+          currentCount + 1
+        }) - 1
         
         val filePath = {
           if (needMoveFile) {
             // if the asyncProfilerPathPrefix is non-local, we first write to a temp file
             // then move it to the final location
-            tempFilePath = Files.createTempFile("temp-file", null)
+            tempFilePath = Files.createTempFile("async-profiler-temp-jfr", null)
             tempFilePath.toString
           } else {
             // if the path is local, we can just use it directly
@@ -334,7 +334,13 @@ object AsyncProfilerOnExecutor extends Logging {
             profiler.execute("stop")
             if (needMoveFile) {
               val executorId = pluginCtx.executorID()
-              val currentEpoch = stageEpochCounters.getOrDefault(currentProfilingStage, 1)
+              val currentEpoch = Option(stageEpochCounters.get(currentProfilingStage))
+                .map(_ - 1)
+                .getOrElse {
+                  log.warn(s"Stage $currentProfilingStage not found in epoch counters, " +
+                    s"using epoch 0")
+                  0
+                }
 
               val baseFileName = s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
                 s"-stage-$currentProfilingStage-epoch-$currentEpoch.jfr"
@@ -364,7 +370,13 @@ object AsyncProfilerOnExecutor extends Logging {
             } else {
               // For local files, compress in place if enabled
               if (jfrCompressionEnabled) {
-                val currentEpoch = stageEpochCounters.getOrDefault(currentProfilingStage, 0)
+                val currentEpoch = Option(stageEpochCounters.get(currentProfilingStage))
+                  .map(_ - 1)
+                  .getOrElse {
+                    log.warn(s"Stage $currentProfilingStage not found in epoch counters, " +
+                      s"using epoch 0")
+                    0
+                  }
                 val originalPath = Paths.get(asyncProfilerPrefix.get).resolve(
                   s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
                     s"-stage-$currentProfilingStage-epoch-$currentEpoch.jfr")
