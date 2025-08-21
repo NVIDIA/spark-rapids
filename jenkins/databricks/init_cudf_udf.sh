@@ -21,7 +21,7 @@
 set -ex
 
 CUDF_VER=${CUDF_VER:-25.10}
-CUDA_VER=${CUDA_VER:-11.8}
+CUDA_VER=${CUDA_VER:-12.9}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH
@@ -77,7 +77,7 @@ else
   PYTHON_SITE_PACKAGES="/databricks/python-bootstrap/envs/cudf-udf/$PYTHON_VERSION/lib/site-packages"
   pip install --target=${PYTHON_SITE_PACKAGES} \
       --extra-index-url=https://pypi.anaconda.org/rapidsai-wheels-nightly/simple \
-      "cudf-cu11>=${CUDF_VER}.0a0,<=${CUDF_VER}"
+      "cudf-cu12>=${CUDF_VER}.0a0,<=${CUDF_VER}"
 
   REQUIRED_PACKAGES=(
     "${REQUIRED_PACKAGES[@]}"
