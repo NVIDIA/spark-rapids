@@ -507,7 +507,8 @@ private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
-  private val semaphore = new GpuBackingSemaphore(computeMaxPermits())
+  private val semaphore = new GpuBackingSemaphore(computeMaxPermits(), 
+    RapidsConf.MAX_CONCURRENT_GPU_TASKS.get(SQLConf.get))
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
