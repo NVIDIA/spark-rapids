@@ -431,8 +431,8 @@ class GpuTaskMetrics extends Serializable {
     onGpuTasksInWaitingQueueMaxCount.add(num)
   }
 
-  def recordMaxConcurrentGpuTasks(count: Long): Unit = {
-    maxConcurrentGpuTasks.add(count)
+  def recordConcurrentGpuTasks(currentConcurrentTasks: Long): Unit = synchronized {
+    maxConcurrentGpuTasks.add(currentConcurrentTasks)
   }
 
   def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = synchronized {

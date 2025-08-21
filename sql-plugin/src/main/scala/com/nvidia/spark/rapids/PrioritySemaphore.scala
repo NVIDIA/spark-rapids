@@ -32,7 +32,6 @@ class PrioritySemaphore[T](val maxPermits: Long, val maxConcurrentGpuTasksLimit:
   private val lock = new ReentrantLock()
   private var occupiedSlots: Long = 0
   private var currentConcurrentGpuTasksNum: Long = 0
-  private var maxConcurrentGpuTasks: Long = 0
 
   private case class ThreadInfo(priority: T,
                                 condition: Condition,
@@ -113,12 +112,8 @@ class PrioritySemaphore[T](val maxPermits: Long, val maxConcurrentGpuTasksLimit:
   private def commitAcquire(numPermits: Long): Unit = {
     occupiedSlots += numPermits
     currentConcurrentGpuTasksNum += 1
-    // Update max concurrent tasks if current thread count is higher
-    if (currentConcurrentGpuTasksNum > maxConcurrentGpuTasks) {
-      maxConcurrentGpuTasks = currentConcurrentGpuTasksNum
-      // Report to GpuTaskMetrics
-      GpuTaskMetrics.get.recordMaxConcurrentGpuTasks(maxConcurrentGpuTasks)
-    }
+    // Report current concurrent tasks to GpuTaskMetrics, let it handle max tracking
+    GpuTaskMetrics.get.recordConcurrentGpuTasks(currentConcurrentGpuTasksNum)
   }
 
   def release(numPermits: Long): Unit = {
