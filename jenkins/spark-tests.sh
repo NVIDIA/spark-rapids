@@ -255,7 +255,7 @@ run_iceberg_tests() {
   elif [[ "$test_type" == "rest" ]]; then
     echo "!!! Running iceberg tests with rest catalog"
     ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
-    org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
+org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
         # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
         # Disabling them may slow down the tests, so we increase memory here.
         ICEBERG_TEST_REMOTE_CATALOG='1' \
