@@ -361,6 +361,7 @@ run_non_utc_time_zone_tests() {
 # - DELTA_LAKE_ONLY: Delta Lake tests only
 # - ICEBERG_ONLY: iceberg tests only
 # - ICEBERG_S3TABLES_ONLY: iceberg s3tables tests only
+# - ICEBERG_REST_CATALOG_ONLY: iceberg rest catalog tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only
@@ -401,12 +402,16 @@ fi
 # Iceberg tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
-  run_iceberg_tests 'rest'
 fi
 
 # Iceberg s3tables tests
 if [[ "$TEST_MODE" == "ICEBERG_S3TABLES_ONLY" ]]; then
   run_iceberg_tests 's3tables'
+fi
+
+# Iceberg rest tests
+if [[ "$TEST_MODE" == "ICEBERG_REST_CATALOG_ONLY" ]]; then
+  run_iceberg_tests 'rest'
 fi
 
 # Avro tests
