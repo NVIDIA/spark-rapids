@@ -31,6 +31,8 @@ class PrioritySemaphore[T](val maxPermits: Long)
   // won't work together properly, and we see things like deadlocks.
   private val lock = new ReentrantLock()
   private var occupiedSlots: Long = 0
+  private var currentThreads: Long = 0
+  private var maxConcurrentTasks: Long = 0
 
   private case class ThreadInfo(priority: T,
                                 condition: Condition,
@@ -110,12 +112,20 @@ class PrioritySemaphore[T](val maxPermits: Long)
 
   private def commitAcquire(numPermits: Long): Unit = {
     occupiedSlots += numPermits
+    currentThreads += 1
+    // Update max concurrent tasks if current thread count is higher
+    if (currentThreads > maxConcurrentTasks) {
+      maxConcurrentTasks = currentThreads
+      // Report to GpuTaskMetrics
+      GpuTaskMetrics.get.recordMaxConcurrentTasks(maxConcurrentTasks)
+    }
   }
 
   def release(numPermits: Long): Unit = {
     lock.lock()
     try {
       occupiedSlots -= numPermits
+      currentThreads -= 1
       // acquire and wakeup for all threads that now have enough permits
       var done = false
       while (!done && waitingQueue.size() > 0) {
