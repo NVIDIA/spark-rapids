@@ -21,9 +21,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.charset.StandardCharsets
-import java.time.ZoneId
 import java.util
-import java.util.Optional
 import java.util.TimeZone
 import java.util.concurrent.Callable
 import java.util.regex.Pattern
@@ -41,7 +39,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.jni.{CastStrings, GpuTimeZoneDB, RmmSpark}
+import com.nvidia.spark.rapids.jni.{CastStrings, RmmSpark}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.CountingOutputStream
@@ -160,15 +158,7 @@ object GpuOrcScan {
     }
 
     // When reading timestamp type from an ORC file, it's not related to the
-    // Spark session timezone but the JVM timezone. Currently only supports
-    // UTC and Shanghai timezone.
-    val types = schema.map(_.dataType).toSet
-    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp)) {
-      val jvmTimeZone = TimeZone.getDefault
-      if (!GpuOrcTimezoneUtils.isGpuOrcSupportedTimeZone(jvmTimeZone)) {
-        meta.willNotWorkOnGpu(GpuOrcTimezoneUtils.getTimezoneNotSupportedMessage(jvmTimeZone))
-      }
-    }
+    // Spark session timezone but the JVM timezone. Currently supports non-UTC timezones
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)
   }
@@ -943,6 +933,8 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .withNumPyTypes(false)
       .includeColumn(includedColumns: _*)
       .decimal128Column(decimal128Fields: _*)
+      // read timestamp as UTC timezone; refer to `GpuOrcTimezoneUtils.rebaseTimeZone`
+      .ignoreTimezoneInStripeFooter()
       .build()
     (parseOpts, tableSchema)
   }
@@ -2821,89 +2813,6 @@ class MultiFileOrcPartitionReader(
   }
 }
 
-object TimeZoneUtil {
-  private def rebaseTimestampRecursively(
-      col: ColumnView,
-      toZoneId: ZoneId,
-      toClose: ArrayBuffer[ColumnView]): ColumnView = {
-
-    // Util function to add a view to the buffer "toClose".
-    val addToClose = (v: ColumnView) => {
-      toClose += v
-      v
-    }
-
-    val dType = col.getType
-    if (dType.hasTimeResolution) {
-      // 1. timestamp type, rebase timestamp column
-      withResource(col.copyToColumnVector()) { colVector =>
-        GpuTimeZoneDB.fromTimestampToUtcTimestamp(colVector, toZoneId)
-      }
-    } else if (dType == DType.LIST) {
-      // 2. nest list type
-      val child = addToClose(col.getChildColumnView(0))
-      val newChild = rebaseTimestampRecursively(child, toZoneId, toClose)
-      if (newChild != child) {
-        col.replaceListChild(addToClose(newChild))
-      } else {
-        col
-      }
-    } else if (dType == DType.STRUCT) {
-      // 3. nest struct type
-      val newViews = (0 until col.getNumChildren).safeMap { i =>
-        val child = addToClose(col.getChildColumnView(i))
-        val newChild = rebaseTimestampRecursively(child, toZoneId, toClose)
-        if (newChild != child) {
-          addToClose(newChild)
-        }
-        newChild
-      }
-      val opNullCount = Optional.of(col.getNullCount.asInstanceOf[java.lang.Long])
-      new ColumnView(col.getType, col.getRowCount, opNullCount, col.getValid,
-        col.getOffsets, newViews.toArray)
-    } else {
-      // 4. other types, no need to rebase
-      col
-    }
-  }
-
-  /**
-   * Rebase the timestamp columns in the input table to the system default timezone.
-   * If the system's default timezone is UTC, it returns the input table as it is.
-   *
-   * @param input the input table, it will be closed after returning
-   * @return a new table with rebased timestamp columns
-   */
-  def rebaseTimeZone(input: Table): Table = {
-    val toZoneId = ZoneId.systemDefault()
-    if (toZoneId == ZoneId.of("UTC")) {
-      // UTC timezone, no need to rebase
-      return input
-    }
-
-    withResource(input) { _ =>
-      val newColumns = (0 until input.getNumberOfColumns).safeMap { colIdx =>
-        val col = input.getColumn(colIdx)
-        withResource(new ArrayBuffer[ColumnView]) { toClose =>
-          val rebased = rebaseTimestampRecursively(col, toZoneId, toClose)
-          if (col == rebased) {
-            // no change
-            col.incRefCount()
-          } else {
-            // rebased, copy the new column
-            toClose += rebased
-            rebased.copyToColumnVector()
-          }
-        }
-      }
-
-      withResource(newColumns) { _ =>
-        new Table(newColumns: _*)
-      }
-    }
-  }
-}
-
 object MakeOrcTableProducer extends Logging {
   def apply(
       useChunkedReader: Boolean,
@@ -2963,8 +2872,8 @@ object MakeOrcTableProducer extends Logging {
       metrics(NUM_OUTPUT_BATCHES) += 1
       val evolvedSchemaTable = SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema,
         readDataSchema, isSchemaCaseSensitive, Some(GpuOrcScan.castColumnTo))
-      val rebasedTimeZone = TimeZoneUtil.rebaseTimeZone(evolvedSchemaTable)
-      // Rebase the timestamp columns (if it has) to system default timezone as Spark does.
+      val rebasedTimeZone = GpuOrcTimezoneUtils.rebaseTimeZone(evolvedSchemaTable)
+      // Rebase the timestamp columns (if it has) to JVM default timezone as Spark does.
       new SingleGpuDataProducer(rebasedTimeZone)
     }
   }
@@ -3021,8 +2930,8 @@ case class OrcTableReader(
     metrics(NUM_OUTPUT_BATCHES) += 1
     val evolvedSchemaTable = SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema,
       readDataSchema, isSchemaCaseSensitive, Some(GpuOrcScan.castColumnTo))
-    // Rebase the timestamp columns (if it has) to system default timezone as Spark does.
-    TimeZoneUtil.rebaseTimeZone(evolvedSchemaTable)
+    // Rebase the timestamp columns (if it has) to JVM default timezone as Spark does.
+    GpuOrcTimezoneUtils.rebaseTimeZone(evolvedSchemaTable)
   }
 
   override def close(): Unit = {
