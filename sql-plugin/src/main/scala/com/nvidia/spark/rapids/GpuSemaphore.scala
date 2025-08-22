@@ -152,7 +152,6 @@ class GpuStageMemoryEstimator(val stageId: Int,
     if (estimator != null) {
       val maxMemory = RmmSpark.getMaxGpuTaskMemory(taskId)
       if (maxMemory > 0) {
-        println(s"Task $taskId done, max memory used: $maxMemory")
         stats.add(maxMemory.toDouble)
       }
     }
