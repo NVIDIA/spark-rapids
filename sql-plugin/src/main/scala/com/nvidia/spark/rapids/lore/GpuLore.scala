@@ -247,7 +247,8 @@ object GpuLore {
 
               g.children.zipWithIndex.foreach {
                 case (child, idx) =>
-                  val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf)
+                  val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf,
+                    useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames)
                   child match {
                     case c: BroadcastQueryStageExec =>
                       c.broadcast.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
@@ -302,7 +303,9 @@ object GpuLore {
     val innerPlan = sub.plan.child
     if (innerPlan.isInstanceOf[GpuExec]) {
       val dumpRDDInfo = LoreDumpRDDInfo(id, loreOutputInfo, innerPlan.output,
-        hadoopConf)
+        hadoopConf,
+        useOriginalSchemaNames = RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES
+          .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf))
       innerPlan match {
         case p: GpuColumnarToRowExec => p.child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
         case c => c.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)

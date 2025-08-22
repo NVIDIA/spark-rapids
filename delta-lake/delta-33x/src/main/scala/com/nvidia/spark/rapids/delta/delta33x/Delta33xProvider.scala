@@ -26,7 +26,7 @@ import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
-import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
+import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils.PROP_CLUSTERING_COLUMNS
 import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterByTransform
@@ -108,16 +108,16 @@ object Delta33xProvider extends DeltaIOProvider {
     Seq(
       GpuOverrides.runnableCmd[DeleteCommand](
           "Delete rows from a Delta Lake table",
-          (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r))
-        .disabledByDefault("Delta Lake delete support is experimental"),
+          (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r)),
       GpuOverrides.runnableCmd[UpdateCommand](
           "Update rows from a Delta Lake table",
-          (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r))
-        .disabledByDefault("Delta Lake update support is experimental"),
+          (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r)),
       GpuOverrides.runnableCmd[MergeIntoCommand](
           "Merge of a source query/table into a Delta Lake table",
-          (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
-        .disabledByDefault("Delta Lake merge support is experimental")
+          (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r)),
+      GpuOverrides.runnableCmd[OptimizeTableCommand](
+          "Optimize a Delta Lake table",
+          (a, conf, p, r) => new OptimizeTableCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 

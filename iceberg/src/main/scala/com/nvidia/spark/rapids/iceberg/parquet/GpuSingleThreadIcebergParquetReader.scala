@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.iceberg.parquet
 
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, PartitionReaderWithBytesRead}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, ParquetPartitionReader}
 import java.util.{Map => JMap}
@@ -28,6 +29,7 @@ import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSingleThreadIcebergParquetReader(
+    val rapidsFileIO: IcebergFileIO,
     val files: Seq[IcebergPartitionedFile],
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
     val gpuDeleteProvider: IcebergPartitionedFile => Option[GpuDeleteFilter],
@@ -60,7 +62,8 @@ class GpuSingleThreadIcebergParquetReader(
         val file = taskIterator.next()
 
         gpuDeleteFilter = gpuDeleteProvider(file)
-        parquetIterator = new SingleFileReader(file, constantsProvider(file), gpuDeleteFilter, conf)
+        parquetIterator = new SingleFileReader(rapidsFileIO, file, constantsProvider(file),
+          gpuDeleteFilter, conf)
         dataIterator = gpuDeleteFilter
           .map(_.filterAndDelete(parquetIterator))
           .getOrElse(parquetIterator)
@@ -93,6 +96,7 @@ class GpuSingleThreadIcebergParquetReader(
 }
 
 private class SingleFileReader(
+    val rapidsFileIO: IcebergFileIO,
     val file: IcebergPartitionedFile,
     val idToConstant: JMap[Integer, _],
     val deleteFilter: Option[GpuDeleteFilter],
@@ -119,9 +123,11 @@ private class SingleFileReader(
 
     val filteredParquet = super.filterParquetBlocks(file, requiredSchema)
 
-    val parquetPartReader = new ParquetPartitionReader(conf.conf,
+    val parquetPartReader = new ParquetPartitionReader(
+      rapidsFileIO,
+      conf.conf,
       file.sparkPartitionedFile,
-      new Path(file.file.location()),
+      new Path(file.file.getDelegate.location()),
       filteredParquet.blocks,
       filteredParquet.schema,
       conf.caseSensitive,

@@ -100,11 +100,8 @@ def is_utc():
 def is_not_utc():
     return not is_utc()
 
-def is_Shanghai_timezone():
-    return get_test_tz() == "Asia/Shanghai"
-
-def is_iceberg_s3tables():
-    v = os.environ.get('ICEBERG_TEST_S3TABLES')
+def is_iceberg_remote_catalog():
+    v = os.environ.get('ICEBERG_TEST_REMOTE_CATALOG')
     return v == "1"
 
 # key is time zone, value is recorded boolean value

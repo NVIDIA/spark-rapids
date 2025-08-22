@@ -24,17 +24,22 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
                                             "spark.rapids.sql.command.MergeIntoCommandEdge": "true"})
 
+fallback_test_params = [{"spark.rapids.sql.format.delta.write.enabled": "false"},
+                        {"spark.rapids.sql.format.parquet.enabled": "false"},
+                        {"spark.rapids.sql.format.parquet.write.enabled": "false"},
+                        {"spark.rapids.sql.command.MergeIntoCommand": "false"},
+                        ]
+if is_before_spark_353():
+    # MergeCommand is disabled by default before Spark 3.5.3.
+    # In Spark 3.5.3 and later, MergeCommand is enabled by default, but may not run on GPU yet
+    # because of https://github.com/NVIDIA/spark-rapids/issues/8042.
+    # See https://github.com/NVIDIA/spark-rapids/issues/13021#issuecomment-3166724473 for details.
+    fallback_test_params.append(delta_writes_enabled_conf)
 
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.parametrize("disable_conf",
-                         [{"spark.rapids.sql.format.delta.write.enabled": "false"},
-                          {"spark.rapids.sql.format.parquet.enabled": "false"},
-                          {"spark.rapids.sql.format.parquet.write.enabled": "false"},
-                          {"spark.rapids.sql.command.MergeIntoCommand": "false"},
-                          delta_writes_enabled_conf  # Test disabled by default
-                         ], ids=idfn)
+@pytest.mark.parametrize("disable_conf", fallback_test_params, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)

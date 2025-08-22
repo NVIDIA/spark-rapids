@@ -22,6 +22,7 @@ import java.util.UUID
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.IcebergPartitionedFile
 import com.nvidia.spark.rapids.iceberg.testutils.AddEqDeletes.getParquetFileInfo
 import org.apache.hadoop.conf.Configuration
@@ -142,7 +143,8 @@ object AddEqDeletes extends Logging {
   }
 
   def getParquetFileInfo(table: Table, parquetFile: String): ParquetFileInfo = {
-    val icebergPartitionedFile = IcebergPartitionedFile(table.io.newInputFile(parquetFile))
+    val icebergPartitionedFile = IcebergPartitionedFile(new IcebergInputFile(table.io.newInputFile
+    (parquetFile)))
 
     val tableSchema = table.schema
     withResource(icebergPartitionedFile.newReader) { reader =>

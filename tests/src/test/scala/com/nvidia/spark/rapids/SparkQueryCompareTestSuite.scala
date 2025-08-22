@@ -109,14 +109,23 @@ object SparkSessionHolder extends Logging {
   }
 
   def sparkSession: SparkSession = {
-    if (!hasActiveSession) {
+    // If there is no active session or the cached one is already stopped, re-init
+    val needsReinit = try {
+      !hasActiveSession || spark.sparkContext.isStopped
+    } catch {
+      case _: Throwable => true
+    }
+    if (needsReinit) {
       reinitSession()
     }
     spark
   }
 
   def resetSparkSessionConf(): Unit = {
-    if (!hasActiveSession) {
+    val needsReinit = try { !hasActiveSession || spark.sparkContext.isStopped } catch {
+      case _: Throwable => true
+    }
+    if (needsReinit) {
       reinitSession()
     } else {
       setAllConfs(origConf.toArray)

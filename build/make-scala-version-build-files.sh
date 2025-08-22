@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ fi
 TO_VERSION=$1
 
 check_scala_version() {
-  for i in ${VALID_VERSIONS[*]}; do [ $i = "$1" ] && return 0; done
+  for i in "${VALID_VERSIONS[@]}"; do [ $i = "$1" ] && return 0; done
   echo "Invalid Scala version: $1. Valid versions: ${VALID_VERSIONS[*]}" 1>&2
   exit 1
 }

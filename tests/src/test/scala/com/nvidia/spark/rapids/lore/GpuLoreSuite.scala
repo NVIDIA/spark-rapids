@@ -437,6 +437,48 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  test("Parquet original schema names") {
+    withGpuSparkSession { spark =>
+      // Enable LORE dump with original schema names for parquet
+      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "5[*]")
+      // Build a dataframe containing various nested types to validate naming
+      val df = spark.range(0, 100, 1, 10)
+        .selectExpr(
+          "id as id_col",
+          "named_struct('a', id, 'b', id + 1) as s_col",
+          "array(id, id + 2) as arr_col",
+          "map(id, id + 3) as map_col")
+        .groupBy("id_col")
+        .agg(
+          functions.first("s_col", ignoreNulls = true).as("s_first"),
+          functions.collect_list("arr_col").as("arr_list"),
+          functions.first("map_col", ignoreNulls = true).as("map_first")
+        )
+
+      // Trigger execution to produce LORE dump
+      val _ = df.collect().length
+
+      // Inspect dumped parquet under loreId-5/input-0
+      val inputRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-5/input-0")
+      val fs = inputRoot.getFileSystem(spark.sparkContext.hadoopConfiguration)
+
+      // Read expected names from rdd.meta
+      val metaPath = new Path(inputRoot, "rdd.meta")
+      val meta = GpuLore.loadObject[LoreRDDMeta](metaPath, spark.sparkContext.hadoopConfiguration)
+      val expectedNames = meta.attrs.map(_.name)
+
+      // Find a parquet batch file in one partition folder and verify column names
+      val partDir = fs.listStatus(inputRoot).map(_.getPath)
+        .find(p => p.getName.startsWith("partition-")).get
+      val parquetFile = fs.listStatus(partDir).map(_.getPath)
+        .find(p => p.getName.endsWith(".parquet")).get
+
+      val directDf = spark.read.parquet(parquetFile.toString)
+      assert(directDf.columns.toSeq == expectedNames)
+    }
+  }
+
   private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {
     val loreId = OutputLoreId.parse(loreDumpIds).head._1
     withGpuSparkSession { spark =>

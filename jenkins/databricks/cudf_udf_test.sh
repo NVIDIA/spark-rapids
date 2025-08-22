@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ set -ex
 CUDF_PY_ENV=${CUDF_PY_ENV:-$(echo /databricks/*/envs/cudf-udf)}
 if [ ! -d "${CUDF_PY_ENV}" ]; then
     echo "Error not found cudf-py packages! Please refer to './jenkins/databricks/init_cudf_udf.sh' to install."
-    exit -1
+    exit 255
 fi
 # Set the path of python site-packages.
 PYTHON_SITE_PACKAGES=$(echo -n ${CUDF_PY_ENV}/*/lib/site-packages)

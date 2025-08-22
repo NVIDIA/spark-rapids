@@ -826,8 +826,11 @@ object GpuShuffledAsymmetricHashJoinExec {
       }
       val baseBuildIter = setupForJoin(buildQueue, rawBuildIter, exprs.buildTypes,
         gpuBatchSizeBytes, metrics)
+      // setupForJoin may start async threads to fetch from rawBuildIter. So after
+      // calling setupForJoin, current thread should not call use rawBuildIter or
+      // probeBuildIter again, to avoid thread safety issues.
+
       if (buildRows <= Int.MaxValue && buildSize <= gpuBatchSizeBytes) {
-        assert(!probeBuildIter.hasNext, "build side not exhausted")
         getJoinInfoSmallBuildSide(joinType, buildSide, condition, exprs,
           baseBuildIter, buildRows, buildSize,
           rawStreamIter, gpuBatchSizeBytes, metrics)
@@ -840,8 +843,11 @@ object GpuShuffledAsymmetricHashJoinExec {
         }
         val streamIter = setupForJoin(streamQueue, rawStreamIter, exprs.streamTypes,
           gpuBatchSizeBytes, metrics)
+        // setupForJoin may start async threads to fetch from rawStreamIter. So after
+        // calling setupForJoin, current thread should not call use rawStreamIter or
+        // probeStreamIter again, to avoid thread safety issues.
+
         if (streamRows <= Int.MaxValue && streamSize <= gpuBatchSizeBytes) {
-          assert(!probeStreamIter.hasNext, "stream side not exhausted")
           metrics(BUILD_DATA_SIZE).set(streamSize)
           val flippedSide = flipped(buildSide)
           JoinInfo(joinType, flippedSide, streamIter, streamSize, None, baseBuildIter,

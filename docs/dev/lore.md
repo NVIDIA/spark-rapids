@@ -40,6 +40,23 @@ You also need to set `spark.rapids.sql.lore.dumpPath` to tell LORE where to dump
 value of which should point to a directory. All dumped data of a query will live in this 
 directory. Note, the directory may either not exist, in which case it will be created, or it should be empty.
 If the directory exists and contains files, an `IllegalArgumentException` will be thrown to prevent overwriting existing data.
+### Preserve original schema names in Parquet
+
+By default, LORE writes Parquet files using the original Spark schema names (including nested
+field names for structures, arrays, and maps, following Spark-compat naming such as `element`,
+`key`, and `value` where applicable).
+
+You can disable this behavior if you prefer auto-generated type-based names by setting:
+
+```
+spark.rapids.sql.lore.parquet.useOriginalSchemaNames = false
+```
+
+When enabled, LORE writes Parquet files with the original Spark schema names (including nested
+field names for structures, arrays, and maps, following Spark-compat naming such as `element`,
+`key`, and `value` where applicable). Replay functionality still relies on LORE metadata to
+reconstruct precise types; the Parquet files are now also directly readable with expected names.
+
 
 A typical directory hierarchy would look like this:
 
