@@ -1077,7 +1077,7 @@ def test_orc_not_support_timestamp_ltz(std_input_path):
 @tz_sensitive_test
 def test_orc_non_utc_timezone(reader_confs, end_timestamp, spark_tmp_path, v1_enabled_list, timezone_pair):
     d_gen = DateGen(start=date(1590, 1, 1))
-    # Update start year to 1590 until https://github.com/NVIDIA/spark-rapids/issues/13272 is fixed.
+    # Update start year to 1590 when https://github.com/NVIDIA/spark-rapids/issues/13272 is fixed.
     ts_gen = TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc), end=end_timestamp, nullable=True)
     date_timestamp_gens = [('c1', d_gen), ('c2', ts_gen)]
 
@@ -1107,7 +1107,7 @@ def test_orc_write_but_cpu_read_fail(spark_tmp_path):
         Caused by: java.lang.IllegalArgumentException: nanos > 999999999 or < 0
 	        at java.sql/java.sql.Timestamp.setNanos(Timestamp.java:336)
 	        at org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector.asScratchTimestamp
-	Reproduce: export DATAGEN_SEED=1754555738
+	Reproduce: export DATAGEN_SEED=1754555738; export TZ=UTC; remove the check to enable writing on GPU; then run this test case
     """
     gpu_write_path = spark_tmp_path + "/ORC_DATA_GPU"
     # If change the start year to 1970, then the test will pass.
