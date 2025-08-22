@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OrcShims
-import java.util.TimeZone
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.orc.OrcConf
@@ -81,13 +80,6 @@ object GpuOrcFileFormat extends Logging {
     val hasBools = schema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
         t.isInstanceOf[BooleanType])
-    }
-
-    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp)) {
-      val jvmTimeZone = TimeZone.getDefault
-      if (!GpuOrcTimezoneUtils.isGpuOrcSupportedTimeZone(jvmTimeZone)) {
-        meta.willNotWorkOnGpu(GpuOrcTimezoneUtils.getTimezoneNotSupportedMessage(jvmTimeZone))
-      }
     }
 
     if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
