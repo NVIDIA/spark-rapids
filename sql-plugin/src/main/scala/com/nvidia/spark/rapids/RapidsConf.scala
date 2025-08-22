@@ -570,6 +570,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .doc("The maximum number of tasks that can execute concurrently per GPU. " +
         "This sets an upper bound on concurrent task execution regardless of " +
         "available GPU memory permits. Set to -1 for no limit.")
+      .internal()
       .integerConf
       .createWithDefault(-1)
 
