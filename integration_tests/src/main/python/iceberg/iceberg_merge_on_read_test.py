@@ -17,7 +17,7 @@ import tempfile
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from conftest import is_iceberg_s3tables
+from conftest import is_iceberg_remote_catalog
 from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
     all_eq_column_combinations
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 # In spark/iceberg integration, there is no builtin way to generate eq deletion files using
 # sql, we used a low level api to add eq deletion files to iceberg table.
 # This does not work with aws s3tables, which is a managed table service.
-@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path, reader_type,
                                eq_delete_cols, register_iceberg_add_eq_deletes_udf):
     table_name = setup_base_iceberg_table(spark_tmp_table_factory)
@@ -70,7 +70,7 @@ def test_iceberg_v2_position_delete(spark_tmp_table_factory, reader_type):
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 # This requires setting a write data path for data files, which is hard to confirm with aws
 # s3tables.
-@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason = "S3tables catalog is managed")
 def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factory,
                                                           spark_tmp_path,
                                                           reader_type):
@@ -90,7 +90,7 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.skipif(is_iceberg_s3tables(), reason = "S3tables catalog is managed")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason = "S3tables catalog is managed")
 @pytest.mark.xfail(reason = "https://github.com/NVIDIA/spark-rapids/issues/12885")
 # When using this datagen, local run is 784 rows
 @pytest.mark.datagen_overrides(seed=1749483297, permanent=True,
