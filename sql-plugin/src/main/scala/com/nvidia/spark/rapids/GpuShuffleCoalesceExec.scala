@@ -103,7 +103,7 @@ object CoalesceReadOption {
       case "ONFAILURE" => DumpOption.OnFailure
     }
     CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
-      RapidsConf.ShuffleKudoMode.withName(RapidsConf.SHUFFLE_KUDO_MODE.get(conf)),
+      RapidsConf.ShuffleKudoMode.withName(RapidsConf.SHUFFLE_KUDO_READ_MODE.get(conf)),
       dumpOption,
       RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf),
       RapidsConf.SHUFFLE_ASYNC_READ_ENABLED.get(conf))
@@ -111,7 +111,7 @@ object CoalesceReadOption {
 
   def apply(conf: RapidsConf): CoalesceReadOption = {
     CoalesceReadOption(conf.shuffleKudoSerializerEnabled,
-      conf.shuffleKudoMode,
+      conf.shuffleKudoReadMode,
       conf.shuffleKudoSerializerDebugMode,
       conf.shuffleKudoSerializerDebugDumpPrefix,
       conf.shuffleAsyncReadEnabled)
