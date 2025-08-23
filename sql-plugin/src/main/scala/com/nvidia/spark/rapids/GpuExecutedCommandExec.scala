@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,10 +33,11 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * is not performed directly here, rather it is the underlying command that will ultimately
  * execute on the GPU.
  */
-case class GpuExecutedCommandExec(cmd: RunnableCommand) extends LeafExecNode with GpuExec {
+case class GpuExecutedCommandExec(cmd: RunnableCommand) extends LeafExecNode
+    with MetricsOverrideGpuExec {
   override def supportsColumnar: Boolean = false
 
-  override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
+  override lazy val opMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
   /**
    * A concrete command should override this lazy field to wrap up any side effects caused by the

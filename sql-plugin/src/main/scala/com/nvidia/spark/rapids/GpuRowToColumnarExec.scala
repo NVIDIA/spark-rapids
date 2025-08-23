@@ -883,7 +883,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     TrampolineUtil.doExecuteBroadcast(child)
   }
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+  override lazy val opMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS)
@@ -893,8 +893,6 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     // use local variables instead of class global variables to prevent the entire
     // object from having to be serialized
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val opTime = gpuLongMetric(OP_TIME)
     val localGoal = goal
@@ -913,14 +911,14 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedInternalRowToCudfRowIterator(
         rowIter, localOutput.toArray, localGoal, streamTime, opTime,
-        numInputRows, numOutputRows, numOutputBatches))
+        numInputRows, NoopMetric, NoopMetric))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
       val conf = new RapidsConf(child.conf)
       val batchSizeBytes = conf.gpuTargetBatchSizeBytes
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
         localSchema, localGoal, batchSizeBytes, converters,
-        numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
+        numInputRows, NoopMetric, NoopMetric, streamTime, opTime))
     }
   }
 }
