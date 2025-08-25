@@ -19,5 +19,5 @@ pyarrow == 19.0.1 ; python_version >= '3.9'
 pytest-xdist >= 2.0.0
 findspark
 fsspec == 2025.3.0
-fastparquet == 0.8.3 ; python_version == '3.8'
 fastparquet == 2024.5.0 ; python_version >= '3.9'
+setuptools ; python_version >= '3.12'

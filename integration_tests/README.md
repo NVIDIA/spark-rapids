@@ -263,7 +263,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-25.06.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-25.06.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-25.10.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-25.10.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -283,10 +283,10 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
 If you just want to verify the SQL replacement is working you will need to add the
 `rapids-4-spark` jar to your `spark-submit` command. Note the following example
-assumes CUDA 11.0 is being used and the Spark distribution is built with Scala 2.12.
+assumes CUDA 12 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -454,10 +454,10 @@ To run cudf_udf tests, need following configuration changes:
    * Decrease `spark.rapids.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
    * Add `spark.rapids.python.concurrentPythonWorkers` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
 
-As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
+As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 12:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-25.06.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar,rapids-4-spark-tests_2.12-25.10.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -475,6 +475,17 @@ Some tests require that Apache Iceberg has been configured in the Spark environm
 properly without it. These tests assume Iceberg is not configured and are disabled by default.
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
+
+### Run Apache iceberg s3tables tests
+
+To run iceberg tests against aws s3tables catalog, we need to setup several things:
+1. Run `aws configure` to setup aws credentials and region.
+2. Create a s3tables [table bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-create.html), and fetch its arn
+3. Create a namespace with name `default` under the table bucket created in step 2.
+4. Add environment `ICEBERG_TEST_REMOTE_CATALOG=1`
+5. Set spark catalog implementation s3 tables: 
+   `--conf spark.sql.catalog.spark_catalog.catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog"`
+6. Set spark warehouse to table bucket arn in step 2: `--conf spark.sql.catalog.spark_catalog.warehouse=<table bucket arn>`
 
 ### Enabling Delta Lake tests
 

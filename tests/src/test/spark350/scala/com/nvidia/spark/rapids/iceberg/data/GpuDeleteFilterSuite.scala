@@ -21,6 +21,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "356"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.iceberg.data
 
@@ -32,6 +33,7 @@ import com.nvidia.spark.rapids.{GpuColumnVector, LazySpillableColumnarBatch, Noo
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.{fieldIndex, PooledTableGen}
 import com.nvidia.spark.rapids.iceberg.data.TestGpuDeleteLoader._
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuIcebergParquetReaderConf, SingleFile}
@@ -40,6 +42,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.iceberg.{DeleteFile, FileContent, FileFormat, FileMetadata, MetadataColumns, PartitionSpec, Schema}
 import org.apache.iceberg.MetadataColumns.isMetadataColumn
 import org.apache.iceberg.common.DynMethods
+import org.apache.iceberg.hadoop.HadoopFileIO
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.types.Type.TypeID
 import org.apache.iceberg.types.Types
@@ -409,6 +412,7 @@ private object TestGpuDeleteLoader {
     }
     col.getType.getTypeId match {
       case DType.DTypeEnum.DECIMAL128 => col.getBigDecimal(rowIdx).asInstanceOf[AnyRef]
+      case DType.DTypeEnum.STRING => col.getJavaString(rowIdx)
       case _ => HOST_COL_GET_ELEMENT.invoke(col, Integer.valueOf(rowIdx)).asInstanceOf[AnyRef]
     }
   }
@@ -468,6 +472,7 @@ private object TestGpuDeleteLoader {
       deleteFiles: Seq[DeleteFile],
       deleteLoader: Option[GpuDeleteLoader]): GpuDeleteFilter = {
     new GpuDeleteFilter(
+      new IcebergFileIO(new HadoopFileIO(new Configuration())),
       tableSchema,
       Map.empty,
       GpuIcebergParquetReaderConf(

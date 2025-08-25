@@ -21,6 +21,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.CombineConf
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, MultiFileCloudParquetPartitionReader}
 
@@ -31,13 +32,15 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuMultiThreadIcebergParquetReader(
+    val rapidsFileIO: IcebergFileIO,
     val files: Seq[IcebergPartitionedFile],
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
     val deleteFilterProvider: IcebergPartitionedFile => Option[GpuDeleteFilter],
     override val conf: GpuIcebergParquetReaderConf) extends GpuIcebergParquetReader {
-  private val pathToFile = files.map(f => f.urlEncodedPath -> f).toMap
-  private val postProcessors: ConcurrentMap[String, GpuParquetReaderPostProcessor] =
-    new ConcurrentHashMap[String, GpuParquetReaderPostProcessor](files.size)
+  private val pathToFile = files.groupBy(_.urlEncodedPath).mapValues(_.toSeq)
+  private val postProcessors: ConcurrentMap[IcebergPartitionedFile, GpuParquetReaderPostProcessor]
+  = new ConcurrentHashMap[IcebergPartitionedFile, GpuParquetReaderPostProcessor](files.size)
+
 
   private var inited = false
   private lazy val reader = createParquetReader()
@@ -72,9 +75,8 @@ class GpuMultiThreadIcebergParquetReader(
       curDataIterator = null
       if (fileIterator.hasNext) {
         val file = fileIterator.next()
-        val filePath = file.urlEncodedPath
         val gpuDeleteFilter = deleteFilterProvider(file)
-        val fileDataIterator = new SingleFileColumnarBatchIterator(filePath,
+        val fileDataIterator = new SingleFileColumnarBatchIterator(file,
           lastBatchHolder, reader, postProcessors)
         curDataIterator = gpuDeleteFilter
           .map(_.filterAndDelete(fileDataIterator))
@@ -87,7 +89,9 @@ class GpuMultiThreadIcebergParquetReader(
     val sparkPartitionedFiles = files.map(_.sparkPartitionedFile).toArray
 
     inited = true
-    new MultiFileCloudParquetPartitionReader(conf.conf,
+    new MultiFileCloudParquetPartitionReader(
+      rapidsFileIO,
+      conf.conf,
       sparkPartitionedFiles,
       this.filterBlock,
       conf.caseSensitive,
@@ -116,7 +120,10 @@ class GpuMultiThreadIcebergParquetReader(
 
   private def filterBlock(f: PartitionedFile) = {
     val path = f.filePath.toString()
-    val icebergFile = pathToFile(path)
+    val icebergFiles = pathToFile(path).filter(p => p.isSame(f))
+    require(icebergFiles.length == 1, s"Expected 1 iceberg partition file, but found " +
+      s"${icebergFiles.length} for $f")
+    val icebergFile = icebergFiles.head
     val deleteFilter = deleteFilterProvider(icebergFile)
 
     val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
@@ -128,15 +135,16 @@ class GpuMultiThreadIcebergParquetReader(
       constantsProvider(icebergFile),
       requiredSchema)
 
-    postProcessors.put(path, postProcessor)
+    val old = postProcessors.put(icebergFile, postProcessor)
+    require(old == null, "Iceberg parquet partition file post processor already exists!")
     filteredParquet
   }
 }
 
-private class SingleFileColumnarBatchIterator(val targetPath: String,
+private class SingleFileColumnarBatchIterator(val file: IcebergPartitionedFile,
     lastBatchHolder: Array[Option[ColumnarBatch]],
     inner: PartitionReader[ColumnarBatch],
-    postProcessors: ConcurrentMap[String, GpuParquetReaderPostProcessor])
+    postProcessors: ConcurrentMap[IcebergPartitionedFile, GpuParquetReaderPostProcessor])
     extends Iterator[ColumnarBatch]  {
 
   private def lastBatch: Option[ColumnarBatch] = lastBatchHolder(0)
@@ -144,7 +152,11 @@ private class SingleFileColumnarBatchIterator(val targetPath: String,
   override def hasNext: Boolean = if (lastBatch.isEmpty) {
     if (inner.next()) {
       lastBatchHolder(0) = Some(inner.get())
-      InputFileUtils.getCurInputFilePath() == targetPath
+
+      // Current file partition
+      InputFileUtils.getCurInputFilePath() == file.urlEncodedPath &&
+        InputFileUtils.getCurInputFileStartOffset == file.start &&
+        InputFileUtils.getCurInputFileLength == file.length
     } else {
       false
     }
@@ -157,7 +169,7 @@ private class SingleFileColumnarBatchIterator(val targetPath: String,
       throw new NoSuchElementException("No more elements")
     }
     try {
-      postProcessors.get(targetPath).process(lastBatch.get)
+      postProcessors.get(file).process(lastBatch.get)
     } finally {
       lastBatchHolder(0) = None
     }

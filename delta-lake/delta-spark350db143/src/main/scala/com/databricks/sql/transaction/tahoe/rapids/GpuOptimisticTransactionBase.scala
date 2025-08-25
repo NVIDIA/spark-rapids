@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -28,6 +28,7 @@ import com.databricks.sql.transaction.tahoe.files.TahoeBatchFileIndex
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaWriteUtils
 
 import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
@@ -140,10 +141,10 @@ abstract class GpuOptimisticTransactionBase
       spark: SparkSession,
       physicalPlan: SparkPlan,
       partitionSchema: StructType,
-      isOptimize: Boolean): SparkPlan = {
+      isOptimize: Boolean,
+      writeOptions: Option[DeltaOptions]): SparkPlan = {
     val optimizeWriteEnabled = !isOptimize &&
-        spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_ENABLED)
-            .orElse(DeltaConfigs.OPTIMIZE_WRITE.fromMetaData(metadata)).getOrElse(false)
+      DeltaWriteUtils.shouldOptimizeWrite(writeOptions, spark.sessionState.conf, metadata)
     if (optimizeWriteEnabled) {
       val planWithoutTopRepartition =
         DeltaShufflePartitionsUtil.removeTopRepartition(physicalPlan)

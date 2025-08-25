@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,7 +107,7 @@ class ShuffleBufferCatalog extends Logging {
       val tableMeta = MetaUtils.buildTableMeta(bufferId.tableId, contigTable)
       val buff = contigTable.getBuffer
       buff.incRefCount()
-      val handle = SpillableDeviceBufferHandle(buff)
+      val handle = SpillableDeviceBufferHandle(buff, initialSpillPriority)
       trackCachedHandle(bufferId, handle, tableMeta)
     }
   }
@@ -132,7 +132,7 @@ class ShuffleBufferCatalog extends Logging {
       tableMeta.bufferMeta().mutateId(bufferId.tableId)
       val buff = compressed.getTableBuffer
       buff.incRefCount()
-      val handle = SpillableDeviceBufferHandle(buff)
+      val handle = SpillableDeviceBufferHandle(buff, initialSpillPriority)
       trackCachedHandle(bufferId, handle, tableMeta)
     }
   }

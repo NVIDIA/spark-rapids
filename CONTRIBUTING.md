@@ -127,15 +127,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -159,8 +159,7 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 ### Building against different CUDA Toolkit versions
 
 You can build against different versions of the CUDA Toolkit by modifying the variable `cuda.version`:
-* `-Dcuda.version=cuda11` (CUDA 11.x, default)
-* `-Dcuda.version=cuda12` (CUDA 12.x)
+* `-Dcuda.version=cuda12` (CUDA 12.x, default)
 
 ### Building a Distribution for a Single Spark Release
 
@@ -178,7 +177,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -599,6 +598,27 @@ brew install gnu-sed
 # and add to PATH to make it as default sed for your shell
 export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
 ```
+
+### Creating a Pull Request
+
+Here are some guidelines to follow when creating a pull request:
+
+1. If your pull request is not ready for review but you want to make use of the
+   continuous integration testing facilities, please make it as a draft and label it with `[WIP]`.
+
+2. If your pull request is ready to be reviewed without requiring additional
+   work on top of it, then convert it to a regular pull request and remove the `[WIP]` label
+   (if applicable).
+
+3. Once the review has taken place, please do not add features or make changes
+   out of the scope of those even if the reviewer requests them. Instead, please
+   consider filing new issues for those changes.
+
+4. Please avoid rebasing your branch during the review process, as this causes the context
+   of any comments made by reviewers to be lost. If conflicts occur during
+   review, then they should be resolved by merging into the branch used for
+   making the pull request.
+
 
 ### Pull request status checks
 A pull request should pass all status checks before being merged.

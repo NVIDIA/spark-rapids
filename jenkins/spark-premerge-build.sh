@@ -27,7 +27,7 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
+CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda12'}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
 MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CLASSIFIER"
@@ -51,7 +51,14 @@ mvn_verify() {
         echo "Spark version: $version"
         # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
-        if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
+        match=1
+        for element in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}"; do
+            if [[ "$element" == "$version" ]]; then
+                match=0
+                break
+            fi
+        done
+        if [[ $match == 0 ]]; then
             env -u SPARK_HOME \
               $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
             # Run filecache tests
@@ -228,16 +235,16 @@ ci_scala213() {
 }
 
 prepare_spark() {
-    spark_ver=${1:-'3.2.0'}
+    spark_version=${1:-'3.2.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"
     rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
     # Download a full version of spark
-    . jenkins/hadoop-def.sh $spark_ver $scala_ver
-    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$spark_ver/spark-$spark_ver-$BIN_HADOOP_VER.tgz
+    . jenkins/hadoop-def.sh $spark_version $scala_ver
+    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$spark_version/spark-$spark_version-$BIN_HADOOP_VER.tgz
 
-    export SPARK_HOME="$ARTF_ROOT/spark-$spark_ver-$BIN_HADOOP_VER"
+    export SPARK_HOME="$ARTF_ROOT/spark-$spark_version-$BIN_HADOOP_VER"
     export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
     tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && rm -f $SPARK_HOME.tgz
     # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue

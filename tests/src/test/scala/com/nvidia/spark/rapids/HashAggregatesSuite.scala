@@ -105,7 +105,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     maxFloatDiff: Double = 0.0,
     incompat: Boolean = false,
     execsAllowedNonGpu: Seq[String] = Seq.empty,
-    sortBeforeRepart: Boolean = false)
+    sortBeforeRepart: Boolean = false,
+    assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame)
     (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
@@ -120,7 +121,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
         maxFloatDiff,
         incompat,
         execsAllowedNonGpu,
-        sortBeforeRepart)(fun)(validateCapturedPlans)
+        sortBeforeRepart,
+        assumeCondition)(fun)(validateCapturedPlans)
     }
   }
 
@@ -130,14 +132,15 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     repart: Integer = 1,
     conf: SparkConf = new SparkConf(),
     sortBeforeRepart: Boolean = false,
-    skipCanonicalizationCheck: Boolean = false)
+    skipCanonicalizationCheck: Boolean = false,
+    assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
       val localConf = {
         new SparkConf().setAll(conf.getAll).setAll(config)
       }
       IGNORE_ORDER_testSparkResultsAreEqual(s"${testName}_config$i",
-        df, repart, localConf, sortBeforeRepart, skipCanonicalizationCheck
+        df, repart, localConf, sortBeforeRepart, skipCanonicalizationCheck, assumeCondition
       )(fun)
     }
   }
@@ -147,7 +150,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     df: SparkSession => DataFrame,
     repart: Integer,
     conf: SparkConf = new SparkConf(),
-    sortBeforeRepart: Boolean = false)
+    sortBeforeRepart: Boolean = false,
+    assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame)
     (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
@@ -156,7 +160,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       }
       IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
         s"${testName}_config$i",
-        df, repart, localConf, sortBeforeRepart
+        df, repart, localConf, sortBeforeRepart, assumeCondition
       )(fun)(validateCapturedPlans)
     }
   }
@@ -168,7 +172,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     maxFloatDiff: Double = 0.0,
     sort: Boolean = false,
     repart: Integer = 1,
-    sortBeforeRepart: Boolean = false)
+    sortBeforeRepart: Boolean = false,
+    assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
       val localConf = {
@@ -176,7 +181,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       }
       INCOMPAT_testSparkResultsAreEqual(
         s"${testName}_config$i",
-        df, maxFloatDiff, localConf, sort, repart, sortBeforeRepart
+        df, maxFloatDiff, localConf, sort, repart, sortBeforeRepart, assumeCondition
       )(fun)
     }
   }
@@ -186,14 +191,16 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     df: SparkSession => DataFrame,
     conf: SparkConf,
     repart: Integer = 1,
-    sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+    sortBeforeRepart: Boolean = false,
+    assumeCondition: SparkSession => (Boolean, String))(
+    fun: DataFrame => DataFrame): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
       val localConf = {
         new SparkConf().setAll(conf.getAll).setAll(config)
       }
       INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
         s"${testName}_config$i",
-        df, repart, localConf, sortBeforeRepart
+        df, repart, localConf, sortBeforeRepart, assumeCondition
       )(fun)
     }
   }
@@ -204,7 +211,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     execsAllowedNonGpu: Seq[String],
     repart: Integer,
     conf: SparkConf,
-    sortBeforeRepart: Boolean = false)
+    sortBeforeRepart: Boolean = false,
+    assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame)
     (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
@@ -213,7 +221,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       }
       IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
         s"${testName}_config$i",
-        df, execsAllowedNonGpu, repart, localConf, sortBeforeRepart
+        df, execsAllowedNonGpu, repart, localConf, sortBeforeRepart, assumeCondition
       )(fun)(validateCapturedPlans)
     }
   }
@@ -224,7 +232,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     execsAllowedNonGpu: Seq[String] = Seq.empty,
     batchSize: Int = 0,
     repart: Int = 1,
-    maxFloatDiff: Double = 0.0)
+    maxFloatDiff: Double = 0.0,
+    assumeCondition: SparkSession => (Boolean, String) = null)
     (fn: DataFrame => DataFrame): Unit = {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
@@ -233,7 +242,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testMatrixSparkResultsAreEqual(testName, df,
       conf = conf, repart = repart,
       execsAllowedNonGpu = execsAllowedNonGpu,
-      incompat = true, sort = true, maxFloatDiff = maxFloatDiff)(fn)
+      incompat = true, sort = true, maxFloatDiff = maxFloatDiff,
+      assumeCondition = assumeCondition)(fn)
   }
 
   def firstDf(spark: SparkSession): DataFrame = {
@@ -417,11 +427,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = floatAggConf) {
     frame => frame.agg(
-      (max("shorts") - min("more_shorts")) * lit(5),
+      (max("shorts") - min("more_shorts")) + lit(5),
       sum("shorts"),
       count("*"),
       avg("shorts"),
-      avg(col("more_shorts") * lit("10")))
+      avg(col("more_shorts") + lit("10")))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual(
@@ -431,11 +441,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       conf = makeBatchedBytes(3, enableCsvConf())
           .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.agg(
-      (max("longs") - min("more_longs")) * lit(5),
+      (max("longs") - min("more_longs")) + lit(5),
       sum("longs"),
       count("*"),
       avg("longs"),
-      avg(col("more_longs") * lit("10")))
+      avg(col("more_longs") + lit("10")))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("distinct", datesCsvDf, conf = enableCsvConf()) {
@@ -464,7 +474,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   INCOMPAT_testMatrixSparkResultsAreEqual(
       "avg literals strings",
       longsFromCSVDf,
-      conf = floatAggConf) {
+      conf = floatAggConf,
+      assumeCondition = ignoreAnsi("IN ANSI mode this is an exception, not null")) {
     //returns (null, null) as strings are casted to double prior avg eval.
     frame => frame.agg(avg(lit("abc")),avg(lit("pqr")))
   }
@@ -586,7 +597,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "test count, sum, max, min with shuffle",
       longsFromCSVDf,
       conf = enableCsvConf(),
-      repart = 2) {
+      repart = 2,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/5120" +
+        " Multiply does not work in ANSI mode yet")) {
     frame => frame.groupBy(col("more_longs")).agg(
       count("*"),
       sum("more_longs"),
@@ -601,7 +614,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.groupBy(lit("2019-02-10")).agg(
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -621,7 +634,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
         lit(456f),
         min(col("floats")) + lit(123),
         sum(col("more_floats") + lit(123.0)),
-        max(col("floats") * col("more_floats")),
+        max(col("floats") + col("more_floats")),
         max("floats") - min("more_floats"),
         max("more_floats") - min("floats"),
         sum("floats") + sum("more_floats"),
@@ -648,7 +661,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -663,7 +676,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -682,7 +695,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -701,7 +714,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -717,7 +730,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -730,12 +743,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       shortsFromCsv,
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3,  enableCsvConf())
-          .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+          .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+    assumeCondition = ignoreAnsi("overflow in computation")) {
     frame => frame.groupBy("more_shorts").agg(
       lit(456),
       min(col("shorts")) + lit(123),
       sum(col("more_shorts") + lit(123.0)),
-      max(col("shorts") * col("more_shorts")),
+      max(col("shorts") + col("more_shorts")),
       max("shorts") - min("more_shorts"),
       max("more_shorts") - min("shorts"),
       sum("shorts"),
@@ -753,7 +767,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("longs")) + lit(123),
       sum(col("more_longs") + lit(123.0)),
-      max(col("longs") * col("more_longs")),
+      max(col("longs") + col("more_longs")),
       max("longs") - min("more_longs"),
       max("more_longs") - min("longs"),
       sum("longs") + sum("more_longs"),
@@ -771,7 +785,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("longs")) + lit(123),
       sum(col("more_longs") + lit(123.0)),
-      max(col("longs") * col("more_longs")),
+      max(col("longs") + col("more_longs")),
       max("longs") - min("more_longs"),
       max("more_longs") - min("longs"),
       sum("longs") + sum("more_longs"),
@@ -784,12 +798,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       intCsvDf,
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3,  enableCsvConf())
-          .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+          .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+    assumeCondition = ignoreAnsi("overflow in computation")) {
     frame => frame.groupBy("ints").agg(
       lit(456f),
       min(col("ints")) + lit(123),
       sum(col("more_ints") + lit(123.0)),
-      max(col("ints") * col("more_ints")),
+      max(col("ints") + col("more_ints")),
       max("ints") - min("more_ints"),
       max("more_ints") - min("ints"),
       sum("ints") + sum("more_ints"),
@@ -802,12 +817,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       intCsvDf,
       // All the literals get turned into doubles, so we need to support avg in those cases
       conf = makeBatchedBytes(3, enableCsvConf())
-          .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
+          .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true"),
+    assumeCondition = ignoreAnsi("overflow in computation")) {
     frame => frame.groupBy("more_ints").agg(
       lit(456f),
       min(col("ints")) + lit(123),
       sum(col("more_ints") + lit(123.0)),
-      max(col("ints") * col("more_ints")),
+      max(col("ints") + col("more_ints")),
       max("ints") - min("more_ints"),
       max("more_ints") - min("ints"),
       sum("ints") + sum("more_ints"),
@@ -824,7 +840,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("doubles")) + lit(123),
       sum(col("more_doubles") + lit(123.0)),
-      max(col("doubles") * col("more_doubles")),
+      max(col("doubles") + col("more_doubles")),
       max("doubles") - min("more_doubles"),
       max("more_doubles") - min("doubles"),
       sum("doubles") + sum("more_doubles"),
@@ -841,7 +857,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("doubles")) + lit(123),
       sum(col("more_doubles") + lit(123.0)),
-      max(col("doubles") * col("more_doubles")),
+      max(col("doubles") + col("more_doubles")),
       max("doubles") - min("more_doubles"),
       max("more_doubles") - min("doubles"),
       sum("doubles") + sum("more_doubles"),
@@ -904,9 +920,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("complex aggregate expressions", intCsvDf,
     // Avg can always have floating point issues
     conf = floatAggConf) {
-    frame => frame.groupBy(col("more_ints") * 2).agg(
+    frame => frame.groupBy(col("more_ints") - 2).agg(
       lit(1000) +
-        (lit(100) * (avg("ints") * sum("ints") - min("ints"))))
+        (lit(100) + (avg("ints") + sum("ints") - min("ints"))))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("complex aggregate expressions 2", intCsvDf,
@@ -914,12 +930,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     conf = floatAggConf) {
     frame => frame.groupBy("more_ints").agg(
       min("ints") +
-        (lit(100) * (avg("ints") * sum("ints") - min("ints"))))
+        (lit(100) + (avg("ints") + sum("ints") - min("ints"))))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("complex aggregate expression 3", intCsvDf,
     // Avg can always have floating point issues
-    conf = floatAggConf) {
+    conf = floatAggConf,
+    assumeCondition = ignoreAnsi("overflow in computation")) {
     frame => frame.groupBy("more_ints").agg(
       min("ints"), avg("ints"),
       max(col("ints") + col("more_ints")), lit(1), min("ints"))
@@ -1053,7 +1070,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -1092,7 +1109,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -1113,7 +1130,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
@@ -1135,7 +1152,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       lit(456f),
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
-      max(col("floats") * col("more_floats")),
+      max(col("floats") + col("more_floats")),
       max("floats") - min("more_floats"),
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ from data_gen import *
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
-from marks import incompat, allow_non_gpu, ignore_order
+from marks import incompat, allow_non_gpu, ignore_order, disable_ansi_mode
 import pyspark.mllib.linalg as mllib
 import pyspark.ml.linalg as ml
 
@@ -222,6 +222,8 @@ def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
                                         # i.e. 'extract(years from d) will actually convert the
                                         # entire interval to year
                                         ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
+# https://github.com/NVIDIA/spark-rapids/issues/12700
+@disable_ansi_mode
 def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     def with_cache(cache):
         select_expr_df, select_expr_project = select_expr

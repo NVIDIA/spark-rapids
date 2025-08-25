@@ -16,15 +16,18 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, KudoSerializedTableColumn, SerializedTableColumn}
+import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, GpuExec, KudoSerializedTableColumn, SerializedTableColumn}
 import com.nvidia.spark.rapids.GpuCoalesceExec.EmptyPartition
 import com.nvidia.spark.rapids.jni.kudo.KudoSerializer
 import com.nvidia.spark.rapids.lore.GpuLore.pathOfChild
+import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.{Partition, SparkContext, TaskContext}
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.rapids.execution.GpuBroadcastHelper
 import org.apache.spark.sql.types.StructType
@@ -32,8 +35,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 
-case class LoreDumpRDDInfo(idxInParent: Int, loreOutputInfo: LoreOutputInfo, attrs: Seq[Attribute],
-    hadoopConf: Broadcast[SerializableConfiguration])
+case class LoreDumpRDDInfo(
+    idxInParent: Int,
+    loreOutputInfo: LoreOutputInfo,
+    attrs: Seq[Attribute],
+    hadoopConf: Broadcast[SerializableConfiguration],
+    useOriginalSchemaNames: Boolean = false)
 
 class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
   extends RDD[ColumnarBatch](input) with GpuLoreRDD {
@@ -85,7 +92,14 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
           val outputPath = pathOfBatch(split.index, batchIdx)
           val outputStream = outputPath.getFileSystem(info.hadoopConf.value.value)
             .create(outputPath, true)
-          DumpUtils.dumpToParquet(nextBatch.get, outputStream, Some(kudoSerializer))
+          if (info.useOriginalSchemaNames) {
+            val colNames = info.attrs.map(_.name)
+            val sparkTypes = info.attrs.map(_.dataType)
+            DumpUtils.dumpToParquet(nextBatch.get, outputStream, colNames, sparkTypes,
+              Some(kudoSerializer))
+          } else {
+            DumpUtils.dumpToParquet(nextBatch.get, outputStream, Some(kudoSerializer))
+          }
           nextBatch.get
         }
 
@@ -115,4 +129,33 @@ class SimpleRDD(_sc: SparkContext, data: Broadcast[Any], schema: StructType) ext
   }
 
   override protected def getPartitions: Array[Partition] = Array(EmptyPartition(0))
+}
+
+/**
+ * A reusable wrapper execution node that adds LoRE dumping capability to any SparkPlan
+ * that doesn't follow GpuExec's internalDoExecuteColumnar protocol.
+ *
+ * This can be used by any execution context that needs to wrap a child plan with LoRE
+ * dumping functionality, not just data writing commands.
+ */
+case class GpuLoreDumpExec(
+    child: GpuExec,
+    loreDumpInfo: LoreDumpRDDInfo)
+    extends ShimUnaryExecNode with GpuExec with Logging {
+
+  override def output: Seq[Attribute] = child.output
+
+  override protected def doExecute(): RDD[InternalRow] = {
+    throw new UnsupportedOperationException(
+      s"${getClass.getCanonicalName} does not support row-based execution")
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val childRDD = child.executeColumnar()
+    val rdd = new GpuLoreDumpRDD(loreDumpInfo, childRDD)
+    rdd.saveMeta()
+    rdd
+  }
+
+  override def nodeName: String = s"GpuLoreDumpExec(${child.nodeName})"
 }

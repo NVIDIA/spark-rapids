@@ -29,8 +29,8 @@
 #   MVN_SETTINGS:   Maven configuration file
 #   POM_FILE:       Project pom file to be deployed
 #   OUT_PATH:       The path where jar files are
-#   CUDA_CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12"
-#   CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12,cuda11-arm64,cuda12-arm64"
+#   CUDA_CLASSIFIERS:    Comma separated classifiers, e.g., "cuda12"
+#   CLASSIFIERS:    Comma separated classifiers, e.g., "cuda12,cuda12-arm64"
 #   DEFAULT_CUDA_CLASSIFIER: The default cuda classifer, will get from project's pom.xml if not set
 ###
 
@@ -98,7 +98,7 @@ if [ "$SIGN_FILE" == true ]; then
         *)
             echo "Error unsupported sign type : $SIGN_TYPE !"
             echo "Please set variable SIGN_TOOL 'nvsec'or 'gpg'"
-            exit -1
+            exit 255
             ;;
     esac
 else
@@ -125,7 +125,7 @@ $DEPLOY_CMD -DpomFile=$POM_FILE \
 
 echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar" >> $ARTIFACT_FILE
 CLASSLIST="$CLASSIFIERS,sources,javadoc"
-CLASSLIST=(${CLASSLIST//','/' '})
-for class in ${CLASSLIST[@]}; do
+IFS=", " read -ra CLASSLIST <<< "$CLASSLIST"
+for class in "${CLASSLIST[@]}"; do
     echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar:$class" >> $ARTIFACT_FILE
 done

@@ -109,14 +109,23 @@ object SparkSessionHolder extends Logging {
   }
 
   def sparkSession: SparkSession = {
-    if (!hasActiveSession) {
+    // If there is no active session or the cached one is already stopped, re-init
+    val needsReinit = try {
+      !hasActiveSession || spark.sparkContext.isStopped
+    } catch {
+      case _: Throwable => true
+    }
+    if (needsReinit) {
       reinitSession()
     }
     spark
   }
 
   def resetSparkSessionConf(): Unit = {
-    if (!hasActiveSession) {
+    val needsReinit = try { !hasActiveSession || spark.sparkContext.isStopped } catch {
+      case _: Throwable => true
+    }
+    if (needsReinit) {
       reinitSession()
     } else {
       setAllConfs(origConf.toArray)
@@ -203,6 +212,25 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
     withSparkSession(c, f)
+  }
+
+  def withGpuHiveSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
+    // Force a new session for Hive since catalogImplementation is a static config
+    TrampolineUtil.cleanupAnyExistingSession()
+    val spark = getBuilder()
+      .master("local[1]")
+      .config(conf)
+      .config(RapidsConf.SQL_ENABLED.key, "true")
+      .config(RapidsConf.TEST_CONF.key, "true")
+      .config(RapidsConf.EXPLAIN.key, "ALL")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.sql.catalogImplementation", "hive")
+      .config("spark.sql.hive.convertMetastoreParquet", "false")
+      .config("spark.sql.queryExecutionListeners",
+        "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
+      .appName("Spark Rapids plugin Hive related tests")
+      .getOrCreate()
+    f(spark)
   }
 
   def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {
@@ -567,7 +595,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       conf: SparkConf = new SparkConf(),
       sort: Boolean = false,
       repart: Integer = 1,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
     (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
@@ -575,7 +604,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       sort=sort,
       maxFloatDiff=maxFloatDiff,
       incompat=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)
   }
 
   def ALLOW_NON_GPU_testSparkResultsAreEqual(
@@ -627,7 +657,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       execsAllowedNonGpu: Seq[String],
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)
       (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     testSparkResultsAreEqualWithCapture(testName, df,
@@ -635,7 +666,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       execsAllowedNonGpu=execsAllowedNonGpu,
       repart=repart,
       sort=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)(validateCapturedPlans)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqual(
@@ -661,14 +693,16 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       df: SparkSession => DataFrame,
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)
       (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     testSparkResultsAreEqualWithCapture(testName, df,
       conf=conf,
       repart=repart,
       sort=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)(validateCapturedPlans)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)(validateCapturedPlans)
   }
 
   def INCOMPAT_IGNORE_ORDER_testSparkResultsAreEqual(
@@ -676,13 +710,16 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       df: SparkSession => DataFrame,
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
+      (fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       incompat=true,
       sort=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)
+      sortBeforeRepart = sortBeforeRepart,
+      assumeCondition = assumeCondition)(fun)
   }
 
   /**
@@ -968,7 +1005,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       maxFloatDiff: Double = 0.0,
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false)
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null)
       (fun: DataFrame => DataFrame)
       (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
 
@@ -976,6 +1014,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         maxFloatDiff, sortBeforeRepart)
     test(qualifiedTestName) {
+      if (assumeCondition != null) {
+        val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = testConf)
+        assume(isAllowed, reason)
+      }
       val (fromCpu, cpuPlan, fromGpu, gpuPlan) = runOnCpuAndGpuWithCapture(df, fun,
         conf = testConf,
         repart = repart)
