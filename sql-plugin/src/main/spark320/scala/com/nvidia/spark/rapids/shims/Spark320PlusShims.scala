@@ -284,6 +284,13 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new OverwriteByExpressionExecV1Meta(p, conf, parent, r)),
+      exec[AppendDataExec](
+        "Append data into a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r)),)
       exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +

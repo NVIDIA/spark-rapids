@@ -34,7 +34,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
-import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, WriterCommitMessage}
+import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, Write, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -125,6 +125,12 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
 
   private[source] def commitOperation(operation: SnapshotUpdate[_], desc: String) = {
     MethodUtils.invokeMethod(cpu, true, "commitOperation", operation, desc)
+  }
+}
+
+object GpuSparkWrite {
+  def supports(cpuClass: Class[_ <: Write]): Boolean = {
+    cpuClass.isAssignableFrom(classOf[SparkWrite])
   }
 }
 

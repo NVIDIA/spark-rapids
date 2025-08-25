@@ -18,11 +18,11 @@ package com.nvidia.spark.rapids.iceberg
 
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
-
-import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
-import org.apache.iceberg.spark.source.GpuSparkBatchQueryScan
-
+import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
+import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
 import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.connector.write.Write
+import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
 
 class IcebergProviderImpl extends IcebergProvider {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -69,5 +69,28 @@ class IcebergProviderImpl extends IcebergProvider {
       "Iceberg scan",
       ClassTag(cpuIcebergScanClass))
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+  }
+
+  override def isSupportedWrite(write: Class[_ <: Write]): Boolean = {
+    GpuSparkWrite.supports(write)
+  }
+
+  override def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit = {
+    if (!meta.conf.isIcebergEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+          s"${RapidsConf.ENABLE_ICEBERG} to true")
+    }
+
+    if (!meta.conf.isIcebergWriteEnabled) {
+      meta.willNotWorkOnGpu("Iceberg output has been disabled. To enable set " +
+          s"${RapidsConf.ENABLE_ICEBERG_WRITE} to true")
+    }
+  }
+
+  override def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
+    GpuAppendDataExec(cpuExec.table.asInstanceOf[SupportsWrite],
+      cpuExec.query,
+      () => meta.refreshCache(),
+      cpuExec.write)
   }
 }

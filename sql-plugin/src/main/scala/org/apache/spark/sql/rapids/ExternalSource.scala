@@ -18,18 +18,16 @@ package org.apache.spark.sql.rapids
 
 import scala.reflect.ClassTag
 import scala.util.Try
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -228,6 +226,30 @@ object ExternalSource extends Logging {
     val writeClass = cpuExec.table.getClass
     if (deltaProvider.isSupportedWrite(writeClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+    cpuExec: AppendDataExec,
+    meta: AppendDataExecMeta): Unit = {
+    val writeClass = cpuExec.write.getClass
+
+    if (icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Append data $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+    cpuExec: AppendDataExec,
+    meta: AppendDataExecMeta): GpuExec = {
+    val writeClass = cpuExec.write.getClass
+
+    if (icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpu(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
