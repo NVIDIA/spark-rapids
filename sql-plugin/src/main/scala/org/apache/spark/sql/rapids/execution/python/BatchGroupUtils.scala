@@ -530,7 +530,6 @@ class CoGroupedIterator(
   }
 
   override def next(): (ColumnarBatch, ColumnarBatch) = {
-    assert(hasNext)
 
     if (currentLeftData.eq(null)) {
       // left is null, right is not null, consume the right data.

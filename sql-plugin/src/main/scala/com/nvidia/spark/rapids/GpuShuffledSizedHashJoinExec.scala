@@ -493,7 +493,6 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       GpuColumnVector.emptyBatchFromTypes(info.exprs.buildTypes)
     }
     val spillableBuiltBatch = withResource(batch) { batch =>
-      assert(!buildIter.hasNext, "build side should have a single batch")
       LazySpillableColumnarBatch(batch, "built")
     }
     createJoinIterator(info, spillableBuiltBatch, lazyStream, gpuBatchSizeBytes, opTime,
@@ -898,7 +897,6 @@ object GpuShuffledAsymmetricHashJoinExec {
             val (streamRows, streamSize) =
               fetchTargetSize(streamIter, streamQueue, gpuBatchSizeBytes)
             if (streamRows <= Int.MaxValue && streamSize <= gpuBatchSizeBytes) {
-              assert(!streamIter.hasNext, "stream side not exhausted")
               // cannot filter out the nulls on the stream-side since they need to be
               // preserved in the outer join
               val streamBatchIter = new GpuCoalesceIterator(
@@ -916,7 +914,6 @@ object GpuShuffledAsymmetricHashJoinExec {
               if (streamBatchIter.hasNext) {
                 val streamBatch = streamBatchIter.next()
                 val singleStreamIter = new SingleGpuColumnarBatchIterator(streamBatch)
-                assert(!streamBatchIter.hasNext, "stream side not exhausted")
                 val streamStats = JoinBuildSideStats.fromBatch(streamBatch, exprs.boundStreamKeys)
                 if (buildStats.streamMagnificationFactor <
                     streamStats.streamMagnificationFactor) {
