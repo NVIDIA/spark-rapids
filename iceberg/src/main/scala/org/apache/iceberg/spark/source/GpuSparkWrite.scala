@@ -16,15 +16,22 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuWrite, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
+import org.apache.hadoop.fs.Path
+import org.apache.hadoop.mapreduce.Job
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
-import org.apache.iceberg.{FileFormat, PartitionSpec, Schema, Table}
+import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
 import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
+import scala.collection.JavaConverters._
+import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, WriterCommitMessage}
@@ -33,9 +40,10 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
+
 class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionAndOrdering  {
-  private val table: Table = FieldUtils.readField(cpu, "table", true).asInstanceOf[Table]
-  private val format: FileFormat = FieldUtils.readField(cpu, "format", true)
+  private[source] val table: Table = FieldUtils.readField(cpu, "table", true).asInstanceOf[Table]
+  private[source] val format: FileFormat = FieldUtils.readField(cpu, "format", true)
     .asInstanceOf[FileFormat]
 
   override def toBatch: BatchWrite = throw new UnsupportedOperationException(
@@ -61,7 +69,62 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
   override def requiredOrdering(): Array[SortOrder] = cpu.requiredOrdering()
 
   private[source] def createDataWriterFactory: DataWriterFactory = {
+    val sparkContext: JavaSparkContext = FieldUtils.readField(cpu, "sparkContext", true)
+      .asInstanceOf[JavaSparkContext]
+    val tableBroadcast = sparkContext.broadcast(SerializableTable.copyOf(table))
+    val queryId = FieldUtils.readField(cpu, "queryId", true).asInstanceOf[String]
+    val outputSpecId = FieldUtils.readField(cpu, "outputSpecId", true).asInstanceOf[Int]
+    val targetFileSize = FieldUtils.readField(cpu, "targetFileSize", true).asInstanceOf[Long]
+    val writeSchema = FieldUtils.readField(cpu, "writeSchema", true).asInstanceOf[Schema]
+    val dsSchema = FieldUtils.readField(cpu, "dsSchema", true).asInstanceOf[StructType]
+    val useFanout = FieldUtils.readField(cpu, "useFanoutWriter", true).asInstanceOf[Boolean]
+    val writeProps = FieldUtils.readField(cpu, "writeProps", true)
+      .asInstanceOf[java.util.Map[String, String]]
 
+    if (!format.equals(FileFormat.PARQUET)) {
+      throw new UnsupportedOperationException(
+        s"GpuSparkWrite only supports Parquet, but got: $format")
+    }
+
+    val hadoopConf = sparkContext.hadoopConfiguration
+    val job = {
+      val tmpJob  = Job.getInstance(hadoopConf)
+      tmpJob.setOutputKeyClass(classOf[Void])
+      tmpJob.setOutputValueClass(classOf[InternalRow])
+      FileOutputFormat.setOutputPath(tmpJob, new Path(table.location()))
+      tmpJob
+    }
+
+    val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
+      SparkSession.active,
+      job,
+      writeProps.asScala.toMap,
+      dsSchema
+    )
+
+    new GpuWriterFactory(
+      tableBroadcast,
+      queryId,
+      format,
+      outputSpecId,
+      targetFileSize,
+      writeSchema,
+      dsSchema,
+      useFanout,
+      writeProps.asScala.toMap,
+      outputWriterFactory,
+      new SerializableConfiguration(hadoopConf)
+    )
+  }
+
+  private[source] def files(messages: Array[WriterCommitMessage]): Seq[DataFile] = {
+    messages.filter(_ != null)
+      .flatMap(_.asInstanceOf[TaskCommit].files)
+      .toSeq
+  }
+
+  private[source] def commitOperation(operation: SnapshotUpdate[_], desc: String) = {
+    MethodUtils.invokeMethod(cpu, true, "commitOperation", operation, desc)
   }
 }
 
@@ -73,7 +136,7 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
     val writeSchema: Schema,
     val dsSchema: StructType,
     val useFanout: Boolean,
-    val props: Map[String, String],
+    val ignore: Map[String, String],
     val outputWriterFactory: ColumnarOutputWriterFactory,
     val hadoopConf: SerializableConfiguration,
 ) extends DataWriterFactory {

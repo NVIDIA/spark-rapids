@@ -20,10 +20,23 @@ import org.apache.spark.sql.connector.write.{BatchWrite, DataWriterFactory, Phys
 
 abstract class GpuBaseBatchWrite(write: GpuSparkWrite) extends BatchWrite {
   override def createBatchWriterFactory(physicalWriteInfo: PhysicalWriteInfo): DataWriterFactory
-  = new GpuWriterFactory()
+  = write.createDataWriterFactory
 
   override def abort(writerCommitMessages: Array[WriterCommitMessage]): Unit =
     write.abort(writerCommitMessages)
 
   override def useCommitCoordinator(): Boolean = false
+}
+
+class GpuBatchAppend(write: GpuSparkWrite ) extends GpuBaseBatchWrite(write) {
+  override def commit(messages: Array[WriterCommitMessage]): Unit = {
+    val append = write.table.newAppend()
+
+    val files = write.files(messages)
+
+    val numFiles = files.length
+    files.foreach(append.appendFile)
+
+    write.commitOperation(append, s"append with $numFiles new data files")
+  }
 }

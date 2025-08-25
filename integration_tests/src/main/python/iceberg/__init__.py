@@ -17,11 +17,9 @@ import tempfile
 import logging
 from itertools import combinations
 from types import MappingProxyType
-from typing import Callable
 from typing import Callable, List, Dict, Optional
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import FloatType, DoubleType, NullType, BinaryType
 from pyspark.sql.types import FloatType, DoubleType, BinaryType
 
 from data_gen import byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, \
