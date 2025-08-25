@@ -586,7 +586,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       logDebug("Loading extra executor plugins: " +
         s"${extraExecutorPlugins.map(_.getClass.getName).mkString(",")}")
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
-      GpuSemaphore.initialize()
+      GpuSemaphore.initialize(conf.maxConcurrentGpuTasks)
       FileCache.init(pluginContext)
       TrafficController.initialize(conf)
     } catch {
