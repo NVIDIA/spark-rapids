@@ -203,7 +203,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       }
       val (typeWithIds, fileReadSchema) = projectSchema(fileSchema, requiredSchema)
       val filteredBlocks = filterRowGroups(reader, requiredSchema, typeWithIds, file.filter)
-      val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b.getOrdinal - 1))
+      val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b.getOrdinal))
       val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks)
 
       val partReaderSparkSchema = TypeWithSchemaVisitor.visit(requiredSchema.asStruct(),
