@@ -174,9 +174,17 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         conf.caseSensitive)
 
       blocks.filter { rowGroup =>
-          statsFilter.shouldRead(typeWithIds, rowGroup) &&
+          val beforeOrdinal = rowGroup.getOrdinal
+          val filterResult = statsFilter.shouldRead(typeWithIds, rowGroup) &&
             dictFilter.shouldRead(typeWithIds, rowGroup, reader.getDictionaryReader(rowGroup)) &&
             bloomFilter.shouldRead(typeWithIds, rowGroup, reader.getBloomFilterDataReader(rowGroup))
+
+          val afterOrdinal = rowGroup.getOrdinal
+          if (beforeOrdinal != afterOrdinal) {
+            throw new IllegalStateException(s"Parquet row group ordinal changed from " +
+              s"$beforeOrdinal to $afterOrdinal after filter, this should never happen!")
+          }
+          filterResult
       }
     }.getOrElse(blocks)
       .toSeq
