@@ -66,7 +66,7 @@ trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
  * {@link org.apache.spark.sql.execution.datasources.v2.V2TableWriteExec}.
  */
 trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec {
-  def query: GpuExec
+  def query: SparkPlan
 
   def writingTask: WritingSparkTask[_] = DataWritingSparkTask
 
@@ -147,14 +147,10 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
  * Rows in the output data set are appended.
  */
 case class GpuAppendDataExec(
-  query: GpuExec,
+  query: SparkPlan,
   refreshCache: () => Unit,
   write: Write) extends GpuV2ExistingTableWriteExec {
   override protected def withNewChildInternal(newChild: SparkPlan): GpuAppendDataExec = {
-    if (!newChild.isInstanceOf[GpuExec]) {
-      throw new IllegalStateException(
-        s"New child is not a GPU plan: ${newChild.getClass.getName}")
-    }
-    copy(query = newChild.asInstanceOf[GpuExec])
+    copy(query = newChild)
   }
 }
