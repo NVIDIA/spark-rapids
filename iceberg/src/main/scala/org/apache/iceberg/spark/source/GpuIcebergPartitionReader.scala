@@ -103,7 +103,7 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
 
     val encryptedFiles = tasks.flatMap(t => Seq(t.file()) ++ t.deletes().asScala)
       .map(f => EncryptedFiles.encryptedInput(
-        fileIO.newInputFile(f.path().toString),
+        fileIO.newInputFile(f.location()),
         f.keyMetadata()))
 
     val inputFiles = table.encryption()
@@ -113,7 +113,7 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
       .toMap
 
     val taskMap = toMapStrict(tasks.map(t => {
-      val file = inputFiles(t.file().path().toString)
+      val file = inputFiles(t.file().location())
       val icebergFile = IcebergPartitionedFile(file,
         Some((t.start(), t.length())),
         Some(t.residual()))
