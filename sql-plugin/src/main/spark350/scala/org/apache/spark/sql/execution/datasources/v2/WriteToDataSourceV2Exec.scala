@@ -26,6 +26,7 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.execution.datasources.v2
 
+import com.nvidia.spark.rapids.GpuExec
 import com.nvidia.spark.rapids.GpuMetric
 
 import org.apache.spark.TaskContext
@@ -44,7 +45,7 @@ trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
   def refreshCache: () => Unit
   def write: Write
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] =
+  protected override val customMetrics: Map[String, GpuMetric] =
     write.supportedCustomMetrics().map { customMetric =>
       customMetric.name() -> GpuMetric.wrap(SQLMetrics.createV2CustomMetric(sparkContext,
         customMetric))
@@ -74,6 +75,10 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
 
   override def child: SparkPlan = query
   override def output: Seq[Attribute] = Seq.empty
+
+  protected val customMetrics: Map[String, GpuMetric] = Map.empty
+
+  override lazy val metrics = customMetrics.mapValues(GpuMetric.unwrap)
 
   protected def writeWithV2(batchWrite: BatchWrite): Seq[InternalRow] = {
     val rdd: RDD[InternalRow] = {
@@ -145,7 +150,15 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
 case class GpuAppendDataExec(
   query: SparkPlan,
   refreshCache: () => Unit,
-  write: Write) extends GpuV2ExistingTableWriteExec {
+  write: Write) extends GpuV2ExistingTableWriteExec with GpuExec {
+
+  override def supportsColumnar: Boolean = false
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(
+      "GpuAppendDataExec does not support columnar execution")
+  }
+
   override protected def withNewChildInternal(newChild: SparkPlan): GpuAppendDataExec = {
     copy(query = newChild)
   }
