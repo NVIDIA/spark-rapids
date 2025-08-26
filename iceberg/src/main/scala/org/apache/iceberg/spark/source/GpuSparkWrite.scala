@@ -77,7 +77,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     val writeSchema = FieldUtils.readField(cpu, "writeSchema", true).asInstanceOf[Schema]
     val dsSchema = FieldUtils.readField(cpu, "dsSchema", true).asInstanceOf[StructType]
     val useFanout = FieldUtils.readField(cpu, "useFanoutWriter", true).asInstanceOf[Boolean]
-    val writeProps = FieldUtils.readField(cpu, "writeProps", true)
+    val writeProps = FieldUtils.readField(cpu, "writeProperties", true)
       .asInstanceOf[java.util.Map[String, String]]
 
     if (!format.equals(FileFormat.PARQUET)) {
