@@ -91,7 +91,7 @@ class IcebergProviderImpl extends IcebergProvider {
   }
 
   override def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
-    GpuAppendDataExec(cpuExec.query,
+    GpuAppendDataExec(meta.childPlans.head.convertIfNeeded(),
       cpuExec.refreshCache,
       cpuExec.write)
   }
