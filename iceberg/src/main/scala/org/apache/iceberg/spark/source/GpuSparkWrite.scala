@@ -130,7 +130,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
 
 object GpuSparkWrite {
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
-    cpuClass.isAssignableFrom(classOf[SparkWrite])
+    classOf[SparkWrite].isAssignableFrom(cpuClass)
   }
 }
 
