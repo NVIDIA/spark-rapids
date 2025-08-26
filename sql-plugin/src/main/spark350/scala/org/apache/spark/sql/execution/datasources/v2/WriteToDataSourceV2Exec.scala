@@ -65,7 +65,7 @@ trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
  * This class is derived from
  * {@link org.apache.spark.sql.execution.datasources.v2.V2TableWriteExec}.
  */
-trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec {
+trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
   def query: SparkPlan
 
   def writingTask: WritingSparkTask[_] = DataWritingSparkTask
@@ -134,10 +134,6 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
     }
 
     Nil
-  }
-
-  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException("Columnar execution not supported")
   }
 }
 
