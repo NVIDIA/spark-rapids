@@ -132,6 +132,10 @@ object GpuSparkWrite {
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
     classOf[SparkWrite].isAssignableFrom(cpuClass)
   }
+
+  def convert(cpuWrite: Write): GpuSparkWrite = {
+    new GpuSparkWrite(cpuWrite.asInstanceOf[SparkWrite])
+  }
 }
 
 class GpuWriterFactory(val tableBroadcast: Broadcast[Table],

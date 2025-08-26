@@ -97,9 +97,9 @@ class IcebergProviderImpl extends IcebergProvider {
         GpuAppendDataExec(
           exec.child,
           cpuExec.refreshCache,
-          cpuExec.write)
+          GpuSparkWrite.convert(cpuExec.write))
       case _ =>
-        GpuAppendDataExec(child, cpuExec.refreshCache, cpuExec.write)
+        GpuAppendDataExec(child, cpuExec.refreshCache, GpuSparkWrite.convert(cpuExec.write))
     }
   }
 }

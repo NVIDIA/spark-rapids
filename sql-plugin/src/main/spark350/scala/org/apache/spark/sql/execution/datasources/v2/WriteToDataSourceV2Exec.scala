@@ -29,17 +29,19 @@ package org.apache.spark.sql.execution.datasources.v2
 import com.nvidia.spark.rapids.GpuColumnarToRowExec
 import com.nvidia.spark.rapids.GpuExec
 import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.GpuWrite
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.connector.write.{BatchWrite,PhysicalWriteInfoImpl, WriterCommitMessage, Write}
+import org.apache.spark.sql.connector.write.{BatchWrite,DataWriter, DataWriterFactory, PhysicalWriteInfoImpl, WriterCommitMessage, Write}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.{LongAccumulator}
+import org.apache.spark.util.{LongAccumulator, Utils}
 
 
 trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
@@ -70,7 +72,7 @@ trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
 trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
   def query: SparkPlan
 
-  def writingTask: WritingSparkTask[_] = DataWritingSparkTask
+  def writingTask: GpuWritingSparkTask[_] = GpuDataWritingSparkTask
 
   var commitProgress: Option[StreamWriterCommitProgress] = None
 
@@ -82,14 +84,14 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
   override lazy val metrics = customMetrics.mapValues(GpuMetric.unwrap)
 
   protected def writeWithV2(batchWrite: BatchWrite): Seq[InternalRow] = {
-    val rdd: RDD[InternalRow] = {
+    val rdd: RDD[ColumnarBatch] = {
       val tempRdd = query.executeColumnar()
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single
       // partition rdd to make sure we at least set up one write task to write the metadata.
       if (tempRdd.partitions.length == 0) {
-        sparkContext.parallelize(Array.empty[InternalRow], 1)
+        sparkContext.parallelize(Array.empty[ColumnarBatch], 1)
       } else {
-        tempRdd.asInstanceOf[RDD[InternalRow]]
+        tempRdd
       }
     }
     // introduce a local var to avoid serializing the whole class
@@ -109,7 +111,7 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
     try {
       sparkContext.runJob(
         rdd,
-        (context: TaskContext, iter: Iterator[InternalRow]) =>
+        (context: TaskContext, iter: Iterator[ColumnarBatch]) =>
           task.run(writerFactory, context, iter, useCommitCoordinator, writeMetrics),
         rdd.partitions.indices,
         (index, result: DataWritingSparkTaskResult) => {
@@ -151,7 +153,7 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
 case class GpuAppendDataExec(
   inner: SparkPlan,
   refreshCache: () => Unit,
-  write: Write) extends GpuV2ExistingTableWriteExec with GpuExec {
+  write: GpuWrite) extends GpuV2ExistingTableWriteExec with GpuExec {
 
   override def query: SparkPlan = {
     inner match {
@@ -169,5 +171,81 @@ case class GpuAppendDataExec(
 
   override protected def withNewChildInternal(newChild: SparkPlan): GpuAppendDataExec = {
     copy(inner = newChild)
+  }
+}
+
+trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with Serializable {
+
+  protected def write(writer: W, row: ColumnarBatch): Unit
+
+  def run(
+    writerFactory: DataWriterFactory,
+    context: TaskContext,
+    iter: Iterator[ColumnarBatch],
+    useCommitCoordinator: Boolean,
+    customMetrics: Map[String, SQLMetric]): DataWritingSparkTaskResult = {
+    val stageId = context.stageId()
+    val stageAttempt = context.stageAttemptNumber()
+    val partId = context.partitionId()
+    val taskId = context.taskAttemptId()
+    val attemptId = context.attemptNumber()
+    val dataWriter = writerFactory.createWriter(partId, taskId).asInstanceOf[W]
+
+    var count = 0L
+    // write the data and commit this writer.
+    Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
+      while (iter.hasNext) {
+        if (count % CustomMetrics.NUM_ROWS_PER_UPDATE == 0) {
+          CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
+        }
+
+        // Count is here.
+        count += 1
+        write(dataWriter, iter.next())
+      }
+
+      CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
+
+      val msg = if (useCommitCoordinator) {
+        val coordinator = SparkEnv.get.outputCommitCoordinator
+        val commitAuthorized = coordinator.canCommit(stageId, stageAttempt, partId, attemptId)
+        if (commitAuthorized) {
+          logInfo(s"Commit authorized for partition $partId (task $taskId, attempt $attemptId, " +
+            s"stage $stageId.$stageAttempt)")
+          dataWriter.commit()
+        } else {
+          val commitDeniedException = QueryExecutionErrors.commitDeniedError(
+            partId, taskId, attemptId, stageId, stageAttempt)
+          logInfo(commitDeniedException.getMessage)
+          // throwing CommitDeniedException will trigger the catch block for abort
+          throw commitDeniedException
+        }
+
+      } else {
+        logInfo(s"Writer for partition ${context.partitionId()} is committing.")
+        dataWriter.commit()
+      }
+
+      logInfo(s"Committed partition $partId (task $taskId, attempt $attemptId, " +
+        s"stage $stageId.$stageAttempt)")
+
+      DataWritingSparkTaskResult(count, msg)
+
+    })(catchBlock = {
+      // If there is an error, abort this writer
+      logError(s"Aborting commit for partition $partId (task $taskId, attempt $attemptId, " +
+        s"stage $stageId.$stageAttempt)")
+      dataWriter.abort()
+      logError(s"Aborted commit for partition $partId (task $taskId, attempt $attemptId, " +
+        s"stage $stageId.$stageAttempt)")
+    }, finallyBlock = {
+      dataWriter.close()
+    })
+  }
+}
+
+object GpuDataWritingSparkTask extends GpuWritingSparkTask[DataWriter[ColumnarBatch]] {
+  override protected def write(writer: DataWriter[ColumnarBatch], row: ColumnarBatch): Unit = {
+    writer.write(row)
   }
 }
