@@ -26,7 +26,7 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.execution.datasources.v2
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.GpuMetric
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
