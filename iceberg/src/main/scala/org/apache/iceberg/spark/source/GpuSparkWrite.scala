@@ -46,8 +46,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
   private[source] val format: FileFormat = FieldUtils.readField(cpu, "format", true)
     .asInstanceOf[FileFormat]
 
-  override def toBatch: BatchWrite = throw new UnsupportedOperationException(
-    "GpuSparkWrite does not support batch write")
+  override def toBatch: BatchWrite = new GpuBatchAppend(this)
 
   override def toStreaming: StreamingWrite = throw new UnsupportedOperationException(
     "GpuSparkWrite does not support streaming write")
