@@ -127,7 +127,7 @@ object GpuIcebergPartitioner {
       table: Table): Array[SparkStructLike] = {
     val numCols = table.getNumberOfColumns
 
-    withResource(new CloseableArray[ColumnVector](numCols)) { hostColArrays =>
+    withResource(CloseableArray.wrap(new Array[ColumnVector](numCols))) { hostColArrays =>
       for (i <- 0 until numCols) {
         hostColArrays.set(i, new RapidsHostColumnVector(sparkType(i).dataType,
           table.getColumn(i).copyToHost()))

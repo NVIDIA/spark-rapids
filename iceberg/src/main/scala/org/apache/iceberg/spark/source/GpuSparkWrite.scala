@@ -26,8 +26,8 @@ import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, Me
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
 import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
-
 import scala.collection.JavaConverters._
+
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
@@ -146,7 +146,7 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
     val outputWriterFactory: ColumnarOutputWriterFactory,
     val hadoopConf: SerializableConfiguration,
 ) extends DataWriterFactory {
-  override def createWriter(partitionId: Int, taskId: Long): DataWriter[ColumnarBatch] = {
+  override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] = {
     val table = tableBroadcast.value
     val spec = table.specs().get(outputSpecId)
     val io = table.io()
@@ -169,9 +169,11 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
 
     if (spec.isUnpartitioned) {
       new GpuUnpartitionedDataWriter(writerFactory, outputFileFactory, io, spec, targetFileSize)
+        .asInstanceOf[DataWriter[InternalRow]]
     } else {
       new GpuPartitionedDataWriter(writerFactory, outputFileFactory, io, spec, writeSchema,
         dsSchema, targetFileSize, useFanout)
+        .asInstanceOf[DataWriter[InternalRow]]
     }
   }
 }

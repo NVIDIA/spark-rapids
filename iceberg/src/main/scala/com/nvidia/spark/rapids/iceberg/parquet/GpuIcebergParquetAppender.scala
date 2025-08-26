@@ -1,19 +1,19 @@
 package com.nvidia.spark.rapids.iceberg.parquet
 
-import scala.util.Using
-
 import com.nvidia.spark.rapids.{GpuParquetWriter, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import java.{lang, util}
 import java.util.stream.{Stream => JStream}
 import org.apache.iceberg.{FieldMetrics, Metrics, MetricsConfig}
-import org.apache.iceberg.io.{FileAppender, FileIO}
+import org.apache.iceberg.io.FileAppender
 import org.apache.iceberg.parquet.ParquetUtil
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.ParquetMetadata
+import scala.util.Using
 
 class GpuIcebergParquetAppender(
     val inner: GpuParquetWriter,
     val metricsConfig: MetricsConfig,
-    val fileIO: FileIO) extends FileAppender[SpillableColumnarBatch] {
+    val fileIO: IcebergFileIO) extends FileAppender[SpillableColumnarBatch] {
   private var closed = false
   private var footer: ParquetMetadata = _
 
@@ -33,7 +33,8 @@ class GpuIcebergParquetAppender(
   override def close(): Unit = {
     if (!closed) {
       inner.close()
-      footer = Using(IcebergPartitionedFile(fileIO.newInputFile(inner.path)).newReader) { reader =>
+      footer = Using(IcebergPartitionedFile(fileIO.newInputFile(inner.path)).newReader) {
+        reader =>
         // TODO: Get footer from table writer
           reader.getFooter
       }.get

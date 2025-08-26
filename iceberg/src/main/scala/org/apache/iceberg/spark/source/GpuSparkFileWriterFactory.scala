@@ -17,6 +17,7 @@
 package org.apache.iceberg.spark.source
 
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetWriter, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetAppender
 import org.apache.iceberg.{FileFormat, MetricsConfig, PartitionSpec, SortOrder, StructLike, Table}
 import org.apache.iceberg.deletes.{EqualityDeleteWriter, PositionDeleteWriter}
@@ -83,7 +84,7 @@ class GpuSparkFileWriterFactory(val table: Table,
     new GpuIcebergParquetAppender(
       gpuWriter,
       metricsConfig = MetricsConfig.forTable(table),
-      fileIO = table.io()
+      fileIO = new IcebergFileIO(table.io())
     )
   }
 }
