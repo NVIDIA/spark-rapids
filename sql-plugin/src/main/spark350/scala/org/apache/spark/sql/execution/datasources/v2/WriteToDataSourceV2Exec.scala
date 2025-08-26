@@ -26,6 +26,7 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.execution.datasources.v2
 
+import com.nvidia.spark.rapids.GpuColumnarToRowExec
 import com.nvidia.spark.rapids.GpuExec
 import com.nvidia.spark.rapids.GpuMetric
 
@@ -148,9 +149,16 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
  * Rows in the output data set are appended.
  */
 case class GpuAppendDataExec(
-  query: SparkPlan,
+  inner: SparkPlan,
   refreshCache: () => Unit,
   write: Write) extends GpuV2ExistingTableWriteExec with GpuExec {
+
+  override def query: SparkPlan = {
+    inner match {
+      case c2r: GpuColumnarToRowExec => c2r.child
+      case _ => inner
+    }
+  }
 
   override def supportsColumnar: Boolean = false
 
@@ -160,6 +168,6 @@ case class GpuAppendDataExec(
   }
 
   override protected def withNewChildInternal(newChild: SparkPlan): GpuAppendDataExec = {
-    copy(query = newChild)
+    copy(inner = newChild)
   }
 }

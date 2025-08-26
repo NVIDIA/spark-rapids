@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids.iceberg
 
 import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuColumnarToRowExec, GpuExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, WriteFileOp}
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
-
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
+
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
