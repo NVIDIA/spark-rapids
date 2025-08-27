@@ -11,7 +11,7 @@ class GpuStaticInvokeMeta(expr: StaticInvoke,
   rule: DataFromReplacementRule) extends BaseExprMeta[StaticInvoke](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
-    if (expr.staticObject != classOf[BucketFunction.BucketInt] ||
+    if (expr.staticObject != classOf[BucketFunction.BucketInt] &&
         expr.staticObject != classOf[BucketFunction.BucketLong]) {
       willNotWorkOnGpu(s"only BucketFunction.BucketInt and BucketFunction.BucketLong are supported")
     }
