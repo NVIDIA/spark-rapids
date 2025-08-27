@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuOverrides, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, WriteFileOp}
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
+
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
-
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
@@ -92,7 +92,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
   override def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
     GpuAppendDataExec(
-      cpuExec.child,
+      new GpuOverrides().apply(cpuExec.query),
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
 //    val child = meta.childPlans.head.convertIfNeeded()
