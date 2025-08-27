@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, ExprChecks, ExprRule, FileFormatChecks, GpuExec, GpuOverrides, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, ExprRule, FileFormatChecks, GpuExec, GpuOverrides, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, WriteFileOp}
 import org.apache.iceberg.spark.functions.GpuStaticInvokeMeta
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
-
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
+
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
