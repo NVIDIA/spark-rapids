@@ -32,6 +32,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuUuid() extends GpuExpression with ShimExpression {
 
+  override lazy val deterministic: Boolean = false
+
   override def hasSideEffects: Boolean = false
 
   override def dataType: DataType = StringType
