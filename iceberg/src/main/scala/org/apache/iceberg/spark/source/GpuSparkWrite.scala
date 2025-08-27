@@ -112,7 +112,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       useFanout,
       writeProps.asScala.toMap,
       outputWriterFactory,
-      new SerializableConfiguration(hadoopConf)
+      new SerializableConfiguration(job.getConfiguration)
     )
   }
 
