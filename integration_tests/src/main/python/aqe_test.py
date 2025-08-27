@@ -340,6 +340,10 @@ def test_aqe_join_executor_broadcast_enforce_single_batch():
 # This test relies on the join not being on the GPU because a join on an array is not
 # currently supported. This causes the join to fall back to the CPU, and with AQE the
 # broadcast needs to also fall back to the CPU, but it does not always with AQE
+# But some versions of Spark will plan this differently, which can result in a shuffle
+# falling back to the CPU. This is perfectly acceptible so long as the query produces
+# the correct result.
+@allow_non_gpu('*')
 def test_aqe_join_and_agg_single_value():
     test_query = """
     WITH 
