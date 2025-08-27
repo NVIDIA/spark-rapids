@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,14 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.jni.GpuMapZipWithUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
+import org.apache.spark.sql.catalyst.analysis.TypeCoercion
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 
 /**
  * A named lambda variable. In Spark on the CPU this includes an AtomicReference to the value that
@@ -586,6 +587,271 @@ case class GpuTransformValues(
     }
   }
 }
+
+trait GpuTwoArgumentHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
+
+  def arguments: Seq[Expression]
+
+  def function: Expression
+
+  protected val lambdaFunction: GpuLambdaFunction = function.asInstanceOf[GpuLambdaFunction]
+
+  override def functions: Seq[Expression] = function :: Nil
+
+  /**
+   * Do the core work of binding this and its lambda function.
+   * @param input the input attributes
+   * @return the bound child GpuLambdaFunction, the bound arguments, and project expressions for
+   *         everything except the lambda function's arguments, because how you get those is
+   *         often dependent on the type of processing you are doing.
+   */
+  protected def bindLambdaFunc(input: AttributeSeq): (GpuLambdaFunction, Seq[GpuExpression],
+      Seq[GpuExpression]) = {
+    // Bind the argument parameters, but they can also be lambda variables...
+    val boundArgs = arguments.map { argument =>
+      GpuBindReferences.bindRefInternal[Expression, GpuExpression](argument, input, {
+        case lr: GpuNamedLambdaVariable if input.indexOf(lr.exprId) >= 0 =>
+          val ordinal = input.indexOf(lr.exprId)
+          GpuBoundReference(ordinal, lr.dataType, input(ordinal).nullable)(lr.exprId, lr.name)
+      })
+    }
+
+    // `function` is a lambda function. In CPU Spark a lambda function's parameters are wrapping
+    // AtomicReference values and the parent expression sets the values before they are processed.
+    // That does not work for us. When processing a lambda function we pass in a modified
+    // columnar batch, which includes the arguments to that lambda function. To make this work
+    // we have to bind the GpuNamedLambdaVariable to a GpuBoundReference and also handle the
+    // binding of AttributeReference to GpuBoundReference based on the attributes in the new batch
+    // that will be passed to the lambda function. This get especially tricky when dealing with
+    // nested lambda functions. So to make that work we first have to find all of the
+    // GpuNamedLambdaVariable instances that are provided by lambda expressions below us in the
+    // expression tree
+
+    val namedVariablesProvidedByChildren = mutable.HashSet[ExprId]()
+    // We purposely include the arguments to the lambda function just below us because
+    // we will add them in as a special case later on.
+    lambdaFunction.foreach {
+      case childLambda: GpuLambdaFunction =>
+        namedVariablesProvidedByChildren ++= childLambda.arguments.map(_.exprId)
+      case _ => // ignored
+    }
+    // With this information we can now find all of the AttributeReference and
+    // GpuNamedLambdaVariable instances below us so we know what columns in `input` we have
+    // to pass on. This is a performance and memory optimization because we are going to explode
+    // the columns that are used below us, which can end up using a lot of memory
+    val usedReferences = new mutable.HashMap[ExprId, Attribute]()
+    function.foreach {
+      case att: AttributeReference => usedReferences(att.exprId) = att
+      case namedLambda: GpuNamedLambdaVariable =>
+        if (!namedVariablesProvidedByChildren.contains(namedLambda.exprId)) {
+          usedReferences(namedLambda.exprId) = namedLambda.toAttribute
+        } // else it is provided by something else so ignore it
+      case _ => // ignored
+    }
+    val references = usedReferences.toSeq.sortBy(_._1.id)
+
+    // The format of the columnar batch passed to `lambdaFunction` will be
+    // `references ++ lambdaFunction.arguments` We are going to take the references
+    // and turn them into bound references from `input` so the bound version of this operator
+    // knows how to create the `references` part of the batch that is passed down.
+
+    val boundIntermediate = references.map {
+      case (_, att) => GpuBindReferences.bindGpuReference(att, input)
+    }
+
+    // Now get the full set of attributes that we will pass to `lambdaFunction` so any nested
+    // higher order functions know how to bind their arguments, and also so we can build a
+    // mapping to know how to replace expressions
+
+    val argsAndReferences = references ++ lambdaFunction.arguments.map { expr =>
+      (expr.exprId, expr)
+    }
+
+    val argsAndRefsAtters = argsAndReferences.map {
+      case (_, named: NamedExpression) => named.toAttribute
+    }
+
+    val replacementMap = argsAndReferences.zipWithIndex.map {
+      case ((exprId, expr), ordinal) =>
+        (exprId, GpuBoundReference(ordinal, expr.dataType, expr.nullable)(exprId, expr.name))
+    }.toMap
+
+    // Now we actually bind all of the attribute references and GpuNamedLambdaVariables
+    // with the appropriate replacements.
+
+    val childFunction = GpuBindReferences.transformNoRecursionOnReplacement(lambdaFunction) {
+      case bind: GpuBind =>
+        bind.bind(argsAndRefsAtters)
+      case a: AttributeReference =>
+        replacementMap(a.exprId)
+      case lr: GpuNamedLambdaVariable if replacementMap.contains(lr.exprId) =>
+        replacementMap(lr.exprId)
+    }
+    val boundFunc =
+      GpuLambdaFunction(childFunction, lambdaFunction.arguments, lambdaFunction.hidden)
+
+    (boundFunc, boundArgs, boundIntermediate)
+  }
+}
+
+
+/**
+ * Expression that performs mapZip operation on two map columns.
+ * This expression takes two map columns and zips them together using the GpuMapZipWithUtils.
+ */
+case class GpuMapZipExpression(
+    leftMap: Expression,
+    rightMap: Expression)
+    extends GpuExpression with ShimExpression {
+
+  override def children: Seq[Expression] = Seq(leftMap, rightMap)
+
+  @transient lazy val MapType(leftKeyType, leftValueType, leftValueContainsNull) = leftMap.dataType
+  @transient lazy val MapType(rightKeyType, rightValueType, rightValueContainsNull) 
+  = rightMap.dataType
+
+  @transient lazy val keyType =
+    TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(leftKeyType, rightKeyType).get
+
+  override def dataType: DataType = {
+    MapType(keyType, StructType(Seq(
+      StructField("left", leftValueType),
+      StructField("right", rightValueType)
+    )), leftValueContainsNull || rightValueContainsNull)
+  }
+
+  override def nullable: Boolean = leftMap.nullable || rightMap.nullable
+
+  override def prettyName: String = "map_zip"
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(leftMap.columnarEval(batch)) { leftCol =>
+      withResource(rightMap.columnarEval(batch)) { rightCol =>
+        val result = GpuMapZipWithUtils.mapZip(leftCol.getBase, rightCol.getBase)
+        GpuColumnVector.from(result, dataType)
+      }
+    }
+  }
+}
+
+trait GpuMapTwoArgumentHigherOrderFunction extends GpuTwoArgumentHigherOrderFunction {
+
+  protected def isBound: Boolean
+  protected def boundIntermediate: Seq[GpuExpression]
+
+  protected lazy val inputToLambda: Seq[DataType] = {
+    assert(isBound)
+    boundIntermediate.map(_.dataType) ++ lambdaFunction.arguments.map(_.dataType)
+  }
+
+  protected def makeElementProjectBatch(
+      inputBatch: ColumnarBatch): (ColumnarBatch, cudf.ColumnVector) = {
+    assert(isBound, "Trying to execute an un-bound transform value expression")
+
+    val mapZipExpr = GpuMapZipExpression(arguments(0), arguments(1))
+
+    val boundProject = boundIntermediate :+ mapZipExpr
+    val explodedTable = withResource(GpuProjectExec.project(inputBatch, boundProject)) {
+      projectedBatch =>
+        withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+          projectedTable.explode(boundIntermediate.length)
+        }
+    }
+    val moddedTable = withResource(explodedTable) { explodedTable =>
+      // The last column is a struct column with key/values pairs in it. We need to pull them
+      // out into stand alone columns
+      val cols = new Array[cudf.ColumnVector](explodedTable.getNumberOfColumns + 2)
+      val numOtherColumns = explodedTable.getNumberOfColumns - 1
+      (0 until numOtherColumns).foreach { index =>
+        cols(index) = explodedTable.getColumn(index)
+      }
+      val keyValuePairColumn = explodedTable.getColumn(numOtherColumns)
+      val keyCol = withResource(
+        keyValuePairColumn.getChildColumnView(GpuMapUtils.KEY_INDEX)) { keyView =>
+        keyView.copyToColumnVector()
+      }
+      withResource(keyCol) { keyCol =>
+        val val1Col = withResource(
+          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(0)) 
+          { valueView =>
+          valueView.copyToColumnVector()
+        }
+        val val2Col = withResource(
+          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(1)) 
+         { valueView =>
+          valueView.copyToColumnVector()
+        }
+        withResource(val1Col) { val1Col =>
+          withResource(val2Col) { val2Col =>
+            cols(numOtherColumns) = keyCol
+            cols(numOtherColumns + 1) = val1Col
+            cols(numOtherColumns + 2) = val2Col
+            new cudf.Table(cols: _*)
+          }
+        }
+      }
+    }
+    
+    // Get the original map structure for reconstruction
+    val zippedMap = withResource(GpuProjectExec.project(inputBatch, Seq(mapZipExpr))) {
+      projectedBatch =>
+        withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+          projectedTable.getColumn(0).copyToColumnVector()
+        }
+    }
+    
+    val lambdaBatch = withResource(moddedTable) { moddedTable =>
+      GpuColumnVector.from(moddedTable, inputToLambda.toArray)
+    }
+    
+    (lambdaBatch, zippedMap)
+  }
+}
+
+case class GpuMapZipWith(
+    argument1: Expression,
+    argument2: Expression,
+    function: Expression,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty)
+    extends GpuMapTwoArgumentHigherOrderFunction {
+
+  @transient lazy val MapType(keyType1, valueType1, valueContainsNull1) = argument1.dataType
+  @transient lazy val MapType(keyType2, valueType2, valueContainsNull2) = argument2.dataType
+
+  @transient lazy val keyType =
+    TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(keyType1, keyType2).get
+
+  override def dataType: DataType = MapType(keyType, function.dataType, 
+    valueContainsNull1 || valueContainsNull2)
+
+  override def prettyName: String = "map_zip_with"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArgs, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuMapZipWith(boundArgs(0), boundArgs(1), boundFunc, isBound = true, boundIntermediate)
+  }
+
+  override def arguments: Seq[Expression] = Seq(argument1, argument2)
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val (lambdaBatch, zippedMap) = makeElementProjectBatch(batch)
+    withResource(lambdaBatch) { lambdaBatch =>
+      withResource(zippedMap) { zippedMap =>
+        val newValueCol = function.columnarEval(lambdaBatch)
+        withResource(newValueCol) { newValueCol =>
+          withResource(GpuMapUtils.replaceExplodedValueAsView(zippedMap,
+            newValueCol.getBase)) {
+            updatedMapView =>
+              GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+          }
+        }
+      }
+    }
+  }
+}
+
 
 case class GpuMapFilter(argument: Expression,
     function: Expression,

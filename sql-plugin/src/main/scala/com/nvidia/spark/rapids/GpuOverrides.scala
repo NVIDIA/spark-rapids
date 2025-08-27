@@ -3138,6 +3138,30 @@ object GpuOverrides extends Logging {
           GpuTransformValues(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
+    expr[MapZipWith](
+      "Filters entries in a map using the function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument1",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("argument2",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            TypeSig.all))),
+      (in, conf, p, r) => new ExprMeta[MapZipWith](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuMapZipWith(childExprs.head.convertToGpu(), 
+          childExprs(1).convertToGpu(), childExprs(2).convertToGpu())
+        }
+      }),
     expr[MapFilter](
       "Filters entries in a map using the function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3569,9 +3593,6 @@ object GpuOverrides extends Logging {
           Some(RepeatingParamCheck("key", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (a.failOnError) {
-            willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
-          }
 
           extractStringLit(a.children(1)) match {
             // In Spark, the key in parse_url could act like a regex, but GPU will match the key
@@ -3599,7 +3620,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(): GpuExpression = {
-          GpuParseUrl(childExprs.map(_.convertToGpu()))
+          GpuParseUrl(childExprs.map(_.convertToGpu()), a.failOnError)
         }
       }),
     expr[Length](
