@@ -39,6 +39,7 @@ import java.util.Date
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.mapreduce.{TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
+import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
 import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
@@ -220,6 +221,6 @@ object GpuWriteFiles {
     hadoopConf.setBoolean("mapreduce.task.ismap", true)
     hadoopConf.setInt("mapreduce.task.partition", 0)
 
-    tc.asInstanceOf[TaskAttemptContext]
+    new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
 }
