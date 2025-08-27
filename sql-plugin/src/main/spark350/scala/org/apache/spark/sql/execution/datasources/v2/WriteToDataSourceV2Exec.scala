@@ -155,14 +155,14 @@ case class GpuAppendDataExec(
   refreshCache: () => Unit,
   write: GpuWrite) extends GpuV2ExistingTableWriteExec with GpuExec {
 
+  override def supportsColumnar: Boolean = false
+
   override def query: SparkPlan = {
     inner match {
       case c2r: GpuColumnarToRowExec => c2r.child
       case _ => inner
     }
   }
-
-  override def supportsColumnar: Boolean = false
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     throw new IllegalStateException(
