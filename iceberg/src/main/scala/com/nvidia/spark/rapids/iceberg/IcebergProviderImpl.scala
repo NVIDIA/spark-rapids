@@ -16,11 +16,14 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuOverrides, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, ExprRule, FileFormatChecks, GpuExec, GpuOverrides, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, WriteFileOp}
+import org.apache.iceberg.spark.functions.GpuStaticInvokeMeta
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
-
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
+
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
@@ -72,6 +75,8 @@ class IcebergProviderImpl extends IcebergProvider {
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
   }
 
+
+
   override def isSupportedWrite(write: Class[_ <: Write]): Boolean = {
     GpuSparkWrite.supports(write)
   }
@@ -102,5 +107,15 @@ class IcebergProviderImpl extends IcebergProvider {
 //      case _ =>
 //        GpuAppendDataExec(child, cpuExec.refreshCache, GpuSparkWrite.convert(cpuExec.write))
 //    }
+  }
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    Seq(
+      new ExprRule[StaticInvoke](
+        (expr, conf, parent, rule) => new GpuStaticInvokeMeta(expr, conf, parent, rule),
+        "Iceberg expressions",
+        None,
+        ClassTag(classOf[Expression]))
+    ).map(r => r.getClassFor.asSubclass(classOf[Expression]) -> r).toMap
   }
 }

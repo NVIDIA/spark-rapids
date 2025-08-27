@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, GpuExec, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, VersionUtils}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, ExprRule, GpuExec, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, VersionUtils}
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
@@ -25,6 +26,7 @@ import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
 /** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
 trait IcebergProvider {
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
 
   def isSupportedWrite(write: Class[_ <: Write]): Boolean
   def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit
