@@ -60,6 +60,9 @@ def setup_clustered_table(spark, path, table_name, enable_dv):
     df = gen_df(spark, gen_list)
     df.write.format("delta").mode("append").saveAsTable(table_name)
 
+    # Optimize the table to trigger clustering
+    spark.sql(f"optimize {table_name}")
+
     desc = spark.sql(f"DESCRIBE DETAIL {table_name}").collect()
     # Ensure the table is clustered as expected
     assert desc[0].clusteringColumns == ["a", "d"]
