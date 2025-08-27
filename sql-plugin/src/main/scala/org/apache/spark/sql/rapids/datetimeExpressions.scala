@@ -1222,7 +1222,7 @@ class MonthsBetweenExprMeta(expr: MonthsBetween,
   // See https://github.com/NVIDIA/spark-rapids/issues/11800
   override def isTimeZoneSupported = false
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuBase(): GpuExpression = {
     val gpuChildren = childExprs.map(_.convertToGpu())
     assert(gpuChildren.length == 3)
     GpuMonthsBetween(gpuChildren(0), gpuChildren(1), gpuChildren(2), expr.timeZoneId)

@@ -93,7 +93,7 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
           override def noReplacementPossibleMessage(reasons: String): String =
             s"blocks running on GPU because $reasons"
 
-          override def convertToGpu(): GpuExpression =
+          override def convertToGpuBase(): GpuExpression =
             GpuPythonUDAF(a.name, a.func, a.dataType,
               childExprs.map(_.convertToGpu()),
               a.evalType, a.udfDeterministic, a.resultId)

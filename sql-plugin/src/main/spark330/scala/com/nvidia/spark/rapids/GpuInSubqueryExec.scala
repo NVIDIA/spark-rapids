@@ -113,7 +113,7 @@ class InSubqueryExecMeta(
     rule: DataFromReplacementRule)
   extends ExprMeta(expr, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuBase(): GpuExpression = {
     expr match {
       case InSubqueryExec(_, plan, exprId, shouldBroadcast, resultBroadcast, result) =>
         val gpuChild = childExprs.head.convertToGpu()

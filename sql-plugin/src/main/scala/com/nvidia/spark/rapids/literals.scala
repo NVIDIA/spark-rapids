@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -753,7 +753,7 @@ class LiteralExprMeta(
   def withNewLiteral(newLiteral: Literal): LiteralExprMeta =
     new LiteralExprMeta(newLiteral, conf, p, r)
 
-  override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
+  override def convertToGpuBase(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
   // There are so many of these that we don't need to print them out, unless it
   // will not work on the GPU

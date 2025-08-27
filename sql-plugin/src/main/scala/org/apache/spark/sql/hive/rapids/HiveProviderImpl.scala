@@ -66,7 +66,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
             }
           }
 
-          override def convertToGpu(): GpuExpression = {
+          override def convertToGpuBase(): GpuExpression = {
             opRapidsFunc.map { _ =>
               // We use the original HiveGenericUDF `deterministic` method as a proxy
               // for simplicity.
@@ -108,7 +108,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
             }
           }
 
-          override def convertToGpu(): GpuExpression = {
+          override def convertToGpuBase(): GpuExpression = {
             opRapidsFunc.map { _ =>
               // We use the original HiveGenericUDF `deterministic` method as a proxy
               // for simplicity.

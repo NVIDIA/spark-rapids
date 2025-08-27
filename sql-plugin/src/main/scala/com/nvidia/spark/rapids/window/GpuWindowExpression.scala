@@ -189,7 +189,7 @@ abstract class GpuWindowExpressionMetaBase(
   /**
    * Convert what this wraps to a GPU enabled version.
    */
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuBase(): GpuExpression = {
     val Seq(left, right) = childExprs.map(_.convertToGpu())
     GpuWindowExpression(left, right.asInstanceOf[GpuWindowSpecDefinition])
   }
@@ -293,7 +293,7 @@ class GpuWindowSpecDefinitionMeta(
   /**
    * Convert what this wraps to a GPU enabled version.
    */
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuBase(): GpuExpression = {
     GpuWindowSpecDefinition(
       partitionSpec.map(_.convertToGpu()),
       orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
@@ -504,7 +504,7 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
     }
   }
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuBase(): GpuExpression = {
     val Seq(left, right) = childExprs.map(_.convertToGpu())
     GpuSpecifiedWindowFrame(windowFrame.frameType, left, right)
   }

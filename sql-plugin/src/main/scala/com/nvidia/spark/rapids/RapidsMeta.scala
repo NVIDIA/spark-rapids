@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 import java.time.ZoneId
 import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp,  WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, BoundReference, Cast, ComplexTypeMergingExpression, Expression, Literal, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
@@ -136,6 +136,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private var typeConversionReasons: Option[mutable.Set[String]] = None
   protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
   protected var cannotRunOnGpuBecauseOfCost: Boolean = false
+  protected var willRunViaCpuBridgeReasons: Option[mutable.Set[String]] = None
 
   import RapidsMeta.gpuSupportedTag
 
@@ -231,6 +232,33 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
 
   /**
+   * Check if this will run via CPU bridge
+   */
+  final def willUseGpuCpuBridge: Boolean = willRunViaCpuBridgeReasons.exists(_.nonEmpty)
+
+  /**
+   * Check if this node itself has CPU bridge expressions anywhere in its expression tree.
+   * This recursively checks all expressions but does NOT check descendant SparkPlan nodes.
+   */
+  final def hasDirectCpuBridgeExpressions: Boolean = {
+    hasAnyCpuBridgeInExpressionTree
+  }
+
+  /**
+   * Recursively check if any expression in this node's expression tree uses CPU bridge.
+   * This checks the current node and recursively checks all child expressions.
+   * For non-expression types (Parts, Scans, etc.), only checks direct usage.
+   */
+  protected def hasAnyCpuBridgeInExpressionTree: Boolean = {
+    willUseGpuCpuBridge ||
+    childExprs.exists(_.hasAnyCpuBridgeInExpressionTree) ||
+    childParts.exists(_.willUseGpuCpuBridge) ||
+    childScans.exists(_.willUseGpuCpuBridge) ||
+    childDataWriteCmds.exists(_.willUseGpuCpuBridge) ||
+    childRunnableCmds.exists(_.willUseGpuCpuBridge)
+  }
+
+  /**
    * Returns true iff this must be replaced because its children have already been
    * replaced and this needs to also be replaced for compatibility.
    */
@@ -283,6 +311,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     shouldBeRemovedReasons = Some(mutable.Set[String]())
     cannotReplaceAnyOfPlanReasons = Some(mutable.Set[String]())
     typeConversionReasons = Some(mutable.Set[String]())
+    willRunViaCpuBridgeReasons = Some(mutable.Set[String]())
   }
 
   /**
@@ -294,6 +323,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childScans.foreach(_.tagForGpu())
     childParts.foreach(_.tagForGpu())
     childExprs.foreach(_.tagForGpu())
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(childExprs)
     childDataWriteCmds.foreach(_.tagForGpu())
     childRunnableCmds.foreach(_.tagForGpu())
     childPlans.foreach(_.tagForGpu())
@@ -338,6 +368,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
+    case Some(v) if v.isEmpty && willUseGpuCpuBridge =>
+      val bridgeReasons = willRunViaCpuBridgeReasons.get.mkString("; ")
+      s"will run on GPU via CPU bridge because $bridgeReasons"
     case Some(v) if v.isEmpty &&
         (cannotRunOnGpuBecauseOfSparkPlan || shouldThisBeRemoved) => "could " + replaceMessage
     case Some(v) if v.isEmpty => "will " + replaceMessage
@@ -373,7 +406,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     } else if (cannotRunOnGpuBecauseOfCost) {
       "$"
     } else if (canThisBeReplaced) {
-      if (cannotRunOnGpuBecauseOfSparkPlan) {
+      if (willUseGpuCpuBridge) {
+        "^"  // Special indicator for CPU bridge expressions
+      } else if (cannotRunOnGpuBecauseOfSparkPlan) {
         "@"
       } else if (cannotRunOnGpuBecauseOfCost) {
         "$"
@@ -405,7 +440,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param all should all the data be printed or just what does not work on the GPU?
    */
   def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
-    if ((all || !canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) &&
+    if ((all || !canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan || 
+         (!all && hasDirectCpuBridgeExpressions)) &&
         !suppressWillWorkOnGpuInfo) {
       indent(strBuilder, depth)
       strBuilder.append(getIndicatorChar)
@@ -555,6 +591,8 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
     if (checkTimeZone) {
       timezoneCheck()
     }
+    // Update our expressions to allow them to run with the bridge if possible
+
     tagSelfForGpuInternal()
   }
 
@@ -1306,6 +1344,134 @@ abstract class BaseExprMeta[INPUT <: Expression](
     printAst(appender, 0, all)
     appender.toString()
   }
+
+  // Override the replacement message for bridge expressions
+  override def replaceMessage: String = if (willUseGpuCpuBridge) {
+    "run on GPU via CPU bridge"
+  } else {
+    super.replaceMessage
+  }
+
+  private def isLeafExpression: Boolean = expr.children.isEmpty
+
+  /**
+   * Deduplicate GPU inputs using semantic equality to reduce memory transfers and code size.
+   * @param gpuInputsWithIndex GPU expressions paired with their original child indices
+   * @return (deduplicated GPU inputs, mapping from original indices to deduplicated indices)
+   */
+  private def deduplicateGpuInputs(
+      gpuInputsWithIndex: Seq[(Expression, Int)]): (Seq[Expression], Map[Int, Int]) = {
+    
+    import org.apache.spark.sql.rapids.catalyst.expressions.GpuExpressionEquals
+    
+    val deduplicatedInputs = scala.collection.mutable.ListBuffer[Expression]()
+    val seenExpressions = scala.collection.mutable.Map[GpuExpressionEquals, Int]()
+    val inputMapping = scala.collection.mutable.Map[Int, Int]()
+    
+    var duplicateCount = 0
+    
+    gpuInputsWithIndex.foreach { case (gpuExpr, originalIndex) =>
+      val exprWrapper = GpuExpressionEquals(gpuExpr)
+      seenExpressions.get(exprWrapper) match {
+        case Some(existingIndex) =>
+          // This expression is a duplicate - map to existing index
+          inputMapping(originalIndex) = existingIndex
+          duplicateCount += 1
+        case None =>
+          // This is a new unique expression - add it
+          val newIndex = deduplicatedInputs.length
+          deduplicatedInputs += gpuExpr
+          seenExpressions(exprWrapper) = newIndex
+          inputMapping(originalIndex) = newIndex
+      }
+    }
+    
+    (deduplicatedInputs.toSeq, inputMapping.toMap)
+  }
+
+  def convertForGpuCpuBridge(): GpuExpression = {
+    // Separate literals from GPU-convertible expressions to optimize data movement
+    // The optimization rule probably took care of this already, but just in case...
+    val gpuInputsWithIndex = scala.collection.mutable.ListBuffer[(Expression, Int)]()
+
+    // Build GPU inputs and track their original positions
+    childExprs.zipWithIndex.foreach {
+      case (childMeta, originalIndex) =>
+        if (childMeta.canThisBeReplaced && !childMeta.wrapped.isInstanceOf[Literal]) {
+          val gpuExpr = childMeta.convertToGpu()
+          gpuInputsWithIndex += ((gpuExpr, originalIndex))
+        }
+    }
+
+    // Deduplicate GPU inputs using semantic equality
+    val (deduplicatedGpuInputs, inputMapping) = deduplicateGpuInputs(gpuInputsWithIndex.toSeq)
+
+    if (deduplicatedGpuInputs.nonEmpty || isLeafExpression) {
+
+      // Create bound CPU expression with mixed children:
+      // - BoundReferences for GPU expressions (will be provided as columnar data)
+      // - Original literals/CPU expressions in their positions (no data movement needed)
+      val boundCpuExpression = if (childExprs.nonEmpty) {
+        val boundChildren: Seq[Expression] = childExprs.zipWithIndex.map {
+          case (childMeta, originalIndex) =>
+            if (childMeta.canThisBeReplaced && !childMeta.wrapped.isInstanceOf[Literal]) {
+              // Replace with BoundReference pointing to deduplicated GPU input position
+              val deduplicatedIndex = inputMapping(originalIndex)
+              val gpuExpr = deduplicatedGpuInputs(deduplicatedIndex)
+              BoundReference(deduplicatedIndex, gpuExpr.dataType, gpuExpr.nullable): Expression
+            } else {
+              // Keep literal/CPU expression as-is (no data transfer needed)
+              childMeta.wrapped.asInstanceOf[Expression]
+            }
+        }
+        expr.withNewChildren(boundChildren)
+      } else {
+        // Leaf expression - no children to bind
+        expr
+      }
+
+      val bridgeExpression = GpuCpuBridgeExpression(
+        gpuInputs = deduplicatedGpuInputs,
+        cpuExpression = boundCpuExpression,
+        outputDataType = expr.dataType,
+        outputNullable = expr.nullable,
+        codegenEnabled = conf.isBridgeCodegenEnabled)
+
+      // Apply bridge optimization to merge adjacent bridge expressions
+      GpuCpuBridgeOptimizer.optimizeBridgeExpressions(bridgeExpression)
+    } else {
+      throw new IllegalStateException(
+        s"Cannot create bridge for ${expr.getClass.getSimpleName}: no GPU-compatible inputs")
+    }
+  }
+
+  /**
+   * Converts a CPU expression to a GPU expression.
+   */
+  def convertToGpuBase(): Expression
+
+  final override def convertToGpu(): Expression = {
+    if (willUseGpuCpuBridge) {
+      convertForGpuCpuBridge()
+    } else {
+      convertToGpuBase()
+    }
+  }
+
+  final def canMoveToCpuBridge(): Boolean = conf.isBridgeAllowedForExpression(expr.getClass)
+
+  final def moveToCpuBridge(): Unit = {
+    if (!canMoveToCpuBridge()) {
+      throw new IllegalStateException("trying to move to bridge when not allowed")
+    }
+    willRunViaCpuBridgeReasons.get ++= cannotBeReplacedReasons.get
+    cannotBeReplacedReasons.get.clear()
+    if (willRunViaCpuBridgeReasons.get.isEmpty) {
+      // We need something so it will move to the GPU and this is the only reason
+      // right now
+      willRunViaCpuBridgeReasons.get.add("it avoids excess CPU and GPU transfers")
+    }
+  }
 }
 
 abstract class ExprMeta[INPUT <: Expression](
@@ -1315,7 +1481,7 @@ abstract class ExprMeta[INPUT <: Expression](
     rule: DataFromReplacementRule)
     extends BaseExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExpression
+  def convertToGpuBase(): GpuExpression
 }
 
 /**
@@ -1355,7 +1521,7 @@ protected abstract class UnaryExprMetaBase[INPUT <: Expression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
+  override final def convertToGpuBase(): GpuExpression =
     convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
@@ -1400,7 +1566,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
   // not all aggs overwrite this
   def tagAggForGpu(): Unit = {}
 
-  override final def convertToGpu(): GpuExpression =
+  override final def convertToGpuBase(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
@@ -1478,7 +1644,7 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression = {
+  override final def convertToGpuBase(): GpuExpression = {
     val Seq(lhs, rhs) = childExprs.map(_.convertToGpu())
     convertToGpu(lhs, rhs)
   }
@@ -1512,7 +1678,7 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression = {
+  override final def convertToGpuBase(): GpuExpression = {
     val Seq(child0, child1, child2) = childExprs.map(_.convertToGpu())
     convertToGpu(child0, child1, child2)
   }
@@ -1531,7 +1697,7 @@ abstract class QuaternaryExprMeta[INPUT <: QuaternaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression = {
+  override final def convertToGpuBase(): GpuExpression = {
     val Seq(child0, child1, child2, child3) = childExprs.map(_.convertToGpu())
     convertToGpu(child0, child1, child2, child3)
   }
@@ -1547,7 +1713,7 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     rule: DataFromReplacementRule)
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression = {
+  override final def convertToGpuBase(): GpuExpression = {
     val gpuCol :: gpuTrimParam = childExprs.map(_.convertToGpu())
     convertToGpu(gpuCol, gpuTrimParam.headOption)
   }
@@ -1564,7 +1730,7 @@ abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression]
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
-  override final def convertToGpu(): GpuExpression =
+  override final def convertToGpuBase(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
@@ -1582,7 +1748,7 @@ final class RuleNotFoundExprMeta[INPUT <: Expression](
   override def tagExprForGpu(): Unit =
     willNotWorkOnGpu(s"GPU does not currently support the operator ${expr.getClass}")
 
-  override def convertToGpu(): GpuExpression =
+  override def convertToGpuBase(): GpuExpression =
     throw new IllegalStateException(s"Cannot be converted to GPU ${expr.getClass} " +
         s"${expr.dataType} $expr")
 }

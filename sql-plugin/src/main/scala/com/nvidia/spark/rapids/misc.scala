@@ -54,7 +54,7 @@ class GpuUuidMeta(
     rule: DataFromReplacementRule)
     extends ExprMeta[Uuid](expr, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuBase(): GpuExpression = {
     // Gpu Uuid ignores the seed in the original Spark Uuid expression,
     // because it always uses a random seed to generate UUIDs.
     GpuUuid()

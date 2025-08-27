@@ -459,6 +459,30 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CPU_BRIDGE = conf("spark.rapids.sql.expression.cpuBridge.enabled")
+    .doc("Enable CPU-GPU bridge expressions that allow CPU expression subtrees " +
+      "to run while keeping the overall plan on GPU. When enabled, expressions that have no " +
+      "GPU implementation will automatically be wrapped in bridge expressions instead of " +
+      "causing plan fallbacks.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val BRIDGE_DISALLOW_LIST = conf("spark.rapids.sql.expression.cpuBridge.disallowList")
+    .doc("Comma separated list of expression class names that should not use CPU bridge " +
+      "expressions even when bridge is enabled.")
+    .internal()
+    .stringConf
+    .createWithDefault("")
+
+  val BRIDGE_CODEGEN_ENABLED = conf("spark.rapids.sql.expression.cpuBridge.codegenEnabled")
+    .doc("Enable code generation for CPU bridge expressions. When enabled, uses Spark's " +
+      "code generation framework for better performance. Falls back to interpreted " +
+      "evaluation if code generation fails.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
     .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
       "lz4, lzf, snappy, and zstd.")
@@ -3640,6 +3664,63 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    */
   def isConfExplicitlySet(key: String): Boolean = {
     conf.contains(key)
+  }
+
+  // CPU-GPU Bridge Configuration accessors
+
+  lazy val isCpuBridgeEnabled: Boolean = get(ENABLE_CPU_BRIDGE)
+
+  lazy val bridgeDisallowList: Set[String] = {
+    val listString = get(BRIDGE_DISALLOW_LIST)
+    if (listString.nonEmpty) {
+      listString.split(",").map(_.trim).filter(_.nonEmpty).toSet
+    } else {
+      Set.empty
+    }
+  }
+
+  lazy val isBridgeCodegenEnabled: Boolean = get(BRIDGE_CODEGEN_ENABLED)
+
+  /**
+   * Checks if a specific expression class should be allowed to use bridge expressions.
+   * Filters out expressions that cannot be directly executed (like aggregations).
+   */
+  def isBridgeAllowedForExpression(exprClass: Class[_]): Boolean = {
+    if (!isCpuBridgeEnabled) return false
+    
+    // Check disallow list
+    if (bridgeDisallowList.contains(exprClass.getName)) return false
+    
+    // Filter out expressions that cannot be directly executed
+    if (isNonExecutableExpression(exprClass)) return false
+    
+    // Exclude nondeterministic expressions for performance and correctness
+    if (isNondeterministicExpression(exprClass)) return false
+    
+    true
+  }
+
+  /**
+   * Checks if an expression is non-executable and cannot be bridged.
+   */
+  private def isNonExecutableExpression(exprClass: Class[_]): Boolean = {
+    import org.apache.spark.sql.catalyst.expressions.{NamedLambdaVariable, Unevaluable, WindowFunction}
+    import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
+    classOf[Unevaluable].isAssignableFrom(exprClass) ||
+      classOf[AggregateFunction].isAssignableFrom(exprClass) ||
+      classOf[WindowFunction].isAssignableFrom(exprClass) ||
+      classOf[NamedLambdaVariable].isAssignableFrom(exprClass)
+  }
+  
+  /**
+   * Checks if an expression is nondeterministic and cannot be bridged.
+   * Nondeterministic expressions (uuid, rand, etc.) are excluded from CPU bridge
+   * for performance and correctness reasons.
+   */
+  private def isNondeterministicExpression(exprClass: Class[_]): Boolean = {
+    import org.apache.spark.sql.catalyst.expressions.Nondeterministic
+    // Check if the class implements Nondeterministic interface
+    classOf[Nondeterministic].isAssignableFrom(exprClass)
   }
 }
 

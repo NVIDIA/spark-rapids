@@ -120,7 +120,7 @@ object DecimalArithmeticOverrides {
         private[this] lazy val rhsDecimalType =
           DecimalUtil.asDecimalType(rhs.wrapped.asInstanceOf[Expression].dataType)
 
-        override def convertToGpu(): GpuExpression = {
+        override def convertToGpuBase(): GpuExpression = {
           // Prior to Spark 3.4.0
           // Division and Multiplication of Decimal types is a little odd. Spark will cast the
           // inputs to a common wider value where the scale is the max of the two input scales,
