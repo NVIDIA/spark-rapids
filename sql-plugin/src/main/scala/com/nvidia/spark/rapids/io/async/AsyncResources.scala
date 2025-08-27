@@ -342,9 +342,9 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
 
   private val holdingGroups: AtomicInteger = new AtomicInteger(0)
 
-  override def acquireResource[T](task: AsyncRunner[T], timeoutMs: Long): AcquireStatus = {
-    val resource = extractResource(task)
-    val requiredAmount: Long = task match {
+  override def acquireResource[T](runner: AsyncRunner[T], timeoutMs: Long): AcquireStatus = {
+    val resource = extractResource(runner)
+    val requiredAmount: Long = runner match {
       case _: GroupedAsyncRunner[T] => resource.groupedHostMemoryBytes.getOrElse(
           throw new InvalidResourceRequest(
             s"GroupedAsyncRunner must have groupedHostMemoryBytes defined, but got $resource"))
@@ -366,8 +366,8 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
         lock.lockInterruptibly()
         try {
           while (!isDone && !isTimeout) {
-            task match {
-              case t: GroupedAsyncRunner[T] if t.holdSharedResource => isDone = true
+            runner match {
+              case rr: GroupedAsyncRunner[T] if rr.holdSharedResource => isDone = true
               case _ =>
             }
             if (isDone) {
@@ -385,7 +385,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
           }
           if (isDone) {
             holdingBuffers.incrementAndGet()
-            task match {
+            runner match {
               case grouped: GroupedAsyncRunner[_] if !grouped.holdSharedResource =>
                 val numGroups = holdingGroups.incrementAndGet()
                 logDebug(s"Acquire a SharedGroup(${bytesToString(required)}), " +
@@ -393,7 +393,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
               case _ =>
               // No action needed for non-grouped tasks
             }
-            task.onAcquire()
+            runner.onAcquire()
             AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
           } else {
             AcquireFailed
