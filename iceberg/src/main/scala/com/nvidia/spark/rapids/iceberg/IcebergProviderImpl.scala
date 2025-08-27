@@ -111,10 +111,11 @@ class IcebergProviderImpl extends IcebergProvider {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
-      GpuOverrides.expr[StaticInvoke](
+      new ExprRule[StaticInvoke](
+        (expr, conf, parent, rule) => new GpuStaticInvokeMeta(expr, conf, parent, rule),
         "Iceberg static invoke expressions",
-        null,
-        (expr, conf, parent, rule) => new GpuStaticInvokeMeta(expr, conf, parent, rule))
+        None,
+        ClassTag(classOf[StaticInvoke]))
     ).map(r => r.getClassFor.asSubclass(classOf[Expression]) -> r).toMap
   }
 }
