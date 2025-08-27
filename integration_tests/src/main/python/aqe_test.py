@@ -337,6 +337,23 @@ def test_aqe_join_executor_broadcast_enforce_single_batch():
         non_exist_classes="GpuBroadcastExchangeExec",
         conf=conf)
 
+# This test relies on the join not being on the GPU because a join on an array is not
+# currently supported. This causes the join to fall back to the CPU, and with AQE the
+# broadcast needs to also fall back to the CPU, but it does not always with AQE
+def test_aqe_join_and_agg_single_value():
+    test_query = """
+    WITH 
+    processed AS (
+      SELECT 
+        SIZE(params) AS result,
+        params as input_params
+      FROM (SELECT collect_list(1) AS params FROM VALUES (1) AS t(dummy)) input_table
+      GROUP BY params
+    )
+    SELECT processed.result
+    FROM (SELECT collect_list(1) AS params FROM VALUES (1) AS t(dummy)) collected
+    LEFT OUTER JOIN processed ON collected.params = processed.input_params"""
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(test_query), conf=_adaptive_conf)
 
 # this should be fixed by https://github.com/NVIDIA/spark-rapids/issues/11120
 aqe_join_with_dpp_fallback=["FilterExec"] if (is_databricks_runtime() or is_before_spark_330()) else []
