@@ -33,7 +33,8 @@ def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, reade
         df.createOrReplaceTempView(view_name)
         spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
 
-    with_gpu_session(insert_data)
+    with_gpu_session(insert_data, conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
+                                          "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.table(table_name),
