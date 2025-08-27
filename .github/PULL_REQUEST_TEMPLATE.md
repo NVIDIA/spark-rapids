@@ -28,15 +28,12 @@ Please provide a description of the changes proposed in this pull request. Here 
 
 ### Checklists
 
-<!-- Check the items below by putting "x" in the brackets for what is done. Not all of these items may be relevant to every PR. -->
+<!-- 
+Check the items below by putting "x" in the brackets for what is done.
+Not all of these items may be relevant to every PR, so please check only those that apply.
+-->
 
-This PR has:
-
-- [ ] added documentation for new or modified features or behaviors.
-- [ ] updated the license in the source code files when it is required.
-- [ ] added new tests or modified existing tests to cover new code paths.
+- [ ] This PR has added documentation for new or modified features or behaviors.
+- [ ] This PR has added new tests or modified existing tests to cover new code paths.
       (Please explain in the PR description how the new code paths are tested, such as names of the new/existing tests that cover them.)
-
-Please select one of the following options:
-- [ ] Performance testing has been performed and its results are added in the PR description.
-- [ ] An issue is filed for performance testing and its link is added in the PR description. (Select this if performance testing will not be completed before the PR is submitted.)
+- [ ] Performance testing has been performed and its results are added in the PR description. Or, an issue has been filed with a link in the PR description.

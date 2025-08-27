@@ -21,6 +21,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.CombineConf
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, MultiFileCloudParquetPartitionReader}
 
@@ -31,6 +32,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuMultiThreadIcebergParquetReader(
+    val rapidsFileIO: IcebergFileIO,
     val files: Seq[IcebergPartitionedFile],
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
     val deleteFilterProvider: IcebergPartitionedFile => Option[GpuDeleteFilter],
@@ -87,7 +89,9 @@ class GpuMultiThreadIcebergParquetReader(
     val sparkPartitionedFiles = files.map(_.sparkPartitionedFile).toArray
 
     inited = true
-    new MultiFileCloudParquetPartitionReader(conf.conf,
+    new MultiFileCloudParquetPartitionReader(
+      rapidsFileIO,
+      conf.conf,
       sparkPartitionedFiles,
       this.filterBlock,
       conf.caseSensitive,

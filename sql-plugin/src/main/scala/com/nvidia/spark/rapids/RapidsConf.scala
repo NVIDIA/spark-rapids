@@ -355,7 +355,7 @@ object RapidsConf extends Logging {
       // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
       .internal()
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
       .doc("The maximum amount of off heap memory that the plugin will use. " +
@@ -2585,6 +2585,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val LORE_PARQUET_USE_ORIGINAL_NAMES =
+    conf("spark.rapids.sql.lore.parquet.useOriginalSchemaNames")
+      .doc("When enabled, LORE writes Parquet files using the original Spark schema names " +
+        "instead of auto-generated type-based names. This makes the dumped Parquet data " +
+        "easier to consume directly via Spark/other tools.")
+      .booleanConf
+      .createWithDefault(true)
+
   val CASE_WHEN_FUSE =
     conf("spark.rapids.sql.case_when.fuse")
       .doc("If when branches is greater than 2 and all then/else values in case when are string " +
@@ -3600,6 +3608,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
 
   lazy val loreSkipDumpingPlan: Boolean = get(LORE_SKIP_DUMPING_PLAN)
+
+  lazy val loreParquetUseOriginalNames: Boolean = get(LORE_PARQUET_USE_ORIGINAL_NAMES)
 
   lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 
