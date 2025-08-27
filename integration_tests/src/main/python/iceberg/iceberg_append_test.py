@@ -40,3 +40,24 @@ def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, reade
         lambda spark: spark.table(table_name),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, reader_type):
+    table_name = create_iceberg_table(spark_tmp_table_factory,
+                                      partition_col_sql="bucket(16, _c2), bucket(16, _c3)")
+
+    def insert_data(spark):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        view_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(view_name)
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+
+    with_gpu_session(insert_data, conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
+                                          "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.table(table_name),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
