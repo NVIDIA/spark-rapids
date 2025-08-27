@@ -159,8 +159,9 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       requiredSchema: Schema,
       typeWithIds: ShadedMessageType,
       filter: Option[Expression])
-  : Seq[ShadedBlockMetaData] = {
+  : Seq[(ShadedBlockMetaData, Int)] = {
     val blocks = reader.getRowGroups.asScala
+      .zipWithIndex
 
     filter.map { f =>
       val statsFilter = new ParquetMetricsRowGroupFilter(requiredSchema,
@@ -173,7 +174,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         f,
         conf.caseSensitive)
 
-      blocks.filter { rowGroup =>
+      blocks.filter { case (rowGroup, _) =>
           val beforeOrdinal = rowGroup.getOrdinal
           val filterResult = statsFilter.shouldRead(typeWithIds, rowGroup) &&
             dictFilter.shouldRead(typeWithIds, rowGroup, reader.getDictionaryReader(rowGroup)) &&
@@ -211,8 +212,8 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       }
       val (typeWithIds, fileReadSchema) = projectSchema(fileSchema, requiredSchema)
       val filteredBlocks = filterRowGroups(reader, requiredSchema, typeWithIds, file.filter)
-      val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b.getOrdinal))
-      val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks)
+      val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b._2))
+      val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
       val partReaderSparkSchema = TypeWithSchemaVisitor.visit(requiredSchema.asStruct(),
           fileReadSchema, new SparkSchemaConverter)
