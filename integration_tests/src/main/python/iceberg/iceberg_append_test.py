@@ -82,8 +82,7 @@ def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, format_
             table_prop=table_prop)
 
         sql = f"ALTER TABLE {table_name} WRITE ORDERED BY _c2, _c3, _c4"
-        with_cpu_session(lambda spark: spark.sql(sql))
-        return table_name
+        with_cpu_session(lambda spark: spark.sql(sql).collect())
 
 
 
