@@ -44,6 +44,16 @@ case class GpuUuid() extends GpuExpression with ShimExpression {
 
   override def children: Seq[Expression] = Nil
 
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    GpuColumnVector.from(
+      StringUtils.randomUUIDsWithSeed(batch.numRows, GpuUuid.randomSeed), dataType)
+  }
+}
+
+object GpuUuid {
+  // Stores the sequence ID for generating UUIDs.
+  private val sequence = new AtomicLong(0L)
+
   /**
    * Generate a seed for UUID generation.
    * The seed is generated based on the current time in nanoseconds, the process
@@ -60,20 +70,9 @@ case class GpuUuid() extends GpuExpression with ShimExpression {
     val gpuUUID = ExecutorCache.getCurrentDeviceUuid
     seed = seed * 37 + processName.hashCode
     seed = seed * 37 + util.Arrays.hashCode(gpuUUID)
-    seed = seed * 37 + GpuUuid.getSequenceId
+    seed = seed * 37 + sequence.incrementAndGet
     seed
   }
-
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    GpuColumnVector.from(StringUtils.randomUUIDsWithSeed(batch.numRows, randomSeed), dataType)
-  }
-}
-
-object GpuUuid {
-  // Stores the sequence ID for generating UUIDs.
-  private val sequence = new AtomicLong(0L)
-
-  private def getSequenceId: Long = sequence.incrementAndGet
 }
 
 class GpuUuidMeta(

@@ -32,7 +32,7 @@ object ExecutorCache {
    * and will not change during the lifetime of the executor.
    * Should be called on executor side.
    */
-  lazy val getCurrentDeviceComputeMode: CudaComputeMode = Cuda.getComputeMode()
+  private[rapids] lazy val getCurrentDeviceComputeMode: CudaComputeMode = Cuda.getComputeMode()
 
   /**
    * Cache the current device UUID for current executor.
@@ -40,12 +40,12 @@ object ExecutorCache {
    * and will not change during the lifetime of the executor.
    * Should be called on executor side.
    */
-  lazy val getCurrentDeviceUuid: Array[Byte] = Cuda.getGpuUuid()
+  private[rapids] lazy val getCurrentDeviceUuid: Array[Byte] = Cuda.getGpuUuid()
 
   /**
    * Cache the current process name for current executor.
    * Should be called on executor side.
    */
-  lazy val getProcessName: String = ManagementFactory.getRuntimeMXBean.getName
+  private[rapids] lazy val getProcessName: String = ManagementFactory.getRuntimeMXBean.getName
 }
 
