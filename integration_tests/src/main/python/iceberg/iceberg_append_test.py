@@ -15,7 +15,7 @@ from typing import Dict, Callable, Any
 
 import pytest
 
-from asserts import assert_equal
+from asserts import assert_equal, assert_equal_with_local_sort
 from data_gen import gen_df
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name
@@ -47,7 +47,7 @@ def do_test_insert_into_table_sql(spark_tmp_table_factory,
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
-    assert_equal(cpu_data, gpu_data)
+    assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
 @iceberg
@@ -74,7 +74,6 @@ def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, format_
     table_prop = {"format-version": format_version,
                    "write.spark.fanout.enabled": str(fanout).lower(),
                   "write.distribution-mode": write_distribution_mode}
-
 
     do_test_insert_into_table_sql(
         spark_tmp_table_factory,
