@@ -62,7 +62,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.command._
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -277,13 +277,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
         (e, conf, p, r) => new AtomicReplaceTableAsSelectExecMeta(e, conf, p, r)),
-      exec[AppendDataExec](
-        "Append data into a datasource V2 table",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
-          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r)),
       exec[OverwriteByExpressionExecV1](
         "Overwrite into a datasource V2 table using the V1 write interface",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
