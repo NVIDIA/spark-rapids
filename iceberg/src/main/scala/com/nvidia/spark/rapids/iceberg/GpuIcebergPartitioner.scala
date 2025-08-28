@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner.toRows
 import com.nvidia.spark.rapids.jni.Hash
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.MethodUtils
-import org.apache.iceberg.{PartitionSpec, Schema, StructLike}
+import org.apache.iceberg.{PartitionSpec, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
 import org.apache.iceberg.transforms.Transform
 import org.apache.iceberg.types.Types
