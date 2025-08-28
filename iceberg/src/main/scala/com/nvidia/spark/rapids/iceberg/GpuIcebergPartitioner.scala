@@ -51,6 +51,9 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   val keyCols: Array[Int] = (0 until spec.fields().size()).toArray
 
   def partition(input: ColumnarBatch): Seq[ColumnarBatchWithPartition] = {
+    if (input.numRows() == 0) {
+      return Seq.empty
+    }
     val numRows = input.numRows()
     val partitionValues = new Table(
       fieldTransforms.safeMap(_.transform(input)).toArray:_*)
