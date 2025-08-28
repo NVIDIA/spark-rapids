@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, Callable, Any
+from typing import Callable, Any
 
 import pytest
 
-from asserts import assert_equal, assert_equal_with_local_sort
+from asserts import assert_equal_with_local_sort
 from data_gen import gen_df
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name
