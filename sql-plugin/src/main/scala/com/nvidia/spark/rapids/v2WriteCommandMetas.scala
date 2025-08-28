@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.rapids.ExternalSource
 
 class AtomicCreateTableAsSelectExecMeta(
@@ -85,6 +85,22 @@ class OverwriteByExpressionExecV1Meta(
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[OverwriteByExpressionExecV1](wrapped, conf, parent, rule)
   with HasCustomTaggingData {
+
+  override def tagPlanForGpu(): Unit = {
+    ExternalSource.tagForGpu(wrapped, this)
+  }
+
+  override def convertToGpu(): GpuExec = {
+    ExternalSource.convertToGpu(wrapped, this)
+  }
+}
+
+class AppendDataExecMeta(
+  wrapped: AppendDataExec,
+  conf: RapidsConf,
+  parent: Option[RapidsMeta[_, _, _]],
+  rule: DataFromReplacementRule)
+  extends SparkPlanMeta[AppendDataExec](wrapped, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
     ExternalSource.tagForGpu(wrapped, this)
