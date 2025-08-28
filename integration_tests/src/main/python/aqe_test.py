@@ -343,7 +343,7 @@ def test_aqe_join_executor_broadcast_enforce_single_batch():
 # But some versions of Spark will plan this differently, which can result in a shuffle
 # falling back to the CPU. This is perfectly acceptible so long as the query produces
 # the correct result.
-@allow_non_gpu('*')
+@allow_non_gpu(any = True)
 def test_aqe_join_and_agg_single_value():
     test_query = """
     WITH 
