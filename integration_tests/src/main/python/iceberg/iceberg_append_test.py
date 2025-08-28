@@ -75,9 +75,17 @@ def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, format_
                    "write.spark.fanout.enabled": str(fanout).lower(),
                   "write.distribution-mode": write_distribution_mode}
 
-    do_test_insert_into_table_sql(
-        spark_tmp_table_factory,
-        lambda table_name: create_iceberg_table(
+    def create_table_and_set_write_order(table_name: str):
+        create_iceberg_table(
             table_name,
             partition_col_sql="bucket(16, _c2), bucket(16, _c3)",
-            table_prop=table_prop))
+            table_prop=table_prop)
+
+        sql = f"ALTER TABLE {table_name} ORDERED BY (_c2, _c3, _c4)"
+        with_cpu_session(lambda spark: spark.sql(sql))
+
+
+
+    do_test_insert_into_table_sql(
+        spark_tmp_table_factory,
+        create_table_and_set_write_order)
