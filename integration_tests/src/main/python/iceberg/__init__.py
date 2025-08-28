@@ -132,10 +132,7 @@ def create_iceberg_table(table_name: str,
                          partition_col_sql: Optional[str] = None,
                          table_prop: Optional[Dict[str, str]] = None) -> str:
     if table_prop is None:
-        table_prop = {'format-version':'2', 'write.delete.mode': 'merge-on-read'}
-    else:
-        table_prop = {**table_prop, 'format-version': '2', 'write.delete.mode':
-            'merge-on-read'}
+        table_prop = {'format-version':'1'}
 
     table_prop_sql = ", ".join([f"'{k}' = '{v}'" for k, v in table_prop.items()])
 

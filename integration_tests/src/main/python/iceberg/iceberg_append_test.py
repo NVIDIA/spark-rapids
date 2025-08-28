@@ -13,23 +13,24 @@
 # limitations under the License.
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
+from asserts import assert_equal
 from data_gen import gen_df
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
-    rapids_reader_types, get_full_table_name
+    get_full_table_name
 from marks import iceberg, ignore_order
 from spark_session import with_gpu_session, with_cpu_session
 
 
 @iceberg
 @ignore_order(local=True)
-def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory):
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, format_version):
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
     gpu_table_name = f"{base_table_name}_gpu"
 
-    create_iceberg_table(cpu_table_name)
-    create_iceberg_table(gpu_table_name)
+    create_iceberg_table(cpu_table_name, table_prop={"format-version": format_version})
+    create_iceberg_table(gpu_table_name, table_prop={"format-version": format_version})
 
     def insert_data(spark, table_name: str):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -51,13 +52,14 @@ def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
-def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory):
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, format_version):
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
     gpu_table_name = f"{base_table_name}_gpu"
 
-    create_iceberg_table(cpu_table_name)
-    create_iceberg_table(gpu_table_name)
+    create_iceberg_table(cpu_table_name, table_prop={"format-version": format_version})
+    create_iceberg_table(gpu_table_name, table_prop={"format-version": format_version})
 
     def insert_data(spark, table_name):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
