@@ -128,11 +128,9 @@ def get_full_table_name(spark_tmp_table_factory):
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
 
-def create_iceberg_table(spark_tmp_table_factory,
+def create_iceberg_table(table_name: str,
                          partition_col_sql: Optional[str] = None,
                          table_prop: Optional[Dict[str, str]] = None) -> str:
-    table_name = get_full_table_name(spark_tmp_table_factory)
-
     if table_prop is None:
         table_prop = {'format-version':'2', 'write.delete.mode': 'merge-on-read'}
     else:
