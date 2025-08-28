@@ -37,14 +37,15 @@ import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-class GpuIcebergPartitioner(val spec: PartitionSpec, val schema: Schema,
+class GpuIcebergPartitioner(val spec: PartitionSpec,
     val dataSparkType: StructType) {
+  private val schema = spec.schema()
   private val sparkType: Array[DataType] = dataSparkType.fields.map(_.dataType)
   private val partitionSparkType: StructType = GpuTypeToSparkType.toSparkType(spec.partitionType())
 
   private val fieldTransforms: Seq[FieldTransform] = spec.fields()
     .asScala
-    .map(f => FieldTransform(fieldIndex(schema, f.fieldId()), f.transform()))
+    .map(f => FieldTransform(fieldIndex(schema, f.sourceId()), f.transform()))
     .toSeq
 
   val keyCols: Array[Int] = (0 until spec.fields().size()).toArray

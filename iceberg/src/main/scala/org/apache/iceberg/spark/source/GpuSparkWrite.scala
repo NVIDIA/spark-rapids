@@ -239,7 +239,7 @@ class GpuPartitionedDataWriter(
     new ClusteredDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io, targetFileSize)
   }
 
-  private val partitioner = new GpuIcebergPartitioner(spec, dataSchema, dataSparkType)
+  private val partitioner = new GpuIcebergPartitioner(spec, dataSparkType)
 
   override def write(record: ColumnarBatch): Unit = {
     partitioner.partition(record)
