@@ -16,11 +16,12 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.reflect.ClassTag
-import scala.util.Try
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
+import scala.reflect.ClassTag
+import scala.util.Try
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
