@@ -44,8 +44,8 @@ def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory):
                      conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
                              "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
 
-    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name))
-    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name))
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal(cpu_data, gpu_data)
 
 
@@ -72,6 +72,6 @@ def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory):
                      conf = {"spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
                              "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED"})
 
-    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name))
-    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name))
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal(cpu_data, gpu_data)
