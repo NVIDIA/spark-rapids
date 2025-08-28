@@ -137,7 +137,8 @@ object GpuIcebergPartitioner {
           table.getColumn(i).copyToHost()))
       }
 
-      withResource(new ColumnarBatch(hostColArrays.release())) { hostBatch =>
+      withResource(new ColumnarBatch(hostColArrays.release(), toIntExact(table.getRowCount))) {
+      hostBatch =>
         hostBatch.rowIterator()
           .asScala
           .map(internalRow => {
