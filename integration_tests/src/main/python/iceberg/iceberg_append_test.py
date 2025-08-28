@@ -24,13 +24,18 @@ from spark_session import with_gpu_session, with_cpu_session
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, format_version):
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, format_version, write_distribution_mode):
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
     gpu_table_name = f"{base_table_name}_gpu"
 
-    create_iceberg_table(cpu_table_name, table_prop={"format-version": format_version})
-    create_iceberg_table(gpu_table_name, table_prop={"format-version": format_version})
+    table_prop = {"format-version": format_version,
+                  "write.distribution-mode": write_distribution_mode}
+
+    create_iceberg_table(cpu_table_name, table_prop=table_prop)
+    create_iceberg_table(gpu_table_name, table_prop=table_prop)
 
     def insert_data(spark, table_name: str):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -54,13 +59,16 @@ def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, forma
 @ignore_order(local=True)
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
-def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, format_version, fanout):
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, format_version, fanout, write_distribution_mode):
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
     gpu_table_name = f"{base_table_name}_gpu"
 
     table_prop = {"format-version": format_version,
-                   "write.spark.fanout.enabled": str(fanout).lower()}
+                   "write.spark.fanout.enabled": str(fanout).lower(),
+                  "write.distribution-mode": write_distribution_mode}
 
     create_iceberg_table(cpu_table_name, table_prop=table_prop)
     create_iceberg_table(gpu_table_name, table_prop=table_prop)
