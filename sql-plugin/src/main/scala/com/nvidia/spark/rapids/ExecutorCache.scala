@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.lang.management.ManagementFactory;
+import java.lang.management.ManagementFactory
 
 import ai.rapids.cudf.{Cuda, CudaComputeMode}
 

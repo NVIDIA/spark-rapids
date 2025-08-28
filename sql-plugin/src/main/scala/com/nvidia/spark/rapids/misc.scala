@@ -70,7 +70,7 @@ case class GpuUuid() extends GpuExpression with ShimExpression {
 }
 
 object GpuUuid {
-  // Stores the sequence ID of calling generate UUIDs.
+  // Stores the sequence ID for generating UUIDs.
   private val sequence = new AtomicLong(0L)
 
   private def getSequenceId: Long = sequence.incrementAndGet
