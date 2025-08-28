@@ -48,7 +48,7 @@ trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
   def refreshCache: () => Unit
   def write: Write
 
-  protected override val customMetrics: Map[String, GpuMetric] =
+  override lazy val additionalMetrics: Map[String, GpuMetric] =
     write.supportedCustomMetrics().map { customMetric =>
       customMetric.name() -> GpuMetric.wrap(SQLMetrics.createV2CustomMetric(sparkContext,
         customMetric))
@@ -67,9 +67,9 @@ trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
  * <br/>
  *
  * This class is derived from
- * {@link org.apache.spark.sql.execution.datasources.v2.V2TableWriteExec}.
+ * [[org.apache.spark.sql.execution.datasources.v2.V2TableWriteExec]].
  */
-trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
+trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec {
   def query: SparkPlan
 
   def writingTask: GpuWritingSparkTask[_] = GpuDataWritingSparkTask
@@ -78,10 +78,6 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
 
   override def child: SparkPlan = query
   override def output: Seq[Attribute] = Seq.empty
-
-  protected val customMetrics: Map[String, GpuMetric] = Map.empty
-
-  override lazy val metrics = customMetrics.mapValues(GpuMetric.unwrap)
 
   protected def writeWithV2(batchWrite: BatchWrite): Seq[InternalRow] = {
     val rdd: RDD[ColumnarBatch] = {
@@ -153,7 +149,7 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode {
 case class GpuAppendDataExec(
   inner: SparkPlan,
   refreshCache: () => Unit,
-  write: GpuWrite) extends GpuV2ExistingTableWriteExec with GpuExec {
+  write: GpuWrite) extends GpuV2ExistingTableWriteExec {
 
   override def supportsColumnar: Boolean = false
 
