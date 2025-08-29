@@ -68,14 +68,10 @@ object AsyncProfilerOnExecutor extends Logging {
   private var needMoveFile: Boolean = false // true when `asyncProfilerPathPrefix` is non-local
   private var tempFilePath: java.nio.file.Path = _
 
-  // Task tracking for stage epoch determination
-  private val runningTasks = new ConcurrentHashMap[Long, Int]() // taskId -> stageId
-  private var epochScheduler: Option[ScheduledExecutorService] = None
-  private var epochTask: Option[ScheduledFuture[_]] = None
   private var isShutdown = false
   
-  // Epoch tracking for same stage multiple executions
-  private val stageEpochCounters = new ConcurrentHashMap[Int, Int]() // stageId -> epochCount
+  // Stage epoch management
+  private var stageEpochManager: Option[StageEpochManager] = None
 
   def init(ctx: PluginContext, conf: RapidsConf): Unit = {
     pluginCtx = ctx
@@ -103,8 +99,19 @@ object AsyncProfilerOnExecutor extends Logging {
         this.jfrCompressionEnabled = conf.asyncProfilerJfrCompression
         this.stageEpochInterval = conf.asyncProfilerStageEpochInterval
 
-        // Start the epoch scheduler
-        startEpochScheduler()
+        // Initialize stage epoch manager
+        val epochManager = new StageEpochManager(
+          name = "AsyncProfiler",
+          epochInterval = this.stageEpochInterval
+        )
+        
+        // Set up stage transition callback
+        epochManager.setStageTransitionCallback { (oldStage, newStage, taskCount, totalTasks) =>
+          onStageTransition(oldStage, newStage, taskCount, totalTasks)
+        }
+        
+        stageEpochManager = Some(epochManager)
+        epochManager.start()
       })
     })
   }
@@ -112,26 +119,13 @@ object AsyncProfilerOnExecutor extends Logging {
 
   def onTaskStart(): Unit = {
     asyncProfiler.foreach(_ => {
-      val taskContext = TaskContext.get
-      val stageId = taskContext.stageId()
-      val taskId = taskContext.taskAttemptId()
-      
-      // Track this task
-      runningTasks.put(taskId, stageId)
-      
-      // Add task completion listener to clean up tracking
-      taskContext.addTaskCompletionListener[Unit] { _ =>
-        runningTasks.remove(taskId)
-      }
-      
-      log.debug(s"Task $taskId from stage $stageId started, " +
-        s"total running tasks: ${runningTasks.size()}")
+      stageEpochManager.foreach(_.onTaskStart())
     })
   }
 
   def shutdown(): Unit = {
     isShutdown = true
-    stopEpochScheduler()
+    stageEpochManager.foreach(_.stop())
     closeLastProfiler()
   }
 
@@ -146,108 +140,23 @@ object AsyncProfilerOnExecutor extends Logging {
   }
 
   /**
-   * Starts the epoch scheduler that periodically determines the current stage epoch
-   * based on running task counts.
+   * Called when stage transition occurs from the StageEpochManager.
    */
-  private def startEpochScheduler(): Unit = {
-    if (epochScheduler.isEmpty && stageEpochInterval > 0) {
-      val scheduler = Executors.newSingleThreadScheduledExecutor(r => {
-        val thread = new Thread(r, "AsyncProfiler-EpochScheduler")
-        thread.setDaemon(true)
-        thread
-      })
-      epochScheduler = Some(scheduler)
-      
-      val task = scheduler.scheduleAtFixedRate(
-        () => {
-          try {
-            determineAndSwitchStageEpoch()
-          } catch {
-            case e: Exception =>
-              log.error("Error in epoch scheduler", e)
-          }
-        },
-        stageEpochInterval, // initial delay
-        stageEpochInterval, // period
-        TimeUnit.SECONDS
-      )
-      epochTask = Some(task)
-      
-      log.info(s"Started stage epoch scheduler with interval ${stageEpochInterval}s")
-    }
-  }
-  
-  /**
-   * Stops the epoch scheduler.
-   */
-  private def stopEpochScheduler(): Unit = {
-    epochTask.foreach(_.cancel(false))
-    epochTask = None
-    
-    epochScheduler.foreach { scheduler =>
-      scheduler.shutdown()
-      try {
-        if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-          scheduler.shutdownNow()
-        }
-      } catch {
-        case _: InterruptedException =>
-          scheduler.shutdownNow()
-          Thread.currentThread().interrupt()
-      }
-    }
-    epochScheduler = None
-  }
-  
-  /**
-   * Determines which stage should be the current epoch based on running task counts
-   * and switches profiling if necessary. The dominant stage must have more than
-   * half of all running tasks to trigger a switch.
-   */
-  private def determineAndSwitchStageEpoch(): Unit = {
+  private def onStageTransition(oldStage: Int, newStage: Int, 
+      taskCount: Int, totalTasks: Int): Unit = {
     if (isShutdown || asyncProfiler.isEmpty) {
       return
     }
     
-    // Count running tasks per stage
-    val stageTaskCounts = mutable.HashMap[Int, Int]()
-    runningTasks.values().asScala.foreach { stageId =>
-      stageTaskCounts(stageId) = stageTaskCounts.getOrElse(stageId, 0) + 1
-    }
-    
-    if (stageTaskCounts.isEmpty) {
-      log.debug("No running tasks, keeping current profiling stage")
-      return
-    }
-    
-    val totalTasks = stageTaskCounts.values.sum
-    val (dominantStage, taskCount) = stageTaskCounts.maxBy(_._2)
-    val dominantRatio = taskCount.toDouble / totalTasks
-    
-    log.debug(s"Stage task counts: ${stageTaskCounts.toMap}, " +
-      s"dominant stage: $dominantStage with $taskCount/$totalTasks tasks " +
-      s"(${(dominantRatio * 100).toInt}%)")
-    
-    // Only switch if the dominant stage has more than half of all running tasks
-    if (dominantRatio > 0.5) {
-      // Switch to the dominant stage if it's different from current
-      if (dominantStage != currentProfilingStage) {
-        asyncProfiler.synchronized {
-          if (dominantStage != currentProfilingStage && !isShutdown) {
-            log.info(s"Switching profiling from stage $currentProfilingStage " +
-              s"to stage $dominantStage (has $taskCount/$totalTasks tasks, " +
-              s"${(dominantRatio * 100).toInt}%)")
-            
-            closeLastProfiler()
-            currentProfilingStage = dominantStage
-            startProfilingForStage(dominantStage)
-          }
-        }
+    asyncProfiler.synchronized {
+      if (newStage != currentProfilingStage && !isShutdown) {
+        log.info(s"Switching profiling from stage $oldStage " +
+          s"to stage $newStage (has $taskCount/$totalTasks tasks)")
+        
+        closeLastProfiler()
+        currentProfilingStage = newStage
+        startProfilingForStage(newStage)
       }
-    } else {
-      log.debug(s"Dominant stage $dominantStage has only " +
-        s"${(dominantRatio * 100).toInt}% of tasks, not switching " +
-        s"(requires >50%)")
     }
   }
   
@@ -257,10 +166,8 @@ object AsyncProfilerOnExecutor extends Logging {
   private def startProfilingForStage(stageId: Int): Unit = {
     asyncProfiler.foreach(profiler => {
       try {
-        // Get current epoch (starting from 0) and increment for next time
-        val currentEpoch = stageEpochCounters.compute(stageId, (_, currentCount) => {
-          currentCount + 1
-        }) - 1
+        // Get current epoch from StageEpochManager and increment for next time
+        val currentEpoch = stageEpochManager.map(_.incrementStageEpoch(stageId)).getOrElse(0) - 1
         
         val filePath = {
           if (needMoveFile) {
@@ -334,11 +241,10 @@ object AsyncProfilerOnExecutor extends Logging {
             profiler.execute("stop")
             if (needMoveFile) {
               val executorId = pluginCtx.executorID()
-              val currentEpoch = Option(stageEpochCounters.get(currentProfilingStage))
-                .map(_ - 1)
+              val currentEpoch = stageEpochManager
+                .map(_.getStageEpochCount(currentProfilingStage) - 1)
                 .getOrElse {
-                  log.warn(s"Stage $currentProfilingStage not found in epoch counters, " +
-                    s"using epoch 0")
+                  log.warn(s"StageEpochManager not available, using epoch 0")
                   0
                 }
 

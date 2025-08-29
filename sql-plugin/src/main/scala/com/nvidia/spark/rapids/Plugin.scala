@@ -603,6 +603,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       GpuSemaphore.initialize()
       FileCache.init(pluginContext)
       TrafficController.initialize(conf)
+      NVMLMonitorOnExecutor.init(pluginContext, conf)
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
       // sticks around without any useful info until it hearbeat times out. Print what happened
@@ -704,6 +705,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     if (isAsyncProfilerEnabled) {
       AsyncProfilerOnExecutor.shutdown()
     }
+    NVMLMonitorOnExecutor.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
@@ -751,6 +753,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     if (isAsyncProfilerEnabled) {
       AsyncProfilerOnExecutor.onTaskStart()
     }
+    NVMLMonitorOnExecutor.onTaskStart()
     // Make sure that the thread/task is registered before we try and block
     // For the task main thread, we want to make sure that it's registered in the OOM state
     // machine throughout the task lifecycle.
