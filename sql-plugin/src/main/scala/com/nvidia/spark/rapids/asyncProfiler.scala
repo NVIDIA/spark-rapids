@@ -18,17 +18,12 @@ package com.nvidia.spark.rapids
 
 import java.io.{BufferedInputStream, BufferedOutputStream, FileInputStream, FileOutputStream}
 import java.nio.file.{Files, Paths}
-import java.util.concurrent.{ConcurrentHashMap, Executors, ScheduledExecutorService, ScheduledFuture, TimeUnit}
 import java.util.zip.GZIPOutputStream
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 import com.nvidia.spark.rapids.Arm.withResource
 import one.profiler.{AsyncProfiler, AsyncProfilerLoader}
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.TaskContext
 import org.apache.spark.api.plugin.PluginContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.SerializableConfiguration
@@ -54,7 +49,6 @@ import org.apache.spark.util.SerializableConfiguration
  * flame graphs.
  *
  */
-
 object AsyncProfilerOnExecutor extends Logging {
 
   private var asyncProfilerPrefix: Option[String] = None
@@ -69,9 +63,7 @@ object AsyncProfilerOnExecutor extends Logging {
   private var tempFilePath: java.nio.file.Path = _
 
   private var isShutdown = false
-  
-  // Stage epoch management
-  private var stageEpochManager: Option[StageEpochManager] = None
+  private var isEpochCallbackRegistered = false
 
   def init(ctx: PluginContext, conf: RapidsConf): Unit = {
     pluginCtx = ctx
@@ -97,38 +89,29 @@ object AsyncProfilerOnExecutor extends Logging {
 
         this.profileOptions = conf.asyncProfilerProfileOptions
         this.jfrCompressionEnabled = conf.asyncProfilerJfrCompression
-        this.stageEpochInterval = conf.asyncProfilerStageEpochInterval
+        this.stageEpochInterval = conf.stageEpochInterval
 
-        // Initialize stage epoch manager
-        val epochManager = new StageEpochManager(
+        // Register with the global StageEpochManager
+        isEpochCallbackRegistered = StageEpochManager.registerCallback(
           name = "AsyncProfiler",
+          callback = onStageTransition,
           epochInterval = this.stageEpochInterval
         )
-        
-        // Set up stage transition callback
-        epochManager.setStageTransitionCallback { (oldStage, newStage, taskCount, totalTasks) =>
-          onStageTransition(oldStage, newStage, taskCount, totalTasks)
-        }
-        
-        stageEpochManager = Some(epochManager)
-        epochManager.start()
       })
     })
   }
 
 
-  def onTaskStart(): Unit = {
-    asyncProfiler.foreach(_ => {
-      stageEpochManager.foreach(_.onTaskStart())
-    })
-  }
+
 
   def shutdown(): Unit = {
     isShutdown = true
-    stageEpochManager.foreach(_.stop())
+    if (isEpochCallbackRegistered) {
+      StageEpochManager.unregisterCallback("AsyncProfiler")
+      isEpochCallbackRegistered = false
+    }
     closeLastProfiler()
   }
-
 
   private def getAppId: String = {
     val appId = pluginCtx.conf.get("spark.app.id", "")
@@ -150,7 +133,7 @@ object AsyncProfilerOnExecutor extends Logging {
     
     asyncProfiler.synchronized {
       if (newStage != currentProfilingStage && !isShutdown) {
-        log.info(s"Switching profiling from stage $oldStage " +
+        log.info(s"Switching profiling from stage $currentProfilingStage " +
           s"to stage $newStage (has $taskCount/$totalTasks tasks)")
         
         closeLastProfiler()
@@ -167,7 +150,7 @@ object AsyncProfilerOnExecutor extends Logging {
     asyncProfiler.foreach(profiler => {
       try {
         // Get current epoch from StageEpochManager and increment for next time
-        val currentEpoch = stageEpochManager.map(_.incrementStageEpoch(stageId)).getOrElse(0) - 1
+        val currentEpoch = StageEpochManager.incrementStageEpoch(stageId) - 1
         
         val filePath = {
           if (needMoveFile) {
@@ -241,12 +224,7 @@ object AsyncProfilerOnExecutor extends Logging {
             profiler.execute("stop")
             if (needMoveFile) {
               val executorId = pluginCtx.executorID()
-              val currentEpoch = stageEpochManager
-                .map(_.getStageEpochCount(currentProfilingStage) - 1)
-                .getOrElse {
-                  log.warn(s"StageEpochManager not available, using epoch 0")
-                  0
-                }
+              val currentEpoch = StageEpochManager.getStageEpochCount(currentProfilingStage) - 1
 
               val baseFileName = s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
                 s"-stage-$currentProfilingStage-epoch-$currentEpoch.jfr"
@@ -276,7 +254,8 @@ object AsyncProfilerOnExecutor extends Logging {
             } else {
               // For local files, compress in place if enabled
               if (jfrCompressionEnabled) {
-                val currentEpoch = Option(stageEpochCounters.get(currentProfilingStage))
+                val currentEpoch =
+                  Option(StageEpochManager.getStageEpochCount(currentProfilingStage))
                   .map(_ - 1)
                   .getOrElse {
                     log.warn(s"Stage $currentProfilingStage not found in epoch counters, " +

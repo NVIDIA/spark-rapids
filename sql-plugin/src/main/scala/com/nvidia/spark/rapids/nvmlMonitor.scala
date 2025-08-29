@@ -16,25 +16,19 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{ConcurrentHashMap, Executors, ScheduledExecutorService, 
-  ScheduledFuture, TimeUnit}
-
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.jni.nvml.{GPUInfo, NVMLMonitor}
 
-import org.apache.spark.{SparkContext, TaskContext}
+import org.apache.spark.api.plugin.PluginContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.PluginContext
 
 /**
  * NVML GPU Monitor for tracking GPU utilization and memory usage during Spark execution.
- * 
+ *
  * This class provides two monitoring modes:
  * 1. Executor lifecycle mode (default): Monitors GPU usage from executor startup to shutdown
  * 2. Stage-based mode: Similar to AsyncProfiler, monitors each stage independently and 
- *    switches monitoring contexts based on which stage has the most running tasks
- * 
+ * switches monitoring contexts based on which stage has the most running tasks
+ *
  * The monitor uses the NVIDIA Management Library (NVML) through JNI to collect real-time
  * GPU statistics including utilization and memory usage.
  */
@@ -45,52 +39,52 @@ object NVMLMonitorOnExecutor extends Logging {
   private var nvmlMonitor: Option[NVMLMonitor] = None
   private var isStageMode: Boolean = false
   private var monitorIntervalMs: Int = 1000
-  private var logFrequency: Int = 10
+  private var logFrequency: Int = 5
   private var stageEpochInterval: Int = 5
-  
+
   // Stage-based monitoring variables
   private var currentMonitoringStage = -1
   private var isShutdown = false
-  private var stageEpochManager: Option[StageEpochManager] = None
-  
+  private var isEpochCallbackRegistered = false
+
   // Monitoring callback state
   private var updateCount = 0
-  
+
   def init(ctx: PluginContext, rapidsConf: RapidsConf): Unit = {
     pluginCtx = ctx
     conf = rapidsConf
-    
+
     if (!conf.nvmlMonitorEnabled) {
       logInfo("NVML monitoring is disabled")
       return
     }
-    
+
     isStageMode = conf.nvmlMonitorStageMode
     monitorIntervalMs = conf.nvmlMonitorIntervalMs
     logFrequency = conf.nvmlMonitorLogFrequency
-    stageEpochInterval = conf.nvmlMonitorStageEpochInterval
-    
+    stageEpochInterval = conf.stageEpochInterval
+
     logInfo(s"Initializing NVML Monitor: stageMode=$isStageMode, " +
       s"intervalMs=$monitorIntervalMs, logFreq=$logFrequency")
-    
+
     try {
       if (!NVMLMonitor.initialize()) {
         logError("Failed to initialize NVML")
         return
       }
-      
-      val deviceCount = NVMLMonitor.getDeviceCount()
+
+      val deviceCount = NVMLMonitor.getDeviceCount
       if (deviceCount == 0) {
         logWarning("No GPUs found for NVML monitoring")
         NVMLMonitor.shutdown()
         return
       }
-      
+
       logInfo(s"NVML detected $deviceCount GPU device(s)")
-      
+
       // Create the monitor
       val monitor = new NVMLMonitor(monitorIntervalMs, true)
-      
+
       // Set up callback
       monitor.setCallback(new NVMLMonitor.MonitoringCallback() {
         override def onGPUUpdate(gpuInfos: Array[GPUInfo], timestamp: Long): Unit = {
@@ -98,27 +92,14 @@ object NVMLMonitorOnExecutor extends Logging {
           if (logFrequency > 0 && updateCount % logFrequency == 0) {
             logInfo(s"NVML Update #$updateCount:")
             gpuInfos.foreach { info =>
-              logInfo(s"  ${info.toCompactString()}")
+              logInfo(s"  ${info.toCompactString}")
             }
           }
         }
-        
-        override def onMonitoringStarted(): Unit = {
-          logInfo(s"NVML monitoring started ${getContextDescription()}")
-        }
-        
-        override def onMonitoringStopped(): Unit = {
-          logInfo(s"NVML monitoring stopped ${getContextDescription()}")
-        }
-        
-        override def onError(error: String): Unit = {
-          logError(s"NVML monitoring error ${getContextDescription()}: $error")
-        }
-        
-        private def getContextDescription(): String = {
+
+        private def getContextDescription: String = {
           if (isStageMode && currentMonitoringStage != -1) {
-            val epoch = stageEpochManager.map(_.getStageEpochCount(currentMonitoringStage))
-              .getOrElse(0)
+            val epoch = StageEpochManager.getStageEpochCount(currentMonitoringStage)
             s"for stage $currentMonitoringStage epoch $epoch"
           } else if (isStageMode) {
             "in stage mode"
@@ -126,51 +107,62 @@ object NVMLMonitorOnExecutor extends Logging {
             s"for executor ${pluginCtx.executorID()}"
           }
         }
-      })
-      
-      nvmlMonitor = Some(monitor)
-      
-      if (isStageMode) {
-        // Initialize stage epoch manager
-        val epochManager = new StageEpochManager(
-          name = "NVMLMonitor",
-          epochInterval = stageEpochInterval
-        )
-        
-        // Set up stage transition callback
-        epochManager.setStageTransitionCallback { (oldStage, newStage, taskCount, totalTasks) =>
-          onStageTransition(oldStage, newStage, taskCount, totalTasks)
+
+        override def onMonitoringStarted(): Unit = {
+          logInfo(s"NVML monitoring started ${getContextDescription}")
+        }
+
+        override def onMonitoringStopped(): Unit = {
+          logInfo(s"NVML monitoring stopped ${getContextDescription}")
+        }
+
+        override def onError(error: String): Unit = {
+          logError(s"NVML monitoring error ${getContextDescription}: $error")
         }
         
-        stageEpochManager = Some(epochManager)
-        epochManager.start()
+      })
+
+      nvmlMonitor = Some(monitor)
+
+      if (isStageMode) {
+        // Register with the global StageEpochManager
+        isEpochCallbackRegistered = StageEpochManager.registerCallback(
+          name = "NVMLMonitor",
+          callback = onStageTransition,
+          epochInterval = stageEpochInterval
+        )
       } else {
         // Start monitoring immediately in executor mode
         startMonitoring()
       }
-      
+
     } catch {
       case e: Exception =>
         logError("Failed to initialize NVML monitor", e)
     }
   }
-  
-  def onTaskStart(): Unit = {
-    nvmlMonitor.foreach(_ => {
-      if (isStageMode) {
-        stageEpochManager.foreach(_.onTaskStart())
-      }
-    })
-  }
-  
+
+
+
   def shutdown(): Unit = {
     isShutdown = true
-    stageEpochManager.foreach(_.stop())
+    if (isEpochCallbackRegistered) {
+      StageEpochManager.unregisterCallback("NVMLMonitor")
+      isEpochCallbackRegistered = false
+    }
     stopCurrentMonitoring()
-    
+
     nvmlMonitor.foreach { monitor =>
       try {
-        monitor.printLifecycleReport()
+        val reportName = if (isStageMode && currentMonitoringStage != -1) {
+          val epochCount = StageEpochManager.getStageEpochCount(currentMonitoringStage)
+          s"Stage-${currentMonitoringStage}-Epoch-${epochCount}-Final"
+        } else if (isStageMode) {
+          "StageMode-NoStages"
+        } else {
+          s"Executor-${pluginCtx.executorID()}"
+        }
+        monitor.printLifecycleReport(reportName)
         NVMLMonitor.shutdown()
         logInfo("NVML monitoring shutdown completed")
       } catch {
@@ -179,18 +171,20 @@ object NVMLMonitorOnExecutor extends Logging {
       }
     }
   }
-  
+
   private def startMonitoring(): Unit = {
     nvmlMonitor.foreach(_.startMonitoring())
   }
-  
+
   private def stopCurrentMonitoring(): Unit = {
     nvmlMonitor.foreach { monitor =>
       try {
         monitor.stopMonitoring()
         if (isStageMode && currentMonitoringStage != -1) {
-          // Print lifecycle report for the current stage
-          monitor.printLifecycleReport()
+          // Print lifecycle report for the current stage with stage ID and epoch ID
+          val epochCount = StageEpochManager.getStageEpochCount(currentMonitoringStage)
+          val reportName = s"Stage-${currentMonitoringStage}-Epoch-${epochCount}"
+          monitor.printLifecycleReport(reportName)
         }
       } catch {
         case e: Exception =>
@@ -198,30 +192,30 @@ object NVMLMonitorOnExecutor extends Logging {
       }
     }
   }
-  
+
   /**
    * Called when stage transition occurs from the StageEpochManager.
    */
-  private def onStageTransition(oldStage: Int, newStage: Int, 
+  private def onStageTransition(oldStage: Int, newStage: Int,
       taskCount: Int, totalTasks: Int): Unit = {
     if (isShutdown) return
-    
+
     logInfo(s"NVML stage epoch transition: $currentMonitoringStage -> $newStage " +
       s"(${taskCount}/${totalTasks} tasks)")
-    
+
     // Stop current monitoring and print report
     if (currentMonitoringStage != -1) {
       stopCurrentMonitoring()
     }
-    
+
     // Switch to new stage
     currentMonitoringStage = newStage
-    
+
     // Increment epoch counter for this stage
-    stageEpochManager.foreach(_.incrementStageEpoch(newStage))
-    
+    StageEpochManager.incrementStageEpoch(newStage)
+
     // Start monitoring for new stage
     startMonitoring()
   }
-  
+
 }

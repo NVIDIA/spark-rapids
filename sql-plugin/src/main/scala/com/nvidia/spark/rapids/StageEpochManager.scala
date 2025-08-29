@@ -29,19 +29,29 @@ import org.apache.spark.internal.Logging
  * Common stage epoch management for monitoring systems that need to track
  * which stage is dominant based on running task counts.
  * 
- * This class provides:
+ * This is a singleton that supports multiple monitoring systems registering
+ * callbacks for stage transitions. Only one scheduler thread is used regardless
+ * of how many monitoring systems are active.
+ * 
+ * Features:
  * 1. Task tracking across stages
  * 2. Dominant stage determination based on configurable threshold
  * 3. Epoch counting per stage
- * 4. Scheduler management for periodic epoch switching
- * 5. Callback mechanism for stage transitions
- * 
- * Used by both AsyncProfilerOnExecutor and NVMLMonitorOnExecutor.
+ * 4. Single scheduler for all monitoring systems
+ * 5. Multiple callback registration support
+ * 6. Automatic lifecycle management (start when first callback registered,
+ *    stop when last callback unregistered)
  */
-class StageEpochManager(
-    name: String,
-    epochInterval: Int,
-    dominantThreshold: Double = 0.5) extends Logging {
+object StageEpochManager extends Logging {
+  
+  private case class MonitoringCallback(
+      name: String,
+      callback: (Int, Int, Int, Int) => Unit,
+      epochInterval: Int)
+
+  // Default configuration
+  private val DefaultEpochInterval = 5
+  private val DefaultDominantThreshold = 0.5
   
   // Task tracking for stage epoch determination
   private val runningTasks = new ConcurrentHashMap[Long, Int]() // taskId -> stageId
@@ -54,25 +64,88 @@ class StageEpochManager(
   private var isShutdown = false
   private var currentStage = -1
   
-  // Callback for stage transitions
-  private var stageTransitionCallback: Option[(Int, Int, Int, Int) => Unit] = None
+  // Multiple callback registration
+  private val registeredCallbacks = new ConcurrentHashMap[String, MonitoringCallback]()
+  
+  // Single epoch interval (all monitoring systems use the same unified config)
+  private var epochInterval = DefaultEpochInterval
+  private val dominantThreshold = DefaultDominantThreshold
   
   /**
-   * Sets the callback function to be called when stage transition occurs.
-   * Parameters: (oldStage, newStage, taskCount, totalTasks)
+   * Registers a monitoring system for stage transition callbacks.
+   * Automatically starts the epoch scheduler if this is the first registration.
+   * 
+   * @param name Unique name for the monitoring system
+   * @param callback Function to call on stage transitions:
+   *                 (oldStage, newStage, taskCount, totalTasks)
+   * @param epochInterval Epoch interval in seconds (should be same for all systems)
+   * @return true if registration succeeded, false if name already exists
    */
-  def setStageTransitionCallback(callback: (Int, Int, Int, Int) => Unit): Unit = {
-    stageTransitionCallback = Some(callback)
+  def registerCallback(name: String, callback: (Int, Int, Int, Int) => Unit, 
+      epochInterval: Int = DefaultEpochInterval): Boolean = synchronized {
+    if (registeredCallbacks.containsKey(name)) {
+      logWarning(s"StageEpochManager: Callback '$name' is already registered")
+      return false
+    }
+    
+    // Validate epoch interval consistency (all systems should use unified config)
+    if (registeredCallbacks.size() > 0 && epochInterval != this.epochInterval) {
+      logWarning(s"StageEpochManager: Callback '$name' has different epoch interval " +
+        s"($epochInterval) than existing callbacks (${this.epochInterval}). " +
+        s"Using existing interval.")
+    } else if (registeredCallbacks.size() == 0) {
+      // First registration sets the epoch interval
+      this.epochInterval = epochInterval
+    }
+    
+    val monitoringCallback = MonitoringCallback(name, callback, epochInterval)
+    registeredCallbacks.put(name, monitoringCallback)
+    
+    // Start scheduler if this is the first callback
+    if (registeredCallbacks.size() == 1) {
+      start()
+    }
+    
+    logInfo(s"StageEpochManager: Registered callback '$name' (interval: ${this.epochInterval}s)")
+    true
   }
   
   /**
-   * Starts the epoch scheduler that periodically determines the current stage epoch
-   * based on running task counts.
+   * Unregisters a monitoring system.
+   * Automatically stops the epoch scheduler if this was the last registration.
+   * 
+   * @param name Name of the monitoring system to unregister
+   * @return true if unregistration succeeded, false if name not found
    */
-  def start(): Unit = {
-    if (epochScheduler.isEmpty && epochInterval > 0) {
+  def unregisterCallback(name: String): Boolean = synchronized {
+    val removed = Option(registeredCallbacks.remove(name))
+    
+    if (removed.isEmpty) {
+      logWarning(s"StageEpochManager: Callback '$name' was not registered")
+      return false
+    }
+    
+    logInfo(s"StageEpochManager: Unregistered callback '$name'")
+    
+    // Stop scheduler if no callbacks remain
+    if (registeredCallbacks.isEmpty) {
+      stop()
+    }
+    // No need to restart - all systems use the same unified configuration
+    
+    true
+  }
+  
+
+  
+  /**
+   * Starts the epoch scheduler. This is called automatically when the first
+   * callback is registered.
+   */
+  private def start(): Unit = {
+    if (epochScheduler.isEmpty) {
       val scheduler = Executors.newSingleThreadScheduledExecutor(r => {
-        val thread = new Thread(r, s"$name-EpochScheduler")
+        val thread = new Thread(r, "StageEpochManager-Scheduler")
         thread.setDaemon(true)
         thread
       })
@@ -84,24 +157,25 @@ class StageEpochManager(
             checkAndSwitchStageEpoch()
           } catch {
             case e: Exception =>
-              logError(s"Error in $name epoch scheduler", e)
+              logError(s"Error in StageEpochManager scheduler", e)
           }
         },
-        epochInterval, // initial delay
-        epochInterval, // period
+        epochInterval,
+        epochInterval,
         TimeUnit.SECONDS
       )
       epochTask = Some(task)
       
-      logInfo(s"Started $name stage epoch scheduler with interval ${epochInterval}s")
+      logInfo(s"Started StageEpochManager with effective epoch interval ${epochInterval}s "
+        + s"(${registeredCallbacks.size()} callbacks registered)")
     }
   }
   
   /**
-   * Stops the epoch scheduler and cleans up resources.
+   * Stops the epoch scheduler and cleans up resources. This is called
+   * automatically when the last callback is unregistered.
    */
-  def stop(): Unit = {
-    isShutdown = true
+  private def stop(): Unit = {
     epochTask.foreach(_.cancel(false))
     epochTask = None
     
@@ -118,6 +192,21 @@ class StageEpochManager(
       }
     }
     epochScheduler = None
+    logInfo("Stopped StageEpochManager scheduler")
+  }
+  
+  /**
+   * Emergency shutdown for application cleanup. This forcefully stops
+   * the scheduler and clears all callbacks.
+   */
+  def shutdown(): Unit = synchronized {
+    isShutdown = true
+    registeredCallbacks.clear()
+    stop()
+    runningTasks.clear()
+    stageEpochCounters.clear()
+    currentStage = -1
+    logInfo("StageEpochManager shutdown completed")
   }
   
   /**
@@ -137,7 +226,7 @@ class StageEpochManager(
         runningTasks.remove(taskId)
       }
       
-      logDebug(s"$name: Task $taskId from stage $stageId started, " +
+      logDebug(s"StageEpochManager: Task $taskId from stage $stageId started, " +
         s"total running tasks: ${runningTasks.size()}")
     }
   }
@@ -190,7 +279,7 @@ class StageEpochManager(
     val stageTaskCounts = getStageTaskCounts
     
     if (stageTaskCounts.isEmpty) {
-      logDebug(s"$name: No running tasks, keeping current stage")
+      logDebug(s"StageEpochManager: No running tasks, keeping current stage")
       return
     }
     
@@ -198,7 +287,7 @@ class StageEpochManager(
     val (dominantStage, taskCount) = stageTaskCounts.maxBy(_._2)
     val dominantRatio = taskCount.toDouble / totalTasks
     
-    logDebug(s"$name: Stage task counts: $stageTaskCounts, " +
+    logDebug(s"StageEpochManager: Stage task counts: $stageTaskCounts, " +
       s"dominant stage: $dominantStage with $taskCount/$totalTasks tasks " +
       s"(${(dominantRatio * 100).toInt}%)")
     
@@ -206,17 +295,24 @@ class StageEpochManager(
     if (dominantRatio > dominantThreshold) {
       // Switch to the dominant stage if it's different from current
       if (dominantStage != currentStage) {
-        logInfo(s"$name: Stage epoch transition: $currentStage -> $dominantStage " +
+        logInfo(s"StageEpochManager: Stage epoch transition: $currentStage -> $dominantStage " +
           s"(${taskCount}/${totalTasks} tasks, ${(dominantRatio * 100).toInt}%)")
         
         val oldStage = currentStage
         currentStage = dominantStage
         
-        // Trigger callback if set
-        stageTransitionCallback.foreach(_(oldStage, dominantStage, taskCount, totalTasks))
+        // Trigger all registered callbacks
+        registeredCallbacks.values().asScala.foreach { monitoring =>
+          try {
+            monitoring.callback(oldStage, dominantStage, taskCount, totalTasks)
+          } catch {
+            case e: Exception =>
+              logError(s"Error in callback '${monitoring.name}' during stage transition", e)
+          }
+        }
       }
     } else {
-      logDebug(s"$name: Dominant stage $dominantStage has only " +
+      logDebug(s"StageEpochManager: Dominant stage $dominantStage has only " +
         s"${(dominantRatio * 100).toInt}% of tasks, not switching " +
         s"(requires >${(dominantThreshold * 100).toInt}%)")
     }

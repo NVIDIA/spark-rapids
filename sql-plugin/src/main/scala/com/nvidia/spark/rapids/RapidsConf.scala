@@ -865,11 +865,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  val ASYNC_PROFILER_STAGE_EPOCH_INTERVAL = conf("spark.rapids.flameGraph.stageEpochInterval")
-    .doc("Interval in seconds to determine the current stage epoch based on running task " +
-      "counts. The profiler will check which stage has the most running tasks and profile " +
-      "that stage during each epoch. This allows profiling when multiple stages run " +
-      "concurrently even if FIFO scheduling is already chosen.")
+  // UNIFIED STAGE EPOCH CONFIGURATION
+
+  val STAGE_EPOCH_INTERVAL = conf("spark.rapids.monitor.stageEpochInterval")
+    .doc("Unified interval in seconds to determine stage epoch transitions for all " +
+      "monitoring systems (AsyncProfiler, NVMLMonitor, etc.). The system will check " +
+      "which stage has the most running tasks and switch monitoring contexts accordingly. " +
+      "This setting affects all monitoring systems that use stage-based profiling.")
     .integerConf
     .createWithDefault(5)
 
@@ -892,7 +894,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("Number of GPU monitoring updates before logging a progress message. " +
       "Set to 0 to disable periodic logging.")
     .integerConf
-    .createWithDefault(10)
+    .createWithDefault(5)
 
   val NVML_MONITOR_STAGE_MODE = conf("spark.rapids.monitor.nvml.stageMode")
     .doc("When enabled, NVML monitoring will track GPU usage per stage (similar to " +
@@ -901,12 +903,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  val NVML_MONITOR_STAGE_EPOCH_INTERVAL = conf("spark.rapids.monitor.nvml.stageEpochInterval")
-    .doc("Interval in seconds to determine stage epoch transitions for NVML monitoring " +
-      "in stage mode. The monitor will track which stage has the most running tasks " +
-      "and switch monitoring contexts accordingly.")
-    .integerConf
-    .createWithDefault(5)
+
 
   // ENABLE/DISABLE PROCESSING
 
@@ -3004,7 +3001,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val asyncProfilerJfrCompression: Boolean = get(ASYNC_PROFILER_JFR_COMPRESSION)
 
-  lazy val asyncProfilerStageEpochInterval: Int = get(ASYNC_PROFILER_STAGE_EPOCH_INTERVAL)
+  lazy val stageEpochInterval: Int = get(STAGE_EPOCH_INTERVAL)
 
   lazy val nvmlMonitorEnabled: Boolean = get(NVML_MONITOR_ENABLED)
 
@@ -3013,8 +3010,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val nvmlMonitorLogFrequency: Int = get(NVML_MONITOR_LOG_FREQUENCY)
 
   lazy val nvmlMonitorStageMode: Boolean = get(NVML_MONITOR_STAGE_MODE)
-
-  lazy val nvmlMonitorStageEpochInterval: Int = get(NVML_MONITOR_STAGE_EPOCH_INTERVAL)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
