@@ -534,6 +534,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
       ProfilerOnExecutor.init(pluginContext, conf)
       if (isAsyncProfilerEnabled) {
+        val schedulerMode = sparkConf.get("spark.scheduler.mode", "FIFO")
+        if (!schedulerMode.equalsIgnoreCase("FIFO")) {
+          logWarning(s"Async profiler is enabled but spark.scheduler.mode is set to " +
+            s"'$schedulerMode'. It's recommended to use FIFO scheduler mode when async " +
+            "profiler is enabled for better profiling accuracy.")
+        }
         AsyncProfilerOnExecutor.init(pluginContext, conf)
       }
 
