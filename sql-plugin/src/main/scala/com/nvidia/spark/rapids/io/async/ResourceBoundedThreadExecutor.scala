@@ -23,7 +23,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.spark.internal.Logging
 
 /**
- * A FutureTask wrapper is used by ResourceBoundedThreadExecutor to manage the execution of
+ * A RapidsFutureTask wrapper is used by ResourceBoundedThreadExecutor to manage the execution of
  * resource-aware asynchronous tasks. It allows the executor to:
  *   - Track whether the task is currently holding a resource.
  *   - Adjust the task's scheduling priority dynamically.
