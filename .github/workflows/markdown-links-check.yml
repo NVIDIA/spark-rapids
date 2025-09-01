@@ -26,7 +26,7 @@ jobs:
     - name: work around permission issue
       run: git config --global --add safe.directory /github/workspace
     - uses: NVIDIA/spark-rapids-common/checkout@main
-    - uses: NVIDIA/spark-rapids-common/markdown-link-check@main
+    - uses: YanxuanLiu/spark-rapids-common/markdown-link-check@markdown-check-sha
       with:
         max-depth: -1
         use-verbose-mode: 'yes'
