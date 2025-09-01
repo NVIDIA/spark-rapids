@@ -30,13 +30,13 @@ case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
   extends GpuBinaryExpression {
 
   require(numBuckets.dataType == DataTypes.IntegerType,
-    s"numBuckets must be an integer, got ${numBuckets.dataType}")
+    s"buckets number must be an integer, got ${numBuckets.dataType}")
 
   require(!value.nullable,
     s"Bucket function does not support nullable values for type ${value.dataType}")
 
-  require(GpuBucketExpression.supportedType(value.dataType),
-    s"Bucket function does not support type ${value.dataType}")
+  require(GpuBucketExpression.isSupportedValueType(value.dataType),
+    s"Bucket function does not support type ${value.dataType} as values")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): CudfColumnVector = {
     throw new IllegalStateException("GpuBucketExpression requires first argument to be scalar, " +
@@ -44,16 +44,20 @@ case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
   }
 
   override def doColumnar(numBuckets: GpuScalar, rhs: GpuColumnVector): CudfColumnVector = {
-    withResource(cast(rhs.getBase)) { rhsLong =>
-      withResource(Hash.murmurHash32(0, Array(rhsLong))) { hash =>
-        withResource(Scalar.fromInt(Integer.MAX_VALUE)) { intMax =>
-          withResource(hash.bitAnd(intMax)) { nonNegativeHash =>
-            nonNegativeHash.mod(numBuckets.getBase, DType.INT32)
-          }
-        }
+    val hash = withResource(cast(rhs.getBase)) { castedValue =>
+      Hash.murmurHash32(0, Array(castedValue))
+    }
+
+    withResource(Scalar.fromInt(Integer.MAX_VALUE)) { intMax =>
+      val nonNegativeHash = withResource(hash) { _ =>
+        hash.bitAnd(intMax)
+      }
+      withResource(nonNegativeHash) { _ =>
+        nonNegativeHash.mod(numBuckets.getBase, DType.INT32)
       }
     }
   }
+
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): CudfColumnVector = {
     throw new IllegalStateException("GpuBucketExpression requires first argument to be scalar, " +
@@ -73,14 +77,15 @@ case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
 }
 
 object GpuBucketExpression {
-  def cast(cv: CudfColumnVector): CudfColumnVector = {
+  private[functions] def cast(cv: CudfColumnVector): CudfColumnVector = {
     cv.getType match {
       case d if d.isBackedByInt => cv.castTo(DType.INT64)
-      case _ => cv.incRefCount()
+      case d if d.isBackedByLong => cv.incRefCount()
+      case u => throw new IllegalStateException(s"Unsupported type for bucketing: $u")
     }
   }
 
-  def supportedType(dataType: DataType): Boolean = {
+  def isSupportedValueType(dataType: DataType): Boolean = {
     dataType match {
       case ByteType |  ShortType | IntegerType | DateType |
            LongType | TimestampType | TimestampNTZType => true
