@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.nvml.{GPUInfo, NVMLMonitor}
+import com.nvidia.spark.rapids.jni.{GPUInfo, NVMLMonitor}
 
 import org.apache.spark.api.plugin.PluginContext
 import org.apache.spark.internal.Logging
@@ -83,7 +83,7 @@ object NVMLMonitorOnExecutor extends Logging {
       logInfo(s"NVML detected $deviceCount GPU device(s)")
 
       // Create the monitor
-      val monitor = new NVMLMonitor(monitorIntervalMs, true)
+      val monitor = new NVMLMonitor(monitorIntervalMs, false)
 
       // Set up callback
       monitor.setCallback(new NVMLMonitor.MonitoringCallback() {
@@ -92,7 +92,7 @@ object NVMLMonitorOnExecutor extends Logging {
           if (logFrequency > 0 && updateCount % logFrequency == 0) {
             logInfo(s"NVML Update #$updateCount:")
             gpuInfos.foreach { info =>
-              logInfo(s"  ${info.toCompactString}")
+              logInfo(s"  ${info.toString}")
             }
           }
         }
@@ -123,6 +123,7 @@ object NVMLMonitorOnExecutor extends Logging {
       })
 
       nvmlMonitor = Some(monitor)
+      isShutdown = false
 
       if (isStageMode) {
         // Register with the global StageEpochManager
@@ -163,6 +164,7 @@ object NVMLMonitorOnExecutor extends Logging {
           s"Executor-${pluginCtx.executorID()}"
         }
         monitor.printLifecycleReport(reportName)
+        monitor.stopMonitoring()
         NVMLMonitor.shutdown()
         logInfo("NVML monitoring shutdown completed")
       } catch {
@@ -179,13 +181,13 @@ object NVMLMonitorOnExecutor extends Logging {
   private def stopCurrentMonitoring(): Unit = {
     nvmlMonitor.foreach { monitor =>
       try {
-        monitor.stopMonitoring()
         if (isStageMode && currentMonitoringStage != -1) {
           // Print lifecycle report for the current stage with stage ID and epoch ID
           val epochCount = StageEpochManager.getStageEpochCount(currentMonitoringStage)
           val reportName = s"Stage-${currentMonitoringStage}-Epoch-${epochCount}"
           monitor.printLifecycleReport(reportName)
         }
+        monitor.stopMonitoring()
       } catch {
         case e: Exception =>
           logError(s"Error stopping NVML monitoring for stage $currentMonitoringStage", e)

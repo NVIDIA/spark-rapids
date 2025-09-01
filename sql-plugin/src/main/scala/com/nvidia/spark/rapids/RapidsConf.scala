@@ -894,7 +894,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("Number of GPU monitoring updates before logging a progress message. " +
       "Set to 0 to disable periodic logging.")
     .integerConf
-    .createWithDefault(5)
+    .createWithDefault(10)
 
   val NVML_MONITOR_STAGE_MODE = conf("spark.rapids.monitor.nvml.stageMode")
     .doc("When enabled, NVML monitoring will track GPU usage per stage (similar to " +

@@ -165,6 +165,7 @@ object StageEpochManager extends Logging {
         TimeUnit.SECONDS
       )
       epochTask = Some(task)
+      isShutdown = false
       
       logInfo(s"Started StageEpochManager with effective epoch interval ${epochInterval}s "
         + s"(${registeredCallbacks.size()} callbacks registered)")
@@ -306,8 +307,12 @@ object StageEpochManager extends Logging {
           try {
             monitoring.callback(oldStage, dominantStage, taskCount, totalTasks)
           } catch {
-            case e: Exception =>
+            case e: Exception => {
               logError(s"Error in callback '${monitoring.name}' during stage transition", e)
+              println(s"Error in callback '${monitoring.name}' during stage transition: $e")
+              val x = e.getStackTrace.mkString("\n")
+              println(x)
+            }
           }
         }
       }
