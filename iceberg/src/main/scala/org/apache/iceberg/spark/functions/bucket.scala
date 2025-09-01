@@ -32,8 +32,11 @@ case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
   require(numBuckets.dataType == DataTypes.IntegerType,
     s"numBuckets must be an integer, got ${numBuckets.dataType}")
 
-  require(!value.nullable && GpuBucketExpression.supportedType(value.dataType),
-    s"Bucket function does not support type ${value.dataType} or nullable values")
+  require(!value.nullable,
+    s"Bucket function does not support nullable values for type ${value.dataType}")
+
+  require(GpuBucketExpression.supportedType(value.dataType),
+    s"Bucket function does not support type ${value.dataType}")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): CudfColumnVector = {
     throw new IllegalStateException("GpuBucketExpression requires first argument to be scalar, " +
