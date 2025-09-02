@@ -97,6 +97,7 @@ object AsyncProfilerOnExecutor extends Logging {
           callback = onStageTransition,
           epochInterval = this.stageEpochInterval
         )
+        isShutdown = false
       })
     })
   }

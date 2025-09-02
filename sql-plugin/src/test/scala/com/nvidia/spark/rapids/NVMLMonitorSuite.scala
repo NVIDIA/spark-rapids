@@ -587,13 +587,6 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
   }
 
   /**
-   * Read log messages for the current test based on test markers
-   *
-   * @param testMarker The unique test marker to identify test boundaries
-   * @return List of log messages for this test
-   */
-
-  /**
    * Add in-memory appender to capture log messages
    */
   private def addInMemoryAppender(): Unit = {

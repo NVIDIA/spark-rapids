@@ -310,9 +310,6 @@ object StageEpochManager extends Logging {
           } catch {
             case e: Exception => {
               logError(s"Error in callback '${monitoring.name}' during stage transition", e)
-              println(s"Error in callback '${monitoring.name}' during stage transition: $e")
-              val x = e.getStackTrace.mkString("\n")
-              println(x)
             }
           }
         }
