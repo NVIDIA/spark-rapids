@@ -569,10 +569,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val MAX_CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.maxConcurrentGpuTasks")
       .doc("The maximum number of tasks that can execute concurrently per GPU. " +
         "This sets an upper bound on concurrent task execution regardless of " +
-        "available GPU memory permits. Set to -1 for no limit.")
+        "available GPU memory permits. Set to 0 for no limit.")
       .internal()
       .integerConf
-      .createWithDefault(-1)
+      .createWithDefault(0)
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +

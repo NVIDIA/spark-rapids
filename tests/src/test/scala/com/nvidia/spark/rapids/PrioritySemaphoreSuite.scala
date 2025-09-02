@@ -24,7 +24,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   type TestPrioritySemaphore = PrioritySemaphore[Long]
 
   test("tryAcquire should return true if permits are available") {
-    val semaphore = new TestPrioritySemaphore(10, -1)
+    val semaphore = new TestPrioritySemaphore(10, 0)
 
     assert(semaphore.tryAcquire(5, 0, () => false, 0))
     assert(semaphore.tryAcquire(3, 0, () => false, 0))
@@ -33,7 +33,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   }
 
   test("acquire and release should work correctly") {
-    val semaphore = new TestPrioritySemaphore(1, -1)
+    val semaphore = new TestPrioritySemaphore(1, 0)
 
     assert(semaphore.tryAcquire(1, 0, () => false, 0))
 
@@ -57,7 +57,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   }
 
   test("multiple threads should handle permits and priority correctly") {
-    val semaphore = new TestPrioritySemaphore(0, -1)
+    val semaphore = new TestPrioritySemaphore(0, 0)
     val results = new java.util.ArrayList[Int]()
 
     def taskWithPriority(priority: Int) = new Runnable {
@@ -83,7 +83,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   }
 
   test("low priority thread cannot surpass high priority thread") {
-    val semaphore = new TestPrioritySemaphore(10, -1)
+    val semaphore = new TestPrioritySemaphore(10, 0)
     semaphore.acquire(() => 5,  () => false, 0, 0)
     val t = new Thread(() => {
       semaphore.acquire(() => 10,  () => false, 2, 0)
@@ -103,7 +103,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
   // this case is described at https://github.com/NVIDIA/spark-rapids/pull/11574/files#r1795652488
   test("thread with larger task id should not surpass smaller task id in the waiting queue") {
-    val semaphore = new TestPrioritySemaphore(10, -1)
+    val semaphore = new TestPrioritySemaphore(10, 0)
     semaphore.acquire(() => 8,  () => false, 0, 0)
     val t = new Thread(() => {
       semaphore.acquire(() => 5,  () => false, 0, 0)
@@ -147,9 +147,9 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
     semaphore.release(10)
   }
 
-  test("maxConcurrentGpuTasks limit disabled with -1") {
-    // Test with no limit (-1)
-    val semaphore = new TestPrioritySemaphore(100, -1)
+  test("maxConcurrentGpuTasks limit disabled with 0") {
+    // Test with no limit (0)
+    val semaphore = new TestPrioritySemaphore(100, 0)
     
     // Should be able to acquire many tasks as long as permits are available
     assert(semaphore.tryAcquire(10, 0, () => false, 0))

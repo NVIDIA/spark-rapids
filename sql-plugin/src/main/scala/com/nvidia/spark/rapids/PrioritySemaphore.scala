@@ -144,7 +144,7 @@ class PrioritySemaphore[T](val maxPermits: Long, val maxConcurrentGpuTasksLimit:
 
   private def canAcquire(numPermits: Long): Boolean = {
     val hasPermits = occupiedSlots + numPermits <= maxPermits
-    val withinTaskLimit = maxConcurrentGpuTasksLimit < 0 || 
+    val withinTaskLimit = maxConcurrentGpuTasksLimit <= 0 ||
       currentConcurrentGpuTasksNum < maxConcurrentGpuTasksLimit
     hasPermits && withinTaskLimit
   }

@@ -190,7 +190,7 @@ object GpuSemaphore {
         // Since we don't have access to a configuration object here,
         // default to only one task per GPU behavior.
         if (instance == null) {
-          initialize(-1)
+          initialize(0)
         }
       }
     }
