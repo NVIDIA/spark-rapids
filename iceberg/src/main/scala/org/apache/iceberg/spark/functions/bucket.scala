@@ -48,13 +48,14 @@ case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
       Hash.murmurHash32(0, Array(castedValue))
     }
 
-    withResource(Scalar.fromInt(Integer.MAX_VALUE)) { intMax =>
-      val nonNegativeHash = withResource(hash) { _ =>
+    val nonNegativeHash = withResource(hash) { _ =>
+      withResource(Scalar.fromInt(Integer.MAX_VALUE)) { intMax =>
         hash.bitAnd(intMax)
       }
-      withResource(nonNegativeHash) { _ =>
-        nonNegativeHash.mod(numBuckets.getBase, DType.INT32)
-      }
+    }
+
+    withResource(nonNegativeHash) { _ =>
+      nonNegativeHash.mod(numBuckets.getBase, DType.INT32)
     }
   }
 
