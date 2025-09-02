@@ -14,13 +14,14 @@
 import pytest
 
 from asserts import assert_gpu_sql_fallback_collect
+from marks import iceberg
 from spark_session import is_spark_35x, with_cpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
                                 reason="Current spark-rapids only support spark 3.5.x")
 
 
-
+@iceberg
 def test_insert_into_iceberg_table_fallback(spark_tmp_table_factory):
     table_name = spark_tmp_table_factory.get()
 
