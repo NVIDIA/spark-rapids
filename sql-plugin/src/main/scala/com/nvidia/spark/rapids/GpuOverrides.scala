@@ -4182,6 +4182,11 @@ object GpuOverrides extends Logging {
         }
       }
     ),
+    expr[Uuid](
+      desc = "Uuid",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING),
+      (a, conf, p, r) => new GpuUuidMeta(a, conf, p, r)
+    ),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
