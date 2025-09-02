@@ -352,11 +352,6 @@ object GpuShuffledSizedHashJoinExec {
           opTime, joinTime)
     }
   }
-
-  val SMALL_JOIN_COUNT = "_sizedSmallJoin"
-  val SMALL_JOIN_COUNT_DESC = "small joins"
-  val BIG_JOIN_COUNT = "_sizedBigJoin"
-  val BIG_JOIN_COUNT_DESC = "big joins"
 }
 
 abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] extends GpuJoinExec {
@@ -386,8 +381,8 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    SMALL_JOIN_COUNT -> createMetric(DEBUG_LEVEL, SMALL_JOIN_COUNT_DESC),
-    BIG_JOIN_COUNT -> createMetric(DEBUG_LEVEL, BIG_JOIN_COUNT_DESC),
+    SMALL_JOIN_COUNT -> createMetric(DEBUG_LEVEL, DESCRIPTION_SMALL_JOIN_COUNT),
+    BIG_JOIN_COUNT -> createMetric(DEBUG_LEVEL, DESCRIPTION_BIG_JOIN_COUNT),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
