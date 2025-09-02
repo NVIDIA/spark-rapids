@@ -80,6 +80,12 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     holdGpuBetweenBatches: Boolean = false,
     useAsyncWrite: Boolean = false) extends HostBufferConsumer with Logging {
 
+  // Length of the file written so far. This is used to track the size of the file
+  private var fileLength: Long = 0L
+
+  /** Returns length of the file written so far. */
+  def getFileLength: Long = fileLength
+
   protected val tableWriter: TableWriter
   private lazy val debugDumpOutputStream: Option[OutputStream] = try {
     debugDumpPath.map { path =>
@@ -143,8 +149,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
 
   override
-  def handleBuffer(buffer: HostMemoryBuffer, len: Long): Unit =
+  def handleBuffer(buffer: HostMemoryBuffer, len: Long): Unit = {
     buffers += Tuple2(buffer, len)
+    fileLength += len
+  }
 
   def writeBufferedData(): Long = {
     val start = System.nanoTime()
