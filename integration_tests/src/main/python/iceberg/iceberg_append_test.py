@@ -14,7 +14,7 @@
 import pytest
 
 from asserts import assert_gpu_sql_fallback_collect
-from marks import iceberg
+from marks import iceberg, allow_non_gpu
 from spark_session import is_spark_35x, with_cpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
@@ -22,6 +22,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 
 
 @iceberg
+@allow_non_gpu("AppendDataExec")
 def test_insert_into_iceberg_table_fallback(spark_tmp_table_factory):
     table_name = spark_tmp_table_factory.get()
 
@@ -39,6 +40,6 @@ def test_insert_into_iceberg_table_fallback(spark_tmp_table_factory):
     view_name = spark_tmp_table_factory.get()
     assert_gpu_sql_fallback_collect(
         df_fun,
-        'org.apache.spark.sql.execution.datasources.v2.AppendDataExec',
+        'AppendDataExec',
         view_name,
         f"INSERT INTO {table_name} SELECT * FROM {view_name}")
