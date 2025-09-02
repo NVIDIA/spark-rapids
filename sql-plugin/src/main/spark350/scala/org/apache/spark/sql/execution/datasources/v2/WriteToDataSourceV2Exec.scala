@@ -41,9 +41,9 @@ import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterF
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.metric.CustomMetrics.NUM_ROWS_PER_UPDATE
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{LongAccumulator, Utils}
-
 
 trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
   def refreshCache: () => Unit
@@ -171,6 +171,9 @@ case class GpuAppendDataExec(
   }
 }
 
+/**
+ * This class is derived from [[org.apache.spark.sql.execution.datasources.v2.WritingSparkTask]].
+ */
 trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with Serializable {
 
   protected def write(writer: W, row: ColumnarBatch): Unit
@@ -192,14 +195,17 @@ trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with S
     // write the data and commit this writer.
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       while (iter.hasNext) {
-        if (count % CustomMetrics.NUM_ROWS_PER_UPDATE == 0) {
-          CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
-        }
-
         // Count is here.
         val batch = iter.next()
+        val numRows = batch.numRows
         write(dataWriter, batch)
-        count += batch.numRows
+
+        val lastCount = count
+        count += numRows
+
+        if ((numRows + (lastCount % NUM_ROWS_PER_UPDATE)) >= NUM_ROWS_PER_UPDATE) {
+          CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
+        }
       }
 
       CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
