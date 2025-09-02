@@ -5,21 +5,24 @@ parent: Additional Functionality
 nav_order: 6
 ---
 
-The RAPIDS Accelerator for Apache Spark provides NVML (NVIDIA Management Library) monitoring functionality to track GPU utilization and memory usage during Spark job execution. This feature helps with performance analysis, troubleshooting, and understanding GPU resource consumption patterns.
+The RAPIDS Accelerator for Apache Spark provides NVML (NVIDIA Management Library) monitoring functionality to track GPU utilization and memory usage during Spark job execution. This feature helps with performance analysis and understanding GPU resource consumption patterns.
 
 ## Overview
 
-The NVML monitor provides real-time GPU statistics including:
+The NVML monitor provides GPU statistics including:
 
-- GPU utilization percentage
-- GPU memory usage (used/total)
-- Memory utilization percentage
-- Timestamp information
+- GPU utilization
+- GPU memory utilization
+- Other metrics like GPU temporature, etc.
 
 The monitor supports two distinct monitoring modes:
 
 1. **Executor Lifecycle Mode** (default): Monitors GPU usage from executor startup to shutdown
 2. **Stage-based Mode**: Similar to AsyncProfiler, monitors each stage independently and switches monitoring contexts based on stage transitions
+
+Regardless of the monitoring mode selected, the system performs periodic updates at configurable intervals to collect and log GPU statistics. This ensures continuous monitoring and provides regular feedback about GPU resource utilization throughout the execution.
+
+
 
 ## Configuration Options
 
@@ -143,7 +146,9 @@ The NVML monitor automatically generates lifecycle reports when monitoring stops
 
 Setting `spark.scheduler.mode=FIFO` is recommended for cleaner stage boundaries when using stage-based monitoring.
 
-#### Log Output Examples
+## Log Output Examples
+
+### Lifecycle Report
 
 ```text
 25/09/02 15:12:03.612 ScalaTest-main-running-NVMLMonitorSuite INFO NVMLMonitor: Stage-2-Epoch-0 - LIFECYCLE REPORT: GPU_0 (NVIDIA RTX 5000 Ada Generation): 1.9s, 13 samples, GPU 0% (avg), Mem 0% (avg), 37°C (avg), 15W (avg) | GPU_1 (NVIDIA RTX A5000): 1.9s, 13 samples, GPU 7% (avg), Mem 0% (avg), 65°C (avg), 94W (avg)
@@ -162,4 +167,12 @@ Memory - Used: Min: 1547, Max: 1579, Avg: 1549 MB, Free: Min: 22984, Max: 23016,
 Thermal/Power - Temp: Min:  65, Max:  65, Avg:  65°C, Power: Min:  94, Max:  95, Avg:  94 W (limit: 230 W)
 Clocks - Graphics: Min: 1695, Max: 1695, Avg: 1695 MHz, Memory: Min: 7600, Max: 7600, Avg: 7600 MHz, SM: Min: 1695, Max: 1695, Avg: 1695 MHz
 Other - Fan: Min:  38, Max:  39, Avg:  38%, Performance State: Min:   2, Max:   2, Avg:   2 (avg P2)
+```
+
+### Periodic Update
+
+```text
+25/09/02 16:21:47 INFO NVMLMonitorOnExecutor: NVML Update #10:
+25/09/02 16:21:47 INFO NVMLMonitorOnExecutor:   GPU_0 (NVIDIA RTX 5000 Ada Generation): Util: 8%, Mem: 0% (32146MB/32760MB), Temp: 50°C, Power: 107W/250W, Clocks: 2730/8550 MHz
+25/09/02 16:21:47 INFO NVMLMonitorOnExecutor:   GPU_1 (NVIDIA RTX A5000): Util: 9%, Mem: 1% (1547MB/24564MB), Temp: 66°C, Power: 95W/230W, Clocks: 1695/7600 MHz
 ```

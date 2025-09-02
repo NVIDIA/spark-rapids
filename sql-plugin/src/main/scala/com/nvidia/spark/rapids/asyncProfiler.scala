@@ -151,7 +151,7 @@ object AsyncProfilerOnExecutor extends Logging {
     asyncProfiler.foreach(profiler => {
       try {
         // Get current epoch from StageEpochManager and increment for next time
-        val currentEpoch = StageEpochManager.incrementStageEpoch(stageId) - 1
+        val currentEpoch = StageEpochManager.getStageEpochCount(stageId) - 1
         
         val filePath = {
           if (needMoveFile) {

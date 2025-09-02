@@ -243,7 +243,7 @@ object StageEpochManager extends Logging {
   /**
    * Increments and returns the new epoch count for a stage.
    */
-  def incrementStageEpoch(stageId: Int): Int = {
+  private def incrementStageEpoch(stageId: Int): Int = {
     stageEpochCounters.compute(stageId, (_, current) => current + 1)
   }
   
@@ -302,7 +302,9 @@ object StageEpochManager extends Logging {
         
         val oldStage = currentStage
         currentStage = dominantStage
-        
+
+        incrementStageEpoch(dominantStage)
+
         // Trigger all registered callbacks
         registeredCallbacks.values().asScala.foreach { monitoring =>
           try {

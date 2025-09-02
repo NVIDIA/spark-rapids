@@ -30,6 +30,17 @@ The profiler periodically checks which stage has the most running tasks and swit
 
 This interval is controlled by `spark.rapids.monitor.stageEpochInterval` (default 5 seconds).
 
+## System Prerequisites
+
+For the async profiler to work correctly, you may need to adjust the following system settings:
+
+```bash
+sudo sysctl kernel.perf_event_paranoid=1
+sudo sysctl kernel.kptr_restrict=0
+```
+
+These settings allow the profiler to access performance counters and kernel symbols, which are necessary for generating accurate flame graphs.
+
 ## More Java Options
 It’s also recommended to add the following to your Spark session configuration for a more precise flame graph.
 

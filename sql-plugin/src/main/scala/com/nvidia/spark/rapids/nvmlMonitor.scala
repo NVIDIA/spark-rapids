@@ -94,7 +94,7 @@ object NVMLMonitorOnExecutor extends Logging {
         override def onGPUUpdate(gpuInfos: Array[GPUInfo], timestamp: Long): Unit = {
           updateCount += 1
           if (logFrequency > 0 && updateCount % logFrequency == 0) {
-            logInfo(s"NVML Update #$updateCount:")
+            logInfo(s"NVML Periodic Update #$updateCount:")
             gpuInfos.foreach { info =>
               logInfo(s"  ${info.toString}")
             }
@@ -103,7 +103,7 @@ object NVMLMonitorOnExecutor extends Logging {
 
         private def getContextDescription: String = {
           if (isStageMode && currentMonitoringStage != -1) {
-            val epoch = StageEpochManager.getStageEpochCount(currentMonitoringStage)
+            val epoch = StageEpochManager.getStageEpochCount(currentMonitoringStage) - 1
             s"for stage $currentMonitoringStage epoch $epoch"
           } else if (isStageMode) {
             "in stage mode"
@@ -227,9 +227,6 @@ object NVMLMonitorOnExecutor extends Logging {
 
     // Switch to new stage
     currentMonitoringStage = newStage
-
-    // Increment epoch counter for this stage
-    StageEpochManager.incrementStageEpoch(newStage)
 
     // Start monitoring for new stage
     startMonitoring()
