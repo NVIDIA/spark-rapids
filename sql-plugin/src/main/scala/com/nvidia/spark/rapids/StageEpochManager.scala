@@ -50,7 +50,7 @@ object StageEpochManager extends Logging {
       epochInterval: Int)
 
   // Default configuration
-  private val DefaultEpochInterval = 5
+  val DefaultEpochInterval = 5
   private val DefaultDominantThreshold = 0.5
   
   // Task tracking for stage epoch determination
@@ -82,7 +82,7 @@ object StageEpochManager extends Logging {
    * @return true if registration succeeded, false if name already exists
    */
   def registerCallback(name: String, callback: (Int, Int, Int, Int) => Unit, 
-      epochInterval: Int = DefaultEpochInterval): Boolean = synchronized {
+      epochInterval: Int): Boolean = synchronized {
     if (registeredCallbacks.containsKey(name)) {
       logWarning(s"StageEpochManager: Callback '$name' is already registered")
       return false
@@ -207,6 +207,7 @@ object StageEpochManager extends Logging {
     runningTasks.clear()
     stageEpochCounters.clear()
     currentStage = -1
+    epochInterval = DefaultEpochInterval  // Reset epoch interval to default
     logInfo("StageEpochManager shutdown completed")
   }
   

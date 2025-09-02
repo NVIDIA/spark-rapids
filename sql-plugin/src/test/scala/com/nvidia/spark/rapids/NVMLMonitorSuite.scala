@@ -28,33 +28,33 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.util.TaskCompletionListener
 
-class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach 
-    with PrivateMethodTester with Logging {
+class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
+  with PrivateMethodTester with Logging {
 
   private var mockPluginContext: PluginContext = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
-    
+
     // Create mock PluginContext
     mockPluginContext = mock(classOf[PluginContext])
     when(mockPluginContext.executorID()).thenReturn("test-executor-1")
     when(mockPluginContext.conf).thenReturn(new SparkConf())
   }
-  
+
   override def afterEach(): Unit = {
     super.afterEach()
-    
+    NVMLMonitorOnExecutor.shutdown()
     StageEpochManager.shutdown()
+    TrampolineUtil.unsetTaskContext()
   }
-  
+
   private def createTestConf(
       enabled: Boolean,
       stageMode: Boolean,
       intervalMs: Int,
       logFrequency: Int,
-      //      stageEpochInterval: Int = 5): RapidsConf = {
-      stageEpochInterval: Int): RapidsConf = {
+      stageEpochInterval: Int = 5): RapidsConf = {
 
     val sparkConf = new SparkConf()
       .set("spark.rapids.monitor.nvml.enabled", enabled.toString)
@@ -62,7 +62,7 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
       .set("spark.rapids.monitor.nvml.intervalMs", intervalMs.toString)
       .set("spark.rapids.monitor.nvml.logFrequency", logFrequency.toString)
       .set("spark.rapids.monitor.stageEpochInterval", stageEpochInterval.toString)
-    
+
     new RapidsConf(sparkConf)
   }
 
@@ -70,11 +70,11 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
   private class MockTaskContextWithListeners(val stageId: Int, val taskId: Long) {
     private val completionListeners = scala.collection.mutable.ListBuffer[TaskCompletionListener]()
     val mockTaskContext: TaskContext = mock(classOf[TaskContext])
-    
+
     // Setup mock behavior
     when(mockTaskContext.stageId()).thenReturn(stageId)
     when(mockTaskContext.taskAttemptId()).thenReturn(taskId)
-    
+
     // Mock addTaskCompletionListener to store listeners
     when(mockTaskContext.addTaskCompletionListener(any[TaskCompletionListener]()))
       .thenAnswer { invocation =>
@@ -82,12 +82,12 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
         completionListeners += listener
         mockTaskContext
       }
-    
+
     // Method to trigger completion
     def triggerCompletion(): Unit = {
       // Remove task from StageEpochManager tracking
       simulateTaskCompletion(taskId)
-      
+
       // Trigger any registered completion listeners
       completionListeners.foreach(_.onTaskCompletion(mockTaskContext))
     }
@@ -96,34 +96,34 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
   // Helper method to simulate a task by setting TaskContext and calling onTaskStart
   private def simulateTask(stageId: Int, taskId: Long): MockTaskContextWithListeners = {
     val taskWrapper = new MockTaskContextWithListeners(stageId, taskId)
-    
+
     // Set the TaskContext first
     TrampolineUtil.setTaskContext(taskWrapper.mockTaskContext)
-    
+
     // Then call StageEpochManager.onTaskStart to properly initialize task tracking
     StageEpochManager.onTaskStart()
-    
+
     taskWrapper
   }
 
-  
+
   // Direct simulation of task completion
   private def simulateTaskCompletion(taskId: Long): Unit = {
-     // Remove task from StageEpochManager's internal tracking
-     try {
-       val stageEpochManagerClass = StageEpochManager.getClass
-       val runningTasksField = stageEpochManagerClass.getDeclaredField("runningTasks")
-       runningTasksField.setAccessible(true)
-       val runningTasks = runningTasksField.get(StageEpochManager)
-         .asInstanceOf[java.util.concurrent.ConcurrentHashMap[Long, Int]]
-      
-       // Remove task from running tasks map
-       runningTasks.remove(taskId)
-      
-     } catch {
-       case e: Exception =>
-         System.err.println(s"Warning: Failed to simulate task completion: ${e.getMessage}")
-     }
+    // Remove task from StageEpochManager's internal tracking
+    try {
+      val stageEpochManagerClass = StageEpochManager.getClass
+      val runningTasksField = stageEpochManagerClass.getDeclaredField("runningTasks")
+      runningTasksField.setAccessible(true)
+      val runningTasks = runningTasksField.get(StageEpochManager)
+        .asInstanceOf[java.util.concurrent.ConcurrentHashMap[Long, Int]]
+
+      // Remove task from running tasks map
+      runningTasks.remove(taskId)
+
+    } catch {
+      case e: Exception =>
+        System.err.println(s"Warning: Failed to simulate task completion: ${e.getMessage}")
+    }
   }
 
   test("NVML monitor with simulated task execution and reporting") {
@@ -131,9 +131,9 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
     val conf = createTestConf(
       enabled = true,
       stageMode = true,
-      intervalMs = 200,       // Faster monitoring updates
-      logFrequency = 1,       // Log every update for visibility
-      stageEpochInterval = 1  // Stage transitions every 1 second
+      intervalMs = 200, // Faster monitoring updates
+      logFrequency = 1, // Log every update for visibility
+      stageEpochInterval = 1 // Stage transitions every 1 second
     )
 
     // Initialize NVML monitor
@@ -182,8 +182,8 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
       finalCounts should contain(2 -> 6)
       // Phase 4: Complete all tasks
       stage0Tasks.drop(2).foreach(_.triggerCompletion()) // Complete remaining Stage 0 task
-      stage1Tasks.foreach(_.triggerCompletion())         // Complete all Stage 1 tasks
-      stage2Tasks.foreach(_.triggerCompletion())         // Complete all Stage 2 tasks
+      stage1Tasks.foreach(_.triggerCompletion()) // Complete all Stage 1 tasks
+      stage2Tasks.foreach(_.triggerCompletion()) // Complete all Stage 2 tasks
 
       // Wait a bit more to ensure all monitoring updates are processed
       Thread.sleep(1000)
@@ -203,11 +203,7 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
       // These reports are printed to logs and would be visible in a real environment
 
     } finally {
-      // Cleanup - this will trigger final report generation
-      NVMLMonitorOnExecutor.shutdown()
 
-      // Clean up TaskContext
-      TrampolineUtil.unsetTaskContext()
     }
   }
 
@@ -216,9 +212,9 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
     val conf = createTestConf(
       enabled = true,
       stageMode = true,
-      intervalMs = 100,       // Very fast updates to capture more data points
-      logFrequency = 2,       // Log every 2 updates
-      stageEpochInterval = 2  // Stage transitions every 2 seconds
+      intervalMs = 100, // Very fast updates to capture more data points
+      logFrequency = 2, // Log every 2 updates
+      stageEpochInterval = 2 // Stage transitions every 2 seconds
     )
 
     // Initialize NVML monitor
@@ -268,64 +264,53 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
         "reports should show detailed GPU usage data")
 
     } finally {
-      // This shutdown will generate final consolidated report
-      NVMLMonitorOnExecutor.shutdown()
-
-      // Clean up TaskContext
-      TrampolineUtil.unsetTaskContext()
-
       System.out.println("Expected NVML reports:")
       System.out.println("  1. Stage-1-Epoch-N report (heavy workload)")
       System.out.println("  2. Stage-2-Epoch-N report (light workload)")
       System.out.println("  3. Stage-2-Epoch-N-Final report (shutdown)")
     }
   }
-//
-//  test("NVML monitor executor mode with task simulation") {
-//    // Test executor mode (non-stage-based) monitoring
-//    val conf = createTestConf(
-//      enabled = true,
-//      stageMode = false,  // Executor lifecycle mode
-//      intervalMs = 200,
-//      logFrequency = 1
-//    )
-//
-//    // Initialize NVML monitor in executor mode
-//    NVMLMonitorOnExecutor.init(mockPluginContext, conf)
-//
-//    try {
-//      System.out.println("=== NVML Executor Mode Test ===")
-//
-//      // In executor mode, monitoring starts immediately and doesn't depend on tasks
-//      // But we can still simulate task execution to create realistic GPU load
-//
-//      // Simulate some tasks running (these won't affect monitoring in executor mode)
-//      val executorTasks = (1L to 4L).map { taskId =>
-//        simulateTask(stageId = 0, taskId = taskId)
-//      }
-//
-//      // Let monitor run for a while to collect data
-//      Thread.sleep(1000)
-//
-//      // Complete some tasks
-//      executorTasks.take(2).foreach(_.triggerCompletion())
-//
-//      // Wait more
-//      Thread.sleep(1000)
-//
-//      // Complete remaining tasks
-//      executorTasks.drop(2).foreach(_.triggerCompletion())
-//
-//      System.out.println("Executor mode monitoring test completed")
-//
-//    } finally {
-//      // In executor mode, this will generate a single lifecycle report for the entire executor
-//      NVMLMonitorOnExecutor.shutdown()
-//
-//      // Clean up TaskContext
-//      TrampolineUtil.unsetTaskContext()
-//
-//      System.out.println("Expected report: Executor-test-executor-1")
-//    }
-//  }
+
+
+  test("NVML monitor executor mode with task simulation") {
+    // Test executor mode (non-stage-based) monitoring
+    val conf = createTestConf(
+      enabled = true,
+      stageMode = false, // Executor lifecycle mode
+      intervalMs = 200,
+      logFrequency = 1
+    )
+
+    // Initialize NVML monitor in executor mode
+    NVMLMonitorOnExecutor.init(mockPluginContext, conf)
+
+    try {
+      System.out.println("=== NVML Executor Mode Test ===")
+
+      // In executor mode, monitoring starts immediately and doesn't depend on tasks
+      // But we can still simulate task execution to create realistic GPU load
+
+      // Simulate some tasks running (these won't affect monitoring in executor mode)
+      val executorTasks = (1L to 4L).map { taskId =>
+        simulateTask(stageId = 0, taskId = taskId)
+      }
+
+      // Let monitor run for a while to collect data
+      Thread.sleep(1000)
+
+      // Complete some tasks
+      executorTasks.take(2).foreach(_.triggerCompletion())
+
+      // Wait more
+      Thread.sleep(1000)
+
+      // Complete remaining tasks
+      executorTasks.drop(2).foreach(_.triggerCompletion())
+
+      System.out.println("Executor mode monitoring test completed")
+
+    } finally {
+      System.out.println("Expected report: Executor-test-executor-1")
+    }
+  }
 }

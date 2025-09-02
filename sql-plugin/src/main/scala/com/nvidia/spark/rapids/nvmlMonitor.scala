@@ -34,13 +34,17 @@ import org.apache.spark.internal.Logging
  */
 object NVMLMonitorOnExecutor extends Logging {
 
+  // Default configuration constants
+  private val DefaultMonitorIntervalMs = 1000
+  private val DefaultLogFrequency = 5
+
   private var pluginCtx: PluginContext = _
   private var conf: RapidsConf = _
   private var nvmlMonitor: Option[NVMLMonitor] = None
   private var isStageMode: Boolean = false
-  private var monitorIntervalMs: Int = 1000
-  private var logFrequency: Int = 5
-  private var stageEpochInterval: Int = 5
+  private var monitorIntervalMs: Int = DefaultMonitorIntervalMs
+  private var logFrequency: Int = DefaultLogFrequency
+  private var stageEpochInterval: Int = StageEpochManager.DefaultEpochInterval
 
   // Stage-based monitoring variables
   private var currentMonitoringStage = -1
@@ -151,13 +155,12 @@ object NVMLMonitorOnExecutor extends Logging {
       StageEpochManager.unregisterCallback("NVMLMonitor")
       isEpochCallbackRegistered = false
     }
-    stopCurrentMonitoring()
 
     nvmlMonitor.foreach { monitor =>
       try {
         val reportName = if (isStageMode && currentMonitoringStage != -1) {
           val epochCount = StageEpochManager.getStageEpochCount(currentMonitoringStage)
-          s"Stage-${currentMonitoringStage}-Epoch-${epochCount}-Final"
+          s"Stage-${currentMonitoringStage}-Epoch-${epochCount - 1}"
         } else if (isStageMode) {
           "StageMode-NoStages"
         } else {
@@ -172,6 +175,18 @@ object NVMLMonitorOnExecutor extends Logging {
           logError("Error during NVML shutdown", e)
       }
     }
+    
+    // Clean up all variables to avoid potential memory leaks and reset state
+    nvmlMonitor = None
+    currentMonitoringStage = -1
+    updateCount = 0
+    pluginCtx = null
+    conf = null
+    // Reset config variables to defaults (optional but cleaner)
+    isStageMode = false
+    monitorIntervalMs = DefaultMonitorIntervalMs
+    logFrequency = DefaultLogFrequency
+    stageEpochInterval = StageEpochManager.DefaultEpochInterval
   }
 
   private def startMonitoring(): Unit = {
@@ -184,7 +199,7 @@ object NVMLMonitorOnExecutor extends Logging {
         if (isStageMode && currentMonitoringStage != -1) {
           // Print lifecycle report for the current stage with stage ID and epoch ID
           val epochCount = StageEpochManager.getStageEpochCount(currentMonitoringStage)
-          val reportName = s"Stage-${currentMonitoringStage}-Epoch-${epochCount}"
+          val reportName = s"Stage-${currentMonitoringStage}-Epoch-${epochCount - 1}"
           monitor.printLifecycleReport(reportName)
         }
         monitor.stopMonitoring()
