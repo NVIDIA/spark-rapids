@@ -37,5 +37,8 @@ def test_insert_into_iceberg_table_fallback(spark_tmp_table_factory):
         return spark.createDataFrame([(1, 'a'), (2, 'b'), (3, 'c')], ['id', 'data'])
 
     view_name = spark_tmp_table_factory.get()
-    assert_gpu_sql_fallback_collect(df_fun, 'AppendDataExec', view_name,
-                                    f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+    assert_gpu_sql_fallback_collect(
+        df_fun,
+        'org.apache.spark.sql.execution.datasources.v2.AppendDataExec',
+        view_name,
+        f"INSERT INTO {table_name} SELECT * FROM {view_name}")
