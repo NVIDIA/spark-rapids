@@ -41,7 +41,6 @@ import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterF
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
-import org.apache.spark.sql.execution.metric.CustomMetrics.NUM_ROWS_PER_UPDATE
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{LongAccumulator, Utils}
 
@@ -200,12 +199,8 @@ trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with S
         val numRows = batch.numRows
         write(dataWriter, batch)
 
-        val lastCount = count
         count += numRows
-
-        if ((numRows + (lastCount % NUM_ROWS_PER_UPDATE)) >= NUM_ROWS_PER_UPDATE) {
-          CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
-        }
+        CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
       }
 
       CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)

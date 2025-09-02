@@ -19,7 +19,7 @@ from marks import iceberg, allow_non_gpu
 from spark_session import is_spark_35x, with_cpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                                reason="Current spark-rapids only support spark 3.5.x")
+                                reason="Current spark-rapids only supports Iceberg append for spark 3.5.x")
 
 
 @iceberg
