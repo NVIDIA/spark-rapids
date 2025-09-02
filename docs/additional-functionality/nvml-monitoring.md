@@ -123,39 +123,27 @@ Similar to the AsyncProfiler functionality, the stage-based mode handles stage b
    - The dominant stage is different from the currently monitored stage
 3. The check interval is controlled by `spark.rapids.monitor.stageEpochInterval` (default 5 seconds)
 
-## Advanced Configuration
 
-### Combined with AsyncProfiler
 
-NVML monitoring can be used alongside AsyncProfiler flame graphs:
 
-```bash
---conf spark.rapids.monitor.nvml.enabled=true \
---conf spark.rapids.monitor.nvml.stageMode=true \
---conf spark.rapids.flameGraph.pathPrefix=/path/to/output/ \
---conf spark.rapids.monitor.stageEpochInterval=5
-```
+## Report Generation
 
-Both systems will use the same stage epoch determination logic for consistent boundaries.
+The NVML monitor automatically generates lifecycle reports when monitoring stops:
 
-### Fine-tuning for Performance
+### Executor Mode Report
 
-For high-frequency monitoring in production environments:
+- Report name: `Executor-{executorId}`
+- Contains aggregate statistics for entire executor lifecycle
 
-```bash
---conf spark.rapids.monitor.nvml.enabled=true \
---conf spark.rapids.monitor.nvml.intervalMs=2000 \
---conf spark.rapids.monitor.nvml.logFrequency=0 \
---conf spark.rapids.monitor.stageEpochInterval=10
-```
+### Stage Mode Report
 
-This configuration:
+- Report name: `Stage-{stageId}-Epoch-{epochId}`
+- Contains statistics for specific stage epoch
+- Generated when stage transitions occur or at shutdown
 
-- Reduces monitoring frequency to every 2 seconds to minimize overhead
-- Disables periodic logging to reduce log verbosity
-- Increases stage epoch interval to reduce context switching overhead
+Setting `spark.scheduler.mode=FIFO` is recommended for cleaner stage boundaries when using stage-based monitoring.
 
-## Log Output Examples
+#### Log Output Examples
 
 ```text
 25/09/02 15:12:03.612 ScalaTest-main-running-NVMLMonitorSuite INFO NVMLMonitor: Stage-2-Epoch-0 - LIFECYCLE REPORT: GPU_0 (NVIDIA RTX 5000 Ada Generation): 1.9s, 13 samples, GPU 0% (avg), Mem 0% (avg), 37°C (avg), 15W (avg) | GPU_1 (NVIDIA RTX A5000): 1.9s, 13 samples, GPU 7% (avg), Mem 0% (avg), 65°C (avg), 94W (avg)
@@ -175,20 +163,3 @@ Thermal/Power - Temp: Min:  65, Max:  65, Avg:  65°C, Power: Min:  94, Max:  95
 Clocks - Graphics: Min: 1695, Max: 1695, Avg: 1695 MHz, Memory: Min: 7600, Max: 7600, Avg: 7600 MHz, SM: Min: 1695, Max: 1695, Avg: 1695 MHz
 Other - Fan: Min:  38, Max:  39, Avg:  38%, Performance State: Min:   2, Max:   2, Avg:   2 (avg P2)
 ```
-
-## Report Generation
-
-The NVML monitor automatically generates lifecycle reports when monitoring stops:
-
-### Executor Mode Report
-
-- Report name: `Executor-{executorId}`
-- Contains aggregate statistics for entire executor lifecycle
-
-### Stage Mode Report
-
-- Report name: `Stage-{stageId}-Epoch-{epochId}`
-- Contains statistics for specific stage epoch
-- Generated when stage transitions occur or at shutdown
-
-Setting `spark.scheduler.mode=FIFO` is recommended for cleaner stage boundaries when using stage-based monitoring.
