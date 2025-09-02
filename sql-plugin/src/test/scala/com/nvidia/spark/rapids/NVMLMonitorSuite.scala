@@ -89,8 +89,6 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
   override def afterEach(): Unit = {
     super.afterEach()
 
-
-
     // Remove in-memory appender
     removeInMemoryAppender()
     logInfo(s"=== END_MARKER: $testMarker ===")
@@ -239,11 +237,6 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
     StageEpochManager.getStageEpochCount(0) should be >= 1
     StageEpochManager.getStageEpochCount(1) should be >= 1
     StageEpochManager.getStageEpochCount(2) should be >= 1
-
-
-
-    // The NVML monitor should have generated lifecycle reports for each stage transition
-    // These reports are printed to logs and would be visible in a real environment
 
     NVMLMonitorOnExecutor.shutdown()
     StageEpochManager.shutdown()
@@ -480,18 +473,6 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
   }
 
 
-  /**
-   * Precisely verify Stage-X-Epoch-Y patterns from log file
-   *
-   * Important: Understanding correct epoch switching logic
-   * - New epochs are only triggered when dominant stage changes  
-   * - stageEpochInterval is just the scheduler check interval for stage switching
-   * - Same stage uses same epoch regardless of duration if it remains dominant
-   * - Each stage typically only has Epoch-0 unless multiple stage transitions occur
-   *
-   * @param testName            Test case name
-   * @param expectedStageEpochs Map[StageID -> Range of expected EpochIDs]
-   */
   private def verifyPreciseStageEpochPatterns(testName: String,
       expectedStageEpochs: Map[Int, Range]): Unit = {
 
@@ -516,7 +497,6 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
       expectedStageEpochs.foreach { case (expectedStageId, expectedEpochRange) =>
         val stageMatches = stageEpochMatches.filter(_._1 == expectedStageId)
         val foundEpochs = stageMatches.map(_._2).toSet
-
 
         if (foundEpochs.nonEmpty) {
           val expectedEpochSet = expectedEpochRange.toSet
@@ -619,13 +599,6 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
   }
 
   /**
-   * Read log messages for the current test based on test markers
-   *
-   * @param testMarker The unique test marker to identify test boundaries
-   * @return List of log messages for this test
-   */
-
-  /**
    * Read log messages from in-memory appender based on test markers
    */
   private def readTestLogMessages(testMarker: String): List[String] = {
@@ -684,8 +657,5 @@ class NVMLMonitorSuite extends AnyFunSuite with Matchers with BeforeAndAfterEach
         s"All test messages: [${testMessages.mkString("; ")}]. " +
         s"Note: This might be expected in test environment without real NVML/GPU support.")
     }
-
-
   }
-
 }
