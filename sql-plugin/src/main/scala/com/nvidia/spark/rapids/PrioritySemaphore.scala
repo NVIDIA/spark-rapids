@@ -113,7 +113,7 @@ class PrioritySemaphore[T](val maxPermits: Long, val maxConcurrentGpuTasksLimit:
     occupiedSlots += numPermits
     currentConcurrentGpuTasksNum += 1
     // Report current concurrent tasks to GpuTaskMetrics, let it handle max tracking
-    GpuTaskMetrics.foreach(_.recordConcurrentGpuTasks(currentConcurrentGpuTasksNum))
+    GpuTaskMetrics.get.recordConcurrentGpuTasks(currentConcurrentGpuTasksNum)
   }
 
   def release(numPermits: Long): Unit = {
