@@ -685,6 +685,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     GpuTimeZoneDB.shutdown()
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
+    MemoryCleaner.stopLoops()
+    MemoryCleaner.cleanAtShutdown()
     GpuDeviceManager.shutdown()
     ProfilerOnExecutor.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
