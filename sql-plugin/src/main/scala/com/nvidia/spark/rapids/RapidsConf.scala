@@ -566,6 +566,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
+  val MAX_CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.maxConcurrentGpuTasks")
+      .doc("The maximum number of tasks that can execute concurrently per GPU. " +
+        "This sets an upper bound on concurrent task execution regardless of " +
+        "available GPU memory permits. Set to 0 for no limit.")
+      .internal()
+      .integerConf
+      .createWithDefault(0)
+
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs.")
@@ -3021,6 +3029,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 
   lazy val concurrentGpuTasks: Option[Integer] = get(CONCURRENT_GPU_TASKS)
+
+  lazy val maxConcurrentGpuTasks: Integer = get(MAX_CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
