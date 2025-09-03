@@ -35,7 +35,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, ExprId, Expression, If, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
@@ -44,7 +44,7 @@ import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
+import org.apache.spark.sql.rapids.aggregate.{AdvAggTypeUtils, AdvancedCudfAggregate, CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAdvancedAggregateFunction, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -307,6 +307,9 @@ object AggregateUtils extends Logging {
 
     repartitionHappened
   }
+
+  type AdvancedStep = (Int, Array[GpuColumnVector]) => Array[GpuColumnVector]
+  type AdvancedAggHandler = (AdvancedStep, Int, Int)
 }
 
 /** Utility class to hold all of the metrics related to hash aggregation */
@@ -400,6 +403,10 @@ class AggHelper(
   private val postStep = new mutable.ArrayBuffer[Expression]()
   private val postStepAttr = new mutable.ArrayBuffer[Attribute]()
 
+  private val advPreStepArgs = new mutable.ArrayBuffer[Seq[Expression]]()
+  private val advPreSteps = new mutable.ArrayBuffer[AggregateUtils.AdvancedStep]()
+  private val advCudfAggregates = new mutable.ArrayBuffer[(AdvancedCudfAggregate, Int)]()
+
   // we add the grouping expression first, which should bind as pass-through
   if (forceMerge) {
     // a grouping expression can do actual computation, but we cannot do that computation again
@@ -411,34 +418,60 @@ class AggHelper(
   }
   postStep ++= groupingAttributes
   postStepAttr ++= groupingAttributes
-  postStepDataTypes ++=
-    groupingExpressions.map(_.dataType)
+  postStepDataTypes ++= groupingExpressions.map(_.dataType)
+
+  private def addAdvancedAgg(advAgg: AdvancedCudfAggregate,
+      aggOrd: Int,
+      advPreStep: AggregateUtils.AdvancedStep,
+      advPreArgs: Seq[Expression]): Unit = {
+    // pre-process is done in two steps for an advanced agg:
+    //   1) pre-project by "preArgs" to get the arguments for the advPreStep,
+    //   2) call the given "advPreStep" function
+    advPreStepArgs += advPreArgs
+    advPreSteps += advPreStep
+    advCudfAggregates += ((advAgg, aggOrd))
+  }
 
   private var ix = groupingAttributes.length
-  for (aggExp <- aggregateExpressions) {
+  for (case (aggExp, ord) <- aggregateExpressions.zipWithIndex) {
     val aggFn = aggExp.aggregateFunction
     if ((aggExp.mode == Partial || aggExp.mode == Complete) && !forceMerge) {
-      val ordinals = (ix until ix + aggFn.updateAggregates.length)
-      aggOrdinals ++= ordinals
-      ix += ordinals.length
-      val updateAggs = aggFn.updateAggregates
-      postStepDataTypes ++= updateAggs.map(_.dataType)
-      cudfAggregates ++= updateAggs
-      preStep ++= aggFn.inputProjection
-      postStep ++= aggFn.postUpdate
-      postStepAttr ++= aggFn.postUpdateAttr
+      aggFn match {
+        case advFn: GpuAdvancedAggregateFunction =>
+          addAdvancedAgg(advFn.updateAggregate(), ord, advFn.preProcessAndClose,
+            aggFn.inputProjection)
+        case _ =>
+          val ordinals = (ix until ix + aggFn.updateAggregates.length)
+          aggOrdinals ++= ordinals
+          ix += ordinals.length
+          val updateAggs = aggFn.updateAggregates
+          postStepDataTypes ++= updateAggs.map(_.dataType)
+          cudfAggregates ++= updateAggs
+          preStep ++= aggFn.inputProjection
+          postStep ++= aggFn.postUpdate
+          postStepAttr ++= aggFn.postUpdateAttr
+      }
     } else {
-      val ordinals = (ix until ix + aggFn.mergeAggregates.length)
-      aggOrdinals ++= ordinals
-      ix += ordinals.length
-      val mergeAggs = aggFn.mergeAggregates
-      postStepDataTypes ++= mergeAggs.map(_.dataType)
-      cudfAggregates ++= mergeAggs
-      preStep ++= aggFn.preMerge
-      postStep ++= aggFn.postMerge
-      postStepAttr ++= aggFn.postMergeAttr
+      aggFn match {
+        case advFn: GpuAdvancedAggregateFunction =>
+          val advMergeAgg = advFn.mergeAggregate()
+          addAdvancedAgg(advMergeAgg, ord, advMergeAgg.preStepAndClose,
+            advFn.aggBufferAttributes)
+        case _ =>
+          val ordinals = (ix until ix + aggFn.mergeAggregates.length)
+          aggOrdinals ++= ordinals
+          ix += ordinals.length
+          val mergeAggs = aggFn.mergeAggregates
+          postStepDataTypes ++= mergeAggs.map(_.dataType)
+          cudfAggregates ++= mergeAggs
+          preStep ++= aggFn.preMerge
+          postStep ++= aggFn.postMerge
+          postStepAttr ++= aggFn.postMergeAttr
+      }
     }
   }
+
+  private val advAggStart = preStep.length
 
   // a bound expression that is applied before the cuDF aggregate
   private val preStepAttributes = if (forceMerge) {
@@ -446,12 +479,65 @@ class AggHelper(
   } else {
     inputAttributes
   }
-  val preStepBound = GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
+
+  // From "preStep" to "postStep"(including "aggregate/reduce"), it splits
+  // aggregates into two parts, build-in ones and advanced ones, and processes them
+  // separately. Then combines the outputs into a single output batch, and the
+  // build-in columns always come before the advanced ones. For example, there are 3
+  // aggregates,
+  //     "max(a), advanced(b), min(a)",
+  // the columns in the "preProcess" output batch is like (assume "advanced(b)" produces
+  // two columns.)
+  //   | group columns | col_max_a | col_min_a | col1_advanced_b | col2_advanced_b |
+  //
+  // Also the output batches of "reduce/aggregate" and "postStep" have the same layout.
+  val preStepBound = GpuBindReferences.bindGpuReferencesTiered(
+    preStep.toList ++ advPreStepArgs.flatten, // Append the arguments of advanced aggs
     preStepAttributes.toList, conf)
 
   // a bound expression that is applied after the cuDF aggregate
   private val postStepBound = GpuBindReferences.bindGpuReferencesTiered(postStep.toList,
     postStepAttr.toList, conf)
+
+  private val advPreStepAndArgLens = advPreSteps.zip(advPreStepArgs.map(_.length))
+
+  /**
+   * Perform the "preStep" for advanced aggregates. The input batch "cb" contains only
+   * the required inputs of the advanced aggregates.
+   * And return the result columns and the number of the results for each advanced
+   * aggregate.
+   * The column numbers are used to build the input for each advanced aggregate in
+   * the following "reduce" or "aggregate" operation. For example,
+   *   input:      | b | c |
+   *   agg:      advanced(b), advanced(c)
+   *   output:    | b_out1 | b_out2 | c_out1 |,     {2, 1}
+   *
+   * "advanced(b)" produces 2 columns while "advanced(c)" returns only one column.
+   */
+  private def preProcessForAdvancedAggsAndClose(
+      cb: ColumnarBatch): (Seq[GpuColumnVector], Seq[Int]) = {
+    val cols = GpuColumnVector.extractColumns(cb)
+    closeOnExcept(cols) { _ =>
+      var idx = 0
+      val outLens = new ArrayBuffer[Int]()
+      closeOnExcept(new ArrayBuffer[GpuColumnVector]()) { outCols =>
+        advPreStepAndArgLens.foreach { case (advPreProcess, argsLen) =>
+          val endIdx = idx + argsLen
+          // advProcessFunc is supposed to close the input columns "cols".
+          val ret = advPreProcess(cb.numRows(), cols.slice(idx, endIdx))
+          outCols ++= ret
+          outLens += ret.length
+          (idx until endIdx).foreach { i =>
+            cols(i) = null // Avoid duplicate close on exceptions
+          }
+          idx = endIdx
+        }
+
+        require(idx == cols.length) // all the columns should be consumed
+        (outCols.toSeq, outLens.toSeq)
+      }
+    }
+  }
 
   /**
    * Apply the "pre" step: preMerge for merge, or pass-through in the update case
@@ -462,41 +548,60 @@ class AggHelper(
    */
   def preProcess(
       toAggregateBatch: ColumnarBatch,
-      metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
+      metrics: GpuHashAggregateMetrics): (SpillableColumnarBatch, Seq[Int]) = {
     val inputBatch = SpillableColumnarBatch(toAggregateBatch,
       SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
 
     val projectedCb = withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
       preStepBound.projectAndCloseWithRetrySingleBatch(inputBatch)
     }
-    SpillableColumnarBatch(
-      projectedCb,
-      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+
+    // The projected batch contains the pre-processed columns of the build-in aggregates,
+    // and the input columns of the advanced aggregates. So
+    //   1) Separate them for each other.
+    //   2) "argsCb" is the batch of the advanced input, have it being processed by
+    //      advanced preSteps to get the final results.
+    //   3) Append the final results to "nonArgsCb".
+    val (nonArgsCb, argsCb) = withResource(projectedCb) { _ =>
+      closeOnExcept(GpuColumnVector.sliceColumns(projectedCb, 0, advAggStart)) { nonArgs =>
+        (nonArgs, GpuColumnVector.sliceColumns(projectedCb, advAggStart, projectedCb.numCols()))
+      }
+    }
+    withResource(nonArgsCb) { _ =>
+      val (advPreCols, argLens) = preProcessForAdvancedAggsAndClose(argsCb)
+      withResource(advPreCols) { _ =>
+        val scb = SpillableColumnarBatch(
+          GpuColumnVector.appendColumns(nonArgsCb, advPreCols: _*),
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        (scb, argLens)
+      }
+    }
   }
 
-  def aggregate(preProcessed: ColumnarBatch, numAggs: GpuMetric): ColumnarBatch = {
+  def aggregate(preProcessed: ColumnarBatch,
+      advArgLens: Seq[Int], numAggs: GpuMetric): (ColumnarBatch, Seq[Int]) = {
     val ret = if (groupingOrdinals.nonEmpty) {
-      performGroupByAggregation(preProcessed)
+      performGroupByAggregation(preProcessed, advArgLens)
     } else {
-      performReduction(preProcessed)
+      performReduction(preProcessed, advArgLens)
     }
     numAggs += 1
     ret
   }
 
   def aggregateWithoutCombine(metrics: GpuHashAggregateMetrics,
-      preProcessed: Iterator[SpillableColumnarBatch]): Iterator[SpillableColumnarBatch] = {
+      preProcessed: Iterator[(SpillableColumnarBatch, Seq[Int])]
+  ): Iterator[(SpillableColumnarBatch, Seq[Int])] = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     val numAggs = metrics.numAggOps
-    preProcessed.flatMap { sb =>
+    preProcessed.flatMap { case (sb, argLens) =>
       withRetry(sb, splitSpillableInHalfByRows) { preProcessedAttempt =>
         withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
           opTime)) { _ =>
           withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
-            SpillableColumnarBatch(
-              aggregate(cb, numAggs),
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+            val (retCb, outLens) = aggregate(cb, argLens, numAggs)
+            (SpillableColumnarBatch(retCb, SpillPriorities.ACTIVE_BATCHING_PRIORITY), outLens)
           }
         }
       }
@@ -505,26 +610,28 @@ class AggHelper(
 
   def aggregate(
       metrics: GpuHashAggregateMetrics,
-      preProcessed: SpillableColumnarBatch): SpillableColumnarBatch = {
+      preProcessed: SpillableColumnarBatch,
+      advArgLens: Seq[Int]): (SpillableColumnarBatch, Seq[Int]) = {
     val numAggs = metrics.numAggOps
     val aggregatedSeq =
       withRetry(preProcessed, splitSpillableInHalfByRows) { preProcessedAttempt =>
         withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
-          SpillableColumnarBatch(
-            aggregate(cb, numAggs),
-            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          val (retCb, outLens) = aggregate(cb, advArgLens, numAggs)
+          (SpillableColumnarBatch(retCb, SpillPriorities.ACTIVE_BATCHING_PRIORITY), outLens)
         }
       }.toSeq
 
     // We need to merge the aggregated batches into 1 before calling post process,
     // if the aggregate code had to split on a retry
     if (aggregatedSeq.size > 1) {
-      val concatted = concatenateBatchesWithRetry(metrics, aggregatedSeq)
+      val concatted = concatenateBatchesWithRetry(metrics, aggregatedSeq.map(_._1))
       withRetryNoSplit(concatted) { attempt =>
+        val outLens = aggregatedSeq.head._2
         withResource(attempt.getColumnarBatch()) { cb =>
-          SpillableColumnarBatch(
-            aggregate(cb, numAggs),
+          val scb = SpillableColumnarBatch(
+            aggregate(cb, outLens, numAggs)._1,
             SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          (scb, outLens)
         }
       }
     } else {
@@ -533,24 +640,69 @@ class AggHelper(
   }
 
   /**
-   * Invoke reduction functions as defined in each `CudfAggreagte`
+   * Invoke reduction functions as defined in each `CudfAggregate`
    *
    * @param preProcessed - a batch after the "pre" step
    * @return
    */
-  def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
+  def performReduction(
+      preProcessed: ColumnarBatch,
+      advArgLens: Seq[Int]): (ColumnarBatch, Seq[Int]) = {
+    val reduceRowNum = 1
     withResource(new NvtxRange("reduce", NvtxColor.BLUE)) { _ =>
-      val cvs = mutable.ArrayBuffer[GpuColumnVector]()
-      cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
-        val aggFn = cudfAgg.reductionAggregate
+      closeOnExcept(new mutable.ArrayBuffer[GpuColumnVector]()) { cvs =>
         val cols = GpuColumnVector.extractColumns(preProcessed)
-        val reductionCol = cols(aggOrdinals(ix))
-        withResource(aggFn(reductionCol.getBase)) { res =>
-          cvs += GpuColumnVector.from(
-            cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
+        cudfAggregates.zip(aggOrdinals).foreach { case (cudfAgg, ix) =>
+          withResource(cudfAgg.reductionAggregate(cols(ix).getBase)) { res =>
+            cvs += GpuColumnVector.from(res, reduceRowNum, cudfAgg.dataType)
+          }
         }
+
+        // Process the advanced aggregates
+        var accLen = advAggStart
+        val outLens = new mutable.ArrayBuffer[Int]()
+        advCudfAggregates.zip(advArgLens).foreach { case ((advAgg, _), argLen) =>
+          val argCols = (accLen until accLen + argLen).map(cols).toArray
+          cvs ++= withResource(advAgg.reduce(preProcessed.numRows, argCols)) { sas =>
+            // Convert a scalar to a one row column for returning
+            outLens += sas.length
+            accLen += argLen
+            sas.safeMap(GpuColumnVector.from(_, reduceRowNum))
+          }
+        }
+        (new ColumnarBatch(cvs.toArray, reduceRowNum), outLens.toSeq)
       }
-      new ColumnarBatch(cvs.toArray, 1)
+    }
+  }
+
+  // This is not used yet since it is for the RapidsAdvancedGroupByAggregation,
+  // which is not supported now.
+  private def insertAdvancedColsAndClose(cb: ColumnarBatch,
+      advCols: Array[Array[GpuColumnVector]], starts: Array[Int]): ColumnarBatch = {
+    if (advCols.isEmpty) {
+      return cb
+    }
+    withResource(cb) { _ =>
+      try {
+        var inId = 0
+        val outCVs = new ArrayBuffer[GpuColumnVector]()
+        advCols.zip(starts).foreach { case (cols, start) =>
+          require(inId < start)
+          outCVs ++= (inId until start).map(i =>
+            cb.column(i).asInstanceOf[GpuColumnVector]
+          )
+          outCVs ++= cols
+          inId = start
+        }
+        if (inId < cb.numCols()) {
+          outCVs ++= (inId until cb.numCols()).map(i =>
+            cb.column(i).asInstanceOf[GpuColumnVector]
+          )
+        }
+        GpuColumnVector.incRefCounts(new ColumnarBatch(outCVs.toArray, cb.numRows()))
+      } finally {
+        advCols.flatten.safeClose()
+      }
     }
   }
 
@@ -560,7 +712,8 @@ class AggHelper(
    * @param preProcessed the batch after the "pre" step
    * @return a Table that has been cuDF aggregated
    */
-  def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
+  def performGroupByAggregation(preProcessed: ColumnarBatch,
+      advArgLens: Seq[Int]): (ColumnarBatch, Seq[Int]) = {
     withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
       withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
         val groupOptions = cudf.GroupByOptions.builder()
@@ -572,15 +725,132 @@ class AggHelper(
           case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
         }
 
-        // perform the aggregate
-        val aggTbl = preProcessedTbl
-          .groupBy(groupOptions, groupingOrdinals: _*)
-          .aggregate(cudfAggsOnColumn.toSeq: _*)
+        var accArgStart = advAggStart
+        val advOutLens = new ArrayBuffer[Int]()
+        // The following 3 variables are not used yet,
+        // They are designed for the RapidsAdvancedGroupByAggregation support
+        var accOutStart = accArgStart
+        val advAggCols = new ArrayBuffer[Array[GpuColumnVector]]()
+        val advAggStarts = new ArrayBuffer[Int]()
+        val aggCb = try {
+          val advAggsOnColumns = advCudfAggregates.zip(advArgLens).flatMap {
+            case ((advAgg, _), argLen) =>
+              val ret = if (advAgg.supportAdvanced) {
+                // TODO implement this
+                // advAggStarts += accOutStart
+                // val tmp = advAgg.aggregateGrouped(keyOffs, args)
+                // advOutLens += tmp.length
+                // Seq.empty
+                throw new UnsupportedOperationException("Advanced aggregate is " +
+                  "not supported yet")
+              } else {
+                val tmp = advAgg.aggregate(Array.range(accArgStart, accArgStart + argLen))
+                advOutLens += tmp.length
+                accOutStart += tmp.length
+                tmp
+              }
+              accArgStart += argLen
+              ret
+          }
 
-        withResource(aggTbl) { _ =>
-          GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+          // perform the aggregate
+          val aggTbl = preProcessedTbl
+            .groupBy(groupOptions, groupingOrdinals: _*)
+            .aggregate((cudfAggsOnColumn ++ advAggsOnColumns).toSeq: _*)
+
+          withResource(aggTbl) { _ =>
+            // The output types of advanced aggs can not be predicated, instead need to
+            // infer them from the output columns.
+            val advAggTypes = (postStepDataTypes.length until aggTbl.getNumberOfColumns).map {
+              advColIx => AdvAggTypeUtils.infer(aggTbl.getColumn(advColIx))
+            }
+            GpuColumnVector.from(aggTbl, (postStepDataTypes ++ advAggTypes).toArray)
+          }
+        } catch {
+          case t: Throwable =>
+            advAggCols.flatten.safeClose(t)
+            throw t
+        }
+        (insertAdvancedColsAndClose(aggCb, advAggCols.toArray, advAggStarts.toArray),
+          advOutLens.toSeq)
+      }
+    }
+  }
+
+  /**
+   * Similar as "preProcessForAdvancedAggsAndClose" but perform the "postStep".
+   * And the input the batch may not contain only the advanced input columns.
+   * So it does the split and extract the inputs internally.
+   */
+  private def postProcessForAdvancedAggs(scb: SpillableColumnarBatch,
+      advArgLens: Seq[Int]): Seq[Array[GpuColumnVector]] = {
+    withResource(scb.getColumnarBatch()) { cb =>
+      val argsCb = GpuColumnVector.sliceColumns(cb, advAggStart, cb.numCols())
+      val cols = GpuColumnVector.extractColumns(argsCb)
+      closeOnExcept(cols) { _ =>
+        var idx = 0
+        val outCols = new ArrayBuffer[Array[GpuColumnVector]]()
+        try {
+          advCudfAggregates.zip(advArgLens).foreach { case ((advAgg, _), argsLen) =>
+            val endIdx = idx + argsLen
+            // advProcessFunc is supposed to close the input columns "cols".
+            outCols += advAgg.postStepAndClose(cb.numRows(), cols.slice(idx, endIdx))
+            (idx until endIdx).foreach { i =>
+              cols(i) = null // Avoid duplicate close on exceptions
+            }
+            idx = endIdx
+          }
+          require(idx == cols.length) // all the columns should be consumed
+          outCols.toSeq
+        } catch {
+          case t: Throwable =>
+            outCols.flatten.safeClose(t)
+            throw t
         }
       }
+    }
+  }
+
+  /**
+   * The given "batch" contains only the post-processed columns of the build-in
+   * aggregates, and the "advsCols" is the output of all the advanced aggregates.
+   *
+   * For easier process with advanced aggregates, it reorders the input aggregates
+   * to separate the advanced ones from the build-in ones earlier at the "preStep".
+   * And this should break the Spark's expectation on the output.
+   *
+   * So this function will merge the two parts and reorder them back to align with
+   * the original order of the aggregates to make sure the result is safe to return
+   * to Spark.
+   */
+  private def mergeWithOriginalOrderAndClose(
+      batch: ColumnarBatch,
+      advsCols: Seq[Array[GpuColumnVector]]): ColumnarBatch = {
+    closeOnExcept(new ArrayBuffer[GpuColumnVector]()) { outCols =>
+      var colIx = groupingAttributes.length
+      // first, group columns, move to out directly
+      outCols ++= (0 until colIx).map(batch.column(_).asInstanceOf[GpuColumnVector])
+      var aggIx = 0
+      advCudfAggregates.zip(advsCols).foreach { case ((_, advOrd), advCols) =>
+        require(aggIx <= advOrd)
+        // 1 move all the columns before this advanced agg to out
+        // One non-advanced agg one column
+        val colsNum = advOrd - aggIx
+        outCols ++= (colIx until colIx + colsNum).map( ci =>
+          batch.column(ci).asInstanceOf[GpuColumnVector]
+        )
+        colIx += colsNum
+        // 2 append the advanced columns to out
+        outCols ++= advCols
+        aggIx = advOrd + 1 // + 1 to skip the advanced agg itself
+      }
+      // move remaining ones to out
+      if (colIx < batch.numCols()) {
+        outCols ++= (colIx until batch.numCols()).map(i =>
+          batch.column(i).asInstanceOf[GpuColumnVector]
+        )
+      }
+      new ColumnarBatch(outCols.toArray, batch.numRows())
     }
   }
 
@@ -591,31 +861,57 @@ class AggHelper(
    * It takes a cuDF aggregated batch and applies the "post" step:
    * postUpdate for update, or postMerge for merge
    *
-   * @param resultBatch - cuDF aggregated batch
+   * @param aggregatedSpillable - cuDF aggregated batch
    * @return output batch from the aggregate
    */
   def postProcess(
       aggregatedSpillable: SpillableColumnarBatch,
+      advArgLens: Seq[Int],
       metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
+    val computeAggTime = metrics.computeAggTime
+    val opTime = metrics.opTime
     val postProcessed =
-      withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
-        postStepBound.projectAndCloseWithRetrySingleBatch(aggregatedSpillable)
+      withResource(new NvtxWithMetrics("post-process", NvtxColor.ORANGE, computeAggTime,
+          opTime)) { _ =>
+        val advCols = postProcessForAdvancedAggs(aggregatedSpillable, advArgLens)
+        val proCb = closeOnExcept(advCols.flatten) { _ =>
+          val noArgsScb = withResource(aggregatedSpillable) { scb =>
+            withResource(scb.getColumnarBatch()) { cb =>
+              SpillableColumnarBatch(
+                GpuColumnVector.sliceColumns(cb, 0, advAggStart),
+                SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+            }
+          }
+          postStepBound.projectAndCloseWithRetrySingleBatch(noArgsScb)
+        }
+        mergeWithOriginalOrderAndClose(proCb, advCols)
       }
     SpillableColumnarBatch(
       postProcessed,
       SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
-  def postProcess(input: Iterator[SpillableColumnarBatch],
-      metrics: GpuHashAggregateMetrics): Iterator[SpillableColumnarBatch] = {
+  def postProcess(input: Iterator[(SpillableColumnarBatch, Seq[Int])],
+      metrics: GpuHashAggregateMetrics
+  ): Iterator[SpillableColumnarBatch] = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
-    input.map { aggregated =>
+    input.map { case (aggregated, advArgLens) =>
       withResource(new NvtxWithMetrics("post-process", NvtxColor.ORANGE, computeAggTime,
-        opTime)) { _ =>
-        val postProcessed = postStepBound.projectAndCloseWithRetrySingleBatch(aggregated)
+          opTime)) { _ =>
+        val advCols = postProcessForAdvancedAggs(aggregated, advArgLens)
+        val proCb = closeOnExcept(advCols.flatten) { _ =>
+          val noArgsScb = withResource(aggregated) { scb =>
+            withResource(scb.getColumnarBatch()) { cb =>
+              SpillableColumnarBatch(
+                GpuColumnVector.sliceColumns(cb, 0, advAggStart),
+                SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+            }
+          }
+          postStepBound.projectAndCloseWithRetrySingleBatch(noArgsScb)
+        }
         SpillableColumnarBatch(
-          postProcessed,
+          mergeWithOriginalOrderAndClose(proCb, advCols),
           SpillPriorities.ACTIVE_BATCHING_PRIORITY)
       }
     }
@@ -632,8 +928,9 @@ object GpuAggregateIterator extends Logging {
   def aggregate(
       helper: AggHelper,
       preProcessed: SpillableColumnarBatch,
-      metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
-    helper.aggregate(metrics, preProcessed)
+      advArgLens: Seq[Int],
+      metrics: GpuHashAggregateMetrics): (SpillableColumnarBatch, Seq[Int]) = {
+    helper.aggregate(metrics, preProcessed, advArgLens)
   }
 
   /**
@@ -658,32 +955,24 @@ object GpuAggregateIterator extends Logging {
       // in some cases casting and in others creating a struct (MERGE_M2 for instance,
       // requires a struct)
       // OOM retry happens within the projection in preProcess
-      val preProcessed = helper.preProcess(inputBatch, metrics)
+      val (preProcessed, advArgLens) = helper.preProcess(inputBatch, metrics)
 
       // 2) perform the aggregation
       // OOM retry means we could get a list of batches
-      val aggregatedSpillable = aggregate(helper, preProcessed, metrics)
+      val (aggregatedSpillable, advLens) = aggregate(helper, preProcessed, advArgLens, metrics)
 
       // 3) a post-processing step required in some scenarios, casting or picking
       // apart a struct
-      helper.postProcess(aggregatedSpillable, metrics)
+      helper.postProcess(aggregatedSpillable, advLens, metrics)
     }
   }
 
   def computeAggregateWithoutPreprocessAndClose(
       metrics: GpuHashAggregateMetrics,
-      inputBatches: Iterator[ColumnarBatch],
+      spillableInput: Iterator[(SpillableColumnarBatch, Seq[Int])],
       helper: AggHelper): Iterator[SpillableColumnarBatch] = {
-    val computeAggTime = metrics.computeAggTime
-    val opTime = metrics.opTime
     // 1) a pre-processing step required before we go into the cuDF aggregate, This has already
     // been done and is skipped
-
-    val spillableInput = inputBatches.map { cb =>
-      withResource(new MetricRange(computeAggTime, opTime)) { _ =>
-        SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-      }
-    }
 
     // 2) perform the aggregation
     // OOM retry means we could get a list of batches
@@ -738,10 +1027,7 @@ object GpuAggFirstPassIterator {
       aggHelper: AggHelper,
       metrics: GpuHashAggregateMetrics
   ): Iterator[SpillableColumnarBatch] = {
-    val preprocessProjectIter = cbIter.map { cb =>
-      val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-      aggHelper.preStepBound.projectAndCloseWithRetrySingleBatch(sb)
-    }
+    val preprocessProjectIter = cbIter.map(aggHelper.preProcess(_, metrics))
     computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper)
   }
 }
@@ -760,7 +1046,7 @@ object GpuAggFirstPassIterator {
 //     (GpuAverage => CudfSum/CudfCount)
 //  * boundResultReferences: project the result expressions Spark expects in the output.
 case class BoundExpressionsModeAggregates(
-    boundFinalProjections: Option[Seq[GpuExpression]],
+    boundFinalProjections: Option[(Seq[GpuExpression], Seq[AggregateUtils.AdvancedAggHandler])],
     boundResultReferences: Seq[Expression])
 
 object GpuAggFinalPassIterator {
@@ -784,9 +1070,30 @@ object GpuAggFinalPassIterator {
       aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      val finalProjections = groupingAttributes ++
-        aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
-      Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
+      var idx = groupingAttributes.length
+      val advFns = new ArrayBuffer[AggregateUtils.AdvancedAggHandler]()
+      val finalProjections = groupingAttributes ++ aggregateExpressions.flatMap { expr =>
+        val aggFn = expr.aggregateFunction
+        val ret = aggFn match {
+          case advFn: GpuAdvancedAggregateFunction =>
+            // Collect the "argument start" and "argument length" for every advanced
+            // aggregate.
+            val postProcess: AggregateUtils.AdvancedStep = (numRows, args) => {
+              Array(advFn.postProcess(numRows, args))
+            }
+            val aggBufLen = aggFn.aggBufferAttributes.length
+            advFns += ((postProcess, idx, aggBufLen))
+            idx += aggBufLen
+            // Put the arguments of advance agg to the output batch
+            advFn.aggBufferAttributes.asInstanceOf[Seq[Expression]]
+          case _ =>
+            idx += 1
+            Seq(aggFn.evaluateExpression)
+        }
+        ret
+      }
+      Some((GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes),
+        advFns.toSeq))
     } else {
       None
     }
@@ -840,9 +1147,10 @@ object GpuAggFinalPassIterator {
     cbIter.map { batch =>
       withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
         opTime)) { _ =>
-        val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
-          GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+        val finalBatch = boundExpressions.boundFinalProjections.map { case (exprs, advFns) =>
+          val cb = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
             SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY), exprs)
+          processAdvancedAggsAndClose(cb, advFns)
         }.getOrElse(batch)
         val finalSCB =
           SpillableColumnarBatch(finalBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
@@ -859,13 +1167,58 @@ object GpuAggFinalPassIterator {
     sbIter.map { sb =>
       withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
         opTime)) { _ =>
-        val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
+        val finalBatch = boundExpressions.boundFinalProjections.map { case (exprs, advFns) =>
           SpillableColumnarBatch(
-            GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs),
+            processAdvancedAggsAndClose(
+              GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs), advFns),
             SpillPriorities.ACTIVE_BATCHING_PRIORITY)
         }.getOrElse(sb)
         reorderFinalBatch(finalBatch, boundExpressions, metrics)
       }
+    }
+  }
+
+  /**
+   * The input batch "inputCb" contains the final columns of the build-in aggregates
+   * and the argument columns of the advanced aggregates.
+   *
+   * This function extracts the argument columns from the input batch, and perform
+   * the final "postProcess" action, then insert the result columns into the output
+   * batch at the correct position for each advanced aggregate.
+   * It also passes through the final columns of build-in aggregates to the output
+   * batch.
+   */
+  private[this] def processAdvancedAggsAndClose(inputCb: ColumnarBatch,
+      processOps: Seq[AggregateUtils.AdvancedAggHandler]): ColumnarBatch = {
+    if (processOps.isEmpty) {
+      return inputCb
+    }
+
+    closeOnExcept(GpuColumnVector.extractColumns(inputCb)) { cols =>
+      val outCols = new ArrayBuffer[GpuColumnVector]()
+      var idx = 0
+      closeOnExcept(outCols) { _ =>
+        processOps.foreach { case (advAggAndClose, inputStartPos, inputLen) =>
+          require(idx <= inputStartPos)
+          val endIdx = inputStartPos + inputLen
+          // 1 Move non-advanced agg columns to out
+          (idx until inputStartPos).foreach { i =>
+            outCols += cols(i)
+            cols(i) = null // avoid duplicate close on exceptions
+          }
+          // 2 process the current advanced agg and append the results to out
+          outCols ++= advAggAndClose(inputCb.numRows(), cols.slice(inputStartPos, endIdx))
+          idx = endIdx
+        } // end of "processOps.foreach"
+
+        if (idx < cols.length) { // Move remaining columns to out directly
+          (idx until cols.length).foreach { i =>
+            outCols += cols(i)
+            cols(i) = null // avoid duplicate close on exceptions
+          }
+        }
+      } // end of "closeOnExcept(outCols)"
+      new ColumnarBatch(outCols.toArray, inputCb.numRows())
     }
   }
 }
@@ -1117,19 +1470,27 @@ class GpuMergeAggregateIterator(
    */
   private def generateEmptyReductionBatch(): ColumnarBatch = {
     val aggregateFunctions = aggregateExpressions.map(_.aggregateFunction)
-    val defaultValues =
-      aggregateFunctions.flatMap(_.initialValues)
-    // We have to grab the semaphore in this scenario, since this is a reduction that produces
-    // rows on the GPU out of empty input, meaning that if a batch has 0 rows, a new single
-    // row is getting created with 0 as the count (if count is the operation), and other default
-    // values.
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-    val vecs = defaultValues.safeMap { ref =>
-      withResource(GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType)) {
-        scalar => GpuColumnVector.from(scalar, 1, ref.dataType)
+    val defaultValues = new ArrayBuffer[GpuScalar]()
+    closeOnExcept(defaultValues) { _ =>
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      // We have to grab the semaphore in this scenario, since this is a reduction that produces
+      // rows on the GPU out of empty input, meaning that if a batch has 0 rows, a new single
+      // row is getting created with 0 as the count (if count is the operation), and other default
+      // values.
+      aggregateFunctions.foreach {
+        case advFunc: GpuAdvancedAggregateFunction =>
+          defaultValues ++= advFunc.defaultValues
+        case aggFunc =>
+          defaultValues ++= aggFunc.initialValues.safeMap { case GpuLiteral(any, dt) =>
+            GpuScalar(any, dt)
+          }
       }
     }
-    new ColumnarBatch(vecs.toArray, 1)
+    withResource(defaultValues) { _ =>
+      val numRows = 1
+      val vecs = defaultValues.safeMap(GpuColumnVector.from(_, numRows))
+      new ColumnarBatch(vecs.toArray, numRows)
+    }
   }
 }
 

@@ -2522,6 +2522,8 @@ object GpuOverrides extends Logging {
             a.evalType, a.udfDeterministic, a.resultId)
         }),
     GpuScalaUDFMeta.exprMeta,
+    GpuUDAFMeta.scalaUDAFMeta,
+    GpuUDAFMeta.scalaAggregatorMeta,
     expr[Rand](
       "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
       ExprChecks.projectOnly(TypeSig.DOUBLE, TypeSig.DOUBLE,

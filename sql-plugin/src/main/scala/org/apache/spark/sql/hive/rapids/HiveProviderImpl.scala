@@ -20,14 +20,16 @@ import java.nio.charset.Charset
 import java.time.ZoneId
 
 import com.google.common.base.Charsets
-import com.nvidia.spark.RapidsUDF
+import com.nvidia.spark.{RapidsUDAF, RapidsUDF}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
+import org.apache.hadoop.hive.ql.exec.UDAF
+import org.apache.hadoop.hive.ql.udf.generic.AbstractGenericUDAFResolver
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, HiveTableRelation}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
+import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF, HiveUDAFFunction}
 import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
@@ -127,6 +129,46 @@ class HiveProviderImpl extends HiveProviderCmdShims {
                 a.funcWrapper,
                 childExprs.map(_.convertToGpu()))
             }
+          }
+        }),
+      GpuOverrides.expr[HiveUDAFFunction](
+        "Hive user defined aggregate function, the UDAF can choose to implement" +
+          " a RAPIDS accelerated interface to get better performance",
+        ExprChecks.reductionAndGroupByAgg(
+          udfTypeSig,
+          TypeSig.all,
+          repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
+        (a, conf, p, r) => new ExprMeta[HiveUDAFFunction](a, conf, p, r) {
+
+          @scala.annotation.nowarn("msg=class UDAF in package exec is deprecated")
+          private val opRapidsFunc = {
+            val hiveUDAF = if (a.isUDAFBridgeRequired) {
+              a.funcWrapper.createFunction[UDAF]()
+            } else {
+              a.funcWrapper.createFunction[AbstractGenericUDAFResolver]()
+            }
+            hiveUDAF match {
+              case rapidsUDAF: RapidsUDAF => Some(rapidsUDAF)
+              case _ => None
+            }
+          }
+
+          override def tagExprForGpu(): Unit = {
+            willNotWorkOnGpu(s"Hive UDAF is not supported yet.")
+            if (opRapidsFunc.isEmpty) {
+              willNotWorkOnGpu(s"Hive UDAF ${a.name} implemented by " +
+                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation ")
+            }
+          }
+
+          override def convertToGpu(): GpuExpression = {
+            GpuHiveUDAFFunction(
+              a.name,
+              a.funcWrapper,
+              childExprs.map(_.convertToGpu()),
+              a.nullable,
+              a.dataType,
+              a.isUDAFBridgeRequired)
           }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap

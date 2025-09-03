@@ -843,6 +843,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   /**
    * Creates a GpuColumnVector from a GpuScalar
+   * This is not recommended and will be deprecated in the future, use
+   * "from(GpuScalar scalar, int count)" instead.
    *
    * @param scalar the input GpuScalar
    * @param count the row number of the output column
@@ -850,7 +852,23 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @return a GpuColumnVector. It should be closed to avoid memory leak.
    */
   public static GpuColumnVector from(GpuScalar scalar, int count, DataType sparkType) {
-    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count), sparkType);
+    if (scalar.dataType() != sparkType) {
+      throw new IllegalArgumentException("The given spark type(" + sparkType +
+          ") does not match the GpuScalar type(" + scalar.dataType() + ").");
+    }
+    return from(scalar, count);
+  }
+
+  /**
+   * Creates a GpuColumnVector from a GpuScalar
+   *
+   * @param scalar the input GpuScalar
+   * @param count the row number of the output column
+   * @return a GpuColumnVector. It should be closed to avoid memory leak.
+   */
+  public static GpuColumnVector from(GpuScalar scalar, int count) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count),
+        scalar.dataType());
   }
 
   /**
@@ -995,6 +1013,27 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     ColumnarBatch ret =
         new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]),numRows);
     return incRefCounts(ret);
+  }
+
+  /**
+   * Slice the columns from the given columnar batch at the range of [start, end).
+   * 'start' should be in the range of '[0, numColumns]', and 'end' >= 'start'.
+   * Any invalid start or end will lead to an exception.
+   * 'start == numColumns' or 'start' == 'end' will return a batch with no columns.
+   */
+  public static ColumnarBatch sliceColumns(ColumnarBatch cb, int start, int end) {
+    int numColumns = cb.numCols();
+    if (0 <= start && start <= numColumns && start <= end) {
+      int numRows = cb.numRows();
+      int realEnd = Math.min(end, numColumns);
+      ArrayList<ColumnVector> columns = new ArrayList<>();
+      for (int i = start; i < realEnd; i++) {
+        columns.add(cb.column(i));
+      }
+      ColumnarBatch ret = new ColumnarBatch(columns.toArray(new ColumnVector[0]), numRows);
+      return incRefCounts(ret);
+    }
+    throw new IllegalArgumentException("Invalid 'start' or 'end'");
   }
 
   /**

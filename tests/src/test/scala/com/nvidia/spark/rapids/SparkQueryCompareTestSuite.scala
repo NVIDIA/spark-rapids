@@ -1315,6 +1315,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     conf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, batchSize.toString)
   }
 
+  def emptyRowsDf(session: SparkSession, schema: StructType): DataFrame = {
+    session.createDataFrame(session.sparkContext.parallelize(Seq.empty[Row], 2), schema)
+  }
+
   def mixedDfWithBuckets(session: SparkSession): DataFrame = {
     import session.implicits._
     Seq[(java.lang.Integer, java.lang.Long, java.lang.Double, String, java.lang.Integer, String)](
@@ -2020,6 +2024,14 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       StructField("strings", StringType, true),
       StructField("more_strings", StringType, true)
     )))(_)
+  }
+
+  def groupbyStringsIntsIntsFromCsv: SparkSession => DataFrame = {
+    spark => fromCsvDf("group_strings_ints_ints.csv", StructType(Array(
+      StructField("key_str", StringType, nullable = true),
+      StructField("c1_int", IntegerType, nullable = true),
+      StructField("c2_int", IntegerType, nullable = true)
+    )))(spark).repartition(6) // Avoid the single partition
   }
 
   def singularDoubleDf(session: SparkSession): DataFrame = {
