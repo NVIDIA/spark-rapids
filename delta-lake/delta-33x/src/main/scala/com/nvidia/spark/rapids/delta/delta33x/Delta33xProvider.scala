@@ -27,12 +27,11 @@ import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils.PROP_CLUSTERING_COLUMNS
 import org.apache.spark.sql.delta.sources.DeltaDataSource
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
@@ -67,15 +66,6 @@ object Delta33xProvider extends DeltaIOProvider {
       case _: DeltaTableV2 => super.tagForGpu(cpuExec, meta)
       case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
       case _ => meta.willNotWorkOnGpu(s"${cpuExec.table} table class not supported on GPU")
-    }
-  }
-
-  override def tagForGpu(cpuExec: OverwriteByExpressionExecV1,
-      meta: OverwriteByExpressionExecV1Meta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
     }
   }
 
