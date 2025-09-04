@@ -57,7 +57,17 @@ import org.apache.spark.util.SerializableConfiguration
  * for combining the buffers before sending to GPU.
  */
 case class SingleHMBAndMeta(hmbs: Array[SpillableHostBuffer], bytes: Long, numRows: Long,
-    blockMeta: Seq[DataBlockBase])
+    blockMeta: Seq[DataBlockBase]) extends AutoCloseable {
+
+  private val closed: AtomicBoolean = new AtomicBoolean(false)
+
+  override def close(): Unit = {
+    // Guarantee idempotence
+    if (closed.compareAndSet(false, true)) {
+      hmbs.safeClose()
+    }
+  }
+}
 
 object SingleHMBAndMeta {
   // Contains no data but could have number of rows for things like count().
@@ -69,7 +79,7 @@ object SingleHMBAndMeta {
 /**
  * The base HostMemoryBuffer information read from a single file.
  */
-trait HostMemoryBuffersWithMetaDataBase {
+trait HostMemoryBuffersWithMetaDataBase extends AutoCloseable {
   // PartitionedFile to be read
   def partitionedFile: PartitionedFile
   // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
@@ -135,6 +145,13 @@ trait HostMemoryBuffersWithMetaDataBase {
   }
 
   private val _releaseCallback: mutable.Queue[() => Unit] = mutable.Queue.empty
+
+  // This close method is idempotent, since both SingleHMBAndMeta.close and releaseResource
+  // keep idempotent.
+  override def close(): Unit = {
+    memBuffersAndSizes.safeClose()
+    releaseResource()
+  }
 }
 
 // This is a common trait for all kind of file formats
@@ -603,6 +620,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def readBuffersToBatch(currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
       addTaskIfNeeded: Boolean): Unit = {
     if (getNumRowsInHostBuffers(currentFileHostBuffers) == 0) {
+      currentFileHostBuffers.close()
       closeCurrentFileHostBuffers()
       if (addTaskIfNeeded) addNextTaskIfNeeded()
       next()
@@ -885,9 +903,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   private def closeCurrentFileHostBuffers(): Unit = {
     currentFileHostBuffers.foreach { current =>
-      current.memBuffersAndSizes.foreach { hbInfo =>
-        hbInfo.hmbs.safeClose()
-      }
+      current.close()
     }
     currentFileHostBuffers = None
   }
@@ -900,11 +916,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     batchIter = EmptyGpuColumnarBatchIterator
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
-        val taskResult = task.get
-        taskResult.data.memBuffersAndSizes.foreach { hmbInfo =>
-          hmbInfo.hmbs.safeClose()
-        }
-        taskResult.close()
+        convertAsyncResult(task.get()).close()
       } else {
         // Note we are not interrupting thread here so it
         // will finish reading and then just discard. If we

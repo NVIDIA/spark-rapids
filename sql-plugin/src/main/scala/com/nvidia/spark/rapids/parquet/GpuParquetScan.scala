@@ -2532,7 +2532,7 @@ class MultiFileCloudParquetPartitionReader(
           val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset)
           allOutputBlocks ++= outputBlocks
           offset += columnDataSize
-          hmbInfo.hmbs.safeClose()
+          hmbInfo.close()
         }
       }
       if (buffers.isEmpty) {
@@ -2826,7 +2826,7 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                hostBuffers.flatMap(_.hmbs).safeClose()
+                hostBuffers.safeClose()
                 HostMemoryEmptyMetaData(file, 0, bytesRead,
                   fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema,
@@ -2842,7 +2842,7 @@ class MultiFileCloudParquetPartitionReader(
         }
       } catch {
         case e: Throwable =>
-          hostBuffers.flatMap(_.hmbs).safeClose(e)
+          hostBuffers.safeClose(e)
           throw e
       }
       val bufferTime = System.nanoTime() - bufferStartTime
@@ -2921,8 +2921,8 @@ class MultiFileCloudParquetPartitionReader(
         // If there are more buffers, we will release the resource after reading all batches,
         // in case of releasing the resource too early.
         if (memBuffersAndSize.length == 1) {
-          // Release the virtual budget of host memory back to the resource pool.
-          buffer.releaseResource()
+          // Release the virtual budget as closing the entire structure
+          buffer.close()
         }
       }
       if (memBuffersAndSize.length > 1) {

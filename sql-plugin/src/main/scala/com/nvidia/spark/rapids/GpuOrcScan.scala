@@ -2132,7 +2132,7 @@ class MultiFileCloudOrcPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                hostBuffers.flatMap(_.hmbs).safeClose()
+                hostBuffers.safeClose()
                 logDebug("Reader is closed, return empty buffer for the current read for " +
                   s"file: ${partFile.filePath.toString}")
                 HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
@@ -2145,7 +2145,7 @@ class MultiFileCloudOrcPartitionReader(
         }
       } catch {
         case e: Throwable =>
-          hostBuffers.flatMap(_.hmbs).safeClose(e)
+          hostBuffers.safeClose(e)
           throw e
       }
       val bufferTime = System.nanoTime() - bufferTimeStart
@@ -2353,7 +2353,7 @@ class MultiFileCloudOrcPartitionReader(
               stripeOffset += block.getBlockSize
             }
             offset += dataCopyAmount
-            buf.hmbs.safeClose()
+            buf.close()
             allOutputStripes ++= buf.blockMeta.map(_.stripe)
           }
         }
