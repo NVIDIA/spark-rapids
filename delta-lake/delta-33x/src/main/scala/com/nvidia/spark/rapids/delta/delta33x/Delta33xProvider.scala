@@ -28,7 +28,6 @@ import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils.PROP_CLUSTERING_COLUMNS
-import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterByTransform
 import org.apache.spark.sql.delta.sources.DeltaDataSource
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -54,24 +53,6 @@ object Delta33xProvider extends DeltaIOProvider {
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
     write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
-  }
-
-  override def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec,
-      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
-  }
-
-  override def tagForGpu(cpuExec: AtomicReplaceTableAsSelectExec,
-      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
   }
 
   override def tagForGpu(
