@@ -2102,6 +2102,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .booleanConf
       .createWithDefault(false)
 
+  val SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO =
+    conf("spark.rapids.shuffle.coalesceBeforeShuffleTargetSizeRatio")
+      .doc("Ratio of target batch size for coalescing batches before shuffle partitioning. " +
+        "The target size for coalescing is calculated as: " +
+        "targetBatchSize * coalesceBeforeShuffleTargetSizeRatio. " +
+        "A value of 0.6 means the coalesce target is 60% of the configured batch size. " +
+        "A value of 0 disables coalescing before shuffle.")
+      .internal()
+      .doubleConf
+      .checkValue(v => v >= 0.0 && v <= 1.0, "Ratio must be between 0.0 and 1.0")
+      .createWithDefault(0.0)
+
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
