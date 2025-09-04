@@ -57,6 +57,12 @@ import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.datasources.v2.{LeafV2CommandExec, SupportsV1Write}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/** A trait used to identify Delta tables that are GPU-aware. */
+trait GpuSupportsWrite extends SupportsWrite
+
+/** A trait used to identify Delta V1Write that is GPU-aware */
+trait GpuV1Write extends V1Write
+
 /**
  * GPU version of AppendDataExecV1
  *
@@ -65,10 +71,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Rows in the output data set are appended.
  */
 case class GpuAppendDataExecV1(
-    table: SupportsWrite,
     plan: LogicalPlan,
     refreshCache: () => Unit,
-    write: V1Write) extends GpuV1FallbackWriters
+    write: GpuV1Write) extends GpuV1FallbackWriters
 
 /**
  * GPU version of OverwriteByExpressionExecV1
@@ -84,10 +89,9 @@ case class GpuAppendDataExecV1(
  * AlwaysTrue to delete all rows.
  */
 case class GpuOverwriteByExpressionExecV1(
-    table: SupportsWrite,
     plan: LogicalPlan,
     refreshCache: () => Unit,
-    write: V1Write) extends GpuV1FallbackWriters
+    write: GpuV1Write) extends GpuV1FallbackWriters
 
 /** GPU version of V1FallbackWriters */
 trait GpuV1FallbackWriters extends LeafV2CommandExec with SupportsV1Write with GpuExec {
@@ -95,11 +99,9 @@ trait GpuV1FallbackWriters extends LeafV2CommandExec with SupportsV1Write with G
 
   override def output: Seq[Attribute] = Nil
 
-  def table: SupportsWrite
-
   def refreshCache: () => Unit
 
-  def write: V1Write
+  def write: GpuV1Write
 
   override def run(): Seq[InternalRow] = {
     writeWithV1(write.toInsertableRelation)

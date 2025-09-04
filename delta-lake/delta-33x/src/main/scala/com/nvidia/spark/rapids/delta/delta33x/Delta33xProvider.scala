@@ -51,7 +51,7 @@ object Delta33xProvider extends DeltaIOProvider {
   }
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
+    write == classOf[DeltaTableV2] || classOf[GpuSupportsWrite].isAssignableFrom(write)
   }
 
   override def tagForGpu(
@@ -64,7 +64,7 @@ object Delta33xProvider extends DeltaIOProvider {
 
     cpuExec.table match {
       case _: DeltaTableV2 => super.tagForGpu(cpuExec, meta)
-      case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
+      case _: GpuSupportsWrite =>
       case _ => meta.willNotWorkOnGpu(s"${cpuExec.table} table class not supported on GPU")
     }
   }
@@ -126,6 +126,21 @@ object Delta33xProvider extends DeltaIOProvider {
   }
 
   override def convertToGpu(
+      cpuExec: AppendDataExecV1,
+      meta: AppendDataExecV1Meta): GpuExec = {
+    val gpuWrite = cpuExec.write match {
+      case write: GpuV1Write => write
+      case _ =>
+        val writeConfig = meta.getCustomTaggingData match {
+          case Some(c: DeltaWriteV1Config) => c
+          case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
+        }
+        toGpuWrite(writeConfig, meta.conf)
+    }
+    GpuAppendDataExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+  }
+
+  override def convertToGpu(
     cpuExec: AtomicReplaceTableAsSelectExec,
     meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
     val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
@@ -138,18 +153,6 @@ object Delta33xProvider extends DeltaIOProvider {
       cpuExec.writeOptions,
       cpuExec.orCreate,
       cpuExec.invalidateCache)
-  }
-
-  override def convertToGpu(
-      cpuExec: AppendDataExecV1,
-      meta: AppendDataExecV1Meta): GpuExec = {
-    cpuExec.table match {
-      case _: DeltaTableV2 =>
-        super.convertToGpu(cpuExec, meta)
-      case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
-        GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, cpuExec.write)
-      case unknown => throw new IllegalStateException(s"$unknown doesn't match any of the known ")
-    }
   }
 }
 

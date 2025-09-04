@@ -44,11 +44,11 @@ import org.apache.spark.sql.sources.InsertableRelation
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
-/** A trait used to identify Delta tables that are GPU-aware. */
-trait GpuDeltaSupportsWrite extends SupportsWrite
-
-/** A trait used to identify Delta V1Write that is GPU-aware */
-trait GpuDeltaV1Write extends V1Write
+///** A trait used to identify Delta tables that are GPU-aware. */
+//trait GpuDeltaSupportsWrite extends SupportsWrite
+//
+///** A trait used to identify Delta V1Write that is GPU-aware */
+//trait GpuDeltaV1Write extends V1Write
 
 trait GpuDeltaCatalogBase extends StagingTableCatalog {
   val spark: SparkSession = SparkSession.active

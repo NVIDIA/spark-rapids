@@ -25,9 +25,9 @@ import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaSupportsWrite, GpuDeltaV1Write}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{GpuSupportsWrite, GpuV1Write}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
@@ -93,7 +93,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
   }
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2] || classOf[GpuDeltaSupportsWrite].isAssignableFrom(write)
+    write == classOf[DeltaTableV2] || classOf[GpuSupportsWrite].isAssignableFrom(write)
   }
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
@@ -218,7 +218,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
     cpuExec.write match {
-      case _: GpuDeltaV1Write => // write is already using GPU, nothing more to do
+      case _: GpuV1Write => // write is already using GPU, nothing more to do
       case write =>
         val deltaTable = cpuExec.table.asInstanceOf[DeltaTableV2]
         val tablePath = if (deltaTable.catalogTable.isDefined) {
@@ -240,7 +240,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): GpuExec = {
     val gpuWrite = cpuExec.write match {
-      case write: GpuDeltaV1Write => write
+      case write: GpuV1Write => write
       case _ =>
         val writeConfig = meta.getCustomTaggingData match {
           case Some(c: DeltaWriteV1Config) => c
@@ -248,7 +248,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
         }
         toGpuWrite(writeConfig, meta.conf)
     }
-    GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+    GpuAppendDataExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   override def tagForGpu(
@@ -281,7 +281,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
       case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
     }
     val gpuWrite = toGpuWrite(writeConfig, meta.conf)
-    GpuOverwriteByExpressionExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+    GpuOverwriteByExpressionExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   protected def toGpuWrite(

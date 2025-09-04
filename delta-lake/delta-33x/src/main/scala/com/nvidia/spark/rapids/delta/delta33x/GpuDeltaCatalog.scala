@@ -21,6 +21,7 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
+import com.nvidia.spark.rapids.{GpuSupportsWrite, GpuV1Write}
 import com.nvidia.spark.rapids.RapidsConf
 import java.util
 import java.util.Locale
@@ -30,7 +31,7 @@ import scala.collection.JavaConverters._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, CatalogUtils}
-import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, SupportsWrite, Table, TableCapability, TableCatalog, TableChange}
+import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, Table, TableCapability, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.catalog.TableCapability._
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, V1Write, WriteBuilder}
@@ -414,7 +415,7 @@ class GpuDeltaCatalog(
       val partitions: Array[Transform],
       override val properties: util.Map[String, String],
       operation: TableCreationModes.CreationMode
-      ) extends StagedTable with SupportsWrite {
+      ) extends StagedTable with GpuSupportsWrite {
 
     private var asSelectQuery: Option[DataFrame] = None
     private var writeOptions: Map[String, String] = Map.empty
@@ -457,7 +458,7 @@ class GpuDeltaCatalog(
      * WriteBuilder for creating a Delta table.
      */
     private class DeltaV1WriteBuilder extends WriteBuilder {
-      override def build(): V1Write = new V1Write {
+      override def build(): V1Write = new GpuV1Write {
         override def toInsertableRelation(): InsertableRelation = {
           new InsertableRelation {
             override def insert(data: DataFrame, overwrite: Boolean): Unit = {

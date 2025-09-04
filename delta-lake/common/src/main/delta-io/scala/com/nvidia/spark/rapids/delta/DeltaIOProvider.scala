@@ -23,6 +23,7 @@ import scala.collection.mutable
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuSupportsWrite
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.{DataFrame, SaveMode}
@@ -51,7 +52,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
   }
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2]
+    write == classOf[DeltaTableV2] || classOf[GpuSupportsWrite].isAssignableFrom(write)
   }
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = {
@@ -95,12 +96,12 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       writeOptionsFromExec(cpuExec.writeOptions), cpuExec.session)
   }
 
-  private case class DeltaWriteV1Config(
+  protected case class DeltaWriteV1Config(
       deltaLog: DeltaLog,
       forceOverwrite: Boolean,
       options: mutable.HashMap[String, String])
 
-  private def extractWriteV1Config(
+  protected def extractWriteV1Config(
       meta: RapidsMeta[_, _, _],
       deltaLog: DeltaLog,
       write: V1Write): Option[DeltaWriteV1Config] = {
@@ -176,7 +177,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
     }
     val gpuWrite = toGpuWrite(writeConfig, meta.conf)
-    GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+    GpuAppendDataExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   override def tagForGpu(
@@ -209,7 +210,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
     }
     val gpuWrite = toGpuWrite(writeConfig, meta.conf)
-    GpuOverwriteByExpressionExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+    GpuOverwriteByExpressionExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   private def checkDeltaProvider(
@@ -222,9 +223,9 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     }
   }
 
-  private def toGpuWrite(
+  protected def toGpuWrite(
       writeConfig: DeltaWriteV1Config,
-      rapidsConf: RapidsConf): V1Write = new V1Write {
+      rapidsConf: RapidsConf): GpuV1Write = new GpuV1Write {
     override def toInsertableRelation(): InsertableRelation = {
       new InsertableRelation {
         override def insert(data: DataFrame, overwrite: Boolean): Unit = {
