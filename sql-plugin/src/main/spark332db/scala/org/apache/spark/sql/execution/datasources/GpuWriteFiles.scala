@@ -211,7 +211,6 @@ object GpuWriteFiles {
     val taskId = new TaskID(jobId, TaskType.MAP, tc.partitionId())
     val taskAttemptId = new TaskAttemptID(taskId, tc.attemptNumber())
 
-
     hadoopConf.set("mapreduce.job.id", jobId.toString)
     hadoopConf.set("mapreduce.task.id",  taskAttemptId.getTaskID.toString)
     hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)

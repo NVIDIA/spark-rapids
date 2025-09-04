@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
-import java.{lang, util}
+import java.lang.{Long => JLong}
+import java.util.{List => JList}
 import java.util.stream.{Stream => JStream}
 
 import com.nvidia.spark.rapids.{GpuParquetWriter, SpillableColumnarBatch}
@@ -26,7 +27,6 @@ import org.apache.iceberg.{FieldMetrics, Metrics, MetricsConfig}
 import org.apache.iceberg.io.FileAppender
 import org.apache.iceberg.parquet.ParquetUtil
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.ParquetMetadata
-
 
 
 /**
@@ -61,14 +61,14 @@ class GpuIcebergParquetAppender(
       inner.close()
       footer = withResource(IcebergPartitionedFile(fileIO.newInputFile(inner.path)).newReader) {
         reader =>
-          // TODO: Get footer from table writer
+          // TODO: Remove the read after https://github.com/rapidsai/cudf/issues/18886 got fixed.
           reader.getFooter
       }
       closed = true
     }
   }
 
-  override def splitOffsets(): util.List[lang.Long] = {
+  override def splitOffsets(): JList[JLong] = {
     require(footer != null, "Writer must be closed before getting split offsets")
 
     ParquetUtil.getSplitOffsets(footer)
