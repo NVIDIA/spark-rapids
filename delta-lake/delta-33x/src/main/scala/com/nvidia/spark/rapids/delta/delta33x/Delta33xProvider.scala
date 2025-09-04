@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.delta.delta33x
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.{DeltaIOProvider, GpuDeltaDataSource, RapidsDeltaUtils}
 import org.apache.hadoop.fs.Path
-import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.SupportsWrite
@@ -81,10 +80,6 @@ object Delta33xProvider extends DeltaIOProvider {
     if (!meta.conf.isDeltaWriteEnabled) {
       meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-
-    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
     }
 
     cpuExec.table match {
@@ -210,11 +205,6 @@ class DeltaCreatableRelationProviderMeta(
       val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
       RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
         saveCmd.options, SparkSession.active)
-
-      val table = source.getTable(saveCmd.schema, Array.empty, saveCmd.options.asJava)
-      if (table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-        willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-      }
     } else {
       willNotWorkOnGpu("no path specified for Delta Lake table")
     }

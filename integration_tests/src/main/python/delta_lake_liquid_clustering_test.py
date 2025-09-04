@@ -31,7 +31,7 @@ import pytest
 from typing import Callable, Dict
 from pyspark.sql.types import StringType, IntegerType
 
-from asserts import assert_gpu_fallback_write
+from asserts import assert_gpu_fallback_write, assert_gpu_and_cpu_writes_are_equal_collect
 from conftest import is_databricks_runtime
 from data_gen import unary_op_df, int_gen, copy_and_update, SetValuesGen, string_gen, long_gen, \
     gen_df
@@ -39,7 +39,7 @@ from delta_lake_delete_test import delta_delete_enabled_conf
 from delta_lake_merge_test import delta_merge_enabled_conf
 from delta_lake_update_test import delta_update_enabled_conf
 from delta_lake_utils import delta_meta_allow, \
-    delta_writes_enabled_conf, delta_write_fallback_allow, setup_delta_dest_tables
+    delta_writes_enabled_conf, delta_write_fallback_allow, assert_gpu_and_cpu_delta_logs_equivalent
 from marks import allow_non_gpu, delta_lake, ignore_order
 from spark_session import is_databricks133_or_later, is_spark_353_or_later, is_spark_356_or_later, with_cpu_session
 
@@ -154,15 +154,14 @@ def test_delta_rtas_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_tab
 
 
 
-@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
-               "AppendDataExecV1")
+@allow_non_gpu(*delta_meta_allow, "CreateTableExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
-def test_delta_append_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_table_factory):
+def test_delta_append_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factory):
     """
     Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
     falls back to the CPU, as this feature is not supported on the GPU.
@@ -179,13 +178,13 @@ def test_delta_append_sql_liquid_clustering_fallback(spark_tmp_path, spark_tmp_t
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_fallback_write(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "AppendDataExecV1",
-        conf=delta_writes_enabled_conf)
-
+        conf=delta_writes_enabled_conf
+    )
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
@@ -401,14 +400,14 @@ def write_to_delta_table_df(spark, path, mode, opts= None):
     df_writer.save(path)
 
 
-@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec")
+@allow_non_gpu(*delta_meta_allow, "CreateTableExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
-def test_delta_append_df_liquid_clustering_fallback(spark_tmp_path, spark_tmp_table_factory):
+def test_delta_append_df_liquid_clustering(spark_tmp_path, spark_tmp_table_factory):
     """
     Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
     falls back to the CPU, as this feature is not supported on the GPU.
@@ -419,15 +418,15 @@ def test_delta_append_df_liquid_clustering_fallback(spark_tmp_path, spark_tmp_ta
         # Create a temp view to select from for the CTAS operation
         write_to_delta_table_df(spark, path, "append")
 
-
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_fallback_write(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
         conf=delta_writes_enabled_conf)
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec")
 @delta_lake
