@@ -57,10 +57,10 @@ import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.datasources.v2.{LeafV2CommandExec, SupportsV1Write}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/** A trait used to identify Delta tables that are GPU-aware. */
+/** A trait used to identify tables that are GPU-aware. */
 trait GpuSupportsWrite extends SupportsWrite
 
-/** A trait used to identify Delta V1Write that is GPU-aware */
+/** A trait used to identify V1Write that is GPU-aware */
 trait GpuV1Write extends V1Write
 
 /**
