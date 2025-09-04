@@ -53,10 +53,6 @@ from spark_session import is_databricks133_or_later, is_spark_353_or_later, is_s
                     reason="CTAS with cluster by is only supported on delta 3.3+")
 def test_delta_ctas_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factory):
     view_name = spark_tmp_table_factory.get()
-    """
-    Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
-    falls back to the CPU, as this feature is not supported on the GPU.
-    """
     def write_func(spark, path):
         # Create a temp view to select from for the CTAS operation
         unary_op_df(spark, int_gen).coalesce(1).createOrReplaceTempView(view_name)
@@ -111,8 +107,6 @@ def setup_clustered_table_sql(spark, path, table_name, view_name):
         """)
 
 
-
-
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -123,10 +117,6 @@ def setup_clustered_table_sql(spark, path, table_name, view_name):
 @pytest.mark.skipif(is_spark_356_or_later(),
                     reason="https://github.com/delta-io/delta/issues/4671")
 def test_delta_rtas_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factory):
-    """
-    Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
-    falls back to the CPU, as this feature is not supported on the GPU.
-    """
     def write_func(spark, path):
         table_name = spark_tmp_table_factory.get()
         view_name = spark_tmp_table_factory.get()
@@ -160,10 +150,6 @@ def test_delta_rtas_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factor
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_append_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factory):
-    """
-    Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
-    falls back to the CPU, as this feature is not supported on the GPU.
-    """
     def write_func(spark, path):
         table_name = spark_tmp_table_factory.get()
         view_name = spark_tmp_table_factory.get()
@@ -226,10 +212,6 @@ def test_delta_insert_overwrite_static_sql_liquid_clustering(spark_tmp_path,
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_insert_overwrite_dynamic_sql_liquid_clustering(spark_tmp_path,
                                                                       spark_tmp_table_factory):
-    """
-    Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
-    falls back to the CPU, as this feature is not supported on the GPU.
-    """
     def write_func(spark, path):
         table_name = spark_tmp_table_factory.get()
         view_name = spark_tmp_table_factory.get()
@@ -404,10 +386,6 @@ def write_to_delta_table_df(spark, path, mode, opts= None):
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 def test_delta_append_df_liquid_clustering(spark_tmp_path, spark_tmp_table_factory):
-    """
-    Test to ensure that creating a Delta table with liquid clustering (CLUSTER BY)
-    falls back to the CPU, as this feature is not supported on the GPU.
-    """
     def write_func(spark, path):
         table_name = spark_tmp_table_factory.get()
         create_clustered_delta_table_df(table_name, path)
