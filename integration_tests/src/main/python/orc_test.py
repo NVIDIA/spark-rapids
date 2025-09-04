@@ -1113,7 +1113,7 @@ def test_orc_write_but_cpu_read_fail(spark_tmp_path):
         Caused by: java.lang.IllegalArgumentException: nanos > 999999999 or < 0
 	        at java.sql/java.sql.Timestamp.setNanos(Timestamp.java:336)
 	        at org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector.asScratchTimestamp
-	Reproduce: export DATAGEN_SEED=1754555738; export TZ=UTC; remove the check to enable writing on GPU; then run this test case
+	Reproduce: export DATAGEN_SEED=1754555738; export TZ=UTC; then run this test case
     """
     gpu_write_path = spark_tmp_path + "/ORC_DATA_GPU"
     # If change the start year to 1970, then the test will pass.
