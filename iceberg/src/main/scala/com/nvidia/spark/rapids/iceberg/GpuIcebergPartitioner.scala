@@ -50,7 +50,7 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   private val sparkType: Array[DataType] = dataSparkType.fields.map(_.dataType)
   private val partitionSparkType: StructType = GpuTypeToSparkType.toSparkType(spec.partitionType())
 
-  private val partitionExprs: Seq[GpuExpression] = spec.fields().asScala.map(getPartitionExpr)
+  private val partitionExprs: Seq[GpuExpression] = spec.fields().asScala.map(getPartitionExpr).toSeq
 
   private val keyCols: Array[Int] = (0 until spec.fields().size()).toArray
 
@@ -152,7 +152,6 @@ object GpuIcebergPartitioner {
     table: Table): Array[SparkStructLike] = {
     val numCols = table.getNumberOfColumns
     val numRows = toIntExact(table.getRowCount)
-
 
     val hostColsArray = closeOnExcept(new Array[ColumnVector](numCols)) { hostCols =>
       for (colIdx <- 0 until numCols) {
