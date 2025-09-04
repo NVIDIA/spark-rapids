@@ -200,7 +200,15 @@ object GpuWriteFiles {
     }
   }
 
-  def getHadoopTaskAttemptContext(hadoopConf: Configuration): TaskAttemptContext = {
+  /**
+   * Create hadoop task attempt context from current spark task context and given hadoop conf.
+   * <br/>
+   *
+   * Note that the given hadoop conf will be modified to set necessary configs.
+   * @param hadoopConf Hadoop configuration
+   * @return Hadoop task attempt context
+   */
+  def calcHadoopTaskAttemptContext(hadoopConf: Configuration): TaskAttemptContext = {
     val tc = TaskContext.get()
     if (tc == null) {
       throw new IllegalStateException("TaskContext is not available")

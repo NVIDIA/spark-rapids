@@ -73,8 +73,7 @@ class GpuSparkFileWriterFactory(val table: Table,
   override def newPositionDeleteWriter(encryptedOutputFile: EncryptedOutputFile,
     partitionSpec: PartitionSpec,
     structLike: StructLike): PositionDeleteWriter[SpillableColumnarBatch] =
-    throw new UnsupportedOperationException("Spark row level deletion should not produce position" +
-      " delete files")
+    throw new UnsupportedOperationException("Iceberg delete command is not supported by gpu yet")
 
   private def createAppender(path: String): GpuIcebergParquetAppender = {
     val gpuWriter =  columnarOutputWriterFactory.newInstance(
