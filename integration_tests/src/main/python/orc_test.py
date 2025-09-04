@@ -33,7 +33,7 @@ def read_orc_sql(data_path):
     return lambda spark : spark.sql('select * from orc.`{}`'.format(data_path))
 
 # Using timestamps from 1590 to work around a cudf ORC bug
-# https://github.com/NVIDIA/spark-rapids/issues/131
+# https://github.com/NVIDIA/spark-rapids/issues/131.
 # https://github.com/NVIDIA/spark-rapids/issues/13272
 # Once the bug is fixed we should remove this and use timestamp_gen.
 def get_orc_timestamp_gen(nullable=True):
@@ -89,11 +89,14 @@ reader_opt_confs = __reader_opt_confs_no_chunked + __reader_opt_confs_chunked
 # The Count result can not be sorted, so local sort can not be used.
 reader_opt_confs_for_count = __reader_opt_confs_common + [__multithreaded_orc_file_reader_combine_unordered_conf_no_chunked]
 
+non_utc_allow_orc_file_source_scan=['ColumnarToRowExec', 'FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
+
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@allow_non_gpu(*non_utc_allow_orc_file_source_scan)
 def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, reader_confs):
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -1092,7 +1095,10 @@ def test_orc_non_utc_timezone(reader_confs, end_timestamp, spark_tmp_path, v1_en
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.rapids.sql.format.orc.enabled': True,
         'spark.rapids.sql.format.orc.read.enabled': True,
-        'spark.sql.session.timeZone': read_timezone
+        'spark.sql.session.timeZone': read_timezone,
+        # ignore write timezone when reading, this is for test purpose only
+        # The `tz_sensitive_test` mark guarantees the write and read are in the same timezone
+        'spark.rapids.sql.test.orc.read.ignore.write.timezone': True
     })
 
     # write on CPU
@@ -1116,12 +1122,3 @@ def test_orc_write_but_cpu_read_fail(spark_tmp_path):
     with_gpu_session(lambda spark: gen_df(spark, [("c1", ts_gen)]).repartition(1).write.orc(gpu_write_path))
     # Read timestamp on CPU and GPU
     assert_gpu_and_cpu_are_equal_collect(read_orc_df(gpu_write_path))
-
-# Test write with New York timezone and read with different timezones via `tz_sensitive_test` annotation.
-@tz_sensitive_test
-def test_orc_read_write_with_different_timezones(std_input_path):
-    # `timestamp_written_with_New_York_timezone.orc` file is written with New York timezone.
-    # The `writerTimezone` in `StripeFooter` is "America/New_York".
-    # Refer to section `Stripe Footer` in https://orc.apache.org/specification/ORCv1/
-    data_path = f"{std_input_path}/timestamp_written_with_New_York_timezone.orc"
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.orc(data_path))
