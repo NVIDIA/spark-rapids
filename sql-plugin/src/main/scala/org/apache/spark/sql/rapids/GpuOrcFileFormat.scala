@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import java.time.ZoneId
+
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OrcShims
@@ -30,6 +32,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
@@ -76,9 +79,25 @@ object GpuOrcFileFormat extends Logging {
         "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
     }
 
+    val types = schema.map(_.dataType).toSet
     val hasBools = schema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
         t.isInstanceOf[BooleanType])
+    }
+
+    if (!meta.conf.testOrcReadIgnoreWriterTimezone) {
+      // For timestamp type, timezone needs to be checked.
+      // This is because JVM timezone and UTC timezone offset is considered when
+      // reading timestamp type from ORC file.
+      if (types.exists(GpuOverrides.isOrContainsTimestamp)) {
+        if (!GpuOverrides.isUTCTimezone()) {
+          meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
+            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+            s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+        }
+      }
+    } else {
+      // Ignore the write timezones in the stripe footers, we support, skip the checks.
     }
 
     if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
