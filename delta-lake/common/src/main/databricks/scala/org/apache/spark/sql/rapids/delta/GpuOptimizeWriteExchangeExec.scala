@@ -56,6 +56,11 @@ case class GpuOptimizeWriteExchangeExec(
     override val child: SparkPlan) extends Exchange with GpuExec {
   import GpuMetric._
 
+  private lazy val coalesceBeforeShuffleTargetRatio = RapidsConf
+    .SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO
+    .get(child.conf)
+  private lazy val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(child.conf)
+
   // Use 150% of target file size hint config considering parquet compression.
   // Still the result file can be smaller/larger than the config due to data skew or
   // variable compression ratio for each data type.
