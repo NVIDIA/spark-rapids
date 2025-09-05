@@ -136,6 +136,8 @@ case class GpuOptimizeWriteExchangeExec(
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
       child.output,
+      coalesceBeforeShuffleTargetRatio,
+      targetBatchSize,
       actualPartitioning,
       child.output.map(_.dataType).toArray,
       serializer,
