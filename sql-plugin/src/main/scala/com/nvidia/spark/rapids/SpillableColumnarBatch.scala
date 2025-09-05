@@ -117,7 +117,6 @@ class SpillableColumnarBatchImpl (
   }
 
   override def getColumnarBatch(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     handle.materialize(sparkTypes)
   }
 
@@ -171,7 +170,6 @@ class SpillableCompressedColumnarBatchImpl(
   }
 
   override def getColumnarBatch(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     handle.materialize()
   }
 
@@ -228,7 +226,6 @@ class SpillableColumnarBatchFromBufferImpl(
   }
 
   override def getColumnarBatch(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     handle.materialize(dataTypes)
   }
 

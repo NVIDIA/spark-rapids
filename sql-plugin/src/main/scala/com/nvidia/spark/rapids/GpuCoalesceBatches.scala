@@ -252,11 +252,15 @@ abstract class AbstractGpuCoalesceIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    streamTime: GpuMetric,
+    streamTimeOrNoop: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Logging {
 
+  val streamTime =  streamTimeOrNoop match {
+    case NoopMetric => new LocalGpuMetric
+    case _ => streamTimeOrNoop
+  }
   private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
@@ -595,7 +599,8 @@ abstract class AbstractGpuCoalesceIterator(
    *
    * @return The coalesced batch
    */
-  override def next(): ColumnarBatch = withResource(new MetricRange(opTime)) { _ =>
+  override def next(): ColumnarBatch = withResource(
+    new MetricRange(Seq(opTime), excludeMetric = streamTime)) { _ =>
     if (coalesceBatchIterator.hasNext) {
       val batch = coalesceBatchIterator.next()
       if (wasLastBatch) {
@@ -747,6 +752,14 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
+
+    if(candidates.batches.length == 1) {
+      // If there is only one batch, just return it directly without retrying
+      // This can save the overhead of setting up the retry iterator
+      // Thus to make coalesce cheaper
+      return Iterator(candidates.batches(0).getColumnarBatch())
+    }
+
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
       concatBatches(attempt.batches)
     }
@@ -869,6 +882,14 @@ class GpuCompressionAwareCoalesceIterator(
   override def getCoalesceRetryIterator(): Iterator[ColumnarBatch] = {
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
+
+    if(candidates.batches.length == 1) {
+      // If there is only one batch, just return it directly without retrying
+      // This can save the overhead of setting up the retry iterator
+      // Thus to make coalesce cheaper
+      return Iterator(candidates.batches(0).getColumnarBatch())
+    }
+
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
       concatBatches(attempt.batches)
     }

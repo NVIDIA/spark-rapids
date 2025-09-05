@@ -199,14 +199,18 @@ object GpuMetric extends Logging {
   }
 
   def ns[T](metrics: GpuMetric*)(f: => T): T = {
-    val initedMetrics = metrics.map(m => (m, m.tryActivateTimer()))
+    ns(metrics, NoopMetric)(f)
+  }
+
+  def ns[T](metrics: Seq[GpuMetric], excludeMetric: GpuMetric = NoopMetric)(f: => T): T = {
+    val initedMetrics = metrics.map(m => (m, m.tryActivateTimer(excludeMetric)))
     val start = System.nanoTime()
     try {
       f
     } finally {
       val taken = System.nanoTime() - start
       initedMetrics.foreach { case (m, isTrack) =>
-        if (isTrack) m.deactivateTimer(taken)
+        if (isTrack) m.deactivateTimer(taken, excludeMetric)
       }
     }
   }
@@ -294,34 +298,45 @@ sealed abstract class GpuMetric extends Serializable {
   // excluding semaphore wait time
   var companionGpuMetric: Option[GpuMetric] = None
   private var semWaitTimeWhenActivated = 0L
+  private var excludeMetricWhenActivated = 0L
 
-  final def tryActivateTimer(): Boolean = {
+  final def tryActivateTimer(excludeMetric: GpuMetric): Boolean = {
     if (!isTimerActive) {
       isTimerActive = true
       semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
+      excludeMetricWhenActivated = excludeMetric.value
       true
     } else {
       false
     }
   }
 
-  final def deactivateTimer(duration: Long): Unit = {
+  final def deactivateTimer(duration: Long, excludeMetric: GpuMetric): Unit = {
     if (isTimerActive) {
       isTimerActive = false
+
       companionGpuMetric.foreach(c =>
-        c.add(duration - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)))
+        c.add(duration
+          - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)
+          - (excludeMetric.value - excludeMetricWhenActivated)
+        ))
       semWaitTimeWhenActivated = 0L
-      add(duration)
+
+      add(duration - (excludeMetric.value - excludeMetricWhenActivated))
     }
   }
 
   final def ns[T](f: => T): T = {
-    if (tryActivateTimer()) {
+    ns(NoopMetric)(f)
+  }
+
+  final def ns[T](excludeMetric: GpuMetric = NoopMetric)(f: => T): T = {
+    if (tryActivateTimer(excludeMetric)) {
       val start = System.nanoTime()
       try {
         f
       } finally {
-        deactivateTimer(System.nanoTime() - start)
+        deactivateTimer(System.nanoTime() - start, excludeMetric)
       }
     } else {
       f

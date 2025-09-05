@@ -13,7 +13,7 @@ def runSingleTest(spark: SparkSession, totalRows: Long, numTasks: Int, lookupTab
     .selectExpr(
       "id",
       "id % 1000 as lookup_key",
-      "id % 50 as shuffle_key",
+      "cast(rand() * 50 as int) as shuffle_key",
       "id * 1.5 as value1",
       "id * 2.3 as value2"
     )
@@ -71,7 +71,7 @@ def createBroadcastJoinScenario(): Unit = {
   spark.conf.set("spark.rapids.shuffle.coalesceBeforeShuffleTargetSizeRatio", "0.0")
   
   val timesNoCoalesce = ArrayBuffer[Long]()
-  for (i <- 1 to 1) {
+  for (i <- 1 to 3) {
     println(s"  Run $i/3...")
     val time = runSingleTest(spark, totalRows, numTasks, lookupTable)
     timesNoCoalesce += time
@@ -82,7 +82,7 @@ def createBroadcastJoinScenario(): Unit = {
   spark.conf.set("spark.rapids.shuffle.coalesceBeforeShuffleTargetSizeRatio", "0.6")
   
   val timesWithCoalesce = ArrayBuffer[Long]()
-  for (i <- 1 to 0) {
+  for (i <- 1 to 3) {
     println(s"  Run $i/3...")
     val time = runSingleTest(spark, totalRows, numTasks, lookupTable)
     timesWithCoalesce += time
