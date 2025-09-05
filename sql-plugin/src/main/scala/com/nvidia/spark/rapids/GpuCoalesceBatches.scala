@@ -257,7 +257,7 @@ abstract class AbstractGpuCoalesceIterator(
     opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Logging {
 
-  val streamTime =  streamTimeOrNoop match {
+  val streamTime = streamTimeOrNoop match {
     case NoopMetric => new LocalGpuMetric
     case _ => streamTimeOrNoop
   }
@@ -753,7 +753,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
 
-    if(candidates.batches.length == 1) {
+    if (candidates.batches.length == 1) {
       // If there is only one batch, just return it directly without retrying
       // This can save the overhead of setting up the retry iterator
       // Thus to make coalesce cheaper
@@ -883,7 +883,7 @@ class GpuCompressionAwareCoalesceIterator(
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
 
-    if(candidates.batches.length == 1) {
+    if (candidates.batches.length == 1) {
       // If there is only one batch, just return it directly without retrying
       // This can save the overhead of setting up the retry iterator
       // Thus to make coalesce cheaper
