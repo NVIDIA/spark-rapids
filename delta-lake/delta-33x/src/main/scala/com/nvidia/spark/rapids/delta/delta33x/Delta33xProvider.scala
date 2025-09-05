@@ -126,21 +126,6 @@ object Delta33xProvider extends DeltaIOProvider {
   }
 
   override def convertToGpu(
-      cpuExec: AppendDataExecV1,
-      meta: AppendDataExecV1Meta): GpuExec = {
-    val gpuWrite = cpuExec.write match {
-      case write: GpuV1Write => write
-      case _ =>
-        val writeConfig = meta.getCustomTaggingData match {
-          case Some(c: DeltaWriteV1Config) => c
-          case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
-        }
-        toGpuWrite(writeConfig, meta.conf)
-    }
-    GpuAppendDataExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
-  }
-
-  override def convertToGpu(
     cpuExec: AtomicReplaceTableAsSelectExec,
     meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
     val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]

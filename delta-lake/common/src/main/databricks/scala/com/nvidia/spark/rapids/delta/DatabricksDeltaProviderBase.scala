@@ -248,7 +248,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
         }
         toGpuWrite(writeConfig, meta.conf)
     }
-    GpuAppendDataExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+    GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   override def tagForGpu(
@@ -281,7 +281,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
       case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
     }
     val gpuWrite = toGpuWrite(writeConfig, meta.conf)
-    GpuOverwriteByExpressionExecV1(cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+    GpuOverwriteByExpressionExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   protected def toGpuWrite(

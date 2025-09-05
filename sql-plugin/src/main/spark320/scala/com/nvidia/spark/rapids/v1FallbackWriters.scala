@@ -71,6 +71,7 @@ trait GpuV1Write extends V1Write
  * Rows in the output data set are appended.
  */
 case class GpuAppendDataExecV1(
+    table: SupportsWrite,
     plan: LogicalPlan,
     refreshCache: () => Unit,
     write: GpuV1Write) extends GpuV1FallbackWriters
@@ -89,6 +90,7 @@ case class GpuAppendDataExecV1(
  * AlwaysTrue to delete all rows.
  */
 case class GpuOverwriteByExpressionExecV1(
+    table: SupportsWrite,
     plan: LogicalPlan,
     refreshCache: () => Unit,
     write: GpuV1Write) extends GpuV1FallbackWriters
@@ -98,6 +100,17 @@ trait GpuV1FallbackWriters extends LeafV2CommandExec with SupportsV1Write with G
   override def supportsColumnar: Boolean = false
 
   override def output: Seq[Attribute] = Nil
+
+  /**
+   * The table to write to.
+   *
+   * Ideally, this would be a GpuSupportsWrite. However, it is unclear enforcing that
+   * here will be always possible because the table is created through multiple layers
+   * of abstraction in Spark, and passed in via the CPU version of V1FallbackWriters.
+   * This function is currently not in use anyway (it is here just to match to its CPU
+   * version), so we just leave it as-is for now.
+   */
+  def table: SupportsWrite
 
   def refreshCache: () => Unit
 
