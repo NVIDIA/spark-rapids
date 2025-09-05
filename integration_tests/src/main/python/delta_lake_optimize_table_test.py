@@ -45,8 +45,7 @@ def test_delta_optimize_fallback_with_deletion_vectors(spark_tmp_path):
                               "ExecutedCommandExec")
 
 
-def _write_many_small_files(spark, enable_deletion_vectors, path, partition_columns=None, clustering_columns=None,
-                            tmp_view_name=None):
+def _write_many_small_files(spark, enable_deletion_vectors, path, partition_columns=None, clustering_columns=None):
     if partition_columns and clustering_columns:
         raise ValueError("Only one of partition_columns or clustering_columns can be specified")
 
@@ -58,16 +57,16 @@ def _write_many_small_files(spark, enable_deletion_vectors, path, partition_colu
         string_gen,
         num_slices=num_slices)
     if clustering_columns:
-        assert tmp_view_name is not None, "A temp view name must be provided when using clustering"
-        # Note: starting Spark 4.0, we can use the `clusterBy` DataFrameWriter API instead of SQL.
-        df.createOrReplaceTempView(tmp_view_name)
+        # Note: the SQL below queries the `df` directly without registering it as a temp view first,
+        # which is supported in Spark 3.3+ (https://issues.apache.org/jira/browse/SPARK-37516).
+        # Starting Spark 4.0, we can use the `clusterBy` DataFrameWriter API instead of SQL.
         spark.sql(f"""
             CREATE TABLE delta.`{path}`
             USING DELTA
             TBLPROPERTIES ('delta.enableDeletionVectors' = '{str(enable_deletion_vectors).lower()}')
             CLUSTER BY ({', '.join(clustering_columns)})
-            AS SELECT * FROM {tmp_view_name}
-        """)
+            AS SELECT * FROM {{tmp_df}}
+        """, tmp_df=df)
     else:
         writer = df.write.format("delta").mode("overwrite")
         if partition_columns:
@@ -89,22 +88,22 @@ def _optimize_sql(path):
     return f"OPTIMIZE delta.`{path}`"
 
 
-def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, tmp_view_name, conf):
+def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, conf):
     def setup_cpu(spark):
-        _write_many_small_files(spark, enable_deletion_vectors, cpu_path, partition_columns, clustering_columns, tmp_view_name)
+        _write_many_small_files(spark, enable_deletion_vectors, cpu_path, partition_columns, clustering_columns)
     def setup_gpu(spark):
-        _write_many_small_files(spark, enable_deletion_vectors, gpu_path, partition_columns, clustering_columns, tmp_view_name)
+        _write_many_small_files(spark, enable_deletion_vectors, gpu_path, partition_columns, clustering_columns)
     with_cpu_session(setup_cpu, conf)
     with_cpu_session(setup_gpu, conf)
 
 
 def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=None, clustering_columns=None,
-                            tmp_view_name=None, conf=delta_writes_enabled_conf):
+                            conf=delta_writes_enabled_conf):
     data_path = spark_tmp_path + "/DELTA_OPTIMIZE"
     cpu_path = data_path + "/CPU"
     gpu_path = data_path + "/GPU"
 
-    _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, tmp_view_name, conf)
+    _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, conf)
 
     # Run OPTIMIZE on each table and verify the returned path matches the target
     cpu_result = with_cpu_session(lambda s: s.sql(_optimize_sql(cpu_path)).collect(), conf=conf)
@@ -153,8 +152,7 @@ def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vector
 @pytest.mark.skipif(is_databricks_runtime(), reason="OPTIMIZE table command is not supported for Databricks")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
     enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
-def test_delta_optimize_clustered_table(spark_tmp_path, spark_tmp_table_factory, enable_deletion_vectors):
-    view_name = spark_tmp_table_factory.get()
+def test_delta_optimize_clustered_table(spark_tmp_path, enable_deletion_vectors):
 
     # Enable OptimizeTableCommand explicitly to make sure that the fallback will happen
     # when the command is enabled.
@@ -162,4 +160,4 @@ def test_delta_optimize_clustered_table(spark_tmp_path, spark_tmp_table_factory,
         "spark.rapids.sql.command.OptimizeTableCommand": "true",
     })
 
-    _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, clustering_columns=["a"], tmp_view_name=view_name, conf=conf)
+    _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, clustering_columns=["a"], conf=conf)
