@@ -16,24 +16,40 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
-import com.nvidia.spark.rapids.GpuMetric
+import ai.rapids.cudf._
+import ai.rapids.cudf.HostColumnVector._
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
+import com.nvidia.spark.rapids.parquet._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.parquet.hadoop.metadata.BlockMetaData
+import scala.collection.JavaConverters._
+import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.MDC
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.delta.{DeltaColumnMapping, DeltaColumnMappingMode, IdMapping, NameMapping, NoMapping, TypeWidening}
+import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader}
+import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
-import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
+import org.apache.spark.sql.delta.actions._
+import org.apache.spark.sql.delta.deletionvectors._
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.execution.vectorized._
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources._
-import org.apache.spark.sql.types.{MetadataBuilder, StructType}
+import org.apache.spark.sql.types.{ByteType, DataType, MetadataBuilder, StructType}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnarBatchRow}
+import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.util.SerializableConfiguration
 
 case class GpuDelta33xParquetFileFormat(
     protocol: Protocol,
@@ -177,8 +193,19 @@ case class GpuDelta33xParquetFileFormat(
     // columns to generate.
     if (useMetadataRowIndex && isRowDeletedColumn.isEmpty) return dataReader
 
-    // We should never come here as we should have fallen back to the CPU
-    throw new IllegalStateException("We don't support reading deletion vectors on the GPU")
+    val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
+    // create an iterator with deletion vectors
+    (file: PartitionedFile) => {
+      val iter = dataReader(file)
+      RapidsDeletionVectorUtils.iteratorWithAdditionalMetadataColumns(
+        file,
+        useMetadataRowIndex,
+        iter,
+        isRowDeletedColumn,
+        rowIndexColumn,
+        tablePath,
+        serializableHadoopConf).asInstanceOf[Iterator[InternalRow]]
+    }
   }
 
   /**
@@ -243,5 +270,512 @@ case class GpuDelta33xParquetFileFormat(
         logError(s"Failed to translate filter ${MDC(DeltaLogKeys.FILTER, filter)}")
         None
     }
+  }
+}
+
+class DeltaMultiFileReaderFactory(
+    fileScan: GpuFileSourceScanExec,
+    useMetadataRowIndex: Boolean,
+    @transient sqlConf: SQLConf,
+    broadcastedConf: Broadcast[SerializableConfiguration],
+    pushedFilters: Array[Filter],
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    partitionSchema: StructType,
+    filters: Array[Filter],
+    tablePath: Option[String],
+    @transient rapidsConf: RapidsConf,
+    metrics: Map[String, GpuMetric],
+    queryUsesInputFile: Boolean
+  ) extends GpuParquetMultiFilePartitionReaderFactory(fileScan.conf, broadcastedConf,
+      fileScan.relation.dataSchema, fileScan.requiredSchema, fileScan.readPartitionSchema,
+      pushedFilters, fileScan.rapidsConf, fileScan.allMetrics, fileScan.queryUsesInputFile) {
+
+  private val schemaWithIndices = fileScan.requiredSchema.fields.zipWithIndex
+  def findColumn(name: String): Option[ColumnMetadata] = {
+    val results = schemaWithIndices.filter(_._1.name == name)
+    if (results.length > 1) {
+      throw new IllegalArgumentException(
+        s"There are more than one column with name=`$name` requested in the reader output")
+    }
+    results.headOption.map(e => ColumnMetadata(e._2, e._1))
+  }
+
+  private val isRowDeletedColumn = findColumn(IS_ROW_DELETED_COLUMN_NAME)
+  private val rowIndexColumnName = if (useMetadataRowIndex) {
+    ParquetFileFormat.ROW_INDEX_TEMPORARY_COLUMN_NAME
+  } else {
+    ROW_INDEX_COLUMN_NAME
+  }
+  private val rowIndexColumn = findColumn(rowIndexColumnName)
+
+  override def createColumnarReader(p: InputPartition): PartitionReader[ColumnarBatch] = {
+    val files = p.asInstanceOf[FilePartition].files
+    val reader = super.createColumnarReader(p)
+    new DeltaMultiFileParquetPartitionReader(files, reader, !useMetadataRowIndex,
+      isRowDeletedColumn, rowIndexColumn, broadcastedConf.value, tablePath)
+  }
+}
+
+class DeltaMultiFileParquetPartitionReader(
+    files: Array[PartitionedFile],
+    reader: PartitionReader[ColumnarBatch],
+    isPredicatePushdownEnabled: Boolean,
+    isRowDeletedColumnOpt: Option[ColumnMetadata],
+    rowIndexColumnOpt: Option[ColumnMetadata],
+    serializableConf: SerializableConfiguration,
+    tablePath: Option[String]) extends PartitionReader[ColumnarBatch] {
+
+  private val filesIterator = files.iterator
+  private var file: PartitionedFile = null
+  private var rowIndex: Long = 0L
+  private var rowIndexFilterOpt: Option[RowIndexFilter] = None
+
+  override def next(): Boolean = {
+    reader.next()
+  }
+
+  override def close(): Unit = {
+    reader.close()
+  }
+
+  private def compareFile(file: PartitionedFile): Boolean = {
+    InputFileUtils.getCurInputFilePath() == file.urlEncodedPath &&
+      InputFileUtils.getCurInputFileStartOffset == file.start &&
+      InputFileUtils.getCurInputFileLength == file.length
+  }
+
+  override def get(): ColumnarBatch = {
+    val batch = reader.get()
+    if (file == null || !compareFile(file)) {
+      file = filesIterator.next()
+      rowIndex = 0
+      rowIndexFilterOpt = RapidsDeletionVectorUtils
+        .getRowIndexFilter(file, isRowDeletedColumnOpt, serializableConf, tablePath)
+    }
+
+    val newBatch = RapidsDeletionVectorUtils.processBatchWithDeletionVector(
+      serializableConf.value,
+      file,
+      isPredicatePushdownEnabled,
+      batch,
+      rowIndex,
+      isRowDeletedColumnOpt,
+      rowIndexFilterOpt,
+      rowIndexColumnOpt
+    )
+    rowIndex += batch.numRows()
+    newBatch
+  }
+}
+
+object RapidsDeletionVectorUtils {
+
+  /**
+   * Multifile
+   **/
+  def processBatchWithDeletionVector(
+    hadoopConf: Configuration,
+    file: PartitionedFile,
+    isPredicatePushdownEnabled: Boolean,
+    batch: ColumnarBatch,
+    rowIndex: Long,
+    isRowDeletedColumnOpt: Option[ColumnMetadata],
+    rowIndexFilterOpt: Option[RowIndexFilter],
+    rowIndexColumnOpt: Option[ColumnMetadata]): ColumnarBatch = {
+
+    replaceBatch(hadoopConf,
+      rowIndex,
+      batch,
+      batch.numRows(),
+      isPredicatePushdownEnabled,
+      rowIndexColumnOpt,
+      isRowDeletedColumnOpt,
+      rowIndexFilterOpt,
+      file)
+  }
+
+  /**
+   * Perfile
+   **/
+  def iteratorWithAdditionalMetadataColumns(
+    partitionedFile: PartitionedFile,
+    isPredicatePushdownEnabled: Boolean,
+    iterator: Iterator[Any],
+    isRowDeletedColumnOpt: Option[ColumnMetadata],
+    rowIndexColumnOpt: Option[ColumnMetadata],
+    tablePath: Option[String],
+    serializableConf: SerializableConfiguration): Iterator[Any] = {
+
+    val rowIndexFilterOpt = RapidsDeletionVectorUtils
+      .getRowIndexFilter(partitionedFile, isRowDeletedColumnOpt, serializableConf, tablePath)
+
+    var rowIndex = 0L
+
+    iterator.map {
+      case cb: ColumnarBatch =>
+        val size = cb.numRows()
+        val newBatch = replaceBatch(serializableConf.value, rowIndex, cb, size,
+          isPredicatePushdownEnabled, rowIndexColumnOpt, isRowDeletedColumnOpt,
+          rowIndexFilterOpt, partitionedFile)
+        rowIndex += size
+        newBatch
+
+
+      case _: ColumnarBatchRow =>
+        throw new RuntimeException("Received invalid type ColumnarBatchRow")
+      case _: InternalRow =>
+        throw new RuntimeException("Received invalid type InternalRow")
+
+      case other =>
+        throw new RuntimeException("Parquet reader returned an unknown row type: " +
+          s"${other.getClass.getName}")
+    }
+  }
+
+  // Ray's logic from GpuParquetReaderPostProcessor processRowPos
+  private def getRowIndexPos(numRows: Int, blocks: List[BlockMetaData]): RapidsHostColumnVector = {
+    val rowIndexVectorBuilder =
+      new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), numRows)
+    var curBlockIndex = 0
+    var processedBlockRowCounts = 0L
+    var processedRowCount = 0L
+
+    var curBlockRowCount = blocks(curBlockIndex).getRowCount
+    var curBlockRowStart = blocks(curBlockIndex).getStartingPos
+    var curBlockRowEnd = curBlockRowStart + curBlockRowCount
+    var curRowPos = curBlockRowStart
+
+    for (i <- 0 until numRows) {
+      if (curRowPos >= curBlockRowEnd) {
+        // switch to next block
+        curBlockIndex += 1
+        processedBlockRowCounts += curBlockRowCount
+        curRowPos = blocks(curBlockIndex).getStartingPos
+
+        curBlockRowCount = blocks(curBlockIndex).getRowCount
+        curBlockRowStart = blocks(curBlockIndex).getStartingPos
+        curBlockRowEnd = curBlockRowStart + curBlockRowCount
+      }
+
+      rowIndexVectorBuilder.append(curRowPos)
+      curRowPos += 1
+      processedRowCount += 1
+    }
+    new RapidsHostColumnVector(org.apache.spark.sql.types.LongType, rowIndexVectorBuilder.build())
+  }
+
+  private def getRowIndexPosSimple(size: Long): RapidsHostColumnVector = {
+    val rowIndexVectorBuilder = new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), size)
+    // populate the row index column value.
+    for (i <- 0L until size) {
+      rowIndexVectorBuilder.append(i)
+    }
+    new RapidsHostColumnVector(org.apache.spark.sql.types.LongType, rowIndexVectorBuilder.build())
+  }
+
+  private def replaceVectors(
+    batch: ColumnarBatch,
+    indexVectorTuples: (Int, org.apache.spark.sql.vectorized.ColumnVector) *): ColumnarBatch = {
+    val vectors = ArrayBuffer[org.apache.spark.sql.vectorized.ColumnVector]()
+    for (i <- 0 until batch.numCols()) {
+      var replaced: Boolean = false
+      for (indexVectorTuple <- indexVectorTuples) {
+        val index = indexVectorTuple._1
+        val vector = indexVectorTuple._2
+        if (index == i) {
+          vectors += vector
+          // Make sure to close the existing vector allocated in the Parquet
+          batch.column(i).close()
+          replaced = true
+        }
+      }
+      if (!replaced) {
+        vectors += batch.column(i)
+      }
+    }
+    new ColumnarBatch(vectors.toArray, batch.numRows())
+  }
+
+  def getRowIndexFilter(partitionedFile: PartitionedFile,
+    isRowDeletedColumnOpt: Option[ColumnMetadata],
+    serializableHadoopConf: SerializableConfiguration,
+    tablePath: Option[String]): Option[RowIndexFilter] = {
+    isRowDeletedColumnOpt.map { col =>
+      // Fetch the DV descriptor from the broadcast map and create a row index filter
+      val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
+        .get(FILE_ROW_INDEX_FILTER_ID_ENCODED)
+      val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
+        .get(FILE_ROW_INDEX_FILTER_TYPE)
+      if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
+        val rowIndexFilter = filterTypeOpt.get match {
+          case RowIndexFilterType.IF_CONTAINED => DropMarkedRowsFilter
+          case RowIndexFilterType.IF_NOT_CONTAINED => KeepMarkedRowsFilter
+          case unexpectedFilterType => throw new IllegalStateException(
+            s"Unexpected row index filter type: ${unexpectedFilterType}")
+        }
+        rowIndexFilter.createInstance(
+          DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get.asInstanceOf[String]),
+          serializableHadoopConf.value,
+          tablePath.map(new Path(_)))
+      } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
+        throw new IllegalStateException(
+          s"Both ${FILE_ROW_INDEX_FILTER_ID_ENCODED} and ${FILE_ROW_INDEX_FILTER_TYPE} " +
+            "should either both have values or no values at all.")
+      } else {
+        KeepAllRowsFilter
+      }
+    }
+  }
+
+  /**
+   * This class is intended to be used only with the method materializeIntoVectorWithRowIndex
+   * this is to avoid copying memory from OffHeapColumnVector to RapidsHostColumnVector before
+   * copying to the device
+   */
+  case class RapidsHostWriteableVector(
+     val builder: RapidsHostColumnBuilder,
+     size: Int,
+     sparkDataType: DataType) extends WritableColumnVector(size, sparkDataType) {
+
+    def putByte(rowId: Int, value: Byte): Unit = {
+      // We are ignoring the rowId as we only use it in materializing the ColumnVector which
+      // uses this method
+      builder.append(value)
+    }
+
+    override def getArrayLength(x$1: Int): Int = throw new UnsupportedOperationException()
+
+    override def getArrayOffset(x$1: Int): Int = throw new UnsupportedOperationException()
+
+    override def getByteBuffer(x$1: Int, x$2: Int): java.nio.ByteBuffer = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getBytesAsUTF8String(x$1: Int, x$2: Int): UTF8String = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getDictId(x$1: Int): Int = throw new UnsupportedOperationException()
+
+    override def putArray(x$1: Int, x$2: Int, x$3: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putBoolean(x$1: Int, x$2: Boolean): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putBooleans(x$1: Int, x$2: Byte): Unit = throw new UnsupportedOperationException()
+
+    override def putBooleans(x$1: Int, x$2: Int, x$3: Boolean): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putByteArray(x$1: Int, x$2: Array[Byte], x$3: Int, x$4: Int): Int = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putBytes(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putBytes(x$1: Int, x$2: Int, x$3: Byte): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putDouble(x$1: Int, x$2: Double): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putDoubles(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putDoubles(x$1: Int, x$2: Int, x$3: Array[Double], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putDoubles(x$1: Int, x$2: Int, x$3: Double): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putDoublesLittleEndian(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putFloat(x$1: Int, x$2: Float): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putFloats(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putFloats(x$1: Int, x$2: Int, x$3: Array[Float], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putFloats(x$1: Int, x$2: Int, x$3: Float): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putFloatsLittleEndian(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putInt(x$1: Int, x$2: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putInts(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putInts(x$1: Int, x$2: Int, x$3: Array[Int], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putInts(x$1: Int, x$2: Int, x$3: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putIntsLittleEndian(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putLong(x$1: Int, x$2: Long): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putLongs(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putLongs(x$1: Int, x$2: Int, x$3: Array[Long], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putLongs(x$1: Int, x$2: Int, x$3: Long): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putLongsLittleEndian(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putNotNull(x$1: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putNotNulls(x$1: Int, x$2: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putNull(x$1: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putNulls(x$1: Int, x$2: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putShort(x$1: Int, x$2: Short): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putShorts(x$1: Int, x$2: Int, x$3: Array[Byte], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putShorts(x$1: Int, x$2: Int, x$3: Array[Short], x$4: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def putShorts(x$1: Int, x$2: Int, x$3: Short): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def reserveInternal(x$1: Int): Unit = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def reserveNewColumn(
+      x$1: Int,
+      x$2: org.apache.spark.sql.types.DataType): WritableColumnVector = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getBoolean(x$1: Int): Boolean = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getByte(x$1: Int): Byte = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getDouble(x$1: Int): Double = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getFloat(x$1: Int): Float = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getInt(x$1: Int): Int = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getLong(x$1: Int): Long = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def getShort(x$1: Int): Short = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def isNullAt(x$1: Int): Boolean = {
+      throw new UnsupportedOperationException()
+    }
+
+    override def close(): Unit = {
+      builder.close()
+    }
+  }
+
+  @scala.annotation.nowarn(
+    "msg=method readFooter in class ParquetFileReader is deprecated"
+  )
+  def replaceBatch(
+    hadoopConf: Configuration,
+    rowIndex: Long,
+    batch: ColumnarBatch,
+    size: Int,
+    isPredicatePushdownEnabled: Boolean,
+    rowIndexColumnOpt: Option[ColumnMetadata],
+    isRowDeletedColumnOpt: Option[ColumnMetadata],
+    rowIndexFilterOpt: Option[RowIndexFilter],
+    file: PartitionedFile): ColumnarBatch = {
+
+    val builder = new RapidsHostColumnBuilder(new BasicType(false, DType.INT8), size)
+    val isRowDeletedVector = new RapidsHostWriteableVector(builder, size, ByteType)
+    val rowIndexCol: RapidsHostColumnVector = if (isPredicatePushdownEnabled) {
+      val rowIndexCol = getRowIndexPos(size, ParquetFileReader.readFooter(hadoopConf,
+        file.filePath.toPath).getBlocks.asScala.toList)
+      rowIndexFilterOpt.get.materializeIntoVectorWithRowIndex(size, rowIndexCol, isRowDeletedVector)
+      rowIndexCol
+    } else {
+      val rowIndexCol = getRowIndexPosSimple(size)
+      rowIndexFilterOpt.get.materializeIntoVector(rowIndex, rowIndex + size, isRowDeletedVector)
+      rowIndexCol
+    }
+
+    val indexVectorTuples = new ArrayBuffer[(Int, org.apache.spark.sql.vectorized.ColumnVector)]
+    indexVectorTuples += (rowIndexColumnOpt.get.index ->
+      GpuColumnVector.from(rowIndexCol.getBase().copyToDevice(), rowIndexCol.dataType()))
+    indexVectorTuples += (isRowDeletedColumnOpt.get.index ->
+      GpuColumnVector.from(isRowDeletedVector.builder.build().copyToDevice(),
+        isRowDeletedVector.dataType))
+    replaceVectors(batch, indexVectorTuples: _*)
   }
 }
