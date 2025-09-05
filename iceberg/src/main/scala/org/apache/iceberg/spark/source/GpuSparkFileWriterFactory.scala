@@ -49,7 +49,7 @@ class GpuSparkFileWriterFactory(val table: Table,
     taskMetrics = GpuWriteJobStatsTracker.taskMetrics)
 
   private lazy val taskAttemptContext: TaskAttemptContext = GpuWriteFiles
-    .getHadoopTaskAttemptContext(hadoopConf.value)
+    .calcHadoopTaskAttemptContext(hadoopConf.value)
 
   override def newDataWriter(file: EncryptedOutputFile,
     partitionSpec: PartitionSpec,

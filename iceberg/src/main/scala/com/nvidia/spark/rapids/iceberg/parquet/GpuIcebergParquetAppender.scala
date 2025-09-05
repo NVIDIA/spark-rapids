@@ -49,7 +49,7 @@ class GpuIcebergParquetAppender(
   }
 
   override def metrics(): Metrics = {
-    require(footer != null, "Writer must be closed before getting metrics")
+    require(closed, "Writer must be closed before getting metrics")
 
     ParquetUtil.footerMetrics(footer, JStream.empty[FieldMetrics[_]](), metricsConfig)
   }
@@ -69,7 +69,7 @@ class GpuIcebergParquetAppender(
   }
 
   override def splitOffsets(): JList[JLong] = {
-    require(footer != null, "Writer must be closed before getting split offsets")
+    require(closed, "Writer must be closed before getting split offsets")
 
     ParquetUtil.getSplitOffsets(footer)
   }
