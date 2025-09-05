@@ -93,6 +93,23 @@ closed by the RAPIDS Accelerator, so the UDF only needs to close any
 intermediate data generated while producing the final result that is
 returned.
 
+For Scala, helper methods implementing the automatic resource management
+pattern are exposed via the public Spark RAPIDS API under the `Arm` object:
+
+```scala
+import com.nvidia.spark.rapids.Arm.{withResource, closeOnExcept}
+```
+
+These methods can be used to conveniently close cuDF objects, e.g.
+```scala
+  override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
+    val nullMask = withResource(args.head.isNull()) { nulls =>
+      nulls.not()
+    }
+    // ...
+  }
+```
+
 ### Generating Columnar Output
 
 The `evaluateColumnar` method must return a `ColumnVector` of an appropriate
