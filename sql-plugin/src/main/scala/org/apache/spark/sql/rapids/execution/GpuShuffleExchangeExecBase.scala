@@ -307,7 +307,8 @@ object GpuShuffleExchangeExecBase {
   val METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM =
     "RAPIDS shuffle time stalled by input stream operations"
   val METRIC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME = "rapidsShuffleCoalesceBeforeShuffleTime"
-  val METRIC_DESC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME = "RAPIDS shuffle coalesce before shuffle time"
+  val METRIC_DESC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME =
+    "RAPIDS shuffle coalesce before shuffle time"
 
   def createAdditionalExchangeMetrics(gpu: GpuExec): Map[String, GpuMetric] = Map(
     // dataSize and dataReadSize are uncompressed, one is on write and the other on read
