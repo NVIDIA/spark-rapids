@@ -93,6 +93,8 @@ closed by the RAPIDS Accelerator, so the UDF only needs to close any
 intermediate data generated while producing the final result that is
 returned.
 
+#### ARM Helper Methods
+
 For Scala, helper methods implementing the automatic resource management
 pattern are exposed via the public Spark RAPIDS API under the `Arm` object:
 
@@ -100,15 +102,38 @@ pattern are exposed via the public Spark RAPIDS API under the `Arm` object:
 import com.nvidia.spark.rapids.Arm.{withResource, closeOnExcept}
 ```
 
-These methods can be used to conveniently close cuDF objects, e.g.
+These patterns serve different use cases:
+- `withResource`: closes the resource after the code block completes regardless
+of whether it succeeds or throws an exception. This should be used for intermediate
+resources that are unused beyond the code block.
+- `closeOnExcept`: only closes the resource if an exception occurs within the 
+code block; if the block succeeds, the resource remains open. This should be used
+if you want to continue using the resource after the code block but need to clean 
+up if an error occurs.
+
+Examples:
+
 ```scala
   override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
-    val nullMask = withResource(args.head.isNull()) { nulls =>
+    val nullMask = withResource(args.head.isNull()) { nulls =>  // nulls always closed after code block
       nulls.not()
     }
     // ...
   }
 ```
+
+```scala
+  override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
+    closeOnExcept(args.head.add(Scalar.fromInt(1))) { result =>  // result only closed if exception occurs
+      // do some processing that might throw...
+      result  // result is returned and remains open for further use
+    }
+    // ...
+  }
+```
+
+Note that these methods originated as a solution for Scala 2.12. Scala 2.13 introduced
+the [Using](https://www.scala-lang.org/api/2.13.6/scala/util/Using$.html) utility, which is an alternative to `withResource` for 2.13 builds of Apache Spark.
 
 ### Generating Columnar Output
 
