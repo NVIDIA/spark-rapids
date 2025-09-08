@@ -33,6 +33,52 @@ import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.{Partition, TaskContext}
+
+/**
+ * RDD wrapper that tracks opTime while excluding child operators' opTime
+ */
+private class GpuOpTimeTrackingRDD(
+    prev: RDD[ColumnarBatch],
+    opTimeMetric: GpuMetric,
+    childOpTimeMetrics: Seq[GpuMetric]) extends RDD[ColumnarBatch](prev) {
+
+  override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
+    val childIterator = firstParent[ColumnarBatch].compute(split, context)
+    
+    // Create wrapper iterator that tracks opTime excluding child opTime
+    new Iterator[ColumnarBatch] {
+      override def hasNext: Boolean = {
+        if (childOpTimeMetrics.nonEmpty) {
+          opTimeMetric.ns(childOpTimeMetrics) {
+            childIterator.hasNext
+          }
+        } else {
+          opTimeMetric.ns {
+            childIterator.hasNext
+          }
+        }
+      }
+
+      override def next(): ColumnarBatch = {
+        if (childOpTimeMetrics.nonEmpty) {
+          opTimeMetric.ns(childOpTimeMetrics) {
+            childIterator.next()
+          }
+        } else {
+          opTimeMetric.ns {
+            childIterator.next()
+          }
+        }
+      }
+    }
+  }
+
+  override def getPartitions: Array[Partition] = firstParent[ColumnarBatch].partitions
+
+  override def getPreferredLocations(split: Partition): Seq[String] =
+    firstParent[ColumnarBatch].preferredLocations(split)
+}
 
 object GpuExec {
   def outputBatching(sp: SparkPlan): CoalesceGoal = sp match {
@@ -131,7 +177,8 @@ trait GpuExec extends SparkPlan {
 
   lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES)) ++
+    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, "operator time (new implementation)")) ++
       additionalMetrics
 
   def gpuLongMetric(name: String): GpuMetric = allMetrics(name)
@@ -188,17 +235,38 @@ trait GpuExec extends SparkPlan {
   def getTaskMetrics: Option[GpuTaskMetrics] =
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
+  /**
+   * Get OP_TIME_NEW metrics from child GpuExec operators to exclude them from this operator's OP_TIME_NEW
+   */
+private def getChildOpTimeMetrics: Seq[GpuMetric] = {
+    children.collect {
+      case gpuChild: GpuExec if gpuChild.allMetrics.contains(OP_TIME_NEW) =>
+        gpuChild.allMetrics(OP_TIME_NEW)
+    }
+  }
+
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     this.dumpLoreMetaInfo()
     val orig = this.dumpLoreRDD(internalDoExecuteColumnar())
+    
+    // Get child opTime metrics for exclusion (both old and new implementations)
+    val childOpTimeMetrics = getChildOpTimeMetrics
+
+    // Wrap RDD for new OP_TIME_NEW metric (new implementation with exclusion)
+    val wrappedForNewOpTime = allMetrics.get(OP_TIME_NEW) match {
+      case Some(opTimeNewMetric) =>
+        new GpuOpTimeTrackingRDD(orig, opTimeNewMetric, childOpTimeMetrics)
+      case None => orig
+    }
+    
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
-      LocationPreservingMapPartitionsRDD(orig) { iter =>
+      LocationPreservingMapPartitionsRDD(wrappedForNewOpTime) { iter =>
         gpuMetrics.makeSureRegistered()
         iter
       }
-    }.getOrElse(orig)
+    }.getOrElse(wrappedForNewOpTime)
   }
 
   override def stringArgs: Iterator[Any] = super.stringArgs ++ loreArgs

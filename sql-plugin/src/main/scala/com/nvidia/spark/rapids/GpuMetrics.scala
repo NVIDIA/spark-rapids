@@ -81,6 +81,7 @@ object GpuMetric extends Logging {
   val PARTITION_SIZE = "partitionSize"
   val NUM_PARTITIONS = "numPartitions"
   val OP_TIME = "opTime"
+  val OP_TIME_NEW = "opTimeNew"
   val COLLECT_TIME = "collectTime"
   val CONCAT_TIME = "concatTime"
   val SORT_TIME = "sortTime"
@@ -215,6 +216,19 @@ object GpuMetric extends Logging {
     }
   }
 
+  def ns[T](metrics: Seq[GpuMetric], excludeMetrics: Seq[GpuMetric])(f: => T): T = {
+    val initedMetrics = metrics.map(m => (m, m.tryActivateTimer(excludeMetrics)))
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      val taken = System.nanoTime() - start
+      initedMetrics.foreach { case (m, isTrack) =>
+        if (isTrack) m.deactivateTimer(taken, excludeMetrics)
+      }
+    }
+  }
+
   /**
    * Give compute block, track its GpuSemaphore withholding time along with the wall time.
    *
@@ -299,12 +313,24 @@ sealed abstract class GpuMetric extends Serializable {
   var companionGpuMetric: Option[GpuMetric] = None
   private var semWaitTimeWhenActivated = 0L
   private var excludeMetricWhenActivated = 0L
+  private var excludeMetricsWhenActivated: Seq[Long] = Seq.empty
 
   final def tryActivateTimer(excludeMetric: GpuMetric): Boolean = {
     if (!isTimerActive) {
       isTimerActive = true
       semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
       excludeMetricWhenActivated = excludeMetric.value
+      true
+    } else {
+      false
+    }
+  }
+
+  final def tryActivateTimer(excludeMetrics: Seq[GpuMetric]): Boolean = {
+    if (!isTimerActive) {
+      isTimerActive = true
+      semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
+      excludeMetricsWhenActivated = excludeMetrics.map(_.value)
       true
     } else {
       false
@@ -326,6 +352,31 @@ sealed abstract class GpuMetric extends Serializable {
     }
   }
 
+  final def deactivateTimer(duration: Long, excludeMetrics: Seq[GpuMetric]): Unit = {
+    if (isTimerActive) {
+      isTimerActive = false
+
+      val totalExcludeTime = if (excludeMetrics.length == excludeMetricsWhenActivated.length) {
+        excludeMetrics.zip(excludeMetricsWhenActivated)
+          .map { case (metric, startValue) => metric.value - startValue }
+          .sum
+      } else {
+        // Safety fallback: calculate exclude time based on current metric values only
+        excludeMetrics.map(_.value).sum
+      }
+
+      companionGpuMetric.foreach(c =>
+        c.add(duration
+          - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)
+          - totalExcludeTime
+        ))
+      semWaitTimeWhenActivated = 0L
+      excludeMetricsWhenActivated = Seq.empty
+
+      add(duration - totalExcludeTime)
+    }
+  }
+
   final def ns[T](f: => T): T = {
     ns(NoopMetric)(f)
   }
@@ -337,6 +388,19 @@ sealed abstract class GpuMetric extends Serializable {
         f
       } finally {
         deactivateTimer(System.nanoTime() - start, excludeMetric)
+      }
+    } else {
+      f
+    }
+  }
+
+  final def ns[T](excludeMetrics: Seq[GpuMetric])(f: => T): T = {
+    if (tryActivateTimer(excludeMetrics)) {
+      val start = System.nanoTime()
+      try {
+        f
+      } finally {
+        deactivateTimer(System.nanoTime() - start, excludeMetrics)
       }
     } else {
       f
