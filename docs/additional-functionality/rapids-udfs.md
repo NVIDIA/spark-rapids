@@ -124,9 +124,9 @@ Examples:
 
 ```scala
   override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
-    closeOnExcept(args.head.isNull()) { nulls =>  // nulls only closed if exception occurs
-      // do some processing that might throw...
-      nulls.not()  // returns null mask; nulls remains open if successful
+    val nullsCol = closeOnExcept(args.head.isNull()) { nulls =>  // nulls only closed if exception occurs
+      validate(nulls) // do something that might throw an exception
+      nulls
     }
     // ...
   }
