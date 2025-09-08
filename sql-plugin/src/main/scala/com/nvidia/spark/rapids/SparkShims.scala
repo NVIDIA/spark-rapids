@@ -196,4 +196,17 @@ trait SparkShims {
    * Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107
    */
   def reproduceEmptyStringBug: Boolean
+
+  /**
+   * Handle TableCacheQueryStageExec for optimizeAdaptiveTransitions.
+   * Returns the original plan for versions where TableCacheQueryStageExec doesn't exist.
+   */
+  def handleTableCacheInOptimizeAdaptiveTransitions(plan: SparkPlan,
+                                                    parent: Option[SparkPlan]): Option[SparkPlan] = None
+
+  /**
+   * Handle TableCacheQueryStageExec for getNonQueryStagePlan.
+   * Returns None for versions where TableCacheQueryStageExec doesn't exist.
+   */
+  def getTableCacheNonQueryStagePlan(plan: SparkPlan): Option[SparkPlan] = None
 }
