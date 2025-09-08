@@ -237,12 +237,39 @@ trait GpuExec extends SparkPlan {
 
   /**
    * Get OP_TIME_NEW metrics from child GpuExec operators to exclude them from this operator's OP_TIME_NEW
+   * Recursively collects all descendant OP_TIME_NEW metrics and deduplicates them
    */
-private def getChildOpTimeMetrics: Seq[GpuMetric] = {
-    children.collect {
-      case gpuChild: GpuExec if gpuChild.allMetrics.contains(OP_TIME_NEW) =>
-        gpuChild.allMetrics(OP_TIME_NEW)
+  private def getChildOpTimeMetrics: Seq[GpuMetric] = {
+    def collectChildOpTimeMetricsRecursive(plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
+      if (visited.contains(plan)) {
+        // Avoid infinite recursion and duplicate collection for shared operators
+        Set.empty
+      } else {
+        val newVisited = visited + plan
+        plan match {
+          case gpuExec: GpuExec =>
+            // Collect this GpuExec's OP_TIME_NEW metric
+            val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSet
+            // Recursively collect from children
+            val childMetrics = gpuExec.children.flatMap { child =>
+              collectChildOpTimeMetricsRecursive(child, newVisited)
+            }.toSet
+            currentMetric ++ childMetrics
+          case _ =>
+            // For non-GPU operators, still recurse into their children
+            plan.children.flatMap { child =>
+              collectChildOpTimeMetricsRecursive(child, newVisited)
+            }.toSet
+        }
+      }
     }
+
+    // Start recursive collection from direct children, excluding this operator itself
+    val allChildMetrics = children.flatMap { child =>
+      collectChildOpTimeMetricsRecursive(child, Set.empty)
+    }.toSet
+
+    allChildMetrics.toSeq
   }
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {

@@ -20,7 +20,7 @@ import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.funsuite.AnyFunSuite
 
-class MyMetricsSuite extends AnyFunSuite {
+class ExcludedMetricsSuite extends AnyFunSuite {
 
   test("GpuMetric.ns: duplicate timing on the same metrics") {
     val m1 = new LocalGpuMetric()

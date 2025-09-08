@@ -133,11 +133,32 @@ case class GpuOptimizeWriteExchangeExec(
   }
 
   @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
-    // Get OP_TIME_NEW metrics from child for exclusion
-    val childOpTimeMetrics = child match {
-      case gpuChild: GpuExec => gpuChild.allMetrics.get(OP_TIME_NEW).toSeq
-      case _ => Seq.empty
+    // Get OP_TIME_NEW metrics from all descendants for exclusion (with deduplication)
+    def collectChildOpTimeMetricsRecursive(plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
+      if (visited.contains(plan)) {
+        // Avoid infinite recursion and duplicate collection for shared operators
+        Set.empty
+      } else {
+        val newVisited = visited + plan
+        plan match {
+          case gpuExec: GpuExec =>
+            // Collect this GpuExec's OP_TIME_NEW metric
+            val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSet
+            // Recursively collect from children
+            val childMetrics = gpuExec.children.flatMap { child =>
+              collectChildOpTimeMetricsRecursive(child, newVisited)
+            }.toSet
+            currentMetric ++ childMetrics
+          case _ =>
+            // For non-GPU operators, still recurse into their children
+            plan.children.flatMap { child =>
+              collectChildOpTimeMetricsRecursive(child, newVisited)
+            }.toSet
+        }
+      }
     }
+
+    val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
     val opTimeNewMetric = allMetrics.get(OP_TIME_NEW)
     
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
