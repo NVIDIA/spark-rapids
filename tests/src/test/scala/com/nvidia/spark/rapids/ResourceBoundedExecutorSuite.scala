@@ -142,7 +142,7 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
         GroupTaskHelpers.newSharedState(groupSize)
       }
 
-      override def resource: TaskResource = TaskResource.newCpuResource(1, Some(groupSize))
+      override def resource: AsyncRunResource = AsyncRunResource.newCpuResource(1, Some(groupSize))
 
       // Guarantee tasks are scheduled in the order of the global unique index.
       override val priority: Double = groupPriority - taskIndex

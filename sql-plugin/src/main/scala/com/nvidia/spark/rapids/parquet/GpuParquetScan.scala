@@ -2735,8 +2735,8 @@ class MultiFileCloudParquetPartitionReader(
 
     override val holdResourceAfterCompletion: Boolean = true
 
-    override val resource: TaskResource = {
-      TaskResource.newCpuResource(file.length, Some(taskTotalReadSize))
+    override val resource: AsyncRunResource = {
+      AsyncRunResource.newCpuResource(file.length, Some(taskTotalReadSize))
     }
 
     // Use the priority of caller as the initial priority of async sub readers.

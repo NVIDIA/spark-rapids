@@ -1100,7 +1100,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       // TODO: Memory capacity can be adjusted during the runtime
       .startupOnly()
       .internal()
-      .longConf
+      .bytesConf(ByteUnit.BYTE)
       .checkValue(v => v >= 0, s"The memory capacity must be greatThanOrEqual zero")
       .createWithDefault(0)
 

@@ -23,22 +23,30 @@ import java.util.concurrent.locks.ReentrantLock
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil.bytesToString
 
-sealed trait TaskResource
+/**
+ * Marker trait for resources required by AsyncRunners.
+ */
+sealed trait AsyncRunResource
 
+/**
+ * HostResource represents host memory resource requirement for CPU-bound tasks.
+ */
 case class HostResource(
     hostMemoryBytes: Long,
-    groupedHostMemoryBytes: Option[Long] = None) extends TaskResource
+    groupedHostMemoryBytes: Option[Long] = None) extends AsyncRunResource
 
-// DeviceResource is a marker object for GPU resources, no additional fields needed.
-object DeviceResource extends TaskResource
+/**
+ * DeviceResource is a marker object for GPU resources, no additional fields needed.
+ */
+object DeviceResource extends AsyncRunResource
 
-object TaskResource {
+object AsyncRunResource {
   def newCpuResource(hostMemoryBytes: Long,
-      groupedMemoryBytes: Option[Long] = None): TaskResource = {
+      groupedMemoryBytes: Option[Long] = None): AsyncRunResource = {
     HostResource(hostMemoryBytes, groupedHostMemoryBytes = groupedMemoryBytes)
   }
 
-  def newGpuResource(): TaskResource = DeviceResource
+  def newGpuResource(): AsyncRunResource = DeviceResource
 }
 
 case class AsyncMetrics(scheduleTimeMs: Long, executionTimeMs: Long)
@@ -107,7 +115,7 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   /**
    * Resource required by the task, such as host memory or GPU semaphore.
    */
-  def resource: TaskResource
+  def resource: AsyncRunResource
 
   /**
    * Priority of the async runner, higher value means higher priority.
@@ -210,7 +218,7 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
  */
 abstract class UnboundedAsyncRunner[T] extends AsyncRunner[T] {
   // Unbounded tasks do not have a resource limit.
-  override val resource: TaskResource = TaskResource.newCpuResource(0L)
+  override val resource: AsyncRunResource = AsyncRunResource.newCpuResource(0L)
 
   // Unbounded tasks have the highest priority.
   override val priority: Double = Double.MaxValue
@@ -260,8 +268,13 @@ abstract class GroupedAsyncRunner[T] extends AsyncRunner[T] {
   def holdSharedResource: Boolean = sharedState.holdingResource.get()
 }
 
-class AsyncFunctor[T](
-    override val resource: TaskResource,
+/**
+ * A simple AsyncRunner implementation that wraps a function to be executed asynchronously.
+ * NOTE: This class is only used in tests currently, removing the forTest suffix if it is used
+ * in production code in the future.
+ */
+class AsyncFunctorForTest[T](
+    override val resource: AsyncRunResource,
     override val priority: Double,
     functor: () => T) extends AsyncRunner[T] {
   override def callImpl(): T = functor()
@@ -275,15 +288,19 @@ object AsyncRunner {
     priority - math.log10(memoryBytes)
   }
 
+  // Create a CPU-bound AsyncRunner with specified memory requirement and priority.
+  // NOTE: The API is only used in tests currently
   def newCpuTask[T](fn: () => T,
       memoryBytes: Long,
       priority: Float = 0.0f): AsyncRunner[T] = {
     val adjustedPriority = hostMemoryPenalty(memoryBytes, priority)
-    new AsyncFunctor[T](TaskResource.newCpuResource(memoryBytes), adjustedPriority, fn)
+    new AsyncFunctorForTest[T](AsyncRunResource.newCpuResource(memoryBytes), adjustedPriority, fn)
   }
 
+  // Create a light-weight unbounded AsyncRunner with the highest priority.
+  // NOTE: The API is only used in tests currently
   def newUnboundedTask[T](fn: () => T): AsyncRunner[T] = {
-    new AsyncFunctor[T](TaskResource.newCpuResource(0L), Float.MaxValue, fn)
+    new AsyncFunctorForTest[T](AsyncRunResource.newCpuResource(0L), Float.MaxValue, fn)
   }
 }
 
