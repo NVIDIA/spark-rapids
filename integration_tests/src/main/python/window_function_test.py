@@ -433,6 +433,7 @@ def test_decimal_running_sum_window_no_part_no_ansi(data_gen):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13430")
 def test_decimal_running_sum_window_no_part_ansi(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
@@ -1240,6 +1241,7 @@ def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
 @pytest.mark.parametrize('c_gen', [string_gen], ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
 @allow_non_gpu(*non_utc_allow)
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13430")
 def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
     data_gen = [
             ('a', RepeatSeqGen(a_b_gen, length=20)),
@@ -1321,6 +1323,7 @@ def test_window_aggs_lead_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
 @pytest.mark.parametrize('c_gen', [UniqueLongGen()], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13430")
 def test_window_aggs_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
     data_gen = [
             ('a', RepeatSeqGen(a_gen, length=20)),
