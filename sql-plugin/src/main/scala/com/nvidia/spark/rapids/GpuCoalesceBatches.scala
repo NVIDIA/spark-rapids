@@ -752,14 +752,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
-
-    if (candidates.batches.length == 1) {
-      // If there is only one batch, just return it directly without retrying
-      // This can save the overhead of setting up the retry iterator
-      // Thus to make coalesce cheaper
-      return Iterator(candidates.batches(0).getColumnarBatch())
-    }
-
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
       concatBatches(attempt.batches)
     }
@@ -882,14 +874,6 @@ class GpuCompressionAwareCoalesceIterator(
   override def getCoalesceRetryIterator(): Iterator[ColumnarBatch] = {
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
-
-    if (candidates.batches.length == 1) {
-      // If there is only one batch, just return it directly without retrying
-      // This can save the overhead of setting up the retry iterator
-      // Thus to make coalesce cheaper
-      return Iterator(candidates.batches(0).getColumnarBatch())
-    }
-
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
       concatBatches(attempt.batches)
     }
