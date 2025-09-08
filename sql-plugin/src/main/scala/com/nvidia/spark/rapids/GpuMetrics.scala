@@ -127,6 +127,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_PARTITION_SIZE = "partition data size"
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME = "op time"
+  val DESCRIPTION_OP_TIME_NEW = "operator time (new implementation)"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
   val DESCRIPTION_SORT_TIME = "sort time"
@@ -361,8 +362,9 @@ sealed abstract class GpuMetric extends Serializable {
           .map { case (metric, startValue) => metric.value - startValue }
           .sum
       } else {
-        // Safety fallback: calculate exclude time based on current metric values only
-        excludeMetrics.map(_.value).sum
+        throw new IllegalStateException(
+          s"the excludeMetrics size ${excludeMetrics.length} is not matched with " +
+            s"excludeMetricsWhenActivated size ${excludeMetricsWhenActivated.length}")
       }
 
       companionGpuMetric.foreach(c =>
