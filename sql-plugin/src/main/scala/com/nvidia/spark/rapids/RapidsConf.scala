@@ -1376,15 +1376,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValue(v => v >= 512, "The stripe size rows must be no less than 512.")
     .createOptional
 
-  val TEST_ORC_READ_IGNORE_WRITE_TIMEZONE =
-    conf("spark.rapids.sql.test.orc.read.ignore.write.timezone")
-    .doc("Only to be used in tests. When set to true, the ORC reader ignores the writer " +
-      "timezones in the stripe footers and use the reader timezone as writer timezone. " +
-      "When set to true, the user should guarantee the the writer timezones in the ORC " +
-      "file is the same as the reader.")
-    .internal()
-    .booleanConf
-    .createWithDefault(false)
+  // This is an experimental feature now. In the future:
+  // MUST use the writer timezones in ORC file footers.
+  val ORC_READ_IGNORE_WRITE_TIMEZONE =
+    conf("spark.rapids.sql.orc.read.ignore.write.timezone")
+      .doc("This is an experimental feature. When set to true, the ORC reader ignores the writer " +
+        "timezones in the stripe footers and use the reader timezone as writer timezone. " +
+        "When set to true, the user should guarantee the the writer timezones in the ORC " +
+        "file is the same as the reader.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
@@ -3327,7 +3329,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val testOrcStripeSizeRows: Option[Integer] = get(TEST_ORC_STRIPE_SIZE_ROWS)
 
-  lazy val testOrcReadIgnoreWriterTimezone: Boolean = get(TEST_ORC_READ_IGNORE_WRITE_TIMEZONE)
+  lazy val orcReadIgnoreWriterTimezone: Boolean = get(ORC_READ_IGNORE_WRITE_TIMEZONE)
 
   lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 

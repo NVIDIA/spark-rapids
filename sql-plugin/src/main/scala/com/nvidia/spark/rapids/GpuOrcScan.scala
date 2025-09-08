@@ -157,7 +157,7 @@ object GpuOrcScan {
       meta.willNotWorkOnGpu("GpuOrcScan does not support default values in schema")
     }
 
-    if (!meta.conf.testOrcReadIgnoreWriterTimezone) {
+    if (!meta.conf.orcReadIgnoreWriterTimezone) {
       // For timestamp type, timezone needs to be checked.
       // This is because JVM timezone and UTC timezone offset is considered when
       // reading timestamp type from ORC file.
