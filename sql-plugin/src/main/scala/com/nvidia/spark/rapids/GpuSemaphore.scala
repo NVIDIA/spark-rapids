@@ -190,7 +190,7 @@ object GpuSemaphore {
         // Since we don't have access to a configuration object here,
         // default to only one task per GPU behavior.
         if (instance == null) {
-          initialize()
+          initialize(0)
         }
       }
     }
@@ -200,11 +200,11 @@ object GpuSemaphore {
   /**
    * Initializes the GPU task semaphore.
    */
-  def initialize(): Unit = synchronized {
+  def initialize(maxConcurrentGpuTasksLimit: Int): Unit = synchronized {
     if (instance != null) {
       throw new IllegalStateException("already initialized")
     }
-    instance = new GpuSemaphore()
+    instance = new GpuSemaphore(maxConcurrentGpuTasksLimit)
   }
 
   /**
@@ -503,11 +503,11 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
   }
 }
 
-private final class GpuSemaphore() extends Logging {
+private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Logging {
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
-  private val semaphore = new GpuBackingSemaphore(computeMaxPermits())
+  private val semaphore = new GpuBackingSemaphore(computeMaxPermits(), maxConcurrentGpuTasksLimit)
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
