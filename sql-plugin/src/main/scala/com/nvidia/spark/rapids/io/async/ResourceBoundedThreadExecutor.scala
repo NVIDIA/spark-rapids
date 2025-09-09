@@ -49,11 +49,11 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncRe
     }
   }
 
-  def holdResource(elapsedNs: Long): Unit = {
+  def resourceAcquired(waitTimeNs: Long): Unit = {
     require(!completed, "Task has already been completed")
     require(!resourceFulfilled, "Cannot hold resource that is already held")
     resourceFulfilled = true
-    scheduleTime += elapsedNs
+    scheduleTime += waitTimeNs
   }
 
   def releaseResource(force: Boolean = false): Unit = {
@@ -227,7 +227,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
       case fut: RapidsFutureTask[_] =>
         mgr.acquireResource(fut.runner, waitResourceTimeoutMs) match {
           case s: AcquireSuccessful =>
-            fut.holdResource(s.elapsedTime)
+            fut.resourceAcquired(s.elapsedTime)
           case AcquireFailed =>
             // bypass the execution via not holding the resource
           case AcquireExcepted(exception) =>

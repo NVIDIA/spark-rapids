@@ -236,21 +236,19 @@ abstract class UnboundedAsyncRunner[T] extends AsyncRunner[T] {
   // Unbounded tasks have the highest priority.
   override val priority: Double = Double.MaxValue
 
-  //
+  // Unbounded tasks use FastReleaseResult as the placeholder.
   override protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T] = {
     new FastReleaseResult(resultData, metrics)
   }
 }
 
-case class GroupSharedState(groupSize: Int,
-    launchedTasks: AtomicInteger,
-    releasedTasks: AtomicInteger,
-    holdingResource: AtomicBoolean)
+case class GroupSharedState(taskToBeReleased: AtomicInteger, holdingResource: AtomicBoolean)
 
 object GroupTaskHelpers {
   def newSharedState(groupSize: Int): GroupSharedState = {
-    GroupSharedState(groupSize,
-      new AtomicInteger(0), new AtomicInteger(0), new AtomicBoolean(false))
+    GroupSharedState(
+      taskToBeReleased = new AtomicInteger(groupSize),
+      holdingResource = new AtomicBoolean(false))
   }
 }
 
@@ -265,19 +263,14 @@ abstract class GroupedAsyncRunner[T] extends AsyncRunner[T] {
   // The shared state for the group, which should be defined by the subclass.
   protected val sharedState: GroupSharedState
 
-  override def call(): AsyncResult[T] = {
-    sharedState.launchedTasks.incrementAndGet()
-    super.call()
-  }
-
   override def onAcquire(): Unit = {
     sharedState.holdingResource.set(true)
   }
 
   override def onRelease(): Unit = {
-    val numReleased = sharedState.releasedTasks.incrementAndGet()
+    val numUnreleased = sharedState.taskToBeReleased.decrementAndGet()
     // If all tasks in the group have released their resources, we can reset the holding state.
-    if (numReleased == sharedState.groupSize) {
+    if (numUnreleased == 0) {
       sharedState.holdingResource.set(false)
     }
   }
