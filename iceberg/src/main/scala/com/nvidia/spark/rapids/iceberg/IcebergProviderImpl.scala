@@ -16,12 +16,15 @@
 
 package com.nvidia.spark.rapids.iceberg
 
+import com.nvidia.spark.rapids.GpuOverrides.expr
+import com.nvidia.spark.rapids.iceberg.spark.GpuStaticInvokeMeta
+
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
-
-import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
+import com.nvidia.spark.rapids.{ExprChecks, ExprRule, FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, TypeSig}
 import org.apache.iceberg.spark.source.GpuSparkBatchQueryScan
-
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 
 class IcebergProviderImpl extends IcebergProvider {
@@ -69,5 +72,15 @@ class IcebergProviderImpl extends IcebergProvider {
       "Iceberg scan",
       ClassTag(cpuIcebergScanClass))
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+  }
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    Seq(
+      expr[StaticInvoke](
+        "Iceberg static invoke expressions",
+        ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT),
+        (e, conf, parent, rule) => new GpuStaticInvokeMeta(e, conf, parent, rule),
+      )
+    ).map(r => r.getClassFor.asSubclass(classOf[Expression]) -> r).toMap
   }
 }

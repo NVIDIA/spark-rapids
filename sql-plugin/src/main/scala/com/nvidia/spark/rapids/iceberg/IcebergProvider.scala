@@ -16,13 +16,15 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, VersionUtils}
+import com.nvidia.spark.rapids.{ExprRule, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, VersionUtils}
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.Scan
 
 /** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
 trait IcebergProvider {
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
 }
 
 object IcebergProvider {

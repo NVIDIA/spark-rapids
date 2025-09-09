@@ -16,13 +16,14 @@
 
 package org.apache.iceberg.spark.functions
 
-import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar}
+import ai.rapids.cudf.{DType, Scalar, ColumnVector => CudfColumnVector}
+import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.Hash
 import org.apache.iceberg.spark.functions.GpuBucketExpression.cast
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.types.{ByteType, DataType, DataTypes, DateType, IntegerType, LongType, ShortType, TimestampNTZType, TimestampType}
 
 
@@ -91,6 +92,34 @@ object GpuBucketExpression {
       case ByteType |  ShortType | IntegerType | DateType |
            LongType | TimestampType | TimestampNTZType => true
       case _ => false
+    }
+  }
+
+  def tagExprForGpu(meta: ExprMeta[StaticInvoke]): Unit = {
+    require(meta.childExprs.length == 2,
+      s"BucketFunction should have exactly two arguments, got ${meta.childExprs.length}")
+    val exprCls = meta.wrapped.staticObject
+    if (exprCls != classOf[BucketFunction.BucketInt] &&
+      exprCls != classOf[BucketFunction.BucketLong]) {
+      meta.willNotWorkOnGpu(s"only BucketFunction.BucketInt and BucketFunction.BucketLong " +
+        s"are supported")
+    }
+
+    val bucketExpr = meta.wrapped.arguments.head
+    if (bucketExpr.dataType != DataTypes.IntegerType) {
+      throw new IllegalStateException(
+        s"BucketFunction number of buckets must be an integer, got ${bucketExpr.dataType}")
+    }
+
+    val valueExpr = meta.wrapped.arguments(1)
+    if (valueExpr.nullable) {
+      meta.willNotWorkOnGpu(s"Gpu bucket function does not support nullable values for type " +
+        s"${valueExpr.dataType}")
+    }
+
+    if (!isSupportedValueType(valueExpr.dataType)) {
+      meta.willNotWorkOnGpu(s"Gpu bucket function does not support type ${valueExpr.dataType} " +
+        s"as values")
     }
   }
 }

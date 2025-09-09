@@ -18,12 +18,11 @@ package org.apache.spark.sql.rapids
 
 import scala.reflect.ClassTag
 import scala.util.Try
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
-
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
@@ -124,6 +123,11 @@ object ExternalSource extends Logging {
       scans = scans ++ icebergProvider.getScans
     }
     scans
+  }
+
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    // TODO: Add iceberg expressions rules when we enable it
+    Map.empty
   }
 
   def wrapCreatableRelationProvider[INPUT <: CreatableRelationProvider](
