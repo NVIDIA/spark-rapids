@@ -1098,7 +1098,7 @@ def test_orc_non_utc_timezone(reader_confs, end_timestamp, spark_tmp_path, v1_en
         'spark.sql.session.timeZone': read_timezone,
         # ignore write timezone when reading, this is for test purpose only
         # The `tz_sensitive_test` mark guarantees the write and read are in the same timezone
-        'spark.rapids.sql.test.orc.read.ignore.write.timezone': True
+        'spark.rapids.sql.orc.read.ignore.write.timezone': True
     })
 
     # write on CPU
