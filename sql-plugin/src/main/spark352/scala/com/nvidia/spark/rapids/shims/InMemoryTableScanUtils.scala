@@ -56,5 +56,6 @@ object InMemoryTableScanUtils {
       "Table cache query stage that wraps InMemoryTableScan for AQE",
       ExecChecks(TypeSig.all, TypeSig.all),
       (tcqs, conf, p, r) => new TableCacheQueryStageExecMeta(tcqs, conf, p, r))
+      .disabledByDefault("Table cache query stage that wraps InMemoryTableScan for AQE")
   }
 }
