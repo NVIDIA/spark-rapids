@@ -947,7 +947,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .withNumPyTypes(false)
       .includeColumn(includedColumns: _*)
       .decimal128Column(decimal128Fields: _*)
-      // read timestamp as UTC timezone; refer to `GpuOrcTimezoneUtils.rebaseTimeZone`
+      // Set reading timestamp ignoring the writer timezones,
+      // read timestamp as it is without using cuDF rebasing timezone.
+      // And then will use `GpuOrcTimezoneUtils.rebaseTimeZone` to rebase to get UTC timestamp.
       .ignoreTimezoneInStripeFooter()
       .build()
     (parseOpts, tableSchema)
