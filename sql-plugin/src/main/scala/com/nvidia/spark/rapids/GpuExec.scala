@@ -240,7 +240,8 @@ trait GpuExec extends SparkPlan {
    * Recursively collects all descendant OP_TIME_NEW metrics and deduplicates them
    */
   private def getChildOpTimeMetrics: Seq[GpuMetric] = {
-    def collectChildOpTimeMetricsRecursive(plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
+    def collectChildOpTimeMetricsRecursive(
+        plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
       if (visited.contains(plan)) {
         // Avoid infinite recursion and duplicate collection for shared operators
         Set.empty

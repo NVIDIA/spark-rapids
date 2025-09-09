@@ -262,7 +262,8 @@ abstract class GpuShuffleExchangeExecBase(
 
   // Spark doesn't report totalTime for this operator so we override metrics
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
+    OP_TIME_NEW_SHUFFLE_READ -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SR),
+    OP_TIME_NEW_SHUFFLE_WRITE -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SW),
     PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
@@ -291,7 +292,8 @@ abstract class GpuShuffleExchangeExecBase(
    * Recursively collects all descendant OP_TIME_NEW metrics and deduplicates them
    */
   private def getChildOpTimeMetrics: Seq[GpuMetric] = {
-    def collectChildOpTimeMetricsRecursive(plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
+    def collectChildOpTimeMetricsRecursive(plan: SparkPlan, visited: Set[SparkPlan]):
+    Set[GpuMetric] = {
       if (visited.contains(plan)) {
         // Avoid infinite recursion and duplicate collection for shared operators
         Set.empty
@@ -331,7 +333,7 @@ abstract class GpuShuffleExchangeExecBase(
   @transient
   lazy val shuffleDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val childOpTimeMetrics = getChildOpTimeMetrics
-    val opTimeNewMetric = allMetrics.get(OP_TIME_NEW)
+    val opTimeNewSW = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
     
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
@@ -346,7 +348,7 @@ abstract class GpuShuffleExchangeExecBase(
       allMetrics,
       writeMetrics,
       additionalMetrics,
-      opTimeNewMetric,
+      opTimeNewSW,
       childOpTimeMetrics)
   }
 
@@ -444,7 +446,7 @@ object GpuShuffleExchangeExecBase {
       metrics: Map[String, GpuMetric],
       writeMetrics: Map[String, SQLMetric],
       additionalMetrics: Map[String, GpuMetric],
-      opTimeNewMetric: Option[GpuMetric] = None,
+      opTimeNewSW: Option[GpuMetric] = None,
       childOpTimeMetrics: Seq[GpuMetric] = Seq.empty)
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
@@ -567,7 +569,7 @@ object GpuShuffleExchangeExecBase {
     }
 
     // Apply OP_TIME_NEW tracking to rddWithPartitionIds if opTimeNewMetric is provided
-    val finalRddWithPartitionIds = opTimeNewMetric match {
+    val finalRddWithPartitionIds = opTimeNewSW match {
       case Some(opTimeMetric) =>
         new GpuShuffleOpTimeTrackingRDD(rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
       case None => rddWithPartitionIds
