@@ -25,6 +25,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
+
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
@@ -51,8 +52,6 @@ object InMemoryTableScanUtils {
    * Gets the TableCacheQueryStageExec rule for this Spark version.
    */
   def getTableCacheQueryStageExecRule: ExecRule[_ <: SparkPlan] = {
-    // import com.nvidia.spark.rapids.shims.TableCacheQueryStageExecMeta
-    
     GpuOverrides.exec[TableCacheQueryStageExec](
       "Table cache query stage that wraps InMemoryTableScan for AQE",
       ExecChecks(TypeSig.all, TypeSig.all),

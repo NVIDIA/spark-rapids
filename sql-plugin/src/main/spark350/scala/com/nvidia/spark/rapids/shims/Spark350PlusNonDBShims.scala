@@ -52,8 +52,8 @@ class TableCacheQueryStageExecMeta(
     Seq(GpuOverrides.wrapPlan(tcqs.plan, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
-    // The wrapped plan will be tagged for GPU but we can't modify the wrapper
-    willNotWorkOnGpu("TableCacheQueryStageExec wrapper stays on CPU for Spark AQE compatibility; child plan may run on GPU")
+    willNotWorkOnGpu("TableCacheQueryStageExec wrapper stays on CPU for Spark AQE compatibility; " +
+      "child plan may run on GPU")
   }
 
   override def convertToGpu(): GpuExec = {
@@ -145,7 +145,7 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-      // Use version-specific InMemoryTableScan rule (disabledByDefault for 3.5.0-3.5.1, enabled for 3.5.2+)
+      // Use version-specific InMemoryTableScan rule (disabledByDefault for 3.5.0-3.5.1)
       InMemoryTableScanUtils.getInMemoryTableScanExecRule,
       GpuOverrides.exec[WindowGroupLimitExec](
         "Apply group-limits for row groups destined for rank-based window functions like " +
@@ -169,7 +169,7 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
   }
 
   override def handleTableCacheInOptimizeAdaptiveTransitions(plan: SparkPlan,
-                                                             parent: Option[SparkPlan]): Option[SparkPlan] = {
+      parent: Option[SparkPlan]): Option[SparkPlan] = {
     plan match {
       case tcqs: TableCacheQueryStageExec => Some(tcqs)
       case _ => None

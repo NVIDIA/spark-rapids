@@ -76,7 +76,8 @@ class InMemoryTableScanMeta(
 case class GpuInMemoryTableScanExec(
    attributes: Seq[Attribute],
    predicates: Seq[Expression],
-   @transient relation: InMemoryRelation) extends ShimLeafExecNode with GpuExec with InMemoryTableScanExecLikeShim {
+   @transient relation: InMemoryRelation) extends ShimLeafExecNode with
+   GpuExec with InMemoryTableScanExecLikeShim {
 
   override val nodeName: String = {
     relation.cacheBuilder.tableName match {

@@ -43,5 +43,6 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 trait InMemoryTableScanExecLikeShim {
-   // No additional implementations needed for pre-3.5.2 Spark versions since InMemoryTableScanLike doesn't exist
+   // No additional implementations needed for pre-3.5.2 Spark versions
+   // since InMemoryTableScanLike doesn't exist
 }

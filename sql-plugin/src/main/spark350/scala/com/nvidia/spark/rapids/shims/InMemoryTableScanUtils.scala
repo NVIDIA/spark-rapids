@@ -21,6 +21,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{ExecRule, GpuOverrides}
+
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
