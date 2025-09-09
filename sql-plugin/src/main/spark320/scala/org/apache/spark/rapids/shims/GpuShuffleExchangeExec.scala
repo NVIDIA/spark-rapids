@@ -44,8 +44,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuMetric.OP_TIME_NEW_SHUFFLE_READ
-import com.nvidia.spark.rapids.{GpuExec, GpuPartitioning}
+import com.nvidia.spark.rapids.GpuPartitioning
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
@@ -75,13 +74,7 @@ case class GpuShuffleExchangeExec(
   override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
     val shuffleRDD =
       new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
-    allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
-      case Some(opTimeMetric) =>
-        // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-        GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty,
-          disableOpTimeTrackingRdd)
-      case None => shuffleRDD
-    }
+    shuffleRDD
   }
 
   override def runtimeStatistics: Statistics = {

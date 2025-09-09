@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric, RapidsConf}
+import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
@@ -39,9 +39,6 @@ case class GpuCustomShuffleReaderExec(
     partitionSpecs: Seq[ShufflePartitionSpec]) extends ShimUnaryExecNode with GpuExec  {
   import GpuMetric._
 
-  private lazy val disableOpTimeTrackingRdd = 
-    RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(conf)
-
   /**
    * We intentionally override metrics in this case rather than overriding additionalMetrics so
    * that NUM_OUTPUT_ROWS and NUM_OUTPUT_BATCHES are removed, since this operator does not
@@ -50,10 +47,9 @@ case class GpuCustomShuffleReaderExec(
    * The Spark version of this operator does not output any metrics.
    */
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_NEW_SHUFFLE_READ -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SR),
     PARTITION_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
-    OP_TIME_NEW -> createTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_OP_TIME_NEW)
+    OP_TIME_NEW -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_OP_TIME_NEW)
   )
 
   override def output: Seq[Attribute] = child.output
@@ -129,13 +125,7 @@ case class GpuCustomShuffleReaderExec(
           val shuffleRDD = new ShuffledBatchRDD(
             shuffle.shuffleDependencyColumnar, shuffle.readMetrics ++ metrics,
             partitionSpecs.toArray)
-          allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
-            case Some(opTimeMetric) =>
-              // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-              GpuExec.createOpTimeTrackingRDD(
-                shuffleRDD, opTimeMetric, Seq.empty, disableOpTimeTrackingRdd)
-            case None => shuffleRDD
-          }
+          shuffleRDD
         case _ =>
           throw new IllegalStateException("operating on canonicalization plan")
       }

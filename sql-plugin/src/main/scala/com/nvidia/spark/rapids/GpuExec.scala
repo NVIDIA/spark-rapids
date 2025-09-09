@@ -118,8 +118,6 @@ trait GpuExec extends SparkPlan with Logging {
   private lazy val disableOpTimeTrackingRdd = 
     RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(conf)
 
-  println(s"RapidsConf.DISABLE_OP_TIME_TRACKING_RDD is $disableOpTimeTrackingRdd")
-
   def sparkSession: SparkSession = {
     SparkSessionUtils.sessionFromPlan(this)
   }
@@ -269,6 +267,7 @@ trait GpuExec extends SparkPlan with Logging {
    * OP_TIME_NEW metrics and deduplicates them
    */
   protected def getChildOpTimeMetrics: Seq[GpuMetric] = {
+    
     def collectChildOpTimeMetricsRecursive(
         plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
       if (visited.contains(plan)) {
@@ -278,25 +277,25 @@ trait GpuExec extends SparkPlan with Logging {
         val newVisited = visited + plan
         plan match {
           case gpuExec: GpuExec =>
-            // Use OP_TIME_NEW_SHUFFLE_READ for Exchange and GpuCustomShuffleReaderExec,
-            // OP_TIME_NEW for others
-            val metricKey = gpuExec match {
-              //TODO stop recu
-              case _: Exchange | _: GpuCustomShuffleReaderExec => OP_TIME_NEW_SHUFFLE_READ
-              case _ => OP_TIME_NEW
-            }
-            val currentMetric = gpuExec.allMetrics.get(metricKey).toSet
+            val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSet
             // Log warning if the expected metric is not found
             if (currentMetric.isEmpty) {
-              logWarning(s"Expected metric '$metricKey' not found in " +
+              logWarning(s"Expected metric '$OP_TIME_NEW' not found in " +
                 s"${gpuExec.getClass.getSimpleName}")
             }
             // Recursively collect from children
-            val childMetrics = gpuExec.children.flatMap { child =>
-              collectChildOpTimeMetricsRecursive(child, newVisited)
-            }.toSet
+            val childMetrics =
+              if (gpuExec.isInstanceOf[Exchange] ||
+                gpuExec.isInstanceOf[GpuCustomShuffleReaderExec]) {
+                Set.empty
+              } else {
+                gpuExec.children.flatMap { child =>
+                  collectChildOpTimeMetricsRecursive(child, newVisited)
+                }.toSet
+              }
             currentMetric ++ childMetrics
           case _ =>
+            //TODO
             // For non-GPU operators, still recurse into their children
             plan.children.flatMap { child =>
               collectChildOpTimeMetricsRecursive(child, newVisited)
@@ -305,7 +304,7 @@ trait GpuExec extends SparkPlan with Logging {
       }
     }
 
-    // Start recursive collection from direct children, excluding this operator itself
+    // Start recursive collection from direct children
     val allChildMetrics = children.flatMap { child =>
       collectChildOpTimeMetricsRecursive(child, Set.empty)
     }.toSet
@@ -321,7 +320,14 @@ trait GpuExec extends SparkPlan with Logging {
       case other => {
         allMetrics.get(OP_TIME_NEW) match {
           case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd => {
-            new GpuOpTimeTrackingRDD(other, opTimeNewMetric, getChildOpTimeMetrics)
+            new GpuOpTimeTrackingRDD(other, opTimeNewMetric,
+              if (this.isInstanceOf[Exchange] ||
+                this.isInstanceOf[GpuCustomShuffleReaderExec]) {
+                Seq.empty
+              } else {
+                getChildOpTimeMetrics
+              }
+            )
           }
           case _ => other
         }

@@ -38,13 +38,7 @@ case class GpuShuffleExchangeExec(
       partitionSpecs: Array[ShufflePartitionSpec],
       lazyFetching: Boolean): RDD[_] = {
     val shuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
-    allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
-      case Some(opTimeMetric) =>
-        // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-        GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty, 
-          RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(conf))
-      case None => shuffleRDD
-    }
+    shuffleRDD
   }
 
   // DB SPECIFIC - throw if called since we don't know how its used

@@ -264,7 +264,7 @@ abstract class GpuShuffleExchangeExecBase(
 
   // Spark doesn't report totalTime for this operator so we override metrics
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_NEW_SHUFFLE_READ -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SR),
+    OP_TIME_NEW -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_OP_TIME_NEW),
     OP_TIME_NEW_SHUFFLE_WRITE -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SW),
     PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
@@ -331,13 +331,7 @@ abstract class GpuShuffleExchangeExecBase(
       // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
       if (cachedShuffleRDD == null) {
         val shuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
-        cachedShuffleRDD = allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
-          case Some(opTimeMetric) =>
-            // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-            GpuExec.createOpTimeTrackingRDD(
-              shuffleRDD, opTimeMetric, Seq.empty, disableOpTimeTrackingRdd)
-          case None => shuffleRDD
-        }
+        cachedShuffleRDD = shuffleRDD
       }
       cachedShuffleRDD
     }

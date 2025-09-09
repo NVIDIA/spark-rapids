@@ -87,7 +87,6 @@ case class GpuOptimizeWriteExchangeExec(
 
   override lazy val allMetrics: Map[String, GpuMetric] = {
     Map(
-      OP_TIME_NEW_SHUFFLE_READ -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SR),
       OP_TIME_NEW_SHUFFLE_WRITE -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SW),
       OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
       PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
@@ -151,32 +150,17 @@ case class GpuOptimizeWriteExchangeExec(
     val stats = ThreadUtils.awaitResult(mapOutputStatisticsFuture, Duration.Inf)
     if (stats == null) {
       val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
-      allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
-        case Some(opTimeMetric) =>
-          // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-          GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
-        case None => shuffleRDD
-      }
+      shuffleRDD
     } else {
       try {
         val partitionSpecs = Some(rebalancePartitions(stats))
         val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
-        allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
-          case Some(opTimeMetric) =>
-            // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-            GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
-          case None => shuffleRDD
-        }
+        shuffleRDD
       } catch {
         case e: Throwable =>
           logWarning("Failed to apply OptimizeWrite.", e)
           val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
-          allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
-            case Some(opTimeMetric) =>
-              // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-              GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
-            case None => shuffleRDD
-          }
+          shuffleRDD
       }
     }
   }
