@@ -77,8 +77,8 @@ case class GpuShuffleExchangeExec(
       new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
     allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
       case Some(opTimeMetric) =>
-        val childOpTimeMetrics = getChildOpTimeMetrics
-        GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+        // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
+        GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
       case None => shuffleRDD
     }
   }

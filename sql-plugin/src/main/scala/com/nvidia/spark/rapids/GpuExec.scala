@@ -28,7 +28,9 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Exp
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
@@ -263,8 +265,16 @@ trait GpuExec extends SparkPlan {
         val newVisited = visited + plan
         plan match {
           case gpuExec: GpuExec =>
-            // Collect this GpuExec's OP_TIME_NEW metric
-            val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSet
+            // Use OP_TIME_NEW_SHUFFLE_READ for Exchange and GpuCustomShuffleReaderExec, OP_TIME_NEW for others
+            val metricKey = gpuExec match {
+              case _: Exchange | _: GpuCustomShuffleReaderExec => OP_TIME_NEW_SHUFFLE_READ
+              case _ => OP_TIME_NEW
+            }
+            val currentMetric = gpuExec.allMetrics.get(metricKey).toSet
+            // Log warning if the expected metric is not found
+            if (currentMetric.isEmpty) {
+              logWarning(s"Expected metric '$metricKey' not found in ${gpuExec.getClass.getSimpleName}")
+            }
             // Recursively collect from children
             val childMetrics = gpuExec.children.flatMap { child =>
               collectChildOpTimeMetricsRecursive(child, newVisited)

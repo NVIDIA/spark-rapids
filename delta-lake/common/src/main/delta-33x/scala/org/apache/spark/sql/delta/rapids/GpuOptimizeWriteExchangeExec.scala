@@ -176,8 +176,8 @@ case class GpuOptimizeWriteExchangeExec(
       val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
       allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
         case Some(opTimeMetric) =>
-          val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
-          GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+          // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
+          GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
         case None => shuffleRDD
       }
     } else {
@@ -200,8 +200,8 @@ case class GpuOptimizeWriteExchangeExec(
         val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.toArray)
         allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
           case Some(opTimeMetric) =>
-            val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
-            GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+            // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
+            GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
           case None => shuffleRDD
         }
       } catch {
@@ -210,8 +210,8 @@ case class GpuOptimizeWriteExchangeExec(
           val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
           allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
             case Some(opTimeMetric) =>
-              val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
-              GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+              // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
+              GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
             case None => shuffleRDD
           }
       }
