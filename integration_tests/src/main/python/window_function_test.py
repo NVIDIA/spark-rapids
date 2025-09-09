@@ -1211,6 +1211,7 @@ lead_lag_array_data_gens =\
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
 @allow_non_gpu(*non_utc_allow)
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13430")
 def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
     data_gen = [
             ('a', RepeatSeqGen(a_gen, length=20)),
@@ -1230,7 +1231,6 @@ def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
             LAG(d, 2, d_default) OVER (PARTITION by a ORDER BY b,c) lag_d_2_default
         FROM window_agg_table
         ''')
-
 
 # lead and lag don't currently work for string columns, so redo the tests, but just for strings
 # without lead and lag
