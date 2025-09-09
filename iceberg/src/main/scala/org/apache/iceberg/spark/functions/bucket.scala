@@ -16,7 +16,7 @@
 
 package org.apache.iceberg.spark.functions
 
-import ai.rapids.cudf.{DType, Scalar, ColumnVector => CudfColumnVector}
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.Hash
