@@ -149,6 +149,11 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
 
       private val dummyFn: () => Long = buildDummyFn()
 
+      override protected def buildResult(resultData: Long,
+          metrics: AsyncMetrics): AsyncResult[Long] = {
+        new FastReleaseResult[Long](resultData, metrics)
+      }
+
       override protected def callImpl(): Long = dummyFn()
     }
 

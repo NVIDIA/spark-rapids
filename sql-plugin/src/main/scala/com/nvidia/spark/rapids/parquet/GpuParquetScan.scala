@@ -2730,10 +2730,7 @@ class MultiFileCloudParquetPartitionReader(
   private class ReadBatchRunner(
       file: PartitionedFile,
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
-      taskContext: TaskContext)
-      extends GroupedAsyncRunner[HostMemoryBuffersWithMetaDataBase] with Logging {
-
-    override val holdResourceAfterCompletion: Boolean = true
+      taskContext: TaskContext) extends GroupedAsyncRunner[BufferInfo] with Logging {
 
     override val resource: AsyncRunResource = {
       AsyncRunResource.newCpuResource(file.length, Some(taskTotalReadSize))
@@ -2746,8 +2743,18 @@ class MultiFileCloudParquetPartitionReader(
 
     private var blockChunkIter: BufferedIterator[BlockMetaData] = null
 
+    // BufferInfo will not be closed until it is transferred onto device side. So, builds
+    // DecayReleaseResult with a release callback rather than FastReleaseResult.
+    override protected def buildResult(resultData: BufferInfo,
+        metrics: AsyncMetrics): RunnerResult = {
+      val releaseCallback = () => {
+        this.callDecayReleaseCallback()
+      }
+      new DecayReleaseResult[BufferInfo](resultData, metrics, releaseCallback)
+    }
+
     /**
-     * Returns the host memory buffers and file meta data for the file processed.
+     * Returns the host memory buffers and file metadata for the file processed.
      * If there was an error then the error field is set. If there were no blocks the buffer
      * is returned as null.  If there were no columns but rows (count() operation) then the
      * buffer is null and the size is the number of rows.

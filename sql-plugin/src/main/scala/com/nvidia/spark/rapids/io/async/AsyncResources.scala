@@ -96,20 +96,39 @@ trait AsyncResult[T] extends AutoCloseable {
   }
 }
 
-class SimpleAsyncResult[T](override val data: T,
+/**
+ * Basic implementation of AsyncResult for runners that release resources immediately upon
+ * completion. This result type is suitable for short-lived operations that don't need to retain
+ * resources after execution. FastReleaseResult has no release hook and resources are freed
+ * automatically as soon as the runner finishes.
+ */
+class FastReleaseResult[T](override val data: T,
     override val metrics: AsyncMetrics) extends AsyncResult[T]
 
-class AsyncResultDecayRelease[T](override val data: T,
+/**
+ * Basic implementation of AsyncResult that allows resources to be held after runner completion
+ * and released later via an explicit callback. This result type is suitable for operations that
+ * need to retain resources after execution until the consumer explicitly releases them.
+ * DecayReleaseResult provides a release hook that must be triggered by calling close() when
+ * resources are no longer needed.
+ */
+class DecayReleaseResult[T](override val data: T,
     override val metrics: AsyncMetrics,
-    override val releaseHook: Option[() => Unit]) extends AsyncResult[T]
+    releaseCallback: () => Unit) extends AsyncResult[T] {
+  override val releaseHook: Option[() => Unit] = Some(releaseCallback)
+}
 
 /**
- * The AsyncRunner interface represents a resource-aware task that can be scheduled by
- * ResourceBoundedThreadExecutor. Tasks define their resource requirements, execution priority,
+ * The AsyncRunner interface represents a resource-aware runner that can be scheduled by
+ * ResourceBoundedThreadExecutor. Runners define their resource requirements, execution priority,
  * and can optionally hold resources after completion for deferred release.
  *
  * AsyncRunner provides hooks for resource lifecycle management and supports both immediate
- * and deferred resource release patterns based on the task's holdResourceAfterCompletion flag.
+ * and deferred resource release patterns based on the corresponding AsyncResult implementation:
+ * - FastReleaseResult: resources are released immediately after the runner completion.
+ * - DecayReleaseResult: resources are held after runner completion and released when the caller
+ *   explicitly invokes the release callback. This is useful for runners that need to retain
+ *   resources for a certain period after execution.
  */
 trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   /**
@@ -137,16 +156,11 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
    * resources if needed. This method can be overridden by subclasses to customize the result
    * format to carry additional metadata or state.
    */
-  protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T] = {
-    if (!holdResourceAfterCompletion) {
-      new SimpleAsyncResult(resultData, metrics)
-    } else {
-      new AsyncResultDecayRelease(resultData, metrics,
-        releaseHook = Option(() => this.callDecayReleaseCallback()))
-    }
-  }
+  protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T]
 
   def call(): AsyncResult[T] = {
+    require(result.isEmpty, "AsyncRunner.call() should only be called once")
+
     val startTime = System.nanoTime()
     val resultData = try {
       beforeExecuteHook.foreach { hook => hook() }
@@ -155,7 +169,9 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
       afterExecuteHook.foreach { hook => hook() }
     }
     metricsBuilder.setExecutionTimeMs(System.nanoTime() - startTime)
-    buildResult(resultData, metricsBuilder.build())
+
+    result = Some(buildResult(resultData, metricsBuilder.build()))
+    result.get
   }
 
   protected var beforeExecuteHook: Option[() => Unit] = None
@@ -182,19 +198,10 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   }
 
   /**
-   * Returns true if the task should release its resources after completion.
-   * This is useful for tasks that are not long-lived and can release resources
-   * immediately after they finish.
-   */
-  def holdResourceAfterCompletion: Boolean = false
-
-  /**
    * Guarantees the release callback will NOT be called unless the task holds the resource.
    * This method is protected not private, so it can be called by subclasses to build own result.
    */
-  private def callDecayReleaseCallback(): Unit = {
-    require(holdResourceAfterCompletion,
-      "This AsyncRunner does not hold resource after completion")
+  protected def callDecayReleaseCallback(): Unit = {
     require(execException.isEmpty, "The resource was somehow released forcefully, " +
         s"caught runtime exception: ${execException.get}")
     require(releaseResourceCallback != null, "releaseResourceCallback is not registered")
@@ -202,6 +209,12 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
     releaseResourceCallback()
     hasDecayReleased = true
   }
+
+  // Cache the result for 2 purposes:
+  // 1. Ensure call() is only called once
+  // 2. Facilitate accessing the status of AsyncRunner inside ThreadExecutor after execution,
+  //    specifically, to help with handling resource release in `RapidsFutureTask.releaseResource`.
+  private[async] var result: Option[AsyncResult[T]] = None
 
   private[async] var releaseResourceCallback: () => Unit = _
 
@@ -222,6 +235,11 @@ abstract class UnboundedAsyncRunner[T] extends AsyncRunner[T] {
 
   // Unbounded tasks have the highest priority.
   override val priority: Double = Double.MaxValue
+
+  //
+  override protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T] = {
+    new FastReleaseResult(resultData, metrics)
+  }
 }
 
 case class GroupSharedState(groupSize: Int,
@@ -277,6 +295,11 @@ class AsyncFunctorForTest[T](
     override val resource: AsyncRunResource,
     override val priority: Double,
     functor: () => T) extends AsyncRunner[T] {
+
+  override protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T] = {
+    new FastReleaseResult(resultData, metrics)
+  }
+
   override def callImpl(): T = functor()
 }
 

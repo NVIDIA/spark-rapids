@@ -59,9 +59,19 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncRe
   def releaseResource(force: Boolean = false): Unit = {
     require(resourceFulfilled, "Cannot release resource that was not held")
     resourceFulfilled = false
-    // Release intermediately if the task supports that, or it has to be (like exception occurred)
-    if (force || !runner.holdResourceAfterCompletion) {
-      runner.releaseResourceCallback()
+    // releaseResourceCallback may be null under certain circumstance like if the runner is
+    // UnboundedAsyncRunner
+    Option(runner.releaseResourceCallback).foreach { cb =>
+      runner.result match {
+        // Immediately release the resource if the task did NOT build result successfully
+        case None => cb()
+        // Immediately release the resource if the task built a FastReleaseResult
+        case Some(_: FastReleaseResult[T]) => cb()
+        // Immediately release the resource if forced
+        case _ if force => cb()
+        // Otherwise, defer the release
+        case _ =>
+      }
     }
   }
 
@@ -118,19 +128,20 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
  * A thread pool executor that integrates with resource management for executing AsyncRunners.
  *
  * This executor provides resource-aware task scheduling by:
- *   - Acquiring resources before task execution through the ResourcePool
+ *   - Acquiring resources before runner execution through the ResourcePool
  *   - Tracking resource usage and releasing resources after task completion
- *   - Supporting priority-based task ordering via PriorityBlockingQueue
- *   - Retrying tasks that fail to acquire resources with adjusted priority
+ *   - Supporting priority-based runner ordering via PriorityBlockingQueue
+ *   - Retrying runners that fail to acquire resources with adjusted priority
  *   - Managing resource lifecycles including immediate and deferred release strategies
  *
- * Tasks that cannot acquire sufficient resources within timeout are bypassed during execution and
- * re-queued with adjusted priority to prevent starvation. The executor works exclusively
- * with AsyncRunner instances and their corresponding RapidsFutureTask wrappers.
+ * AsyncRunners that cannot acquire sufficient resources within timeout are bypassed during
+ * execution and re-queued with adjusted priority to prevent starvation. The executor works
+ * exclusively with AsyncRunner instances and their corresponding RapidsFutureTask wrappers.
  *
- * Resource release timing is controlled by the AsyncRunner's `holdResourceAfterCompletion` flag:
- * immediate release when false (default) or deferred release when true, with exceptions always
- * triggering immediate release regardless of the flag.
+ * Resource release timing can be controlled by the implementation of the AsyncRunner.
+ * Runners are able to provide callbacks for resource lifecycle management and supports both
+ * immediate and deferred resource release patterns based on the corresponding AsyncResult
+ * implementation.
  *
  * @param mgr the ResourcePool for managing resource acquisition and release
  * @param waitResourceTimeoutMs timeout in milliseconds for resource acquisition
@@ -158,10 +169,13 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
 
   override def submit[T](fn: Callable[T]): Future[T] = {
     fn match {
-      case task: AsyncRunner[_] =>
+      // quick path for UnboundedAsyncRunner that does not need resource management
+      case runner: UnboundedAsyncRunner[_] =>
+        super.submit(runner)
+      case runner: AsyncRunner[_] =>
         //register the resource release callback
-        task.releaseResourceCallback = () => mgr.releaseResource(task)
-        super.submit(task)
+        runner.releaseResourceCallback = () => mgr.releaseResource(runner)
+        super.submit(runner)
       case f =>
         throw new IllegalArgumentException(
           "ResourceBoundedThreadExecutor only accepts AsyncRunner," +
@@ -172,10 +186,13 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
   // This method is only for the extensions of RapidsFutureTask.
   override def submit[T](r: Runnable, result: T): Future[T] = {
     r match {
-      case futTask: RapidsFutureTask[_] =>
+      // quick path for UnboundedAsyncRunner that does not need resource management
+      case ft: RapidsFutureTask[_] if ft.runner.isInstanceOf[UnboundedAsyncRunner[_]] =>
+        super.submit(ft, result)
+      case ft: RapidsFutureTask[_] =>
         //register the resource release callback
-        futTask.runner.releaseResourceCallback = () => mgr.releaseResource(futTask.runner)
-        super.submit(futTask, null.asInstanceOf[T])
+        ft.runner.releaseResourceCallback = () => mgr.releaseResource(ft.runner)
+        super.submit(ft, null.asInstanceOf[T])
       case _ =>
         throw new UnsupportedOperationException("only accepts AsyncRunner or RapidsFutureTask")
     }
