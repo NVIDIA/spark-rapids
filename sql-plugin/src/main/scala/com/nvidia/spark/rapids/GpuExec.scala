@@ -266,7 +266,7 @@ trait GpuExec extends SparkPlan with Logging {
    * operator's OP_TIME_NEW. Recursively collects all descendant
    * OP_TIME_NEW metrics and deduplicates them
    */
-  protected def getChildOpTimeMetrics: Seq[GpuMetric] = {
+  def getChildOpTimeMetrics: Seq[GpuMetric] = {
     
     def collectChildOpTimeMetricsRecursive(
         plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {

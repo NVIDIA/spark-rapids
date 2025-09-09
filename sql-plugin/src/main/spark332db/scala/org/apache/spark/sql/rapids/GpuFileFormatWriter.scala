@@ -38,6 +38,7 @@ import java.util.{Date, UUID}
 
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetrics.OP_TIME_NEW
 import com.nvidia.spark.rapids.shims.{BucketingUtilsShim, RapidsFileSourceMetaUtils}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -262,6 +263,16 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
         rdd
       }
 
+      // Collect exclude metrics from the plan
+      val excludeMetrics = plan match {
+        case gpuExec: GpuExec =>
+          val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSeq
+          val childMetrics = gpuExec.getChildOpTimeMetrics
+          currentMetric ++ childMetrics
+        case _ =>
+          Seq.empty[GpuMetric]
+      }
+
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
@@ -277,7 +288,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
             committer,
             iterator = iter,
             concurrentOutputWriterSpec = concurrentOutputWriterSpec,
-            baseDebugOutputPath = baseDebugOutputPath)
+            baseDebugOutputPath = baseDebugOutputPath,
+            excludeMetrics = excludeMetrics)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -387,7 +399,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
-      baseDebugOutputPath: Option[String]): WriteTaskResult = {
+      baseDebugOutputPath: Option[String],
+      excludeMetrics: Seq[GpuMetric] = Seq.empty): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -427,7 +440,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       }
 
     // Use GpuMetric.ns to automatically collect execution time
-    dataWriter.operatorTimeMetric.ns {
+    dataWriter.operatorTimeMetric.ns(excludeMetrics) {
       try {
         Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
           // Execute the task to write rows out and commit the task.

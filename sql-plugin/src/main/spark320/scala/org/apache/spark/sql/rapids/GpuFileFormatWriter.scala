@@ -63,6 +63,8 @@ import org.apache.spark.util.{SerializableConfiguration, Utils}
 /** A helper object for writing columnar data out to a location. */
 object GpuFileFormatWriter extends Logging {
 
+  import GpuMetric._
+
   private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
     schema.foreach { field =>
       if (!format.supportDataType(field.dataType)) {
@@ -245,6 +247,16 @@ object GpuFileFormatWriter extends Logging {
         rdd
       }
 
+      // Collect exclude metrics from the plan
+      val excludeMetrics = plan match {
+        case gpuExec: GpuExec =>
+          val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSeq
+          val childMetrics = gpuExec.getChildOpTimeMetrics
+          currentMetric ++ childMetrics
+        case _ =>
+          Seq.empty[GpuMetric]
+      }
+
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerId = SparkHadoopWriterUtils.createJobTrackerID(new Date)
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
@@ -260,7 +272,8 @@ object GpuFileFormatWriter extends Logging {
             committer,
             iterator = iter,
             concurrentOutputWriterSpec = concurrentOutputWriterSpec,
-            baseDebugOutputPath = baseDebugOutputPath)
+            baseDebugOutputPath = baseDebugOutputPath,
+            excludeMetrics = excludeMetrics)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -295,7 +308,8 @@ object GpuFileFormatWriter extends Logging {
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
-      baseDebugOutputPath: Option[String]): WriteTaskResult = {
+      baseDebugOutputPath: Option[String],
+      excludeMetrics: Seq[GpuMetric]): WriteTaskResult = {
 
     val jobId = RapidsHadoopWriterUtils.createJobID(jobTrackerId, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -335,7 +349,7 @@ object GpuFileFormatWriter extends Logging {
       }
 
     // Use GpuMetric.ns to automatically collect execution time
-    dataWriter.operatorTimeMetric.ns {
+    dataWriter.operatorTimeMetric.ns(excludeMetrics) {
       try {
         Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
           // Execute the task to write rows out and commit the task.
