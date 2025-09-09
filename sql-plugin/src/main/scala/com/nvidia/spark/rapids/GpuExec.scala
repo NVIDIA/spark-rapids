@@ -22,6 +22,8 @@ import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.{Partition, TaskContext}
+import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
@@ -30,12 +32,11 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.rapids.GpuTaskMetrics
+import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.{Partition, TaskContext}
 
 /**
  * RDD wrapper that tracks opTime while excluding child operators' opTime
@@ -105,7 +106,7 @@ object GpuExec {
   val TASK_METRICS_TAG = new TreeNodeTag[GpuTaskMetrics]("gpu_task_metrics")
 }
 
-trait GpuExec extends SparkPlan {
+trait GpuExec extends SparkPlan with Logging {
   import GpuMetric._
 
   def sparkSession: SparkSession = {
@@ -252,8 +253,9 @@ trait GpuExec extends SparkPlan {
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
   /**
-   * Get OP_TIME_NEW metrics from child GpuExec operators to exclude them from this operator's OP_TIME_NEW
-   * Recursively collects all descendant OP_TIME_NEW metrics and deduplicates them
+   * Get OP_TIME_NEW metrics from child GpuExec operators to exclude them from this
+   * operator's OP_TIME_NEW. Recursively collects all descendant
+   * OP_TIME_NEW metrics and deduplicates them
    */
   protected def getChildOpTimeMetrics: Seq[GpuMetric] = {
     def collectChildOpTimeMetricsRecursive(
@@ -265,7 +267,8 @@ trait GpuExec extends SparkPlan {
         val newVisited = visited + plan
         plan match {
           case gpuExec: GpuExec =>
-            // Use OP_TIME_NEW_SHUFFLE_READ for Exchange and GpuCustomShuffleReaderExec, OP_TIME_NEW for others
+            // Use OP_TIME_NEW_SHUFFLE_READ for Exchange and GpuCustomShuffleReaderExec,
+            // OP_TIME_NEW for others
             val metricKey = gpuExec match {
               case _: Exchange | _: GpuCustomShuffleReaderExec => OP_TIME_NEW_SHUFFLE_READ
               case _ => OP_TIME_NEW
@@ -273,7 +276,8 @@ trait GpuExec extends SparkPlan {
             val currentMetric = gpuExec.allMetrics.get(metricKey).toSet
             // Log warning if the expected metric is not found
             if (currentMetric.isEmpty) {
-              logWarning(s"Expected metric '$metricKey' not found in ${gpuExec.getClass.getSimpleName}")
+              logWarning(s"Expected metric '$metricKey' not found in " +
+                s"${gpuExec.getClass.getSimpleName}")
             }
             // Recursively collect from children
             val childMetrics = gpuExec.children.flatMap { child =>
