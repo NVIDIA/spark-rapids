@@ -27,7 +27,8 @@ import scala.concurrent.duration.Duration
 
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
-import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW_SR, MODERATE_LEVEL}
+import com.nvidia.spark.rapids.GpuMetrics.{OP_TIME_NEW, OP_TIME_NEW_SHUFFLE_WRITE}
+import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW, DESCRIPTION_OP_TIME_NEW_SR, DESCRIPTION_OP_TIME_NEW_SW, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -87,6 +88,8 @@ case class GpuOptimizeWriteExchangeExec(
   override lazy val allMetrics: Map[String, GpuMetric] = {
     Map(
       OP_TIME_NEW_SHUFFLE_READ -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SR),
+      OP_TIME_NEW_SHUFFLE_WRITE -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SW),
+      OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
       PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
       NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
       NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
@@ -114,32 +117,8 @@ case class GpuOptimizeWriteExchangeExec(
 
   @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     // Get OP_TIME_NEW metrics from all descendants for exclusion (with deduplication)
-    def collectChildOpTimeMetricsRecursive(plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
-      if (visited.contains(plan)) {
-        // Avoid infinite recursion and duplicate collection for shared operators
-        Set.empty
-      } else {
-        val newVisited = visited + plan
-        plan match {
-          case gpuExec: GpuExec =>
-            // Collect this GpuExec's OP_TIME_NEW metric
-            val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSet
-            // Recursively collect from children
-            val childMetrics = gpuExec.children.flatMap { child =>
-              collectChildOpTimeMetricsRecursive(child, newVisited)
-            }.toSet
-            currentMetric ++ childMetrics
-          case _ =>
-            // For non-GPU operators, still recurse into their children
-            plan.children.flatMap { child =>
-              collectChildOpTimeMetricsRecursive(child, newVisited)
-            }.toSet
-        }
-      }
-    }
-
-    val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
-    val opTimeNewMetric = allMetrics.get(OP_TIME_NEW)
+    val childOpTimeMetrics = getChildOpTimeMetrics
+    val opTimeNewSWMetric = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
     
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
@@ -154,7 +133,7 @@ case class GpuOptimizeWriteExchangeExec(
       metrics=allMetrics,
       writeMetrics=writeMetrics,
       additionalMetrics=additionalMetrics,
-      opTimeNewMetric=opTimeNewMetric,
+      opTimeNewSW=opTimeNewSWMetric,
       childOpTimeMetrics=childOpTimeMetrics)
     metrics("numPartitions").set(dep.partitioner.numPartitions)
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
