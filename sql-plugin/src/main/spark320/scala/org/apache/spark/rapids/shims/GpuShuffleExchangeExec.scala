@@ -78,7 +78,8 @@ case class GpuShuffleExchangeExec(
     allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
       case Some(opTimeMetric) =>
         // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-        GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
+        GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty,
+          disableOpTimeTrackingRdd)
       case None => shuffleRDD
     }
   }

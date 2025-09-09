@@ -2618,6 +2618,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val DISABLE_OP_TIME_TRACKING_RDD = conf("spark.rapids.sql.exec.disableOpTimeTrackingRDD")
+    .doc("Disable OpTimeTrackingRDD for all GPU operations. When true, OpTimeTrackingRDD " +
+      "wrappers will not be created, which can improve performance by avoiding overhead " +
+      "of operation time tracking.")
+    .booleanConf
+    .createWithDefault(false)
+
   val LORE_PARQUET_USE_ORIGINAL_NAMES =
     conf("spark.rapids.sql.lore.parquet.useOriginalSchemaNames")
       .doc("When enabled, LORE writes Parquet files using the original Spark schema names " +

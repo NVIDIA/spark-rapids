@@ -89,13 +89,19 @@ object GpuExec {
    * @param rdd The RDD to wrap
    * @param opTimeMetric The op time metric to track
    * @param childOpTimeMetrics Child op time metrics to exclude
-   * @return Wrapped RDD with op time tracking
+   * @param disableOpTimeTrackingRdd Whether to disable OpTimeTrackingRDD
+   * @return Wrapped RDD with op time tracking if enabled, otherwise original RDD
    */
   def createOpTimeTrackingRDD(
       rdd: RDD[ColumnarBatch],
       opTimeMetric: GpuMetric,
-      childOpTimeMetrics: Seq[GpuMetric]): RDD[ColumnarBatch] = {
-    new GpuOpTimeTrackingRDD(rdd, opTimeMetric, childOpTimeMetrics)
+      childOpTimeMetrics: Seq[GpuMetric],
+      disableOpTimeTrackingRdd: Boolean): RDD[ColumnarBatch] = {
+    if (disableOpTimeTrackingRdd) {
+      rdd
+    } else {
+      new GpuOpTimeTrackingRDD(rdd, opTimeMetric, childOpTimeMetrics)
+    }
   }
 
   def outputBatching(sp: SparkPlan): CoalesceGoal = sp match {
@@ -108,6 +114,11 @@ object GpuExec {
 
 trait GpuExec extends SparkPlan with Logging {
   import GpuMetric._
+
+  private lazy val disableOpTimeTrackingRdd = 
+    RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(conf)
+
+  println(s"RapidsConf.DISABLE_OP_TIME_TRACKING_RDD is $disableOpTimeTrackingRdd")
 
   def sparkSession: SparkSession = {
     SparkSessionUtils.sessionFromPlan(this)
@@ -270,6 +281,7 @@ trait GpuExec extends SparkPlan with Logging {
             // Use OP_TIME_NEW_SHUFFLE_READ for Exchange and GpuCustomShuffleReaderExec,
             // OP_TIME_NEW for others
             val metricKey = gpuExec match {
+              //TODO stop recu
               case _: Exchange | _: GpuCustomShuffleReaderExec => OP_TIME_NEW_SHUFFLE_READ
               case _ => OP_TIME_NEW
             }
@@ -304,14 +316,14 @@ trait GpuExec extends SparkPlan with Logging {
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     this.dumpLoreMetaInfo()
 
-    val childOpTimeMetrics = getChildOpTimeMetrics
     val origin = internalDoExecuteColumnar() match {
       case tracking: GpuOpTimeTrackingRDD => tracking // this is for shuffle read case
       case other => {
         allMetrics.get(OP_TIME_NEW) match {
-          case Some(opTimeNewMetric) =>
-            new GpuOpTimeTrackingRDD(other, opTimeNewMetric, childOpTimeMetrics)
-          case None => other
+          case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd => {
+            new GpuOpTimeTrackingRDD(other, opTimeNewMetric, getChildOpTimeMetrics)
+          }
+          case _ => other
         }
       }
     }

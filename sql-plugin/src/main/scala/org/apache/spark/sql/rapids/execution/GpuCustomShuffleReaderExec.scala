@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric, RapidsConf}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
@@ -38,6 +38,9 @@ case class GpuCustomShuffleReaderExec(
     child: SparkPlan,
     partitionSpecs: Seq[ShufflePartitionSpec]) extends ShimUnaryExecNode with GpuExec  {
   import GpuMetric._
+
+  private lazy val disableOpTimeTrackingRdd = 
+    RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(conf)
 
   /**
    * We intentionally override metrics in this case rather than overriding additionalMetrics so
@@ -129,7 +132,8 @@ case class GpuCustomShuffleReaderExec(
           allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
             case Some(opTimeMetric) =>
               // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-              GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
+              GpuExec.createOpTimeTrackingRDD(
+                shuffleRDD, opTimeMetric, Seq.empty, disableOpTimeTrackingRdd)
             case None => shuffleRDD
           }
         case _ =>

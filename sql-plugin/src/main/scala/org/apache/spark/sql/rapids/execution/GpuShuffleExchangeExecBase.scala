@@ -229,6 +229,8 @@ abstract class GpuShuffleExchangeExecBase(
     .SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO
     .get(child.conf)
   private lazy val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(child.conf)
+  lazy val disableOpTimeTrackingRdd =
+    RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(child.conf)
 
   private lazy val useGPUShuffle = {
     gpuOutputPartitioning match {
@@ -311,7 +313,8 @@ abstract class GpuShuffleExchangeExecBase(
       writeMetrics,
       additionalMetrics,
       opTimeNewSW,
-      childOpTimeMetrics)
+      childOpTimeMetrics,
+      disableOpTimeTrackingRdd)
   }
 
   /**
@@ -331,7 +334,8 @@ abstract class GpuShuffleExchangeExecBase(
         cachedShuffleRDD = allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
           case Some(opTimeMetric) =>
             // Empty childOpTimeMetrics for shuffle read operations to avoid double counting
-            GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, Seq.empty)
+            GpuExec.createOpTimeTrackingRDD(
+              shuffleRDD, opTimeMetric, Seq.empty, disableOpTimeTrackingRdd)
           case None => shuffleRDD
         }
       }
@@ -416,7 +420,8 @@ object GpuShuffleExchangeExecBase {
       writeMetrics: Map[String, SQLMetric],
       additionalMetrics: Map[String, GpuMetric],
       opTimeNewSW: Option[GpuMetric] = None,
-      childOpTimeMetrics: Seq[GpuMetric] = Seq.empty)
+      childOpTimeMetrics: Seq[GpuMetric] = Seq.empty,
+      disableOpTimeTrackingRdd: Boolean = false)
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
       case _: GpuRoundRobinPartitioning => true
@@ -539,9 +544,9 @@ object GpuShuffleExchangeExecBase {
 
     // Apply OP_TIME_NEW tracking to rddWithPartitionIds if opTimeNewMetric is provided
     val finalRddWithPartitionIds = opTimeNewSW match {
-      case Some(opTimeMetric) =>
+      case Some(opTimeMetric) if !disableOpTimeTrackingRdd =>
         new GpuShuffleOpTimeTrackingRDD(rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
-      case None => rddWithPartitionIds
+      case _ => rddWithPartitionIds
     }
 
     // Now, we manually create a GpuShuffleDependency. Because pairs in rddWithPartitionIds
