@@ -364,12 +364,19 @@ case class GpuColumnarToRowExec(
       opTime, streamTime)
 
     val cdata = child.executeColumnar()
-    if (exportColumnarRdd) {
+    val rdd = if (exportColumnarRdd) {
       // If we are exporting columnar rdd we need an easy way for the code that walks the
       // RDDs to know where the columnar to row transition is happening.
       GpuColumnToRowMapPartitionsRDD.mapPartitions(cdata, f)
     } else {
       cdata.mapPartitions(f)
+    }
+
+    // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
+    allMetrics.get(OP_TIME_NEW) match {
+      case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd =>
+        new GpuOpTimeTrackingRDD[InternalRow](rdd, opTimeNewMetric, getChildOpTimeMetrics)
+      case _ => rdd
     }
   }
 

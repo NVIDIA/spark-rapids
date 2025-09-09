@@ -19,12 +19,9 @@ package org.apache.spark.sql.rapids
 import java.{lang => jl}
 import java.io.ObjectInputStream
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.ConcurrentHashMap
-
-import scala.collection.mutable
-import scala.jdk.CollectionConverters._
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{NvtxId, NvtxRegistry}
@@ -262,7 +259,8 @@ class GpuTaskMetrics extends Serializable {
     GpuTaskMetrics.incHostBytesAllocated(bytes, isPinned)
     maxHostBytesAllocated = maxHostBytesAllocated.max(GpuTaskMetrics.hostBytesAllocated.get())
     if (isPinned) {
-      maxPinnedBytesAllocated = maxPinnedBytesAllocated.max(GpuTaskMetrics.pinnedBytesAllocated.get())
+      maxPinnedBytesAllocated =
+        maxPinnedBytesAllocated.max(GpuTaskMetrics.pinnedBytesAllocated.get())
     } else {
       maxPageableBytesAllocated = maxPageableBytesAllocated.max(
         GpuTaskMetrics.pageableBytesAllocated.get())

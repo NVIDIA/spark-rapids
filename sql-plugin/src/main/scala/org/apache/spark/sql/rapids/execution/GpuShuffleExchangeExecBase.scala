@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
-import org.apache.spark.{MapOutputStatistics, Partition, ShuffleDependency, TaskContext}
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -44,52 +44,6 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
-/**
- * RDD wrapper that tracks opTime for shuffle operations with Product2[Int, ColumnarBatch] type
- */
-private class GpuShuffleOpTimeTrackingRDD(
-    prev: RDD[Product2[Int, ColumnarBatch]],
-    opTimeMetric: GpuMetric,
-    childOpTimeMetrics: Seq[GpuMetric]) extends RDD[Product2[Int, ColumnarBatch]](prev) {
-
-  override def compute(split: Partition, context: TaskContext):
-  Iterator[Product2[Int, ColumnarBatch]] = {
-    val childIterator = firstParent[Product2[Int, ColumnarBatch]].compute(split, context)
-    
-    // Create wrapper iterator that tracks opTime excluding child opTime
-    new Iterator[Product2[Int, ColumnarBatch]] {
-      override def hasNext: Boolean = {
-        if (childOpTimeMetrics.nonEmpty) {
-          opTimeMetric.ns(childOpTimeMetrics) {
-            childIterator.hasNext
-          }
-        } else {
-          opTimeMetric.ns {
-            childIterator.hasNext
-          }
-        }
-      }
-      
-      override def next(): Product2[Int, ColumnarBatch] = {
-        if (childOpTimeMetrics.nonEmpty) {
-          opTimeMetric.ns(childOpTimeMetrics) {
-            childIterator.next()
-          }
-        } else {
-          opTimeMetric.ns {
-            childIterator.next()
-          }
-        }
-      }
-    }
-  }
-
-  override def getPartitions: Array[Partition] =
-    firstParent[Product2[Int, ColumnarBatch]].partitions
-  
-  override def getPreferredLocations(split: Partition): Seq[String] =
-    firstParent[Product2[Int, ColumnarBatch]].preferredLocations(split)
-}
 
 abstract class GpuShuffleMetaBase(
     shuffle: ShuffleExchangeExec,
@@ -229,7 +183,7 @@ abstract class GpuShuffleExchangeExecBase(
     .SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO
     .get(child.conf)
   private lazy val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(child.conf)
-  lazy val disableOpTimeTrackingRdd =
+  override lazy val disableOpTimeTrackingRdd =
     RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(child.conf)
 
   private lazy val useGPUShuffle = {
@@ -539,7 +493,7 @@ object GpuShuffleExchangeExecBase {
     // Apply OP_TIME_NEW tracking to rddWithPartitionIds if opTimeNewMetric is provided
     val finalRddWithPartitionIds = opTimeNewSW match {
       case Some(opTimeMetric) if !disableOpTimeTrackingRdd =>
-        new GpuShuffleOpTimeTrackingRDD(rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
+        new GpuOpTimeTrackingRDD[Product2[Int, ColumnarBatch]](rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
       case _ => rddWithPartitionIds
     }
 

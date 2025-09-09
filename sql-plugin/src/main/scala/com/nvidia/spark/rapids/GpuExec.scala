@@ -21,8 +21,8 @@ import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import org.apache.hadoop.fs.Path
-import org.apache.spark.{Partition, TaskContext}
 
+import org.apache.spark.{Partition, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
 import org.apache.spark.rdd.RDD
@@ -39,18 +39,18 @@ import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * RDD wrapper that tracks opTime while excluding child operators' opTime
+ * Generic RDD wrapper that tracks opTime while excluding child operators' opTime
  */
-private class GpuOpTimeTrackingRDD(
-    prev: RDD[ColumnarBatch],
+class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
+    prev: RDD[T],
     opTimeMetric: GpuMetric,
-    childOpTimeMetrics: Seq[GpuMetric]) extends RDD[ColumnarBatch](prev) {
+    childOpTimeMetrics: Seq[GpuMetric]) extends RDD[T](prev) {
 
-  override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
-    val childIterator = firstParent[ColumnarBatch].compute(split, context)
+  override def compute(split: Partition, context: TaskContext): Iterator[T] = {
+    val childIterator = firstParent[T].compute(split, context)
     
     // Create wrapper iterator that tracks opTime excluding child opTime
-    new Iterator[ColumnarBatch] {
+    new Iterator[T] {
       override def hasNext: Boolean = {
         if (childOpTimeMetrics.nonEmpty) {
           opTimeMetric.ns(childOpTimeMetrics) {
@@ -63,7 +63,7 @@ private class GpuOpTimeTrackingRDD(
         }
       }
 
-      override def next(): ColumnarBatch = {
+      override def next(): T = {
         if (childOpTimeMetrics.nonEmpty) {
           opTimeMetric.ns(childOpTimeMetrics) {
             childIterator.next()
@@ -77,10 +77,10 @@ private class GpuOpTimeTrackingRDD(
     }
   }
 
-  override def getPartitions: Array[Partition] = firstParent[ColumnarBatch].partitions
+  override def getPartitions: Array[Partition] = firstParent[T].partitions
 
   override def getPreferredLocations(split: Partition): Seq[String] =
-    firstParent[ColumnarBatch].preferredLocations(split)
+    firstParent[T].preferredLocations(split)
 }
 
 object GpuExec {
@@ -100,7 +100,7 @@ object GpuExec {
     if (disableOpTimeTrackingRdd) {
       rdd
     } else {
-      new GpuOpTimeTrackingRDD(rdd, opTimeMetric, childOpTimeMetrics)
+      new GpuOpTimeTrackingRDD[ColumnarBatch](rdd, opTimeMetric, childOpTimeMetrics)
     }
   }
 
@@ -115,7 +115,7 @@ object GpuExec {
 trait GpuExec extends SparkPlan with Logging {
   import GpuMetric._
 
-  private lazy val disableOpTimeTrackingRdd = 
+  lazy val disableOpTimeTrackingRdd =
     RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(conf)
 
   def sparkSession: SparkSession = {
@@ -316,7 +316,7 @@ trait GpuExec extends SparkPlan with Logging {
     this.dumpLoreMetaInfo()
 
     val origin = internalDoExecuteColumnar() match {
-      case tracking: GpuOpTimeTrackingRDD => tracking // this is for shuffle read case
+      case tracking: GpuOpTimeTrackingRDD[_] => tracking // this is for shuffle read case
       case other => {
         allMetrics.get(OP_TIME_NEW) match {
           case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd => {
