@@ -178,7 +178,10 @@ object GpuDeviceManager extends Logging {
 
     SpillFramework.shutdown()
 
-    // try to avoid segfault on RMM shutdown
+    // If we close RMM resources in the shutdown hook in `MemoryCleaner`, will
+    // get segment fault, so close them here before shutdown hook starts.
+    // We assume all RMM resources should be closed at this point, or leaks occurs,
+    // because all Spark tasks/jobs are done at this point.
     MemoryCleaner.cleanAllRmmBlockers()
 
     RmmSpark.clearEventHandler()
