@@ -184,6 +184,15 @@ abstract class GpuFileFormatDataWriter(
   /** Writes a columnar batch of records */
   def write(batch: ColumnarBatch): Unit
 
+  /** Get the operator time metric for timing collection */
+  def operatorTimeMetric: GpuMetric = {
+    statsTrackers.find(_.isInstanceOf[GpuWriteTaskStatsTracker]) match {
+      case Some(tracker: GpuWriteTaskStatsTracker) =>
+        tracker.operatorTime
+      case _ => NoopMetric
+    }
+  }
+
   protected val reportSingleWriter = true
 
   private def updateWritersNumber(): Unit = {

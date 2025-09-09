@@ -64,6 +64,8 @@ class GpuWriteTaskStatsTracker(
     taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MIN_THROTTLE_TIME_KEY).set(minNs)
     taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MAX_THROTTLE_TIME_KEY).set(maxNs)
   }
+
+  def operatorTime: GpuMetric = taskMetrics(GpuWriteJobStatsTracker.OPERATOR_TIME_KEY)
 }
 
 /**
@@ -88,6 +90,7 @@ object GpuWriteJobStatsTracker {
   val SORT_TIME_KEY = "writeSortTime"
   val SORT_OP_TIME_KEY = "writeSortOpTime"
   val WRITE_IO_TIME_KEY = "writeIOTime"
+  val OPERATOR_TIME_KEY = "operatorTime"
   val ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY = "asyncWriteTotalThrottleTime"
   val ASYNC_WRITE_AVG_THROTTLE_TIME_KEY = "asyncWriteAvgThrottleTime"
   val ASYNC_WRITE_MIN_THROTTLE_TIME_KEY = "asyncWriteMinThrottleTime"
@@ -111,6 +114,8 @@ object GpuWriteJobStatsTracker {
         "GPU sort time"),
       WRITE_IO_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.DEBUG_LEVEL,
         "write I/O time"),
+      OPERATOR_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.MODERATE_LEVEL,
+        "operator time"),
       TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME),
       ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "total throttle time"),

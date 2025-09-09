@@ -218,7 +218,7 @@ abstract class GpuShuffleExchangeExecBase(
 
   // Spark doesn't report totalTime for this operator so we override metrics
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_NEW -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_OP_TIME_NEW),
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
     OP_TIME_NEW_SHUFFLE_WRITE -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SW),
     PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),

@@ -426,23 +426,26 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
         }
       }
 
-    try {
-      Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
-        // Execute the task to write rows out and commit the task.
-        dataWriter.writeWithIterator(iterator)
-        dataWriter.commit()
-      })(catchBlock = {
-        // If there is an error, abort the task
-        dataWriter.abort()
-        logError(s"Job $jobId aborted.")
-      }, finallyBlock = {
-        dataWriter.close()
-      })
-    } catch {
-      case e: FetchFailedException =>
-        throw e
-      case t: Throwable =>
-        throw new SparkException("Task failed while writing rows.", t)
+    // Use GpuMetric.ns to automatically collect execution time
+    dataWriter.operatorTimeMetric.ns {
+      try {
+        Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
+          // Execute the task to write rows out and commit the task.
+          dataWriter.writeWithIterator(iterator)
+          dataWriter.commit()
+        })(catchBlock = {
+          // If there is an error, abort the task
+          dataWriter.abort()
+          logError(s"Job $jobId aborted.")
+        }, finallyBlock = {
+          dataWriter.close()
+        })
+      } catch {
+        case e: FetchFailedException =>
+          throw e
+        case t: Throwable =>
+          throw new SparkException("Task failed while writing rows.", t)
+      }
     }
   }
 

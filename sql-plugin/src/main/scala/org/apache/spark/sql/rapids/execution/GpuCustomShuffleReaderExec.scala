@@ -49,7 +49,7 @@ case class GpuCustomShuffleReaderExec(
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
     PARTITION_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
-    OP_TIME_NEW -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_OP_TIME_NEW)
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW)
   )
 
   override def output: Seq[Attribute] = child.output
