@@ -21,8 +21,8 @@ import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.{Partition, TaskContext}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
 import org.apache.spark.rdd.RDD
@@ -303,26 +303,29 @@ trait GpuExec extends SparkPlan with Logging {
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     this.dumpLoreMetaInfo()
-    val orig = this.dumpLoreRDD(internalDoExecuteColumnar())
-    
-    // Get child opTime metrics for exclusion (both old and new implementations)
-    val childOpTimeMetrics = getChildOpTimeMetrics
 
-    // Wrap RDD for new OP_TIME_NEW metric (new implementation with exclusion)
-    val wrappedForNewOpTime = allMetrics.get(OP_TIME_NEW) match {
-      case Some(opTimeNewMetric) =>
-        new GpuOpTimeTrackingRDD(orig, opTimeNewMetric, childOpTimeMetrics)
-      case None => orig
+    val childOpTimeMetrics = getChildOpTimeMetrics
+    val origin = internalDoExecuteColumnar() match {
+      case tracking: GpuOpTimeTrackingRDD => tracking // this is for shuffle read case
+      case other => {
+        allMetrics.get(OP_TIME_NEW) match {
+          case Some(opTimeNewMetric) =>
+            new GpuOpTimeTrackingRDD(other, opTimeNewMetric, childOpTimeMetrics)
+          case None => other
+        }
+      }
     }
-    
+
+    val wrappedForLORE = this.dumpLoreRDD(origin)
+
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
-      LocationPreservingMapPartitionsRDD(wrappedForNewOpTime) { iter =>
+      LocationPreservingMapPartitionsRDD(wrappedForLORE) { iter =>
         gpuMetrics.makeSureRegistered()
         iter
       }
-    }.getOrElse(wrappedForNewOpTime)
+    }.getOrElse(wrappedForLORE)
   }
 
   override def stringArgs: Iterator[Any] = super.stringArgs ++ loreArgs

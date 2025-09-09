@@ -324,6 +324,7 @@ abstract class GpuShuffleExchangeExecBase(
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = SparkShimImpl
     .attachTreeIfSupported(this, "execute") {
+      //TODO
       // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
       if (cachedShuffleRDD == null) {
         val shuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
