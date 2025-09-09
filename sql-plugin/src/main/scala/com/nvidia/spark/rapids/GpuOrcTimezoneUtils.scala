@@ -74,12 +74,10 @@ object GpuOrcTimezoneUtils {
         s"Only TIMESTAMP_MICROSECONDS is supported, but got $dType")
 
       // 1. timestamp type, rebase timestamp column
-      withResource(col.copyToColumnVector()) { colVector =>
-        withResource(colVector.castTo(DType.INT64)) { longs =>
-          withResource(Scalar.fromLong(diffMicros)) { offsetScalar =>
-            withResource(longs.sub(offsetScalar)) { rebased =>
-              rebased.castTo(DType.TIMESTAMP_MICROSECONDS)
-            }
+      withResource(col.bitCastTo(DType.INT64)) { longs =>
+        withResource(Scalar.fromLong(diffMicros)) { offsetScalar =>
+          withResource(longs.sub(offsetScalar)) { rebased =>
+            rebased.castTo(DType.TIMESTAMP_MICROSECONDS)
           }
         }
       }
