@@ -72,7 +72,13 @@ case class GpuShuffleExchangeExec(
   override def numPartitions: Int = shuffleDependencyColumnar.partitioner.numPartitions
 
   override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
-    new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
+    val shuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
+    allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
+      case Some(opTimeMetric) =>
+        val childOpTimeMetrics = getChildOpTimeMetrics
+        GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+      case None => shuffleRDD
+    }
   }
 
   override def runtimeStatistics: Statistics = {

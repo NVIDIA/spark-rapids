@@ -355,7 +355,7 @@ abstract class GpuShuffleExchangeExecBase(
   /**
    * Caches the created ShuffleBatchRDD so we can reuse that.
    */
-  private var cachedShuffleRDD: ShuffledBatchRDD = null
+  private var cachedShuffleRDD: RDD[ColumnarBatch] = null
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -364,7 +364,13 @@ abstract class GpuShuffleExchangeExecBase(
     .attachTreeIfSupported(this, "execute") {
       // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
       if (cachedShuffleRDD == null) {
-        cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
+        val shuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
+        cachedShuffleRDD = allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
+          case Some(opTimeMetric) =>
+            val childOpTimeMetrics = getChildOpTimeMetrics
+            GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+          case None => shuffleRDD
+        }
       }
       cachedShuffleRDD
     }

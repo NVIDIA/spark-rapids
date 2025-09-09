@@ -47,6 +47,7 @@ case class GpuCustomShuffleReaderExec(
    * The Spark version of this operator does not output any metrics.
    */
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME_NEW_SHUFFLE_READ -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SR),
     PARTITION_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
     OP_TIME_NEW -> createTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_OP_TIME_NEW)
@@ -122,9 +123,15 @@ case class GpuCustomShuffleReaderExec(
       cachedShuffleRDD = child match {
         case stage: ShuffleQueryStageExec =>
           val shuffle = stage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
-          new ShuffledBatchRDD(
+          val shuffleRDD = new ShuffledBatchRDD(
             shuffle.shuffleDependencyColumnar, shuffle.readMetrics ++ metrics,
             partitionSpecs.toArray)
+          allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
+            case Some(opTimeMetric) =>
+              val childOpTimeMetrics = getChildOpTimeMetrics
+              GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+            case None => shuffleRDD
+          }
         case _ =>
           throw new IllegalStateException("operating on canonicalization plan")
       }

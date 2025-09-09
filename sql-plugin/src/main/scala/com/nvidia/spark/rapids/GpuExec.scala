@@ -81,6 +81,20 @@ private class GpuOpTimeTrackingRDD(
 }
 
 object GpuExec {
+  /**
+   * Create an op time tracking RDD wrapper
+   * @param rdd The RDD to wrap
+   * @param opTimeMetric The op time metric to track
+   * @param childOpTimeMetrics Child op time metrics to exclude
+   * @return Wrapped RDD with op time tracking
+   */
+  def createOpTimeTrackingRDD(
+      rdd: RDD[ColumnarBatch],
+      opTimeMetric: GpuMetric,
+      childOpTimeMetrics: Seq[GpuMetric]): RDD[ColumnarBatch] = {
+    new GpuOpTimeTrackingRDD(rdd, opTimeMetric, childOpTimeMetrics)
+  }
+
   def outputBatching(sp: SparkPlan): CoalesceGoal = sp match {
     case gpu: GpuExec => gpu.outputBatching
     case _ => null
@@ -239,7 +253,7 @@ trait GpuExec extends SparkPlan {
    * Get OP_TIME_NEW metrics from child GpuExec operators to exclude them from this operator's OP_TIME_NEW
    * Recursively collects all descendant OP_TIME_NEW metrics and deduplicates them
    */
-  private def getChildOpTimeMetrics: Seq[GpuMetric] = {
+  protected def getChildOpTimeMetrics: Seq[GpuMetric] = {
     def collectChildOpTimeMetricsRecursive(
         plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
       if (visited.contains(plan)) {

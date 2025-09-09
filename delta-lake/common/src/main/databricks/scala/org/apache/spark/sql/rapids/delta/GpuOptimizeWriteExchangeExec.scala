@@ -27,6 +27,7 @@ import scala.concurrent.duration.Duration
 
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
+import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW_SR, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -85,6 +86,7 @@ case class GpuOptimizeWriteExchangeExec(
 
   override lazy val allMetrics: Map[String, GpuMetric] = {
     Map(
+      OP_TIME_NEW_SHUFFLE_READ -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SR),
       PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
       NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
       NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
@@ -169,15 +171,33 @@ case class GpuOptimizeWriteExchangeExec(
     // Collect execution statistics, these will be used to adjust/decide how to split files
     val stats = ThreadUtils.awaitResult(mapOutputStatisticsFuture, Duration.Inf)
     if (stats == null) {
-      new ShuffledBatchRDD(shuffleDependency, metrics)
+      val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
+      allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
+        case Some(opTimeMetric) =>
+          val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
+          GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+        case None => shuffleRDD
+      }
     } else {
       try {
         val partitionSpecs = Some(rebalancePartitions(stats))
-        new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
+        val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
+        allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
+          case Some(opTimeMetric) =>
+            val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
+            GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+          case None => shuffleRDD
+        }
       } catch {
         case e: Throwable =>
           logWarning("Failed to apply OptimizeWrite.", e)
-          new ShuffledBatchRDD(shuffleDependency, metrics)
+          val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
+          allMetrics.get(OP_TIME_NEW_SHUFFLE_READ) match {
+            case Some(opTimeMetric) =>
+              val childOpTimeMetrics = collectChildOpTimeMetricsRecursive(child, Set.empty).toSeq
+              GpuExec.createOpTimeTrackingRDD(shuffleRDD, opTimeMetric, childOpTimeMetrics)
+            case None => shuffleRDD
+          }
       }
     }
   }
