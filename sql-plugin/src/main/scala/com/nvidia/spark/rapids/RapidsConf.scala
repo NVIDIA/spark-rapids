@@ -1376,8 +1376,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValue(v => v >= 512, "The stripe size rows must be no less than 512.")
     .createOptional
 
-  // This is an experimental feature now. In the future:
-  // MUST use the writer timezones in ORC file footers.
   val ORC_READ_IGNORE_WRITE_TIMEZONE =
     conf("spark.rapids.sql.orc.read.ignore.write.timezone")
       .doc("This is an experimental feature. When set to true, the ORC reader ignores the writer " +
