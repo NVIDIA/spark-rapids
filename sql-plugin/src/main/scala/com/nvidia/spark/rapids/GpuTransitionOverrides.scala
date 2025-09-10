@@ -438,12 +438,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     val neededPartIndexes = partOutAttrs.zipWithIndex.collect{
       case (provided, index) if neededExprIds.contains(provided.exprId) => index
     }
-    if (fss.relation.partitionSchema.nonEmpty) {
-      val prunedPartSchema = Some(StructType(neededPartIndexes.map(fss.relation.partitionSchema)))
-      fss.copy(requiredPartitionSchema = prunedPartSchema)(fss.rapidsConf)
-    } else {
-      fss
-    }
+    val prunedPartSchema = Some(StructType(neededPartIndexes.map(fss.relation.partitionSchema)))
+    fss.copy(requiredPartitionSchema = prunedPartSchema)(fss.rapidsConf)
   }
 
   // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging
