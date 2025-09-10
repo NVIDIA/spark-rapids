@@ -157,8 +157,10 @@ case class GpuDelta33xParquetFileFormat(
       metrics: Map[String, GpuMetric])
   : PartitionedFile => Iterator[InternalRow] = {
 
-    val useMetadataRowIndexConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
-    val useMetadataRowIndex = sparkSession.sessionState.conf.getConf(useMetadataRowIndexConf)
+    // We don't want to use metadata to generate Row Indices as it will also
+    // generate hidden metadata that we currently can't handle.
+    // For details see https://github.com/NVIDIA/spark-rapids/issues/7458
+    val useMetadataRowIndex = false
 
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
@@ -419,7 +421,7 @@ case class GpuDelta33xParquetFileFormat(
    * this is to avoid copying memory from OffHeapColumnVector to RapidsHostColumnVector before
    * copying to the device
    */
-  case class RapidsHostWriteableVector(
+  case class SkipRowRapidsHostWriteableVector(
      builder: RapidsHostColumnBuilder,
      size: Int,
      sparkDataType: DataType) extends WritableColumnVector(size, sparkDataType) {
@@ -645,7 +647,7 @@ case class GpuDelta33xParquetFileFormat(
 
     val (rowIndexCol, isRowDeletedVector) =
       withResource(new RapidsHostColumnBuilder(new BasicType(false, DType.INT8), size)) { builder =>
-      val isRowDeletedVector = RapidsHostWriteableVector(builder, size, ByteType)
+      val isRowDeletedVector = SkipRowRapidsHostWriteableVector(builder, size, ByteType)
       val rowIndexCol: RapidsHostColumnVector = if (useMetadataRowIndex) {
         val rowIndexCol = getRowIndexPos(size, ParquetFileReader.readFooter(hadoopConf,
           file.filePath.toPath).getBlocks.asScala.toList)
@@ -670,6 +672,6 @@ case class GpuDelta33xParquetFileFormat(
     }
     indexVectorTuples += (isRowDeletedColumnOpt.get.index ->
         GpuColumnVector.from(isRowDeletedVector, ByteType))
-    replaceVectors(batch, indexVectorTuples: _*)
+    replaceVectors(batch, indexVectorTuples.toSeq : _*)
   }
 }
