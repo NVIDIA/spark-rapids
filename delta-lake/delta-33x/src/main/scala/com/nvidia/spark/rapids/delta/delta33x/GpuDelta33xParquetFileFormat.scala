@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids.delta.delta33x
 import ai.rapids.cudf._
 import ai.rapids.cudf.HostColumnVector._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
-import com.nvidia.spark.rapids.parquet._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
@@ -28,11 +28,9 @@ import org.apache.parquet.hadoop.metadata.BlockMetaData
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.MDC
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader}
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions._
@@ -40,11 +38,10 @@ import org.apache.spark.sql.delta.deletionvectors._
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.vectorized._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{ByteType, DataType, MetadataBuilder, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnarBatchRow}
@@ -184,7 +181,12 @@ case class GpuDelta33xParquetFileFormat(
     }
 
     val isRowDeletedColumn = findColumn(IS_ROW_DELETED_COLUMN_NAME)
-    val rowIndexColumn = findColumn(ROW_INDEX_COLUMN_NAME)
+    val rowIndexColumnName = if (useMetadataRowIndex) {
+      ParquetFileFormat.ROW_INDEX_TEMPORARY_COLUMN_NAME
+    } else {
+      ROW_INDEX_COLUMN_NAME
+    }
+    val rowIndexColumn = findColumn(rowIndexColumnName)
 
     // We don't have any additional columns to generate, just return the original reader as is.
     if (isRowDeletedColumn.isEmpty && rowIndexColumn.isEmpty) return dataReader
@@ -197,7 +199,7 @@ case class GpuDelta33xParquetFileFormat(
     // create an iterator with deletion vectors
     (file: PartitionedFile) => {
       val iter = dataReader(file)
-      RapidsDeletionVectorUtils.iteratorWithAdditionalMetadataColumns(
+      iteratorWithAdditionalMetadataColumns(
         file,
         useMetadataRowIndex,
         iter,
@@ -271,144 +273,24 @@ case class GpuDelta33xParquetFileFormat(
         None
     }
   }
-}
-
-class DeltaMultiFileReaderFactory(
-    fileScan: GpuFileSourceScanExec,
-    useMetadataRowIndex: Boolean,
-    @transient sqlConf: SQLConf,
-    broadcastedConf: Broadcast[SerializableConfiguration],
-    pushedFilters: Array[Filter],
-    dataSchema: StructType,
-    readDataSchema: StructType,
-    partitionSchema: StructType,
-    filters: Array[Filter],
-    tablePath: Option[String],
-    @transient rapidsConf: RapidsConf,
-    metrics: Map[String, GpuMetric],
-    queryUsesInputFile: Boolean
-  ) extends GpuParquetMultiFilePartitionReaderFactory(fileScan.conf, broadcastedConf,
-      fileScan.relation.dataSchema, fileScan.requiredSchema, fileScan.readPartitionSchema,
-      pushedFilters, fileScan.rapidsConf, fileScan.allMetrics, fileScan.queryUsesInputFile) {
-
-  private val schemaWithIndices = fileScan.requiredSchema.fields.zipWithIndex
-  def findColumn(name: String): Option[ColumnMetadata] = {
-    val results = schemaWithIndices.filter(_._1.name == name)
-    if (results.length > 1) {
-      throw new IllegalArgumentException(
-        s"There are more than one column with name=`$name` requested in the reader output")
-    }
-    results.headOption.map(e => ColumnMetadata(e._2, e._1))
-  }
-
-  private val isRowDeletedColumn = findColumn(IS_ROW_DELETED_COLUMN_NAME)
-  private val rowIndexColumnName = if (useMetadataRowIndex) {
-    ParquetFileFormat.ROW_INDEX_TEMPORARY_COLUMN_NAME
-  } else {
-    ROW_INDEX_COLUMN_NAME
-  }
-  private val rowIndexColumn = findColumn(rowIndexColumnName)
-
-  override def createColumnarReader(p: InputPartition): PartitionReader[ColumnarBatch] = {
-    val files = p.asInstanceOf[FilePartition].files
-    val reader = super.createColumnarReader(p)
-    new DeltaMultiFileParquetPartitionReader(files, reader, !useMetadataRowIndex,
-      isRowDeletedColumn, rowIndexColumn, broadcastedConf.value, tablePath)
-  }
-}
-
-class DeltaMultiFileParquetPartitionReader(
-    files: Array[PartitionedFile],
-    reader: PartitionReader[ColumnarBatch],
-    isPredicatePushdownEnabled: Boolean,
-    isRowDeletedColumnOpt: Option[ColumnMetadata],
-    rowIndexColumnOpt: Option[ColumnMetadata],
-    serializableConf: SerializableConfiguration,
-    tablePath: Option[String]) extends PartitionReader[ColumnarBatch] {
-
-  private val filesIterator = files.iterator
-  private var file: PartitionedFile = null
-  private var rowIndex: Long = 0L
-  private var rowIndexFilterOpt: Option[RowIndexFilter] = None
-
-  override def next(): Boolean = {
-    reader.next()
-  }
-
-  override def close(): Unit = {
-    reader.close()
-  }
-
-  private def compareFile(file: PartitionedFile): Boolean = {
-    InputFileUtils.getCurInputFilePath() == file.urlEncodedPath &&
-      InputFileUtils.getCurInputFileStartOffset == file.start &&
-      InputFileUtils.getCurInputFileLength == file.length
-  }
-
-  override def get(): ColumnarBatch = {
-    val batch = reader.get()
-    if (file == null || !compareFile(file)) {
-      file = filesIterator.next()
-      rowIndex = 0
-      rowIndexFilterOpt = RapidsDeletionVectorUtils
-        .getRowIndexFilter(file, isRowDeletedColumnOpt, serializableConf, tablePath)
-    }
-
-    val newBatch = RapidsDeletionVectorUtils.processBatchWithDeletionVector(
-      serializableConf.value,
-      file,
-      isPredicatePushdownEnabled,
-      batch,
-      rowIndex,
-      isRowDeletedColumnOpt,
-      rowIndexFilterOpt,
-      rowIndexColumnOpt
-    )
-    rowIndex += batch.numRows()
-    newBatch
-  }
-}
-
-object RapidsDeletionVectorUtils {
-
-  /**
-   * Multifile
-   **/
-  def processBatchWithDeletionVector(
-    hadoopConf: Configuration,
-    file: PartitionedFile,
-    isPredicatePushdownEnabled: Boolean,
-    batch: ColumnarBatch,
-    rowIndex: Long,
-    isRowDeletedColumnOpt: Option[ColumnMetadata],
-    rowIndexFilterOpt: Option[RowIndexFilter],
-    rowIndexColumnOpt: Option[ColumnMetadata]): ColumnarBatch = {
-
-    replaceBatch(hadoopConf,
-      rowIndex,
-      batch,
-      batch.numRows(),
-      isPredicatePushdownEnabled,
-      rowIndexColumnOpt,
-      isRowDeletedColumnOpt,
-      rowIndexFilterOpt,
-      file)
-  }
 
   /**
    * Perfile
    **/
-  def iteratorWithAdditionalMetadataColumns(
+  private def iteratorWithAdditionalMetadataColumns(
     partitionedFile: PartitionedFile,
-    isPredicatePushdownEnabled: Boolean,
+    useMetadataRowIndex: Boolean,
     iterator: Iterator[Any],
     isRowDeletedColumnOpt: Option[ColumnMetadata],
     rowIndexColumnOpt: Option[ColumnMetadata],
     tablePath: Option[String],
     serializableConf: SerializableConfiguration): Iterator[Any] = {
 
-    val rowIndexFilterOpt = RapidsDeletionVectorUtils
-      .getRowIndexFilter(partitionedFile, isRowDeletedColumnOpt, serializableConf, tablePath)
+    require(!useMetadataRowIndex || rowIndexColumnOpt.isDefined,
+      "useMetadataRowIndex is enabled but rowIndexColumn is not defined.")
+
+    val rowIndexFilterOpt =
+      getRowIndexFilter(partitionedFile, isRowDeletedColumnOpt, serializableConf, tablePath)
 
     var rowIndex = 0L
 
@@ -416,11 +298,10 @@ object RapidsDeletionVectorUtils {
       case cb: ColumnarBatch =>
         val size = cb.numRows()
         val newBatch = replaceBatch(serializableConf.value, rowIndex, cb, size,
-          isPredicatePushdownEnabled, rowIndexColumnOpt, isRowDeletedColumnOpt,
+          useMetadataRowIndex, rowIndexColumnOpt, isRowDeletedColumnOpt,
           rowIndexFilterOpt, partitionedFile)
         rowIndex += size
         newBatch
-
 
       case _: ColumnarBatchRow =>
         throw new RuntimeException("Received invalid type ColumnarBatchRow")
@@ -435,43 +316,48 @@ object RapidsDeletionVectorUtils {
 
   // Ray's logic from GpuParquetReaderPostProcessor processRowPos
   private def getRowIndexPos(numRows: Int, blocks: List[BlockMetaData]): RapidsHostColumnVector = {
-    val rowIndexVectorBuilder =
-      new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), numRows)
-    var curBlockIndex = 0
-    var processedBlockRowCounts = 0L
-    var processedRowCount = 0L
+    withResource(new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), numRows)) {
+      rowIndexVectorBuilder =>
 
-    var curBlockRowCount = blocks(curBlockIndex).getRowCount
-    var curBlockRowStart = blocks(curBlockIndex).getStartingPos
-    var curBlockRowEnd = curBlockRowStart + curBlockRowCount
-    var curRowPos = curBlockRowStart
+        var curBlockIndex = 0
+        var processedBlockRowCounts = 0L
+        var processedRowCount = 0L
 
-    for (i <- 0 until numRows) {
-      if (curRowPos >= curBlockRowEnd) {
-        // switch to next block
-        curBlockIndex += 1
-        processedBlockRowCounts += curBlockRowCount
-        curRowPos = blocks(curBlockIndex).getStartingPos
+        var curBlockRowCount = blocks(curBlockIndex).getRowCount
+        var curBlockRowStart = blocks(curBlockIndex).getStartingPos
+        var curBlockRowEnd = curBlockRowStart + curBlockRowCount
+        var curRowPos = curBlockRowStart
 
-        curBlockRowCount = blocks(curBlockIndex).getRowCount
-        curBlockRowStart = blocks(curBlockIndex).getStartingPos
-        curBlockRowEnd = curBlockRowStart + curBlockRowCount
-      }
+        for (_ <- 0 until numRows) {
+          if (curRowPos >= curBlockRowEnd) {
+            // switch to next block
+            curBlockIndex += 1
+            processedBlockRowCounts += curBlockRowCount
+            curRowPos = blocks(curBlockIndex).getStartingPos
 
-      rowIndexVectorBuilder.append(curRowPos)
-      curRowPos += 1
-      processedRowCount += 1
+            curBlockRowCount = blocks(curBlockIndex).getRowCount
+            curBlockRowStart = blocks(curBlockIndex).getStartingPos
+            curBlockRowEnd = curBlockRowStart + curBlockRowCount
+          }
+
+          rowIndexVectorBuilder.append(curRowPos)
+          curRowPos += 1
+          processedRowCount += 1
+        }
+        new RapidsHostColumnVector(org.apache.spark.sql.types.LongType,
+          rowIndexVectorBuilder.build())
     }
-    new RapidsHostColumnVector(org.apache.spark.sql.types.LongType, rowIndexVectorBuilder.build())
   }
 
   private def getRowIndexPosSimple(size: Long): RapidsHostColumnVector = {
-    val rowIndexVectorBuilder = new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), size)
-    // populate the row index column value.
-    for (i <- 0L until size) {
-      rowIndexVectorBuilder.append(i)
+    withResource(new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), size)) {
+      rowIndexVectorBuilder =>
+      // populate the row index column value.
+      for (i <- 0L until size) {
+        rowIndexVectorBuilder.append(i)
+      }
+      new RapidsHostColumnVector(org.apache.spark.sql.types.LongType, rowIndexVectorBuilder.build())
     }
-    new RapidsHostColumnVector(org.apache.spark.sql.types.LongType, rowIndexVectorBuilder.build())
   }
 
   private def replaceVectors(
@@ -497,12 +383,12 @@ object RapidsDeletionVectorUtils {
     new ColumnarBatch(vectors.toArray, batch.numRows())
   }
 
-  def getRowIndexFilter(partitionedFile: PartitionedFile,
+  private def getRowIndexFilter(partitionedFile: PartitionedFile,
     isRowDeletedColumnOpt: Option[ColumnMetadata],
     serializableHadoopConf: SerializableConfiguration,
     tablePath: Option[String]): Option[RowIndexFilter] = {
     isRowDeletedColumnOpt.map { col =>
-      // Fetch the DV descriptor from the broadcast map and create a row index filter
+      // Fetch the DV descriptor from the partitioned file and create a row index filter
       val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED)
       val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
@@ -534,13 +420,13 @@ object RapidsDeletionVectorUtils {
    * copying to the device
    */
   case class RapidsHostWriteableVector(
-     val builder: RapidsHostColumnBuilder,
+     builder: RapidsHostColumnBuilder,
      size: Int,
      sparkDataType: DataType) extends WritableColumnVector(size, sparkDataType) {
 
     def putByte(rowId: Int, value: Byte): Unit = {
-      // We are ignoring the rowId as we only use it in materializing the ColumnVector which
-      // uses this method
+      // We are ignoring the rowId as we only use this method to materialize the ColumnVector which
+      // adds the bytes sequentially.
       builder.append(value)
     }
 
@@ -746,36 +632,44 @@ object RapidsDeletionVectorUtils {
   @scala.annotation.nowarn(
     "msg=method readFooter in class ParquetFileReader is deprecated"
   )
-  def replaceBatch(
+  private def replaceBatch(
     hadoopConf: Configuration,
     rowIndex: Long,
     batch: ColumnarBatch,
     size: Int,
-    isPredicatePushdownEnabled: Boolean,
+    useMetadataRowIndex: Boolean,
     rowIndexColumnOpt: Option[ColumnMetadata],
     isRowDeletedColumnOpt: Option[ColumnMetadata],
     rowIndexFilterOpt: Option[RowIndexFilter],
     file: PartitionedFile): ColumnarBatch = {
 
-    val builder = new RapidsHostColumnBuilder(new BasicType(false, DType.INT8), size)
-    val isRowDeletedVector = new RapidsHostWriteableVector(builder, size, ByteType)
-    val rowIndexCol: RapidsHostColumnVector = if (isPredicatePushdownEnabled) {
-      val rowIndexCol = getRowIndexPos(size, ParquetFileReader.readFooter(hadoopConf,
-        file.filePath.toPath).getBlocks.asScala.toList)
-      rowIndexFilterOpt.get.materializeIntoVectorWithRowIndex(size, rowIndexCol, isRowDeletedVector)
-      rowIndexCol
-    } else {
-      val rowIndexCol = getRowIndexPosSimple(size)
-      rowIndexFilterOpt.get.materializeIntoVector(rowIndex, rowIndex + size, isRowDeletedVector)
-      rowIndexCol
+    val (rowIndexCol, isRowDeletedVector) =
+      withResource(new RapidsHostColumnBuilder(new BasicType(false, DType.INT8), size)) { builder =>
+      val isRowDeletedVector = RapidsHostWriteableVector(builder, size, ByteType)
+      val rowIndexCol: RapidsHostColumnVector = if (useMetadataRowIndex) {
+        val rowIndexCol = getRowIndexPos(size, ParquetFileReader.readFooter(hadoopConf,
+          file.filePath.toPath).getBlocks.asScala.toList)
+        rowIndexFilterOpt.get.
+          materializeIntoVectorWithRowIndex(size, rowIndexCol, isRowDeletedVector)
+        rowIndexCol
+      } else {
+        val rowIndexCol = getRowIndexPosSimple(size)
+        rowIndexFilterOpt.get.materializeIntoVector(rowIndex, rowIndex + size, isRowDeletedVector)
+        rowIndexCol
+      }
+      (rowIndexCol, builder.buildAndPutOnDevice())
     }
 
     val indexVectorTuples = new ArrayBuffer[(Int, org.apache.spark.sql.vectorized.ColumnVector)]
-    indexVectorTuples += (rowIndexColumnOpt.get.index ->
-      GpuColumnVector.from(rowIndexCol.getBase().copyToDevice(), rowIndexCol.dataType()))
+
+    withResource(rowIndexCol.getBase) { host =>
+      if (rowIndexColumnOpt.isDefined) {
+        indexVectorTuples += (rowIndexColumnOpt.get.index ->
+          GpuColumnVector.from(host.copyToDevice(), rowIndexCol.dataType()))
+      }
+    }
     indexVectorTuples += (isRowDeletedColumnOpt.get.index ->
-      GpuColumnVector.from(isRowDeletedVector.builder.build().copyToDevice(),
-        isRowDeletedVector.dataType))
+        GpuColumnVector.from(isRowDeletedVector, ByteType))
     replaceVectors(batch, indexVectorTuples: _*)
   }
 }
