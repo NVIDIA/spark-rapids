@@ -84,26 +84,6 @@ class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
 }
 
 object GpuExec {
-  /**
-   * Create an op time tracking RDD wrapper
-   * @param rdd The RDD to wrap
-   * @param opTimeMetric The op time metric to track
-   * @param childOpTimeMetrics Child op time metrics to exclude
-   * @param disableOpTimeTrackingRdd Whether to disable OpTimeTrackingRDD
-   * @return Wrapped RDD with op time tracking if enabled, otherwise original RDD
-   */
-  def createOpTimeTrackingRDD(
-      rdd: RDD[ColumnarBatch],
-      opTimeMetric: GpuMetric,
-      childOpTimeMetrics: Seq[GpuMetric],
-      disableOpTimeTrackingRdd: Boolean): RDD[ColumnarBatch] = {
-    if (disableOpTimeTrackingRdd) {
-      rdd
-    } else {
-      new GpuOpTimeTrackingRDD[ColumnarBatch](rdd, opTimeMetric, childOpTimeMetrics)
-    }
-  }
-
   def outputBatching(sp: SparkPlan): CoalesceGoal = sp match {
     case gpu: GpuExec => gpu.outputBatching
     case _ => null
@@ -315,23 +295,21 @@ trait GpuExec extends SparkPlan with Logging {
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     this.dumpLoreMetaInfo()
 
-    val origin = internalDoExecuteColumnar() match {
-      case tracking: GpuOpTimeTrackingRDD[_] => tracking // this is for shuffle read case
-      case other => {
-        allMetrics.get(OP_TIME_NEW) match {
-          case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd => {
-            new GpuOpTimeTrackingRDD(other, opTimeNewMetric,
-              if (this.isInstanceOf[Exchange] ||
-                this.isInstanceOf[GpuCustomShuffleReaderExec]) {
-                Seq.empty
-              } else {
-                getChildOpTimeMetrics
-              }
-            )
+    val origin = allMetrics.get(OP_TIME_NEW) match {
+      case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd =>
+        new GpuOpTimeTrackingRDD(
+          internalDoExecuteColumnar(),
+          opTimeNewMetric,
+          if (this.isInstanceOf[Exchange] || this.isInstanceOf[GpuCustomShuffleReaderExec]) {
+            // for shuffle, we do not want to exclude child opTime any more, because
+            // that's beyond current stage
+            Seq.empty
+          } else {
+            getChildOpTimeMetrics
           }
-          case _ => other
-        }
-      }
+        )
+      case _ =>
+        internalDoExecuteColumnar()
     }
 
     val wrappedForLORE = this.dumpLoreRDD(origin)

@@ -493,7 +493,8 @@ object GpuShuffleExchangeExecBase {
     // Apply OP_TIME_NEW tracking to rddWithPartitionIds if opTimeNewMetric is provided
     val finalRddWithPartitionIds = opTimeNewSW match {
       case Some(opTimeMetric) if !disableOpTimeTrackingRdd =>
-        new GpuOpTimeTrackingRDD[Product2[Int, ColumnarBatch]](rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
+        new GpuOpTimeTrackingRDD[Product2[Int, ColumnarBatch]](
+          rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
       case _ => rddWithPartitionIds
     }
 
