@@ -60,9 +60,6 @@ case class GpuOptimizeWriteExchangeExec(
     @transient deltaLog: DeltaLog) extends Exchange with GpuExec with DeltaLogging {
   import GpuMetric._
 
-  private lazy val coalesceBeforeShuffleTargetRatio = RapidsConf
-    .SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO
-    .get(child.conf)
   private lazy val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(child.conf)
 
   // Use 150% of target file size hint config considering parquet compression.
@@ -136,7 +133,6 @@ case class GpuOptimizeWriteExchangeExec(
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
       child.output,
-      coalesceBeforeShuffleTargetRatio,
       targetBatchSize,
       actualPartitioning,
       child.output.map(_.dataType).toArray,

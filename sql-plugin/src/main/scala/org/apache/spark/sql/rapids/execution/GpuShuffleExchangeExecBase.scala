@@ -178,9 +178,6 @@ abstract class GpuShuffleExchangeExecBase(
   private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
     .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
     .get(child.conf)
-  private lazy val coalesceBeforeShuffleTargetRatio = RapidsConf
-    .SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO
-    .get(child.conf)
   private lazy val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(child.conf)
 
   private lazy val useGPUShuffle = {
@@ -247,7 +244,6 @@ abstract class GpuShuffleExchangeExecBase(
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
-      coalesceBeforeShuffleTargetRatio,
       targetBatchSize,
       gpuOutputPartitioning,
       sparkTypes,
@@ -343,7 +339,6 @@ object GpuShuffleExchangeExecBase {
   def prepareBatchShuffleDependency(
       rdd: RDD[ColumnarBatch],
       outputAttributes: Seq[Attribute],
-      coalesceBeforeShuffleTargetRatio: Double,
       targetBatchSize: Long,
       newPartitioning: GpuPartitioning,
       sparkTypes: Array[DataType],
@@ -395,9 +390,8 @@ object GpuShuffleExchangeExecBase {
     }
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       newRdd.mapPartitions { iter =>
-        // Conditionally create a GpuCoalesceIterator if ratio > 0
-        val finalIter = if (coalesceBeforeShuffleTargetRatio > 0.0) {
-          val coalesceTargetSize = (targetBatchSize * coalesceBeforeShuffleTargetRatio).toLong
+        val finalIter = {
+          val coalesceTargetSize = targetBatchSize
           val concatTime: GpuMetric =
             additionalMetrics(METRIC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME)
           new GpuCoalesceIterator(
@@ -412,11 +406,8 @@ object GpuShuffleExchangeExecBase {
             concatTime = concatTime,
             opTime = NoopMetric,
             opName = "coalesce before shuffle")
-        } else {
-          // Skip coalescing when ratio is 0
-          iter
         }
-        
+
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
