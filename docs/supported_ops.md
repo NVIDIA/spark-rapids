@@ -22779,6 +22779,34 @@ are limited.
 <th>YEARMONTH</th>
 </tr>
 <tr>
+<td rowSpan="1">StaticInvoke</td>
+<td rowSpan="1"> </td>
+<td rowSpan="1">StaticInvoke</td>
+<td rowSpan="1">None</td>
+<td rowSpan="1">project</td>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">NormalizeNaNAndZero</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Normalize NaN and zero</td>
