@@ -226,4 +226,168 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     }
   }
 
+  test("operator time metrics are reasonable for parquet write jobs") {
+    val sparkSession = spark
+    import sparkSession.implicits._
+      
+    // Enable OpTimeTracking for this test
+    spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
+
+    val numRows = 5000000L
+    val numTasks = 8
+    val parquetOutputPath = new File(tempDir, "test_parquet").getAbsolutePath
+    
+    // Create test data and write to Parquet
+    val testDataDF = spark.range(0, numRows, 1, numTasks)
+      .selectExpr(
+        "id",
+        "id % 100 as category", 
+        "rand() * 1000 as price",
+        "cast(rand() * 10000 as int) as quantity"
+      )
+      .groupBy("category")
+      .agg(
+        count("*").as("total_count"),
+        sum("price").as("total_price"),
+        avg("quantity").as("avg_quantity")
+      )
+      .filter($"total_count" > 500)
+    
+    // Write to Parquet format which should trigger GPU operators
+    testDataDF.write
+      .mode("overwrite")
+      .option("compression", "snappy")
+      .parquet(parquetOutputPath)
+    
+    // Verify the output file exists
+    val outputDir = new File(parquetOutputPath)
+    assert(outputDir.exists() && outputDir.listFiles().nonEmpty,
+      "Parquet output files should be created")
+    
+    // Parse event logs to find metrics and task times
+    val (metrics, taskTimes) = parseEventLogs()
+    val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+
+    assert(operatorTimeMetrics.nonEmpty, 
+      s"Should find operator time metrics for parquet write job. " +
+        s"Found ${metrics.length} total metrics: ${metrics.map(_.name).distinct}")
+    
+    assert(taskTimes.nonEmpty, 
+      s"Should find executor run times in event logs. Found ${taskTimes.length} tasks")
+    
+    // Calculate total operator time (in nanoseconds)
+    val totalOperatorTime = operatorTimeMetrics.map(_.value).sum
+
+    // Calculate total task execution time
+    // (Executor Run Time in milliseconds, convert to nanoseconds)
+    val totalTaskExecutionTime = taskTimes.map(_.executionTime * 1000000L).sum
+    
+    // Verify metric values are reasonable (> 0)
+    operatorTimeMetrics.foreach { metric =>
+      assert(metric.value > 0, s"operator time metric ${metric.name} " +
+        s"should have positive value, got ${metric.value}")
+    }
+    
+    taskTimes.foreach { taskTime =>
+      assert(taskTime.executionTime > 0, s"task ${taskTime.taskId} executor run time " +
+        s"should be positive, got ${taskTime.executionTime}")
+    }
+    
+    println(s"Parquet write job: Found ${operatorTimeMetrics.length} operator time metrics")
+    println(s"Parquet write job: Found ${taskTimes.length} executor run time records")
+    println(f"Parquet write job: Total operator time: ${totalOperatorTime / 1000000.0}%.2f ms")
+    println(f"Parquet write job: Total executor run time: " +
+      f"${totalTaskExecutionTime / 1000000.0}%.2f ms")
+    
+    val minExpectedOperatorTime = totalTaskExecutionTime * 0.8
+    val maxExpectedOperatorTime = totalTaskExecutionTime
+    val operatorTimeRatio = totalOperatorTime.toDouble / totalTaskExecutionTime.toDouble
+    
+    println(f"Parquet write job: Operator time ratio: ${operatorTimeRatio * 100.0}%.1f%% " +
+      "of executor run time")
+    println("Parquet write job: Expected range: 80.0%% - 100.0%% of executor run time")
+    
+    assert(totalOperatorTime >= minExpectedOperatorTime, 
+      f"Parquet write job: Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) " +
+      f"should be at least 80%% of total executor run time " +
+      f"(${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
+      f"but was only ${operatorTimeRatio * 100.0}%.1f%%")
+    
+    assert(totalOperatorTime <= maxExpectedOperatorTime, 
+      f"Parquet write job: Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) " +
+      f"should not exceed total executor run time " +
+      f"(${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
+      f"but was ${operatorTimeRatio * 100.0}%.1f%%")
+    
+    operatorTimeMetrics.foreach { m =>
+      println(f"  ${m.name}: ${m.value / 1000000.0}%.2f ms " +
+        f"(stage ${m.stage.getOrElse("unknown")})")
+    }
+  }
+
+  test("no operator time metrics when OpTimeTracking is disabled") {
+    val sparkSession = spark
+    import sparkSession.implicits._
+      
+    // Disable OpTimeTracking for this test
+    spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "true")
+    
+    val numRows = 2000000L
+    val numTasks = 4
+    
+    // Run a query that would normally generate operator time metrics
+    val resultDF = spark.range(0, numRows, 1, numTasks)
+      .selectExpr(
+        "id",
+        "id % 50 as bucket",
+        "rand() * 500 as score"
+      )
+      .groupBy("bucket")
+      .agg(
+        count("*").as("record_count"),
+        sum("score").as("total_score"),
+        max("score").as("max_score"),
+        min("score").as("min_score")
+      )
+      .filter($"record_count" > 10000)
+      .orderBy($"total_score".desc)
+    
+    val results = resultDF.collect()
+    assert(results.length > 0, "Query should produce results")
+    
+    // Parse event logs to find metrics and task times
+    val (metrics, taskTimes) = parseEventLogs()
+    val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+
+    println(s"OpTimeTracking disabled: Found ${metrics.length} total metrics")
+    println(s"OpTimeTracking disabled: Found ${operatorTimeMetrics.length} operator time metrics")
+    println(s"OpTimeTracking disabled: Found ${taskTimes.length} executor run time records")
+    
+    // When OpTimeTracking is disabled, there should be no operator time metrics
+    assert(operatorTimeMetrics.isEmpty, 
+      s"Should not find any operator time metrics when OpTimeTracking is disabled. " +
+        s"Found ${operatorTimeMetrics.length} operator time metrics: " +
+        s"${operatorTimeMetrics.map(m => s"${m.name}=${m.value}")}")
+    
+    // But we should still have task execution times
+    assert(taskTimes.nonEmpty, 
+      s"Should still find executor run times even when OpTimeTracking is disabled. " +
+        s"Found ${taskTimes.length} tasks")
+    
+    // Verify task execution times are reasonable
+    taskTimes.foreach { taskTime =>
+      assert(taskTime.executionTime > 0, s"task ${taskTime.taskId} executor run time " +
+        s"should be positive, got ${taskTime.executionTime}")
+    }
+    
+    val totalTaskExecutionTime = taskTimes.map(_.executionTime).sum
+    println(f"OpTimeTracking disabled: Total executor run time: " +
+      f"${totalTaskExecutionTime}%.2f ms")
+    
+    // Verify that we executed a meaningful workload (total execution time > 100ms)
+    assert(totalTaskExecutionTime > 100, 
+      s"Total task execution time should be substantial to validate the test, " +
+        s"got ${totalTaskExecutionTime} ms")
+  }
+
 }
