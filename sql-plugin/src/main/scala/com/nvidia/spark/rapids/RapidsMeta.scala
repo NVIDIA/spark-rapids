@@ -41,6 +41,8 @@ import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, Strin
 
 trait DataFromReplacementRule {
   val operationName: String
+
+  def noteDoc: Option[String] = None
   def incompatDoc: Option[String] = None
   def disabledMsg: Option[String] = None
 
@@ -547,10 +549,10 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
-  val checkTimeZone: Boolean = true
+  def checkTimeZone(): Boolean = true
 
   final override def tagSelfForGpu(): Unit = {
-    if (checkTimeZone) {
+    if (checkTimeZone()) {
       timezoneCheck()
     }
     tagSelfForGpuInternal()
@@ -563,7 +565,7 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
   // Only UTC time zone is allowed to be consistent with previous behavior
   // for [[DataWritingCommand]]. Needs to override [[checkTimeZone]] to skip
   // UTC time zone check in sub class of [[DataWritingCommand]].
-  def timezoneCheck(): Unit = {
+  private def timezoneCheck(): Unit = {
     val types = (wrapped.inputSet.map(_.dataType) ++ wrapped.outputSet.map(_.dataType)).toSet
     if (types.exists(GpuOverrides.isOrContainsTimestamp(_))) {
       if (!GpuOverrides.isUTCTimezone()) {
@@ -1405,7 +1407,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
 
   // Set to false if the aggregate doesn't overflow and therefore
   // shouldn't error
-  val needsAnsiCheck: Boolean = true
+  def needsAnsiCheck: Boolean = true
 
   // The type to use to determine whether the aggregate could overflow.
   // Set to None, if we should fallback for all types

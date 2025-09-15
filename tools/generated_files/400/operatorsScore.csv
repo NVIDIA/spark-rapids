@@ -22,6 +22,7 @@ InMemoryTableScanExec,3.0
 DataWritingCommandExec,3.0
 ExecutedCommandExec,3.0
 WriteFilesExec,3.0
+AppendDataExec,3.0
 AppendDataExecV1,3.0
 AtomicCreateTableAsSelectExec,3.0
 AtomicReplaceTableAsSelectExec,3.0
@@ -160,6 +161,7 @@ InputFileBlockLength,4
 InputFileBlockStart,4
 InputFileName,4
 IntegralDivide,4
+Invoke,4
 IsNaN,4
 IsNotNull,4
 IsNull,4
@@ -192,6 +194,7 @@ MapFilter,4
 MapFromArrays,4
 MapKeys,4
 MapValues,4
+MapZipWith,4
 Max,4
 MaxBy,4
 Md5,4
@@ -298,6 +301,7 @@ UnboundedPreceding$,4
 UnixTimestamp,4
 UnscaledValue,4
 Upper,4
+Uuid,4
 VariancePop,4
 VarianceSamp,4
 WeekDay,4

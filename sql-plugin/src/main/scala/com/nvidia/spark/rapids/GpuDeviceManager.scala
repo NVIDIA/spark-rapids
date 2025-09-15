@@ -433,7 +433,8 @@ object GpuDeviceManager extends Logging {
 
   private def initializePinnedPoolAndOffHeapLimits(gpuId: Int, conf: RapidsConf,
                                                    sparkConf: SparkConf): Unit = {
-    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(conf, sparkConf)
+    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(
+      conf, sparkConf, Cuda.getDeviceCount)
     // disable the cuDF provided default pinned pool for now
     if (!PinnedMemoryPool.configureDefaultCudfPinnedPoolSize(0L)) {
       // This is OK in tests because they don't unload/reload our shared
@@ -449,7 +450,7 @@ object GpuDeviceManager extends Logging {
   }
 
   // visible for testing
-  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf, sparkConf: SparkConf,
+  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf, sparkConf: SparkConf, deviceCount: Int,
       memCheck: MemoryChecker =
       MemoryCheckerImpl): (Long, Long) = {
     val perTaskOverhead = conf.perTaskOverhead
@@ -461,8 +462,6 @@ object GpuDeviceManager extends Logging {
     // that the previous minimum of 15 MB * num cores was too little for certain benchmark
     // queries to complete, whereas this limit was sufficient.
     val minMemoryLimit = 4L * 1024 * 1024 * 1024
-
-    val deviceCount: Int = Cuda.getDeviceCount()
 
     val executorOverheadKey = "spark.executor.memoryOverhead"
     val pysparkOverheadKey = "spark.executor.pyspark.memory"
@@ -494,13 +493,21 @@ object GpuDeviceManager extends Logging {
         // constraints, we can fall back to minMemoryLimit via saying there's no available
         lazy val availableHostMemory = memCheck.getAvailableMemoryBytes(conf).getOrElse(0L)
         val hostMemUsageFraction = .8
+        // Spark calculates the total mem to allocate to the job as
+        // val totalMemMiB =
+        //      executorMemoryMiB + memoryOverheadMiB + memoryOffHeapMiB + pysparkMemToUseMiB
+        // and RAPIDS uses memory from the overhead portion here. Therefore, if the overhead is
+        // set we can just use that, otherwise we can infer it from the above as
+        // val memoryOverheadMiB =
+        //      totalMemMiB - executorMemoryMiB - memoryOffHeapMiB - pysparkMemToUseMiB
+        // where totalMemMiB is instead derived from the actual mem limits we can observe
+        // directly from the system
         lazy val basedOnHostMemory = (hostMemUsageFraction * ((1.0 * availableHostMemory /
           deviceCount) - heapSize - pysparkOverhead - sparkOffHeapSize)).toLong
         if (executorOverhead.isDefined) {
-          val basedOnConfiguredOverhead = executorOverhead.get - sparkOffHeapSize
+          val basedOnConfiguredOverhead = executorOverhead.get
           logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
-            s"a memory limit from ($executorOverheadKey - " + s"$sparkOffHeapSizeKey) = " +
-            s"(${executorOverhead.get} - " + s"$sparkOffHeapSize) = $basedOnConfiguredOverhead")
+            s"a memory limit from ($executorOverheadKey = ${executorOverhead.get}")
           if (basedOnConfiguredOverhead < minMemoryLimit) {
             logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
               s"$minMemoryLimit; using the latter")
@@ -516,10 +523,11 @@ object GpuDeviceManager extends Logging {
           }
         } else {
           logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we used " +
-            s"memory limit derived from $hostMemUsageFraction * (estimated available " +
-            s"host memory - $heapSizeKey - $pysparkOverheadKey - $sparkOffHeapSizeKey) = " +
-            s"$hostMemUsageFraction * ($availableHostMemory - $heapSize - $pysparkOverhead " +
-            s"- $sparkOffHeapSize) = $basedOnHostMemory")
+            s"memory limit derived from ($hostMemUsageFraction * (estimated available " +
+            s"host memory / device count) - $heapSizeKey - $pysparkOverheadKey - " +
+            s"$sparkOffHeapSizeKey) = ($hostMemUsageFraction * ($availableHostMemory / " +
+            s"$deviceCount) - $heapSize - $pysparkOverhead - $sparkOffHeapSize) = " +
+            s"$basedOnHostMemory")
           if (basedOnHostMemory < minMemoryLimit) {
             logWarning(s"the memory limit, $basedOnHostMemory, based on the available " +
               s"host memory of $availableHostMemory, is less than the minimum of " +

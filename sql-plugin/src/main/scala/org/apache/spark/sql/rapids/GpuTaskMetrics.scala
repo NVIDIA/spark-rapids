@@ -221,6 +221,11 @@ class GpuTaskMetrics extends Serializable {
   private val onGpuTasksInWaitingQueueAvgCount = new AvgLongAccumulator
   private val onGpuTasksInWaitingQueueMaxCount = new MaxLongAccumulator
 
+  // This is used to track the max parallelism of multithreaded readers
+  private val multithreadReaderMaxParallelism = new MaxLongAccumulator
+
+  // This is used to track the maximum concurrent tasks in PrioritySemaphore
+  private val maxConcurrentGpuTasks = new MaxLongAccumulator
 
   // Spill
   private val spillToHostTimeNs = new NanoSecondAccumulator
@@ -292,7 +297,9 @@ class GpuTaskMetrics extends Serializable {
     "gpuMaxPinnedMemoryBytes" -> maxPinnedMemoryBytes,
     "gpuOnGpuTasksWaitingGPUAvgCount" -> onGpuTasksInWaitingQueueAvgCount,
     "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
-    "gpuMaxTaskFootprint" -> maxGpuFootprint
+    "gpuMaxTaskFootprint" -> maxGpuFootprint,
+    "multithreadReaderMaxParallelism" -> multithreadReaderMaxParallelism,
+    "gpuMaxConcurrentGpuTasks" -> maxConcurrentGpuTasks
   )
 
   def register(sc: SparkContext): Unit = {
@@ -422,6 +429,14 @@ class GpuTaskMetrics extends Serializable {
   def recordOnGpuTasksWaitingNumber(num: Int): Unit = {
     onGpuTasksInWaitingQueueAvgCount.add(num)
     onGpuTasksInWaitingQueueMaxCount.add(num)
+  }
+
+  def recordConcurrentGpuTasks(currentConcurrentTasks: Long): Unit = synchronized {
+    maxConcurrentGpuTasks.add(currentConcurrentTasks)
+  }
+
+  def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = synchronized {
+    multithreadReaderMaxParallelism.add(parallelism)
   }
 }
 

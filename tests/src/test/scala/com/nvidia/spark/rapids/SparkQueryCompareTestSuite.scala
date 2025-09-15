@@ -109,14 +109,23 @@ object SparkSessionHolder extends Logging {
   }
 
   def sparkSession: SparkSession = {
-    if (!hasActiveSession) {
+    // If there is no active session or the cached one is already stopped, re-init
+    val needsReinit = try {
+      !hasActiveSession || spark.sparkContext.isStopped
+    } catch {
+      case _: Throwable => true
+    }
+    if (needsReinit) {
       reinitSession()
     }
     spark
   }
 
   def resetSparkSessionConf(): Unit = {
-    if (!hasActiveSession) {
+    val needsReinit = try { !hasActiveSession || spark.sparkContext.isStopped } catch {
+      case _: Throwable => true
+    }
+    if (needsReinit) {
       reinitSession()
     } else {
       setAllConfs(origConf.toArray)
@@ -203,6 +212,25 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
     withSparkSession(c, f)
+  }
+
+  def withGpuHiveSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
+    // Force a new session for Hive since catalogImplementation is a static config
+    TrampolineUtil.cleanupAnyExistingSession()
+    val spark = getBuilder()
+      .master("local[1]")
+      .config(conf)
+      .config(RapidsConf.SQL_ENABLED.key, "true")
+      .config(RapidsConf.TEST_CONF.key, "true")
+      .config(RapidsConf.EXPLAIN.key, "ALL")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.sql.catalogImplementation", "hive")
+      .config("spark.sql.hive.convertMetastoreParquet", "false")
+      .config("spark.sql.queryExecutionListeners",
+        "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
+      .appName("Spark Rapids plugin Hive related tests")
+      .getOrCreate()
+    f(spark)
   }
 
   def compare(expected: Any, actual: Any, epsilon: Double = 0.0): Boolean = {

@@ -27,6 +27,10 @@ Acquire GPU|Time waiting for GPU semaphore to be acquired
 Release GPU|Releasing the GPU semaphore
 GpuCoalesceBatches: collect|GPU combining of small batches post-kernel processing
 broadcast join stream|GpuBroadcastHashJoinExec.getBroadcastBuiltBatchAndStreamIter -  Gets the ColumnarBatch for the build side and the stream iterator by acquiring the GPU only after first stream batch has been streamed to GPU.
+gpuKudoSerialize|Perform kudo serialization on the gpu
+Acquire GPU|Time waiting for GPU semaphore to be acquired
+Release GPU|Releasing the GPU semaphore
+gpuKudoSliceBuffers|slice kudo serialized buffers on host into partitions
 CommitShuffle|After all temporary shuffle writes are done, produce a single file (shuffle_[map_id]_0) in the commit phase
 ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
 queueFetched|MT shuffle manager is using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results
@@ -37,5 +41,8 @@ ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
 hash join build|Return multiple batches as the build side data for the following sub-partitioning join
 probe left|Probing the left side of a join input iterator to get the data size for preparing the join
 build batch: collect|Perform a join where the build side fits in a single GPU batch
+ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
+ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
+gpuKudoCopyToHost|copy gpu kudo serialized outputs back to the host
 BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
 RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing

@@ -19,7 +19,7 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, \
-    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session
+    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session, is_before_spark_353
 
 delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
@@ -62,12 +62,13 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, enable_deletion_vec
     delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql, checker,
                           partition_columns, enable_deletion_vectors)
 
-@allow_non_gpu('ColumnarToRowExec', 'ExecutedCommandExec', delta_write_fallback_allow, *delta_meta_allow)
+@allow_non_gpu('ColumnarToRowExec', delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors aren't supported")
-@pytest.mark.xfail(condition=not is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/12123")
+@pytest.mark.skipif((not is_databricks_runtime()) and is_before_spark_353(),
+                    reason="Update with deletion vector is only supported after delta.io 3.0.0")
+@pytest.mark.xfail(condition=is_databricks_runtime() and not is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/12123")
 def test_delta_update_fallback_with_deletion_vectors(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
@@ -81,15 +82,18 @@ def test_delta_update_fallback_with_deletion_vectors(spark_tmp_path):
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
                               "ExecutedCommandExec", delta_update_enabled_conf)
 
+fallback_test_params = [{"spark.rapids.sql.format.delta.write.enabled": "false"},
+                        {"spark.rapids.sql.format.parquet.write.enabled": "false"},
+                        {"spark.rapids.sql.command.UpdateCommand": "false"},
+                        ]
+if is_before_spark_353():
+    # UpdateCommand is disabled by default before Spark 3.5.3
+    fallback_test_params.append(delta_writes_enabled_conf)
+
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.parametrize("disable_conf",
-                         [{"spark.rapids.sql.format.delta.write.enabled": "false"},
-                          {"spark.rapids.sql.format.parquet.write.enabled": "false"},
-                          {"spark.rapids.sql.command.UpdateCommand": "false"},
-                          delta_writes_enabled_conf  # Test disabled by default
-                          ], ids=idfn)
+@pytest.mark.parametrize("disable_conf", fallback_test_params, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("enable_deletion_vector", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,12 +38,12 @@ DEST_PATH=${DEST_PATH:-"/tmp/test-get-dest"}
 rm -rf $DEST_PATH && mkdir -p $DEST_PATH
 
 remote_maven_repo=$SERVER_ID::default::$SERVER_URL
-# Get the spark-rapids-jni and spark-rapids-private jars from OSS Snapshot maven repo
+# Get the spark-rapids-jni, spark-rapids-private, hybrid jars from OSS Snapshot maven repo
 if [ "$SERVER_ID" == "snapshots" ]; then
-    oss_snapshot_url="https://oss.sonatype.org/content/repositories/snapshots"
+    oss_snapshot_url="https://central.sonatype.com/repository/maven-snapshots/"
     remote_maven_repo="$remote_maven_repo,$SERVER_ID::default::$oss_snapshot_url"
 fi
-while read line; do
+while read -r line; do
     artifact=$line # artifact=groupId:artifactId:version:[[packaging]:classifier]
     # Clean up $M2_CACHE to avoid side-effect of previous dependency:get
     rm -rf $M2_CACHE/com/nvida

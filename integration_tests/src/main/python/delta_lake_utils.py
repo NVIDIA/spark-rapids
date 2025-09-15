@@ -17,7 +17,9 @@ import os.path
 import pytest
 import re
 
-from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later
+from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later, \
+    with_cpu_session
+from asserts import assert_equal
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -66,7 +68,10 @@ def _fixup_operation_metrics(opm):
     # between CPU and GPU.
     metrics_to_remove = ["executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs",
                          "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted",
-                         "numTargetBytesUpdated", "numTargetBytesRemoved", "materializeSourceTimeMs"]
+                         "numTargetBytesUpdated", "numTargetBytesRemoved", "materializeSourceTimeMs",
+                         # For OPTIMIZE command, file size distribution can legitimately differ
+                         # across CPU and GPU implementations. Ignore percentile and min/max metrics.
+                         "p25FileSize", "p50FileSize", "p75FileSize", "minFileSize", "maxFileSize"]
     for k in metrics_to_remove:
         opm.pop(k, None)
 
@@ -82,6 +87,17 @@ def _fixup_operation_parameters(opp):
             subbed = TMP_TABLE_PATTERN.sub("tmp_table", pred)
             subbed = TMP_TABLE_PATH_PATTERN.sub("tmp_table", subbed)
             opp[key] = REF_ID_PATTERN.sub("#refid", subbed)
+
+def assert_delta_history_equal(conf, cpu_table, gpu_table):
+    # Project all columns except for the `timestamp` column, which won't match between CPU and GPU.
+    cols = ["version", "userId", "userName", "operation", "operationParameters", "job", "notebook",
+            "clusterId", "readVersion", "isolationLevel", "isBlindAppend", "operationMetrics", "userMetadata"]
+    cpu_history = with_cpu_session(lambda spark: spark.sql("DESCRIBE HISTORY {}".format(cpu_table))
+                                   .select(cols).collect(), conf=conf)
+    gpu_history = with_cpu_session(lambda spark: spark.sql("DESCRIBE HISTORY {}".format(gpu_table))
+                                   .select(cols).collect(), conf=conf)
+    assert_equal(cpu_history, gpu_history)
+
 
 def assert_delta_log_json_equivalent(filename, c_json, g_json):
     assert c_json.keys() == g_json.keys(), "Delta log {} has mismatched keys:\nCPU: {}\nGPU: {}".format(filename, c_json, g_json)

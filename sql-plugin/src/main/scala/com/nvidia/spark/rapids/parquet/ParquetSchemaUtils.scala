@@ -550,20 +550,24 @@ object ParquetSchemaUtils {
         cv.getType.equals(DType.UINT64)
   }
 
-  private def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {
-    (cv.getType.equals(DType.UINT8) && dt.isInstanceOf[ShortType]) ||
-        (cv.getType.equals(DType.UINT16) && dt.isInstanceOf[IntegerType]) ||
-        (cv.getType.equals(DType.UINT32) && dt.isInstanceOf[LongType])
-  }
-
+  // INT32 is special because smaller INT types are stored as it in parquet
+  // So to be cautious we support down casting to these types.
   private def needInt32Downcast(cv: ColumnView, dt: DataType): Boolean = {
-    cv.getType.equals(DType.INT32) && Seq(ByteType, ShortType, DateType).contains(dt)
+    cv.getType.equals(DType.INT32) && Seq(ByteType, ShortType).contains(dt)
   }
 
-  private def needSignedUpcast(cv: ColumnView, dt: DataType): Boolean = {
+  private def needUpcast(cv: ColumnView, dt: DataType): Boolean = {
     cv.getType match {
-      case DType.INT8 => dt == ShortType || dt == IntegerType
-      case DType.INT16 => dt == IntegerType
+      case DType.INT8 | DType.UINT8 =>
+        dt == ShortType || dt == IntegerType || dt == LongType || dt == DoubleType
+      case DType.INT16 | DType.UINT16 =>
+        dt == IntegerType || dt == LongType || dt == DoubleType
+      case DType.INT32 =>
+        dt == LongType || dt == DoubleType || dt == DateType
+      case DType.UINT32 =>
+        dt == LongType || dt == DoubleType
+      case DType.FLOAT32 =>
+        dt == DoubleType
       case _ => false
     }
   }
@@ -574,19 +578,22 @@ object ParquetSchemaUtils {
   // this means the parameter dt is from Spark meta module.
   // This implements the requested type behavior accordingly for GPU.
   // This is suitable for all Spark versions, no need to add to shim layer.
-  private def evolveSchemaCasts(cv: ColumnView, dt: DataType, originalFromDt: DataType)
-  : ColumnView = {
+  private def evolveSchemaCasts(cv: ColumnView, dt: DataType,
+                                originalFromDt: DataType): ColumnView = {
+    // This code needs to be kept in sync with
+    // GpuParquetFileFilterHandler.checkSchemaCompat or more specifically
+    // GpuParquetFileFilterHandler.checkPrimitiveCompat
     if (needDecimalCast(cv, dt)) {
       val fromDecimal = originalFromDt.asInstanceOf[DecimalType]
       val toDecimal = dt.asInstanceOf[DecimalType]
       val ansiMode = CastOptions.DEFAULT_CAST_OPTIONS.isAnsiMode
       GpuCast.castDecimalToDecimal(cv, fromDecimal, toDecimal, ansiMode)
-    } else if (needUnsignedToSignedCast(cv, dt) || needInt32Downcast(cv, dt) ||
-        needSignedUpcast(cv, dt)) {
-      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
+    } else if (needInt32Downcast(cv, dt) ||
+      needUpcast(cv, dt)) {
+      cv.castTo(GpuColumnVector.getNonNestedRapidsType(dt))
     } else if (DType.STRING.equals(cv.getType) && dt == BinaryType) {
       // Ideally we would bitCast the STRING to a LIST, but that does not work.
-      // Instead we are going to have to pull apart the string and put it back together
+      // Instead, we are going to have to pull apart the string and put it back together
       // as a list.
 
       val dataBuf = Option(cv.getData)

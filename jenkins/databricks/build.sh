@@ -51,6 +51,14 @@ declare -A artifacts
 # Initializes the scripts and the variables based on teh arguments passed to the script.
 initialize()
 {
+    # Print DB runtime version details
+    if [[ -f /databricks/BUILDINFO ]]; then
+        echo "DB runtime version details:"
+        cat /databricks/BUILDINFO
+    else
+        echo "No /databricks/BUILDINFO file found"
+    fi
+
     # install rsync to be used for copying onto the databricks nodes
     sudo apt install -y rsync
 
@@ -165,7 +173,7 @@ if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_PHASES="clean install"
     for jdk_ver in 17 11 8; do
       if [[ $jdk_ver == 8 ]]; then
-        echo >2 "WARNING: could not find an 11+ JDK. Bloop Project might not be fully functional"
+        echo "WARNING: could not find an 11+ JDK. Bloop Project might not be fully functional" >&2
         exit 1
       fi
 

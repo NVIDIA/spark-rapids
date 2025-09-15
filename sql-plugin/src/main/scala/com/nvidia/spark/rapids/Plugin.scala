@@ -137,11 +137,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.08.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.10.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-25.08.0-cuda12.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.10.0-cuda12.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-25.08.0-cuda12.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.10.0-cuda12.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -517,6 +517,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
   private val activeTaskNvtx = new ConcurrentHashMap[Thread, NvtxRange]()
 
+  private var isAsyncProfilerEnabled = false
+
   override def init(
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
@@ -527,7 +529,19 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
+
+      isAsyncProfilerEnabled = conf.asyncProfilerPathPrefix.nonEmpty
+
       ProfilerOnExecutor.init(pluginContext, conf)
+      if (isAsyncProfilerEnabled) {
+        val schedulerMode = sparkConf.get("spark.scheduler.mode", "FIFO")
+        if (!schedulerMode.equalsIgnoreCase("FIFO")) {
+          logWarning(s"Async profiler is enabled but spark.scheduler.mode is set to " +
+            s"'$schedulerMode'. It's recommended to use FIFO scheduler mode when async " +
+            "profiler is enabled for better profiling accuracy.")
+        }
+        AsyncProfilerOnExecutor.init(pluginContext, conf)
+      }
 
       // Checks if the current GPU architecture is supported by the
       // spark-rapids-jni and cuDF libraries.
@@ -586,7 +600,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       logDebug("Loading extra executor plugins: " +
         s"${extraExecutorPlugins.map(_.getClass.getName).mkString(",")}")
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
-      GpuSemaphore.initialize()
+      GpuSemaphore.initialize(conf.maxConcurrentGpuTasks)
       FileCache.init(pluginContext)
       TrafficController.initialize(conf)
     } catch {
@@ -598,7 +612,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         logGpuDebugInfoAndExit(systemExitCode = 1)
       case e: Throwable =>
         logError("Exception in the executor plugin, shutting down!", e)
-        System.exit(1)
+        RapidsExecutorPlugin.exitWithHaltOnTimeout(1)
     }
   }
 
@@ -678,7 +692,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       case e: Throwable =>
         logWarning("nvidia-smi process failed", e)
     }
-    System.exit(systemExitCode)
+    RapidsExecutorPlugin.exitWithHaltOnTimeout(systemExitCode)
   }
 
   override def shutdown(): Unit = {
@@ -687,6 +701,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     ProfilerOnExecutor.shutdown()
+    if (isAsyncProfilerEnabled) {
+      AsyncProfilerOnExecutor.shutdown()
+    }
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
@@ -731,6 +748,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     })
     extraExecutorPlugins.foreach(_.onTaskStart())
     ProfilerOnExecutor.onTaskStart()
+    if (isAsyncProfilerEnabled) {
+      AsyncProfilerOnExecutor.onTaskStart()
+    }
     // Make sure that the thread/task is registered before we try and block
     // For the task main thread, we want to make sure that it's registered in the OOM state
     // machine throughout the task lifecycle.
@@ -758,7 +778,32 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 }
 
-object RapidsExecutorPlugin {
+object RapidsExecutorPlugin extends Logging {
+  /**
+   * Calling System.exit will trigger shutdown hooks to run.
+   * This code is intended to let them run, but then force
+   * kill the process if it takes too long to actually exit.
+   * @param exitCode the exit code to use.
+   */
+  def exitWithHaltOnTimeout(exitCode: Int): Unit = synchronized {
+    val sleepTime = 40
+    val sleepKill = new java.lang.Thread(() => {
+      try {
+        logInfo(s"Halting after $sleepTime seconds")
+        Thread.sleep(sleepTime * 1000)
+        logWarning("Forcing Halt...")
+        Runtime.getRuntime.halt(exitCode)
+      } catch {
+        case _: InterruptedException => //Ignored/expected...
+        case e: Exception =>
+          logWarning("Exception in the ShutDownHook", e)
+      }
+    }, "ShutdownHook-sleepKill-" + sleepTime + "s")
+    sleepKill.setDaemon(true)
+    sleepKill.start()
+    System.exit(exitCode)
+  }
+
   /**
    * Return true if the expected cudf version is satisfied by the actual version found.
    * The version is satisfied if the major and minor versions match exactly. If there is a requested

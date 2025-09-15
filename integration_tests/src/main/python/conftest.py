@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ import os
 import pytest
 import random
 import warnings
+
 
 # TODO redo _spark stuff using fixtures
 #
@@ -98,6 +99,10 @@ def is_utc():
 
 def is_not_utc():
     return not is_utc()
+
+def is_iceberg_remote_catalog():
+    v = os.environ.get('ICEBERG_TEST_REMOTE_CATALOG')
+    return v == "1"
 
 # key is time zone, value is recorded boolean value
 _support_info_cache_for_time_zone = {}
@@ -221,9 +226,12 @@ def pytest_runtest_setup(item):
     global _non_gpu_allowed
     global _per_test_ansi_mode_enabled
     _non_gpu_allowed_databricks = []
+    _non_gpu_allowed_conditional = []
     _allow_any_non_gpu_databricks = False
+    _allow_any_non_gpu_conditional = False
     non_gpu_databricks = item.get_closest_marker('allow_non_gpu_databricks')
     non_gpu = item.get_closest_marker('allow_non_gpu')
+    non_gpu_conditional = item.get_closest_marker('allow_non_gpu_conditional')
     _per_test_ansi_mode_enabled = None if item.get_closest_marker('disable_ansi_mode') is None \
       else not item.get_closest_marker('disable_ansi_mode')
 
@@ -250,11 +258,30 @@ def pytest_runtest_setup(item):
         _allow_any_non_gpu = False
         _non_gpu_allowed = []
 
-    _allow_any_non_gpu = _allow_any_non_gpu | _allow_any_non_gpu_databricks
+    if non_gpu_conditional:
+        condition = non_gpu_conditional.args[0]
+        _non_gpu_allowed_conditional = non_gpu_conditional.args[1]
+        if not isinstance(condition, bool):
+            raise ValueError("The first parameter of 'allow_non_gpu_conditional' must be a Boolean.")
+        if condition:
+            if non_gpu_conditional.kwargs and non_gpu_conditional.kwargs['any']:
+                _allow_any_non_gpu_conditional = True
+                _non_gpu_allowed_conditional = []
+            elif _non_gpu_allowed_conditional:
+                _allow_any_non_gpu_conditional = False
+            else:
+                warnings.warn('allow_non_gpu_conditional marker without anything allowed')
+                _allow_any_non_gpu_conditional = False
+                _non_gpu_allowed_conditional = []
+
+
+    _allow_any_non_gpu = _allow_any_non_gpu | _allow_any_non_gpu_databricks | _allow_any_non_gpu_conditional
     if _non_gpu_allowed and _non_gpu_allowed_databricks:
         _non_gpu_allowed = _non_gpu_allowed + _non_gpu_allowed_databricks
     elif _non_gpu_allowed_databricks:
         _non_gpu_allowed = _non_gpu_allowed_databricks
+    if _non_gpu_allowed_conditional:
+        _non_gpu_allowed = _non_gpu_allowed + tuple(_non_gpu_allowed_conditional.split(","))
 
     global _validate_execs_in_gpu_plan
     validate_execs = item.get_closest_marker('validate_execs_in_gpu_plan')
@@ -460,12 +487,15 @@ def spark_tmp_table_factory(request):
     table_id = random.getrandbits(31)
     base_id = f'tmp_table_{worker_id}_{table_id}'
     yield TmpTableFactory(base_id)
-    sp = get_spark_i_know_what_i_am_doing()
-    tables = sp.sql("SHOW TABLES".format(base_id)).collect()
-    for row in tables:
-        t_name = row['tableName']
-        if (t_name.startswith(base_id)):
-            sp.sql("DROP TABLE IF EXISTS {}".format(t_name))
+    # Drop table doesn't work spark sql with aws s3tables.
+    if not is_iceberg_remote_catalog():
+        sp = get_spark_i_know_what_i_am_doing()
+        tables = sp.sql("SHOW TABLES").collect()
+        for row in tables:
+            t_name = row['tableName']
+            if (t_name.startswith(base_id)):
+                sp.sql("DROP TABLE IF EXISTS {} ".format(t_name))
+
 
 def _get_jvm_session(spark):
     return spark._jsparkSession
@@ -527,3 +557,12 @@ def enable_fuzz_test(request):
     if not enable_fuzz_test:
         # fuzz tests are not required for any test runs
         pytest.skip("fuzz_test not configured to run")
+
+@pytest.fixture(scope="session")
+def register_iceberg_add_eq_deletes_udf(request):
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
+    sp = get_spark_i_know_what_i_am_doing()
+    from pyspark.sql.types import NullType
+    sp.udf.registerJavaFunction("iceberg_add_eq_deletes",
+                                   "com.nvidia.spark.rapids.iceberg.testutils.AddEqDeletes",
+                                   NullType())
