@@ -19,12 +19,10 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, TypeSig}
-import com.nvidia.spark.rapids.GpuOverrides.expr
-import com.nvidia.spark.rapids.iceberg.spark.GpuStaticInvokeMeta
+import com.nvidia.spark.rapids.{FileFormatChecks, GpuExpression, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta}
+import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.GpuSparkBatchQueryScan
 
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 
@@ -75,13 +73,21 @@ class IcebergProviderImpl extends IcebergProvider {
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
   }
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    Seq(
-      expr[StaticInvoke](
-        "Iceberg static invoke expressions",
-        ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT),
-        (e, conf, parent, rule) => new GpuStaticInvokeMeta(e, conf, parent, rule),
-      )
-    ).map(r => r.getClassFor.asSubclass(classOf[Expression]) -> r).toMap
+  override def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
+    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
+      GpuBucketExpression.tagExprForGpu(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"StaticInvoke of ${expr.staticObject.getName} is not supported on GPU")
+    }
+  }
+
+  override def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
+    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu().asInstanceOf[GpuExpression])
+      GpuBucketExpression(left, right)
+    } else {
+      throw new IllegalStateException(
+        s"Should have been caught in tagExprForGpu: ${expr.staticObject.getName}")
+    }
   }
 }

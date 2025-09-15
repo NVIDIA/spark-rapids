@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.iceberg.spark
-
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuExpression, RapidsConf, RapidsMeta}
-import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
+import org.apache.spark.sql.rapids.ExternalSource
 
 /**
  * Meta class for overriding StaticInvoke expressions.
@@ -27,26 +25,16 @@ import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
  * When writing to partitioned table, iceberg needs to compute the partition values based on the 
  * partition spec using [[StaticInvoke]] expression.
  */
-class GpuStaticInvokeMeta(expr: StaticInvoke,
+class StaticInvokeMeta(expr: StaticInvoke,
   conf: RapidsConf,
   parent: Option[RapidsMeta[_, _, _]],
   rule: DataFromReplacementRule) extends ExprMeta[StaticInvoke](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
-    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
-      GpuBucketExpression.tagExprForGpu(this)
-    } else {
-      willNotWorkOnGpu(s"StaticInvoke of ${expr.staticObject.getName} is not supported on GPU")
-    }
+    ExternalSource.tagForGpu(expr, this)
   }
 
   override def convertToGpu(): GpuExpression = {
-    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
-      val Seq(left, right) = childExprs.map(_.convertToGpu().asInstanceOf[GpuExpression])
-      GpuBucketExpression(left, right)
-    } else {
-      throw new IllegalStateException(
-        s"Should have been caught in tagExprForGpu: ${expr.staticObject.getName}")
-    }
+    ExternalSource.convertToGpu(expr, this)
   }
 }
