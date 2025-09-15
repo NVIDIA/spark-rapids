@@ -27,7 +27,7 @@ import scala.concurrent.duration.Duration
 
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{OP_TIME_NEW, OP_TIME_NEW_SHUFFLE_WRITE}
-import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW, DESCRIPTION_OP_TIME_NEW_SR, DESCRIPTION_OP_TIME_NEW_SW, MODERATE_LEVEL}
+import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW, DESCRIPTION_OP_TIME_NEW_SW, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
