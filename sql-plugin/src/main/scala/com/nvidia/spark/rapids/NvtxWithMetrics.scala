@@ -39,14 +39,14 @@ class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: Seq[GpuMetric
   def this(name: String, color: NvtxColor, metrics: GpuMetric*) =
     this(name, color, metrics.toSeq, NoopMetric)
 
-  val needTracks = metrics.map(_.tryActivateTimer(excludeMetric))
+  val needTracks = metrics.map(_.tryActivateTimer(Seq(excludeMetric)))
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
     metrics.toSeq.zip(needTracks).foreach { pair =>
       if (pair._2) {
-        pair._1.deactivateTimer(time, excludeMetric)
+        pair._1.deactivateTimer(time, Seq(excludeMetric))
       }
     }
     super.close()
@@ -59,14 +59,14 @@ class MetricRange(val metrics: Seq[GpuMetric], val excludeMetric: GpuMetric = No
   // add a convenient constructor
   def this(metrics: GpuMetric*) = this(metrics.toSeq, NoopMetric)
 
-  val needTracks = metrics.map(_.tryActivateTimer(excludeMetric))
+  val needTracks = metrics.map(_.tryActivateTimer(Seq(excludeMetric)))
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
     metrics.toSeq.zip(needTracks).foreach { pair =>
       if (pair._2) {
-        pair._1.deactivateTimer(time, excludeMetric)
+        pair._1.deactivateTimer(time, Seq(excludeMetric))
       }
     }
   }
