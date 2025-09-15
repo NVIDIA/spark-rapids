@@ -36,8 +36,6 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
   private val tempDir = new File(System.getProperty("java.io.tmpdir"), "metrics-eventlog-test")
   private val eventLogDir = new File(tempDir, "eventlogs")
 
-
-
   override def beforeEach(): Unit = {
     // Clean up temp directories
     if (tempDir.exists()) {
@@ -143,13 +141,13 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
   test("operator time metrics are recorded in event logs with OpTimeTracking enabled") {
     val sparkSession = spark
     import sparkSession.implicits._
-      
+
     // Enable OpTimeTracking
     spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
-    
+
     val numRows = 5000000L
     val numTasks = 8
-    
+
     // Run query that should generate operator time metrics
     val resultDF = spark.range(0, numRows, 1, numTasks)
       .selectExpr(
@@ -164,65 +162,159 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
         avg("value").as("avg_value")
       )
       .filter($"count" > 1000)
-    
+
     val results = resultDF.collect()
     assert(results.length > 0, "Query should produce results")
-    
+
     // Parse event logs to find metrics and task times
     val (metrics, taskTimes) = parseEventLogs()
     val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
 
-    assert(operatorTimeMetrics.nonEmpty, 
+    assert(operatorTimeMetrics.nonEmpty,
       s"Should find operator time metrics in event logs. " +
         s"Found ${metrics.length} total metrics: ${metrics.map(_.name).distinct}")
-    
-    assert(taskTimes.nonEmpty, 
+
+    assert(taskTimes.nonEmpty,
       s"Should find executor run times in event logs. Found ${taskTimes.length} tasks")
-    
+
     // Calculate total operator time (in nanoseconds)
     val totalOperatorTime = operatorTimeMetrics.map(_.value).sum
 
     // Calculate total task execution time
     // (Executor Run Time in milliseconds, convert to nanoseconds)
     val totalTaskExecutionTime = taskTimes.map(_.executionTime * 1000000L).sum
-    
+
     // Verify metric values are reasonable (> 0)
     operatorTimeMetrics.foreach { metric =>
       assert(metric.value > 0, s"operator time metric ${metric.name} " +
         s"should have positive value, got ${metric.value}")
     }
-    
+
     taskTimes.foreach { taskTime =>
       assert(taskTime.executionTime > 0, s"task ${taskTime.taskId} executor run time " +
         s"should be positive, got ${taskTime.executionTime}")
     }
-    
+
     println(s"Found ${operatorTimeMetrics.length} operator time metrics in event logs")
     println(s"Found ${taskTimes.length} executor run time records in event logs")
     println(f"Total operator time: ${totalOperatorTime / 1000000.0}%.2f ms")
     println(f"Total executor run time: ${totalTaskExecutionTime / 1000000.0}%.2f ms")
-    
+
     // Verify that operator time is within expected range of executor run time
     // Operator time should be between 80% and 100% of executor run time
     val minExpectedOperatorTime = totalTaskExecutionTime * 0.8
     val maxExpectedOperatorTime = totalTaskExecutionTime
     val operatorTimeRatio = totalOperatorTime.toDouble / totalTaskExecutionTime.toDouble
-    
+
     println(f"Operator time ratio: ${operatorTimeRatio * 100.0}%.1f%% of executor run time")
     println(f"Expected range: 80.0%% - 100.0%% of executor run time")
-    
-    assert(totalOperatorTime >= minExpectedOperatorTime, 
+
+    assert(totalOperatorTime >= minExpectedOperatorTime,
       f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should be at least 80%% " +
-      f"of total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
-      f"but was only ${operatorTimeRatio * 100.0}%.1f%%")
-    
-    assert(totalOperatorTime <= maxExpectedOperatorTime, 
+        f"of total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
+        f"but was only ${operatorTimeRatio * 100.0}%.1f%%")
+
+    assert(totalOperatorTime <= maxExpectedOperatorTime,
       f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should not exceed " +
-      f"total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
-      f"but was ${operatorTimeRatio * 100.0}%.1f%%")
-    
+        f"total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
+        f"but was ${operatorTimeRatio * 100.0}%.1f%%")
+
     operatorTimeMetrics.foreach { m =>
       println(f"  ${m.name}: ${m.value / 1000000.0}%.2f ms (stage ${m.stage.getOrElse("unknown")})")
+    }
+  }
+
+  test("operator time metrics are less when c2r and r2c happened") {
+    val sparkSession = spark
+    import sparkSession.implicits._
+      
+    // Enable OpTimeTracking
+    spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
+
+    try {
+      spark.conf.set("spark.rapids.sql.exec.HashAggregateExec", "false")
+
+      val numRows = 5000000L
+      val numTasks = 8
+
+      // Run query that should generate operator time metrics
+      val resultDF = spark.range(0, numRows, 1, numTasks)
+        .selectExpr(
+          "id",
+          "id % 20 as group_key",
+          "rand() * 100 as value"
+        )
+        .groupBy("group_key")
+        .agg(
+          count("*").as("count"),
+          sum("value").as("sum_value"),
+          avg("value").as("avg_value")
+        )
+        .filter($"count" > 1000)
+
+      val results = resultDF.collect()
+      assert(results.length > 0, "Query should produce results")
+
+      // Parse event logs to find metrics and task times
+      val (metrics, taskTimes) = parseEventLogs()
+      val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+
+      assert(operatorTimeMetrics.nonEmpty,
+        s"Should find operator time metrics in event logs. " +
+          s"Found ${metrics.length} total metrics: ${metrics.map(_.name).distinct}")
+
+      assert(taskTimes.nonEmpty,
+        s"Should find executor run times in event logs. Found ${taskTimes.length} tasks")
+
+      // Calculate total operator time (in nanoseconds)
+      val totalOperatorTime = operatorTimeMetrics.map(_.value).sum
+
+      // Calculate total task execution time
+      // (Executor Run Time in milliseconds, convert to nanoseconds)
+      val totalTaskExecutionTime = taskTimes.map(_.executionTime * 1000000L).sum
+
+      // Verify metric values are reasonable (> 0)
+      operatorTimeMetrics.foreach { metric =>
+        assert(metric.value > 0, s"operator time metric ${metric.name} " +
+          s"should have positive value, got ${metric.value}")
+      }
+
+      taskTimes.foreach { taskTime =>
+        assert(taskTime.executionTime > 0, s"task ${taskTime.taskId} executor run time " +
+          s"should be positive, got ${taskTime.executionTime}")
+      }
+
+      println(s"Found ${operatorTimeMetrics.length} operator time metrics in event logs")
+      println(s"Found ${taskTimes.length} executor run time records in event logs")
+      println(f"Total operator time: ${totalOperatorTime / 1000000.0}%.2f ms")
+      println(f"Total executor run time: ${totalTaskExecutionTime / 1000000.0}%.2f ms")
+
+      // Verify that operator time is within expected range of executor run time
+      // Operator time should be between 80% and 100% of executor run time
+      val minExpectedOperatorTime = totalTaskExecutionTime * 0.1
+      val maxExpectedOperatorTime = totalTaskExecutionTime * 0.8
+      val operatorTimeRatio = totalOperatorTime.toDouble / totalTaskExecutionTime.toDouble
+
+      println(f"Operator time ratio: ${operatorTimeRatio * 100.0}%.1f%% of executor run time")
+      println(f"Expected range: 80.0%% - 100.0%% of executor run time")
+
+      assert(totalOperatorTime >= minExpectedOperatorTime,
+        f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should be at least 80%% " +
+          f"of total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
+          f"but was only ${operatorTimeRatio * 100.0}%.1f%%")
+
+      assert(totalOperatorTime <= maxExpectedOperatorTime,
+        f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should not exceed " +
+          f"total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
+          f"but was ${operatorTimeRatio * 100.0}%.1f%%")
+
+      operatorTimeMetrics.foreach { m =>
+        println(f"  ${m.name}: ${m.value / 1000000.0}%.2f ms " +
+          f"(stage ${m.stage.getOrElse("unknown")})")
+      }
+      println("Test completed successfully.")
+    } finally {
+      spark.conf.set("spark.rapids.sql.exec.HashAggregateExec", "true")
     }
   }
 
