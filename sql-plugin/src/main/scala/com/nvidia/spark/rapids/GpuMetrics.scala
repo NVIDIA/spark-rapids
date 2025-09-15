@@ -304,7 +304,7 @@ sealed abstract class GpuMetric extends Serializable {
   private var semWaitTimeWhenActivated = 0L
   private var excludeMetricsWhenActivated: Seq[Long] = Seq.empty
 
-  final def tryActivateTimer(excludeMetrics: Seq[GpuMetric]): Boolean = {
+  def tryActivateTimer(excludeMetrics: Seq[GpuMetric]): Boolean = {
     if (!isTimerActive) {
       isTimerActive = true
       semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
@@ -315,7 +315,7 @@ sealed abstract class GpuMetric extends Serializable {
     }
   }
 
-  final def deactivateTimer(duration: Long, excludeMetrics: Seq[GpuMetric]): Unit = {
+  def deactivateTimer(duration: Long, excludeMetrics: Seq[GpuMetric]): Unit = {
     if (isTimerActive) {
       isTimerActive = false
 
@@ -364,6 +364,9 @@ object NoopMetric extends GpuMetric {
   override def add(v: Long): Unit = ()
   override def set(v: Long): Unit = ()
   override def value: Long = 0
+
+  override def tryActivateTimer(excludeMetrics: Seq[GpuMetric]): Boolean = false
+  override def deactivateTimer(duration: Long, excludeMetrics: Seq[GpuMetric]): Unit = ()
 }
 
 final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsExclSemWait: Boolean = false)
