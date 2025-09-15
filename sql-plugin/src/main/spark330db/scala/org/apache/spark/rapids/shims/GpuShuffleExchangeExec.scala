@@ -36,7 +36,8 @@ case class GpuShuffleExchangeExec(
     child, shuffleOrigin)(cpuOutputPartitioning) {
 
     override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
-        val shuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
+        val shuffleRDD =
+            new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
         shuffleRDD
     }
 
