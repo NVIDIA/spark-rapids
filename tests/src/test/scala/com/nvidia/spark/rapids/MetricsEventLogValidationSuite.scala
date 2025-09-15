@@ -229,75 +229,87 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
   test("operator time metrics are reasonable for parquet write jobs") {
     val sparkSession = spark
     import sparkSession.implicits._
+    
+    // Save original configurations
+    val originalOpTimeTracking =
+      spark.conf.getOption("spark.rapids.sql.exec.disableOpTimeTrackingRDD")
+    val originalSlowfsImpl = spark.conf.getOption("fs.slowfs.impl")
+
+    try {
+      // Enable OpTimeTracking for this test
+      spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
       
-    // Enable OpTimeTracking for this test
-    spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
+      // Configure slow filesystem for testing
+      spark.conf.set("fs.slowfs.impl", "com.nvidia.spark.rapids.SlowFileSystem")
 
-    val numRows = 5000000L
-    val numTasks = 8
-    val parquetOutputPath = new File(tempDir, "test_parquet").getAbsolutePath
+      val numRows = 5000000L
+      val numTasks = 8
+      val parquetOutputPath = "slowfs://" + new File(tempDir, "test_parquet").getAbsolutePath
     
-    // Create test data and write to Parquet
-    val testDataDF = spark.range(0, numRows, 1, numTasks)
-      .selectExpr(
-        "id",
-        "id % 100 as category", 
-        "rand() * 1000 as price",
-        "cast(rand() * 10000 as int) as quantity"
-      )
-      .groupBy("category")
-      .agg(
-        count("*").as("total_count"),
-        sum("price").as("total_price"),
-        avg("quantity").as("avg_quantity")
-      )
-      .filter($"total_count" > 500)
+      // Create test data for parquet write
+      val testDataDF = spark.range(0, numRows, 1, numTasks)
+        .selectExpr(
+          "id",
+          "id % 100 as category", 
+          "rand() * 1000 as price",
+          "cast(rand() * 10000 as int) as quantity"
+        )
+        .groupBy("category")
+        .agg(
+          count("*").as("total_count"),
+          sum("price").as("total_price"),
+          avg("quantity").as("avg_quantity")
+        )
+        .filter($"total_count" > 5)
     
-    // Write to Parquet format which should trigger GPU operators
-    testDataDF.write
-      .mode("overwrite")
-      .option("compression", "snappy")
-      .parquet(parquetOutputPath)
+      // Write to slow filesystem Parquet format with repartitioning
+      // and take significant time due to filesystem delays
+      testDataDF
+        .repartition(50)  // Repartition to 50 partitions to amplify write time
+        .write
+        .mode("overwrite")
+        .option("compression", "snappy")
+        .parquet(parquetOutputPath)
     
-    // Verify the output file exists
-    val outputDir = new File(parquetOutputPath)
-    assert(outputDir.exists() && outputDir.listFiles().nonEmpty,
-      "Parquet output files should be created")
-    
-    // Parse event logs to find metrics and task times
-    val (metrics, taskTimes) = parseEventLogs()
-    val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+      // Verify the output file exists (check the actual file path, not the slowfs path)
+      val actualOutputPath = new File(tempDir, "test_parquet")
+      assert(actualOutputPath.exists() && actualOutputPath.listFiles().nonEmpty,
+        "Parquet output files should be created")
+      
+      // Parse event logs to find metrics and task times
+      val (metrics, taskTimes) = parseEventLogs()
+      val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
 
-    assert(operatorTimeMetrics.nonEmpty, 
-      s"Should find operator time metrics for parquet write job. " +
-        s"Found ${metrics.length} total metrics: ${metrics.map(_.name).distinct}")
-    
-    assert(taskTimes.nonEmpty, 
-      s"Should find executor run times in event logs. Found ${taskTimes.length} tasks")
-    
-    // Calculate total operator time (in nanoseconds)
-    val totalOperatorTime = operatorTimeMetrics.map(_.value).sum
+      assert(operatorTimeMetrics.nonEmpty, 
+        s"Should find operator time metrics for parquet write job. " +
+          s"Found ${metrics.length} total metrics: ${metrics.map(_.name).distinct}")
+      
+      assert(taskTimes.nonEmpty, 
+        s"Should find executor run times in event logs. Found ${taskTimes.length} tasks")
+      
+      // Calculate total operator time (in nanoseconds)
+      val totalOperatorTime = operatorTimeMetrics.map(_.value).sum
 
-    // Calculate total task execution time
-    // (Executor Run Time in milliseconds, convert to nanoseconds)
-    val totalTaskExecutionTime = taskTimes.map(_.executionTime * 1000000L).sum
+      // Calculate total task execution time
+      // (Executor Run Time in milliseconds, convert to nanoseconds)
+      val totalTaskExecutionTime = taskTimes.map(_.executionTime * 1000000L).sum
+      
+      // Verify metric values are reasonable (> 0)
+      operatorTimeMetrics.foreach { metric =>
+        assert(metric.value > 0, s"operator time metric ${metric.name} " +
+          s"should have positive value, got ${metric.value}")
+      }
+      
+      taskTimes.foreach { taskTime =>
+        assert(taskTime.executionTime > 0, s"task ${taskTime.taskId} executor run time " +
+          s"should be positive, got ${taskTime.executionTime}")
+      }
     
-    // Verify metric values are reasonable (> 0)
-    operatorTimeMetrics.foreach { metric =>
-      assert(metric.value > 0, s"operator time metric ${metric.name} " +
-        s"should have positive value, got ${metric.value}")
-    }
-    
-    taskTimes.foreach { taskTime =>
-      assert(taskTime.executionTime > 0, s"task ${taskTime.taskId} executor run time " +
-        s"should be positive, got ${taskTime.executionTime}")
-    }
-    
-    println(s"Parquet write job: Found ${operatorTimeMetrics.length} operator time metrics")
-    println(s"Parquet write job: Found ${taskTimes.length} executor run time records")
-    println(f"Parquet write job: Total operator time: ${totalOperatorTime / 1000000.0}%.2f ms")
-    println(f"Parquet write job: Total executor run time: " +
-      f"${totalTaskExecutionTime / 1000000.0}%.2f ms")
+      println(s"Parquet write job: Found ${operatorTimeMetrics.length} operator time metrics")
+      println(s"Parquet write job: Found ${taskTimes.length} executor run time records")
+      println(f"Parquet write job: Total operator time: ${totalOperatorTime / 1000000.0}%.2f ms")
+      println(f"Parquet write job: Total executor run time: " +
+        f"${totalTaskExecutionTime / 1000000.0}%.2f ms")
     
     val minExpectedOperatorTime = totalTaskExecutionTime * 0.8
     val maxExpectedOperatorTime = totalTaskExecutionTime
@@ -305,7 +317,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     
     println(f"Parquet write job: Operator time ratio: ${operatorTimeRatio * 100.0}%.1f%% " +
       "of executor run time")
-    println("Parquet write job: Expected range: 80.0%% - 100.0%% of executor run time")
+    println(f"Parquet write job: Expected range: 80.0%% - 100.0%% of executor run time")
     
     assert(totalOperatorTime >= minExpectedOperatorTime, 
       f"Parquet write job: Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) " +
@@ -319,9 +331,45 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       f"(${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
       f"but was ${operatorTimeRatio * 100.0}%.1f%%")
     
-    operatorTimeMetrics.foreach { m =>
-      println(f"  ${m.name}: ${m.value / 1000000.0}%.2f ms " +
-        f"(stage ${m.stage.getOrElse("unknown")})")
+    // Assert stage 5 (parquet write stage) operator time accounts for > 20% of total
+    val stage5Metrics = operatorTimeMetrics.filter(_.stage.contains(5))
+    val stage5OperatorTime = stage5Metrics.map(_.value).sum
+    val stage5Ratio = if (totalOperatorTime > 0) {
+      stage5OperatorTime.toDouble / totalOperatorTime.toDouble
+    } else {
+      0.0
+    }
+    
+    println(f"Parquet write job: Stage 5 operator time: " +
+      f"${stage5OperatorTime / 1000000.0}%.2f ms")
+    println(f"Parquet write job: Stage 5 ratio: ${stage5Ratio * 100.0}%.1f%% " +
+      "of total operator time")
+    
+    assert(stage5Metrics.nonEmpty, 
+      "Should find operator time metrics for stage 5 (parquet write stage)")
+    
+    assert(stage5Ratio > 0.2,
+      f"Stage 5 (parquet write stage) operator time should account for more than 20%% " +
+      f"of total operator time, but was only ${stage5Ratio * 100.0}%.1f%% " +
+      f"(${stage5OperatorTime / 1000000.0}%.2f ms out of " +
+      f"${totalOperatorTime / 1000000.0}%.2f ms)")
+      
+      operatorTimeMetrics.foreach { m =>
+        println(f"  ${m.name}: ${m.value / 1000000.0}%.2f ms " +
+          f"(stage ${m.stage.getOrElse("unknown")})")
+      }
+      println("Parquet write job: Test completed successfully.")
+
+    } finally {
+      // Restore original configurations
+      originalOpTimeTracking match {
+        case Some(value) => spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", value)
+        case None => spark.conf.unset("spark.rapids.sql.exec.disableOpTimeTrackingRDD")
+      }
+      originalSlowfsImpl match {
+        case Some(value) => spark.conf.set("fs.slowfs.impl", value)
+        case None => spark.conf.unset("fs.slowfs.impl")
+      }
     }
   }
 
