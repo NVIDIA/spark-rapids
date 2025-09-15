@@ -45,7 +45,7 @@ public class IcebergFileIO implements RapidsFileIO {
 
 
   @Override
-  public RapidsInputFile newInputFile(String path) throws IOException {
+  public IcebergInputFile newInputFile(String path) throws IOException {
     return new IcebergInputFile(delegate.newInputFile(path));
   }
 }
