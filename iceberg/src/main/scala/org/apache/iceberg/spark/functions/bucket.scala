@@ -16,6 +16,8 @@
 
 package org.apache.iceberg.spark.functions
 
+import scala.util.{Success, Try}
+
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -25,7 +27,6 @@ import org.apache.iceberg.spark.functions.GpuBucketExpression.cast
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.types.{ByteType, DataType, DataTypes, DateType, IntegerType, LongType, ShortType, TimestampNTZType, TimestampType}
-
 
 case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
   extends GpuBinaryExpression {
@@ -87,6 +88,13 @@ object GpuBucketExpression {
     }
   }
 
+  private lazy val supportedFunctionClasses: Try[Set[Class[_]]] = Try {
+    Set(
+      classOf[BucketFunction.BucketInt],
+      classOf[BucketFunction.BucketLong]
+    )
+  }
+
   def isSupportedValueType(dataType: DataType): Boolean = {
     dataType match {
       case ByteType |  ShortType | IntegerType | DateType |
@@ -99,10 +107,16 @@ object GpuBucketExpression {
     require(meta.childExprs.length == 2,
       s"BucketFunction should have exactly two arguments, got ${meta.childExprs.length}")
     val exprCls = meta.wrapped.staticObject
-    if (exprCls != classOf[BucketFunction.BucketInt] &&
-      exprCls != classOf[BucketFunction.BucketLong]) {
-      meta.willNotWorkOnGpu(s"only BucketFunction.BucketInt and BucketFunction.BucketLong " +
-        s"are supported")
+
+    supportedFunctionClasses match {
+      case Success(supported) =>
+        if (!supported.contains(exprCls)) {
+          meta.willNotWorkOnGpu(s"Supported iceberg partition function classes are: " +
+            s"${supported.mkString("[", ",", "]")},  actual: $exprCls")
+        }
+      case scala.util.Failure(e) =>
+        meta.willNotWorkOnGpu(s"Unable to load supported iceberg partition function classes: " +
+          s"${e.getMessage}")
     }
 
     val bucketExpr = meta.wrapped.arguments.head

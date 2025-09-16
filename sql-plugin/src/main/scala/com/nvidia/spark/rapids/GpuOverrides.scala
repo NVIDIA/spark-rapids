@@ -4190,7 +4190,7 @@ object GpuOverrides extends Logging {
     ),
     expr[StaticInvoke](
       desc = "StaticInvoke",
-      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT),
+      StaticInvokeCheck,
       (a, conf, p, r) => new StaticInvokeMeta(a, conf, p, r)
     ),
     SparkShimImpl.ansiCastRule
