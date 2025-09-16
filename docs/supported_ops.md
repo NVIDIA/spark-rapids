@@ -22782,29 +22782,29 @@ are limited.
 <td rowSpan="1">StaticInvoke</td>
 <td rowSpan="1"> </td>
 <td rowSpan="1">StaticInvoke</td>
-<td rowSpan="1">None</td>
+<td rowSpan="1">The supported types are not deterministic since it's a dynamic expression</td>
 <td rowSpan="1">project</td>
 <td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
 </tr>
 <tr>
 <td rowSpan="2">NormalizeNaNAndZero</td>
