@@ -131,10 +131,10 @@ case class GpuParquetScan(
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         options.asScala.toMap)
     } else {
-      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf)
+      val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
-        resourcePoolConf,
+        poolConfBuilder,
         metrics, queryUsesInputFile)
     }
   }
@@ -1109,7 +1109,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    resourcePoolConf: ResourcePoolConf,
+    poolConfBuilder: ThreadPoolConfBuilder,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
@@ -1156,7 +1156,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       }.getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
   private val compressCfg = CpuCompressionConfig.forParquet(rapidsConf)
   // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
-  private val poolMemCapacity = rapidsConf.multiThreadMemoryLimit match {
+  private val poolMemCapacity = rapidsConf.multiThreadReadMemoryLimit match {
     case v if v == 0 => None
     case v => Some(v)
   }
@@ -1186,13 +1186,15 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
+    val poolConf = poolConfBuilder.build()
     val reader = new MultiFileCloudParquetPartitionReader(fileIO, conf, files, filterFunc,
       isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
-      metrics, partitionSchema, poolConf, maxNumFileProcessed, ignoreMissingFiles,
+      metrics, partitionSchema,
+      poolConf,
+      maxNumFileProcessed, ignoreMissingFiles,
       ignoreCorruptFiles, readUseFieldId, queryUsesInputFile, keepReadsInOrderFromConf,
       combineConf)
     // NOTE: Initialize must happen after the initialization of the reader, to ensure everything
@@ -1268,9 +1270,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   override def buildBaseColumnarReaderForCoalescing(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
+    val poolConf = poolConfBuilder.build()
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
-
-    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
 
     metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
       metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
@@ -2214,7 +2215,7 @@ case class ParquetSingleDataBlockMeta(
  *                                             usage that the reader will use
  * @param execMetrics metrics
  * @param partitionSchema Schema of partitions.
- * @param resourceConf resource pool configuration.
+ * @param poolConf thread pool configuration.
  * @param ignoreMissingFiles Whether to ignore missing files
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
@@ -2235,13 +2236,13 @@ class MultiFileParquetPartitionReader(
     override val compressCfg: CpuCompressionConfig,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-    resourceConf, execMetrics)
+    poolConf, execMetrics)
   with ParquetPartitionReaderBase {
 
   // Some implicits to convert the base class to the sub-class and vice versa
@@ -2419,7 +2420,7 @@ class MultiFileParquetPartitionReader(
  *                                             usage that the reader will use
  * @param execMetrics metrics
  * @param partitionSchema Schema of partitions.
- * @param resourceConf resource pool configuration.
+ * @param poolConf thread pool configuration
  * @param maxNumFileProcessed the maximum number of files to read on the CPU side and waiting to be
  *                            processed on the GPU. This affects the amount of host memory used.
  * @param ignoreMissingFiles Whether to ignore missing files
@@ -2447,7 +2448,7 @@ class MultiFileCloudParquetPartitionReader(
     override val compressCfg: CpuCompressionConfig,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     maxNumFileProcessed: Int,
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
@@ -2456,7 +2457,7 @@ class MultiFileCloudParquetPartitionReader(
     keepReadsInOrder: Boolean,
     combineConf: CombineConf)
   extends MultiFileCloudPartitionReaderBase(conf,
-    files, resourceConf, maxNumFileProcessed, null,
+    files, poolConf, maxNumFileProcessed, null,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
     keepReadsInOrder, combineConf)
   with ParquetPartitionReaderBase {

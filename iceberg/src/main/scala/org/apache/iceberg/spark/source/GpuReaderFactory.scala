@@ -18,7 +18,7 @@ package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{GpuMetric, MultiFileReaderUtils, RapidsConf, ResourcePoolConf}
+import com.nvidia.spark.rapids.{GpuMetric, MultiFileReaderUtils, RapidsConf, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
 
@@ -41,7 +41,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled &&
     !queryUsesInputFile
   // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
-  private val poolMemCapacity = rapidsConf.multiThreadMemoryLimit match {
+  private val poolMemCapacity = rapidsConf.multiThreadReadMemoryLimit match {
     case v if v == 0 => None
     case v => Some(v)
   }
@@ -88,13 +88,11 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       val useMultiThread = MultiFileReaderUtils.useMultiThreadReader(canUseCoalescing,
         canUseMultiThread, files, allCloudSchemes)
 
-      val poolConf = ResourcePoolConf
-          .buildFromConf(rapidsConf)
-          .setMemoryCapacity(poolMemCapacity)
+      val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
       if (useMultiThread) {
-        MultiThread(poolConf, partition.maxNumParquetFilesParallel)
+        MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel)
       } else {
-        MultiFile(poolConf)
+        MultiFile(poolConfBuilder)
       }
     } else {
       throw new UnsupportedOperationException("Currently only parquet format is supported")

@@ -33,20 +33,22 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
 
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)
-    val membuffers = {
+    val memBuffers: Array[SingleHMBAndMeta] = {
       val singleBuf = SpillableHostBuffer(HostMemoryBuffer.allocate(0), 0,
         SpillPriorities.ACTIVE_BATCHING_PRIORITY)
       Array(SingleHMBAndMeta(Array(singleBuf), 0L, 0, Seq.empty))
     }
-    val poolConf = ResourcePoolConf(
-      waitResourceTimeoutMs = 10 * 1000L, // 10 seconds
-      retryPriorityAdjust = 0.0f, // no penalty
-      maxThreadNumber = 1
-    ).setMemoryCapacity(Some(1L << 20)) // 1MB
+    val poolConf = new ThreadPoolConfBuilder(
+      maxThreadNumber = 1,
+      isMemoryBounded = true,
+      memoryCapacityFromDriver =  1L << 20,
+      timeoutMs = 10 * 1000L, // 10 seconds
+      stageLevelPool = false
+    ).build()
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
-      resourceConf = poolConf,
+      poolConf = poolConf,
       maxNumFileProcessed = 1,
       filters = Array.empty,
       execMetrics = Map.empty,
@@ -57,7 +59,7 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
       currentFileHostBuffers = Some(new HostMemoryBuffersWithMetaDataBase {
         override def partitionedFile: PartitionedFile =
           PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty, "", 0, 0)
-        override def memBuffersAndSizes: Array[SingleHMBAndMeta] = membuffers
+        override def memBuffersAndSizes: Array[SingleHMBAndMeta] = memBuffers
         override def bytesRead: Long = 0
       })
 

@@ -26,7 +26,7 @@ import org.apache.spark.internal.Logging
  * A RapidsFutureTask wrapper is used by ResourceBoundedThreadExecutor to manage the execution of
  * resource-aware asynchronous tasks. It allows the executor to:
  *   - Track whether the task is currently holding a resource.
- *   - Adjust the task's scheduling priority dynamically.
+ *   - [NOT enabled] Adjust the task's scheduling priority dynamically.
  *   - Mark completion and exception state for robust scheduling and error handling.
  *   - Integrate with resource management callbacks for proper resource release.
  *
@@ -75,17 +75,6 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncRe
     }
   }
 
-  /**
-   * Adjusts the task's priority by a specified delta and appends the last wait time to the
-   * schedule time.
-   */
-  def adjustPriority(delta: Double, lastWaitTime: Long): Double = {
-    require(!completed, "Task has already been completed")
-    scheduleTime += lastWaitTime
-    priority += delta
-    priority
-  }
-
   override def setException(e: Throwable): Unit = {
     caughtException = true
     runner.execException = Some(e)
@@ -97,6 +86,12 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncRe
   def isResourceFulfilled: Boolean = resourceFulfilled
 
   def isCompleted: Boolean = completed
+
+  override def toString: String = {
+    s"RapidsFutureTask(runner=$runner, priority=$priority, " +
+        s"resourceFulfilled=$resourceFulfilled, completed=$completed, " +
+        s"caughtException=$caughtException, scheduleTime=${scheduleTime / 1e9}s)"
+  }
 
   private[async] var scheduleTime: Long = 0L
 }
@@ -131,12 +126,11 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
  *   - Acquiring resources before runner execution through the ResourcePool
  *   - Tracking resource usage and releasing resources after task completion
  *   - Supporting priority-based runner ordering via PriorityBlockingQueue
- *   - Retrying runners that fail to acquire resources with adjusted priority
  *   - Managing resource lifecycles including immediate and deferred release strategies
  *
  * AsyncRunners that cannot acquire sufficient resources within timeout are bypassed during
- * execution and re-queued with adjusted priority to prevent starvation. The executor works
- * exclusively with AsyncRunner instances and their corresponding RapidsFutureTask wrappers.
+ * execution and re-queued to prevent starvation. The executor works exclusively with AsyncRunner
+ * instances and their corresponding RapidsFutureTask wrappers.
  *
  * Resource release timing can be controlled by the implementation of the AsyncRunner.
  * Runners are able to provide callbacks for resource lifecycle management and supports both
@@ -144,8 +138,7 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
  * implementation.
  *
  * @param mgr the ResourcePool for managing resource acquisition and release
- * @param waitResourceTimeoutMs timeout in milliseconds for resource acquisition
- * @param retryPriorityAdjust priority adjustment applied to tasks that fail resource acquisition
+ * @param timeoutMs timeout in milliseconds for resource acquisition
  * @param corePoolSize the core number of threads in the pool
  * @param maximumPoolSize the maximum number of threads in the pool
  * @param workQueue the queue for holding tasks before execution
@@ -153,8 +146,7 @@ class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTas
  * @param keepAliveTime the time to keep idle threads alive
  */
 class ResourceBoundedThreadExecutor(mgr: ResourcePool,
-    waitResourceTimeoutMs: Long,
-    retryPriorityAdjust: Double,
+    timeoutMs: Long,
     corePoolSize: Int,
     maximumPoolSize: Int,
     workQueue: BlockingQueue[Runnable],
@@ -163,9 +155,8 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
   maximumPoolSize, keepAliveTime, TimeUnit.SECONDS, workQueue, threadFactory) with Logging {
 
   logInfo(s"Creating ResourceBoundedThreadExecutor with resourcePool: ${mgr.toString}, " +
-    s"corePoolSize: $corePoolSize, maximumPoolSize: $maximumPoolSize, " +
-    s"waitResourceTimeoutMs: $waitResourceTimeoutMs," +
-      s" retryPriorityAdjustment: $retryPriorityAdjust")
+      s"corePoolSize: $corePoolSize, maximumPoolSize: $maximumPoolSize, " +
+      s"waitResourceTimeoutMs: $timeoutMs")
 
   override def submit[T](fn: Callable[T]): Future[T] = {
     fn match {
@@ -188,7 +179,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     r match {
       // quick path for UnboundedAsyncRunner that does not need resource management
       case ft: RapidsFutureTask[_] if ft.runner.isInstanceOf[UnboundedAsyncRunner[_]] =>
-        super.submit(ft, result)
+        super.submit(ft, null.asInstanceOf[T])
       case ft: RapidsFutureTask[_] =>
         //register the resource release callback
         ft.runner.releaseResourceCallback = () => mgr.releaseResource(ft.runner)
@@ -225,7 +216,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
   override def beforeExecute(t: Thread, r: Runnable): Unit = {
     r match {
       case fut: RapidsFutureTask[_] =>
-        mgr.acquireResource(fut.runner, waitResourceTimeoutMs) match {
+        mgr.acquireResource(fut.runner, timeoutMs) match {
           case s: AcquireSuccessful =>
             fut.resourceAcquired(s.elapsedTime)
           case AcquireFailed =>
@@ -248,16 +239,12 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           fut.releaseResource(t != null)
         }
         // If the task failed to acquire enough resource, we bypass the execution and re-add it to
-        // the task queue with a priority penalty to avoid starvation.
+        // the task queue.
         if (t == null && !fut.isCompleted) {
-          // IMPORTANT: Ensure the priority penalty >=1000 in case the timeout task being
-          // polled recursively.
-          val priorPenalty = -retryPriorityAdjust min -1e3
-          fut.adjustPriority(priorPenalty, waitResourceTimeoutMs * 1000000L)
-          logWarning(s"Re-add timeout task: scheduleTime(${fut.scheduleTime / 1e9}s), " +
-              s"new priority(${fut.priority})")
-          require(workQueue.add(fut),
-            s"Failed to re-add task ${fut.runner} to the work queue after execution")
+          fut.scheduleTime += timeoutMs * 1000000L
+          val reAddSuccess = workQueue.add(fut)
+          require(reAddSuccess, s"Failed to re-add $fut to the work queue after execution")
+          logDebug(s"Re-add timeout runner: $fut")
         }
       case _ =>
         throw new RuntimeException(s"Unexpected runnable: ${r.getClass.getName}")
@@ -269,8 +256,7 @@ object ResourceBoundedThreadExecutor {
   def apply[T](name: String,
       pool: ResourcePool,
       maxThreadNumber: Int,
-      waitResourceTimeoutMs: Long = 60 * 1000L,
-      retryPriorityAdjust: Double = 0.0): ResourceBoundedThreadExecutor = {
+      waitResourceTimeoutMs: Long): ResourceBoundedThreadExecutor = {
     val taskQueue = new PriorityBlockingQueue(10000, new RapidsFutureTaskComparator[T])
     val threadFactory: ThreadFactory = new ThreadFactoryBuilder()
         .setDaemon(true)
@@ -279,7 +265,6 @@ object ResourceBoundedThreadExecutor {
 
     new ResourceBoundedThreadExecutor(pool,
       waitResourceTimeoutMs,
-      retryPriorityAdjust,
       corePoolSize = maxThreadNumber,
       maximumPoolSize = maxThreadNumber,
       workQueue = taskQueue.asInstanceOf[BlockingQueue[Runnable]],

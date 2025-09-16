@@ -106,7 +106,7 @@ class GpuMultiThreadIcebergParquetReader(
       CpuCompressionConfig.disabled(),
       conf.metrics,
       new StructType(), // iceberg handles partition value by itself
-      conf.threadConf.asInstanceOf[MultiThread].poolConf,
+      conf.threadConf.asInstanceOf[MultiThread].poolConfBuilder.build(),
       conf.threadConf.asInstanceOf[MultiThread].maxNumFilesProcessed,
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles

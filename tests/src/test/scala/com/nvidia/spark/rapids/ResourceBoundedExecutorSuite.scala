@@ -33,8 +33,7 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     ResourceBoundedThreadExecutor[Long]("single-thread-executor",
       new HostMemoryPool(memorySize),
       maxThreadNumber = maxThreadNumber,
-      waitResourceTimeoutMs = waitResourceTimeoutMs,
-      retryPriorityAdjust = 0.0)
+      waitResourceTimeoutMs = waitResourceTimeoutMs)
   }
 
   /**

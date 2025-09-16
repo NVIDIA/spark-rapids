@@ -14,6 +14,7 @@
 
 def resource_bounded_multithreaded_reader_conf(file_type, specialized_conf = {}):
     base_conf = specialized_conf.copy()
+    base_conf['spark.rapids.sql.multiThreadedRead.memBound'] = 'true'
     base_conf['spark.rapids.sql.multiThreadedRead.stageLevelPool'] = 'true'
     base_conf['spark.sql.sources.useV1SourceList'] = file_type
 

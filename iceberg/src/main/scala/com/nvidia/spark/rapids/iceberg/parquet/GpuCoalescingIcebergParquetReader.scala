@@ -92,7 +92,7 @@ class GpuCoalescingIcebergParquetReader(
       CpuCompressionConfig.disabled(),
       conf.metrics,
       new StructType(), // partitionSchema
-      conf.threadConf.asInstanceOf[MultiFile].poolConf,
+      conf.threadConf.asInstanceOf[MultiFile].poolConfBuilder.build(),
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
       false) // useFieldId

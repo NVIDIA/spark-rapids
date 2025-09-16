@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
-import java.util.concurrent.{CompletionService, ConcurrentLinkedQueue, Future, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{CompletionService, ConcurrentLinkedQueue, ExecutorCompletionService, Future, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 
 import scala.annotation.tailrec
@@ -170,14 +170,15 @@ object MultiFileReaderThreadPool extends Logging {
   @volatile
   private var threadPool: Option[ThreadPoolExecutor] = None
 
-  private def initThreadPool(conf: ResourcePoolConf): ThreadPoolExecutor = synchronized {
+  private def initThreadPool(conf: ThreadPoolConf): ThreadPoolExecutor = synchronized {
     if (threadPool.isEmpty) {
       threadPool = Some(createThreadPool( "multithreaded file reader worker", conf))
     }
     threadPool.get
   }
 
-  private def createThreadPool(name: String, conf: ResourcePoolConf): ThreadPoolExecutor = {
+  private def createThreadPool(name: String, conf: ThreadPoolConf): ThreadPoolExecutor = {
+    // Determine the number of threads to use
     val maxThreads = conf.maxThreadNumber
     val numThreads = Math.max(maxThreads, GpuDeviceManager.getNumCores)
     if (maxThreads != numThreads) {
@@ -186,15 +187,22 @@ object MultiFileReaderThreadPool extends Logging {
     }
     logDebug(s"Using $numThreads for the multithreaded reader thread pool")
 
-    val pool = new HostMemoryPool(conf.memoryCapacity)
-    val threadExecutor = ResourceBoundedThreadExecutor[HostMemoryBuffersWithMetaDataBase](
-        name,
-        pool,
-        numThreads,
-        conf.waitResourceTimeoutMs,
-        conf.retryPriorityAdjust)
-    threadExecutor.allowCoreThreadTimeOut(true)
-    threadExecutor
+    // Create the thread pool according to the memory bounded configuration
+    val threadPoolExecutor = conf match {
+      case _: DefaultThreadPoolConf =>
+        TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", numThreads)
+      case boundedConf: MemoryBoundedPoolConf =>
+        require(boundedConf.memoryCapacity > 0,
+          "The memory capacity of ResourceBoundedThreadExecutor must be set before use")
+        val pool = new HostMemoryPool(boundedConf.memoryCapacity)
+        ResourceBoundedThreadExecutor[HostMemoryBuffersWithMetaDataBase](
+          name,
+          pool,
+          numThreads,
+          boundedConf.waitMemTimeoutMs)
+    }
+    threadPoolExecutor.allowCoreThreadTimeOut(true)
+    threadPoolExecutor
   }
 
   /**
@@ -202,14 +210,14 @@ object MultiFileReaderThreadPool extends Logging {
    * @note The thread number will be ignored if the thread pool is already created, or modified
    *       if it is not the right size compared to the number of cores available.
    */
-  def getOrCreateThreadPool(conf: ResourcePoolConf): ThreadPoolExecutor = {
-    if (conf.stageLevelPool) {
+  def getOrCreateThreadPool(tpc: ThreadPoolConf): ThreadPoolExecutor = {
+    if (tpc.stageLevelPool) {
       val stageId = TaskContext.get().stageId()
-      getOrCreateStageThreadPool(stageId, conf)
+      getOrCreateStageThreadPool(stageId, tpc)
     } else {
       // TODO: With updated PoolConf, support the extension/shrinkage of ThreadPool in flight
       threadPool.getOrElse {
-        initThreadPool(conf)
+        initThreadPool(tpc)
       }
     }
   }
@@ -219,7 +227,7 @@ object MultiFileReaderThreadPool extends Logging {
   }
 
   private def getOrCreateStageThreadPool(stageId: Int,
-      conf: ResourcePoolConf): ThreadPoolExecutor = {
+      conf: ThreadPoolConf): ThreadPoolExecutor = {
     stageLevelPools.computeIfAbsent(stageId, _ => {
       createThreadPool(s"stage pool of MultiFileReader for stage($stageId)", conf)
     })
@@ -382,58 +390,80 @@ case class CombineConf(
     combineThresholdSize: Long, // The size to combine to when combining small files
     combineWaitTime: Int) // The amount of time to wait for other files ready for combination.
 
-case class ResourcePoolConf(
-    waitResourceTimeoutMs: Long, // The timeout for acquiring resources
-    retryPriorityAdjust: Double, // The penalty for task priority if failed to acquire resource
-    maxThreadNumber: Int, // The maximum number of threads used by the thread pool
-    stageLevelPool: Boolean = false // Only for testing, create pools for each task
-) extends Logging {
-  // Get the memory capacity: the maximum host memory used by in-flight tasks
-  def memoryCapacity: Long = {
-    require(memCap > 0L, s"Memory capacity must be set before use: $memCap")
-    memCap
-  }
+trait ThreadPoolConf {
+  /**
+   * The maximum number of threads used by the thread pool, not necessarily the final number
+   */
+  def maxThreadNumber: Int
 
-  // Return a copy of this ResourcePoolConf while setting the memory capacity with the
-  // following logic:
+  /**
+   * Whether to create pools for each Spark stage, only for testing for now
+   */
+  def stageLevelPool: Boolean
+}
+
+case class DefaultThreadPoolConf(
+    maxThreadNumber: Int,
+    stageLevelPool: Boolean) extends ThreadPoolConf
+
+case class MemoryBoundedPoolConf(
+    maxThreadNumber: Int,
+    stageLevelPool: Boolean,
+    memoryCapacity: Long, // The maximum host memory being used in bytes, must be > 0
+    waitMemTimeoutMs: Long // The timeout for acquiring host memory in milliseconds
+) extends ThreadPoolConf
+
+class ThreadPoolConfBuilder(
+    private val maxThreadNumber: Int,
+    private val isMemoryBounded: Boolean,
+    private val memoryCapacityFromDriver: Long,
+    private val timeoutMs: Long,
+    private val stageLevelPool: Boolean
+) extends Logging {
+
+  // Finalize the ThreadPoolConf, which mainly determines the memory capacity of the
+  // ResourceBoundedThreadExecutor if isMemoryBounded is true.
+  //
+  // The memory capacity is determined in the following order:
   // 1. Try to get the value from the latest user defined value from driver side
   // 2. If not set, figure out the value according to physical memory settings of current
   // executor via `initializePinnedPoolAndOffHeapLimits`
   // 3. if still not set, use the default value `DEFAULT_MEMORY_CAPACITY`.
-  def setMemoryCapacity(valueFromDriver: Option[Long]): ResourcePoolConf = {
-    val poolConf = this.copy()
-    poolConf.memCap = valueFromDriver match {
-      case Some(capacity) =>
-        capacity
-      case _ =>
+  def build(): ThreadPoolConf = {
+    if (!isMemoryBounded) {
+      DefaultThreadPoolConf(maxThreadNumber, stageLevelPool)
+    } else {
+      val memCap: Long = if (memoryCapacityFromDriver > 0) {
+        memoryCapacityFromDriver
+      } else {
         SparkEnv.get.conf.getOption(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key) match {
           case Some(v) if v.toLong > 0 =>
             v.toLong
           case _ =>
             logWarning(s"Fallback to default memory capacity for ResourcePoolConf: " +
-                s"${ResourcePoolConf.DEFAULT_MEMORY_CAPACITY}")
+                s"${ThreadPoolConfBuilder.DEFAULT_MEMORY_CAPACITY}")
             // If the memory capacity is not set, use the default value.
-            ResourcePoolConf.DEFAULT_MEMORY_CAPACITY
+            ThreadPoolConfBuilder.DEFAULT_MEMORY_CAPACITY
         }
+      }
+      logDebug(s"Setting memory capacity for ResourcePoolConf to ${memCap >> 20}MB")
+      MemoryBoundedPoolConf(
+        maxThreadNumber = maxThreadNumber,
+        stageLevelPool = stageLevelPool,
+        memoryCapacity = memCap,
+        waitMemTimeoutMs = timeoutMs)
     }
-    logDebug(s"Setting memory capacity for ResourcePoolConf to ${memCap >> 20}MB")
-    poolConf
   }
-
-  private var memCap: Long = 0L
 }
 
-object ResourcePoolConf {
-  /**
-   * Build a ResourcePoolConf from the RapidsConf and SparkConf. SparkConf is only used to
-   * determine the memory overhead if the RapidsConf is not set.
-   */
-  def buildFromConf(conf: RapidsConf): ResourcePoolConf = {
-    ResourcePoolConf(
-      conf.multiThreadReadTaskTimeout,
-      // Currently we hardcode the retry penalty as -1000 inside ResourceBoundedThreadExecutor
-      0.0,
+object ThreadPoolConfBuilder {
+
+  def apply(conf: RapidsConf): ThreadPoolConfBuilder = {
+    new ThreadPoolConfBuilder(
       conf.multiThreadReadNumThreads,
+      conf.useMemoryBoundedMultiThreadRead,
+      conf.multiThreadReadMemoryLimit,
+      conf.multiThreadReadTaskTimeout,
       conf.multiThreadReadStageLevelPool)
   }
 
@@ -451,7 +481,7 @@ object ResourcePoolConf {
  *
  * @param conf Configuration parameters
  * @param inputFiles PartitionFiles to be read
- * @param numThreads the number of threads to read files in parallel.
+ * @param poolConf thread pool configurations
  * @param maxNumFileProcessed threshold to control the maximum file number to be
  *                            submitted to threadpool
  * @param filters push down filters
@@ -464,7 +494,7 @@ object ResourcePoolConf {
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
     inputFiles: Array[PartitionedFile],
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
@@ -474,9 +504,6 @@ abstract class MultiFileCloudPartitionReaderBase(
     keepReadsInOrder: Boolean = true,
     combineConf: CombineConf = CombineConf(-1, -1))
   extends FilePartitionReaderBase(conf, execMetrics) {
-
-  require(resourceConf.memoryCapacity > 0,
-    "The memory capacity in ResourcePoolConf must be set before use")
 
   protected type BufferInfo = HostMemoryBuffersWithMetaDataBase
   protected type RunnerResult = AsyncResult[BufferInfo]
@@ -492,7 +519,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   // this is used when the read order doesn't matter and in that case, the tasks queue
   // above is used to track any left being processed that need to be cleaned up if we exit early
   // like in the case of a limit call and we don't read all files
-  private var fcs: CompletionService[RunnerResult] = null
+  private var fcs: CompletionService[RunnerResult] = _
 
   // If I/O eager prefetch is enabled, submit async reading tasks eagerly instead of triggering
   // async reading tasks when the first batch is requested.
@@ -518,10 +545,12 @@ abstract class MultiFileCloudPartitionReaderBase(
       logDebug("Not keeping reads in order")
       synchronized {
         if (fcs == null) {
-          val threadPool =
-            MultiFileReaderThreadPool.getOrCreateThreadPool(resourceConf)
-                .asInstanceOf[ResourceBoundedThreadExecutor]
-          fcs = new BoundedCompletionService[HostMemoryBuffersWithMetaDataBase](threadPool)
+          fcs = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf) match {
+            case pool: ResourceBoundedThreadExecutor =>
+              new BoundedCompletionService[BufferInfo](pool)
+            case pool: ThreadPoolExecutor =>
+              new ExecutorCompletionService[RunnerResult](pool)
+          }
         }
       }
     } else {
@@ -559,7 +588,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       } else {
         // Add these in the order as we got them so that we can make sure
         // we process them in the same order as CPU would.
-        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(resourceConf)
+        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
         tasks.add(threadPool.submit(newTaskRunner(file)))
       }
     }
@@ -895,7 +924,7 @@ abstract class MultiFileCloudPartitionReaderBase(
         val futureRunner = fcs.submit(runner)
         tasks.add(futureRunner)
       } else {
-        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(resourceConf)
+        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
         tasks.add(threadPool.submit(runner))
       }
     }
@@ -1003,7 +1032,7 @@ class BatchContext(
  * @param maxReadBatchSizeRows  soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
  * @param maxGpuColumnSizeBytes maximum number of bytes for a GPU column
- * @param resourceConf          the resource pool configuration
+ * @param poolConf              the thread pool configuration
  * @param execMetrics           metrics
  */
 abstract class MultiFileCoalescingPartitionReaderBase(
@@ -1013,12 +1042,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
     with MultiFileReaderFunctions {
-
-  require(resourceConf.memoryCapacity > 0,
-    "The memory capacity in ResourcePoolConf must be set before use")
 
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
     clippedBlocks.iterator.buffered
@@ -1294,7 +1320,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[DataBlockBase]()
           val tc = TaskContext.get
-          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(resourceConf)
+          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
           filesAndBlocks.foreach { case (file, blocks) =>
             val fileBlockSize = blocks.map(_.getBlockSize).sum
             // use a single buffer and slice it up for different files if we need

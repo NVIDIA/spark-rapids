@@ -1093,10 +1093,21 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
 
+  // Memory-bounded multithreaded reading
+  val MULTITHREAD_READ_MEM_BOUNDED_ENABLED = conf("spark.rapids.sql.multiThreadedRead.memBound")
+      .doc("Enable memory-bounded multi-threaded reading. When enabled, the concurrency of " +
+        "multi-threaded reading will be dynamically controlled based on the available memory " +
+        s"budget per Spark executor as specified by ${MULTITHREAD_READ_MEM_LIMIT.key}.")
+      .startupOnly()
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val MULTITHREAD_READ_MEM_LIMIT = conf("spark.rapids.sql.multiThreadedRead.memoryLimit")
       .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
         "This can not be changed at runtime after the executor has started. And if 0, it " +
-        "will be set with 90% of executor's off-heap memory")
+        "will be set with 90% of executor's off-heap memory. This config only takes effect " +
+        s"when ${MULTITHREAD_READ_MEM_BOUNDED_ENABLED.key} is enabled.")
       // TODO: Memory capacity can be adjusted during the runtime
       .startupOnly()
       .internal()
@@ -1112,7 +1123,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .longConf
       .checkValue(v => v >= 0, "The timeout must be greater than zero")
-      .createWithDefault(5 * 1000L) // 5 seconds
+      .createWithDefault(30 * 1000L) // 30 seconds
 
   val MULTITHREAD_READ_STAGE_LEVEL_POOL = conf("spark.rapids.sql.multiThreadedRead.stageLevelPool")
       .doc("Enable test mode for the multi-threaded read. This will create different " +
@@ -3212,7 +3223,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val numFilesFilterParallel: Int = get(NUM_FILES_FILTER_PARALLEL)
 
-  lazy val multiThreadMemoryLimit: Long = get(MULTITHREAD_READ_MEM_LIMIT)
+  lazy val useMemoryBoundedMultiThreadRead: Boolean = get(MULTITHREAD_READ_MEM_BOUNDED_ENABLED)
+
+  lazy val multiThreadReadMemoryLimit: Long = get(MULTITHREAD_READ_MEM_LIMIT)
 
   lazy val multiThreadReadTaskTimeout: Long = get(MULTITHREAD_READ_TASK_TIMEOUT)
 

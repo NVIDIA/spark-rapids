@@ -68,7 +68,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    val resourcePoolConf = ResourcePoolConf.buildFromConf(fileScan.rapidsConf)
+    val poolConf = ThreadPoolConfBuilder(fileScan.rapidsConf)
     GpuParquetMultiFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,
@@ -77,7 +77,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       fileScan.readPartitionSchema,
       pushedFilters,
       fileScan.rapidsConf,
-      resourcePoolConf,
+      poolConf,
       fileScan.allMetrics,
       fileScan.queryUsesInputFile)
   }

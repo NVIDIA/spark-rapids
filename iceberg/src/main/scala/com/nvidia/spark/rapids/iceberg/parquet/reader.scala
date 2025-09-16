@@ -22,7 +22,7 @@ import java.util.Objects
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ResourcePoolConf}
+import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
@@ -113,9 +113,11 @@ sealed trait ThreadConf
 
 case object SingleFile extends ThreadConf
 
-case class MultiThread(poolConf: ResourcePoolConf, maxNumFilesProcessed: Int) extends ThreadConf
+case class MultiThread(
+    poolConfBuilder: ThreadPoolConfBuilder,
+    maxNumFilesProcessed: Int) extends ThreadConf
 
-case class MultiFile(poolConf: ResourcePoolConf) extends ThreadConf
+case class MultiFile(poolConfBuilder: ThreadPoolConfBuilder) extends ThreadConf
 
 
 case class GpuIcebergParquetReaderConf(

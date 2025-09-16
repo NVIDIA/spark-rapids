@@ -123,10 +123,10 @@ case class GpuAvroScan(
         dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics,
         options.asScala.toMap)
     } else {
-      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf)
+      val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
       GpuAvroMultiFilePartitionReaderFactory(sparkSession.sessionState.conf,
         rapidsConf, broadcastedConf, dataSchema, readDataSchema, readPartitionSchema,
-        parsedOptions, metrics, pushedFilters, resourcePoolConf, queryUsesInputFile)
+        parsedOptions, metrics, pushedFilters, poolConfBuilder, queryUsesInputFile)
     }
   }
 
@@ -204,7 +204,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     options: AvroOptions,
     metrics: Map[String, GpuMetric],
     filters: Array[Filter],
-    resourcePoolConf: ResourcePoolConf,
+    poolConfBuilder: ThreadPoolConfBuilder,
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
@@ -214,12 +214,6 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
   private val maxNumFileProcessed = rapidsConf.maxNumAvroFilesParallel
-
-  // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
-  private val poolMemCapacity = rapidsConf.multiThreadMemoryLimit match {
-    case v if v == 0 => None
-    case v => Some(v)
-  }
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -249,7 +243,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     } else {
       partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
-    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
+    val poolConf = poolConfBuilder.build()
     val reader = new GpuMultiFileCloudAvroPartitionReader(
       conf, files, poolConf, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
@@ -309,7 +303,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
         }
       }
     }
-    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
+    val poolConf = poolConfBuilder.build()
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
       poolConf, debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
@@ -639,7 +633,7 @@ class GpuAvroPartitionReader(
  *
  * @param conf the Hadoop configuration
  * @param files the partitioned files to read
- * @param numThreads the size of the threadpool
+ * @param poolConf thread pool configurations
  * @param maxNumFileProcessed threshold to control the maximum file number to be
  *                            submitted to threadpool
  * @param filters filters passed into the filterHandler
@@ -657,7 +651,7 @@ class GpuAvroPartitionReader(
 class GpuMultiFileCloudAvroPartitionReader(
     override val conf: Configuration,
     files: Array[PartitionedFile],
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
@@ -671,7 +665,7 @@ class GpuMultiFileCloudAvroPartitionReader(
     maxReadBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long)
   extends MultiFileCloudPartitionReaderBase(conf,
-    files, resourceConf, maxNumFileProcessed, filters,
+    files, poolConf, maxNumFileProcessed, filters,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
     ignoreCorruptFiles) with MultiFileReaderFunctions with GpuAvroReaderBase {
 
@@ -917,14 +911,14 @@ class GpuMultiFileAvroPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     override val debugDumpPrefix: Option[String],
     override val debugDumpAlways: Boolean,
     execMetrics: Map[String, GpuMetric],
     mapPathHeader: Map[Path, Header])
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-    resourceConf, execMetrics) with GpuAvroReaderBase {
+    poolConf, execMetrics) with GpuAvroReaderBase {
 
   override def checkIfNeedToSplitDataBlock(
       currentBlockInfo: SingleDataBlockInfo,

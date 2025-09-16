@@ -104,10 +104,10 @@ case class GpuOrcScan(
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
         options.asScala.toMap)
     } else {
-      val resourcePoolConf = ResourcePoolConf.buildFromConf(rapidsConf)
+      val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
       GpuOrcMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
-        resourcePoolConf,
+        poolConfBuilder,
         metrics, queryUsesInputFile)
     }
   }
@@ -567,7 +567,7 @@ object GpuOrcScan {
  * @param partitionSchema     schema of partitions.
  * @param filters             filters on non-partition columns
  * @param rapidsConf          the Rapids configuration
- * @param resourcePoolConf    the resource-bounded ThreadPool configuration
+ * @param poolConfBuilder     the builder of ThreadPoolConf carries the driver-side settings
  * @param metrics             the metrics
  * @param queryUsesInputFile  this is a parameter to easily allow turning it
  *                            off in GpuTransitionOverrides if InputFileName,
@@ -581,7 +581,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    resourcePoolConf: ResourcePoolConf,
+    poolConfBuilder: ThreadPoolConfBuilder,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
@@ -596,11 +596,6 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   private val combineThresholdSize = rapidsConf.getMultithreadedCombineThreshold
   private val combineWaitTime = rapidsConf.getMultithreadedCombineWaitTime
   private val keepReadsInOrder = rapidsConf.getMultithreadedReaderKeepOrder
-  // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
-  private val poolMemCapacity = rapidsConf.multiThreadMemoryLimit match {
-    case v if v == 0 => None
-    case v => Some(v)
-  }
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -620,7 +615,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   override def buildBaseColumnarReaderForCloud(files: Array[PartitionedFile], conf: Configuration):
       PartitionReader[ColumnarBatch] = {
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
-    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
+    val poolConf = poolConfBuilder.build()
     val reader = new MultiFileCloudOrcPartitionReader(
       conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
@@ -670,7 +665,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     }
 
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
-    val poolConf = resourcePoolConf.setMemoryCapacity(poolMemCapacity)
+    val poolConf = poolConfBuilder.build()
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,
@@ -1999,7 +1994,7 @@ private object GpuOrcFileFilterHandler {
  * @param useChunkedReader whether to read Parquet by chunks or read all at once
  * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
  *                                             usage that the reader will use
- * @param numThreads the size of the threadpool
+ * @param poolConf thread pool configurations
  * @param maxNumFileProcessed threshold to control the maximum file number to be
  *                            submitted to threadpool
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated ORC data or null
@@ -2022,7 +2017,7 @@ class MultiFileCloudOrcPartitionReader(
     maxGpuColumnSizeBytes: Long,
     useChunkedReader: Boolean,
     maxChunkedReaderMemoryUsageSizeBytes: Long,
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     maxNumFileProcessed: Int,
     override val debugDumpPrefix: Option[String],
     override val debugDumpAlways: Boolean,
@@ -2034,7 +2029,7 @@ class MultiFileCloudOrcPartitionReader(
     queryUsesInputFile: Boolean,
     keepReadsInOrder: Boolean,
     combineConf: CombineConf)
-  extends MultiFileCloudPartitionReaderBase(conf, files, resourceConf, maxNumFileProcessed, filters,
+  extends MultiFileCloudPartitionReaderBase(conf, files, poolConf, maxNumFileProcessed, filters,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
     keepReadsInOrder = keepReadsInOrder, combineConf = combineConf)
   with MultiFileReaderFunctions with OrcPartitionReaderBase {
@@ -2593,7 +2588,7 @@ private case class OrcSingleStripeMeta(
  *                                             usage that the reader will use
  * @param execMetrics           metrics
  * @param partitionSchema       schema of partitions
- * @param numThreads            the size of the threadpool
+ * @param poolConf              the thread pool configuration
  * @param isCaseSensitive       whether the name check should be case sensitive or not
  */
 class MultiFileOrcPartitionReader(
@@ -2611,11 +2606,11 @@ class MultiFileOrcPartitionReader(
     maxChunkedReaderMemoryUsageSizeBytes: Long,
     execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
-    resourceConf: ResourcePoolConf,
+    poolConf: ThreadPoolConf,
     isCaseSensitive: Boolean)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedStripes,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-    resourceConf, execMetrics)
+    poolConf, execMetrics)
     with OrcCommonFunctions {
 
   // implicit to convert SchemaBase to Orc TypeDescription
