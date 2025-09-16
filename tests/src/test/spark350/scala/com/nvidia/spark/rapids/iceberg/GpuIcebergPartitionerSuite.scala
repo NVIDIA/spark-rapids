@@ -74,28 +74,30 @@ class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     withResource(partitioned) { _ =>
       for ((part, partIdx) <- partitioned.zipWithIndex) {
-        assert(part.batch.numRows() > 0, s"partition $partIdx is empty")
-        val numCols = part.batch.numCols()
-        val hostCols =  closeOnExcept(new Array[ColumnVector](numCols)) { hostCols =>
-          for (i <- 0 until numCols) {
-            hostCols(i) = part.batch.column(i).asInstanceOf[GpuColumnVector].copyToHost()
+        withResource(part.batch.getColumnarBatch()) { batch =>
+          assert(batch.numRows() > 0, s"partition $partIdx is empty")
+          val numCols = batch.numCols()
+          val hostCols = closeOnExcept(new Array[ColumnVector](numCols)) { hostCols =>
+            for (i <- 0 until numCols) {
+              hostCols(i) = batch.column(i).asInstanceOf[GpuColumnVector].copyToHost()
+            }
+            hostCols
           }
-          hostCols
-        }
 
-        withResource(new ColumnarBatch(hostCols, part.batch.numRows())) { hostBatch =>
-          for (rowIdx <- 0 until hostBatch.numRows()) {
-            val internalRow = hostBatch.getRow(rowIdx)
-            val row = Row.fromSeq(internalRow.toSeq(sparkType))
-            icebergRow.wrap(row)
+          withResource(new ColumnarBatch(hostCols, batch.numRows())) { hostBatch =>
+            for (rowIdx <- 0 until hostBatch.numRows()) {
+              val internalRow = hostBatch.getRow(rowIdx)
+              val row = Row.fromSeq(internalRow.toSeq(sparkType))
+              icebergRow.wrap(row)
 
-            icebergPartitionKey.partition(icebergRow)
-            val expectedPartitionKey = icebergPartitionKey
-            val actualPartitionKey = part.partition
+              icebergPartitionKey.partition(icebergRow)
+              val expectedPartitionKey = icebergPartitionKey
+              val actualPartitionKey = part.partition
 
-            assertEqual(expectedPartitionKey, actualPartitionKey,
-              icebergPartitionSpec.partitionType(),
-              s"in partition $partIdx for #$rowIdx row $row")
+              assertEqual(expectedPartitionKey, actualPartitionKey,
+                icebergPartitionSpec.partitionType(),
+                s"in partition $partIdx for #$rowIdx row $row")
+            }
           }
         }
       }
