@@ -197,7 +197,8 @@ case class GpuDelta33xParquetFileFormat(
         isRowDeletedColumn,
         rowIndexColumn,
         tablePath,
-        serializableHadoopConf).asInstanceOf[Iterator[InternalRow]]
+        serializableHadoopConf,
+        metrics).asInstanceOf[Iterator[InternalRow]]
     }
   }
 
@@ -274,7 +275,8 @@ case class GpuDelta33xParquetFileFormat(
     isRowDeletedColumnOpt: Option[ColumnMetadata],
     rowIndexColumnOpt: Option[ColumnMetadata],
     tablePath: Option[String],
-    serializableConf: SerializableConfiguration): Iterator[Any] = {
+    serializableConf: SerializableConfiguration,
+    metrics: Map[String, GpuMetric]): Iterator[Any] = {
 
     val rowIndexFilterOpt =
       getRowIndexFilter(partitionedFile, isRowDeletedColumnOpt, serializableConf, tablePath)
@@ -286,7 +288,7 @@ case class GpuDelta33xParquetFileFormat(
         val size = cb.numRows()
         val newBatch = replaceBatch(serializableConf.value, rowIndex, cb, size,
           rowIndexColumnOpt, isRowDeletedColumnOpt,
-          rowIndexFilterOpt, partitionedFile)
+          rowIndexFilterOpt, partitionedFile, metrics)
         rowIndex += size
         newBatch
 
@@ -588,15 +590,21 @@ case class GpuDelta33xParquetFileFormat(
     rowIndexColumnOpt: Option[ColumnMetadata],
     isRowDeletedColumnOpt: Option[ColumnMetadata],
     rowIndexFilterOpt: Option[RowIndexFilter],
-    file: PartitionedFile): ColumnarBatch = {
+    file: PartitionedFile,
+    metrics: Map[String, GpuMetric]): ColumnarBatch = {
 
+    var startTime = System.nanoTime()
     val rowIndexCol = getRowIndexPosSimple(size)
+    metrics("rowIndexColumnGenTime") += System.nanoTime() - startTime
+
+    startTime = System.nanoTime()
     val isRowDeletedVector =
       withResource(new RapidsHostColumnBuilder(new BasicType(false, DType.INT8), size)) { builder =>
         val isRowDeletedVector = SkipRowRapidsHostWriteableVector(builder, size, ByteType)
         rowIndexFilterOpt.get.materializeIntoVector(rowIndex, rowIndex + size, isRowDeletedVector)
         builder.buildAndPutOnDevice()
       }
+    metrics("isRowDeletedColumnGenTime") += System.nanoTime() - startTime
 
     val indexVectorTuples = new ArrayBuffer[(Int, org.apache.spark.sql.vectorized.ColumnVector)]
 
