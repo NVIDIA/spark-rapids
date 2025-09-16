@@ -73,7 +73,9 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     val spillableInput = SpillableColumnarBatch(input, ACTIVE_ON_DECK_PRIORITY)
 
     val (partitionKeys, partitions) = withRetryNoSplit(spillableInput) { scb =>
-      val parts = partitionExprs.safeMap(_.columnarEval(scb.getColumnarBatch()))
+      val parts = withResource(scb.getColumnarBatch()) { inputBatch =>
+        partitionExprs.safeMap(_.columnarEval(inputBatch))
+      }
       val keysTable = withResource(parts) { _ =>
         val arr = new Array[CudfColumnVector](partitionExprs.size)
         for (i <- partitionExprs.indices) {
@@ -121,7 +123,9 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
         (partitionKeys, splitIds)
       }
 
-      val inputTable = GpuColumnVector.from(scb.getColumnarBatch())
+      val inputTable = withResource(scb.getColumnarBatch()) { inputBatch =>
+        GpuColumnVector.from(inputBatch)
+      }
       val sortedDataTable = withResource(inputTable) { _ =>
         inputTable.gather(sortedKeyTableWithRowIdx.getColumn(keyColNum))
       }
