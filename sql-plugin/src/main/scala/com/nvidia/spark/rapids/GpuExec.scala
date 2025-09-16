@@ -274,11 +274,16 @@ trait GpuExec extends SparkPlan with Logging {
                 }.toSet
               }
             currentMetric ++ childMetrics
-          case _ =>
-            // For non-GPU operators, still recurse into their children
-            plan.children.flatMap { child =>
-              collectChildOpTimeMetricsRecursive(child, newVisited)
-            }.toSet
+          case other =>
+            if (other.isInstanceOf[Exchange]) {
+              // Do not recurse into Exchange children
+              Set.empty
+            } else {
+              // For non-GPU operators, still recurse into their children
+              plan.children.flatMap { child =>
+                collectChildOpTimeMetricsRecursive(child, newVisited)
+              }.toSet
+            }
         }
       }
     }
