@@ -44,7 +44,6 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
-
 abstract class GpuShuffleMetaBase(
     shuffle: ShuffleExchangeExec,
     conf: RapidsConf,
@@ -179,10 +178,6 @@ abstract class GpuShuffleExchangeExecBase(
   private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
     .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
     .get(child.conf)
-  private lazy val coalesceBeforeShuffleTargetRatio = RapidsConf
-    .SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO
-    .get(child.conf)
-  private lazy val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(child.conf)
   override lazy val disableOpTimeTrackingRdd =
     RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(child.conf)
 
@@ -242,7 +237,6 @@ abstract class GpuShuffleExchangeExecBase(
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
-
   /**
    * A `ShuffleDependency` that will partition columnar batches of its child based on
    * the partitioning scheme defined in `newPartitioning`. Those partitions of
@@ -256,8 +250,6 @@ abstract class GpuShuffleExchangeExecBase(
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
-      coalesceBeforeShuffleTargetRatio,
-      targetBatchSize,
       gpuOutputPartitioning,
       sparkTypes,
       serializer,
@@ -319,9 +311,6 @@ object GpuShuffleExchangeExecBase {
   val METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM = "rapidsShuffleStalledByInputStream"
   val METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM =
     "RAPIDS shuffle time stalled by input stream operations"
-  val METRIC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME = "rapidsShuffleCoalesceBeforeShuffleTime"
-  val METRIC_DESC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME =
-    "RAPIDS shuffle coalesce before shuffle time"
 
   def createAdditionalExchangeMetrics(gpu: GpuExec): Map[String, GpuMetric] = Map(
     // dataSize and dataReadSize are uncompressed, one is on write and the other on read
@@ -348,16 +337,12 @@ object GpuShuffleExchangeExecBase {
     METRIC_SHUFFLE_SER_COPY_BUFFER_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_COPY_BUFFER_TIME),
     METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM),
-    METRIC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME)
+        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM)
   )
 
   def prepareBatchShuffleDependency(
       rdd: RDD[ColumnarBatch],
       outputAttributes: Seq[Attribute],
-      coalesceBeforeShuffleTargetRatio: Double,
-      targetBatchSize: Long,
       newPartitioning: GpuPartitioning,
       sparkTypes: Array[DataType],
       serializer: Serializer,
@@ -411,28 +396,6 @@ object GpuShuffleExchangeExecBase {
     }
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       newRdd.mapPartitions { iter =>
-        // Conditionally create a GpuCoalesceIterator if ratio > 0
-        val finalIter = if (coalesceBeforeShuffleTargetRatio > 0.0) {
-          val coalesceTargetSize = (targetBatchSize * coalesceBeforeShuffleTargetRatio).toLong
-          val concatTime: GpuMetric =
-            additionalMetrics(METRIC_SHUFFLE_COALESCE_BEFORE_SHUFFLE_TIME)
-          new GpuCoalesceIterator(
-            iter,
-            sparkTypes,
-            TargetSize(coalesceTargetSize),
-            numInputRows = NoopMetric,
-            numInputBatches = NoopMetric,
-            numOutputRows = NoopMetric,
-            numOutputBatches = NoopMetric,
-            collectTime = NoopMetric,
-            concatTime = concatTime,
-            opTime = NoopMetric,
-            opName = "coalesce before shuffle")
-        } else {
-          // Skip coalescing when ratio is 0
-          iter
-        }
-        
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
@@ -444,11 +407,11 @@ object GpuShuffleExchangeExecBase {
               partitioned = null
               at = 0
             }
-            if (finalIter.hasNext) {
-              var batch = finalIter.next()
-              while (batch.numRows == 0 && finalIter.hasNext) {
+            if (iter.hasNext) {
+              var batch = iter.next()
+              while (batch.numRows == 0 && iter.hasNext) {
                 batch.close()
-                batch = finalIter.next()
+                batch = iter.next()
               }
               // Get a non-empty batch or the last batch. So still need to
               // check if it is empty for the later case.
