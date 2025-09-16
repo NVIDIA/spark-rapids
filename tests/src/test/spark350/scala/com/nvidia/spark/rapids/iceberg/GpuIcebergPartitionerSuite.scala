@@ -72,9 +72,7 @@ class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     val partitioner = new GpuIcebergPartitioner(icebergPartitionSpec, sparkType)
 
-    val partitioned = withResource(createColumnarBatch(sparkType, 1000, seed = seed)) { batch =>
-      partitioner.partition(batch)
-    }
+    val partitioned = partitioner.partition(createColumnarBatch(sparkType, 1000, seed = seed))
 
     val icebergPartitionKey = new PartitionKey(icebergPartitionSpec, icebergSchema)
     val icebergRow = new SparkStructLike(icebergSchema.asStruct())

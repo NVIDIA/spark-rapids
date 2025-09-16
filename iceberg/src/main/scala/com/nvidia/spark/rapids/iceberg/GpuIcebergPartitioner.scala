@@ -60,8 +60,10 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     .toArray
 
   /**
-   * Partition the `input` columnar batch using iceberg's partition spec. It's the caller's
-   * responsibility to close the input columnar batch.
+   * Partition the `input` columnar batch using iceberg's partition spec.
+   * <br/>
+   * This method takes the ownership of the input columnar batch, and it should not be used after
+   * this call.
    */
   def partition(input: ColumnarBatch): Seq[ColumnarBatchWithPartition] = {
     if (input.numRows() == 0) {
