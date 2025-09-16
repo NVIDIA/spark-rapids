@@ -79,80 +79,88 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
   private val holdingGroups: AtomicInteger = new AtomicInteger(0)
 
   override def acquireResource[T](runner: AsyncRunner[T], timeoutMs: Long): AcquireStatus = {
-    // step 1: determine the required amount of resource
-    val requiredAmount: Long = runner match {
+    // step 1: extract the resource requirements and runner info
+    val (selfMemReq, groupMemReq, isGroupRunner) = runner match {
       // For grouped runners, if the group is already holding the resource, no additional
       // allocation is needed.
       case r: GroupedAsyncRunner[T] if r.holdSharedResource =>
-        0L
+        (0L, Some(0L), true)
       // For grouped runners that are not yet holding the resource, allocate the full group size.
       case _: GroupedAsyncRunner[T] =>
         val resource = extractResource(runner)
-        resource.groupedHostMemoryBytes.getOrElse(
+        val groupMem = resource.groupedHostMemoryBytes.getOrElse(
           throw new InvalidResourceRequest(
             s"GroupedAsyncRunner must have groupedHostMemoryBytes defined, but got $resource"))
+        (resource.hostMemoryBytes, Some(groupMem), true)
       // For non-grouped runners, allocate the individual task size.
       case _ =>
-        extractResource(runner).hostMemoryBytes
+        (extractResource(runner).hostMemoryBytes, None, false)
     }
 
     // step 2: try to acquire the resource with blocking and timeout
-    requiredAmount match {
-      case 0 =>
-        holdingBuffers.incrementAndGet()
-        runner.onAcquire()
-        AcquireSuccessful(elapsedTime = 0L)
-      case required if required > maxHostMemoryBytes =>
-        // Call the failure callback to notify the caller about the failure
-        val invalidReq = new InvalidResourceRequest("Task requires more host memory(" +
-            s"${bytesToString(required)}) than pool size(${bytesToString(maxHostMemoryBytes)})")
-        AcquireExcepted(invalidReq)
-      case required: Long =>
-        var isDone = false
-        var isTimeout = false
-        val timeoutNs = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
-        var waitTimeNs = timeoutNs
-        // Enter into the critical section which is guarded by the lock from concurrent access
-        lock.lockInterruptibly()
-        try {
-          while (!isDone && !isTimeout) {
-            runner match {
-              case rr: GroupedAsyncRunner[T] if rr.holdSharedResource => isDone = true
-              case _ =>
-            }
-            if (isDone) {
-            } else if (remaining.get() >= required) {
-              remaining.getAndAdd(-required)
-              isDone = true
-            } else if (waitTimeNs > 0) {
-              waitTimeNs = condition.awaitNanos(waitTimeNs)
-            }  else {
-              isTimeout = true
-              logWarning(s"Failed to acquire ${bytesToString(required)}, " +
-                  s"remaining=${bytesToString(remaining.get())}, " +
-                  s"pendingTasks=${holdingBuffers.get()}, pendingGroups=${holdingGroups.get()}")
-            }
-          }
-          if (isDone) {
-            holdingBuffers.incrementAndGet()
-            runner match {
-              case grouped: GroupedAsyncRunner[_] if !grouped.holdSharedResource =>
-                val numGroups = holdingGroups.incrementAndGet()
-                logDebug(s"Acquire a SharedGroup(${bytesToString(required)}), " +
-                    s"remaining=${bytesToString(remaining.get())}, pendingGroups=$numGroups")
-              case _ =>
-              // No action needed for non-grouped tasks
-            }
-            runner.onAcquire()
-            AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
+    // 2.1 If no resource needed, acquire immediately
+    if (selfMemReq == 0L && groupMemReq.getOrElse(0L) == 0L) {
+      holdingBuffers.incrementAndGet()
+      runner.onAcquire()
+      return AcquireSuccessful(elapsedTime = 0L)
+    }
+    // 2.2 If the request runner itself exceeds the maximum pool size, fail immediately by
+    // returning a failure signal
+    if (selfMemReq > maxHostMemoryBytes) {
+      val invalidReq = new InvalidResourceRequest("Task requires more host memory(" +
+          s"${bytesToString(selfMemReq)}) than pool size(${bytesToString(maxHostMemoryBytes)})")
+      return AcquireExcepted(invalidReq)
+    }
+    // 2.3 The main path for acquiring resource with blocking and timeout
+    var isDone = false
+    var isTimeout = false
+    val timeoutNs = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+    var waitTimeNs = timeoutNs
+    // Enter into the critical section which is guarded by the lock from concurrent access
+    lock.lockInterruptibly()
+    try {
+      while (!isDone && !isTimeout) {
+        // Check again for GroupedAsyncRunner after entering the critical section
+        if (isGroupRunner && runner.asInstanceOf[GroupedAsyncRunner[T]].holdSharedResource) {
+          isDone = true
+        } else {
+          // If enough resource is available, acquire it and exit the loop.
+          // IMPORTANT: For grouped runners, we will always allocate the full group size once the
+          // remaining resource is enough for the current runner itself. Even if there is not
+          // enough remaining resource for the entire group, in this case the forceful allocation
+          // will cause the remaining resource to go negative. This is to avoid deadlock when
+          // there exists huge group which exceeds the pool size or occupies most of the pool,
+          // although this may temporarily exceed the pool limit.
+          if (remaining.get() >= selfMemReq) {
+            remaining.getAndAdd(-groupMemReq.getOrElse(selfMemReq))
+            isDone = true
+          } else if (waitTimeNs > 0) {
+            waitTimeNs = condition.awaitNanos(waitTimeNs)
           } else {
-            AcquireFailed
+            isTimeout = true
+            logWarning(s"Failed to acquire ${bytesToString(selfMemReq)}, " +
+                s"remaining=${bytesToString(remaining.get())}, " +
+                s"pendingTasks=${holdingBuffers.get()}, pendingGroups=${holdingGroups.get()}")
           }
-        } catch {
-          case ex: Throwable => AcquireExcepted(ex)
-        } finally {
-          lock.unlock()
         }
+      }
+      if (isDone) {
+        holdingBuffers.incrementAndGet()
+        // Update holdingGroups only for the first runner in a group that acquired the resource
+        if (isGroupRunner && !runner.asInstanceOf[GroupedAsyncRunner[T]].holdSharedResource) {
+          val numGroups = holdingGroups.incrementAndGet()
+          logDebug(s"Acquire a SharedGroup(${bytesToString(groupMemReq.get)}), " +
+              s"remaining=${bytesToString(remaining.get())}, pendingGroups=$numGroups")
+        }
+        runner.onAcquire()
+        AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
+      } else {
+        AcquireFailed
+      }
+    } catch {
+      case ex: Throwable => AcquireExcepted(ex)
+    } finally {
+      lock.unlock()
     }
   }
 
@@ -179,7 +187,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
   }
 
   override def toString: String = {
-    s"HostMemoryPool(maxHostMemoryBytes=${maxHostMemoryBytes >> 20}MB)"
+    s"HostMemoryPool(maxHostMemoryBytes=${bytesToString(maxHostMemoryBytes)})"
   }
 
   private def extractResource(task: AsyncRunner[_]): HostResource = {
