@@ -4192,7 +4192,7 @@ object GpuOverrides extends Logging {
       desc = "StaticInvoke",
       StaticInvokeCheck,
       (a, conf, p, r) => new StaticInvokeMeta(a, conf, p, r)
-    ),
+    ).note("The supported types are not deterministic since it's a dynamic expression"),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
