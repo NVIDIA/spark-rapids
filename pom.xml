@@ -85,7 +85,6 @@
         <profile>
             <id>release320</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>320</value>
@@ -658,6 +657,7 @@
         <profile>
             <id>release353</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>353</value>
