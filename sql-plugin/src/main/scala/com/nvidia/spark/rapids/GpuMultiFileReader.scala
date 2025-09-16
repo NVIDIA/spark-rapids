@@ -419,7 +419,7 @@ class ThreadPoolConfBuilder(
     private val memoryCapacityFromDriver: Long,
     private val timeoutMs: Long,
     private val stageLevelPool: Boolean
-) extends Logging {
+) extends Logging with Serializable {
 
   // Finalize the ThreadPoolConf, which mainly determines the memory capacity of the
   // ResourceBoundedThreadExecutor if isMemoryBounded is true.

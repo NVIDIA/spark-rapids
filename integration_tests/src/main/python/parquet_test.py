@@ -232,6 +232,7 @@ def test_parquet_read_multithread_flow_ctrl_quick_crash(spark_tmp_path, keep_ord
     tiny_pool_conf = {
         'spark.rapids.sql.multiThreadedRead.stageLevelPool': 'true',
         'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.multiThreadedRead.memBound': 'true',
         'spark.rapids.sql.multiThreadedRead.numThreads': 64,
         'spark.rapids.sql.multiThreadedRead.memoryLimit': 1 << 10,  # 1KB
         'spark.rapids.sql.multiThreadedRead.taskTimeout': timeout,

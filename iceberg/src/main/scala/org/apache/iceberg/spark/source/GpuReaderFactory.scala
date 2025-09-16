@@ -40,11 +40,6 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   // not honored by Iceberg.
   private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled &&
     !queryUsesInputFile
-  // Fetch the latest updated value of multiThreadMemoryLimit from the driver side.
-  private val poolMemCapacity = rapidsConf.multiThreadReadMemoryLimit match {
-    case v if v == 0 => None
-    case v => Some(v)
-  }
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] =
     throw new UnsupportedOperationException("GpuReaderFactory does not support createReader()")

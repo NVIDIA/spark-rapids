@@ -1097,7 +1097,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val MULTITHREAD_READ_MEM_BOUNDED_ENABLED = conf("spark.rapids.sql.multiThreadedRead.memBound")
       .doc("Enable memory-bounded multi-threaded reading. When enabled, the concurrency of " +
         "multi-threaded reading will be dynamically controlled based on the available memory " +
-        s"budget per Spark executor as specified by ${MULTITHREAD_READ_MEM_LIMIT.key}.")
+        s"budget per Spark executor.")
       .startupOnly()
       .internal()
       .booleanConf
