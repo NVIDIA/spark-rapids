@@ -155,7 +155,8 @@ case class GpuOptimizeWriteExchangeExec(
     } else {
       try {
         val partitionSpecs = Some(rebalancePartitions(stats))
-        val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
+        val shuffleRDD =
+          new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
         shuffleRDD
       } catch {
         case e: Throwable =>
