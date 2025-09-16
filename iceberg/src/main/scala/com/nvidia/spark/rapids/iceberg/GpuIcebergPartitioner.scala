@@ -104,39 +104,43 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
         }
       }
 
+      withResource(sortedKeyTableWithRowIdx) { _ =>
+        val uniqueKeysTable = sortedKeyTableWithRowIdx.groupBy(keyColIndices: _*)
+          .aggregate()
 
-      val sortedUniqueKeysTable = sortedKeyTableWithRowIdx.groupBy(keyColIndices: _*)
-        .aggregate()
-        .orderBy(keySortOrders: _*)
-
-      val (sortedPartitionKeys, splitIds) = withResource(sortedUniqueKeysTable) { _ =>
-        val partitionKeys = toPartitionKeys(spec.partitionType(),
-          partitionSparkType,
-          sortedUniqueKeysTable)
-
-        val splitIdsCv = sortedKeyTableWithRowIdx.upperBound(
-          sortedUniqueKeysTable,
-          keySortOrders: _*)
-
-        val splitIds = withResource(splitIdsCv) { _ =>
-          GpuColumnVector.toIntArray(splitIdsCv)
+        val sortedUniqueKeysTable = withResource(uniqueKeysTable) { _ =>
+          uniqueKeysTable.orderBy(keySortOrders: _*)
         }
 
-        (partitionKeys, splitIds)
-      }
+        val (sortedPartitionKeys, splitIds) = withResource(sortedUniqueKeysTable) { _ =>
+          val partitionKeys = toPartitionKeys(spec.partitionType(),
+            partitionSparkType,
+            sortedUniqueKeysTable)
 
-      val inputTable = withResource(scb.getColumnarBatch()) { inputBatch =>
-        GpuColumnVector.from(inputBatch)
-      }
-      val sortedDataTable = withResource(inputTable) { _ =>
-        inputTable.gather(sortedKeyTableWithRowIdx.getColumn(keyColNum))
-      }
+          val splitIdsCv = sortedKeyTableWithRowIdx.upperBound(
+            sortedUniqueKeysTable,
+            keySortOrders: _*)
 
-      val partitions = withResource(sortedDataTable) { _ =>
-        sortedDataTable.contiguousSplit(splitIds: _*)
-      }
+          val splitIds = withResource(splitIdsCv) { _ =>
+            GpuColumnVector.toIntArray(splitIdsCv)
+          }
 
-      (sortedPartitionKeys, partitions)
+          (partitionKeys, splitIds)
+        }
+
+        val inputTable = withResource(scb.getColumnarBatch()) { inputBatch =>
+          GpuColumnVector.from(inputBatch)
+        }
+        val sortedDataTable = withResource(inputTable) { _ =>
+          inputTable.gather(sortedKeyTableWithRowIdx.getColumn(keyColNum))
+        }
+
+        val partitions = withResource(sortedDataTable) { _ =>
+          sortedDataTable.contiguousSplit(splitIds: _*)
+        }
+
+        (sortedPartitionKeys, partitions)
+      }
     }
 
     withResource(partitions) { _ =>
