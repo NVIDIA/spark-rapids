@@ -25,10 +25,11 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.iceberg
 
+import com.nvidia.spark.rapids.{GpuColumnVector, RapidsConf}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FuzzerUtils.createColumnarBatch
-import com.nvidia.spark.rapids.GpuColumnVector
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitionerSuite.assertEqual
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.iceberg.{PartitionKey, PartitionSpec, Schema, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
 import org.apache.iceberg.types.Types
@@ -37,6 +38,7 @@ import org.scalatest.Assertions.assertResult
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -44,8 +46,13 @@ class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
   private var seed = 0L
 
   override def beforeAll: Unit = {
+    SpillFramework.initialize(new RapidsConf(new SparkConf))
     seed = System.currentTimeMillis()
     println(s"Random seed set to $seed")
+  }
+
+  override def afterAll: Unit = {
+    SpillFramework.shutdown()
   }
 
   test("bucket") {
