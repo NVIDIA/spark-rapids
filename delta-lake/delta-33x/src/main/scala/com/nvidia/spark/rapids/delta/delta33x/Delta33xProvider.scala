@@ -49,10 +49,6 @@ object Delta33xProvider extends DeltaIOProvider {
     ).map(r => (r.getClassFor.asSubclass(classOf[CreatableRelationProvider]), r)).toMap
   }
 
-  override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2] || classOf[GpuSupportsWrite].isAssignableFrom(write)
-  }
-
   override def tagForGpu(
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): Unit = {
