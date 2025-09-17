@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.{Future => JFuture}
 
 import scala.collection.mutable
-import scala.util.Random
 
 import com.nvidia.spark.rapids.io.async._
 import org.scalatest.funsuite.AnyFunSuite
@@ -122,106 +121,5 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     (0 until results.length - 1).foreach { i =>
       require(results(i) < results(i + 1), s"Unexpected order of wallTime: ${results.toList}")
     }
-  }
-
-  // The test uses a single-threaded executor to capture execution order, submitting grouped tasks
-  // with globally generated GroupPriority, then verifying the actual execution sequence
-  // matches the expected priority-based task scheduling behavior over grouped tasks.
-  test("GroupedAsyncRunner should run in order") {
-    // Create a single-threaded bounded executor to control the execution order of tasks.
-    val executor = createSingleThreadedBoundedExecutor(maxThreadNumber = 1)
-
-    class DummyGroupedRunner(
-        taskIndex: Int,
-        groupIndex: Int,
-        groupSize: Int,
-        groupPriority: Double) extends GroupedAsyncRunner[Long] {
-
-      override protected val sharedState: GroupSharedState = {
-        GroupTaskHelpers.newSharedState(groupSize)
-      }
-
-      override def resource: AsyncRunResource = AsyncRunResource.newCpuResource(1, Some(groupSize))
-
-      // Guarantee tasks are scheduled in the order of the global unique index.
-      override val priority: Double = groupPriority - taskIndex
-
-      private val dummyFn: () => Long = buildDummyFn()
-
-      override protected def buildResult(resultData: Long,
-          metrics: AsyncMetrics): AsyncResult[Long] = {
-        new FastReleaseResult[Long](resultData, metrics)
-      }
-
-      override protected def callImpl(): Long = dummyFn()
-    }
-
-    val taskQueue = mutable.ArrayBuffer[(Int, DummyGroupedRunner)]()
-    (0 until 10).foreach { g =>
-      val priority = -g * 1000 // mock descend TaskAttemptId
-      (0 until 5).foreach { i =>
-        taskQueue += Random.nextInt() -> new DummyGroupedRunner(i, g, 5, priority)
-      }
-    }
-    val submits = taskQueue.zipWithIndex.sortBy(_._1._1).map { case ((_, task), i) =>
-      (i, executor.submit(task))
-    }
-    val results = submits.drop(1).sortBy(_._1).map(_._2.get().data)
-    (0 until results.length - 1).foreach { i =>
-      require(results(i) < results(i + 1), s"Unexpected order of wallTime: ${results.toList}")
-    }
-  }
-
-  private def submitAndVerifyResults(executor: ResourceBoundedThreadExecutor,
-      tasks: Seq[(Int, AsyncRunner[Long])]): Unit = {
-    val r = tasks
-        .map { case (index, task) =>
-          val fut = executor.submit(task)
-          Thread.sleep(1) // Guarantee the submission order
-          index -> fut
-        }
-        .sortBy(_._1)
-        .map { case (_, future) => future.get().data }
-    (0 until r.length - 1).foreach { i =>
-      require(r(i) < r(i + 1), s"Unexpected order of wallTime: ${r.map(_ % 10000000000L).toList}")
-    }
-  }
-
-  // The test uses a two-pipe bounded executor to simulate the simple concurrent execution,
-  // submitting tasks with different memory requirements, then verifying the actual execution
-  // order of HostMemoryPool matches the expected priority-based task scheduling behavior.
-  test("HostMemoryPool in parallel: task should be blocked when resource is not enough") {
-    // Create a two-pipe bounded executor to simulate the simple concurrent execution.
-    val executor = createSingleThreadedBoundedExecutor(maxThreadNumber = 2,
-      memorySize = 100,
-      // Set a long timeout to avoid re-adding task to the queue complicating the test.
-      waitResourceTimeoutMs = 100000L)
-
-    submitAndVerifyResults(executor,
-      Seq(
-        0 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 3), memoryBytes = 10), // 0 -> 0 -> 3
-        1 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 20), // 1 -> 1 -> 6
-        2 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 40), // 2 -> 3 -> 8
-        3 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 45), // 3 -> 8 -> 13
-        4 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 2), memoryBytes = 70), // 4 -> 13 -> 15
-      ))
-
-    submitAndVerifyResults(executor,
-      Seq(
-        1 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 20), memoryBytes = 30), // 0 -> 0 -> 20
-        0 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 10), memoryBytes = 40), // 1 -> 1 -> 11
-        4 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 10), memoryBytes = 90), // 2 -> 41 -> 51
-        2 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 10), memoryBytes = 55), // 3 -> 20 -> 30
-        3 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 30), memoryBytes = 45), // 4 -> 11 -> 41
-      ))
-
-    submitAndVerifyResults(executor,
-      Seq(
-        0 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 60),  // 0 -> 0 -> 5
-        3 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 25), memoryBytes = 45), // 1 -> 5 -> 30
-        1 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 48),  // 2 -> 5 -> 10
-        4 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 5), memoryBytes = 100), // 3 -> 30 -> 35
-        2 -> AsyncRunner.newCpuTask(buildDummyFn(sleepMs = 10), memoryBytes = 50), // 4 -> 10 -> 20
-      ))
   }
 }

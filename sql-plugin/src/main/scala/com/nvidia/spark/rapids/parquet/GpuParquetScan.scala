@@ -41,7 +41,7 @@ import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.fileio.{RapidsFileIO, SeekableInputStream}
 import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.io.async._
-import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark, TaskPriority}
+import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
@@ -2704,50 +2704,28 @@ class MultiFileCloudParquetPartitionReader(
       override val allPartValues: Option[Array[(Long, InternalRow)]]
   ) extends HostMemoryBuffersWithMetaDataBase
 
-  // The total size of file data in bytes that will be processed by this Spark task
-  // NOTE: This is driver metric, which may be much larger than the actual size of file buffer,
-  // since row-group filters and column pruning will be applied before the actual I/O.
-  private lazy val taskTotalReadSize: Long = {
-    files.foldLeft(0L) { (acc, file) =>
-      acc + file.length
-    }
-  }
-
-  private lazy val runnerSharedState: GroupSharedState = {
-    GroupTaskHelpers.newSharedState(files.length)
-  }
-
-  // Fetch the universal task priority for this TaskAttempt.
-  private lazy val taskPriority: Long = {
-    val taskAttemptID = TaskContext.get().taskAttemptId()
-    TaskPriority.getTaskPriority(taskAttemptID)
-  }
-
   private class ReadBatchRunner(
       file: PartitionedFile,
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
-      taskContext: TaskContext) extends GroupedAsyncRunner[BufferInfo] with Logging {
+      override val taskContext: TaskContext
+  ) extends SparkAsyncRunner[BufferInfo] with Logging {
 
     override val resource: AsyncRunResource = {
-      AsyncRunResource.newCpuResource(file.length, Some(taskTotalReadSize))
+      AsyncRunResource.newCpuResource(file.length)
     }
-
-    // Use the priority of caller as the initial priority of async sub readers.
-    override val priority: Double = taskPriority.toDouble
-
-    override protected val sharedState: GroupSharedState = runnerSharedState
-
-    private var blockChunkIter: BufferedIterator[BlockMetaData] = null
 
     // BufferInfo will not be closed until it is transferred onto device side. So, builds
     // DecayReleaseResult with a release callback rather than FastReleaseResult.
     override protected def buildResult(resultData: BufferInfo,
         metrics: AsyncMetrics): RunnerResult = {
-      val releaseCallback = () => {
-        this.callDecayReleaseCallback()
+      require(releaseResourceCallback != null, "releaseResourceCallback should be set")
+      val releaseCallback: () => Unit = () => {
+        releaseResourceCallback()
       }
       new DecayReleaseResult[BufferInfo](resultData, metrics, releaseCallback)
     }
+
+    private var blockChunkIter: BufferedIterator[BlockMetaData] = null
 
     /**
      * Returns the host memory buffers and file metadata for the file processed.

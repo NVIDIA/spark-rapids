@@ -17,10 +17,13 @@
 package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.Callable
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
+import java.util.concurrent.atomic.AtomicLong
 import java.util.function.LongUnaryOperator
 
+import com.nvidia.spark.rapids.jni.TaskPriority
+
 import org.apache.spark.TaskContext
+import org.apache.spark.util.TaskCompletionListener
 
 /**
  * Marker trait for resources required by AsyncRunners.
@@ -30,9 +33,7 @@ sealed trait AsyncRunResource
 /**
  * HostResource represents host memory resource requirement for CPU-bound tasks.
  */
-case class HostResource(
-    hostMemoryBytes: Long,
-    groupedHostMemoryBytes: Option[Long] = None) extends AsyncRunResource
+case class HostResource(hostMemoryBytes: Long) extends AsyncRunResource
 
 /**
  * DeviceResource is a marker object for GPU resources, no additional fields needed.
@@ -40,9 +41,8 @@ case class HostResource(
 object DeviceResource extends AsyncRunResource
 
 object AsyncRunResource {
-  def newCpuResource(hostMemoryBytes: Long,
-      groupedMemoryBytes: Option[Long] = None): AsyncRunResource = {
-    HostResource(hostMemoryBytes, groupedHostMemoryBytes = groupedMemoryBytes)
+  def newCpuResource(hostMemoryBytes: Long): AsyncRunResource = {
+    HostResource(hostMemoryBytes)
   }
 
   def newGpuResource(): AsyncRunResource = DeviceResource
@@ -187,6 +187,8 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
    * It can be overridden by subclasses to perform actions right after the acquisition.
    */
   def onAcquire(): Unit = {
+    require(!holdResource, "The resource has already been acquired")
+    holdResource = true
   }
 
   /**
@@ -194,22 +196,8 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
    * It can be overridden by subclasses to perform actions right after the release.
    */
   def onRelease(): Unit = {
-  }
-
-  /**
-   * Guarantees the release callback will NOT be called unless the task holds the resource.
-   * This method is protected not private, so it can be called by subclasses to build own result.
-   */
-  protected def callDecayReleaseCallback(): Unit = {
-    require(execException.isEmpty, "The resource was somehow released forcefully, " +
-        s"caught runtime exception: ${execException.get}")
-    require(!hasDecayReleased, "callDecayReleaseCallback has been already called for once")
-    releaseResourceCallback()
-    hasDecayReleased = true
-  }
-
-  override def toString: String = {
-    s"AsyncRunner(id=$runnerID, resource=$resource, priority=$priority)"
+    require(holdResource, "The resource has already been released")
+    holdResource = false
   }
 
   // Cache the result for 2 purposes:
@@ -218,16 +206,29 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   //    specifically, to help with handling resource release in `RapidsFutureTask.releaseResource`.
   private[async] var result: Option[AsyncResult[T]] = None
 
-  private[async] var releaseResourceCallback: () => Unit = () => {}
+  protected[async] var releaseResourceCallback: () => Unit = () => {}
 
   private[async] lazy val metricsBuilder = new AsyncMetricsBuilder
 
   private[async] var execException: Option[Throwable] = None
 
-  // Unique ID for the runner, mainly for logging and tracking purpose.
-  private[async] val runnerID: String = AsyncRunner.nextRunnerId()
+  /**
+   * AsyncRunner is not necessarily tied to a Spark task, despite it is usually the case.
+   * sparkTaskId is None if the runner is not associated with any Spark task. Otherwise, it
+   * carries the corresponding Spark task ID.
+   */
+  protected[async] def sparkTaskId: Option[Long] = None
 
-  private var hasDecayReleased = false
+  // Unique ID for the runner, mainly for logging and tracking purpose.
+  private[async] val runnerId: Long = AsyncRunner.nextRunnerId()
+
+  // Label to indicate whether the runner is currently holding the resource.
+  protected var holdResource = false
+
+  override def toString: String = {
+    s"AsyncRunner(runnerId=$runnerId, sparkTaskId=${sparkTaskId.getOrElse(-1L)}, " +
+        s"resource=$resource, priority=$priority)"
+  }
 }
 
 /**
@@ -281,16 +282,8 @@ object AsyncRunner {
     new AsyncFunctorForTest[T](AsyncRunResource.newCpuResource(0L), Float.MaxValue, fn)
   }
 
-  private def nextRunnerId(): String = {
-    val sparkTaskId: Long = Option(TaskContext.get()) match {
-      case Some(tc) => tc.taskAttemptId()
-      case None => 0L
-    }
-    // Atomically increase the global runner ID with overflow protection
-    val runnerId = globalRunnerId.getAndUpdate(idUpdateFn)
-    // Format: T<taskId>_R<runnerId>
-    s"T${sparkTaskId}_R$runnerId"
-  }
+  // Atomically increase the global runner ID with overflow protection
+  private def nextRunnerId(): Long = globalRunnerId.getAndUpdate(idUpdateFn)
 
   private lazy val idUpdateFn = new LongUnaryOperator {
     override def applyAsLong(operand: Long): Long = {
@@ -309,38 +302,34 @@ object AsyncRunner {
 }
 
 /**
- * An AsyncRunner that shares resource allocation with other tasks in the same group.
- * When any task in the group requests resources, it requests the total amount needed for the
- * entire group. Once one task successfully acquires the group's resources, other tasks in the
- * same group can proceed without additional resource allocation. This pattern is useful for
- * coordinated async tasks which are consumed by the same consumer, such as multithreaded reader.
+ * An AsyncRunner being launched within a Spark task, which allows it to access the Spark
+ * TaskContext and task ID. The runner priority is derived from the Spark task priority,
+ * which makes runners from the same Spark task to be scheduled one after another.
+ * This is important to avoid starvation of runners of the same Spark task which might
+ * depend on each other.
  */
-abstract class GroupedAsyncRunner[T] extends AsyncRunner[T] {
-  // The shared state for the group, which should be defined by the subclass.
-  protected val sharedState: GroupSharedState
+abstract class SparkAsyncRunner[T] extends AsyncRunner[T] {
+  // SparkAsyncRunner must be created within a Spark task context
+  protected[async] def taskContext: TaskContext
+
+  override def priority: Double = TaskPriority.getTaskPriority(sparkTaskId.get)
+
+  override protected[async] val sparkTaskId: Option[Long] = {
+    Some(taskContext.taskAttemptId())
+  }
 
   override def onAcquire(): Unit = {
-    sharedState.holdingResource.set(true)
-  }
-
-  override def onRelease(): Unit = {
-    val numUnreleased = sharedState.taskToBeReleased.decrementAndGet()
-    // If all tasks in the group have released their resources, we can reset the holding state.
-    if (numUnreleased == 0) {
-      sharedState.holdingResource.set(false)
-    }
-  }
-
-  // The core method to query if the group behind the task is holding the resource.
-  def holdSharedResource: Boolean = sharedState.holdingResource.get()
-}
-
-case class GroupSharedState(taskToBeReleased: AtomicInteger, holdingResource: AtomicBoolean)
-
-object GroupTaskHelpers {
-  def newSharedState(groupSize: Int): GroupSharedState = {
-    GroupSharedState(
-      taskToBeReleased = new AtomicInteger(groupSize),
-      holdingResource = new AtomicBoolean(false))
+    super.onAcquire()
+    // Register a callback to ensure the resource is released when the Spark task completes,
+    // regardless of whether the task succeeds or fails. This is a safety net to prevent
+    // resource leaks in case that Spark task is killed or fails unexpectedly.
+    require(releaseResourceCallback != null, "releaseResourceCallback should be set")
+    taskContext.addTaskCompletionListener(new TaskCompletionListener {
+      override def onTaskCompletion(context: TaskContext): Unit = {
+        if (holdResource) {
+          releaseResourceCallback()
+        }
+      }
+    })
   }
 }
