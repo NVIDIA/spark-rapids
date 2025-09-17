@@ -203,7 +203,7 @@ object GpuMetric extends Logging {
   }
 
   def ns[T](metrics: GpuMetric*)(f: => T): T = {
-    ns(metrics, Seq(NoopMetric))(f)
+    ns(metrics, Seq.empty)(f)
   }
 
   def ns[T](metrics: Seq[GpuMetric], excludeMetrics: Seq[GpuMetric])(f: => T): T = {
@@ -342,7 +342,7 @@ sealed abstract class GpuMetric extends Serializable {
   }
 
   final def ns[T](f: => T): T = {
-    ns(Seq(NoopMetric))(f)
+    ns(Seq.empty)(f)
   }
 
   final def ns[T](excludeMetrics: Seq[GpuMetric])(f: => T): T = {
