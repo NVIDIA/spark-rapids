@@ -164,7 +164,7 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
       table,
       format,
       dsSchema,
-      null,
+      table.sortOrder(),
       format,
       outputWriterFactory,
       hadoopConf
