@@ -134,19 +134,21 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
         (sortedPartitionKeys, splitIds, rowIdxCol)
       }
 
-      val inputTable = withResource(scb.getColumnarBatch()) { inputBatch =>
-        GpuColumnVector.from(inputBatch)
-      }
+      withResource(rowIdxCol) { _ =>
+        val inputTable = withResource(scb.getColumnarBatch()) { inputBatch =>
+          GpuColumnVector.from(inputBatch)
+        }
 
-      val sortedDataTable = withResource(inputTable) { _ =>
-        inputTable.gather(rowIdxCol)
-      }
+        val sortedDataTable = withResource(inputTable) { _ =>
+          inputTable.gather(rowIdxCol)
+        }
 
-      val partitions = withResource(sortedDataTable) { _ =>
-        sortedDataTable.contiguousSplit(splitIds: _*)
-      }
+        val partitions = withResource(sortedDataTable) { _ =>
+          sortedDataTable.contiguousSplit(splitIds: _*)
+        }
 
-      (sortedPartitionKeys, partitions)
+        (sortedPartitionKeys, partitions)
+      }
     }
 
     withResource(partitions) { _ =>
