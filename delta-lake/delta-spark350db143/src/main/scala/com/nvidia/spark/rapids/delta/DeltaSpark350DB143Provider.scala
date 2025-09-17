@@ -23,8 +23,9 @@ package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.DeltaOptions
 import com.databricks.sql.transaction.tahoe.commands.WriteIntoDeltaEdge
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaCatalog, GpuDeltaLog, GpuV1Write, GpuWriteIntoDelta}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaCatalog, GpuDeltaLog, GpuWriteIntoDelta}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuV1Write
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
 import org.apache.spark.sql.{DataFrame, SaveMode}
@@ -39,7 +40,7 @@ object DeltaSpark350DB143Provider extends DatabricksDeltaProviderBase {
 
   override protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
-     rapidsConf: RapidsConf): V1Write = new GpuV1Write {
+     rapidsConf: RapidsConf): GpuV1Write = new GpuV1Write {
     override def toInsertableRelation(): InsertableRelation = {
       new InsertableRelation {
         override def insert(data: DataFrame, overwrite: Boolean): Unit = {

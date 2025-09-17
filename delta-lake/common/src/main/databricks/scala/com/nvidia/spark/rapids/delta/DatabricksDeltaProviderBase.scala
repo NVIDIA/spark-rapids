@@ -286,7 +286,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
 
   protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
-     rapidsConf: RapidsConf): V1Write
+     rapidsConf: RapidsConf): GpuV1Write
 }
 
 class DeltaCreatableRelationProviderMeta(

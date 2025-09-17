@@ -26,6 +26,7 @@ import com.databricks.sql.transaction.tahoe.{DeltaErrors, DeltaLog, DeltaOptions
 import com.databricks.sql.transaction.tahoe.catalog.BucketTransform
 import com.databricks.sql.transaction.tahoe.commands.{TableCreationModes, WriteIntoDelta}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaSourceUtils, DeltaSQLConf}
+import com.nvidia.spark.rapids.{GpuSupportsWrite, GpuV1Write}
 import com.nvidia.spark.rapids.RapidsConf
 import org.apache.hadoop.fs.Path
 
@@ -33,7 +34,7 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, CatalogUtils, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, SupportsWrite, Table, TableCapability, TableCatalog, TableChange}
+import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, Table, TableCapability, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.catalog.TableCapability._
 import org.apache.spark.sql.connector.expressions.{FieldReference, IdentityTransform, Transform}
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, V1Write, WriteBuilder}
