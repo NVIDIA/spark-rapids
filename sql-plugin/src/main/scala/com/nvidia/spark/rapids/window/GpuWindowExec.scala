@@ -62,7 +62,7 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def output: Seq[Attribute] = windowOps.map(_.toAttribute)
 
@@ -164,7 +164,7 @@ case class GpuWindowExec(
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
-    val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val opTime = gpuLongMetric(GpuMetric.OP_TIME_LEGACY)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
     val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)

@@ -370,7 +370,7 @@ case class GpuCachedDoublePassWindowExec(
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
-    val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val opTime = gpuLongMetric(GpuMetric.OP_TIME_LEGACY)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
     val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)

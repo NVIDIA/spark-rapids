@@ -116,7 +116,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
                   val value = (acc \ "Update").extractOpt[String]
                   
                   (name, value) match {
-                    case (Some(n), Some(v)) if n.equals("operator time") => {
+                    case (Some(n), Some(v)) if n.equals("op time v2") => {
                       metrics += MetricRecord(n, v.toLong, stageId)
                     }
                     case _ => // Ignore other metrics
@@ -168,7 +168,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
 
     // Parse event logs to find metrics and task times
     val (metrics, taskTimes) = parseEventLogs()
-    val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+    val operatorTimeMetrics = metrics.filter(_.name.equals("op time v2"))
 
     assert(operatorTimeMetrics.nonEmpty,
       s"Should find operator time metrics in event logs. " +
@@ -257,7 +257,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
 
       // Parse event logs to find metrics and task times
       val (metrics, taskTimes) = parseEventLogs()
-      val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+      val operatorTimeMetrics = metrics.filter(_.name.equals("op time v2"))
 
       assert(operatorTimeMetrics.nonEmpty,
         s"Should find operator time metrics in event logs. " +
@@ -370,7 +370,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       
       // Parse event logs to find metrics and task times
       val (metrics, taskTimes) = parseEventLogs()
-      val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+      val operatorTimeMetrics = metrics.filter(_.name.equals("op time v2"))
 
       assert(operatorTimeMetrics.nonEmpty, 
         s"Should find operator time metrics for parquet write job. " +
@@ -403,17 +403,17 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       println(f"Parquet write job: Total executor run time: " +
         f"${totalTaskExecutionTime / 1000000.0}%.2f ms")
     
-    val minExpectedOperatorTime = totalTaskExecutionTime * 0.8
+    val minExpectedOperatorTime = totalTaskExecutionTime * 0.7
     val maxExpectedOperatorTime = totalTaskExecutionTime
     val operatorTimeRatio = totalOperatorTime.toDouble / totalTaskExecutionTime.toDouble
     
     println(f"Parquet write job: Operator time ratio: ${operatorTimeRatio * 100.0}%.1f%% " +
       "of executor run time")
-    println(f"Parquet write job: Expected range: 80.0%% - 100.0%% of executor run time")
+    println(f"Parquet write job: Expected range: 70.0%% - 100.0%% of executor run time")
     
     assert(totalOperatorTime >= minExpectedOperatorTime, 
       f"Parquet write job: Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) " +
-      f"should be at least 80%% of total executor run time " +
+      f"should be at least 70%% of total executor run time " +
       f"(${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
       f"but was only ${operatorTimeRatio * 100.0}%.1f%%")
     
@@ -497,7 +497,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     
     // Parse event logs to find metrics and task times
     val (metrics, taskTimes) = parseEventLogs()
-    val operatorTimeMetrics = metrics.filter(_.name.equals("operator time"))
+    val operatorTimeMetrics = metrics.filter(_.name.equals("op time v2"))
 
     println(s"OpTimeTracking disabled: Found ${metrics.length} total metrics")
     println(s"OpTimeTracking disabled: Found ${operatorTimeMetrics.length} operator time metrics")

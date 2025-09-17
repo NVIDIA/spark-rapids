@@ -87,7 +87,7 @@ case class GpuExpandExec(
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     PRE_PROJECT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, "pre-projection time"),
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
@@ -115,7 +115,7 @@ case class GpuExpandExec(
         // We got some nested expressions, so pre-projection is good to enable.
         projectionsForBind = preprojectedProjections
         attributesForBind = preprojectionList.map(_.toAttribute)
-        val opMetric = metricsMap(OP_TIME)
+        val opMetric = metricsMap(OP_TIME_LEGACY)
         val preproMetric = metricsMap(PRE_PROJECT_TIME)
         preprojectIter = (iter: Iterator[ColumnarBatch]) => iter.map(cb =>
           GpuMetric.ns(opMetric, preproMetric) {
@@ -204,7 +204,7 @@ class GpuExpandIterator(
   private val numOutputBatches = metrics(NUM_OUTPUT_BATCHES)
   private val numInputRows = metrics(NUM_INPUT_ROWS)
   private val numOutputRows = metrics(NUM_OUTPUT_ROWS)
-  private val opTime = metrics(OP_TIME)
+  private val opTime = metrics(OP_TIME_LEGACY)
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>

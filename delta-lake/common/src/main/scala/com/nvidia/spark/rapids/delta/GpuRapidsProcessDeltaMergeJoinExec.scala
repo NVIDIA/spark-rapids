@@ -173,7 +173,7 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = {
     import GpuMetric._
-    Map(OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    Map(OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
   }
 
   private def bindForGpu(e: Expression): GpuExpression = {
@@ -237,7 +237,7 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
 
   private[this] val intermediateTypes: Array[DataType] = noopCopyOutput.map(_.dataType).toArray
   private[this] var nextBatch: Option[ColumnarBatch] = None
-  private[this] val opTime = metrics.getOrElse(GpuMetric.OP_TIME, NoopMetric)
+  private[this] val opTime = metrics.getOrElse(GpuMetric.OP_TIME_LEGACY, NoopMetric)
   private[this] val numOutputRows = metrics.getOrElse(GpuMetric.NUM_OUTPUT_ROWS, NoopMetric)
 
   // Don't install the callback if in a unit test

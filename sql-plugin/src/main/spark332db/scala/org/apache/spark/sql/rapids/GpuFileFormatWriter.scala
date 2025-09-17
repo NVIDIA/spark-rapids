@@ -267,7 +267,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       val excludeMetrics = plan match {
         case gpuExec: GpuExec =>
           val currentMetric = gpuExec.getOpTimeNewMetric.toSeq
-          val childMetrics = gpuExec.getChildOpTimeMetrics
+          val childMetrics = gpuExec.getDescendantOpTimeMetrics
           currentMetric ++ childMetrics
         case _ =>
           Seq.empty[GpuMetric]

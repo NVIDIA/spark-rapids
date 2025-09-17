@@ -115,7 +115,7 @@ case class GpuOptimizeWriteExchangeExec(
 
   @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     // Get OP_TIME_NEW metrics from all descendants for exclusion (with deduplication)
-    val childOpTimeMetrics = getChildOpTimeMetrics
+    val descendantOpTimeMetrics = getDescendantOpTimeMetrics
     val opTimeNewShuffleWriteMetric = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
     
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
@@ -130,7 +130,7 @@ case class GpuOptimizeWriteExchangeExec(
       writeMetrics=writeMetrics,
       additionalMetrics=additionalMetrics,
       opTimeNewShuffleWrite=opTimeNewShuffleWriteMetric,
-      childOpTimeMetrics=childOpTimeMetrics)
+      descendantOpTimeMetrics=descendantOpTimeMetrics)
     metrics("numPartitions").set(dep.partitioner.numPartitions)
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(

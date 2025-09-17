@@ -246,7 +246,7 @@ abstract class GpuShuffleExchangeExecBase(
    */
   @transient
   lazy val shuffleDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
-    val childOpTimeMetrics = getChildOpTimeMetrics
+    val descendantOpTimeMetrics = getDescendantOpTimeMetrics
     val opTimeNewShuffleWrite = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
     
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
@@ -261,7 +261,7 @@ abstract class GpuShuffleExchangeExecBase(
       writeMetrics,
       additionalMetrics,
       opTimeNewShuffleWrite,
-      childOpTimeMetrics,
+      descendantOpTimeMetrics,
       enableOpTimeTrackingRdd)
   }
 
@@ -353,7 +353,7 @@ object GpuShuffleExchangeExecBase {
       writeMetrics: Map[String, SQLMetric],
       additionalMetrics: Map[String, GpuMetric],
       opTimeNewShuffleWrite: Option[GpuMetric] = None,
-      childOpTimeMetrics: Seq[GpuMetric] = Seq.empty,
+      descendantOpTimeMetrics: Seq[GpuMetric] = Seq.empty,
       enableOpTimeTrackingRdd: Boolean = true)
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
@@ -457,7 +457,7 @@ object GpuShuffleExchangeExecBase {
     val finalRddWithPartitionIds = opTimeNewShuffleWrite match {
       case Some(opTimeMetric) if enableOpTimeTrackingRdd =>
         new GpuOpTimeTrackingRDD[Product2[Int, ColumnarBatch]](
-          rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
+          rddWithPartitionIds, opTimeMetric, descendantOpTimeMetrics)
       case _ => rddWithPartitionIds
     }
 

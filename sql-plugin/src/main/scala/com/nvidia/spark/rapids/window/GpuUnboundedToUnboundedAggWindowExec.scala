@@ -1146,7 +1146,7 @@ case class GpuUnboundedToUnboundedAggWindowExec(
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
-    val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val opTime = gpuLongMetric(GpuMetric.OP_TIME_LEGACY)
 
     val boundStages = GpuUnboundedToUnboundedAggWindowIterator.breakUpAggregations(
       gpuPartitionSpec, windowOps, child.output)

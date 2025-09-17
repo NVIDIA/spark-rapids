@@ -44,7 +44,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
     prev: RDD[T],
     opTimeMetric: GpuMetric,
-    childOpTimeMetrics: Seq[GpuMetric]) extends RDD[T](prev) {
+    descendantOpTimeMetrics: Seq[GpuMetric]) extends RDD[T](prev) {
 
   override def compute(split: Partition, context: TaskContext): Iterator[T] = {
     val childIterator = firstParent[T].compute(split, context)
@@ -52,8 +52,8 @@ class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
     // Create wrapper iterator that tracks opTime excluding child opTime
     new Iterator[T] {
       override def hasNext: Boolean = {
-        if (childOpTimeMetrics.nonEmpty) {
-          opTimeMetric.ns(childOpTimeMetrics) {
+        if (descendantOpTimeMetrics.nonEmpty) {
+          opTimeMetric.ns(descendantOpTimeMetrics) {
             childIterator.hasNext
           }
         } else {
@@ -64,8 +64,8 @@ class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
       }
 
       override def next(): T = {
-        if (childOpTimeMetrics.nonEmpty) {
-          opTimeMetric.ns(childOpTimeMetrics) {
+        if (descendantOpTimeMetrics.nonEmpty) {
+          opTimeMetric.ns(descendantOpTimeMetrics) {
             childIterator.next()
           }
         } else {
@@ -246,7 +246,7 @@ trait GpuExec extends SparkPlan with Logging {
    * operator's OP_TIME_NEW. Recursively collects all descendant
    * OP_TIME_NEW metrics and deduplicates them
    */
-  def getChildOpTimeMetrics: Seq[GpuMetric] = {
+  def getDescendantOpTimeMetrics: Seq[GpuMetric] = {
 
     def collectChildOpTimeMetricsRecursive(
         plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
@@ -298,8 +298,8 @@ trait GpuExec extends SparkPlan with Logging {
 
   // For GpuShuffleExchangeExecBase and GpuCustomShuffleReaderExec,
   // we want the op time metrics to be called:
-  // - "operator time (shuffle write partition & serial)" for shuffle write, and
-  // - "operator time (shuffle read)" for shuffle read.
+  // - "op time v2 (shuffle write partition & serial)" for shuffle write, and
+  // - "op time v2 (shuffle read)" for shuffle read.
   // That's why we have this separate method to get the metric.
   def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW)
 
@@ -307,16 +307,16 @@ trait GpuExec extends SparkPlan with Logging {
     // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
     getOpTimeNewMetric match {
       case Some(opTimeNewMetric) if enableOpTimeTrackingRdd =>
-        val childOpTimeMetrics =
+        val descendantOpTimeMetrics =
           if (this.isInstanceOf[Exchange]
             || this.isInstanceOf[GpuCustomShuffleReaderExec]) {
             // for shuffle, we do not want to exclude child opTime any more, because
             // that's beyond current stage
             Seq.empty
           } else {
-            getChildOpTimeMetrics
+            getDescendantOpTimeMetrics
           }
-        new GpuOpTimeTrackingRDD(rdd, opTimeNewMetric, childOpTimeMetrics)
+        new GpuOpTimeTrackingRDD(rdd, opTimeNewMetric, descendantOpTimeMetrics)
       case _ => rdd
     }
   }
