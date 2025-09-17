@@ -28,7 +28,7 @@ class GpuMetricsSuite extends AnyFunSuite {
         Thread.sleep(100)
       )
     )
-    // if the timing is duplicated, the value should be around 1s
+    // if the timing is duplicated, the value should be around 0.1s
     assert(m1.value < 100000000 * 1.2)
     assert(m1.value > 100000000 * 0.8)
   }
@@ -42,7 +42,7 @@ class GpuMetricsSuite extends AnyFunSuite {
       }
     }
 
-    // if the timing is duplicated, the value should be around 2,000,000,000
+    // if the timing is duplicated, the value should be around 0.2s
     assert(m1.value < 100000000 * 1.2)
     assert(m1.value > 100000000 * 0.8)
     assert(m2.value < 100000000 * 1.2)
