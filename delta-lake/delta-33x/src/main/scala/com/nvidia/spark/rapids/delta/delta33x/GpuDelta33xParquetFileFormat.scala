@@ -390,35 +390,43 @@ case class GpuDelta33xParquetFileFormat(
             indexVectorTuples += (rowIndexColumnOpt.get.index -> rowIndexGpuCol.incRefCount())
           }
           startTime = System.nanoTime()
-          val isRowDeletedVector = withResource(rowIndexFilterOpt.get.materializeIntoVector) {
-            deleteRowIndices =>
-              withResource(rowIndexGpuCol.getBase.contains(deleteRowIndices.getBase)) {
-                isDeletedBool =>
-                  isDeletedBool.castTo(DType.INT8)
-              }
-          }
+          val isRowDeletedVector = rowIndexFilterOpt.get.materializeIntoVector(rowIndexGpuCol)
           metrics("isRowDeletedColumnGenTime") += System.nanoTime() - startTime
-          indexVectorTuples += (isRowDeletedColumnOpt.get.index ->
-            GpuColumnVector.from(isRowDeletedVector, ByteType))
+          indexVectorTuples += (isRowDeletedColumnOpt.get.index -> isRowDeletedVector)
           replaceVectors(batch, indexVectorTuples.toSeq: _*)
       }
     }
   }
 
   trait RapidsRowIndexFilter {
-    def materializeIntoVector: GpuColumnVector
+    def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector
   }
 
   final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-    def materializeIntoVector: GpuColumnVector = {
-      throw new UnsupportedOperationException("KeepMarkedRowsFilter is not supported")
+    def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
+      val deletedRowIndices = bitmap.toArray
+      withResource(GpuColumnVector.from(ColumnVector.fromLongs(deletedRowIndices:_* ), LongType)) {
+        deleteRowIndices =>
+          withResource(rowIndexCol.getBase.contains(deleteRowIndices.getBase)) {
+            isDeletedBool =>
+              withResource(isDeletedBool.not()) { isNotDeletedBool =>
+                GpuColumnVector.from(isNotDeletedBool.castTo(DType.INT8), ByteType)
+              }
+          }
+      }
     }
   }
 
   final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-    def materializeIntoVector: GpuColumnVector = {
+    def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
       val deletedRowIndices = bitmap.toArray
-      GpuColumnVector.from(ColumnVector.fromLongs(deletedRowIndices:_* ), LongType)
+      withResource(GpuColumnVector.from(ColumnVector.fromLongs(deletedRowIndices:_* ), LongType)) {
+        deleteRowIndices =>
+          withResource(rowIndexCol.getBase.contains(deleteRowIndices.getBase)) {
+            isDeletedBool =>
+              GpuColumnVector.from(isDeletedBool.castTo(DType.INT8), ByteType)
+          }
+      }
     }
   }
 
@@ -440,14 +448,14 @@ case class GpuDelta33xParquetFileFormat(
   }
 
   private object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
-    def materializeIntoVector: GpuColumnVector = {
-      throw new UnsupportedOperationException("RapidsDropAllRowsFilter is not supported")
+    def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
+      GpuColumnVector.from(Scalar.fromByte(1.toByte), rowIndexCol.getRowCount.toInt, ByteType)
     }
   }
 
   private object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
-    def materializeIntoVector: GpuColumnVector = {
-      throw new UnsupportedOperationException("RapidsKeepAllRowsFilter is not supported")
+    def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
+      GpuColumnVector.from(Scalar.fromByte(0.toByte), rowIndexCol.getRowCount.toInt, ByteType)
     }
   }
 
