@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
@@ -243,5 +244,13 @@ object ExternalSource extends Logging {
     cpuExec: AppendDataExec,
     meta: AppendDataExecMeta): GpuExec = {
     throw new IllegalStateException("AppendDataExec is not supported")
+  }
+
+  def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
+    meta.willNotWorkOnGpu(s"StaticInvoke is not supported")
+  }
+
+  def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
+    throw new IllegalStateException("StaticInvoke is not supported")
   }
 }
