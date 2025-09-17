@@ -373,11 +373,7 @@ case class GpuColumnarToRowExec(
     }
 
     // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
-    allMetrics.get(OP_TIME_NEW) match {
-      case Some(opTimeNewMetric) if enableOpTimeTrackingRdd =>
-        new GpuOpTimeTrackingRDD[InternalRow](rdd, opTimeNewMetric, getChildOpTimeMetrics)
-      case _ => rdd
-    }
+    wrapWithTimeTrackingRDD(rdd)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {

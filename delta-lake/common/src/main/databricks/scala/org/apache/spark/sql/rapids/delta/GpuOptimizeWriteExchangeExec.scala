@@ -27,8 +27,8 @@ import scala.concurrent.duration.Duration
 
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
-import com.nvidia.spark.rapids.GpuMetric.{OP_TIME_NEW, OP_TIME_NEW_SHUFFLE_WRITE}
-import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW, DESCRIPTION_OP_TIME_NEW_SW, MODERATE_LEVEL}
+import com.nvidia.spark.rapids.GpuMetric.{OP_TIME_NEW_SHUFFLE_READ, OP_TIME_NEW_SHUFFLE_WRITE}
+import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -83,14 +83,17 @@ case class GpuOptimizeWriteExchangeExec(
   override lazy val allMetrics: Map[String, GpuMetric] = {
     Map(
       OP_TIME_NEW_SHUFFLE_WRITE ->
-        createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SW),
-      OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
+        createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE),
+      OP_TIME_NEW_SHUFFLE_READ ->
+        createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ),
       PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
       NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
       NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
       NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
     ) ++ additionalMetrics
   }
+
+  override def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW_SHUFFLE_READ)
 
   private lazy val serializer: Serializer =
     new GpuColumnarBatchSerializer(allMetrics,
@@ -147,9 +150,7 @@ case class GpuOptimizeWriteExchangeExec(
     } else {
       try {
         val partitionSpecs = Some(rebalancePartitions(stats))
-        val shuffleRDD =
-          new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
-        shuffleRDD
+        new ShuffledBatchRDD(shuffleDependency, metrics, partitionSpecs.get.toArray)
       } catch {
         case e: Throwable =>
           logWarning("Failed to apply OptimizeWrite.", e)

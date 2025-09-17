@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuTaskMetrics
-import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
+import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -257,11 +257,11 @@ trait GpuExec extends SparkPlan with Logging {
         val newVisited = visited + plan
         plan match {
           case gpuExec: GpuExec =>
-            val currentMetric = gpuExec.allMetrics.get(OP_TIME_NEW).toSet
+            val currentMetric = gpuExec.getOpTimeNewMetric.toSet
             // Log warning if the expected metric is not found
             if (currentMetric.isEmpty) {
-              logWarning(s"Expected metric '$OP_TIME_NEW' not found in " +
-                s"${gpuExec.getClass.getSimpleName}")
+              logWarning(s"${gpuExec.getClass.getSimpleName} " +
+                s"returned empty metrics in getOpTimeNewMetric")
             }
             // Recursively collect from children
             val childMetrics =
@@ -296,26 +296,35 @@ trait GpuExec extends SparkPlan with Logging {
     allChildMetrics.toSeq
   }
 
-  final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    this.dumpLoreMetaInfo()
+  // For GpuShuffleExchangeExecBase and GpuCustomShuffleReaderExec,
+  // we want the op time metrics to be called:
+  // - "operator time (shuffle write partition & serial)" for shuffle write, and
+  // - "operator time (shuffle read)" for shuffle read.
+  // That's why we have this separate method to get the metric.
+  def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW)
 
-    val origin = allMetrics.get(OP_TIME_NEW) match {
+  protected def wrapWithTimeTrackingRDD[T](rdd: RDD[T]): RDD[T] = {
+    // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
+    getOpTimeNewMetric match {
       case Some(opTimeNewMetric) if enableOpTimeTrackingRdd =>
-        new GpuOpTimeTrackingRDD(
-          internalDoExecuteColumnar(),
-          opTimeNewMetric,
-          if (this.isInstanceOf[Exchange] || this.isInstanceOf[GpuCustomShuffleReaderExec]) {
+        val childOpTimeMetrics =
+          if (this.isInstanceOf[Exchange]
+            || this.isInstanceOf[GpuCustomShuffleReaderExec]) {
             // for shuffle, we do not want to exclude child opTime any more, because
             // that's beyond current stage
             Seq.empty
           } else {
             getChildOpTimeMetrics
           }
-        )
-      case _ =>
-        internalDoExecuteColumnar()
+        new GpuOpTimeTrackingRDD[T](rdd, opTimeNewMetric, childOpTimeMetrics)
+      case _ => rdd
     }
+  }
 
+  final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    this.dumpLoreMetaInfo()
+    // this is the core of op time new
+    val origin = wrapWithTimeTrackingRDD(internalDoExecuteColumnar())
     val wrappedForLORE = this.dumpLoreRDD(origin)
 
     val metrics = getTaskMetrics

@@ -72,9 +72,7 @@ case class GpuShuffleExchangeExec(
   override def numPartitions: Int = shuffleDependencyColumnar.partitioner.numPartitions
 
   override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
-    val shuffleRDD =
-      new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
-    shuffleRDD
+    new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
   }
 
   override def runtimeStatistics: Statistics = {
