@@ -1591,6 +1591,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ICEBERG_WRITE = conf("spark.rapids.sql.format.iceberg.write.enabled")
+    .doc("When set to false disables Iceberg write acceleration")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")
       .doc("When set to false disables Hive text table acceleration. " +
@@ -3376,6 +3381,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
 
   lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
+
+  lazy val isIcebergWriteEnabled: Boolean = get(ENABLE_ICEBERG_WRITE)
 
   lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
 
