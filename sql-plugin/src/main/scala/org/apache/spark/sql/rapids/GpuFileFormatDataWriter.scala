@@ -188,7 +188,7 @@ abstract class GpuFileFormatDataWriter(
   def operatorTimeMetric: GpuMetric = {
     statsTrackers.find(_.isInstanceOf[GpuWriteTaskStatsTracker]) match {
       case Some(tracker: GpuWriteTaskStatsTracker) =>
-        tracker.operatorTime
+        tracker.opTimeNew
       case _ => NoopMetric
     }
   }

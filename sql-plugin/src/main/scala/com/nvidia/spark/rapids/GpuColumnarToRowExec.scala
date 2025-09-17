@@ -374,7 +374,7 @@ case class GpuColumnarToRowExec(
 
     // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
     allMetrics.get(OP_TIME_NEW) match {
-      case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd =>
+      case Some(opTimeNewMetric) if enableOpTimeTrackingRdd =>
         new GpuOpTimeTrackingRDD[InternalRow](rdd, opTimeNewMetric, getChildOpTimeMetrics)
       case _ => rdd
     }

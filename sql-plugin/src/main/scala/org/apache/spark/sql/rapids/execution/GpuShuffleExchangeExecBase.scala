@@ -178,8 +178,6 @@ abstract class GpuShuffleExchangeExecBase(
   private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
     .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
     .get(child.conf)
-  override lazy val disableOpTimeTrackingRdd =
-    RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(child.conf)
 
   private lazy val useGPUShuffle = {
     gpuOutputPartitioning match {
@@ -214,7 +212,8 @@ abstract class GpuShuffleExchangeExecBase(
   // Spark doesn't report totalTime for this operator so we override metrics
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
     OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
-    OP_TIME_NEW_SHUFFLE_WRITE -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SW),
+    OP_TIME_NEW_SHUFFLE_WRITE ->
+      createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE),
     PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
@@ -245,7 +244,7 @@ abstract class GpuShuffleExchangeExecBase(
   @transient
   lazy val shuffleDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val childOpTimeMetrics = getChildOpTimeMetrics
-    val opTimeNewSW = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
+    val opTimeNewShuffleWrite = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
     
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
@@ -258,9 +257,9 @@ abstract class GpuShuffleExchangeExecBase(
       allMetrics,
       writeMetrics,
       additionalMetrics,
-      opTimeNewSW,
+      opTimeNewShuffleWrite,
       childOpTimeMetrics,
-      disableOpTimeTrackingRdd)
+      enableOpTimeTrackingRdd)
   }
 
   /**
@@ -275,8 +274,7 @@ abstract class GpuShuffleExchangeExecBase(
     .attachTreeIfSupported(this, "execute") {
       // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
       if (cachedShuffleRDD == null) {
-        val shuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
-        cachedShuffleRDD = shuffleRDD
+        cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
       }
       cachedShuffleRDD
     }
@@ -351,9 +349,9 @@ object GpuShuffleExchangeExecBase {
       metrics: Map[String, GpuMetric],
       writeMetrics: Map[String, SQLMetric],
       additionalMetrics: Map[String, GpuMetric],
-      opTimeNewSW: Option[GpuMetric] = None,
+      opTimeNewShuffleWrite: Option[GpuMetric] = None,
       childOpTimeMetrics: Seq[GpuMetric] = Seq.empty,
-      disableOpTimeTrackingRdd: Boolean = false)
+      enableOpTimeTrackingRdd: Boolean = true)
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
       case _: GpuRoundRobinPartitioning => true
@@ -453,8 +451,8 @@ object GpuShuffleExchangeExecBase {
     }
 
     // Apply OP_TIME_NEW tracking to rddWithPartitionIds if opTimeNewMetric is provided
-    val finalRddWithPartitionIds = opTimeNewSW match {
-      case Some(opTimeMetric) if !disableOpTimeTrackingRdd =>
+    val finalRddWithPartitionIds = opTimeNewShuffleWrite match {
+      case Some(opTimeMetric) if enableOpTimeTrackingRdd =>
         new GpuOpTimeTrackingRDD[Product2[Int, ColumnarBatch]](
           rddWithPartitionIds, opTimeMetric, childOpTimeMetrics)
       case _ => rddWithPartitionIds

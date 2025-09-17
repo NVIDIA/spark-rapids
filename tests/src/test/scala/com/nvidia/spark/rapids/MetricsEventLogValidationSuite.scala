@@ -143,7 +143,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     import sparkSession.implicits._
 
     // Enable OpTimeTracking
-    spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
+    spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "true")
 
     val numRows = 5000000L
     val numTasks = 8
@@ -229,7 +229,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     import sparkSession.implicits._
       
     // Enable OpTimeTracking
-    spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
+    spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "true")
 
     try {
       spark.conf.set("spark.rapids.sql.exec.HashAggregateExec", "false")
@@ -324,12 +324,12 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     
     // Save original configurations
     val originalOpTimeTracking =
-      spark.conf.getOption("spark.rapids.sql.exec.disableOpTimeTrackingRDD")
+      spark.conf.getOption("spark.rapids.sql.exec.opTimeTrackingRDD.enabled")
     val originalSlowfsImpl = spark.conf.getOption("fs.slowfs.impl")
 
     try {
       // Enable OpTimeTracking for this test
-      spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "false")
+      spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "true")
       
       // Configure slow filesystem for testing
       spark.conf.set("fs.slowfs.impl", "com.nvidia.spark.rapids.SlowFileSystem")
@@ -455,8 +455,8 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     } finally {
       // Restore original configurations
       originalOpTimeTracking match {
-        case Some(value) => spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", value)
-        case None => spark.conf.unset("spark.rapids.sql.exec.disableOpTimeTrackingRDD")
+        case Some(value) => spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", value)
+        case None => spark.conf.unset("spark.rapids.sql.exec.opTimeTrackingRDD.enabled")
       }
       originalSlowfsImpl match {
         case Some(value) => spark.conf.set("fs.slowfs.impl", value)
@@ -470,7 +470,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     import sparkSession.implicits._
       
     // Disable OpTimeTracking for this test
-    spark.conf.set("spark.rapids.sql.exec.disableOpTimeTrackingRDD", "true")
+    spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "false")
     
     val numRows = 2000000L
     val numTasks = 4

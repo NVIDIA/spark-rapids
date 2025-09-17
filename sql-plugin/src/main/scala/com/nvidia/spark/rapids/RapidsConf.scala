@@ -2102,18 +2102,6 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .booleanConf
       .createWithDefault(false)
 
-  val SHUFFLE_COALESCE_BEFORE_SHUFFLE_TARGET_SIZE_RATIO =
-    conf("spark.rapids.shuffle.coalesceBeforeShuffleTargetSizeRatio")
-      .doc("Ratio of target batch size for coalescing batches before shuffle partitioning. " +
-        "The target size for coalescing is calculated as: " +
-        "targetBatchSize * coalesceBeforeShuffleTargetSizeRatio. " +
-        "A value of 0.6 means the coalesce target is 60% of the configured batch size. " +
-        "A value of 0 disables coalescing before shuffle.")
-      .internal()
-      .doubleConf
-      .checkValue(v => v >= 0.0 && v <= 1.0, "Ratio must be between 0.0 and 1.0")
-      .createWithDefault(0.0)
-
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
@@ -2618,12 +2606,12 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
-  val DISABLE_OP_TIME_TRACKING_RDD = conf("spark.rapids.sql.exec.disableOpTimeTrackingRDD")
-    .doc("Disable OpTimeTrackingRDD for all GPU operations. When true, OpTimeTrackingRDD " +
-      "wrappers will not be created, which can improve performance by avoiding overhead " +
-      "of operation time tracking.")
+  val OP_TIME_TRACKING_RDD_ENABLED = conf("spark.rapids.sql.exec.opTimeTrackingRDD.enabled")
+    .doc("Enable OpTimeTrackingRDD for all GPU operations. When true, OpTimeTrackingRDD " +
+      "wrappers will be created to track operation time. When false, can improve " +
+      "performance by avoiding overhead of operation time tracking.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val LORE_PARQUET_USE_ORIGINAL_NAMES =
     conf("spark.rapids.sql.lore.parquet.useOriginalSchemaNames")

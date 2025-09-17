@@ -95,8 +95,8 @@ object GpuExec {
 trait GpuExec extends SparkPlan with Logging {
   import GpuMetric._
 
-  lazy val disableOpTimeTrackingRdd =
-    RapidsConf.DISABLE_OP_TIME_TRACKING_RDD.get(conf)
+  lazy val enableOpTimeTrackingRdd =
+    RapidsConf.OP_TIME_TRACKING_RDD_ENABLED.get(conf)
 
   def sparkSession: SparkSession = {
     SparkSessionUtils.sessionFromPlan(this)
@@ -247,7 +247,7 @@ trait GpuExec extends SparkPlan with Logging {
    * OP_TIME_NEW metrics and deduplicates them
    */
   def getChildOpTimeMetrics: Seq[GpuMetric] = {
-    
+
     def collectChildOpTimeMetricsRecursive(
         plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
       if (visited.contains(plan)) {
@@ -300,7 +300,7 @@ trait GpuExec extends SparkPlan with Logging {
     this.dumpLoreMetaInfo()
 
     val origin = allMetrics.get(OP_TIME_NEW) match {
-      case Some(opTimeNewMetric) if !disableOpTimeTrackingRdd =>
+      case Some(opTimeNewMetric) if enableOpTimeTrackingRdd =>
         new GpuOpTimeTrackingRDD(
           internalDoExecuteColumnar(),
           opTimeNewMetric,

@@ -113,7 +113,7 @@ case class GpuOptimizeWriteExchangeExec(
   @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     // Get OP_TIME_NEW metrics from all descendants for exclusion (with deduplication)
     val childOpTimeMetrics = getChildOpTimeMetrics
-    val opTimeNewSWMetric = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
+    val opTimeNewShuffleWriteMetric = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
     
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
@@ -126,7 +126,7 @@ case class GpuOptimizeWriteExchangeExec(
       metrics=allMetrics,
       writeMetrics=writeMetrics,
       additionalMetrics=additionalMetrics,
-      opTimeNewSW=opTimeNewSWMetric,
+      opTimeNewShuffleWrite=opTimeNewShuffleWriteMetric,
       childOpTimeMetrics=childOpTimeMetrics)
     metrics("numPartitions").set(dep.partitioner.numPartitions)
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
@@ -143,8 +143,7 @@ case class GpuOptimizeWriteExchangeExec(
     // Collect execution statistics, these will be used to adjust/decide how to split files
     val stats = ThreadUtils.awaitResult(mapOutputStatisticsFuture, Duration.Inf)
     if (stats == null) {
-      val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
-      shuffleRDD
+      new ShuffledBatchRDD(shuffleDependency, metrics)
     } else {
       try {
         val partitionSpecs = Some(rebalancePartitions(stats))
@@ -154,8 +153,7 @@ case class GpuOptimizeWriteExchangeExec(
       } catch {
         case e: Throwable =>
           logWarning("Failed to apply OptimizeWrite.", e)
-          val shuffleRDD = new ShuffledBatchRDD(shuffleDependency, metrics)
-          shuffleRDD
+          new ShuffledBatchRDD(shuffleDependency, metrics)
       }
     }
   }
