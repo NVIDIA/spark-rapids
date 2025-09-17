@@ -25,10 +25,12 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{GpuColumnVector, RapidsConf}
+import ai.rapids.cudf.{OrderByArg, Table}
+import com.nvidia.spark.rapids.{GpuColumnVector, RapidsConf, TestUtils}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FuzzerUtils.createColumnarBatch
-import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitionerSuite.assertEqual
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitionerSuite.{assertEqual, concatPartitionedBatches, sortColumnarBatch}
 import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.iceberg.{PartitionKey, PartitionSpec, Schema, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
@@ -40,6 +42,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
@@ -64,6 +67,7 @@ class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
     )
 
     val sparkType = GpuTypeToSparkType.toSparkType(icebergSchema)
+    val sparkFieldTypes = sparkType.fields.map(_.dataType)
 
     val icebergPartitionSpec = PartitionSpec.builderFor(icebergSchema)
         .bucket("x", 16)
@@ -72,10 +76,21 @@ class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     val partitioner = new GpuIcebergPartitioner(icebergPartitionSpec, sparkType)
 
-    val partitioned = partitioner.partition(createColumnarBatch(sparkType, 1000, seed = seed))
+    val totalRowCount = 1000
+
+    val originalCb = createColumnarBatch(sparkType, totalRowCount, seed = seed)
+    val sortedOriginalCb = sortColumnarBatch(originalCb, sparkFieldTypes)
+
+    val partitioned = partitioner.partition(originalCb)
 
     val icebergPartitionKey = new PartitionKey(icebergPartitionSpec, icebergSchema)
     val icebergRow = new SparkStructLike(icebergSchema.asStruct())
+
+    withResource(sortedOriginalCb) { _ =>
+      withResource(concatPartitionedBatches(partitioned, sparkFieldTypes)) { sortedPartitionedCb =>
+        TestUtils.compareBatches(sortedOriginalCb, sortedPartitionedCb)
+      }
+    }
 
     withResource(partitioned) { _ =>
       for ((part, partIdx) <- partitioned.zipWithIndex) {
@@ -120,6 +135,39 @@ object GpuIcebergPartitionerSuite {
       val javaClass = structType.fields().get(i).`type`().typeId().javaClass()
       assertResult(expected.get(i, javaClass), s"$clue at #$i partition key") {
         actual.get(i, javaClass)
+      }
+    }
+  }
+
+  def concatPartitionedBatches(partitioned: Seq[ColumnarBatchWithPartition],
+    dataTypes: Array[DataType]): ColumnarBatch = {
+    val tables = partitioned.safeMap { part =>
+      withResource(part.batch.getColumnarBatch()) { cb =>
+        GpuColumnVector.from(cb)
+      }
+    }
+
+    withResource(tables) { _ =>
+      withResource(Table.concatenate(tables: _*)) { concatedTable =>
+        val numCols = concatedTable.getNumberOfColumns
+        val sortOrders = {
+          (0 until numCols).map(OrderByArg.asc)
+        }
+        withResource(concatedTable.orderBy(sortOrders: _*)) { sortedTable =>
+          GpuColumnVector.from(sortedTable, dataTypes)
+        }
+      }
+    }
+  }
+
+  def sortColumnarBatch(cb: ColumnarBatch, dataTypes: Array[DataType]): ColumnarBatch = {
+    withResource(GpuColumnVector.from(cb)) { table =>
+      val numCols = table.getNumberOfColumns
+      val sortOrders = {
+        (0 until numCols).map(OrderByArg.asc)
+      }
+      withResource(table.orderBy(sortOrders: _*)) { sortedTable =>
+        GpuColumnVector.from(sortedTable, dataTypes)
       }
     }
   }
