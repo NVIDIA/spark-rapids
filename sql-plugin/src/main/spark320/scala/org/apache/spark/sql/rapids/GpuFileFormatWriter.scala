@@ -63,8 +63,6 @@ import org.apache.spark.util.{SerializableConfiguration, Utils}
 /** A helper object for writing columnar data out to a location. */
 object GpuFileFormatWriter extends Logging {
 
-  import GpuMetric._
-
   private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
     schema.foreach { field =>
       if (!format.supportDataType(field.dataType)) {

@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuTaskMetrics
-import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec}
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -303,7 +303,7 @@ trait GpuExec extends SparkPlan with Logging {
   // That's why we have this separate method to get the metric.
   def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW)
 
-  protected def wrapWithTimeTrackingRDD[T](rdd: RDD[T]): RDD[T] = {
+  protected def wrapWithTimeTrackingRDD[T: scala.reflect.ClassTag](rdd: RDD[T]): RDD[T] = {
     // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
     getOpTimeNewMetric match {
       case Some(opTimeNewMetric) if enableOpTimeTrackingRdd =>
@@ -316,7 +316,7 @@ trait GpuExec extends SparkPlan with Logging {
           } else {
             getChildOpTimeMetrics
           }
-        new GpuOpTimeTrackingRDD[T](rdd, opTimeNewMetric, childOpTimeMetrics)
+        new GpuOpTimeTrackingRDD(rdd, opTimeNewMetric, childOpTimeMetrics)
       case _ => rdd
     }
   }
