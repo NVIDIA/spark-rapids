@@ -301,13 +301,13 @@ case class GpuDelta33xParquetFileFormat(
   private def getRowIndexPosSimple(size: Long): RapidsHostColumnVector = {
     withResource(new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), size)) {
       rowIndexVectorBuilder =>
-      // populate the row index column value.
-      var i = 0L
-      while (i < size) {
-        rowIndexVectorBuilder.append(i)
-        i += 1
-      }
-      new RapidsHostColumnVector(org.apache.spark.sql.types.LongType, rowIndexVectorBuilder.build())
+        // populate the row index column value.
+        var i = 0L
+        while (i < size) {
+          rowIndexVectorBuilder.append(i)
+          i += 1
+        }
+        new RapidsHostColumnVector(org.apache.spark.sql.types.LongType, rowIndexVectorBuilder.build())
     }
   }
 
