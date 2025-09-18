@@ -1519,7 +1519,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
    *       instead, construct the handles directly. This is because the factory methods
    *       trigger a spill to disk, and that standard behavior of the spill framework so far.
    * @param handle a host handle that only has a size set, and no backing store.
-   * @return the builder to be closed by caller
+   * @return the builder to be closed by caller....
    */
   def makeBuilder(handle: SpillableHostBufferHandle): SpillableHostBufferHandleBuilder = {
     var builder: Option[SpillableHostBufferHandleBuilder] = None
