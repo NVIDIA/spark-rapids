@@ -124,3 +124,37 @@ def _change_table(table_name, table_func: Callable[[SparkSession], None], messag
 
 def get_full_table_name(spark_tmp_table_factory):
     return f"default.{spark_tmp_table_factory.get()}"
+
+
+def schema_to_ddl(spark, schema):
+    return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
+
+
+def create_iceberg_table(table_name: str,
+                         partition_col_sql: Optional[str] = None,
+                         table_prop: Optional[Dict[str, str]] = None) -> str:
+    if table_prop is None:
+        table_prop = {'format-version':'1'}
+
+    table_prop_sql = ", ".join([f"'{k}' = '{v}'" for k, v in table_prop.items()])
+
+    def set_iceberg_table(spark: SparkSession):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=42)
+        ddl = schema_to_ddl(spark, df.schema)
+
+        if partition_col_sql is None:
+            sql = (f"CREATE TABLE {table_name} "
+                   f"({ddl}) "
+                   f"USING ICEBERG "
+                   f"TBLPROPERTIES ({table_prop_sql})")
+        else:
+            sql = (f"CREATE TABLE {table_name} "
+                   f"({ddl}) "
+                   f"USING ICEBERG "
+                   f"PARTITIONED BY ({partition_col_sql}) "
+                   f"TBLPROPERTIES ({table_prop_sql})")
+
+        spark.sql(sql)
+
+    with_cpu_session(set_iceberg_table)
+    return table_name
