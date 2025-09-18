@@ -39,7 +39,18 @@ import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * Generic RDD wrapper that tracks opTime while excluding child operators' opTime
+ * Generic RDD wrapper that tracks the wall time spent because of this RDD and its descendants.
+ * The wall time contains two parts:
+ *
+ * 1. (Shallow Part) the time spent on doing this RDD's own work
+ * 2. (Deep Part) the time spent on doing the children RDDs' work
+ *
+ * Since most time spent on RDD is by invoking the next() and hasNext() of the iterator
+ * returned by compute(), we wrap the iterator to track the time spent. By doing this we can easily
+ * track the sum of the two parts. But to calculate the Shallow Part (opTimeMetric), we need to
+ * exclude the time spent on children RDDs. That's why we need to pass in the
+ * descendantOpTimeMetrics, which contains all its descendants' shallow
+ * time.
  */
 class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
     prev: RDD[T],
@@ -264,7 +275,9 @@ trait GpuExec extends SparkPlan with Logging {
                 s"returned empty metrics in getOpTimeNewMetric")
             }
             // Recursively collect from children
-            val childMetrics =
+            val childMetrics = {
+              // Why use Exchange instead of GpuShuffleExchangeExecBase?
+              // Because classes like delta.GpuOptimizeWriteExchangeExec also extends Exchange
               if (gpuExec.isInstanceOf[Exchange] ||
                 gpuExec.isInstanceOf[GpuCustomShuffleReaderExec]) {
                 Set.empty
@@ -273,6 +286,7 @@ trait GpuExec extends SparkPlan with Logging {
                   collectChildOpTimeMetricsRecursive(child, newVisited)
                 }.toSet
               }
+            }
             currentMetric ++ childMetrics
           case other =>
             if (other.isInstanceOf[Exchange]) {
