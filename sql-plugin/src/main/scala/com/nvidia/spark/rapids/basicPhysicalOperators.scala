@@ -226,7 +226,7 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
   def projectList: Seq[Expression]
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -675,7 +675,7 @@ case class GpuProjectExec(
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     KEY_NUM_PRE_SPLIT -> createMetric(DEBUG_LEVEL, "num pre-splits"),
-    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -1131,7 +1131,7 @@ case class GpuFilterExec(
     Seq[AnyRef](coalesceAfter.asInstanceOf[java.lang.Boolean])
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
@@ -1204,7 +1204,7 @@ case class GpuSampleExec(
     seed: Long, child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def output: Seq[Attribute] = {
     child.output
@@ -1280,7 +1280,7 @@ case class GpuFastSampleExec(
     child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def output: Seq[Attribute] = {
     child.output
@@ -1478,7 +1478,7 @@ case class GpuRangeExec(
   override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY)
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY)
   )
 
   override def outputOrdering: Seq[SortOrder] = {

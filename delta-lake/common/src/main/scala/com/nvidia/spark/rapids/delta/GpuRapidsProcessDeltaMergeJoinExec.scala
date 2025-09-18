@@ -173,7 +173,7 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = {
     import GpuMetric._
-    Map(OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    Map(OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
   }
 
   private def bindForGpu(e: Expression): GpuExpression = {

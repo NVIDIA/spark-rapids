@@ -62,7 +62,7 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def output: Seq[Attribute] = windowOps.map(_.toAttribute)
 

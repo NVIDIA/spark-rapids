@@ -298,8 +298,8 @@ trait GpuExec extends SparkPlan with Logging {
 
   // For GpuShuffleExchangeExecBase and GpuCustomShuffleReaderExec,
   // we want the op time metrics to be called:
-  // - "op time v2 (shuffle write partition & serial)" for shuffle write, and
-  // - "op time v2 (shuffle read)" for shuffle read.
+  // - "op time (shuffle write partition & serial)" for shuffle write, and
+  // - "op time (shuffle read)" for shuffle read.
   // That's why we have this separate method to get the metric.
   def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW)
 
