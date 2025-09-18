@@ -97,23 +97,23 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     // Comprehensive test for task priority and memory usage (including unbounded tasks):
     // Execution order: 1, 4, 6, 2, 5, 3
     val futures = mutable.ArrayBuffer[JFuture[AsyncResult[Long]]]()
-    // priority = 5 - log10(1 << 20) = -1.02
+    // (1) priority = 5 - 1KB = 4
     futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
-      memoryBytes = 1 << 20, priority = 5.0f))
+      memoryBytes = 100 << 10, priority = 5L))
     // Guarantee the first task is executed first to avoid uncertain execution order.
     Thread.sleep(1)
-    // priority = 3 - log10(1 << 10) = -0.01
+    // (2) priority = 3 - 1KB = 2
     futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
-      memoryBytes = 1 << 10, priority = 3.0f))
-    // priority = 4 - log10(50 << 10) = -0.71
+      memoryBytes = 1 << 10, priority = 3L))
+    // (3) priority = 4 - 50KB = -46
     futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
-      memoryBytes = 50 << 10, priority = 4.0f))
-    // Unbounded task with the highest priority
+      memoryBytes = 50 << 10, priority = 4L))
+    // (4) Unbounded task with the highest priority
     futures += executor.submit(AsyncRunner.newUnboundedTask(buildDummyFn()))
-    // priority = 7 - log10(10 << 20) = -0.02
+    // (5) priority = 7 - 10KB = -3
     futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(),
-      memoryBytes = 10 << 20, priority = 7.0f))
-    // Unbounded task with the highest priority
+      memoryBytes = 10 << 10, priority = 7L))
+    // (6) Unbounded task with the highest priority
     futures += executor.submit(AsyncRunner.newUnboundedTask(buildDummyFn()))
     results = Array(1, 4, 6, 2, 5, 3).zip(futures).sortBy(_._1).map {
       case (_, fut) => fut.get().data

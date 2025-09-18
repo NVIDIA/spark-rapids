@@ -34,7 +34,6 @@ import org.apache.spark.internal.Logging
  * @tparam T the result type returned by the AsyncRunner
  */
 class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncResult[T]](runner) {
-  private[async] var priority: Double = runner.priority
   private var resourceFulfilled: Boolean = false
   private var completed: Boolean = false
   private var caughtException: Boolean = false
@@ -88,7 +87,7 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncRe
   def isCompleted: Boolean = completed
 
   override def toString: String = {
-    s"RapidsFutureTask(runner=$runner, priority=$priority, " +
+    s"RapidsFutureTask(runner=$runner, priority=${runner.priority}, " +
         s"resourceFulfilled=$resourceFulfilled, completed=$completed, " +
         s"caughtException=$caughtException, scheduleTime=${scheduleTime / 1e9}s)"
   }
@@ -106,16 +105,7 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncRe
  */
 class RapidsFutureTaskComparator[T] extends java.util.Comparator[RapidsFutureTask[T]] {
   override def compare(o1: RapidsFutureTask[T], o2: RapidsFutureTask[T]): Int = {
-    if (o1.isResourceFulfilled) {
-      // o1 is holding resource, so o1 should come before o2
-      -1
-    } else if (o2.isResourceFulfilled) {
-      // o2 is holding resource, so o2 should come before o1
-      1
-    } else {
-      // both tasks are not holding resources, compare by priority
-      (-o1.priority).compareTo(-o2.priority)
-    }
+    o2.runner.priority.compareTo(o1.runner.priority)
   }
 }
 

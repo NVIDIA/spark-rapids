@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
 import scala.collection.mutable
@@ -71,11 +70,12 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
 
   private val condition = lock.newCondition()
 
-  private val runnersInFlight: AtomicLong = new AtomicLong(0L)
-
   // It is safe to use thread-nonsafe variables because below states are only accessed within
   // the lock guarded critical section.
   private var remaining: Long = maxHostMemoryBytes
+
+  // Only counts for the AsyncRunners which actually acquired host memory.
+  private var runnersInFlight: Long = 0L
 
   private val runningSparkTasks = mutable.HashMap[Long, Long]()
 
@@ -86,81 +86,86 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
     // step 2: try to acquire the resource with blocking and timeout
     // 2.1 If no resource needed, acquire immediately
     if (memoryRequire == 0L) {
-      runnersInFlight.incrementAndGet()
+      // run onAcquire callback even if no actual resource is acquired
       runner.onAcquire()
-      return AcquireSuccessful(elapsedTime = 0L)
+      AcquireSuccessful(elapsedTime = 0L)
     }
     // 2.2 If the request runner itself exceeds the maximum pool size, fail immediately by
     // returning a failure signal
-    if (memoryRequire > maxHostMemoryBytes) {
+    else if (memoryRequire > maxHostMemoryBytes) {
       val invalidReq = new InvalidResourceRequest(
         s"Task requires more host memory(${bytesToString(memoryRequire)})" +
             s"than pool size(${bytesToString(maxHostMemoryBytes)})")
-      return AcquireExcepted(invalidReq)
+      AcquireExcepted(invalidReq)
     }
     // 2.3 The main path for acquiring resource with blocking and timeout
-    var isDone = false
-    var isTimeout = false
-    val timeoutNs = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
-    var waitTimeNs = timeoutNs
-    // Enter into the critical section which is guarded by the lock from concurrent access
-    lock.lockInterruptibly()
-    try {
-      while (!isDone && !isTimeout) {
-        // If enough resource is available, acquire it and exit the loop.
-        if (remaining >= memoryRequire) {
-          remaining -= memoryRequire
-          isDone = true
-        } else if (waitTimeNs > 0) {
-          waitTimeNs = condition.awaitNanos(waitTimeNs)
+    else {
+      var isDone = false
+      var isTimeout = false
+      val timeoutNs = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+      var waitTimeNs = timeoutNs
+      // Enter into the critical section which is guarded by the lock from concurrent access
+      lock.lockInterruptibly()
+      try {
+        do {
+          // If enough resource is available, acquire it and exit the loop.
+          if (remaining >= memoryRequire) {
+            remaining -= memoryRequire
+            isDone = true
+          } else if (waitTimeNs > 0) {
+            waitTimeNs = condition.awaitNanos(waitTimeNs)
+          } else {
+            isTimeout = true
+            logWarning(s"Failed to acquire ${bytesToString(memoryRequire)}, remaining=" +
+                s"${bytesToString(remaining)}, AsyncRunners=$runnersInFlight, " +
+                s"SparkTasks=${runningSparkTasks.size}")
+          }
+        } while (!isDone && !isTimeout)
+        if (isDone) {
+          // Update nonAtomic states if the resource is acquired successfully
+          runnersInFlight += 1L
+          runner.sparkTaskId.foreach { id =>
+            val numRunner = runningSparkTasks.getOrElse(id, 0L)
+            runningSparkTasks.put(id, numRunner + 1L)
+          }
+          // Callback to the runner for post-acquire actions, should keep thread-safe
+          runner.onAcquire()
+          AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
         } else {
-          isTimeout = true
-          logWarning(s"Failed to acquire ${bytesToString(memoryRequire)}, remaining=" +
-              s"${bytesToString(remaining)}, AsyncRunners=${runnersInFlight.get()}, " +
-              s"SparkTasks=${runningSparkTasks.size}")
+          AcquireFailed
         }
+      } catch {
+        case ex: Throwable => AcquireExcepted(ex)
+      } finally {
+        lock.unlock()
       }
-      if (isDone) {
-        runnersInFlight.incrementAndGet()
-        runner.sparkTaskId.foreach { id =>
-          val numRunner = runningSparkTasks.getOrElseUpdate(id, 0L)
-          runningSparkTasks.put(id, numRunner + 1L)
-        }
-        runner.onAcquire()
-        AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
-      } else {
-        AcquireFailed
-      }
-    } catch {
-      case ex: Throwable => AcquireExcepted(ex)
-    } finally {
-      lock.unlock()
     }
   }
 
   override def releaseResource[T](runner: AsyncRunner[T]): Unit = {
     val toRelease = extractResource(runner).hostMemoryBytes
-    val pendingRunners = runnersInFlight.decrementAndGet()
-    runner.onRelease()
     if (toRelease > 0) {
       // Enter into the critical section if there is actual resource to release for.
       lock.lock()
       // Update nonAtomic states
+      runnersInFlight -= 1L
       remaining += toRelease
       runner.sparkTaskId.foreach { taskId =>
         val runnersForTask = runningSparkTasks.getOrElse(taskId, 0L)
         require(runnersForTask > 0L,
           s"The Spark task $taskId to release does not have any running runners")
         if (runnersForTask == 1L) {
-          runningSparkTasks.remove(taskId)
+          runningSparkTasks -= taskId
           logDebug(s"[LOG POINT] remaining=${bytesToString(remaining)}, " +
-              s"AsyncRunners=$pendingRunners, SparkTasks=${runningSparkTasks.size})")
+              s"AsyncRunners=$runnersInFlight, SparkTasks=${runningSparkTasks.size})")
         }
       }
       // Waking up waiters
       condition.signalAll()
       lock.unlock()
     }
+    // Callback to the runner for post-release actions, should keep thread-safe
+    runner.onRelease()
   }
 
   override def toString: String = {

@@ -142,7 +142,7 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
    * most circumstances, such as GpuMultiFileReader, but it might also be adjusted based on the
    * resource requirements or other factors.
    */
-  def priority: Double
+  def priority: Long
 
   /**
    * The abstract method defines the actual execution logic, which should be implemented by the
@@ -240,7 +240,7 @@ abstract class UnboundedAsyncRunner[T] extends AsyncRunner[T] {
   override val resource: AsyncRunResource = AsyncRunResource.newCpuResource(0L)
 
   // Unbounded tasks have the highest priority.
-  override val priority: Double = Double.MaxValue
+  override val priority: Long = Long.MaxValue
 
   // Unbounded tasks use FastReleaseResult as the placeholder.
   override protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T] = {
@@ -255,7 +255,7 @@ abstract class UnboundedAsyncRunner[T] extends AsyncRunner[T] {
  */
 class AsyncFunctorForTest[T](
     override val resource: AsyncRunResource,
-    override val priority: Double,
+    override val priority: Long,
     functor: () => T) extends AsyncRunner[T] {
 
   override protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T] = {
@@ -271,15 +271,16 @@ object AsyncRunner {
   // NOTE: The API is only used in tests currently
   def newCpuTask[T](fn: () => T,
       memoryBytes: Long,
-      priority: Float = 0.0f): AsyncRunner[T] = {
-    val adjustedPriority = hostMemoryPenalty(memoryBytes, priority)
-    new AsyncFunctorForTest[T](AsyncRunResource.newCpuResource(memoryBytes), adjustedPriority, fn)
+      priority: Long = 0L): AsyncRunner[T] = {
+    require(priority >= 0, s"Priority must be non-negative, got: $priority")
+    val p = hostMemoryPenalty(memoryBytes, priority)
+    new AsyncFunctorForTest[T](AsyncRunResource.newCpuResource(memoryBytes), p, fn)
   }
 
   // Create a light-weight unbounded AsyncRunner with the highest priority.
   // NOTE: The API is only used in tests currently
   def newUnboundedTask[T](fn: () => T): AsyncRunner[T] = {
-    new AsyncFunctorForTest[T](AsyncRunResource.newCpuResource(0L), Float.MaxValue, fn)
+    new AsyncFunctorForTest[T](AsyncRunResource.newCpuResource(0L), Long.MaxValue, fn)
   }
 
   // Atomically increase the global runner ID with overflow protection
@@ -294,10 +295,12 @@ object AsyncRunner {
   private lazy val globalRunnerId = new AtomicLong(0)
 
   // Adjust the priority based on the memory overhead to minimal the potential clogging:
-  // lightweight tasks should have higher priority
-  private def hostMemoryPenalty(memoryBytes: Long, priority: Double): Double = {
+  // lightweight tasks should have higher priority.
+  // Assert pre-adjusted priority is non-negative. Then, apply a penalty proportional to
+  // memory requirement (in KB) to the priority.
+  private def hostMemoryPenalty(memoryBytes: Long, priority: Long): Long = {
     require(memoryBytes >= 0, s"Memory bytes must be non-negative, got: $memoryBytes")
-    priority - math.log10(memoryBytes)
+    priority - (memoryBytes >> 10)
   }
 }
 
@@ -312,7 +315,7 @@ abstract class SparkAsyncRunner[T] extends AsyncRunner[T] {
   // SparkAsyncRunner must be created within a Spark task context
   protected[async] def taskContext: TaskContext
 
-  override def priority: Double = TaskPriority.getTaskPriority(sparkTaskId.get)
+  override def priority: Long = TaskPriority.getTaskPriority(sparkTaskId.get)
 
   override protected[async] val sparkTaskId: Option[Long] = {
     Some(taskContext.taskAttemptId())
