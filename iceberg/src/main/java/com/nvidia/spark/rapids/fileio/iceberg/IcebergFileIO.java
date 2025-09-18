@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.fileio.iceberg;
 
-import com.nvidia.spark.rapids.fileio.RapidsFileIO;
-import com.nvidia.spark.rapids.fileio.RapidsInputFile;
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
+import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import org.apache.iceberg.io.FileIO;
 
 import java.io.IOException;
