@@ -19,9 +19,11 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
+import com.nvidia.spark.rapids.{FileFormatChecks, GpuExpression, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta}
+import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.GpuSparkBatchQueryScan
 
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 
 class IcebergProviderImpl extends IcebergProvider {
@@ -69,5 +71,23 @@ class IcebergProviderImpl extends IcebergProvider {
       "Iceberg scan",
       ClassTag(cpuIcebergScanClass))
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+  }
+
+  override def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
+    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
+      GpuBucketExpression.tagExprForGpu(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"StaticInvoke of ${expr.staticObject.getName} is not supported on GPU")
+    }
+  }
+
+  override def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
+    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu().asInstanceOf[GpuExpression])
+      GpuBucketExpression(left, right)
+    } else {
+      throw new IllegalStateException(
+        s"Should have been caught in tagExprForGpu: ${expr.staticObject.getName}")
+    }
   }
 }
