@@ -28,7 +28,7 @@ abstract class GpuBaseBatchWrite(write: GpuSparkWrite) extends BatchWrite {
   override def useCommitCoordinator(): Boolean = false
 }
 
-class GpuBatchAppend(write: GpuSparkWrite ) extends GpuBaseBatchWrite(write) {
+class GpuBatchAppend(write: GpuSparkWrite) extends GpuBaseBatchWrite(write) {
   override def commit(messages: Array[WriterCommitMessage]): Unit = {
     val append = write.table.newAppend()
 
