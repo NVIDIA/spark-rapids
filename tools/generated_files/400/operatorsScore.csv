@@ -15,6 +15,7 @@ SubqueryBroadcastExec,3.0
 TakeOrderedAndProjectExec,3.0
 UnionExec,3.0
 AQEShuffleReadExec,3.0
+TableCacheQueryStageExec,3.0
 HashAggregateExec,4.5
 ObjectHashAggregateExec,3.0
 SortAggregateExec,3.0
