@@ -363,9 +363,6 @@ case class GpuDelta33xParquetFileFormat(
     }
   }
 
-  @scala.annotation.nowarn(
-    "msg=method readFooter in class ParquetFileReader is deprecated"
-  )
   private def replaceBatch(
     batch: ColumnarBatch,
     size: Int,
