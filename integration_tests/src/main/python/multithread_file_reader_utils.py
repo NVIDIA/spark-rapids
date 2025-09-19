@@ -14,8 +14,8 @@
 
 def resource_bounded_multithreaded_reader_conf(file_type, specialized_conf = {}):
     base_conf = specialized_conf.copy()
-    base_conf['spark.rapids.sql.multiThreadedRead.memBound'] = 'true'
-    base_conf['spark.rapids.sql.multiThreadedRead.stageLevelPool'] = 'true'
+    base_conf['spark.rapids.sql.multiThreadedRead.memoryLimit.enabled'] = 'true'
+    base_conf['spark.rapids.sql.multiThreadedRead.memoryLimit.tests.perStagePool'] = 'true'
     base_conf['spark.sql.sources.useV1SourceList'] = file_type
 
     combine_size = ('spark.rapids.sql.reader.multithreaded.combine.sizeBytes', [0, 4 << 20])
@@ -23,12 +23,12 @@ def resource_bounded_multithreaded_reader_conf(file_type, specialized_conf = {})
     reader_type = ('spark.rapids.sql.format.%s.reader.type' % file_type,
                    ['MULTITHREADED', 'COALESCING'])
     pool_size = ('spark.rapids.sql.multiThreadedRead.numThreads', [16, 128])
-    memory_limit = ('spark.rapids.sql.multiThreadedRead.memoryLimit', [
+    memory_limit = ('spark.rapids.sql.multiThreadedRead.memoryLimit.size', [
         4 << 20,   # 4MB
         32 << 20,   # 32MB
         128 << 20,  # 128MB
     ])
-    task_timeout = ('spark.rapids.sql.multiThreadedRead.taskTimeout', [0, 1000])
+    task_timeout = ('spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout', [0, 1000])
 
     conf_matrix = [base_conf]
     for conf_branch in [combine_size, keep_order, reader_type, pool_size, memory_limit, task_timeout]:

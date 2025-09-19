@@ -447,10 +447,10 @@ object GpuDeviceManager extends Logging {
     }
     // Host memory limits must be set after the pinned memory pool is initialized
     HostAlloc.initialize(nonPinnedLimit)
-    // Fill the MULTITHREAD_READ_MEM_LIMIT with the 90% of the total OFF_HEAP memory
+    // Fill the MULTITHREAD_READ_MEMORY_LIMIT_SIZE with the 90% of the total OFF_HEAP memory
     // if it is not set already.
     if (conf.multiThreadReadMemoryLimit == 0) {
-      sparkConf.set(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key,
+      sparkConf.set(RapidsConf.MULTITHREAD_READ_MEMORY_LIMIT_SIZE.key,
         (0.9 * (pinnedSize + nonPinnedLimit)).toLong.toString)
     }
   }

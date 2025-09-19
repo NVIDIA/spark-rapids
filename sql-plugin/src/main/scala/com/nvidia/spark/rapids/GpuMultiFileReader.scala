@@ -436,7 +436,7 @@ class ThreadPoolConfBuilder(
       val memCap: Long = if (memoryCapacityFromDriver > 0) {
         memoryCapacityFromDriver
       } else {
-        SparkEnv.get.conf.getOption(RapidsConf.MULTITHREAD_READ_MEM_LIMIT.key) match {
+        SparkEnv.get.conf.getOption(RapidsConf.MULTITHREAD_READ_MEMORY_LIMIT_SIZE.key) match {
           case Some(v) if v.toLong > 0 =>
             v.toLong
           case _ =>
@@ -461,9 +461,9 @@ object ThreadPoolConfBuilder {
   def apply(conf: RapidsConf): ThreadPoolConfBuilder = {
     new ThreadPoolConfBuilder(
       conf.multiThreadReadNumThreads,
-      conf.useMemoryBoundedMultiThreadRead,
+      conf.enableMultiThreadReadMemoryLimit,
       conf.multiThreadReadMemoryLimit,
-      conf.multiThreadReadTaskTimeout,
+      conf.multiThreadReadMemoryAcquireTimeout,
       conf.multiThreadReadStageLevelPool)
   }
 
@@ -646,17 +646,23 @@ abstract class MultiFileCloudPartitionReaderBase(
    * Given a set of host buffers actually read have the GPU read them and update the
    * batchIter with the returned Columnar batches.
    */
-  private def readBuffersToBatch(currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
+  private def readBuffersToBatch(fileHostBuffers: HostMemoryBuffersWithMetaDataBase,
       addTaskIfNeeded: Boolean): Unit = {
-    if (getNumRowsInHostBuffers(currentFileHostBuffers) == 0) {
-      currentFileHostBuffers.close()
-      closeCurrentFileHostBuffers()
+    if (getNumRowsInHostBuffers(fileHostBuffers) == 0) {
+      // Close the currentFileHostBuffers on the deck if it is the fileHostBuffers being passed
+      // in, otherwise close the fileHostBuffers passed in. It assumes that we will always handle
+      // the currentFileHostBuffers on the deck at first.
+      if (currentFileHostBuffers.isDefined) {
+        closeCurrentFileHostBuffers()
+      } else {
+        fileHostBuffers.close()
+      }
       if (addTaskIfNeeded) addNextTaskIfNeeded()
       next()
     } else {
-      val file = currentFileHostBuffers.partitionedFile.filePath
+      val file = fileHostBuffers.partitionedFile.filePath
       batchIter = try {
-        readBatches(currentFileHostBuffers)
+        readBatches(fileHostBuffers)
       } catch {
         case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(s"Skipped the corrupted file: $file", e)

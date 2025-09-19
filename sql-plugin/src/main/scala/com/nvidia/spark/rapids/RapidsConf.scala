@@ -1094,45 +1094,54 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
 
   // Memory-bounded multithreaded reading
-  val MULTITHREAD_READ_MEMORY_LIMIT_ENABLED = conf("spark.rapids.sql.multiThreadedRead.memoryLimit.enabled")
-      .doc("Enable memory-bounded multi-threaded reading. When enabled, the concurrency of " +
-        "multi-threaded reading will be dynamically controlled based on the available memory " +
-        s"budget per Spark executor.")
-      .startupOnly()
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
+  val MULTITHREAD_READ_MEMORY_LIMIT_ENABLED = {
+    // TODO: This conf should be adjusted during the runtime
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.enabled")
+        .doc("Enable memory-bounded multi-threaded reading. When enabled, the concurrency of " +
+            "multi-threaded reading will be dynamically controlled based on the available memory " +
+            s"budget per Spark executor.")
+        .startupOnly()
+        .internal()
+        .booleanConf
+        .createWithDefault(false)
+  }
 
-  val MULTITHREAD_READ_MEMORY_LIMIT_SIZE = conf("spark.rapids.sql.multiThreadedRead.memoryLimit.size")
-      .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
-        "This can not be changed at runtime after the executor has started. And if 0, it " +
-        "will be set with 90% of executor's off-heap memory. This config only takes effect " +
-        s"when ${MULTITHREAD_READ_MEM_BOUNDED_ENABLED.key} is enabled.")
-      // TODO: Memory capacity can be adjusted during the runtime
-      .startupOnly()
-      .internal()
-      .bytesConf(ByteUnit.BYTE)
-      .checkValue(v => v >= 0, s"The memory capacity must be greatThanOrEqual zero")
-      .createWithDefault(0)
+  val MULTITHREAD_READ_MEMORY_LIMIT_SIZE = {
+    // TODO: This conf should be adjusted during the runtime
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.size")
+        .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
+            "This can not be changed at runtime after the executor has started. And if 0, it " +
+            "will be set with 90% of executor's off-heap memory. This config only takes effect " +
+            s"when ${MULTITHREAD_READ_MEMORY_LIMIT_ENABLED.key} is enabled.")
+        .startupOnly()
+        .internal()
+        .bytesConf(ByteUnit.BYTE)
+        .checkValue(v => v >= 0, s"The memory capacity must be greatThanOrEqual zero")
+        .createWithDefault(0)
+  }
 
-  val MULTITHREAD_READ_MEMORY_LIMIT_ACQUISITION_TIMEOUT  = conf("spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout")
-      .doc("The maximum time in milliseconds to wait for a task to acquire required resource " +
-        "before giving up and put off the run, by re-appending the task back into the queue " +
-        "with a priority penality.")
-      .startupOnly()
-      .internal()
-      .longConf
-      .checkValue(v => v >= 0, "The timeout must be greater than zero")
-      .createWithDefault(30 * 1000L) // 30 seconds
+  val MULTITHREAD_READ_MEMORY_LIMIT_ACQUISITION_TIMEOUT  = {
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout")
+        .doc("The maximum time in milliseconds to wait for a task to acquire required resource " +
+            "before giving up and put off the run, by re-appending the task back into the queue " +
+            "with a priority penality.")
+        .startupOnly()
+        .internal()
+        .longConf
+        .checkValue(v => v >= 0, "The timeout must be greater than zero")
+        .createWithDefault(30 * 1000L)
+  } // 30 seconds
 
-  val MULTITHREAD_READ_MEMORY_LIMIT_TEST_PER_STAGE_POOL = conf("spark.rapids.sql.multiThreadedRead.memoryLimit.tests.perStagePool")
-      .doc("Enable test mode for the multi-threaded read. This will create different " +
-        "threadpools for each stage, so as to verify threadpools with different configs " +
-        "as independent test cases which can be run in parallel.")
-      .startupOnly()
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
+  val MULTITHREAD_READ_MEMORY_LIMIT_TEST_PER_STAGE_POOL = {
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.tests.perStagePool")
+        .doc("Enable test mode for the multi-threaded read. This will create different " +
+            "threadpools for each stage, so as to verify threadpools with different configs " +
+            "as independent test cases which can be run in parallel.")
+        .startupOnly()
+        .internal()
+        .booleanConf
+        .createWithDefault(false)
+  }
 
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -3223,13 +3232,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val numFilesFilterParallel: Int = get(NUM_FILES_FILTER_PARALLEL)
 
-  lazy val useMemoryBoundedMultiThreadRead: Boolean = get(MULTITHREAD_READ_MEM_BOUNDED_ENABLED)
+  lazy val enableMultiThreadReadMemoryLimit: Boolean = get(MULTITHREAD_READ_MEMORY_LIMIT_ENABLED)
 
-  lazy val multiThreadReadMemoryLimit: Long = get(MULTITHREAD_READ_MEM_LIMIT)
+  lazy val multiThreadReadMemoryLimit: Long = get(MULTITHREAD_READ_MEMORY_LIMIT_SIZE)
 
-  lazy val multiThreadReadTaskTimeout: Long = get(MULTITHREAD_READ_TASK_TIMEOUT)
+  lazy val multiThreadReadMemoryAcquireTimeout: Long =
+    get(MULTITHREAD_READ_MEMORY_LIMIT_ACQUISITION_TIMEOUT)
 
-  lazy val multiThreadReadStageLevelPool: Boolean = get(MULTITHREAD_READ_STAGE_LEVEL_POOL)
+  lazy val multiThreadReadStageLevelPool: Boolean =
+    get(MULTITHREAD_READ_MEMORY_LIMIT_TEST_PER_STAGE_POOL)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 

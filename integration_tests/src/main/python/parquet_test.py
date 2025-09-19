@@ -230,12 +230,12 @@ def test_parquet_read_multithread_flow_ctrl_quick_crash(spark_tmp_path, keep_ord
             lambda spark: gen_df(spark, [('a', long_gen)]).write.parquet(data_path),
             conf=rebase_write_corrected_conf)
     tiny_pool_conf = {
-        'spark.rapids.sql.multiThreadedRead.stageLevelPool': 'true',
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.tests.perStagePool': 'true',
         'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-        'spark.rapids.sql.multiThreadedRead.memBound': 'true',
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.enabled': 'true',
         'spark.rapids.sql.multiThreadedRead.numThreads': 64,
-        'spark.rapids.sql.multiThreadedRead.memoryLimit': 1 << 10,  # 1KB
-        'spark.rapids.sql.multiThreadedRead.taskTimeout': timeout,
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.size': 1 << 10,  # 1KB
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout': timeout,
         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': keep_order,
     }
     fn = lambda ss: (read_parquet_sql(data_path))(ss).write.parquet(data_path + '_tmpout')
