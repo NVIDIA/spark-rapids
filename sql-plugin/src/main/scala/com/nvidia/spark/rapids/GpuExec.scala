@@ -53,7 +53,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * time.
  */
 class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
-    prev: RDD[T],
+    val prev: RDD[T],
     opTimeMetric: GpuMetric,
     descendantOpTimeMetrics: Seq[GpuMetric]) extends RDD[T](prev) {
 
