@@ -234,7 +234,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(Array(newChild))
 
     case p =>
-      p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
+      SparkShimImpl.handleTableCacheInOptimizeAdaptiveTransitions(p, parent) match {
+        case Some(handledPlan) => handledPlan
+        case None => p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
+      }
   }
 
   /**
@@ -868,7 +871,8 @@ object GpuTransitionOverrides {
         } else {
           sqse.plan
         }
-      case _ => plan
+      case _ =>
+        SparkShimImpl.getTableCacheNonQueryStagePlan(plan).getOrElse(plan)
     }
   }
 
