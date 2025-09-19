@@ -16,7 +16,10 @@
 
 package org.apache.iceberg.spark.source
 
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
 import org.apache.hadoop.fs.Path
@@ -26,7 +29,6 @@ import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, Me
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
 import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
-import scala.collection.JavaConverters._
 
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
@@ -197,8 +199,12 @@ class GpuUnpartitionedDataWriter(
     null)
 
 
-  override def write(t: ColumnarBatch): Unit = delegate.write(SpillableColumnarBatch(t,
-    ACTIVE_ON_DECK_PRIORITY))
+  override def write(t: ColumnarBatch): Unit = {
+    val scb = closeOnExcept(t) { _ =>
+      SpillableColumnarBatch(t, ACTIVE_ON_DECK_PRIORITY)
+    }
+    delegate.write(scb)
+  }
 
   override def commit(): WriterCommitMessage = {
     close()
