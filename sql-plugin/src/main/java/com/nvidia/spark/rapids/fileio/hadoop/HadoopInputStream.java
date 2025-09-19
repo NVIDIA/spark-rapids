@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.fileio.hadoop;
 
-import com.nvidia.spark.rapids.fileio.SeekableInputStream;
+import com.nvidia.spark.rapids.jni.fileio.SeekableInputStream;
 import org.apache.hadoop.fs.FSDataInputStream;
 
 import java.io.IOException;
