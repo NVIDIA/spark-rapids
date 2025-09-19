@@ -41,7 +41,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{ByteType, LongType, MetadataBuilder, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-//import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.SerializableConfiguration
 
 case class GpuDelta33xParquetFileFormat(
@@ -285,12 +284,10 @@ case class GpuDelta33xParquetFileFormat(
 
     iterator.map {
       case cb: ColumnarBatch =>
-        val startTime = System.nanoTime()
         val size = cb.numRows()
         val newBatch = replaceBatch(cb, size, rowIndexColumnOpt, isRowDeletedColumnOpt,
           rowIndexFilterOpt, metrics)
         rowIndex += size
-        metrics("ColumnarBatchReplaceTime") += System.nanoTime() - startTime
         newBatch
 
       case other =>
