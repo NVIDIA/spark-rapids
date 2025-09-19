@@ -19,24 +19,49 @@ from itertools import combinations
 from types import MappingProxyType
 from typing import Callable, List, Dict, Optional
 
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import FloatType, DoubleType, BinaryType
 
-from data_gen import byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, \
-    boolean_gen, DataGen, gen_df, date_gen, timestamp_gen, binary_gen, decimal_gen_32bit, \
-    decimal_gen_64bit, decimal_gen_128bit
+from data_gen import *
 from spark_session import with_cpu_session
 
 # iceberg supported types
 iceberg_table_gen = MappingProxyType({
-    '_c0': byte_gen, '_c1': short_gen, '_c2': int_gen, '_c3': long_gen, '_c4': float_gen,
-    '_c5': double_gen, '_c6': string_gen, '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen,
-    '_c10': decimal_gen_32bit, '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit,
-    '_c13': binary_gen
+    '_c0': byte_gen, '_c1': short_gen, '_c2': IntegerGen(nullable=False),
+    '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, '_c6': string_gen,
+    '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen, '_c10': decimal_gen_32bit,
+    '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit, '_c13': binary_gen
 })
 iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
+
+# All data types of iceberg, not all of them are supported by spark-rapids for now
+iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
+    BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen ]] + \
+                   [simple_string_to_string_map_gen,
+                    MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+                    MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+                    MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+
+iceberg_full_gens_list = ([byte_gen, short_gen, IntegerGen(nullable=False), LongGen(nullable=False),
+                          float_gen, double_gen, string_gen, boolean_gen, date_gen,
+                          timestamp_gen, binary_gen, ArrayGen(binary_gen), ArrayGen(byte_gen),
+                          ArrayGen(long_gen), ArrayGen(string_gen), ArrayGen(date_gen),
+                          ArrayGen(timestamp_gen), ArrayGen(decimal_gen_64bit),
+                          ArrayGen(ArrayGen(byte_gen)),
+                          StructGen([['child0', ArrayGen(byte_gen)], ['child1', byte_gen],
+                                     ['child2', float_gen], ['child3', decimal_gen_64bit]]),
+                          ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen],
+                                              ['child2', int_gen]]))] +
+                          iceberg_map_gens + decimal_gens)
+
+iceberg_write_enabled_conf = {
+    "spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
+    "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
+    "spark.rapids.sql.format.iceberg.enabled": "true",
+    "spark.rapids.sql.format.iceberg.write.enabled": "true",
+}
 
 
 def can_be_eq_delete_col(data_gen: DataGen) -> bool:
@@ -129,17 +154,21 @@ def get_full_table_name(spark_tmp_table_factory):
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
 
-
 def create_iceberg_table(table_name: str,
                          partition_col_sql: Optional[str] = None,
-                         table_prop: Optional[Dict[str, str]] = None) -> str:
+                         table_prop: Optional[Dict[str, str]] = None,
+                         df_gen: Optional[Callable[[SparkSession], DataFrame]] = None) -> str:
     if table_prop is None:
         table_prop = {'format-version':'1'}
+
+    if df_gen is None:
+        df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+
 
     table_prop_sql = ", ".join([f"'{k}' = '{v}'" for k, v in table_prop.items()])
 
     def set_iceberg_table(spark: SparkSession):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=42)
+        df = df_gen(spark)
         ddl = schema_to_ddl(spark, df.schema)
 
         if partition_col_sql is None:
