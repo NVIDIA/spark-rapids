@@ -35,7 +35,7 @@ def hive_udaf_eval_fn(spark, data_gens):
 
 
 @ignore_order(local=True)
-@pytest.mark.skip()
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13451")
 @pytest.mark.parametrize("aggs", projected_aggs_list, ids=idfn)
 def test_groupby_with_hive_average_udaf(aggs):
     with_spark_session(skip_if_no_hive)
@@ -50,7 +50,7 @@ def test_groupby_with_hive_average_udaf(aggs):
 
 
 @ignore_order(local=True)
-@pytest.mark.skip()
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13451")
 @pytest.mark.parametrize("aggs", projected_aggs_list, ids=idfn)
 def test_reduction_with_hive_average_udaf(aggs):
     with_spark_session(skip_if_no_hive)

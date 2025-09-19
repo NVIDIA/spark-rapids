@@ -364,6 +364,7 @@ case class GpuScalaAggregator(
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = {
     // TODO make it compatible with the Spark one by leveraging TypedImperativeAggExprMeta.
+    // https://github.com/NVIDIA/spark-rapids/issues/13452
     // The Spark ScalaAggregator returns only a BinaryType column as the aggregate buffer,
     // so the current implementation is not compatible with the Spark one.
     aggBufferTypes.zipWithIndex.map { case (dt, id) =>

@@ -736,7 +736,8 @@ class AggHelper(
           val advAggsOnColumns = advCudfAggregates.zip(advArgLens).flatMap {
             case ((advAgg, _), argLen) =>
               val ret = if (advAgg.supportAdvanced) {
-                // TODO implement this
+                // TODO implement this,
+                //  tracked by https://github.com/NVIDIA/spark-rapids/issues/13453
                 // advAggStarts += accOutStart
                 // val tmp = advAgg.aggregateGrouped(keyOffs, args)
                 // advOutLens += tmp.length
