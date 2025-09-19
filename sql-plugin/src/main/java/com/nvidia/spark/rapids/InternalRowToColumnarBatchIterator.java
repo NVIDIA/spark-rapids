@@ -143,6 +143,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     long dataLength = calcDataLengthEstimate(numRowsEstimate);
     long offsetLength = calcOffsetLengthEstimate(numRowsEstimate);
     int used[];
+
     try (SpillableHostBuffer spillableBuffer = sBufAndNumRows._1;
     ) {
       HostMemoryBuffer[] hBufs =

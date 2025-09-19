@@ -246,6 +246,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
    * Public for tests.
    */
   def closeInternal(): Unit = this.synchronized {
+    println(s"closeInternal for broadcast with batch ${batchInternal}")
     Seq(data, batchInternal).safeClose()
     data = null
     batchInternal = null

@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.iceberg.data
 
 import ai.rapids.cudf.{Table => CudfTable}
-import com.nvidia.spark.rapids.{GpuColumnVector, LazySpillableColumnarBatch}
+import com.nvidia.spark.rapids.{GpuColumnVector, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuCoalescingIcebergParquetReader, GpuIcebergParquetReader, GpuIcebergParquetReaderConf, GpuMultiThreadIcebergParquetReader, GpuSingleThreadIcebergParquetReader, IcebergPartitionedFile, MultiFile, MultiThread, SingleFile}
@@ -31,7 +31,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 trait GpuDeleteLoader {
   def loadDeletes(deletes: Seq[DeleteFile],
       schema: Schema,
-      sparkTypes: Array[DataType]): LazySpillableColumnarBatch
+      sparkTypes: Array[DataType]): SpillableColumnarBatch
 }
 
 class DefaultDeleteLoader(
@@ -41,7 +41,7 @@ class DefaultDeleteLoader(
 
   def loadDeletes(deletes: Seq[DeleteFile],
       schema: Schema,
-      sparkTypes: Array[DataType]): LazySpillableColumnarBatch = {
+      sparkTypes: Array[DataType]): SpillableColumnarBatch = {
     val files = deletes.map(f => IcebergPartitionedFile(inputFiles(f.path().toString)))
     withResource(createReader(schema, files)) { reader =>
       withResource(new ArrayBuffer[ColumnarBatch]()) { batches =>
@@ -56,14 +56,12 @@ class DefaultDeleteLoader(
 
           if (tables.size > 1) {
             withResource(CudfTable.concatenate(tables.toArray: _*)) { combined =>
-              withResource(GpuColumnVector.from(combined, sparkTypes)) { combinedBatch =>
-                LazySpillableColumnarBatch(combinedBatch, "Eq deletes")
-              }
+              val combinedBatch = GpuColumnVector.from(combined, sparkTypes)
+              SpillableColumnarBatch(combinedBatch, "Eq deletes")
             }
           } else {
-            withResource(GpuColumnVector.from(tables.head, sparkTypes)) { singleBatch =>
-              LazySpillableColumnarBatch(singleBatch, "Eq deletes")
-            }
+            val singleBatch = GpuColumnVector.from(tables.head, sparkTypes)
+            SpillableColumnarBatch(singleBatch, "Eq deletes")
           }
         }
       }

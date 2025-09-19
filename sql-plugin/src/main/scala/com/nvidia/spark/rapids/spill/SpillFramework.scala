@@ -44,7 +44,6 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.BlockId
 
-
 /**
  * Spark-RAPIDS Spill Framework
  *
@@ -263,7 +262,6 @@ trait SpillableHandle extends StoreHandle with Logging {
       doClose()
     }
   }
-
 }
 
 /**
@@ -1280,6 +1278,9 @@ trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
   }
 
   override def close(): Unit = synchronized {
+    if (handles.size() > 0) {
+      logWarning(s"We have ${handles.size} handles still in the store, which we will close. ${handles.toArray().mkString(",")}")
+    }
     handles.forEach(handle => {
       handle.close()
     })

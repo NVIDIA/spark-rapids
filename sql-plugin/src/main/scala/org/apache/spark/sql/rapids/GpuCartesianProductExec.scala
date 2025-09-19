@@ -17,16 +17,13 @@
 package org.apache.spark.sql.rapids
 
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
-
 import scala.collection.mutable
-
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
+import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
-
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -45,9 +42,11 @@ class GpuSerializableBatch(batch: ColumnarBatch)
   assert(batch != null)
   @transient private var internalBatch: ColumnarBatch = batch
 
-  def getBatch: ColumnarBatch = {
+  def releaseBatch: ColumnarBatch = {
     assert(internalBatch != null)
-    internalBatch
+    val tmp = internalBatch
+    internalBatch = null
+    tmp
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
@@ -149,7 +148,7 @@ class GpuCartesianRDD(
     val currSplit = split.asInstanceOf[GpuCartesianPartition]
 
     // create a buffer to cache stream-side data in a spillable manner
-    val spillBatchBuffer = mutable.ArrayBuffer[LazySpillableColumnarBatch]()
+    val spillBatchBuffer = mutable.ArrayBuffer[SpillableColumnarBatch]()
     // sentinel variable to label whether stream-side data is cached or not
     var streamSideCached = false
 
@@ -164,9 +163,9 @@ class GpuCartesianRDD(
     onTaskCompletion(context)(close())
 
     rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
-      val batch = withResource(lhs.getBatch) { lhsBatch =>
-        LazySpillableColumnarBatch(lhsBatch, "cross_lhs")
-      }
+      // since SpillableColumnarBatch takes ownership, and lhs.getBatch returns a cached copy
+      // increment ref counts until lhs is closed
+      val batch = SpillableColumnarBatch(lhs.releaseBatch, "cross_lhs")
       // Introduce sentinel `streamSideCached` to record whether stream-side data is cached or
       // not, because predicate `spillBatchBuffer.isEmpty` will always be true if
       // `rdd2.iterator` is an empty iterator.
@@ -174,16 +173,13 @@ class GpuCartesianRDD(
         streamSideCached = true
         // lazily compute and cache stream-side data
         rdd2.iterator(currSplit.s2, context).map { serializableBatch =>
-          withResource(serializableBatch.getBatch) { batch =>
-            val lzyBatch = LazySpillableColumnarBatch(batch, "cross_rhs")
-            spillBatchBuffer += lzyBatch
-            // return a spill only version so we don't close it until the end
-            LazySpillableColumnarBatch.spillOnly(lzyBatch)
-          }
+          val scb = SpillableColumnarBatch(serializableBatch.releaseBatch, "cross_rhs")
+          spillBatchBuffer += scb.incRefCount()
+          scb
         }
       } else {
         // fetch cached stream-side data, and make it spill only so we don't close it until the end
-        spillBatchBuffer.toIterator.map(LazySpillableColumnarBatch.spillOnly)
+        spillBatchBuffer.map(_.incRefCount()).iterator
       }
 
       GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(

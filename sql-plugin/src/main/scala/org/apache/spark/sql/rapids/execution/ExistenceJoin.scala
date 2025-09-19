@@ -16,10 +16,9 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{ColumnVector, GatherMap, NvtxColor, Scalar, Table}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, LazySpillableColumnarBatch, NvtxWithMetrics, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, NvtxWithMetrics, SpillableColumnarBatch, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
-
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -44,8 +43,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * </code>
  */
 abstract class ExistenceJoinIterator(
-    spillableBuiltBatch: LazySpillableColumnarBatch,
-    lazyStream: Iterator[LazySpillableColumnarBatch],
+    spillableBuiltBatch: SpillableColumnarBatch,
+    spillableStream: Iterator[SpillableColumnarBatch],
     opTime: GpuMetric,
     joinTime: GpuMetric
 ) extends Iterator[ColumnarBatch]()
@@ -65,7 +64,7 @@ abstract class ExistenceJoinIterator(
   def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap
 
   override def hasNext: Boolean = {
-    val streamHasNext = lazyStream.hasNext
+    val streamHasNext = spillableStream.hasNext
     if (!streamHasNext) {
       close()
     }
@@ -73,12 +72,10 @@ abstract class ExistenceJoinIterator(
   }
 
   override def next(): ColumnarBatch = {
-    withResource(lazyStream.next()) { lazyBatch =>
+    withResource(spillableStream.next()) { streamBatch =>
       withResource(new NvtxWithMetrics("existence join batch", NvtxColor.ORANGE, joinTime)) { _ =>
         opTime.ns {
-          val ret = existenceJoinNextBatch(lazyBatch)
-          spillableBuiltBatch.allowSpilling()
-          ret
+          existenceJoinNextBatch(streamBatch)
         }
       }
     }
@@ -91,14 +88,12 @@ abstract class ExistenceJoinIterator(
   }
 
   private def existenceJoinNextBatch(
-      spillableLeftBatch: LazySpillableColumnarBatch): ColumnarBatch = {
-    val batches = Seq(spillableBuiltBatch, spillableLeftBatch)
-    batches.foreach(_.checkpoint())
+      spillableLeftBatch: SpillableColumnarBatch): ColumnarBatch = {
     withRetryNoSplit {
-      withRestoreOnRetry(batches) {
-        // left columns with exists
-        withResource(existsScatterMap(spillableLeftBatch.getBatch)) { gatherMap =>
-          existenceJoinResult(spillableLeftBatch.getBatch, gatherMap)
+      // left columns with exists
+      withResource(spillableLeftBatch.getColumnarBatch()) { leftBatch =>
+        withResource(existsScatterMap(leftBatch)) { gatherMap =>
+          existenceJoinResult(leftBatch, gatherMap)
         }
       }
     }

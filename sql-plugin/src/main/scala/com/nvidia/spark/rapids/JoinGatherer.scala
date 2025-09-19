@@ -16,48 +16,23 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 import com.nvidia.spark.Retryable
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-/**
- * Holds something that can be spilled if it is marked as such, but it does not modify the
- * data until it is ready to be spilled. This avoids the performance penalty of making reformatting
- * the underlying data so it is ready to be spilled.
- *
- * Call `allowSpilling` to indicate that the data can be released for spilling and call `close`
- * to indicate that the data is not needed any longer.
- *
- * If the data is needed after `allowSpilling` is called the implementations should get the data
- * back and cache it again until allowSpilling is called once more.
- */
-trait LazySpillable extends AutoCloseable with Retryable {
-
-  /**
-   * Indicate that we are done using the data for now and it can be spilled.
-   *
-   * This method should not have issues with being called multiple times without the data being
-   * accessed.
-   */
-  def allowSpilling(): Unit
-}
 
 /**
  * Generic trait for all join gather instances.  A JoinGatherer takes the gather maps that are the
  * result of a cudf join call along with the data batches that need to be gathered and allow
  * someone to materialize the join in batches.  It also provides APIs to help decide on how
  * many rows to gather.
- *
- * This is a LazySpillable instance so the life cycle follows that too.
  */
-trait JoinGatherer extends LazySpillable {
+trait JoinGatherer extends AutoCloseable with Retryable {
   /**
    * Gather the next n rows from the join gather maps.
    *
@@ -95,6 +70,9 @@ trait JoinGatherer extends LazySpillable {
    */
   def getFixedWidthBitSize: Option[Int]
 
+  def checkpoint(): Unit
+
+  def restore(): Unit
 
   /**
    * Do a complete/expensive job to get the number of rows that can be gathered to get close
@@ -142,15 +120,15 @@ trait JoinGatherer extends LazySpillable {
 }
 
 object JoinGatherer {
-  def apply(gatherMap: LazySpillableGatherMap,
-      inputData: LazySpillableColumnarBatch,
+  def apply(gatherMap: SpillableGatherMap,
+      inputData: SpillableColumnarBatch,
       outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
     new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
 
-  def apply(leftMap: LazySpillableGatherMap,
-      leftData: LazySpillableColumnarBatch,
-      rightMap: LazySpillableGatherMap,
-      rightData: LazySpillableColumnarBatch,
+  def apply(leftMap: SpillableGatherMap,
+      leftData: SpillableColumnarBatch,
+      rightMap: SpillableGatherMap,
+      rightData: SpillableColumnarBatch,
       outOfBoundsPolicyLeft: OutOfBoundsPolicy,
       outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
     val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
@@ -178,161 +156,7 @@ object JoinGatherer {
   }
 }
 
-
-/**
- * Holds a Columnar batch that is LazySpillable.
- */
-trait LazySpillableColumnarBatch extends LazySpillable {
-  /**
-   * How many rows are in the underlying batch. Should not unspill the batch to get this into.
-   */
-  def numRows: Int
-
-  /**
-   * How many columns are in the underlying batch. Should not unspill the batch to get this info.
-   */
-  def numCols: Int
-
-  /**
-   * The amount of device memory in bytes that the underlying batch uses. Should not unspill the
-   * batch to get this info.
-   */
-  def deviceMemorySize: Long
-
-  /**
-   * The data types of the underlying batches columns. Should not unspill the batch to get this
-   * info.
-   */
-  def dataTypes: Array[DataType]
-
-
-  /**
-   * Get the batch that this wraps and unspill it if needed.
-   */
-  def getBatch: ColumnarBatch
-
-  /**
-   * Release the underlying batch to the caller who is responsible for closing it. The resulting
-   * batch will NOT be closed when this instance is closed.
-   */
-  def releaseBatch(): ColumnarBatch
-}
-
-object LazySpillableColumnarBatch {
-  def apply(cb: ColumnarBatch,
-      name: String): LazySpillableColumnarBatch =
-    new LazySpillableColumnarBatchImpl(cb, name)
-
-  def spillOnly(wrapped: LazySpillableColumnarBatch): LazySpillableColumnarBatch = wrapped match {
-    case alreadyGood: AllowSpillOnlyLazySpillableColumnarBatchImpl => alreadyGood
-    case anythingElse => AllowSpillOnlyLazySpillableColumnarBatchImpl(anythingElse)
-  }
-}
-
-/**
- * A version of `LazySpillableColumnarBatch` where instead of closing the underlying
- * batch it is only spilled. This is used for cases, like with a streaming hash join
- * where the data itself needs to out live the JoinGatherer it is handed off to.
- */
-case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableColumnarBatch)
-    extends LazySpillableColumnarBatch {
-  override def getBatch: ColumnarBatch =
-    wrapped.getBatch
-
-  override def releaseBatch(): ColumnarBatch = {
-    closeOnExcept(GpuColumnVector.incRefCounts(wrapped.getBatch)) { batch =>
-      wrapped.allowSpilling()
-      batch
-    }
-  }
-
-  override def numRows: Int = wrapped.numRows
-  override def numCols: Int = wrapped.numCols
-  override def deviceMemorySize: Long = wrapped.deviceMemorySize
-  override def dataTypes: Array[DataType] = wrapped.dataTypes
-
-  override def allowSpilling(): Unit =
-    wrapped.allowSpilling()
-
-  override def close(): Unit = {
-    // Don't actually close it, we don't own it, just allow it to be spilled.
-    wrapped.allowSpilling()
-  }
-
-  override def checkpoint(): Unit =
-    wrapped.checkpoint()
-
-  override def restore(): Unit =
-    wrapped.restore()
-
-  override def toString: String = s"SPILL_ONLY $wrapped"
-}
-
-/**
- * Holds a columnar batch that is cached until it is marked that it can be spilled.
- */
-class LazySpillableColumnarBatchImpl(
-    cb: ColumnarBatch,
-    name: String) extends LazySpillableColumnarBatch {
-
-  private var cached: Option[ColumnarBatch] = Some(GpuColumnVector.incRefCounts(cb))
-  private var spill: Option[SpillableColumnarBatch] = None
-  override val numRows: Int = cb.numRows()
-  override val deviceMemorySize: Long = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-  override val dataTypes: Array[DataType] = GpuColumnVector.extractTypes(cb)
-  override val numCols: Int = dataTypes.length
-
-  override def getBatch: ColumnarBatch = {
-    if (cached.isEmpty) {
-      withResource(new NvtxRange("get batch " + name, NvtxColor.RED)) { _ =>
-        cached = spill.map(_.getColumnarBatch())
-      }
-    }
-    cached.getOrElse(throw new IllegalStateException("batch is closed"))
-  }
-
-  override def releaseBatch(): ColumnarBatch = {
-    closeOnExcept(getBatch) { batch =>
-      cached = None
-      close()
-      batch
-    }
-  }
-
-  override def allowSpilling(): Unit = {
-    if (spill.isEmpty && cached.isDefined) {
-      withResource(new NvtxRange("spill batch " + name, NvtxColor.RED)) { _ =>
-        // First time we need to allow for spilling
-        try {
-          spill = Some(SpillableColumnarBatch(cached.get,
-            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-        } finally {
-          // Putting data in a SpillableColumnarBatch takes ownership of it.
-          cached = None
-        }
-      }
-    }
-    cached.foreach(_.close())
-    cached = None
-  }
-
-  override def close(): Unit = {
-    cached.foreach(_.close())
-    cached = None
-    spill.foreach(_.close())
-    spill = None
-  }
-
-  override def checkpoint(): Unit =
-    allowSpilling()
-
-  override def restore(): Unit =
-    allowSpilling()
-
-  override def toString: String = s"SpillableBatch $name $numCols X $numRows"
-}
-
-trait LazySpillableGatherMap extends LazySpillable {
+trait SpillableGatherMap extends AutoCloseable {
   /**
    * How many rows total are in this gather map
    */
@@ -346,80 +170,47 @@ trait LazySpillableGatherMap extends LazySpillable {
   def toColumnView(startRow: Long, numRows: Int): ColumnView
 }
 
-object LazySpillableGatherMap {
-  def apply(map: GatherMap, name: String): LazySpillableGatherMap =
-    new LazySpillableGatherMapImpl(map, name)
+object SpillableGatherMap {
+  def apply(map: GatherMap, name: String): SpillableGatherMap =
+    new SpillableGatherMapImpl(
+      SpillableBuffer(map.releaseBuffer(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+      map.getRowCount(),
+      name)
 
-  def leftCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
+  def leftCross(leftCount: Int, rightCount: Int): SpillableGatherMap =
     new LeftCrossGatherMap(leftCount, rightCount)
 
-  def rightCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
+  def rightCross(leftCount: Int, rightCount: Int): SpillableGatherMap =
     new RightCrossGatherMap(leftCount, rightCount)
 }
 
 /**
  * Holds a gather map that is also lazy spillable.
  */
-class LazySpillableGatherMapImpl(
-    map: GatherMap,
-    name: String) extends LazySpillableGatherMap {
+class SpillableGatherMapImpl(
+    mapBuffer: SpillableBuffer,
+    rowCount: Long,
+    name: String) extends SpillableGatherMap {
 
-  override val getRowCount: Long = map.getRowCount
-
-  private var cached: Option[DeviceMemoryBuffer] = Some(map.releaseBuffer())
-  private var spill: Option[SpillableBuffer] = None
+  override val getRowCount: Long = rowCount
 
   override def toColumnView(startRow: Long, numRows: Int): ColumnView = {
-    ColumnView.fromDeviceBuffer(getBuffer, startRow * 4L, DType.INT32, numRows)
+    withResource(getBuffer) { buff =>
+      ColumnView.fromDeviceBuffer(buff, startRow * 4L, DType.INT32, numRows)
+    }
   }
 
-  private def getBuffer = {
-    if (cached.isEmpty) {
-      withResource(new NvtxRange("get map " + name, NvtxColor.RED)) { _ =>
-        cached = spill.map { sb =>
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-          RmmRapidsRetryIterator.withRetryNoSplit {
-            sb.getDeviceBuffer()
-          }
-        }
-      }
-    }
-    cached.get
-  }
-
-  override def allowSpilling(): Unit = {
-    if (spill.isEmpty && cached.isDefined) {
-      withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
-        try {
-          // First time we need to allow for spilling
-          spill = Some(SpillableBuffer(cached.get,
-            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-        } finally {
-          // Putting data in a SpillableBuffer takes ownership of it.
-          cached = None
-        }
-      }
-    }
-    cached.foreach(_.close())
-    cached = None
-  }
+  private def getBuffer = mapBuffer.getDeviceBuffer()
 
   override def close(): Unit = {
-    cached.foreach(_.close())
-    cached = None
-    spill.foreach(_.close())
-    spill = None
+    mapBuffer.close()
   }
 
-  override def checkpoint(): Unit =
-    allowSpilling()
-
-  override def restore(): Unit =
-    allowSpilling()
+  override def toString: String = s"SpillableGatherMap $name rowCount: $rowCount"
 }
 
 abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
-    extends LazySpillableGatherMap {
+    extends SpillableGatherMap {
   override val getRowCount: Long = leftCount.toLong * rightCount.toLong
 
   override def toColumnView(startRow: Long, numRows: Int): ColumnView = withRetryNoSplit {
@@ -436,21 +227,9 @@ abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
    */
   def compute(rowNum: ai.rapids.cudf.ColumnVector): ai.rapids.cudf.ColumnVector
 
-  override def allowSpilling(): Unit = {
-    // NOOP, we don't cache anything on the GPU
-  }
-
   override def close(): Unit = {
     // NOOP, we don't cache anything on the GPU
   }
-  override def checkpoint(): Unit = {
-    // NOOP, we don't cache anything on the GPU
-  }
-
-  override def restore(): Unit = {
-    // NOOP, we don't cache anything on the GPU
-  }
-
 }
 
 class LeftCrossGatherMap(leftCount: Int, rightCount: Int) extends
@@ -534,11 +313,11 @@ object JoinGathererImpl {
  * JoinGatherer for a single map/table
  */
 class JoinGathererImpl(
-    private val gatherMap: LazySpillableGatherMap,
-    private val data: LazySpillableColumnarBatch,
+    private val gatherMap: SpillableGatherMap,
+    private val data: SpillableColumnarBatch,
     boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
 
-  assert(data.numCols > 0, "data with no columns should have been filtered out already")
+  assert(data.numCols() > 0, "data with no columns should have been filtered out already")
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
@@ -553,14 +332,10 @@ class JoinGathererImpl(
 
   override def checkpoint: Unit = {
     gatheredUpToCheckpoint = gatheredUpTo
-    gatherMap.checkpoint()
-    data.checkpoint()
   }
 
   override def restore: Unit = {
     gatheredUpTo = gatheredUpToCheckpoint
-    gatherMap.restore()
-    data.restore()
   }
 
   override def toString: String = {
@@ -569,7 +344,7 @@ class JoinGathererImpl(
 
   override def realCheapPerRowSizeEstimate: Double = {
     val totalInputRows: Int = data.numRows
-    val totalInputSize: Long = data.deviceMemorySize
+    val totalInputSize: Long = data.sizeInBytes
     // Avoid divide by 0 here and later on
     if (totalInputRows > 0 && totalInputSize > 0) {
       totalInputSize.toDouble / totalInputRows
@@ -584,12 +359,13 @@ class JoinGathererImpl(
     val start = gatheredUpTo
     assert((start + n) <= totalRows)
     val ret = withResource(gatherMap.toColumnView(start, n)) { gatherView =>
-      val batch = data.getBatch
-      val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
-        table.gather(gatherView, boundsCheckPolicy)
-      }
-      withResource(gatheredTable) { gt =>
-        GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
+      withResource(data.getColumnarBatch()) { batch =>
+        val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
+          table.gather(gatherView, boundsCheckPolicy)
+        }
+        withResource(gatheredTable) { gt =>
+          GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
+        }
       }
     }
     gatheredUpTo += n
@@ -601,16 +377,12 @@ class JoinGathererImpl(
 
   override def numRowsLeft: Long = totalRows - gatheredUpTo
 
-  override def allowSpilling(): Unit = {
-    data.allowSpilling()
-    gatherMap.allowSpilling()
-  }
-
   override def getBitSizeMap(n: Int): ColumnView = {
-    val cb = data.getBatch
-    val inputBitCounts = withResource(GpuColumnVector.from(cb)) { table =>
-      withResource(table.rowBitCount()) { bits =>
-        bits.castTo(DType.INT64)
+    val inputBitCounts = withResource(data.getColumnarBatch()) { batch =>
+      withResource(GpuColumnVector.from(batch)) { table =>
+        withResource(table.rowBitCount()) { bits =>
+          bits.castTo(DType.INT64)
+        }
       }
     }
     // Gather the bit counts so we know what the output table will look like
@@ -650,9 +422,9 @@ class JoinGathererImpl(
  * JoinGatherer for the case where the gather produces the same table as the input table.
  */
 class JoinGathererSameTable(
-    private val data: LazySpillableColumnarBatch) extends JoinGatherer {
+    private val data: SpillableColumnarBatch) extends JoinGatherer {
 
-  assert(data.numCols > 0, "data with no columns should have been filtered out already")
+  assert(data.numCols() > 0, "data with no columns should have been filtered out already")
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
@@ -665,12 +437,10 @@ class JoinGathererSameTable(
 
   override def checkpoint: Unit = {
     gatheredUpToCheckpoint = gatheredUpTo
-    data.checkpoint()
   }
 
   override def restore: Unit = {
     gatheredUpTo = gatheredUpToCheckpoint
-    data.restore()
   }
 
   override def toString: String = {
@@ -679,7 +449,7 @@ class JoinGathererSameTable(
 
   override def realCheapPerRowSizeEstimate: Double = {
     val totalInputRows: Int = data.numRows
-    val totalInputSize: Long = data.deviceMemorySize
+    val totalInputSize: Long = data.sizeInBytes
     // Avoid divide by 0 here and later on
     if (totalInputRows > 0 && totalInputSize > 0) {
       totalInputSize.toDouble / totalInputRows
@@ -702,10 +472,6 @@ class JoinGathererSameTable(
 
   override def numRowsLeft: Long = totalRows - gatheredUpTo
 
-  override def allowSpilling(): Unit = {
-    data.allowSpilling()
-  }
-
   override def getBitSizeMap(n: Int): ColumnView = {
     withResource(sliceForGather(n)) { cb =>
       withResource(GpuColumnVector.from(cb)) { table =>
@@ -723,23 +489,24 @@ class JoinGathererSameTable(
   private def isFullBatchGather(n: Int): Boolean = gatheredUpTo == 0 && n == totalRows
 
   private def sliceForGather(n: Int): ColumnarBatch = {
-    val cb = data.getBatch
-    if (isFullBatchGather(n)) {
-      GpuColumnVector.incRefCounts(cb)
-    } else {
-      val splitStart = gatheredUpTo.toInt
-      val splitEnd = splitStart + n
-      val inputColumns = GpuColumnVector.extractColumns(cb)
-      val outputColumns: Array[vectorized.ColumnVector] = inputColumns.safeMap { c =>
-        val views = c.getBase.splitAsViews(splitStart, splitEnd)
-        assert(views.length == 3, s"Unexpected number of views: ${views.length}")
-        views(0).safeClose()
-        views(2).safeClose()
-        withResource(views(1)) { v =>
-          GpuColumnVector.from(v.copyToColumnVector(), c.dataType())
+    withResource(data.getColumnarBatch()) { cb =>
+      if (isFullBatchGather(n)) {
+        GpuColumnVector.incRefCounts(cb)
+      } else {
+        val splitStart = gatheredUpTo.toInt
+        val splitEnd = splitStart + n
+        val inputColumns = GpuColumnVector.extractColumns(cb)
+        val outputColumns: Array[vectorized.ColumnVector] = inputColumns.safeMap { c =>
+          val views = c.getBase.splitAsViews(splitStart, splitEnd)
+          assert(views.length == 3, s"Unexpected number of views: ${views.length}")
+          views(0).safeClose()
+          views(2).safeClose()
+          withResource(views(1)) { v =>
+            GpuColumnVector.from(v.copyToColumnVector(), c.dataType())
+          }
         }
+        new ColumnarBatch(outputColumns, splitEnd - splitStart)
       }
-      new ColumnarBatch(outputColumns, splitEnd - splitStart)
     }
   }
 }
@@ -777,11 +544,6 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
   override def restore: Unit = {
     left.restore
     right.restore
-  }
-
-  override def allowSpilling(): Unit = {
-    left.allowSpilling()
-    right.allowSpilling()
   }
 
   override def realCheapPerRowSizeEstimate: Double =

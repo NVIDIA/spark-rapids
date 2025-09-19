@@ -27,14 +27,12 @@ package com.nvidia.spark.rapids.iceberg.data
 
 import scala.collection.JavaConverters._
 import scala.language.reflectiveCalls
-
-import ai.rapids.cudf.{DType, HostColumnVector, HostColumnVectorCore}
-import com.nvidia.spark.rapids.{GpuColumnVector, LazySpillableColumnarBatch, NoopMetric, RapidsConf}
+import com.nvidia.spark.rapids.{GpuColumnVector, NoopMetric, RapidsConf, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
-import com.nvidia.spark.rapids.iceberg.{fieldIndex, PooledTableGen}
+import com.nvidia.spark.rapids.iceberg.{PooledTableGen, fieldIndex}
 import com.nvidia.spark.rapids.iceberg.data.TestGpuDeleteLoader._
 import com.nvidia.spark.rapids.iceberg.parquet.{GpuIcebergParquetReaderConf, SingleFile}
 import com.nvidia.spark.rapids.spill.SpillFramework
@@ -51,10 +49,9 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.prop.TableDrivenPropertyChecks._
 import org.scalatest.prop.Tables.Table
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.types.{DataType, LongType, StringType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
@@ -349,7 +346,7 @@ class TestGpuDeleteLoader(private val tableGen: PooledTableGen,
 
   override def loadDeletes(deletes: Seq[DeleteFile],
       schema: Schema,
-      sparkTypes: Array[DataType]): LazySpillableColumnarBatch = {
+      sparkTypes: Array[DataType]): SpillableColumnarBatch = {
     require(deletes.nonEmpty, "No deletes to load")
     require(deletes.map(_.content()).distinct.length == 1,
       "Only one kind of delete content is supported")
@@ -361,9 +358,8 @@ class TestGpuDeleteLoader(private val tableGen: PooledTableGen,
           .asScala
           .map(_.fieldId())
           .toSeq
-        withResource(tableGen.pooledHostVector(fieldIds, rows)) { batch =>
-          LazySpillableColumnarBatch(batch, "Eq deletes build")
-        }
+        val batch = tableGen.pooledHostVector(fieldIds, rows)
+        SpillableColumnarBatch(batch, "Eq deletes build")
       case FileContent.POSITION_DELETES =>
         val pairs = posDeletes
           .keys
@@ -386,9 +382,8 @@ class TestGpuDeleteLoader(private val tableGen: PooledTableGen,
             .safeMap(p => GpuColumnVector.from(p._1, p._2))
             .toArray[ColumnVector]
 
-          withResource(new ColumnarBatch(columns, pairs.length)) { batch =>
-            LazySpillableColumnarBatch(batch, "Pos deletes build")
-          }
+          val batch = new ColumnarBatch(columns, pairs.length)
+          SpillableColumnarBatch(batch, "Pos deletes build")
         }
 
       case c => throw new UnsupportedOperationException(s"Unsupported delete content: $c")
