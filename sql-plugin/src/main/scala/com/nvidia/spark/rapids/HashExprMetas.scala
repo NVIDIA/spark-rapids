@@ -19,18 +19,18 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.shims.XxHash64Shims
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, Murmur3Hash, XxHash64}
+import org.apache.spark.sql.catalyst.expressions.HashExpression
 import org.apache.spark.sql.rapids.{GpuMurmur3Hash, GpuXxHash64, XxHash64Utils}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{ArrayType, StructType}
 
 /** Base meta for Murmur3-hash-like expressions. */
-abstract class Murmur3BaseExprMeta[E <: Expression](
-    expr: E,
+case class Murmur3HashExprMeta[HEINT <: HashExpression[Int]](
+    expr: HEINT,
     override val conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
+    override val parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends ExprMeta[E](expr, conf, parent, rule) {
+  extends ExprMeta(expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
     val hasArrayOfStruct = expr.children.exists { e =>
@@ -43,20 +43,17 @@ abstract class Murmur3BaseExprMeta[E <: Expression](
       willNotWorkOnGpu("hashing arrays with structs is not supported")
     }
   }
-
-  protected def seedOf(e: E): Int
-
   override def convertToGpu(): GpuExpression =
-    GpuMurmur3Hash(childExprs.map(_.convertToGpu()), seedOf(expr))
+    GpuMurmur3Hash(childExprs.map(_.convertToGpu()), expr.seed)
 }
 
 /** Base meta for xxhash64-like expressions. */
-abstract class XxHash64BaseExprMeta[E <: Expression](
-    expr: E,
+case class XxHash64ExprMeta[HE <: HashExpression[Long]](
+    expr: HE,
     override val conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
+    override val parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends ExprMeta[E](expr, conf, parent, rule) {
+  extends ExprMeta(expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
     val maxDepth = expr.children.map(c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
@@ -73,29 +70,10 @@ abstract class XxHash64BaseExprMeta[E <: Expression](
     }
   }
 
-  protected def seedOf(e: E): Long
-
   override def convertToGpu(): GpuExpression =
-    GpuXxHash64(childExprs.map(_.convertToGpu()), seedOf(expr))
+    GpuXxHash64(childExprs.map(_.convertToGpu()), expr.seed)
 }
 
-case class Murmur3HashExprMeta(
-    a: Murmur3Hash,
-    override val conf: RapidsConf,
-    override val parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends Murmur3BaseExprMeta[Murmur3Hash](a, conf, parent, rule) {
-  override protected def seedOf(e: Murmur3Hash): Int = e.seed
-}
-
-case class XxHash64ExprMeta(
-    a: XxHash64,
-    override val conf: RapidsConf,
-    override val parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends XxHash64BaseExprMeta[XxHash64](a, conf, parent, rule) {
-  override protected def seedOf(e: XxHash64): Long = e.seed
-}
 
 /** Shared ExprChecks for hash expressions */
 object HashExprChecks {
