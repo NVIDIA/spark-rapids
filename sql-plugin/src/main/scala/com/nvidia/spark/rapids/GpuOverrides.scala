@@ -3452,7 +3452,7 @@ object GpuOverrides extends Logging {
     expr[Murmur3Hash] (
       "Murmur3 hash operator",
       HashExprChecks.murmur3ProjectChecks,
-      (a, conf, p, r) => Murmur3HashExprMeta(a, conf, p, r)),
+      Murmur3HashExprMeta),
     expr[XxHash64](
       "xxhash64 hash operator",
       HashExprChecks.xxhash64ProjectChecks,
