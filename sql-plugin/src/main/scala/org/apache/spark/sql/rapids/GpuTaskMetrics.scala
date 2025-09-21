@@ -207,7 +207,7 @@ class AvgLongAccumulator extends AccumulatorV2[jl.Long, jl.Double] {
   } else 0;
 }
 
-class GpuTaskMetrics extends Serializable {
+class GpuTaskMetrics extends Serializable with Logging {
   private val semaphoreHoldingTime = new NanoSecondAccumulator
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
@@ -403,6 +403,9 @@ class GpuTaskMetrics extends Serializable {
       // once on task completion, whereas the actual logic tracking of the max value during memory
       // allocations lives in the JNI. Therefore, we can stick the convention here of calling the
       // add method instead of adding a dedicated max method to the accumulator.
+      if (maxDeviceMemoryBytes.value.value > 0) {
+        logError(s"updateMaxMemory called twice for task $taskAttemptId with maxMem $maxMem")
+      }
       maxDeviceMemoryBytes.add(maxMem)
     }
     if (maxHostBytesAllocated > 0) {
