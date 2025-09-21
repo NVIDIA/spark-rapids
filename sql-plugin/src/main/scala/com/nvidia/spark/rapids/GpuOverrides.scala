@@ -3449,14 +3449,14 @@ object GpuOverrides extends Logging {
         override final def convertToGpu(): GpuExpression =
           GpuConcatWs(childExprs.map(_.convertToGpu()))
       }),
-    expr[Murmur3Hash] (
+    expr[Murmur3Hash](
       "Murmur3 hash operator",
       HashExprChecks.murmur3ProjectChecks,
       Murmur3HashExprMeta),
     expr[XxHash64](
       "xxhash64 hash operator",
       HashExprChecks.xxhash64ProjectChecks,
-      XxHash64ExprMeta,
+      XxHash64ExprMeta),
     expr[HiveHash](
       "hive hash operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
