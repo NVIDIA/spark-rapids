@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.{HashExprChecks, Murmur3BaseExprMeta, XxHash64BaseExprMeta}
+import com.nvidia.spark.rapids.{HashExprChecks, Murmur3HashExprMeta, XxHash64ExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{CollationAwareMurmur3Hash, CollationAwareXxHash64, Expression}
 import org.apache.spark.sql.rapids.{GpuMurmur3Hash, GpuXxHash64}
@@ -31,16 +31,12 @@ object SparkShimImpl extends Spark400PlusCommonShims {
       GpuOverrides.expr[CollationAwareMurmur3Hash](
         "Collation-aware murmur3 hash operator",
         HashExprChecks.murmur3ProjectChecks,
-        (a, conf, p, r) => new Murmur3BaseExprMeta[CollationAwareMurmur3Hash](a, conf, p, r) {
-          override protected def seedOf(e: CollationAwareMurmur3Hash): Int = e.seed
-        }
+        Murmur3HashExprMeta
       ),
       GpuOverrides.expr[CollationAwareXxHash64](
         "Collation-aware xxhash64 operator",
         HashExprChecks.xxhash64ProjectChecks,
-        (a, conf, p, r) => new XxHash64BaseExprMeta[CollationAwareXxHash64](a, conf, p, r) {
-          override protected def seedOf(e: CollationAwareXxHash64): Long = e.seed
-        }
+        XxHash64ExprMeta
       )
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
