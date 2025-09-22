@@ -367,6 +367,7 @@ object GpuLore {
       SparkShimVersion(3, 5, 5),
       SparkShimVersion(3, 5, 6),
       SparkShimVersion(4, 0, 0),
+      SparkShimVersion(4, 0, 1),
       // Databricks versions
       DatabricksShimVersion(3, 3, 2, "12.2"), // 332db
       DatabricksShimVersion(3, 4, 1, "13.3"), // 341db143
