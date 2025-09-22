@@ -1746,7 +1746,7 @@ class GpuSequenceMeta(
     //  Date/Timestamp are not enabled right now so this is probably fine.
   }
 
-  override def convertToGpuBase(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val (startExpr, stopExpr, stepOpt) = if (expr.stepOpt.isDefined) {
         val Seq(start, stop, step) = childExprs.map(_.convertToGpu())
         (start, stop, Some(step))

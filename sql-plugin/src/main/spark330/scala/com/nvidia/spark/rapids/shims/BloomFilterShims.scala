@@ -73,7 +73,7 @@ object BloomFilterShims {
                 ParamCheck("numBits",
                   TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))))))),
         (a, conf, p, r) => new ExprMeta[BloomFilterAggregate](a, conf, p, r) {
-          override def convertToGpuBase(): GpuExpression = {
+          override def convertToGpuImpl(): GpuExpression = {
             GpuBloomFilterAggregate(
               childExprs.head.convertToGpu(),
               a.estimatedNumItemsExpression.eval().asInstanceOf[Number].longValue,

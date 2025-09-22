@@ -30,14 +30,14 @@ object GpuCpuBridgeOptimizer extends Logging {
       exprs.foreach { child =>
         if (!child.canExprTreeBeReplaced && canRunOnCpuOrGpuRecursively(child)) {
           // Then we want to move some things to the CPU as needed
-          moveToCpuIfNeededRecursively(child, wasParentReplaced = false, 0)
+          moveToCpuIfNeededRecursively(child, isParentOnCpu = false)
         }
       }
     }
   }
 
   private def canRunOnCpuOrGpuRecursively(expr: BaseExprMeta[_]): Boolean = {
-    if (!expr.canThisBeReplaced && !expr.canMoveToCpuBridge()) {
+    if (!expr.canThisBeReplaced && !expr.canMoveToCpuBridge) {
       false
     } else {
       expr.childExprs.forall(canRunOnCpuOrGpuRecursively)
@@ -47,25 +47,29 @@ object GpuCpuBridgeOptimizer extends Logging {
   /**
    * Move an expression to the GPU/CPU bridge if it has to or if it would be
    * less data movement if it did run on the CPU, this means that it has more inputs
-   * and outputs on the CPU than the GPU.
+   * and outputs on the CPU than on the GPU. This is not 100% perfect in all cases,
+   * but is a best effort calculation because it is expensive to calculate it
+   * perfectly.
    * @param expr the expression to possibly move
-   * @param wasParentReplaced will its output be on the CPU
+   * @param isParentOnCpu Indicates if the parent expression was replaced and is on
+   *                      the CPU. A "parent" consumes the output of this expression
+   *                      so it indicates that the output of this expression will be
+   *                      moved to the CPU too.
    * @return true if this was placed on the CPU bridge else false
    */
   private def moveToCpuIfNeededRecursively(expr: BaseExprMeta[_],
-                                           wasParentReplaced: Boolean,
-                                           indent: Int): Boolean = {
+                                           isParentOnCpu: Boolean): Boolean = {
     if (expr.willUseGpuCpuBridge) {
-      // Some expression trees can be reused. If we are here, then we don't need to go any
+      // Some expression trees are reused. If we are here, then we don't need to go any
       // deeper
       true
-    } else if (!expr.canThisBeReplaced && expr.canMoveToCpuBridge()) {
+    } else if (!expr.canThisBeReplaced && expr.canMoveToCpuBridge) {
       expr.childExprs.foreach { child =>
-        moveToCpuIfNeededRecursively(child, wasParentReplaced = true, indent + 1)
+        moveToCpuIfNeededRecursively(child, isParentOnCpu = true)
       }
       expr.moveToCpuBridge()
       true
-    } else if (expr.canThisBeReplaced && expr.canMoveToCpuBridge()) {
+    } else if (expr.canThisBeReplaced && expr.canMoveToCpuBridge) {
       // We need to check the cost of moving this (data movement only for now)
       // But we don't know if we are going to move until we know our children will
       // But they need to know if we will before they can tell, so just assume we
@@ -73,9 +77,9 @@ object GpuCpuBridgeOptimizer extends Logging {
       // we want to prefer the GPU for execution if possible
       val maxPossibleCost: Int = expr.childExprs.length + 1
       // This is for the output
-      val parentCost = if (wasParentReplaced) 1 else 0
+      val parentCost = if (isParentOnCpu) 1 else 0
       val childrenMovedToCpu = expr.childExprs.map { child =>
-        moveToCpuIfNeededRecursively(child, wasParentReplaced = false, indent + 1)
+        moveToCpuIfNeededRecursively(child, isParentOnCpu = false)
       }
       val costToStayOnGPU = childrenMovedToCpu.count(b => b) + parentCost
       val costToMoveDataToCPU = maxPossibleCost - costToStayOnGPU
@@ -88,9 +92,11 @@ object GpuCpuBridgeOptimizer extends Logging {
         false
       }
     } else {
-      // This can be replaced, but cannot run on the bridge, so check its children
+      // This cannot run on the bridge, so check its children. If it can be replaced
+      // then it might run on the GPU fully. If not this is only needed so we can
+      // properly output metadata when that logging is enabled.
       expr.childExprs.foreach { child =>
-        moveToCpuIfNeededRecursively(child, wasParentReplaced = false, indent + 1)
+        moveToCpuIfNeededRecursively(child, isParentOnCpu = !expr.canThisBeReplaced)
       }
       false
     }

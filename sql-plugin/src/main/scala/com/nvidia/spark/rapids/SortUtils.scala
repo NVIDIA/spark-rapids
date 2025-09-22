@@ -431,7 +431,7 @@ case class GpuSortOrderMeta(
   }
 
   // One of the few expressions that are not replaced with a GPU version
-  override def convertToGpuBase(): Expression =
+  override def convertToGpuImpl(): Expression =
     sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
 
   private[this] def isStructType(dataType: DataType) = dataType match {

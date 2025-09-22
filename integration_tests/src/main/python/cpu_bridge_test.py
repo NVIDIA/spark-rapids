@@ -22,7 +22,8 @@ from spark_session import is_before_spark_330, with_cpu_session, with_gpu_sessio
 
 
 # Helper function to create config that forces specific expressions to CPU bridge
-def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, codegen_enabled=True):
+def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, codegen_enabled=True,
+                                    disallowed_bridge_expressions=[]):
     """Create config that enables CPU bridge and disables specific GPU expressions"""
     conf = {
         'spark.rapids.sql.expression.cpuBridge.enabled': True,
@@ -31,6 +32,9 @@ def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, codegen_enabled=Tr
     # Disable specific GPU expressions to force CPU bridge fallback
     for expr_name in disabled_gpu_expressions:
         conf[f'spark.rapids.sql.expression.{expr_name}'] = False
+
+    if disallowed_bridge_expressions:
+        conf['spark.rapids.sql.expression.cpuBridge.disallowList'] = ','.join(disallowed_bridge_expressions)
     return conf
 
 @pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
@@ -162,3 +166,12 @@ def test_cpu_bridge_window_lag_disabled_fallback():
     
     # Verify that WindowExec falls back to CPU (doesn't use GPU or bridge)
     assert_gpu_fallback_collect(test_func, 'WindowExec', conf=conf)
+
+@allow_non_gpu('ProjectExec')
+def test_disallowed_bridge_fallback():
+    """Test that when an expression is not on the GPU and is disallowed to use
+    the cpu_bridge that it is honored"""
+    conf = create_cpu_bridge_fallback_conf(['Add'],
+            disallowed_bridge_expressions=['org.apache.spark.sql.catalyst.expressions.Add'])
+    assert_gpu_fallback_collect(lambda spark: binary_op_df(spark, byte_gen).selectExpr("a + b"),
+                                'ProjectExec', conf=conf)

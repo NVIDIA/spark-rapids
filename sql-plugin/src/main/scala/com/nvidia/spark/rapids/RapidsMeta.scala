@@ -1446,22 +1446,36 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   /**
-   * Converts a CPU expression to a GPU expression.
+   * Converts a CPU expression to a GPU expression. Subclasses of this should
+   * implement this method to provide custom logic to do the conversion. Anyone
+   * who wants to get the converted expression should call `convertToGpu`
+   * directly. It provides a layer of indirection.
    */
-  def convertToGpuBase(): Expression
+  def convertToGpuImpl(): Expression
 
+  /**
+   * Converts a CPU expression to a GPU expression. It may also do other things,
+   * like use the GpuCpuBridge to run some GPU expressions on the CPU and in
+   * the future it may provide other types of optimizations.
+   * @return a GPU expression
+   */
   final override def convertToGpu(): Expression = {
     if (willUseGpuCpuBridge) {
       convertForGpuCpuBridge()
     } else {
-      convertToGpuBase()
+      convertToGpuImpl()
     }
   }
 
-  final def canMoveToCpuBridge(): Boolean = conf.isBridgeAllowedForExpression(expr.getClass)
+  /**
+   * Is this particular class allowed to run under the GpuCpuBridge (according to the
+   * configs)
+   * @return true if it can, else false.
+   */
+  final def canMoveToCpuBridge: Boolean = conf.isBridgeAllowedForExpression(expr.getClass)
 
   final def moveToCpuBridge(): Unit = {
-    if (!canMoveToCpuBridge()) {
+    if (!canMoveToCpuBridge) {
       throw new IllegalStateException("trying to move to bridge when not allowed")
     }
     willRunViaCpuBridgeReasons.get ++= cannotBeReplacedReasons.get
@@ -1481,7 +1495,7 @@ abstract class ExprMeta[INPUT <: Expression](
     rule: DataFromReplacementRule)
     extends BaseExprMeta[INPUT](expr, conf, parent, rule) {
 
-  def convertToGpuBase(): GpuExpression
+  def convertToGpuImpl(): GpuExpression
 }
 
 /**
@@ -1521,7 +1535,7 @@ protected abstract class UnaryExprMetaBase[INPUT <: Expression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpuBase(): GpuExpression =
+  override final def convertToGpuImpl(): GpuExpression =
     convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
@@ -1566,7 +1580,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
   // not all aggs overwrite this
   def tagAggForGpu(): Unit = {}
 
-  override final def convertToGpuBase(): GpuExpression =
+  override final def convertToGpuImpl(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
@@ -1644,7 +1658,7 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpuBase(): GpuExpression = {
+  override final def convertToGpuImpl(): GpuExpression = {
     val Seq(lhs, rhs) = childExprs.map(_.convertToGpu())
     convertToGpu(lhs, rhs)
   }
@@ -1678,7 +1692,7 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpuBase(): GpuExpression = {
+  override final def convertToGpuImpl(): GpuExpression = {
     val Seq(child0, child1, child2) = childExprs.map(_.convertToGpu())
     convertToGpu(child0, child1, child2)
   }
@@ -1697,7 +1711,7 @@ abstract class QuaternaryExprMeta[INPUT <: QuaternaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpuBase(): GpuExpression = {
+  override final def convertToGpuImpl(): GpuExpression = {
     val Seq(child0, child1, child2, child3) = childExprs.map(_.convertToGpu())
     convertToGpu(child0, child1, child2, child3)
   }
@@ -1713,7 +1727,7 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     rule: DataFromReplacementRule)
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpuBase(): GpuExpression = {
+  override final def convertToGpuImpl(): GpuExpression = {
     val gpuCol :: gpuTrimParam = childExprs.map(_.convertToGpu())
     convertToGpu(gpuCol, gpuTrimParam.headOption)
   }
@@ -1730,7 +1744,7 @@ abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression]
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
-  override final def convertToGpuBase(): GpuExpression =
+  override final def convertToGpuImpl(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
@@ -1748,7 +1762,7 @@ final class RuleNotFoundExprMeta[INPUT <: Expression](
   override def tagExprForGpu(): Unit =
     willNotWorkOnGpu(s"GPU does not currently support the operator ${expr.getClass}")
 
-  override def convertToGpuBase(): GpuExpression =
+  override def convertToGpuImpl(): GpuExpression =
     throw new IllegalStateException(s"Cannot be converted to GPU ${expr.getClass} " +
         s"${expr.dataType} $expr")
 }
