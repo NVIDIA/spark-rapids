@@ -142,7 +142,7 @@ class InvokeExprMeta(
     }
   }
 
-  override def convertToGpuBase(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     targetType match {
       case SupportedTargetEnum.STRUCTS_TO_JSON_EVALUATOR =>
         val evaluator = invoke.targetObject.eval(null).asInstanceOf[StructsToJsonEvaluator]

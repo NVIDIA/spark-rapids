@@ -3787,12 +3787,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * Checks if an expression is non-executable and cannot be bridged.
    */
   private def isNonExecutableExpression(exprClass: Class[_]): Boolean = {
-    import org.apache.spark.sql.catalyst.expressions.{NamedLambdaVariable, Unevaluable, WindowFunction}
+    import org.apache.spark.sql.catalyst.expressions.{Generator, NamedLambdaVariable, Unevaluable, WindowFunction}
     import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
     classOf[Unevaluable].isAssignableFrom(exprClass) ||
       classOf[AggregateFunction].isAssignableFrom(exprClass) ||
       classOf[WindowFunction].isAssignableFrom(exprClass) ||
-      classOf[NamedLambdaVariable].isAssignableFrom(exprClass)
+      classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
+      classOf[Generator].isAssignableFrom(exprClass)
   }
   
   /**

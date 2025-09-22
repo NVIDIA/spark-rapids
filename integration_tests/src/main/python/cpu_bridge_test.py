@@ -175,3 +175,12 @@ def test_disallowed_bridge_fallback():
             disallowed_bridge_expressions=['org.apache.spark.sql.catalyst.expressions.Add'])
     assert_gpu_fallback_collect(lambda spark: binary_op_df(spark, byte_gen).selectExpr("a + b"),
                                 'ProjectExec', conf=conf)
+
+@allow_non_gpu("GenerateExec", "ShuffleExchangeExec")
+@ignore_order(local=True)
+def test_generate_outer_fallback():
+    conf = create_cpu_bridge_fallback_conf([])
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql("SELECT array(struct(1, 'a'), struct(2, 'b')) as x")\
+            .repartition(1).selectExpr("inline_outer(x)"),
+        "GenerateExec", conf = conf)
