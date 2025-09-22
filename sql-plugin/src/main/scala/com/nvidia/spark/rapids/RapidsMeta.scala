@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression,
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{ScalarSubquery, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
@@ -1390,14 +1390,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   def convertForGpuCpuBridge(): GpuExpression = {
-    // Separate literals from GPU-convertible expressions to optimize data movement
-    // The optimization rule probably took care of this already, but just in case...
+    // Separate literals and ScalarSubQueries from GPU-convertible expressions to optimize
+    // data movement, and work around bugs in spark were only a Scala value is supported as input.
     val gpuInputsWithIndex = scala.collection.mutable.ListBuffer[(Expression, Int)]()
 
     // Build GPU inputs and track their original positions
     childExprs.zipWithIndex.foreach {
       case (childMeta, originalIndex) =>
-        if (childMeta.canThisBeReplaced && !childMeta.wrapped.isInstanceOf[Literal]) {
+        if (childMeta.canThisBeReplaced &&
+          !childMeta.wrapped.isInstanceOf[Literal] &&
+          !childMeta.wrapped.isInstanceOf[ScalarSubquery]) {
           val gpuExpr = childMeta.convertToGpu()
           gpuInputsWithIndex += ((gpuExpr, originalIndex))
         }
@@ -1414,14 +1416,22 @@ abstract class BaseExprMeta[INPUT <: Expression](
       val boundCpuExpression = if (childExprs.nonEmpty) {
         val boundChildren: Seq[Expression] = childExprs.zipWithIndex.map {
           case (childMeta, originalIndex) =>
-            if (childMeta.canThisBeReplaced && !childMeta.wrapped.isInstanceOf[Literal]) {
+            if (childMeta.canThisBeReplaced &&
+              !childMeta.wrapped.isInstanceOf[Literal] &&
+              !childMeta.wrapped.isInstanceOf[ScalarSubquery]) {
               // Replace with BoundReference pointing to deduplicated GPU input position
               val deduplicatedIndex = inputMapping(originalIndex)
               val gpuExpr = deduplicatedGpuInputs(deduplicatedIndex)
               BoundReference(deduplicatedIndex, gpuExpr.dataType, gpuExpr.nullable): Expression
-            } else {
-              // Keep literal/CPU expression as-is (no data transfer needed)
-              childMeta.wrapped.asInstanceOf[Expression]
+            } else childMeta.wrapped match {
+              case ss: ScalarSubquery =>
+                // Keep ScalarSubquery as-is (no data transfer needed) but we do need
+                // to make sure it is ready
+                ss.updateResult()
+                childMeta.wrapped.asInstanceOf[Expression]
+              case _ =>
+                // Keep literal/CPU expression as-is (no data transfer needed)
+                childMeta.wrapped.asInstanceOf[Expression]
             }
         }
         expr.withNewChildren(boundChildren)

@@ -1314,10 +1314,10 @@ def test_hash_join_different_key_integral_types_asymmetric(left_gen, right_gen, 
 
 
 bloom_filter_confs = {
-    "spark.sql.autoBroadcastJoinThreshold": "1",
+    "spark.sql.autoBroadcastJoinThreshold": 1,
     "spark.sql.optimizer.runtime.bloomFilter.applicationSideScanSizeThreshold": 1,
     "spark.sql.optimizer.runtime.bloomFilter.creationSideThreshold": "100GB",
-    "spark.sql.optimizer.runtime.bloomFilter.enabled": "true"
+    "spark.sql.optimizer.runtime.bloomFilter.enabled": True
 }
 
 def check_bloom_filter_join(confs, expected_classes, is_multi_column):
@@ -1335,10 +1335,10 @@ def check_bloom_filter_join(confs, expected_classes, is_multi_column):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize("batch_size", ['1g', '1000'], ids=idfn)
-@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO_ENABLED", "KUDO_DISABLED"])
 def test_bloom_filter_join(batch_size, is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.batchSizeBytes": batch_size,
             kudo_enabled_conf_key: kudo_enabled}
@@ -1348,10 +1348,10 @@ def test_bloom_filter_join(batch_size, is_multi_column, kudo_enabled):
 
 @allow_non_gpu("FilterExec", "ShuffleExchangeExec")
 @ignore_order(local=True)
-@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO_ENABLED", "KUDO_DISABLED"])
 def test_bloom_filter_join_cpu_probe(is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.expression.BloomFilterMightContain": "false",
             kudo_enabled_conf_key: kudo_enabled}
@@ -1361,10 +1361,10 @@ def test_bloom_filter_join_cpu_probe(is_multi_column, kudo_enabled):
 
 @allow_non_gpu("ObjectHashAggregateExec", "ShuffleExchangeExec")
 @ignore_order(local=True)
-@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO_ENABLED", "KUDO_DISABLED"])
 def test_bloom_filter_join_cpu_build(is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.expression.BloomFilterAggregate": "false",
             kudo_enabled_conf_key: kudo_enabled}
@@ -1375,10 +1375,10 @@ def test_bloom_filter_join_cpu_build(is_multi_column, kudo_enabled):
 @allow_non_gpu("ObjectHashAggregateExec", "ProjectExec", "ShuffleExchangeExec")
 @ignore_order(local=True)
 @pytest.mark.parametrize("agg_replace_mode", ["partial", "final"])
-@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO_ENABLED", "KUDO_DISABLED"])
 def test_bloom_filter_join_split_cpu_build(agg_replace_mode, is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.hashAgg.replaceMode": agg_replace_mode,
             kudo_enabled_conf_key: kudo_enabled}

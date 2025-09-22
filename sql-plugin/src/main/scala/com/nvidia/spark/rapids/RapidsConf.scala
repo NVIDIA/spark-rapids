@@ -3795,7 +3795,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
       classOf[Generator].isAssignableFrom(exprClass)
   }
-  
+
   /**
    * Checks if an expression is nondeterministic and cannot be bridged.
    * Nondeterministic expressions (uuid, rand, etc.) are excluded from CPU bridge
