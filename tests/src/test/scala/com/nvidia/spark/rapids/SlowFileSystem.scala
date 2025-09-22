@@ -52,9 +52,7 @@ class SlowFileSystem extends FileSystem {
 
   // Check if path is a slowfs path
   private def isSlowfsPath(f: Path): Boolean = {
-    val ret = f.toString.startsWith("slowfs:/")
-    println(s"Path $f is slowfs: $ret")
-    ret
+    f.toString.startsWith("slowfs:/")
   }
 
   // Convert slowfs:/ path to file:/ path
