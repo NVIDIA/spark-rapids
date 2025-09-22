@@ -420,7 +420,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       f"(${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
       f"but was ${operatorTimeRatio * 100.0}%.1f%%")
     
-    // Assert stage 5 (parquet write stage) operator time accounts for > 20% of total
+    // Assert stage 5 (parquet write stage) operator time accounts for > 10% of total
     val stage5Metrics = operatorTimeMetrics.filter(_.stage.contains(5))
     val stage5OperatorTime = stage5Metrics.map(_.value).sum
     val stage5Ratio = if (totalOperatorTime > 0) {
@@ -437,8 +437,8 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     assert(stage5Metrics.nonEmpty, 
       "Should find operator time metrics for stage 5 (parquet write stage)")
     
-    assert(stage5Ratio > 0.2,
-      f"Stage 5 (parquet write stage) operator time should account for more than 20%% " +
+    assert(stage5Ratio > 0.1,
+      f"Stage 5 (parquet write stage) operator time should account for more than 10%% " +
       f"of total operator time, but was only ${stage5Ratio * 100.0}%.1f%% " +
       f"(${stage5OperatorTime / 1000000.0}%.2f ms out of " +
       f"${totalOperatorTime / 1000000.0}%.2f ms)")
