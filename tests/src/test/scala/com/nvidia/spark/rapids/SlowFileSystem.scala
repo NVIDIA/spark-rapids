@@ -50,6 +50,13 @@ class SlowFileSystem extends FileSystem {
     if (wrappedFs != null) wrappedFs.getUri else null
   }
 
+  // Check if path is a slowfs path
+  private def isSlowfsPath(f: Path): Boolean = {
+    val ret = f.toString.startsWith("slowfs:/")
+    println(s"Path $f is slowfs: $ret")
+    ret
+  }
+
   // Convert slowfs:/ path to file:/ path
   private def convertPath(f: Path): Path = {
     val pathStr = f.toString
@@ -69,35 +76,60 @@ class SlowFileSystem extends FileSystem {
       blockSize: Long,
       progress: Progressable): FSDataOutputStream = {
     
-    val underlying = wrappedFs.create(convertPath(f), permission, overwrite, 
-      bufferSize, replication, blockSize, progress)
-    
-    new FSDataOutputStream(new SlowOutputStream(underlying, writeDelayMs), null)
+    if (isSlowfsPath(f)) {
+      val underlying = wrappedFs.create(convertPath(f), permission, overwrite, 
+        bufferSize, replication, blockSize, progress)
+      new FSDataOutputStream(new SlowOutputStream(underlying, writeDelayMs), null)
+    } else {
+      wrappedFs.create(f, permission, overwrite, bufferSize, replication, blockSize, progress)
+    }
   }
 
   override def open(f: Path, bufferSize: Int): FSDataInputStream = {
-    wrappedFs.open(convertPath(f), bufferSize)
+    if (isSlowfsPath(f)) {
+      wrappedFs.open(convertPath(f), bufferSize)
+    } else {
+      wrappedFs.open(f, bufferSize)
+    }
   }
 
   override def append(f: Path, bufferSize: Int, progress: Progressable): FSDataOutputStream = {
-    val underlying = wrappedFs.append(convertPath(f), bufferSize, progress)
-    new FSDataOutputStream(new SlowOutputStream(underlying, writeDelayMs), null)
+    if (isSlowfsPath(f)) {
+      val underlying = wrappedFs.append(convertPath(f), bufferSize, progress)
+      new FSDataOutputStream(new SlowOutputStream(underlying, writeDelayMs), null)
+    } else {
+      wrappedFs.append(f, bufferSize, progress)
+    }
   }
 
   override def rename(src: Path, dst: Path): Boolean = {
-    wrappedFs.rename(convertPath(src), convertPath(dst))
+    val srcPath = if (isSlowfsPath(src)) convertPath(src) else src
+    val dstPath = if (isSlowfsPath(dst)) convertPath(dst) else dst
+    wrappedFs.rename(srcPath, dstPath)
   }
 
   override def delete(f: Path, recursive: Boolean): Boolean = {
-    wrappedFs.delete(convertPath(f), recursive)
+    if (isSlowfsPath(f)) {
+      wrappedFs.delete(convertPath(f), recursive)
+    } else {
+      wrappedFs.delete(f, recursive)
+    }
   }
 
   override def listStatus(f: Path): Array[FileStatus] = {
-    wrappedFs.listStatus(convertPath(f))
+    if (isSlowfsPath(f)) {
+      wrappedFs.listStatus(convertPath(f))
+    } else {
+      wrappedFs.listStatus(f)
+    }
   }
 
   override def setWorkingDirectory(new_dir: Path): Unit = {
-    wrappedFs.setWorkingDirectory(convertPath(new_dir))
+    if (isSlowfsPath(new_dir)) {
+      wrappedFs.setWorkingDirectory(convertPath(new_dir))
+    } else {
+      wrappedFs.setWorkingDirectory(new_dir)
+    }
   }
 
   override def getWorkingDirectory: Path = {
@@ -105,30 +137,29 @@ class SlowFileSystem extends FileSystem {
   }
 
   override def mkdirs(f: Path, permission: FsPermission): Boolean = {
-    wrappedFs.mkdirs(convertPath(f), permission)
+    if (isSlowfsPath(f)) {
+      wrappedFs.mkdirs(convertPath(f), permission)
+    } else {
+      wrappedFs.mkdirs(f, permission)
+    }
   }
 
   override def getFileStatus(f: Path): FileStatus = {
-    wrappedFs.getFileStatus(convertPath(f))
+    if (isSlowfsPath(f)) {
+      wrappedFs.getFileStatus(convertPath(f))
+    } else {
+      wrappedFs.getFileStatus(f)
+    }
   }
 
   override def makeQualified(path: Path): Path = {
-    // Convert slowfs path to properly qualified path with slowfs scheme
+    // Only process slowfs paths, let others pass through unchanged
     val pathStr = path.toString
     if (pathStr.startsWith("slowfs:/")) {
       path
-    } else if (pathStr.startsWith("/")) {
-      new Path("slowfs:" + pathStr)
     } else {
-      // For relative paths, use the underlying filesystem's working directory
-      // but prefix with slowfs scheme
-      val workingDir = wrappedFs.getWorkingDirectory.toString
-      val cleanWorkingDir = if (workingDir.startsWith("file:/")) {
-        workingDir.substring(5)
-      } else {
-        workingDir
-      }
-      new Path("slowfs:" + cleanWorkingDir + "/" + pathStr)
+      // For non-slowfs paths, delegate to the underlying filesystem
+      wrappedFs.makeQualified(path)
     }
   }
 

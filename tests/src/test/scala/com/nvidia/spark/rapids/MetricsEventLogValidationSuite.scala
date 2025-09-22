@@ -326,12 +326,14 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     val originalOpTimeTracking =
       spark.conf.getOption("spark.rapids.sql.exec.opTimeTrackingRDD.enabled")
     val originalSlowfsImpl = spark.conf.getOption("fs.slowfs.impl")
+    val originalSlowfsImplDisableCache = spark.conf.getOption("fs.slowfs.impl.disable.cache")
 
     try {
       // Enable OpTimeTracking for this test
       spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "true")
       
-      // Configure slow filesystem for testing
+      // Configure slow filesystem for testing and disable cache to prevent pollution
+      spark.conf.set("fs.slowfs.impl.disable.cache", "true")
       spark.conf.set("fs.slowfs.impl", "com.nvidia.spark.rapids.SlowFileSystem")
 
       val numRows = 5000000L
@@ -461,6 +463,18 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       originalSlowfsImpl match {
         case Some(value) => spark.conf.set("fs.slowfs.impl", value)
         case None => spark.conf.unset("fs.slowfs.impl")
+      }
+      originalSlowfsImplDisableCache match {
+        case Some(value) => spark.conf.set("fs.slowfs.impl.disable.cache", value)
+        case None => spark.conf.unset("fs.slowfs.impl.disable.cache")
+      }
+      
+      // Clear FileSystem cache to prevent contamination from SlowFileSystem
+      try {
+        import org.apache.hadoop.fs.FileSystem
+        FileSystem.closeAll()
+      } catch {
+        case _: Exception => // Ignore cleanup failures to avoid breaking tests
       }
     }
   }
