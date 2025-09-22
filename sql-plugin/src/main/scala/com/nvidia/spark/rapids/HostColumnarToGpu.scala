@@ -70,7 +70,7 @@ object HostColumnarToGpu extends Logging {
   def arrowColumnarCopy(
       cv: ColumnVector,
       ab: ai.rapids.cudf.ArrowColumnBuilder,
-      rows: Int): ju.List[ReferenceManager] = {
+      rows: Int): (ju.List[ReferenceManager], java.lang.Long) = {
     val valVector = cv match {
       case v: ArrowColumnVector =>
         try {
@@ -105,7 +105,16 @@ object HostColumnarToGpu extends Logging {
         // swallow the exception and assume no offsets buffer
     }
     ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
-    referenceManagers.result().asJava
+    def getSize(buf: ByteBuffer): Long = {
+      if (buf != null) {
+        buf.limit() - buf.position()
+      } else {
+        0L
+      }
+    }
+    // total bytes added is data + validity + offsets (if present)
+    val bytesAdded = getSize(dataBuf) + getSize(validity) + getSize(offsets)
+    (referenceManagers.result().asJava, bytesAdded)
   }
 
   // Data type is passed explicitly to allow overriding the reported type from the column vector.
@@ -115,7 +124,7 @@ object HostColumnarToGpu extends Logging {
       cv: ColumnVector,
       b: RapidsHostColumnBuilder,
       dataType: DataType,
-      rows: Int): Unit = {
+      rows: Int): Long = {
     dataType match {
       case NullType =>
         ColumnarCopyHelper.nullCopy(b, rows)
@@ -253,10 +262,12 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     withResource(new MetricRange(copyBufTime)) { _ =>
       val rows = batch.numRows()
+      var bytesCopied = 0L
       for (i <- 0 until batch.numCols()) {
-        batchBuilder.copyColumnar(batch.column(i), i, rows)
+        bytesCopied += batchBuilder.copyColumnar(batch.column(i), i, rows)
       }
       totalRows += rows
+      batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, bytesCopied, rows)
     }
   }
 
