@@ -202,12 +202,14 @@ def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
 
-_resource_bounded_pool_conf_matrix = resource_bounded_multithreaded_reader_conf('parquet', {
-    # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-    int96RebaseModeInReadKey : 'CORRECTED',
-    datetimeRebaseModeInReadKey : 'CORRECTED'
-})
 
+_resource_bounded_pool_conf_matrix = resource_bounded_multithreaded_reader_conf(
+    file_type='parquet',
+    specialized_conf={
+        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+        int96RebaseModeInReadKey: 'CORRECTED',
+        datetimeRebaseModeInReadKey: 'CORRECTED'
+    })
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', _resource_bounded_pool_conf_matrix, ids=idfn)
 @tz_sensitive_test
@@ -242,6 +244,58 @@ def test_parquet_read_multithread_flow_ctrl_quick_crash(spark_tmp_path, keep_ord
     assert_spark_exception(
             lambda: with_gpu_session(fn, conf=tiny_pool_conf),
             "Invalid resource request: Task requires more host memory")
+
+
+"""
+This test case addresses the potential deadlock issue that occurs when multiple Parquet scan operators
+are in the same stage and depend on each other for downstream operations. The test creates a bucketed 
+join query where both sides of the join read from the same bucketed Parquet table to reproduce this 
+issue. Without deadlock prevention mechanisms, the deadlock scenario will occur reliably when 
+spark.rapids.sql.multiThreadedRead.memoryLimit.size <= 32KB.
+"""
+_resource_bounded_pool_conf_join = resource_bounded_multithreaded_reader_conf(
+    file_type='parquet',
+    combine_size_conf=[1 << 10, 128 << 20],
+    keep_order_conf=[False, True],
+    reader_type_conf='MULTITHREADED',
+    pool_size_conf=[2, 128],
+    memory_limit_conf=[8 << 10, 32 << 10, 64 << 10],
+    timeout_conf=[50, 1000]
+)
+@pytest.mark.parametrize('reader_confs', _resource_bounded_pool_conf_join, ids=idfn)
+@ignore_order(local=True)
+def test_parquet_read_multithread_flow_ctrl_local_join(spark_tmp_path, reader_confs):
+    num_buckets = 8
+    source_table_name = "source_bucketed_parquet"
+
+    # --- Phase 1: Data Generation ---
+    # Only one bucketed table is created. We add a 'filter_key' column that
+    # will be used to split the source table into two inputs for the join.
+    gen_list = [('key_col', LongGen(min_val=0, max_val=127, nullable=False)),
+                ('val_col', long_gen)]
+    with_cpu_session(
+        lambda spark :
+        gen_df(spark, gen_list, length=2048)
+        .withColumn("filter_key", (rand() * 3).cast("int")) # Values will be 0, 1, or 2
+        .write
+        .format("parquet")
+        .bucketBy(num_buckets, "key_col")
+        .sortBy("key_col")
+        .mode('overwrite')
+        .option("path", spark_tmp_path)
+        .saveAsTable(source_table_name),
+        conf=rebase_write_corrected_conf)
+
+    # --- Phase 2: Read, Filter, and Bucket Join ---
+    # This function reads the source table once, applies two different filters to create
+    # the left and right sides of the join, and then performs the local bucket join.
+    def read_filter_and_join(spark):
+        source_df = spark.table(source_table_name)
+        left_df = source_df.filter(col("filter_key") == 0)
+        right_df = source_df.filter(col("filter_key") == 1)
+        return left_df.join(right_df, "key_col")
+
+    assert_gpu_and_cpu_are_equal_collect(read_filter_and_join, conf=reader_confs)
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])

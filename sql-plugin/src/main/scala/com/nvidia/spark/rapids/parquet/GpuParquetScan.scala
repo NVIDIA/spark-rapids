@@ -2707,12 +2707,14 @@ class MultiFileCloudParquetPartitionReader(
   private class ReadBatchRunner(
       file: PartitionedFile,
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
-      override val taskContext: TaskContext
-  ) extends SparkAsyncRunner[BufferInfo] with Logging {
+      taskContext: TaskContext) extends MemoryBoundedAsyncRunner[BufferInfo] with Logging {
 
-    override val resource: AsyncRunResource = {
-      AsyncRunResource.newCpuResource(file.length)
-    }
+    // Set TaskContext in terms of an AsyncRunner
+    override protected[async] def sparkTaskContext: Option[TaskContext] = Some(taskContext)
+
+    // We don't know the actual file buffer size after column pruning and row-group filtering
+    // before reading, so we just use the raw size as the resource requirement.
+    override val requiredMemoryBytes: Long = file.length
 
     // BufferInfo will not be closed until it is transferred onto device side. So, builds
     // DecayReleaseResult with a release callback rather than FastReleaseResult.

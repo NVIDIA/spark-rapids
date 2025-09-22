@@ -390,6 +390,8 @@ case class CombineConf(
     combineThresholdSize: Long, // The size to combine to when combining small files
     combineWaitTime: Int) // The amount of time to wait for other files ready for combination.
 
+// TODO: Refactor thread pool components into a common utility, since it is not specific to
+//  multi-file reading.
 trait ThreadPoolConf {
   /**
    * The maximum number of threads used by the thread pool, not necessarily the final number
@@ -562,13 +564,13 @@ abstract class MultiFileCloudPartitionReaderBase(
       val runner = getBatchRunner(tc, file, conf, filters)
       val metrics = GpuTaskMetrics.get
       val taskId = tc.taskAttemptId()
-      runner.setBeforeHook(() => {
+      runner.addPreHook(() => {
         val onFlightTasks = MultiFileReaderThreadPool.runningTaskNum.incrementAndGet()
         metrics.updateMultithreadReaderMaxParallelism(onFlightTasks)
         logDebug(s"[$taskId] Starting a new task for file ${file.filePath} " +
           s"with $onFlightTasks tasks running in parallel")
       })
-      runner.setAfterHook(() => {
+      runner.addPostHook(() => {
         val onFlightTasks = MultiFileReaderThreadPool.runningTaskNum.decrementAndGet()
         logDebug(s"[$taskId] Finished a task for file ${file.filePath} " +
           s"with $onFlightTasks tasks running in parallel")

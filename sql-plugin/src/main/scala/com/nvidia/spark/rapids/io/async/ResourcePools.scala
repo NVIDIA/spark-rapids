@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
 import scala.collection.mutable
@@ -70,14 +71,18 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
 
   private val condition = lock.newCondition()
 
+  // Tracking running AsyncRunners which actually acquires host memory, which is mainly for deadlock
+  // prevention for now.
+  private val numRunnerInFlight: AtomicLong = new AtomicLong(0L)
+
   // It is safe to use thread-nonsafe variables because below states are only accessed within
   // the lock guarded critical section.
   private var remaining: Long = maxHostMemoryBytes
 
   // Only counts for the AsyncRunners which actually acquired host memory.
-  private var runnersInFlight: Long = 0L
+  private var numRunnerInPool: Long = 0L
 
-  private val runningSparkTasks = mutable.HashMap[Long, Long]()
+  private val tasksInPool = mutable.HashMap[Long, Long]()
 
   override def acquireResource[T](runner: AsyncRunner[T], timeoutMs: Long): AcquireStatus = {
     // step 1: extract the resource requirements and runner info
@@ -107,32 +112,60 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
       // Enter into the critical section which is guarded by the lock from concurrent access
       lock.lockInterruptibly()
       try {
-        do {
-          // If enough resource is available, acquire it and exit the loop.
-          if (remaining >= memoryRequire) {
-            remaining -= memoryRequire
-            isDone = true
-          } else if (waitTimeNs > 0) {
-            waitTimeNs = condition.awaitNanos(waitTimeNs)
-          } else {
-            isTimeout = true
-            logWarning(s"Failed to acquire ${bytesToString(memoryRequire)}, remaining=" +
-                s"${bytesToString(remaining)}, AsyncRunners=$runnersInFlight, " +
-                s"SparkTasks=${runningSparkTasks.size}")
-          }
-        } while (!isDone && !isTimeout)
-        if (isDone) {
+        // [Deadlock Prevention]
+        // Due to the decay release, the virtual memory limit may interact with other dependency
+        // mechanisms, such as in a local join. In this scenario, both sides of the join may
+        // perform multithreaded scans limited by the HostMemoryPool. The join operator requires
+        // outputs from both sides, but one side may occupy all the memory budget, leaving the
+        // other side blocked and waiting for memory to be released.
+        //
+        // [Solution]
+        // If there is no runner in flight, run the request runner immediately regardless of
+        // the current available resource.
+        if (numRunnerInFlight.compareAndSet(0L, 1L)) {
+          // The remaining resource might be negative here
+          remaining -= memoryRequire
+          isDone = true
+          // Register a post-hook to decrement numRunnerInFlight as soon as the runner is done
+          runner.addPostHook(() => numRunnerInFlight.decrementAndGet())
+        } else {
+          do {
+            // If enough resource is available, acquire it and exit the loop.
+            if (remaining >= memoryRequire) {
+              remaining -= memoryRequire
+              isDone = true
+              // Update numRunnerInFlight as soon as the runner being permitted to run, meanwhile
+              // register a post-hook to decrement it as soon as the runner is done
+              numRunnerInFlight.incrementAndGet()
+              runner.addPostHook(() => numRunnerInFlight.decrementAndGet())
+            } else if (waitTimeNs > 0) {
+              waitTimeNs = condition.awaitNanos(waitTimeNs)
+            } else {
+              isTimeout = true
+              logWarning(s"Failed to acquire ${bytesToString(memoryRequire)}, remaining=" +
+                  s"${bytesToString(remaining)}, AsyncRunners=$numRunnerInPool, " +
+                  s"SparkTasks=${tasksInPool.size}")
+            }
+          } while (!isDone && !isTimeout)
+        }
+        if (!isDone) {
+          AcquireFailed
+        } else {
           // Update nonAtomic states if the resource is acquired successfully
-          runnersInFlight += 1L
+          numRunnerInPool += 1L
           runner.sparkTaskId.foreach { id =>
-            val numRunner = runningSparkTasks.getOrElse(id, 0L)
-            runningSparkTasks.put(id, numRunner + 1L)
+            val numRunner = tasksInPool.getOrElse(id, 0L)
+            tasksInPool.put(id, numRunner + 1L)
           }
           // Callback to the runner for post-acquire actions, should keep thread-safe
           runner.onAcquire()
+          // Log a warning when the resource is over-committed
+          if (remaining < 0) {
+            logWarning(
+              s"Over-committed HostMemoryPool: exceeded_amount=${bytesToString(-remaining)}, " +
+                  s"AsyncRunners=$numRunnerInPool, SparkTasks=${tasksInPool.size}")
+          }
           AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
-        } else {
-          AcquireFailed
         }
       } catch {
         case ex: Throwable => AcquireExcepted(ex)
@@ -148,16 +181,16 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
       // Enter into the critical section if there is actual resource to release for.
       lock.lock()
       // Update nonAtomic states
-      runnersInFlight -= 1L
-      remaining += toRelease
+      numRunnerInPool -= 1L
+      remaining += toRelease // release the memory back to the pool
       runner.sparkTaskId.foreach { taskId =>
-        val runnersForTask = runningSparkTasks.getOrElse(taskId, 0L)
+        val runnersForTask = tasksInPool.getOrElse(taskId, 0L)
         require(runnersForTask > 0L,
           s"The Spark task $taskId to release does not have any running runners")
         if (runnersForTask == 1L) {
-          runningSparkTasks -= taskId
+          tasksInPool -= taskId
           logDebug(s"[LOG POINT] remaining=${bytesToString(remaining)}, " +
-              s"AsyncRunners=$runnersInFlight, SparkTasks=${runningSparkTasks.size})")
+              s"AsyncRunners=$numRunnerInPool, SparkTasks=${tasksInPool.size})")
         }
       }
       // Waking up waiters
