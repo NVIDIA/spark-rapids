@@ -215,7 +215,7 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
    * sparkTaskId is None if the runner is not associated with any Spark task. Otherwise, it
    * carries the corresponding Spark task ID.
    */
-  protected[async] def sparkTaskContext: Option[TaskContext] = None
+  def sparkTaskContext: Option[TaskContext] = None
 
   // Unique ID for the runner, mainly for logging and tracking purpose.
   private[async] val runnerId: Long = AsyncRunner.nextRunnerId()

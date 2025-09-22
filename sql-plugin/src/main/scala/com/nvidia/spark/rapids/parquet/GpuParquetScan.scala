@@ -2710,7 +2710,7 @@ class MultiFileCloudParquetPartitionReader(
       taskContext: TaskContext) extends MemoryBoundedAsyncRunner[BufferInfo] with Logging {
 
     // Set TaskContext in terms of an AsyncRunner
-    override protected[async] def sparkTaskContext: Option[TaskContext] = Some(taskContext)
+    override def sparkTaskContext: Option[TaskContext] = Some(taskContext)
 
     // We don't know the actual file buffer size after column pruning and row-group filtering
     // before reading, so we just use the raw size as the resource requirement.

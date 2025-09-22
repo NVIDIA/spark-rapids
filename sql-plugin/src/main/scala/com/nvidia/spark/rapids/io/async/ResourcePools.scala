@@ -153,9 +153,10 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
         } else {
           // Update nonAtomic states if the resource is acquired successfully
           numRunnerInPool += 1L
-          runner.sparkTaskId.foreach { id =>
-            val numRunner = tasksInPool.getOrElse(id, 0L)
-            tasksInPool.put(id, numRunner + 1L)
+          runner.sparkTaskContext.foreach { ctx =>
+            val tid = ctx.taskAttemptId()
+            val numRunner = tasksInPool.getOrElse(tid, 0L)
+            tasksInPool.put(tid, numRunner + 1L)
           }
           // Callback to the runner for post-acquire actions, should keep thread-safe
           runner.onAcquire()
@@ -183,12 +184,13 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
       // Update nonAtomic states
       numRunnerInPool -= 1L
       remaining += toRelease // release the memory back to the pool
-      runner.sparkTaskId.foreach { taskId =>
-        val runnersForTask = tasksInPool.getOrElse(taskId, 0L)
+      runner.sparkTaskContext.foreach { ctx =>
+        val tid = ctx.taskAttemptId()
+        val runnersForTask = tasksInPool.getOrElse(tid, 0L)
         require(runnersForTask > 0L,
-          s"The Spark task $taskId to release does not have any running runners")
+          s"The Spark task $tid to release does not have any running runners")
         if (runnersForTask == 1L) {
-          tasksInPool -= taskId
+          tasksInPool -= tid
           logDebug(s"[LOG POINT] remaining=${bytesToString(remaining)}, " +
               s"AsyncRunners=$numRunnerInPool, SparkTasks=${tasksInPool.size})")
         }
