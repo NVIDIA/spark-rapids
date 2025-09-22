@@ -29,7 +29,7 @@ import org.apache.spark.sql.delta.{DeltaErrors, Snapshot}
 import org.apache.spark.sql.delta.commands.{DeltaCommand, DeltaOptimizeContext}
 import org.apache.spark.sql.delta.commands.optimize.OptimizeMetrics
 import org.apache.spark.sql.delta.rapids.commands.GpuOptimizeExecutor
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
+import org.apache.spark.sql.delta.skipping.clustering.{ClusteredTableUtils, ClusteringColumnInfo}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.types.StringType
 
@@ -67,9 +67,20 @@ case class GpuOptimizeTableCommand(
     if (zOrderBy.nonEmpty) {
       throw new IllegalStateException("Z-Order optimize should not run on GPU")
     }
-    val isClustered = ClusteredTableUtils.getClusterBySpecOptional(snapshot).isDefined
-    if (isClustered) {
-      throw new IllegalStateException("Liquid clustering should not run on GPU")
+
+    val isClusteredTable = ClusteredTableUtils.isSupported(snapshot.protocol)
+    if (isClusteredTable) {
+      if (userPartitionPredicates.nonEmpty) {
+        throw DeltaErrors.clusteringWithPartitionPredicatesException(userPartitionPredicates)
+      }
+      if (zOrderBy.nonEmpty) {
+        throw DeltaErrors.clusteringWithZOrderByException(zOrderBy)
+      }
+    }
+
+    lazy val clusteringColumns = ClusteringColumnInfo.extractLogicalNames(snapshot)
+    if (optimizeContext.isFull && (!isClusteredTable || clusteringColumns.isEmpty)) {
+      throw DeltaErrors.optimizeFullNotSupportedException()
     }
 
     val partitionColumns = snapshot.metadata.partitionColumns
