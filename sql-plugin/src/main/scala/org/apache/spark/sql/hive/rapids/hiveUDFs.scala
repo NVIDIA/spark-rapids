@@ -78,7 +78,7 @@ case class GpuHiveUDAFFunction(
     dataType: DataType,
     isUDAFBridgeRequired: Boolean) extends GpuUDAFFunctionBase {
 
-  @scala.annotation.nowarn("msg=class UDAF in package exec is deprecated")
+  @scala.annotation.nowarn("msg=is deprecated")
   @transient
   override lazy val function: RapidsUDAF = if (isUDAFBridgeRequired) {
     funcWrapper.createFunction[UDAF]().asInstanceOf[RapidsUDAF]

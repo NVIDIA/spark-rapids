@@ -35,7 +35,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, ExprId, Expression, If, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
@@ -433,7 +433,7 @@ class AggHelper(
   }
 
   private var ix = groupingAttributes.length
-  for (case (aggExp, ord) <- aggregateExpressions.zipWithIndex) {
+  aggregateExpressions.zipWithIndex.foreach { case (aggExp, ord) =>
     val aggFn = aggExp.aggregateFunction
     if ((aggExp.mode == Partial || aggExp.mode == Complete) && !forceMerge) {
       aggFn match {

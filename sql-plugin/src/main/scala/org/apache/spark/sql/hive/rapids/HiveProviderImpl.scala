@@ -140,7 +140,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
         (a, conf, p, r) => new ExprMeta[HiveUDAFFunction](a, conf, p, r) {
 
-          @scala.annotation.nowarn("msg=class UDAF in package exec is deprecated")
+          @scala.annotation.nowarn("msg=is deprecated")
           private val opRapidsFunc = {
             val hiveUDAF = if (a.isUDAFBridgeRequired) {
               a.funcWrapper.createFunction[UDAF]()
