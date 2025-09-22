@@ -21,9 +21,9 @@ import com.nvidia.spark.rapids.GpuUserDefinedFunction
 import org.apache.hadoop.hive.ql.exec.{UDAF, UDF}
 import org.apache.hadoop.hive.ql.udf.generic.{AbstractGenericUDAFResolver, GenericUDF}
 
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
-import org.apache.spark.sql.rapids.aggregate.GpuUDAFFunctionBase
+import org.apache.spark.sql.rapids.aggregate.GpuTypedUDAFFunctionBase
 import org.apache.spark.sql.types.DataType
 
 /** Common implementation across Hive UDFs */
@@ -76,7 +76,7 @@ case class GpuHiveUDAFFunction(
     children: Seq[Expression],
     nullable: Boolean,
     dataType: DataType,
-    isUDAFBridgeRequired: Boolean) extends GpuUDAFFunctionBase {
+    isUDAFBridgeRequired: Boolean) extends GpuTypedUDAFFunctionBase {
 
   @scala.annotation.nowarn("msg=is deprecated")
   @transient
@@ -84,15 +84,5 @@ case class GpuHiveUDAFFunction(
     funcWrapper.createFunction[UDAF]().asInstanceOf[RapidsUDAF]
   } else {
     funcWrapper.createFunction[AbstractGenericUDAFResolver]().asInstanceOf[RapidsUDAF]
-  }
-
-  override lazy val aggBufferAttributes: Seq[AttributeReference] = {
-    // TODO make it compatible with the Spark one by leveraging TypedImperativeAggExprMeta.
-    // Tracked by https://github.com/NVIDIA/spark-rapids/issues/13452
-    // The Spark HiveUDAFFunction returns only a BinaryType column as the aggregate buffer,
-    // so the current implementation is not compatible with the Spark one.
-    aggBufferTypes.zipWithIndex.map { case (dt, id) =>
-      AttributeReference(s"${name}_$id", dt)()
-    }
   }
 }

@@ -34,6 +34,7 @@ import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.aggregate.AdvAggTypeUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types._
@@ -138,7 +139,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           udfTypeSig,
           TypeSig.all,
           repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[HiveUDAFFunction](a, conf, p, r) {
+        (a, conf, p, r) => new TypedImperativeAggExprMeta[HiveUDAFFunction](a, conf, p, r) {
 
           @scala.annotation.nowarn("msg=is deprecated")
           private val opRapidsFunc = {
@@ -153,7 +154,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
             }
           }
 
-          override def tagExprForGpu(): Unit = {
+          override def tagAggForGpu(): Unit = {
             // See https://github.com/NVIDIA/spark-rapids/issues/13451
             willNotWorkOnGpu(s"Hive UDAF is not supported yet.")
             if (opRapidsFunc.isEmpty) {
@@ -162,11 +163,20 @@ class HiveProviderImpl extends HiveProviderCmdShims {
             }
           }
 
-          override def convertToGpu(): GpuExpression = {
+          override def aggBufferAttribute: AttributeReference = {
+            opRapidsFunc.map { rapidsUDAF =>
+              AdvAggTypeUtils.attrFromTypes(expr.name, rapidsUDAF.aggBufferTypes())
+            }.getOrElse(
+              // opRapidsFunc is None, so it will fallback to CPU, use the CPU one.
+              expr.aggBufferAttributes.head
+            )
+          }
+
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
             GpuHiveUDAFFunction(
               a.name,
               a.funcWrapper,
-              childExprs.map(_.convertToGpu()),
+              childExprs,
               a.nullable,
               a.dataType,
               a.isUDAFBridgeRequired)

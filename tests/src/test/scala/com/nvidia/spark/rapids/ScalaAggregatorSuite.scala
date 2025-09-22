@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, GroupByAggregationOnColumn, Scalar}
 import com.nvidia.spark.{RapidsSimpleGroupByAggregation, RapidsUDAF, RapidsUDAFGroupByAggregation}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 
 import org.apache.spark.sql.{functions, Encoder, Encoders}
 import org.apache.spark.sql.expressions.Aggregator
@@ -31,7 +30,7 @@ class ScalaAggregatorSuite extends SparkQueryCompareTestSuite {
       groupbyStringsIntsIntsFromCsv) { df =>
     // This is a basic smoke-test of the Scala UDAF framework, not an exhaustive test of
     // the specific UDAF implementation itself.
-    df.createOrReplaceTempView("groupby_scala_average_udaf_test_table")
+    df.repartition(7).createOrReplaceTempView("groupby_scala_average_udaf_test_table")
     df.sparkSession.udf.register("intAverage", functions.udaf(new IntAverageAggregator))
     df.sparkSession.sql(sqlText = """
       SELECT count(c1_int), intAverage(c1_int), max(c2_int), intAverage(c2_int)
@@ -44,7 +43,7 @@ class ScalaAggregatorSuite extends SparkQueryCompareTestSuite {
       groupbyStringsIntsIntsFromCsv) { df =>
     // This is a basic smoke-test of the Scala UDAF framework, not an exhaustive test of
     // the specific UDAF implementation itself.
-    df.createOrReplaceTempView("reduction_scala_average_udaf_test_table")
+    df.repartition(7).createOrReplaceTempView("reduction_scala_average_udaf_test_table")
     df.sparkSession.udf.register("intAverage", functions.udaf(new IntAverageAggregator))
     df.sparkSession.sql(sqlText = """
       SELECT intAverage(c1_int), count(c1_int), intAverage(c2_int), max(c2_int)
@@ -125,17 +124,26 @@ class IntAverageAggregator extends Aggregator[Integer, AverageBuffer, Integer] w
     }
   }
 
+  override def preProcess(numRows: Int, args: Array[ColumnVector]): Array[ColumnVector] = {
+    require(args.length == 1)
+    withResource(args.head) { intArg =>
+      Array(intArg.castTo(DType.INT64)) // Cast int to long to avoid potential overflow
+    }
+  }
+
   override def postProcess(numRows: Int, args: Array[ColumnVector]): ColumnVector = {
     // Final step: divide sum by count to get average. Perform element-wise
     // division: sum / count.
     // Note that if the COUNT is 0 the SUM is null.
-    withResource(args) { _ => // This is to close the input "args" to avoid GPU memory leak.
+    // This is to close the input "args" to avoid GPU memory leak.
+    val averageCol = withResource(args) { _ =>
       val sumCol = args(0)
       val countCol = args(1)
-      withResource(sumCol.div(countCol)) { averageCol =>
-        // Cast to integers, no overflows here.
-        averageCol.castTo(DType.INT32)
-      }
+      sumCol.div(countCol)
+    }
+    withResource(averageCol) { averageCol =>
+      // Cast to integers, no overflows here.
+      averageCol.castTo(DType.INT32)
     }
   }
 
@@ -165,11 +173,11 @@ class IntAverageAggregator extends Aggregator[Integer, AverageBuffer, Integer] w
       }
 
       override def postStep(aggregatedData: Array[ColumnVector]): Array[ColumnVector] = {
-        // The original input is type of integer, and cudf count() aggregate also produce
-        // an integer column, so convert them both to Long to match the agg buffer type.
+        // cudf count() aggregate produces an integer column, so convert it to
+        // Long to match the agg buffer type.
         require(aggregatedData.length == 2, "Expect two columns for postStep during update")
         withResource(aggregatedData) { _ =>
-          aggregatedData.safeMap(_.castTo(DType.INT64))
+          Array(aggregatedData.head.incRefCount(), aggregatedData(1).castTo(DType.INT64))
         }
       }
     }

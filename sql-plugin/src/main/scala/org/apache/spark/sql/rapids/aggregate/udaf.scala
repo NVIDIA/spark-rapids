@@ -18,9 +18,9 @@ package org.apache.spark.sql.rapids.aggregate
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, GroupByAggregationOnColumn, Scalar}
 import com.nvidia.spark.{RapidsAdvancedGroupByAggregation, RapidsSimpleGroupByAggregation, RapidsUDAF, RapidsUDAFGroupByAggregation}
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnsignedIntegerType, GpuUnsignedLongType, GpuUserDefinedFunction, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnsignedIntegerType, GpuUnsignedLongType, GpuUserDefinedFunction, ImperativeAggExprMeta, RepeatingParamCheck, TypedImperativeAggExprMeta, TypeSig}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray, AutoCloseableProducingSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, UserDefinedExpression}
 import org.apache.spark.sql.execution.aggregate.{ScalaAggregator, ScalaUDAF}
@@ -274,6 +274,31 @@ object AdvAggTypeUtils {
       DecimalType(precision, -dType.getScale)
     case _ => throw new IllegalArgumentException(s"Unsupported DType: $dType")
   }
+
+  /**
+   * Extract the children columns form the given struct column. These columns
+   * should be closed when no longer needed.
+   * The behavior is undefined if a non-struct column is specified.
+   */
+  def extractChildren(structCol: GpuColumnVector): Array[GpuColumnVector] = {
+    val dt = structCol.dataType().asInstanceOf[StructType]
+    val baseCol = structCol.getBase
+    (0 until baseCol.getNumChildren).safeMap { i =>
+      GpuColumnVector.from(baseCol.getChildColumnView(i).copyToColumnVector(), dt(i).dataType)
+    }.toArray
+  }
+
+  /**
+   * Create an attribute of struct type from the given types.
+   */
+  def attrFromTypes(
+      name: String,
+      aggBufTypes: Array[DataType]): AttributeReference = {
+    val aggType = StructType(aggBufTypes.zipWithIndex.map { case (dt, id) =>
+      StructField(s"_${name}_child$id", dt)
+    })
+    AttributeReference(s"${name}_buf", aggType)()
+  }
 }
 
 /** Common implementation for all the types of GPU UDAF interface. */
@@ -353,24 +378,85 @@ case class GpuScalaUDAF(
     }
 }
 
+/**
+ * Co-worked with GpuTypedUDAFFunctionBase to support the process of the
+ * aggregate buffer for TypedImperativeAggregate in Spark.
+ */
+private[aggregate] class TypeUDAFCudfAggregate(
+    aggBufferAttr: AttributeReference,
+    aggBufferTypes: Array[DataType],
+    udafAgg: RapidsUDAFGroupByAggregation
+) extends UDAFCudfAggregate(aggBufferTypes, udafAgg) {
+  override def preStepAndClose(numRows: Int,
+      args: Array[GpuColumnVector]): Array[GpuColumnVector] = {
+    require((args.length == 1) && args.head.dataType().isInstanceOf[StructType],
+      "preStep expects only one struct column as the input")
+    val children = withResource(args.head)(AdvAggTypeUtils.extractChildren)
+    super.preStepAndClose(numRows, children)
+  }
+
+  override def postStepAndClose(numRows: Int,
+      aggregatedData: Array[GpuColumnVector]): Array[GpuColumnVector] = {
+    withResource(super.postStepAndClose(numRows, aggregatedData)) { ret =>
+      val cudfCol = ColumnVector.makeStruct(numRows.toLong, ret.map(_.getBase): _*)
+      Array(GpuColumnVector.from(cudfCol, aggBufferAttr.dataType))
+    }
+  }
+}
+
+/**
+ * Aggregate function that leverages a single struct type buffer as the aggregate
+ * buffer, to match the Spark expectation for a TypedImperativeAggregate who is
+ * using a single aggregate buffer, e.g. ScalaAggregator and HiveUDAFFunction.
+ */
+trait GpuTypedUDAFFunctionBase extends GpuUDAFFunctionBase {
+
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = {
+    // TODO make it compatible with the Spark one by leveraging TypedImperativeAggExprMeta.
+    // Tracked by https://github.com/NVIDIA/spark-rapids/issues/13452
+    // The Spark ScalaAggregator returns only a BinaryType column as the aggregate buffer,
+    // but here is a StructType one.
+    Seq(AdvAggTypeUtils.attrFromTypes(name, aggBufferTypes))
+  }
+
+
+  override def defaultValues: Array[GpuScalar] = {
+    val childrenCols = withResource(super.defaultValues) { defValues =>
+      defValues.safeMap(s => ColumnVector.fromScalar(s.getBase, 1))
+    }
+    val structScalar = withResource(childrenCols) { _ =>
+      Scalar.structFromColumnViews(childrenCols: _*)
+    }
+    Array(GpuScalar(structScalar, aggBufferAttributes.head.dataType))
+  }
+
+  override def updateAggregate(): AdvancedCudfAggregate = {
+    new TypeUDAFCudfAggregate(aggBufferAttributes.head, aggBufferTypes,
+      function.updateAggregation())
+  }
+
+  override def mergeAggregate(): AdvancedCudfAggregate = {
+    new TypeUDAFCudfAggregate(aggBufferAttributes.head, aggBufferTypes,
+      function.mergeAggregation())
+  }
+
+  override def postProcess(numRows: Int,
+      args: Array[GpuColumnVector]): GpuColumnVector = {
+    require((args.length == 1) && args.head.dataType().isInstanceOf[StructType],
+      "postProcess expects only one struct column as the input")
+    val children = withResource(args.head)(AdvAggTypeUtils.extractChildren)
+    super.postProcess(numRows, children)
+  }
+}
+
 case class GpuScalaAggregator(
     function: RapidsUDAF,
     children: Seq[Expression],
     dataType: DataType,
     nullable: Boolean,
-    aggregatorName: Option[String]) extends GpuUDAFFunctionBase {
+    aggregatorName: Option[String]) extends GpuTypedUDAFFunctionBase {
 
   override val name: String = aggregatorName.getOrElse(function.getClass.getSimpleName)
-
-  override lazy val aggBufferAttributes: Seq[AttributeReference] = {
-    // TODO make it compatible with the Spark one by leveraging TypedImperativeAggExprMeta.
-    // https://github.com/NVIDIA/spark-rapids/issues/13452
-    // The Spark ScalaAggregator returns only a BinaryType column as the aggregate buffer,
-    // so the current implementation is not compatible with the Spark one.
-    aggBufferTypes.zipWithIndex.map { case (dt, id) =>
-      AttributeReference(s"${name}_$id", dt)()
-    }
-  }
 }
 
 object GpuUDAFMeta {
@@ -382,10 +468,10 @@ object GpuUDAFMeta {
       TypeSig.all,
       repeatingParamCheck =
         Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
-    (expr, conf, p, r) => new ExprMeta(expr, conf, p, r) {
+    (expr, conf, p, r) => new ImperativeAggExprMeta(expr, conf, p, r) {
       private val opRapidsUDAF = GpuScalaUDF.getRapidsUDFInstance[RapidsUDAF](expr.udaf)
 
-      override def tagExprForGpu(): Unit = {
+      override def tagAggForGpu(): Unit = {
         if (opRapidsUDAF.isEmpty) {
           val udfClass = expr.udaf.getClass
           willNotWorkOnGpu(s"${expr.name} implemented by $udfClass does not " +
@@ -393,12 +479,12 @@ object GpuUDAFMeta {
         }
       }
 
-      override def convertToGpu(): GpuExpression = {
+      override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
         require(opRapidsUDAF.isDefined)
         GpuScalaUDAF(
           opRapidsUDAF.get,
           expr.dataType,
-          childExprs.map(_.convertToGpu()),
+          childExprs,
           expr.udafName,
           expr.nullable)
       }
@@ -414,22 +500,31 @@ object GpuUDAFMeta {
         TypeSig.all,
         repeatingParamCheck =
           Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
-      (expr, conf, p, r) => new ExprMeta(expr, conf, p, r) {
+      (expr, conf, p, r) => new TypedImperativeAggExprMeta(expr, conf, p, r) {
         private val opRapidsUDAF = GpuScalaUDF.getRapidsUDFInstance[RapidsUDAF](expr.agg)
 
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           if (opRapidsUDAF.isEmpty) {
             val udfClass = expr.agg.getClass
-            willNotWorkOnGpu(s"${expr.name} implemented by $udfClass does not provide " +
-              s"a GPU implementation")
+            willNotWorkOnGpu(s"${expr.name} implemented by $udfClass does not " +
+              s"provide a GPU implementation")
           }
         }
 
-        override def convertToGpu(): GpuExpression = {
+        override def aggBufferAttribute: AttributeReference = {
+          opRapidsUDAF.map { rapidsUDAF =>
+            AdvAggTypeUtils.attrFromTypes(expr.name, rapidsUDAF.aggBufferTypes())
+          }.getOrElse(
+            // opRapidsUDAF is None, so it will fallback to CPU, use the CPU one.
+            expr.aggBufferAttributes.head
+          )
+        }
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
           require(opRapidsUDAF.isDefined)
           GpuScalaAggregator(
             opRapidsUDAF.get,
-            childExprs.map(_.convertToGpu()),
+            childExprs,
             expr.dataType,
             expr.nullable,
             expr.aggregatorName)

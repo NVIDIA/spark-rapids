@@ -216,8 +216,18 @@ public class IntLongAverageHiveUDAF extends AbstractGenericUDAFResolver implemen
     }
   }
 
-  // preProcess uses default implementation (pass-through) because no
-  // change is needed to the single input column
+  boolean isInt = false;
+
+  @Override
+  public ColumnVector[] preProcess(int numRows, ColumnVector[] args) {
+    if (args.length != 1) {
+      throw new IllegalArgumentException("Expect only one column for preProcess.");
+    }
+    try (ColumnVector inputInt = args[0]) {
+      isInt = inputInt.getType().equals(DType.INT32);
+      return new ColumnVector[] {inputInt.castTo(DType.INT64)};
+    }
+  }
 
   @Override
   public RapidsUDAFGroupByAggregation updateAggregation() {
@@ -231,7 +241,7 @@ public class IntLongAverageHiveUDAF extends AbstractGenericUDAFResolver implemen
         }
         // For reduction (no group-by keys), compute SUM and COUNT directly
         ColumnVector inCol = preStepData[0];
-        Scalar sum = preStepData[0].sum();
+        Scalar sum = inCol.sum();
         try {
           Scalar count = Scalar.fromLong(inCol.getRowCount() - inCol.getNullCount());
           return new Scalar[]{sum, count};
@@ -257,19 +267,13 @@ public class IntLongAverageHiveUDAF extends AbstractGenericUDAFResolver implemen
 
       @Override
       public ColumnVector[] postStep(ColumnVector[] aggregatedData) {
-        // The original input is type of integer, and cudf count() aggregate also produce
-        // an integer column, so convert them both to Long to match the agg buffer type.
+        // cudf count() aggregate produces an integer column, so convert them
+        // both to Long to match the agg buffer type.
         assert (aggregatedData.length == 2);
-        try (ColumnVector sum = aggregatedData[0];
-             ColumnVector count = aggregatedData[1]) {
-          ColumnVector sumAsLong = sum.castTo(DType.INT64);
-          try {
-            ColumnVector countAsLong = count.castTo(DType.INT64);
-            return new ColumnVector[] {sumAsLong, countAsLong};
-          } catch (Exception e) {
-            sumAsLong.close();
-            throw e;
-          }
+        try (ColumnVector sumLong = aggregatedData[0];
+             ColumnVector countMaybeInt = aggregatedData[1]) {
+          ColumnVector countAsLong = countMaybeInt.castTo(DType.INT64);
+          return new ColumnVector[] {sumLong, countAsLong};
         }
       }
     };
@@ -318,10 +322,18 @@ public class IntLongAverageHiveUDAF extends AbstractGenericUDAFResolver implemen
     if (args.length != 2) {
       throw new IllegalArgumentException("Expect twos column for postProcess.");
     }
+    ColumnVector ret = null;
     // Final step: divide sum by count to get average
     try (ColumnVector sumCol = args[0];
         ColumnVector countCol = args[1]) {
-      return sumCol.div(countCol);
+      ret = sumCol.div(countCol);
+    }
+    if (isInt) {
+      try (ColumnVector intRet = ret) {
+        return intRet.castTo(DType.INT32);
+      }
+    } else { // return the longs directly
+      return ret;
     }
   }
 

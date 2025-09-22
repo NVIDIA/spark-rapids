@@ -1860,7 +1860,6 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         allowSinglePassAgg = false,
         allowNonFullyAggregatedOutput = false,
         1)
-
     } else {
       super.convertToGpu()
     }

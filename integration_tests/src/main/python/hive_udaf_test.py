@@ -25,6 +25,8 @@ projected_aggs_list = [
     "average_agg(i), max(i), average_agg(l), min(l)",
     "max(i), average_agg(i), min(l), average_agg(l)",
     "max(i), min(l), average_agg(i), average_agg(l)",
+    "average_agg(i), max(i), min(l), average_agg(l)",
+    "max(i), average_agg(i), average_agg(l), min(l)",
     "average_agg(i), average_agg(l), max(i), min(l)"
 ]
 

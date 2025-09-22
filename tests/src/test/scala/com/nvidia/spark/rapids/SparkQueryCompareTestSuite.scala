@@ -2027,11 +2027,11 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def groupbyStringsIntsIntsFromCsv: SparkSession => DataFrame = {
-    spark => fromCsvDf("group_strings_ints_ints.csv", StructType(Array(
+    fromCsvDf("group_strings_ints_ints.csv", StructType(Array(
       StructField("key_str", StringType, nullable = true),
       StructField("c1_int", IntegerType, nullable = true),
       StructField("c2_int", IntegerType, nullable = true)
-    )))(spark).repartition(6) // Avoid the single partition
+    )))(_)
   }
 
   def singularDoubleDf(session: SparkSession): DataFrame = {
