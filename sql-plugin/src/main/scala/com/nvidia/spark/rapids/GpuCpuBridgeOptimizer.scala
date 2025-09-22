@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, Literal}
+import org.apache.spark.sql.execution.ScalarSubquery
 
 /**
  * Optimizer to make decisions like, which expressions should we run on the CPU vs the GPU
@@ -45,11 +46,27 @@ object GpuCpuBridgeOptimizer extends Logging {
   }
 
   /**
+   * Determine whether an expression is effectively scalar-like for the purpose of
+   * CPU/GPU placement. An expression is scalar-like if it is a `Literal`, a `ScalarSubquery`,
+   * or if all of its inputs are scalar-like (yielding a scalar result as well).
+   * Zero-arity non-literal expressions are not treated as scalar-like.
+   */
+  private def isScalarLike(exprMeta: BaseExprMeta[_]): Boolean = {
+    exprMeta.wrapped match {
+      case _: Literal => true
+      case _: ScalarSubquery => true
+      case _ =>
+        exprMeta.childExprs.nonEmpty && exprMeta.childExprs.forall(isScalarLike)
+    }
+  }
+
+  /**
    * Move an expression to the GPU/CPU bridge if it has to or if it would be
    * less data movement if it did run on the CPU, this means that it has more inputs
    * and outputs on the CPU than on the GPU. This is not 100% perfect in all cases,
    * but is a best effort calculation because it is expensive to calculate it
-   * perfectly.
+   * perfectly. We do try to take into account scalar values as best we can, but it
+   * is not perfect.
    * @param expr the expression to possibly move
    * @param isParentOnCpu Indicates if the parent expression was replaced and is on
    *                      the CPU. A "parent" consumes the output of this expression
@@ -60,6 +77,7 @@ object GpuCpuBridgeOptimizer extends Logging {
   private def moveToCpuIfNeededRecursively(expr: BaseExprMeta[_],
                                            isParentOnCpu: Boolean): Boolean = {
     if (expr.willUseGpuCpuBridge) {
+      System.err.println(s"${expr.wrapped} ALREADY ON CPU")
       // Some expression trees are reused. If we are here, then we don't need to go any
       // deeper
       true
@@ -71,24 +89,34 @@ object GpuCpuBridgeOptimizer extends Logging {
       true
     } else if (expr.canThisBeReplaced && expr.canMoveToCpuBridge) {
       // We need to check the cost of moving this (data movement only for now)
-      // But we don't know if we are going to move until we know our children will
-      // But they need to know if we will before they can tell, so just assume we
-      // will not move and the children may be wrong if that is incorrect, but
-      // we want to prefer the GPU for execution if possible
-      val maxPossibleCost: Int = expr.childExprs.length + 1
-      // This is for the output
-      val parentCost = if (isParentOnCpu) 1 else 0
-      val childrenMovedToCpu = expr.childExprs.map { child =>
+      // Prefer to keep scalar inputs/outputs co-located with their consumer/producer.
+      val (scalarChildren, nonScalarChildren) = expr.childExprs.partition(isScalarLike)
+
+      // Consider only non-scalar children for initial cost comparison, because we can
+      // always co-locate scalar children with the chosen side at low compute cost but
+      // high transfer cost.
+      val maxPossibleCost: Int = nonScalarChildren.length + 1 // +1 accounts for this expr's output
+      // Penalize parent mismatch more when this expression is scalar-like (output is scalar)
+      val parentCostUnit = if (isParentOnCpu) { if (isScalarLike(expr)) 2 else 1 } else 0
+      val childrenMovedToCpu = nonScalarChildren.map { child =>
         moveToCpuIfNeededRecursively(child, isParentOnCpu = false)
       }
-      val costToStayOnGPU = childrenMovedToCpu.count(b => b) + parentCost
+      val costToStayOnGPU = childrenMovedToCpu.count(b => b) + parentCostUnit
       val costToMoveDataToCPU = maxPossibleCost - costToStayOnGPU
 
       // prefer the GPU if things are equal
       if (costToStayOnGPU > costToMoveDataToCPU) {
         expr.moveToCpuBridge()
+        // Ensure scalar-like children are co-located on CPU to avoid expensive transfers
+        scalarChildren.foreach { child =>
+          moveToCpuIfNeededRecursively(child, isParentOnCpu = true)
+        }
         true
       } else {
+        // Keep this on GPU. Visit scalar children to keep them co-located on GPU as well.
+        scalarChildren.foreach { child =>
+          moveToCpuIfNeededRecursively(child, isParentOnCpu = false)
+        }
         false
       }
     } else {

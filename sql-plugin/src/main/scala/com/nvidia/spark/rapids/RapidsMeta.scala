@@ -1352,8 +1352,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
     super.replaceMessage
   }
 
-  private def isLeafExpression: Boolean = expr.children.isEmpty
-
   /**
    * Deduplicate GPU inputs using semantic equality to reduce memory transfers and code size.
    * @param gpuInputsWithIndex GPU expressions paired with their original child indices
@@ -1408,51 +1406,40 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // Deduplicate GPU inputs using semantic equality
     val (deduplicatedGpuInputs, inputMapping) = deduplicateGpuInputs(gpuInputsWithIndex.toSeq)
 
-    if (deduplicatedGpuInputs.nonEmpty || isLeafExpression) {
-
-      // Create bound CPU expression with mixed children:
-      // - BoundReferences for GPU expressions (will be provided as columnar data)
-      // - Original literals/CPU expressions in their positions (no data movement needed)
-      val boundCpuExpression = if (childExprs.nonEmpty) {
-        val boundChildren: Seq[Expression] = childExprs.zipWithIndex.map {
-          case (childMeta, originalIndex) =>
-            if (childMeta.canThisBeReplaced &&
-              !childMeta.wrapped.isInstanceOf[Literal] &&
-              !childMeta.wrapped.isInstanceOf[ScalarSubquery]) {
-              // Replace with BoundReference pointing to deduplicated GPU input position
-              val deduplicatedIndex = inputMapping(originalIndex)
-              val gpuExpr = deduplicatedGpuInputs(deduplicatedIndex)
-              BoundReference(deduplicatedIndex, gpuExpr.dataType, gpuExpr.nullable): Expression
-            } else childMeta.wrapped match {
-              case ss: ScalarSubquery =>
-                // Keep ScalarSubquery as-is (no data transfer needed) but we do need
-                // to make sure it is ready
-                ss.updateResult()
-                childMeta.wrapped.asInstanceOf[Expression]
-              case _ =>
-                // Keep literal/CPU expression as-is (no data transfer needed)
-                childMeta.wrapped.asInstanceOf[Expression]
-            }
+    // Create bound CPU expression with mixed children:
+    // - BoundReferences for GPU expressions (will be provided as columnar data)
+    // - Original literals/CPU expressions in their positions (no data movement needed)
+    val boundChildren: Seq[Expression] = childExprs.zipWithIndex.map {
+      case (childMeta, originalIndex) =>
+        if (childMeta.canThisBeReplaced &&
+          !childMeta.wrapped.isInstanceOf[Literal] &&
+          !childMeta.wrapped.isInstanceOf[ScalarSubquery]) {
+          // Replace with BoundReference pointing to deduplicated GPU input position
+          val deduplicatedIndex = inputMapping(originalIndex)
+          val gpuExpr = deduplicatedGpuInputs(deduplicatedIndex)
+          BoundReference(deduplicatedIndex, gpuExpr.dataType, gpuExpr.nullable): Expression
+        } else childMeta.wrapped match {
+          case ss: ScalarSubquery =>
+            // Keep ScalarSubquery as-is (no data transfer needed) but we do need
+            // to make sure it is ready
+            ss.updateResult()
+            childMeta.wrapped.asInstanceOf[Expression]
+          case _ =>
+            // Keep literal/CPU expression as-is (no data transfer needed)
+            childMeta.wrapped.asInstanceOf[Expression]
         }
-        expr.withNewChildren(boundChildren)
-      } else {
-        // Leaf expression - no children to bind
-        expr
-      }
-
-      val bridgeExpression = GpuCpuBridgeExpression(
-        gpuInputs = deduplicatedGpuInputs,
-        cpuExpression = boundCpuExpression,
-        outputDataType = expr.dataType,
-        outputNullable = expr.nullable,
-        codegenEnabled = conf.isBridgeCodegenEnabled)
-
-      // Apply bridge optimization to merge adjacent bridge expressions
-      GpuCpuBridgeOptimizer.optimizeBridgeExpressions(bridgeExpression)
-    } else {
-      throw new IllegalStateException(
-        s"Cannot create bridge for ${expr.getClass.getSimpleName}: no GPU-compatible inputs")
     }
+    val boundCpuExpression = expr.withNewChildren(boundChildren)
+
+    val bridgeExpression = GpuCpuBridgeExpression(
+      gpuInputs = deduplicatedGpuInputs,
+      cpuExpression = boundCpuExpression,
+      outputDataType = expr.dataType,
+      outputNullable = expr.nullable,
+      codegenEnabled = conf.isBridgeCodegenEnabled)
+
+    // Apply bridge optimization to merge adjacent bridge expressions
+    GpuCpuBridgeOptimizer.optimizeBridgeExpressions(bridgeExpression)
   }
 
   /**

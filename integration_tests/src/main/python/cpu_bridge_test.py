@@ -14,11 +14,12 @@
 
 import pytest
 
+from pyspark.sql.functions import col
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
 from marks import allow_non_gpu
 from data_gen import *
 from marks import ignore_order
-from spark_session import is_before_spark_330, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_330, is_databricks_runtime
 
 
 # Helper function to create config that forces specific expressions to CPU bridge
@@ -112,6 +113,38 @@ def test_cpu_bridge_nondeterministic_works_next_to_bridge():
     
     # This should succeed with mixed GPU/CPU bridge execution, not fall back entirely
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+# This is borrowed partly from join_test.py
+bloom_filter_confs = {
+    "spark.sql.autoBroadcastJoinThreshold": 1,
+    "spark.sql.optimizer.runtime.bloomFilter.applicationSideScanSizeThreshold": 1,
+    "spark.sql.optimizer.runtime.bloomFilter.creationSideThreshold": "100GB",
+    "spark.sql.optimizer.runtime.bloomFilter.enabled": True
+}
+
+def check_bloom_filter_join(confs, is_multi_column):
+    def do_join(spark):
+        if is_multi_column:
+            left = spark.range(100000).withColumn("second_id", col("id") % 5)
+            right = spark.range(10).withColumn("id2", col("id").cast("string")).withColumn("second_id", col("id") % 5)
+            return right.filter("cast(id2 as bigint) % 3 = 0").join(left, (left.id == right.id) & (left.second_id == right.second_id), "inner")
+        else:
+            left = spark.range(100000)
+            right = spark.range(10).withColumn("id2", col("id").cast("string"))
+            return right.filter("cast(id2 as bigint) % 3 = 0").join(left, left.id == right.id, "inner")
+    bridge_conf = create_cpu_bridge_fallback_conf([])
+    partial_conf = copy_and_update(bridge_conf, confs)
+    all_confs = copy_and_update(bloom_filter_confs, partial_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=all_confs)
+
+@allow_non_gpu("ShuffleExchangeExec")
+@ignore_order(local=True)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_cpu_probe(is_multi_column):
+    conf = {"spark.rapids.sql.expression.BloomFilterMightContain": "false"}
+    check_bloom_filter_join(confs=conf, is_multi_column=is_multi_column)
 
 # ==============================================================================
 # NEGATIVE TEST CASES - Verify expressions that should NOT use CPU bridge
