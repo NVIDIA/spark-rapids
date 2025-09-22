@@ -17,12 +17,16 @@
 package org.apache.iceberg.spark
 
 import org.apache.iceberg.Schema
-import org.apache.iceberg.types.TypeUtil
+import org.apache.iceberg.types.{Types, TypeUtil}
 
 import org.apache.spark.sql.types.StructType
 
 object GpuTypeToSparkType {
   def toSparkType(schema: Schema): StructType = {
     TypeUtil.visit(schema, new TypeToSparkType).asInstanceOf[StructType]
+  }
+
+  def toSparkType(icebergStruct: Types.StructType): StructType = {
+    TypeUtil.visit(icebergStruct, new TypeToSparkType).asInstanceOf[StructType]
   }
 }

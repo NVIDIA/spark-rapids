@@ -36,6 +36,7 @@ import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonToStructsReaderType
@@ -4195,6 +4196,11 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new GpuUuidMeta(a, conf, p, r)
     ),
+    expr[StaticInvoke](
+      desc = "StaticInvoke",
+      StaticInvokeCheck,
+      (a, conf, p, r) => new StaticInvokeMeta(a, conf, p, r)
+    ).note("The supported types are not deterministic since it's a dynamic expression"),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 

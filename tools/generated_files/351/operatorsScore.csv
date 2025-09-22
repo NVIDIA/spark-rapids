@@ -22,6 +22,7 @@ InMemoryTableScanExec,3.0
 DataWritingCommandExec,3.0
 ExecutedCommandExec,3.0
 WriteFilesExec,3.0
+AppendDataExec,3.0
 AppendDataExecV1,3.0
 AtomicCreateTableAsSelectExec,3.0
 AtomicReplaceTableAsSelectExec,3.0
@@ -262,6 +263,7 @@ SpecifiedWindowFrame,4
 Sqrt,4
 Stack,4
 StartsWith,4
+StaticInvoke,4
 StddevPop,4
 StddevSamp,4
 StringInstr,4

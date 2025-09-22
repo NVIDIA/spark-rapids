@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.jni.StringUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
+import java.util
+import java.util.concurrent.atomic.AtomicLong
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Uuid}
 import org.apache.spark.sql.types._
@@ -43,7 +45,33 @@ case class GpuUuid() extends GpuExpression with ShimExpression {
   override def children: Seq[Expression] = Nil
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    GpuColumnVector.from(StringUtils.randomUUIDs(batch.numRows), dataType)
+    GpuColumnVector.from(
+      StringUtils.randomUUIDsWithSeed(batch.numRows, GpuUuid.randomSeed), dataType)
+  }
+}
+
+object GpuUuid {
+  // Stores the sequence ID for generating UUIDs.
+  private val sequence = new AtomicLong(0L)
+
+  /**
+   * Generate a seed for UUID generation.
+   * The seed is generated based on the current time in nanoseconds, the process
+   * name, the GPU UUID, and a sequence ID that increments with each call to
+   * this method. This method ensures (do best effort) that the seed is unique
+   * across different runs, including different Spark jobs, different executions
+   * of the same job, set backward of the clock, etc.
+   *
+   * @return A seed for UUID generation.
+   */
+  private def randomSeed: Long = {
+    var seed = System.nanoTime
+    val processName = ExecutorCache.getProcessName
+    val gpuUUID = ExecutorCache.getCurrentDeviceUuid
+    seed = seed * 37 + processName.hashCode
+    seed = seed * 37 + util.Arrays.hashCode(gpuUUID)
+    seed = seed * 37 + sequence.incrementAndGet
+    seed
   }
 }
 

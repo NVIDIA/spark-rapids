@@ -37,7 +37,7 @@ import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaOperations.Operation
 import org.apache.spark.sql.delta.actions.{Action, AddFile, DeletionVectorDescriptor, FileAction, RemoveFile}
 import org.apache.spark.sql.delta.actions.InMemoryLogReplay.UniqueFileActionTuple
-import org.apache.spark.sql.delta.commands.{Batch, Bin, ClusteringStrategy, CompactionStrategy, DeletionVectorUtils, DeltaCommand, DeltaOptimizeContext, OptimizeTableStrategy, ZOrderStrategy}
+import org.apache.spark.sql.delta.commands.{Batch, Bin, ClusteringStrategy, DeletionVectorUtils, DeltaCommand, DeltaOptimizeContext, OptimizeTableStrategy, ZOrderStrategy}
 import org.apache.spark.sql.delta.commands.optimize._
 import org.apache.spark.sql.delta.files.SQLMetricsReporting
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
@@ -92,14 +92,6 @@ class GpuOptimizeExecutor(
    */
   private val optimizeStrategy =
     OptimizeTableStrategy(sparkSession, snapshot, optimizeContext, zOrderByColumns)
-
-  // Sanity check to ensure that this class is used only for what we support at the moment,
-  // though this class is completely ported from the original Delta IO OptimizeExecutor class.
-  // We can simply remove this check once we support more modes.
-  if (!optimizeStrategy.isInstanceOf[CompactionStrategy]) {
-    throw new IllegalArgumentException(
-      s"Optimize strategy ${optimizeStrategy.getClass.getSimpleName} is not supported.")
-  }
 
   /** Timestamp to use in [[FileAction]] */
   private val operationTimestamp = new SystemClock().getTimeMillis()
