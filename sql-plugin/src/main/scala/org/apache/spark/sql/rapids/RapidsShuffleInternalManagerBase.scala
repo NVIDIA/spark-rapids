@@ -38,7 +38,7 @@ import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.serializer.SerializerManager
+import org.apache.spark.serializer.{SerializationStream, SerializerManager}
 import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
@@ -297,8 +297,90 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     write(new TimeTrackingIterator(records))
   }
 
+  /**
+   * Optimized write path for single batch tasks that bypasses diskBlockObjectWriters
+   * and writes directly to partWriter using serializer.
+   * 
+   * Takes advantage of the fact that records are ordered by partition ID 
+   * (e.g., 0, 0, 1, 2, 2, 3) to process them in streaming fashion.
+   */
+  private def writeSingleBatchDirect(
+      records: TimeTrackingIterator,
+      mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
+    
+    val serializerInstance = serializer
+    val partitionSizes = new Array[Long](numPartitions)
+    var recordsWritten: Long = 0L
+    
+    // Track timing for metrics
+    val writeStartTime = System.nanoTime()
+
+
+    var currentPartitionId: Int = -1
+    var currentPartWriter: ShufflePartitionWriter = null
+    var currentSerializationStream: SerializationStream = null
+
+    while (records.hasNext) {
+      val record = records.next()
+      val key = record._1
+      val value = record._2
+      val reducePartitionId: Int = partitioner.getPartition(key)
+
+      // Check if we need to switch to a new partition writer
+      if (reducePartitionId != currentPartitionId) {
+        // Close previous partition writer if exists
+        if (currentSerializationStream != null) {
+          currentSerializationStream.close()
+          currentSerializationStream = null
+        }
+
+        // Open new partition writer
+        currentPartitionId = reducePartitionId
+        currentPartWriter = mapOutputWriter.getPartitionWriter(reducePartitionId)
+        val outputStream = currentPartWriter.openStream()
+        currentSerializationStream = serializerInstance.serializeStream(outputStream)
+      }
+
+      // Write record to current partition
+      currentSerializationStream.writeKey[K](key)
+      currentSerializationStream.writeValue[V](value)
+      recordsWritten += 1
+
+      // Track record size (estimate based on value type)
+      val recordSize = value match {
+        case cb: ColumnarBatch if cb.numCols() > 0 =>
+          cb.column(0) match {
+            case gpc: GpuPackedTableColumn => gpc.getTableBuffer.getLength
+            case gcc: GpuCompressedColumnVector => gcc.getTableBuffer.getLength
+            case _ => 1024L // Default estimate
+          }
+        case _ => 1024L // Default estimate
+      }
+      partitionSizes(reducePartitionId) += recordSize
+    }
+
+    // Close the last partition writer
+    if (currentSerializationStream != null) {
+      currentSerializationStream.close()
+    }
+
+    // Update write metrics
+    val writeTime = System.nanoTime() - writeStartTime
+    writeMetrics.incWriteTime(writeTime)
+    writeMetrics.incRecordsWritten(recordsWritten)
+    writeMetrics.incBytesWritten(partitionSizes.sum)
+
+
+    // Commit all partitions and return partition lengths
+    commitAllPartitions(mapOutputWriter, true /*non-empty checksums*/)
+  }
+
   private def write(records: TimeTrackingIterator): Unit = {
+    // Check if we can use the optimized path for single batch tasks
+    import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
+    
     // Timestamp when the main processing begins
+    val processingStart: Long = System.nanoTime()
     val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
       shuffleId,
       mapId,
@@ -307,6 +389,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       var openTimeNs = 0L
       val partLengths = if (!records.hasNext) {
         commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
+      } else if (GpuShuffleExchangeExecBase.isSingleBatchTask) {
+        // Optimized path for single batch tasks: bypass diskBlockObjectWriters
+        // and write directly to partWriter using serializer
+        logInfo(s"Using optimized single batch write path for shuffle $shuffleId")
+        writeSingleBatchDirect(records, mapOutputWriter)
       } else {
         // per reduce partition id
         // open all the writers ahead of time (Spark does this already)
@@ -411,8 +498,47 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           }
         }
 
-        writePartitionedData(mapOutputWriter)
+        // writeTimeNs is an approximation of the amount of time we spent in
+        // DiskBlockObjectWriter.write, which involves serializing records and writing them
+        // on disk. As we use multiple threads for writing, writeTimeNs is
+        // estimated by 'the total amount of time it took to finish processing the entire logic
+        // above' minus 'the amount of time it took to do anything expensive other than the
+        // serialization and the write. The latter involves computations in upstream execs,
+        // ColumnarBatch size estimation, and the time blocked on the limiter.
+        val writeTimeNs = (System.nanoTime() - processingStart) -
+          records.getIterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
 
+        val combineTimeStart = System.nanoTime()
+        val pl = writePartitionedData(mapOutputWriter)
+        val combineTimeNs = System.nanoTime() - combineTimeStart
+
+        // add openTime which is also done by Spark, and we are counting
+        // in the ioTime later
+        writeMetrics.incWriteTime(openTimeNs)
+
+        // At this point, Spark has timed the amount of time it took to write
+        // to disk (the IO, per write). But note that when we look at the
+        // multi threaded case, this metric is now no longer task-time.
+        // Users need to look at "rs. shuffle write time" (shuffleWriteTimeMetric),
+        // which does its own calculation at the task-thread level.
+        // We use ioTimeNs, however, to get an approximation of serialization time.
+        val ioTimeNs =
+          writeMetrics.asInstanceOf[ThreadSafeShuffleWriteMetricsReporter].getWriteTime
+
+        // serializationTime is the time spent compressing/encoding batches that wasn't
+        // counted in the ioTime
+        val totalPerRecordWriteTime = recordWriteTime.get() + ioTimeNs
+        val ioRatio = (ioTimeNs.toDouble/totalPerRecordWriteTime)
+        val serializationRatio = 1.0 - ioRatio
+
+        // update metrics, note that we expect them to be relative to the task
+        ioTimeMetric.foreach(_ += (ioRatio * writeTimeNs).toLong)
+        serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
+        // we add all three here because this metric is meant to show the time
+        // we are blocked on writes
+        shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
+        shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
+        pl
       }
       myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
     } catch {
