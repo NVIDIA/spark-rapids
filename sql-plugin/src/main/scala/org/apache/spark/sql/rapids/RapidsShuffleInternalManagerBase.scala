@@ -323,13 +323,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     // Collect compressed buffers from parallel tasks
     val partitionBuffers = new ConcurrentHashMap[Int, ByteArrayOutputStream]()
     
-    // Track compression completion per partition
-    val partitionCompletionCounters = new ConcurrentHashMap[Int, AtomicInteger]()
+    // Track compression futures per partition
+    val partitionFutures =
+      new ConcurrentHashMap[Int, java.util.concurrent.ConcurrentLinkedQueue[Future[Long]]]()
     val maxPartitionSeen = new AtomicInteger(-1)
     val processingComplete = new AtomicBoolean(false)
-    
-    // Collect all compression futures to wait for completion
-    val compressionFutures = new mutable.ListBuffer[Future[Long]]()
 
     // Create dedicated writer thread (not using queueWriteTask)
     val writerThreadFactory = new ThreadFactory {
@@ -348,12 +346,18 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         
         while (!processingComplete.get() || nextPartitionToWrite <= maxPartitionSeen.get()) {
           if (nextPartitionToWrite <= maxPartitionSeen.get()) {
-            // Wait for this partition's compression to complete
-            val counter = partitionCompletionCounters.get(nextPartitionToWrite)
-            if (counter != null) {
-              // Wait for compression tasks to complete for this partition
-              while (counter.get() > 0) {
-                Thread.sleep(1)
+            // Wait for this partition's compression futures to complete
+            val futures = partitionFutures.get(nextPartitionToWrite)
+            if (futures != null) {
+              // Wait for all compression tasks to complete for this partition
+              import scala.collection.JavaConverters._
+              futures.asScala.foreach { future =>
+                try {
+                  future.get() // Wait for completion
+                } catch {
+                  case ee: ExecutionException =>
+                    throw ee.getCause
+                }
               }
 
               // Write this partition
@@ -364,7 +368,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               nextPartitionToWrite += 1
             }
           } else {
-            // Wait a bit for more partitions to be processed
+            // Sleep briefly to avoid busy waiting
             Thread.sleep(1)
           }
         }
@@ -382,14 +386,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val reducePartitionId: Int = partitioner.getPartition(key)
         recordsWritten += 1
 
-
-        // Track compression task for this partition
-        val counter = partitionCompletionCounters.computeIfAbsent(reducePartitionId, 
-          _ => new AtomicInteger(0))
-        counter.incrementAndGet()
+        // Get or create futures queue for this partition
+        val futures = partitionFutures.computeIfAbsent(reducePartitionId, 
+          _ => new java.util.concurrent.ConcurrentLinkedQueue[Future[Long]]())
         
-        // Track the maximum partition seen for writer thread
-        maxPartitionSeen.set(math.max(maxPartitionSeen.get(), reducePartitionId))
 
         // Estimate data size for limiter
         val recordSize = value match {
@@ -430,27 +430,28 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             
             // Track total data size
             totalDataSize.addAndGet(recordSize)
+            recordSize // Return record size
           } finally {
             limiter.release(recordSize)
-            val counter = partitionCompletionCounters.get(reducePartitionId)
-            if (counter == null) {
-              throw new IllegalStateException(s"Counter for partition $reducePartitionId not found")
-            }
-            counter.decrementAndGet()
           }
         })
         
-        // Collect future for synchronization
-        compressionFutures += future
+        // Add future to partition's queue
+        futures.offer(future)
+        // Track the maximum partition seen for writer thread
+        maxPartitionSeen.set(math.max(maxPartitionSeen.get(), reducePartitionId))
       }
 
       // Wait for all compression tasks to complete before signaling processing complete
-      compressionFutures.foreach { future =>
-        try {
-          future.get()
-        } catch {
-          case ee: ExecutionException =>
-            throw ee.getCause
+      import scala.collection.JavaConverters._
+      partitionFutures.values().asScala.foreach { futuresQueue =>
+        futuresQueue.asScala.foreach { future =>
+          try {
+            future.get()
+          } catch {
+            case ee: ExecutionException =>
+              throw ee.getCause
+          }
         }
       }
       
@@ -487,8 +488,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       }
       
       // Cancel any pending compression futures
-      compressionFutures.foreach(_.cancel(true))
-      compressionFutures.clear()
+      import scala.collection.JavaConverters._
+      partitionFutures.values().asScala.foreach { futuresQueue =>
+        futuresQueue.asScala.foreach(_.cancel(true))
+        futuresQueue.clear()
+      }
+      partitionFutures.clear()
       
       // Clean up any remaining buffers
       val iter = partitionBuffers.values().iterator()
