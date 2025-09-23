@@ -2720,9 +2720,10 @@ class MultiFileCloudParquetPartitionReader(
     // DecayReleaseResult with a release callback rather than FastReleaseResult.
     override protected def buildResult(resultData: BufferInfo,
         metrics: AsyncMetrics): RunnerResult = {
-      require(releaseResourceCallback != null, "releaseResourceCallback should be set")
       val releaseCallback: () => Unit = () => {
-        releaseResourceCallback()
+        if (isHoldingResource) {
+          releaseResourceCallback()
+        }
       }
       new DecayReleaseResult[BufferInfo](resultData, metrics, releaseCallback)
     }

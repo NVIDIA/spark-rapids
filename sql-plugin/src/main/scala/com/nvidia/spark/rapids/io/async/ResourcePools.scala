@@ -31,9 +31,12 @@ class InvalidResourceRequest(msg: String) extends RuntimeException(
 
 // Represents the status of acquiring resources for a task
 sealed trait AcquireStatus
+
 case class AcquireSuccessful(elapsedTime: Long) extends AcquireStatus
+
 // AcquireFailed indicates that the task could not be scheduled due to resource constraints
 case object AcquireFailed extends AcquireStatus
+
 // AcquireExcepted indicates that an exception occurred while trying to acquire resources
 case class AcquireExcepted(exception: Throwable) extends AcquireStatus
 
@@ -91,8 +94,6 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
     // step 2: try to acquire the resource with blocking and timeout
     // 2.1 If no resource needed, acquire immediately
     if (memoryRequire == 0L) {
-      // run onAcquire callback even if no actual resource is acquired
-      runner.onAcquire()
       AcquireSuccessful(elapsedTime = 0L)
     }
     // 2.2 If the request runner itself exceeds the maximum pool size, fail immediately by
@@ -122,8 +123,9 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
         // [Solution]
         // If there is no runner in flight, run the request runner immediately regardless of
         // the current available resource.
-        if (numRunnerInFlight.compareAndSet(0L, 1L)) {
-          // The remaining resource might be negative here
+        if (remaining < memoryRequire &&
+            numRunnerInFlight.compareAndSet(0L, 1L)) {
+          // The remaining resource should be negative here
           remaining -= memoryRequire
           isDone = true
           // Register a post-hook to decrement numRunnerInFlight as soon as the runner is done
@@ -187,12 +189,13 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
       runner.sparkTaskContext.foreach { ctx =>
         val tid = ctx.taskAttemptId()
         val runnersForTask = tasksInPool.getOrElse(tid, 0L)
-        require(runnersForTask > 0L,
-          s"The Spark task $tid to release does not have any running runners")
-        if (runnersForTask == 1L) {
+        // It is possible runnersForTask == 0, if some runners were cancelled from caller side
+        if (runnersForTask <= 1L) {
           tasksInPool -= tid
           logDebug(s"[LOG POINT] remaining=${bytesToString(remaining)}, " +
               s"AsyncRunners=$numRunnerInPool, SparkTasks=${tasksInPool.size})")
+        } else {
+          tasksInPool.put(tid, runnersForTask - 1L)
         }
       }
       // Waking up waiters

@@ -952,7 +952,9 @@ abstract class MultiFileCloudPartitionReaderBase(
     closeCurrentFileHostBuffers()
     batchIter = EmptyGpuColumnarBatchIterator
     tasks.asScala.foreach { task =>
-      if (task.isDone()) {
+      if (task.isCancelled) {
+        // Do nothing if already cancelled
+      } else if (task.isDone) {
         convertAsyncResult(task.get()).close()
       } else {
         // Note we are not interrupting thread here so it

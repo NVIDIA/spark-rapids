@@ -25,7 +25,6 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.jni.TaskPriority
 
 import org.apache.spark.TaskContext
-import org.apache.spark.util.TaskCompletionListener
 
 /**
  * Marker trait for resources required by AsyncRunners.
@@ -120,6 +119,39 @@ class DecayReleaseResult[T](override val data: T,
 }
 
 /**
+ * States of AsyncRunner during its lifecycle
+ *
+ * - Init: The initial state when the runner is polled from the worker queue. The firstTime flag
+ * indicates if it's the first time the runner is being scheduled.
+ * - Pending: The runner is waiting for the required resource.
+ * - ScheduleFailed: The runner failed to be scheduled due to resource acquisition failure.
+ * - Running: The runner is currently executing.
+ * - Completed: The runner has completed execution successfully, but still holds the resource.
+ * - ExecFailed: The runner execution failed with an exception, but still holds the resource.
+ * - Closed: The runner has been closed and released the resource. If an exception is provided,
+ * it indicates a failed workload.
+ * - Cancelled: The runner has been cancelled from outside (usually due to Spark Task failure,
+ * interruption)
+ */
+sealed trait AsyncRunnerState
+
+case class Init(firstTime: Boolean) extends AsyncRunnerState
+
+case object Pending extends AsyncRunnerState
+
+case class ScheduleFailed(exception: Throwable) extends AsyncRunnerState
+
+case object Running extends AsyncRunnerState
+
+case object Completed extends AsyncRunnerState
+
+case class ExecFailed(exception: Throwable) extends AsyncRunnerState
+
+case class Closed(exception: Option[Throwable]) extends AsyncRunnerState
+
+case object Cancelled extends AsyncRunnerState
+
+/**
  * The AsyncRunner interface represents a resource-aware runner that can be scheduled by
  * ResourceBoundedThreadExecutor. Runners define their resource requirements, execution priority,
  * and can optionally hold resources after completion for deferred release.
@@ -208,8 +240,6 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
 
   private[async] lazy val metricsBuilder = new AsyncMetricsBuilder
 
-  private[async] var execException: Option[Throwable] = None
-
   /**
    * AsyncRunner is not necessarily tied to a Spark task, despite it is usually the case.
    * sparkTaskId is None if the runner is not associated with any Spark task. Otherwise, it
@@ -217,15 +247,20 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
    */
   def sparkTaskContext: Option[TaskContext] = None
 
+  // Label to indicate whether the runner is currently holding the resource.
+  def isHoldingResource: Boolean = holdResource
+
+  @volatile private var holdResource = false
+
+  @volatile private[async] var state: AsyncRunnerState = Init(firstTime = true)
+
   // Unique ID for the runner, mainly for logging and tracking purpose.
   private[async] val runnerId: Long = AsyncRunner.nextRunnerId()
 
-  // Label to indicate whether the runner is currently holding the resource.
-  protected var holdResource = false
-
   override def toString: String = {
     val tid = sparkTaskContext.map(_.taskAttemptId()).getOrElse(-1L)
-    s"AsyncRunner(runnerId=$runnerId, taskId=$tid, resource=$resource, priority=$priority)"
+    s"AsyncRunner(state=$state, runnerId=$runnerId, " +
+        s"taskId=$tid, resource=$resource, priority=$priority)"
   }
 }
 
@@ -269,23 +304,6 @@ abstract class MemoryBoundedAsyncRunner[T] extends AsyncRunner[T] {
     sparkTaskContext match {
       case Some(ctx) => TaskPriority.getTaskPriority(ctx.taskAttemptId())
       case None => 0L
-    }
-  }
-
-  override def onAcquire(): Unit = {
-    super.onAcquire()
-    require(releaseResourceCallback != null, "releaseResourceCallback should be set")
-    sparkTaskContext.foreach { ctx =>
-      // Register a callback to ensure the resource is released when the Spark task completes,
-      // regardless of whether the task succeeds or fails. This is a safety net to prevent
-      // resource leaks in case that Spark task is killed or fails unexpectedly.
-      ctx.addTaskCompletionListener(new TaskCompletionListener {
-        override def onTaskCompletion(context: TaskContext): Unit = {
-          if (holdResource) {
-            releaseResourceCallback()
-          }
-        }
-      })
     }
   }
 }
