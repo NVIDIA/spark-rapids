@@ -341,9 +341,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         currentSerializationStream = serializerInstance.serializeStream(outputStream)
       }
 
-      // Write record to current partition
-      currentSerializationStream.writeKey[K](key)
-      currentSerializationStream.writeValue[V](value)
+      // Write record to current partition  
+      currentSerializationStream.writeKey(key.asInstanceOf[Any])
+      currentSerializationStream.writeValue(value.asInstanceOf[Any])
       recordsWritten += 1
 
       // Track record size (estimate based on value type)
