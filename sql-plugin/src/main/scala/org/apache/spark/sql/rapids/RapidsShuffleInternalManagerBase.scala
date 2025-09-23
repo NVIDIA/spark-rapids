@@ -393,13 +393,21 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
         // Estimate data size for limiter
         val recordSize = value match {
-          case cb: ColumnarBatch if cb.numCols() > 0 =>
-            cb.column(0) match {
-              case gpc: GpuPackedTableColumn => gpc.getTableBuffer.getLength
-              case gcc: GpuCompressedColumnVector => gcc.getTableBuffer.getLength
-              case _ => throw new IllegalStateException(s"Unexpected column type: ${cb.column(0)}")
+          case columnarBatch: ColumnarBatch =>
+            if (columnarBatch.numCols() > 0) {
+              columnarBatch.column(0) match {
+                case _: SlicedGpuColumnVector =>
+                  SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch)
+                case _: SlicedSerializedColumnVector =>
+                  SlicedSerializedColumnVector.getTotalHostMemoryUsed(columnarBatch)
+                case _ =>
+                  0L
+              }
+            } else {
+              0L
             }
-          case _ => throw new IllegalStateException(s"Unexpected value type: ${value.getClass}")
+          case _ =>
+            0L
         }
 
         // Acquire limiter and process compression task immediately
