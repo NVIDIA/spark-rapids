@@ -337,7 +337,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // Open new partition writer
         currentPartitionId = reducePartitionId
         currentPartWriter = mapOutputWriter.getPartitionWriter(reducePartitionId)
-        val outputStream = currentPartWriter.openStream()
+        val outputStream = blockManager.serializerManager.wrapStream(
+          ShuffleBlockId(0, 0, 0) // just to trigger compression
+          , currentPartWriter.openStream())
         currentSerializationStream = serializerInstance.serializeStream(outputStream)
       }
 
