@@ -299,7 +299,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
   private def write(records: TimeTrackingIterator): Unit = {
     // Timestamp when the main processing begins
-    val processingStart: Long = System.nanoTime()
     val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
       shuffleId,
       mapId,
@@ -412,47 +411,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           }
         }
 
-        // writeTimeNs is an approximation of the amount of time we spent in
-        // DiskBlockObjectWriter.write, which involves serializing records and writing them
-        // on disk. As we use multiple threads for writing, writeTimeNs is
-        // estimated by 'the total amount of time it took to finish processing the entire logic
-        // above' minus 'the amount of time it took to do anything expensive other than the
-        // serialization and the write. The latter involves computations in upstream execs,
-        // ColumnarBatch size estimation, and the time blocked on the limiter.
-        val writeTimeNs = (System.nanoTime() - processingStart) -
-          records.getIterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
+        writePartitionedData(mapOutputWriter)
 
-        val combineTimeStart = System.nanoTime()
-        val pl = writePartitionedData(mapOutputWriter)
-        val combineTimeNs = System.nanoTime() - combineTimeStart
-
-        // add openTime which is also done by Spark, and we are counting
-        // in the ioTime later
-        writeMetrics.incWriteTime(openTimeNs)
-
-        // At this point, Spark has timed the amount of time it took to write
-        // to disk (the IO, per write). But note that when we look at the
-        // multi threaded case, this metric is now no longer task-time.
-        // Users need to look at "rs. shuffle write time" (shuffleWriteTimeMetric),
-        // which does its own calculation at the task-thread level.
-        // We use ioTimeNs, however, to get an approximation of serialization time.
-        val ioTimeNs =
-          writeMetrics.asInstanceOf[ThreadSafeShuffleWriteMetricsReporter].getWriteTime
-
-        // serializationTime is the time spent compressing/encoding batches that wasn't
-        // counted in the ioTime
-        val totalPerRecordWriteTime = recordWriteTime.get() + ioTimeNs
-        val ioRatio = (ioTimeNs.toDouble/totalPerRecordWriteTime)
-        val serializationRatio = 1.0 - ioRatio
-
-        // update metrics, note that we expect them to be relative to the task
-        ioTimeMetric.foreach(_ += (ioRatio * writeTimeNs).toLong)
-        serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
-        // we add all three here because this metric is meant to show the time
-        // we are blocked on writes
-        shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
-        shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
-        pl
       }
       myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
     } catch {

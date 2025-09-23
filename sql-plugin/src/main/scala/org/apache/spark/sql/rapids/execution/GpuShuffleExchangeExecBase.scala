@@ -23,8 +23,9 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency, TaskContext}
 
-import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -312,6 +313,32 @@ object GpuShuffleExchangeExecBase {
   val METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM = "rapidsShuffleStalledByInputStream"
   val METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM =
     "RAPIDS shuffle time stalled by input stream operations"
+  
+  // ThreadLocal variable to track if current task has only one ColumnarBatch
+  private val singleBatchTaskLocal: ThreadLocal[Boolean] = new ThreadLocal[Boolean] {
+    override def initialValue(): Boolean = false
+  }
+  
+  /**
+   * Set the flag indicating whether the current task has only one ColumnarBatch to process
+   */
+  def setSingleBatchTask(isSingle: Boolean): Unit = {
+    singleBatchTaskLocal.set(isSingle)
+  }
+  
+  /**
+   * Get the flag indicating whether the current task has only one ColumnarBatch to process
+   */
+  def isSingleBatchTask: Boolean = {
+    singleBatchTaskLocal.get()
+  }
+  
+  /**
+   * Clear the ThreadLocal variable for the current thread
+   */
+  def clearSingleBatchTask(): Unit = {
+    singleBatchTaskLocal.remove()
+  }
 
   def createAdditionalExchangeMetrics(gpu: GpuExec): Map[String, GpuMetric] = Map(
     // dataSize and dataReadSize are uncompressed, one is on write and the other on read
@@ -402,6 +429,7 @@ object GpuShuffleExchangeExecBase {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
+          private var isFirstCall = true
           private def partNextBatch(): Unit = {
             if (partitioned != null) {
               partitioned.map(_._1).safeClose()
@@ -425,6 +453,22 @@ object GpuShuffleExchangeExecBase {
                 at = 0
               } else {
                 batch.close()
+              }
+            }
+
+            // Check if this is the first call and iterator has no more data
+            // If so, set the ThreadLocal flag indicating single batch task
+            if (isFirstCall) {
+              isFirstCall = false
+
+              if (!iter.hasNext) {
+                GpuShuffleExchangeExecBase.setSingleBatchTask(true)
+
+                Option(TaskContext.get()).foreach { tc =>
+                  onTaskCompletion(tc) {
+                    GpuShuffleExchangeExecBase.clearSingleBatchTask()
+                  }
+                }
               }
             }
           }
