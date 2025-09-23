@@ -27,7 +27,7 @@ import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
-import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
+import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
 import org.apache.spark.api.java.JavaSparkContext
@@ -206,7 +206,7 @@ class GpuUnpartitionedDataWriter(
   val spec: PartitionSpec,
   val targetFileSize: Long)
   extends DataWriter[ColumnarBatch] {
-  private val delegate = new RollingDataWriter[SpillableColumnarBatch](
+  private val delegate = new GpuRollingDataWriter(
     fileWriterFactory,
     fileFactory,
     io,
@@ -256,9 +256,10 @@ class GpuPartitionedDataWriter(
 
   private val delegate: PartitioningWriter[SpillableColumnarBatch, DataWriteResult] =
     if (fanoutEnabled) {
-      new FanoutDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io, targetFileSize)
+      new GpuFanoutDataWriter(writerFactory, fileFactory, io,
+        targetFileSize)
     } else {
-      new ClusteredDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io,
+      new GpuClusteredDataWriter(writerFactory, fileFactory, io,
         targetFileSize)
     }
 
