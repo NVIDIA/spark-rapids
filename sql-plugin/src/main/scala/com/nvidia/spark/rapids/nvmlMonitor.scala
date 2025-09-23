@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.{GPUInfo, NVMLMonitor}
+import com.nvidia.spark.rapids.jni.nvml.{GPUInfo, NVML, NVMLMonitor}
 
 import org.apache.spark.api.plugin.PluginContext
 import org.apache.spark.internal.Logging
@@ -72,15 +72,15 @@ object NVMLMonitorOnExecutor extends Logging {
       s"intervalMs=$monitorIntervalMs, logFreq=$logFrequency")
 
     try {
-      if (!NVMLMonitor.initialize()) {
+      if (!NVML.initialize()) {
         logError("Failed to initialize NVML")
         return
       }
 
-      val deviceCount = NVMLMonitor.getDeviceCount
+      val deviceCount = NVML.getDeviceCount
       if (deviceCount == 0) {
         logWarning("No GPUs found for NVML monitoring")
-        NVMLMonitor.shutdown()
+        NVML.shutdown()
         return
       }
 
@@ -168,7 +168,7 @@ object NVMLMonitorOnExecutor extends Logging {
         }
         monitor.printLifecycleReport(reportName)
         monitor.stopMonitoring()
-        NVMLMonitor.shutdown()
+        NVML.shutdown()
         logInfo("NVML monitoring shutdown completed")
       } catch {
         case e: Exception =>
