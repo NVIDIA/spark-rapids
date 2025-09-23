@@ -131,7 +131,8 @@ class IntAverageAggregator extends Aggregator[Integer, AverageBuffer, Integer] w
     }
   }
 
-  override def postProcess(numRows: Int, args: Array[ColumnVector]): ColumnVector = {
+  override def postProcess(numRows: Int, args: Array[ColumnVector],
+      outType: DataType): ColumnVector = {
     // Final step: divide sum by count to get average. Perform element-wise
     // division: sum / count.
     // Note that if the COUNT is 0 the SUM is null.

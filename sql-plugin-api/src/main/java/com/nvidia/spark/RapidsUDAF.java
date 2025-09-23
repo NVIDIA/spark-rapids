@@ -84,9 +84,10 @@ public interface RapidsUDAF {
    * @param numRows The number of rows in the aggregated data.
    * @param args An array of ColumnVector arguments from the final aggregation step.
    *            They should be closed when no longer needed.
+   * @param outType The final data type of this UDAF
    * @return A single ColumnVector representing the final UDAF result.
    */
-  ColumnVector postProcess(int numRows, ColumnVector[] args);
+  ColumnVector postProcess(int numRows, ColumnVector[] args, DataType outType);
 
   /**
    * Data types of the aggregate buffer. This is similar as the "bufferSchema" of

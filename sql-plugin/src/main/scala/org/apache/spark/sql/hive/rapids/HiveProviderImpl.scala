@@ -155,8 +155,6 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           }
 
           override def tagAggForGpu(): Unit = {
-            // See https://github.com/NVIDIA/spark-rapids/issues/13451
-            willNotWorkOnGpu(s"Hive UDAF is not supported yet.")
             if (opRapidsFunc.isEmpty) {
               willNotWorkOnGpu(s"Hive UDAF ${a.name} implemented by " +
                 s"${a.funcWrapper.functionClassName} does not provide a GPU implementation ")

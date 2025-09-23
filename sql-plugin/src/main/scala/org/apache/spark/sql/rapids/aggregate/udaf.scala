@@ -101,7 +101,7 @@ trait GpuAdvancedAggregateFunction extends GpuAggregateFunction with UserDefined
   // Similar as "mergeAggregates" in the GpuAggregateFunction
   def mergeAggregate(): AdvancedCudfAggregate
   // Similar as "evaluateExpression" in the GpuAggregateFunction
-  def postProcess(numRows: Int, args: Array[GpuColumnVector]): GpuColumnVector
+  def postProcessAndClose(numRows: Int, args: Array[GpuColumnVector]): GpuColumnVector
 
   override final lazy val inputProjection: Seq[Expression] = children
 
@@ -128,7 +128,7 @@ trait GpuAdvancedAggregateFunction extends GpuAggregateFunction with UserDefined
  * aggregate process via GPU columns or scalars.
  */
 private[aggregate] class UDAFCudfAggregate(
-    aggBufferTypes: Array[DataType],
+    inputAggBufferTypes: Array[DataType],
     udafAgg: RapidsUDAFGroupByAggregation) extends AdvancedCudfAggregate {
 
   // Type of UDAF check is done by initialing this field when constructing an instance.
@@ -186,11 +186,11 @@ private[aggregate] class UDAFCudfAggregate(
       numRows: Int,
       aggregatedData: Array[GpuColumnVector]): Array[GpuColumnVector] = {
     closeOnExcept(udafAgg.postStep(aggregatedData.map(_.getBase))) { postCols =>
-      require(postCols.length == aggBufferTypes.length,
+      require(postCols.length == inputAggBufferTypes.length,
         "The sizes of the 'postStep' and 'aggregationBufferTypes' outputs does " +
-          s"not match. Sizes: ${postCols.length} vs ${aggBufferTypes.length}")
+          s"not match. Sizes: ${postCols.length} vs ${inputAggBufferTypes.length}")
       try {
-        postCols.zip(aggBufferTypes).map { case (cudfCol, dt) =>
+        postCols.zip(inputAggBufferTypes).map { case (cudfCol, dt) =>
           GpuColumnVector.fromChecked(cudfCol, dt)
         }
       } catch {
@@ -340,8 +340,10 @@ trait GpuUDAFFunctionBase extends GpuAdvancedAggregateFunction
     }
   }
 
-  override def postProcess(numRows: Int, args: Array[GpuColumnVector]): GpuColumnVector = {
-    closeOnExcept(function.postProcess(numRows, args.map(_.getBase))) { postCol =>
+  override def postProcessAndClose(
+      numRows: Int,
+      args: Array[GpuColumnVector]): GpuColumnVector = {
+    closeOnExcept(function.postProcess(numRows, args.map(_.getBase), dataType)) { postCol =>
       try {
         GpuColumnVector.fromChecked(postCol, dataType)
       } catch {
@@ -384,9 +386,9 @@ case class GpuScalaUDAF(
  */
 private[aggregate] class TypeUDAFCudfAggregate(
     aggBufferAttr: AttributeReference,
-    aggBufferTypes: Array[DataType],
+    inputAggBufferTypes: Array[DataType],
     udafAgg: RapidsUDAFGroupByAggregation
-) extends UDAFCudfAggregate(aggBufferTypes, udafAgg) {
+) extends UDAFCudfAggregate(inputAggBufferTypes, udafAgg) {
   override def preStepAndClose(numRows: Int,
       args: Array[GpuColumnVector]): Array[GpuColumnVector] = {
     require((args.length == 1) && args.head.dataType().isInstanceOf[StructType],
@@ -440,12 +442,12 @@ trait GpuTypedUDAFFunctionBase extends GpuUDAFFunctionBase {
       function.mergeAggregation())
   }
 
-  override def postProcess(numRows: Int,
+  override def postProcessAndClose(numRows: Int,
       args: Array[GpuColumnVector]): GpuColumnVector = {
     require((args.length == 1) && args.head.dataType().isInstanceOf[StructType],
       "postProcess expects only one struct column as the input")
     val children = withResource(args.head)(AdvAggTypeUtils.extractChildren)
-    super.postProcess(numRows, children)
+    super.postProcessAndClose(numRows, children)
   }
 }
 

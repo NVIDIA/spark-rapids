@@ -524,12 +524,13 @@ class AggHelper(
         advPreStepAndArgLens.foreach { case (advPreProcess, argsLen) =>
           val endIdx = idx + argsLen
           // advProcessFunc is supposed to close the input columns "cols".
-          val ret = advPreProcess(cb.numRows(), cols.slice(idx, endIdx))
-          outCols ++= ret
-          outLens += ret.length
+          val args = cols.slice(idx, endIdx)
           (idx until endIdx).foreach { i =>
             cols(i) = null // Avoid duplicate close on exceptions
           }
+          val ret = advPreProcess(cb.numRows(), args)
+          outCols ++= ret
+          outLens += ret.length
           idx = endIdx
         }
 
@@ -794,11 +795,12 @@ class AggHelper(
         try {
           advCudfAggregates.zip(advArgLens).foreach { case ((advAgg, _), argsLen) =>
             val endIdx = idx + argsLen
-            // advProcessFunc is supposed to close the input columns "cols".
-            outCols += advAgg.postStepAndClose(cb.numRows(), cols.slice(idx, endIdx))
+            val args = cols.slice(idx, endIdx)
             (idx until endIdx).foreach { i =>
               cols(i) = null // Avoid duplicate close on exceptions
             }
+            // advProcessFunc is supposed to close the input columns "cols".
+            outCols += advAgg.postStepAndClose(cb.numRows(), args)
             idx = endIdx
           }
           require(idx == cols.length) // all the columns should be consumed
@@ -1080,7 +1082,7 @@ object GpuAggFinalPassIterator {
             // Collect the "argument start" and "argument length" for every advanced
             // aggregate.
             val postProcess: AggregateUtils.AdvancedStep = (numRows, args) => {
-              Array(advFn.postProcess(numRows, args))
+              Array(advFn.postProcessAndClose(numRows, args))
             }
             val aggBufLen = aggFn.aggBufferAttributes.length
             advFns += ((postProcess, idx, aggBufLen))
@@ -1207,8 +1209,12 @@ object GpuAggFinalPassIterator {
             outCols += cols(i)
             cols(i) = null // avoid duplicate close on exceptions
           }
+          val args = cols.slice(inputStartPos, endIdx)
+          (inputStartPos until endIdx).foreach { i =>
+            cols(i) = null // avoid duplicate close on exceptions
+          }
           // 2 process the current advanced agg and append the results to out
-          outCols ++= advAggAndClose(inputCb.numRows(), cols.slice(inputStartPos, endIdx))
+          outCols ++= advAggAndClose(inputCb.numRows(), args)
           idx = endIdx
         } // end of "processOps.foreach"
 

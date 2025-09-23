@@ -31,7 +31,7 @@ class ScalaUDAFSuite extends SparkQueryCompareTestSuite {
       groupbyStringsIntsIntsFromCsv) { df =>
     // This is a basic smoke-test of the Scala UDAF framework, not an exhaustive test of
     // the specific UDAF implementation itself.
-    // "repartition(7)" is to avoid a single partition
+    // "repartition(7)" is to avoid the Complete mode of the aggregate.
     df.repartition(7).createOrReplaceTempView("groupby_scala_average_udaf_test_table")
     df.sparkSession.udf.register("intAverage", new IntAverageUDAF)
     df.sparkSession.sql(sqlText = """
@@ -46,7 +46,7 @@ class ScalaUDAFSuite extends SparkQueryCompareTestSuite {
       groupbyStringsIntsIntsFromCsv) { df =>
     // This is a basic smoke-test of the Scala UDAF framework, not an exhaustive test of
     // the specific UDAF implementation itself.
-    // "repartition(7)" is to avoid a single partition
+    // "repartition(7)" is to avoid the Complete mode of the aggregate.
     df.repartition(7).createOrReplaceTempView("reduction_scala_average_udaf_test_table")
     df.sparkSession.udf.register("intAverage", new IntAverageUDAF)
     df.sparkSession.sql(sqlText = """
@@ -142,7 +142,8 @@ class IntAverageUDAF extends UserDefinedAggregateFunction with RapidsUDAF {
     }
   }
 
-  override def postProcess(numRows: Int, args: Array[ColumnVector]): ColumnVector = {
+  override def postProcess(numRows: Int, args: Array[ColumnVector],
+      outType: DataType): ColumnVector = {
     // Final step: divide sum by count to get average. Perform element-wise
     // division: sum / count.
     // Note that if the COUNT is 0 the SUM is null.
