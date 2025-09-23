@@ -77,7 +77,6 @@ object GpuCpuBridgeOptimizer extends Logging {
   private def moveToCpuIfNeededRecursively(expr: BaseExprMeta[_],
                                            isParentOnCpu: Boolean): Boolean = {
     if (expr.willUseGpuCpuBridge) {
-      System.err.println(s"${expr.wrapped} ALREADY ON CPU")
       // Some expression trees are reused. If we are here, then we don't need to go any
       // deeper
       true
