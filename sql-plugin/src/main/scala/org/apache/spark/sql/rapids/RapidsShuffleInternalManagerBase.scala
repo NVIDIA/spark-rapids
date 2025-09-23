@@ -344,8 +344,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       override def run(): Unit = {
         var nextPartitionToWrite = 0
         
-        while (!processingComplete.get() || nextPartitionToWrite <= maxPartitionSeen.get()) {
-          if (nextPartitionToWrite <= maxPartitionSeen.get()) {
+        while (!processingComplete.get() || nextPartitionToWrite < maxPartitionSeen.get()) {
+          if (nextPartitionToWrite < maxPartitionSeen.get()) {
             // Wait for this partition's compression futures to complete
             val futures = partitionFutures.get(nextPartitionToWrite)
             if (futures != null) {
@@ -397,9 +397,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             cb.column(0) match {
               case gpc: GpuPackedTableColumn => gpc.getTableBuffer.getLength
               case gcc: GpuCompressedColumnVector => gcc.getTableBuffer.getLength
-              case _ => 1024L // Default estimate
+              case _ => throw new IllegalStateException(s"Unexpected column type: ${cb.column(0)}")
             }
-          case _ => 1024L // Default estimate
+          case _ => throw new IllegalStateException(s"Unexpected value type: ${value.getClass}")
         }
 
         // Acquire limiter and process compression task immediately
@@ -441,23 +441,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // Track the maximum partition seen for writer thread
         maxPartitionSeen.set(math.max(maxPartitionSeen.get(), reducePartitionId))
       }
-
-      // Wait for all compression tasks to complete before signaling processing complete
-      import scala.collection.JavaConverters._
-      partitionFutures.values().asScala.foreach { futuresQueue =>
-        futuresQueue.asScala.foreach { future =>
-          try {
-            future.get()
-          } catch {
-            case ee: ExecutionException =>
-              throw ee.getCause
-          }
-        }
-      }
       
       // Signal that main thread is done processing
       processingComplete.set(true)
-      
+      maxPartitionSeen.set(math.max(maxPartitionSeen.get(), partitioner.numPartitions))
+
       // Wait for writer thread to complete all partitions
       try {
         writerFuture.get()
