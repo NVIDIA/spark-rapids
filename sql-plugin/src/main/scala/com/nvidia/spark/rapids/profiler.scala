@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,10 @@ import org.apache.spark.io.CompressionCodec
 import org.apache.spark.scheduler.{SparkListener, SparkListenerJobEnd, SparkListenerStageCompleted}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.util.SerializableConfiguration
+
+/**
+ * For profiling with com.nvidia.spark.rapids.jni.Profiler
+ */
 
 object ProfilerOnExecutor extends Logging {
   private val jobPattern = raw"SPARK_.*_JId_([0-9]+).*".r
@@ -358,9 +362,11 @@ object ProfilerOnDriver extends Logging {
   private var isJobsStageProfilingComplete = false
 
   def init(sc: SparkContext, conf: RapidsConf): Unit = {
+    // Even if conf.profilePath is not set, we still might need it in AsyncProfiler
+    hadoopConf = new SerializableConfiguration(sc.hadoopConfiguration)
+
     // if no profile path, profiling is disabled and nothing to do
     conf.profilePath.foreach { _ =>
-      hadoopConf = new SerializableConfiguration(sc.hadoopConfiguration)
       jobRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_JOBS)
       stageRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_STAGES)
       if (jobRanges.nonEmpty || stageRanges.nonEmpty) {

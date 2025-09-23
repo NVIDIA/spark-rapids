@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -252,11 +252,15 @@ abstract class AbstractGpuCoalesceIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    streamTime: GpuMetric,
+    streamTimeOrNoop: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Logging {
 
+  val streamTime = streamTimeOrNoop match {
+    case NoopMetric => new LocalGpuMetric
+    case _ => streamTimeOrNoop
+  }
   private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
@@ -595,7 +599,8 @@ abstract class AbstractGpuCoalesceIterator(
    *
    * @return The coalesced batch
    */
-  override def next(): ColumnarBatch = withResource(new MetricRange(opTime)) { _ =>
+  override def next(): ColumnarBatch = withResource(
+    new MetricRange(Seq(opTime), excludeMetric = streamTime)) { _ =>
     if (coalesceBatchIterator.hasNext) {
       val batch = coalesceBatchIterator.next()
       if (wasLastBatch) {
@@ -887,7 +892,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
@@ -923,7 +928,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val concatTime = gpuLongMetric(CONCAT_TIME)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
 
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema

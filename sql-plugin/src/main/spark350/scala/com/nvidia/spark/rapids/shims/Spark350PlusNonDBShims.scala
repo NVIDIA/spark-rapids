@@ -23,10 +23,12 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "400"}
+{"spark": "401"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuOverrides.exec
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
@@ -34,11 +36,51 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, PythonUDAF, ToPrettyString}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
-import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
 import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.{StringType, StructType}
+
+class TableCacheQueryStageExecMeta(
+    tcqs: TableCacheQueryStageExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends SparkPlanMeta[TableCacheQueryStageExec](tcqs, conf, parent, rule) {
+
+  override val childPlans: Seq[SparkPlanMeta[SparkPlan]] =
+    Seq(GpuOverrides.wrapPlan(tcqs.plan, conf, Some(this)))
+
+  override def tagPlanForGpu(): Unit = {
+    willNotWorkOnGpu("TableCacheQueryStageExec wrapper stays on CPU for Spark AQE compatibility; " +
+      "child plan may run on GPU")
+  }
+
+  override def convertToGpu(): GpuExec = {
+    throw new IllegalStateException("TableCacheQueryStageExec should not be converted to GPU")
+  }
+
+  override def convertToCpu(): SparkPlan = {
+    val wrappedPlan = childPlans.head.convertIfNeeded()
+
+    // If the wrapped plan wasn't converted, return the original TableCacheQueryStageExec
+    if (wrappedPlan == tcqs.plan) {
+      return tcqs
+    }
+
+    // The wrapped plan was converted to GPU - check if we can safely wrap it
+    if (InMemoryTableScanUtils.canTableCacheWrapGpuInMemoryTableScan) {
+      // For Spark 3.5.2+: GPU InMemoryTableScan implements InMemoryTableScanLike,
+      // so TableCacheQueryStageExec can safely wrap it and pass Spark's validation
+      tcqs.copy(plan = wrappedPlan)
+    } else {
+      // For Spark 3.5.0-3.5.1: Missing InMemoryTableScanLike trait causes validation issues.
+      // Keep the original CPU plan to avoid AQE complications.
+      tcqs
+    }
+  }
+}
 
 trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
   override def getFileScanRDD(
@@ -103,19 +145,9 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    val imtsKey = classOf[InMemoryTableScanExec].asSubclass(classOf[SparkPlan])
-    // To avoid code duplication we are reusing the rule from GpuOverrides
-    // but we disable it by default
-    val imtsRule = GpuOverrides.commonExecs.getOrElse(imtsKey,
-        throw new IllegalStateException("InMemoryTableScan should be overridden by default before" +
-        " Spark 3.5.0")).
-      disabledByDefault(
-        """there could be complications when using it with AQE with Spark-3.5.0 and Spark-3.5.1.
-          |For more details please check
-          |https://github.com/NVIDIA/spark-rapids/issues/10603""".stripMargin.replaceAll("\n", " "))
-
     val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-      imtsRule,
+      // Use version-specific InMemoryTableScan rule (disabledByDefault for 3.5.0-3.5.1)
+      InMemoryTableScanUtils.getInMemoryTableScanExecRule,
       GpuOverrides.exec[WindowGroupLimitExec](
         "Apply group-limits for row groups destined for rank-based window functions like " +
           "row_number(), rank(), and dense_rank()",
@@ -124,8 +156,31 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all),
         (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r)),
-      GpuOverrides.neverReplaceExec[TableCacheQueryStageExec]("Table cache query stage")
+      exec[AppendDataExec](
+        "Append data into a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r)),
+      InMemoryTableScanUtils.getTableCacheQueryStageExecRule
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
     super.getExecs ++ shimExecs
+  }
+
+  override def handleTableCacheInOptimizeAdaptiveTransitions(plan: SparkPlan,
+      parent: Option[SparkPlan]): Option[SparkPlan] = {
+    plan match {
+      case tcqs: TableCacheQueryStageExec => Some(tcqs)
+      case _ => None
+    }
+  }
+
+  override def getTableCacheNonQueryStagePlan(plan: SparkPlan): Option[SparkPlan] = {
+    plan match {
+      case tcqs: TableCacheQueryStageExec => Some(tcqs.plan)
+      case _ => None
+    }
   }
 }

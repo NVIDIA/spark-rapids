@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.delta.delta33x
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.{DeltaIOProvider, GpuDeltaDataSource, RapidsDeltaUtils}
 import org.apache.hadoop.fs.Path
-import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.SupportsWrite
@@ -28,13 +27,11 @@ import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils.PROP_CLUSTERING_COLUMNS
-import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterByTransform
 import org.apache.spark.sql.delta.sources.DeltaDataSource
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
@@ -57,24 +54,6 @@ object Delta33xProvider extends DeltaIOProvider {
     write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
   }
 
-  override def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec,
-      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
-  }
-
-  override def tagForGpu(cpuExec: AtomicReplaceTableAsSelectExec,
-      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
-  }
-
   override def tagForGpu(
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): Unit = {
@@ -83,23 +62,10 @@ object Delta33xProvider extends DeltaIOProvider {
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
 
-    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
-
     cpuExec.table match {
       case _: DeltaTableV2 => super.tagForGpu(cpuExec, meta)
       case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
       case _ => meta.willNotWorkOnGpu(s"${cpuExec.table} table class not supported on GPU")
-    }
-  }
-
-  override def tagForGpu(cpuExec: OverwriteByExpressionExecV1,
-      meta: OverwriteByExpressionExecV1Meta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
     }
   }
 
@@ -210,11 +176,6 @@ class DeltaCreatableRelationProviderMeta(
       val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
       RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
         saveCmd.options, SparkSession.active)
-
-      val table = source.getTable(saveCmd.schema, Array.empty, saveCmd.options.asJava)
-      if (table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-        willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-      }
     } else {
       willNotWorkOnGpu("no path specified for Delta Lake table")
     }
