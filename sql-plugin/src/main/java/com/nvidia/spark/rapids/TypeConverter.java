@@ -21,8 +21,18 @@ import java.io.Serializable;
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters;
 
 public abstract class TypeConverter implements Serializable  {
-  /** Append row value to the column builder and return the number of data bytes written */
+  /**
+   * Append row value to the column builder and return the number of data bytes written
+   */
   public abstract double append(SpecializedGetters row, int column, RapidsHostColumnBuilder builder);
+
+  /**
+   * Append row value to the column builder, but no value is returned as a performance
+   * optimization for scala.
+   */
+  public void appendNoRet(SpecializedGetters row, int column, RapidsHostColumnBuilder builder) {
+    append(row, column, builder);
+  }
 
   /**
    * This is here for structs.  When you append a null to a struct the size is not known

@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -228,12 +229,16 @@ case class GpuCpuBridgeExpression(
           nullSafe = false,
           releaseSemaphore = false
         )
+        val r = new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)
+        try {
+          val result = evaluationFunction(rowIterator, subBatchInput.numRows())
 
-        val result = evaluationFunction(rowIterator, subBatchInput.numRows())
-
-        // Convert result to spillable format
-        val resultBatch = new ColumnarBatch(Array(result), subBatchInput.numRows())
-        SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          // Convert result to spillable format
+          val resultBatch = new ColumnarBatch(Array(result), subBatchInput.numRows())
+          SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        } finally {
+          r.close()
+        }
       }
     }
   }
@@ -359,7 +364,7 @@ case class GpuCpuBridgeExpression(
         // Stream through the iterator without caching - preserves memory efficiency
         rowIterator.foreach { row =>
           val resultRow = projection.apply(row)
-          converter.append(resultRow, 0, builder)
+          converter.appendNoRet(resultRow, 0, builder)
         }
 
         // Build the result column and put it on the GPU
