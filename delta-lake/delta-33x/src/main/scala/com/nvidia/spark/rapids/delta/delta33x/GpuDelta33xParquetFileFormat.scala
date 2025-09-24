@@ -449,8 +449,10 @@ case class GpuDelta33xParquetFileFormat(
           markedRowIndicesCol =>
             rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
         }
-      withResource(containsMarkedRows.not()) { indicesToDelete =>
-        GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
+      withResource(containsMarkedRows) { containsMarkedRows =>
+        withResource(containsMarkedRows.not()) { indicesToDelete =>
+          GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
+        }
       }
     }
   }
@@ -463,7 +465,9 @@ case class GpuDelta33xParquetFileFormat(
           markedRowIndicesCol =>
             rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
         }
-      GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
+      withResource(containsMarkedRows) { containsMarkedRows =>
+        GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
+      }
     }
   }
 
