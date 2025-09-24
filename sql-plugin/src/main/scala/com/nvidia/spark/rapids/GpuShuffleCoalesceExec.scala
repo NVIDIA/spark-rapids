@@ -61,7 +61,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   import GpuShuffleCoalesceUtils._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
@@ -149,7 +149,7 @@ object GpuShuffleCoalesceUtils {
     val inRowsMetric = metricsMap(GpuMetric.NUM_INPUT_ROWS)
     val outBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
     val outRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
-    val opTimeMetric = metricsMap(GpuMetric.OP_TIME)
+    val opTimeMetric = metricsMap(GpuMetric.OP_TIME_LEGACY)
     val readThrottlingMetric = metricsMap(GpuMetric.READ_THROTTLING_TIME)
     val hostIter = if (readOption.kudoEnabled) {
       new KudoHostShuffleCoalesceIterator(iter, targetSize, dataTypes, concatTimeMetric,

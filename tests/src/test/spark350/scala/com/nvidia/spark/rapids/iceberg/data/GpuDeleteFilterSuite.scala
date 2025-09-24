@@ -31,7 +31,7 @@ import scala.language.reflectiveCalls
 import ai.rapids.cudf.{DType, HostColumnVector, HostColumnVectorCore}
 import com.nvidia.spark.rapids.{GpuColumnVector, LazySpillableColumnarBatch, NoopMetric, RapidsConf}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.{fieldIndex, PooledTableGen}
@@ -486,7 +486,7 @@ private object TestGpuDeleteLoader {
         10000000,
         None,
         parquetDebugDumpAlways = false,
-        Map(OP_TIME -> NoopMetric, JOIN_TIME -> NoopMetric),
+        Map(OP_TIME_LEGACY -> NoopMetric, JOIN_TIME -> NoopMetric),
         SingleFile,
         tableSchema,
         None),
