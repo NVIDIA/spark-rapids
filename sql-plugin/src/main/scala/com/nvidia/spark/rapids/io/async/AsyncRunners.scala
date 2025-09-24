@@ -18,12 +18,14 @@ package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.Callable
 import java.util.concurrent.atomic.AtomicLong
-import java.util.function.LongUnaryOperator
-import scala.collection.mutable
-import com.nvidia.spark.rapids.jni.TaskPriority
-import org.apache.spark.TaskContext
-
 import java.util.concurrent.locks.ReentrantLock
+import java.util.function.LongUnaryOperator
+
+import scala.collection.mutable
+
+import com.nvidia.spark.rapids.jni.TaskPriority
+
+import org.apache.spark.TaskContext
 
 /**
  * Marker trait for resources required by AsyncRunners.
