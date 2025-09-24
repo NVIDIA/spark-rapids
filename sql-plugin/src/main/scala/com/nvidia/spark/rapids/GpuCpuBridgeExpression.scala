@@ -101,6 +101,8 @@ case class GpuCpuBridgeExpression(
         s"(expression: ${cpuExpression.getClass.getSimpleName})")
       evaluateInParallel(batch)
     } else {
+      logDebug(s"Using sequential processing for ${numRows} rows " +
+        s"(expression: ${cpuExpression.getClass.getSimpleName})")
       evaluateSequentially(batch)
     }
   }
@@ -359,7 +361,7 @@ case class GpuCpuBridgeExpression(
           val resultRow = projection.apply(row)
           converter.append(resultRow, 0, builder)
         }
-        
+
         // Build the result column and put it on the GPU
         closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
           GpuColumnVector.from(resultCol, dataType)

@@ -44,8 +44,8 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
-import com.nvidia.spark.rapids.{ColumnarCopyHelper, RapidsHostColumnBuilder, TypeSig}
-import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
+import com.nvidia.spark.rapids.{ColumnarCopyHelper, RapidsHostColumnBuilder, TypeConverter, TypeSig}
+import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
 import org.apache.spark.sql.vectorized.ColumnVector

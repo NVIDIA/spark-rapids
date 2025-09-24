@@ -77,20 +77,6 @@ private[rapids] object GpuRowToColumnConverter {
   private[this] val VALIDITY = 0.125 // 1/8th of a byte (1 bit)
   private[this] val VALIDITY_N_OFFSET = OFFSET + VALIDITY
 
-  private[rapids] abstract class TypeConverter extends Serializable {
-    /** Append row value to the column builder and return the number of data bytes written */
-    def append(row: SpecializedGetters,
-      column: Int,
-      builder: RapidsHostColumnBuilder): Double
-
-    /**
-     * This is here for structs.  When you append a null to a struct the size is not known
-     * ahead of time.  Also because structs push nulls down to the children this size should
-     * assume a validity even if the schema says it cannot be null.
-     */
-    def getNullSize: Double
-  }
-
   private def getConverterFor(field: StructField): TypeConverter =
     getConverterForType(field.dataType, field.nullable)
 
