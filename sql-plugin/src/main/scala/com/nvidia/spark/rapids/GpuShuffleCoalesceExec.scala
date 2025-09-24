@@ -600,7 +600,7 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     }
 
     withResource(new MetricRange(concatTimeMetric)) { _ =>
-      withRetryNoSplit(input) { tables =>
+      withRetryNoSplit(input.toSeq) { tables =>
         tableOperator.concatOnGpu(tables.toArray)
       }
     }
