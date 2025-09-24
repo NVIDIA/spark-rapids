@@ -138,12 +138,15 @@ def test_delta_deletion_vector(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path))
 
+fallback_readers_pre_353=["PERFILE", "MULTITHREADED", "COALESCING"]
+fallback_readers_353_plus=["COALESCING"]
 @allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_spark_353_or_later(), \
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
+@pytest.mark.parametrize("reader_type", fallback_readers_pre_353 if is_before_spark_353() else fallback_readers_353_plus, ids=idfn)
+def test_delta_deletion_vector_read_fallback(spark_tmp_path, reader_type):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
@@ -164,7 +167,7 @@ def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
     with_cpu_session(setup_tables, conf=enable_conf)
     with_cpu_session(write_func(data_path), conf=enable_conf)
 
-    assert_gpu_fallback_collect(read_parquet_sql(data_path), "FileSourceScanExec", conf={"spark.rapids.sql.format.parquet.reader.type": "PERFILE"})
+    assert_gpu_fallback_collect(read_parquet_sql(data_path), "FileSourceScanExec", conf={"spark.rapids.sql.format.parquet.reader.type": reader_type})
 
 @allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
                "FilterExec", "MapElementsExec", "ProjectExec")
@@ -172,7 +175,7 @@ def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-@pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED"])
 # a='' shouldn't match anything as a is an int
 @pytest.mark.parametrize("condition", ["where a = 0", "", "where a = ''"])
 def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):
