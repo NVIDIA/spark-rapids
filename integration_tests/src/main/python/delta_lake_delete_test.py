@@ -171,22 +171,28 @@ def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
                "FilterExec", "MapElementsExec", "ProjectExec")
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or not is_spark_353_or_later(), \
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-def test_delta_deletion_vector_perfile_read(spark_tmp_path):
+# a='' shouldn't match anything as a is an int
+@pytest.mark.parametrize("condition", ["where a = 0", "", "where a = ''"])
+def test_delta_deletion_vector_perfile_read(spark_tmp_path, condition):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
                                use_cdf=False, enable_deletion_vectors=True)
     def write_func(path):
-        delete_sql="DELETE FROM delta.`{}` where a = 0".format(path)
+        delete_sql=f"DELETE FROM delta.`{path}` {condition}"
         def delete_func(spark):
-            spark.sql(delete_sql)
+            count = spark.sql(delete_sql).collect()[0][0]
+            if condition != "where a = ''":
+                assert(count > 0)
+            else:
+                assert(count == 0)
         return delete_func
 
     def read_parquet_sql(data_path):
-        return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
+        return lambda spark : spark.sql(f"select * from delta.`{data_path}`")
 
     enable_conf = copy_and_update(delta_delete_enabled_conf,
                                   {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})

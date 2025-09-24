@@ -155,6 +155,8 @@ case class GpuDelta33xParquetFileFormat(
     // We don't want to use metadata to generate Row Indices as it will also
     // generate hidden metadata that we currently can't handle.
     // For details see https://github.com/NVIDIA/spark-rapids/issues/7458
+    val useMetadataRowIndexConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
+    val useMetadataRowIndex = sparkSession.sessionState.conf.getConf(useMetadataRowIndexConf)
 
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
@@ -186,6 +188,13 @@ case class GpuDelta33xParquetFileFormat(
 
     if (isRowDeletedColumn.isEmpty) return dataReader
 
+    require(useMetadataRowIndex || !optimizationsEnabled,
+      "Cannot generate row index related metadata with file splitting or predicate pushdown")
+
+    if (hasTablePath && isRowDeletedColumn.isEmpty) {
+      throw new IllegalArgumentException(
+        s"Expected a column $IS_ROW_DELETED_COLUMN_NAME in the schema")
+    }
     val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
     // create an iterator with deletion vectors
     (file: PartitionedFile) => {
@@ -266,8 +275,25 @@ case class GpuDelta33xParquetFileFormat(
   }
 
   /**
-   * Perfile
-   **/
+   * Returns an iterator of columnar batches with additional metadata columns, such as row index
+   * and skip_row
+   *
+   * This method wraps each {@code ColumnarBatch} in the input iterator to include additional
+   * columns based on the provided metadata and deletion filter options. It updates the
+   * running row index across batches and throws an exception if a
+   * non-{@code ColumnarBatch} row is encountered.
+   *
+   * @param partitionedFile       The file partition associated with this iterator.
+   * @param iterator              Iterator over the input data, expected to yield
+   *                              {@code ColumnarBatch} items.
+   * @param isRowDeletedColumnOpt Optional metadata for the deleted-row marker column.
+   * @param rowIndexColumnOpt     Optional metadata for the row index column.
+   * @param tablePath             Optional path to the table.
+   * @param serializableConf      Serializable Hadoop configuration for accessing file system.
+   * @param metrics               Map for tracking GPU metric times by name.
+   * @return Iterator yielding {@code ColumnarBatch} objects with added columns per batch.
+   * @throws RuntimeException If an unexpected row type is encountered in the input iterator.
+   */
   private def iteratorWithAdditionalMetadataColumns(
     partitionedFile: PartitionedFile,
     iterator: Iterator[Any],
@@ -275,7 +301,7 @@ case class GpuDelta33xParquetFileFormat(
     rowIndexColumnOpt: Option[ColumnMetadata],
     tablePath: Option[String],
     serializableConf: SerializableConfiguration,
-    metrics: Map[String, GpuMetric]): Iterator[Any] = {
+    metrics: Map[String, GpuMetric]) = {
 
     val rowIndexFilterOpt =
       getRowIndexFilter(partitionedFile, isRowDeletedColumnOpt, serializableConf, tablePath)
@@ -336,7 +362,7 @@ case class GpuDelta33xParquetFileFormat(
     isRowDeletedColumnOpt: Option[ColumnMetadata],
     serializableHadoopConf: SerializableConfiguration,
     tablePath: Option[String]): Option[RapidsRowIndexFilter] = {
-    isRowDeletedColumnOpt.map { col =>
+    isRowDeletedColumnOpt.map { _ =>
       // Fetch the DV descriptor from the partitioned file and create a row index filter
       val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED)
@@ -363,6 +389,25 @@ case class GpuDelta33xParquetFileFormat(
     }
   }
 
+  /**
+  * Replaces vector columns in a given batch with new columns representing row indices and skip_row
+  *
+  * Generates a new row index column and, if present, an "is row deleted" column based on the
+  * provided filter. Both columns are added or replaced in the input batch according to the
+  * specified column metadata.
+  *
+  * @param batch                  Input {@link ColumnarBatch} to be updated with replacement
+  *                               columns.
+  * @param size                   The number of rows in the batch.
+  * @param rowIndexColumnOpt      Optional metadata for the row index column.
+  * @param isRowDeletedColumnOpt  Optional metadata for the deleted row marker column.
+  * @param rowIndexFilterOpt      Optional deletion vector filter for materializing "is deleted"
+  *                               status.
+  * @param metrics                Map for tracking time spent in specific stages, keyed by metric
+  *                               name.
+  * @return                       A new {@link ColumnarBatch} with replaced/added columns for
+  *                               row indices and deletion status.
+  */
   private def replaceBatch(
     batch: ColumnarBatch,
     size: Int,
@@ -398,29 +443,27 @@ case class GpuDelta33xParquetFileFormat(
 
   final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
     def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-      val deletedRowIndices = bitmap.toArray
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(deletedRowIndices:_* ), LongType)) {
-        deleteRowIndices =>
-          withResource(rowIndexCol.getBase.contains(deleteRowIndices.getBase)) {
-            isDeletedBool =>
-              withResource(isDeletedBool.not()) { isNotDeletedBool =>
-                GpuColumnVector.from(isNotDeletedBool.castTo(DType.INT8), ByteType)
-              }
-          }
+      val markedRowIndices = bitmap.toArray
+      val containsMarkedRows =
+        withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
+          markedRowIndicesCol =>
+            rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
+        }
+      withResource(containsMarkedRows.not()) { indicesToDelete =>
+        GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
       }
     }
   }
 
   final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
     def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-      val deletedRowIndices = bitmap.toArray
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(deletedRowIndices:_* ), LongType)) {
-        deleteRowIndices =>
-          withResource(rowIndexCol.getBase.contains(deleteRowIndices.getBase)) {
-            isDeletedBool =>
-              GpuColumnVector.from(isDeletedBool.castTo(DType.INT8), ByteType)
-          }
-      }
+      val markedRowIndices = bitmap.toArray
+      val containsMarkedRows =
+        withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
+          markedRowIndicesCol =>
+            rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
+        }
+      GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
     }
   }
 
