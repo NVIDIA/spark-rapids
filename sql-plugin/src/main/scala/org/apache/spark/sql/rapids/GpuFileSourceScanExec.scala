@@ -395,6 +395,8 @@ case class GpuFileSourceScanExec(
     "numFiles" -> createMetric(ESSENTIAL_LEVEL, "number of files read"),
     "metadataTime" -> createTimingMetric(ESSENTIAL_LEVEL, "metadata time"),
     "filesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "size of files read"),
+    "isRowDeletedColumnGenTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time skiprow gen"),
+    "rowIndexColumnGenTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time row index gen"),
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),

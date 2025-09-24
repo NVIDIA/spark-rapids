@@ -91,13 +91,19 @@ object Delta33xProvider extends DeltaIOProvider {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
       val requiredSchema = meta.wrapped.requiredSchema
-      if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
-      }
-      if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported")
+      if (!meta.conf.isParquetPerFileReadEnabled) {
+        if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
+          meta.willNotWorkOnGpu(
+            s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is supported for PERFILE and " +
+              " not supported for " +
+              s"${RapidsReaderType.withName(meta.conf.get(RapidsConf.PARQUET_READER_TYPE))}")
+        }
+        if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
+          meta.willNotWorkOnGpu(
+            s"reading metadata column $ROW_INDEX_COLUMN_NAME is supported for PERFILE and " +
+              " not supported for " +
+              s"${RapidsReaderType.withName(meta.conf.get(RapidsConf.PARQUET_READER_TYPE))}")
+        }
       }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
