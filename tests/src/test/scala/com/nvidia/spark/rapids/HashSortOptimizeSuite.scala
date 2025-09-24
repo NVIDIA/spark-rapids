@@ -60,9 +60,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
     assert(gse.children.length == 1)
     assert(!gse.global)
     assert(gse.sortType == SortEachBatch)
-    val coalesce = gse.children.head
-    assert(coalesce.isInstanceOf[GpuCoalesceBatches])
-    val sortChild = coalesce.children.head
+    val sortChild = gse.children.head
     assertResult(joinNode) { sortChild }
   }
 
