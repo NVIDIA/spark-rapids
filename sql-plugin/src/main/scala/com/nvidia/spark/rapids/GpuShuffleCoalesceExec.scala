@@ -18,8 +18,10 @@ package com.nvidia.spark.rapids
 
 import java.util
 import java.util.concurrent.{Future, TimeUnit}
+
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
+
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -32,6 +34,7 @@ import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
 import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoGpuSerializer, KudoHostMergeResultWrapper, KudoSerializer, MergeOptions}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.conf.Configuration
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
