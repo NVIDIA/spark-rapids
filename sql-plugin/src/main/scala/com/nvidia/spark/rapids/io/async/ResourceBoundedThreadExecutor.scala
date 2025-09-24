@@ -36,25 +36,37 @@ import org.apache.spark.util.TaskCompletionListener
  * @param runner the AsyncRunner to be executed and tracked
  * @tparam T the result type returned by the AsyncRunner
  */
-class RapidsFutureTask[T](val runner: AsyncRunner[T]) extends FutureTask[AsyncResult[T]](runner) {
+class RapidsFutureTask[T](val runner: AsyncRunner[T])
+    extends FutureTask[AsyncResult[T]](runner) with Logging {
 
-  override def run(): Unit = {
-    runner.state match {
+  override def run(): Unit = runner.withStateLock { rr =>
+    // Handle the cancelled case first
+    if (rr.state == Cancelled) {
+      rr.state = ScheduleFailed(new IllegalStateException("cancelled"))
+      logWarning(s"Runner being cancelled ahead of execution: $rr")
+    }
+
+    rr.state match {
       case Running =>
         // Pass the schedule time to the task metrics builder
-        runner.metricsBuilder.setScheduleTimeMs(scheduleTime)
+        rr.metricsBuilder.setScheduleTimeMs(scheduleTime)
         scheduleTime = 0L
         super.run()
+        // Update the runner state: Running -> Completed
+        rr.state = Completed
+
       // Throw the ScheduleFailed exception within the scope of `FutureTask.run`, so that
       // the exception can be properly recorded and propagated to the caller of `get()`.
       case ScheduleFailed(ex: Throwable) =>
         // Trick: register a pre-hook to let `AsyncRunner.call` throw the exception
-        runner.addPreHook(() => throw ex)
+        rr.addPreHook(() => throw ex)
         super.run()
+
       // Expected states to bypass the execution
       case Pending =>
+
       case _ =>
-        throw new IllegalStateException(s"should NOT reach this line: $runner")
+        throw new IllegalStateException(s"should NOT reach this line: $rr")
     }
   }
 
@@ -169,46 +181,38 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
   }
 
   override def beforeExecute(t: Thread, r: Runnable): Unit = {
-    // Only RapidsFutureTask is expected here
-    val futTask: RapidsFutureTask[_] = r match {
-      case fut: RapidsFutureTask[_] => fut
-      case _ => throw new RuntimeException(s"Unexpected runnable: ${r.getClass.getName}")
-    }
-    val rr = futTask.runner
+    val futTask = parseFutureTask(r)
 
-    // Update the runner state
-    rr.state match {
-      // Normally the runner should be in Init state before being executed:
-      // either the first time or re-scheduled after a timeout
-      case init: Init =>
-        rr.state = Pending
-        // register all the callbacks for the first time
-        if (init.firstTime) {
-          setupReleaseCallback(futTask)
-        }
-      // It is possible that the runner has already been cancelled from the Spark task side
-      // before being polled from the work queue. In this case, we just mark the state
-      // as ScheduleFailed and skip the execution.
-      case Cancelled =>
-        rr.state = ScheduleFailed(new IllegalStateException("cancelled"))
-        logWarning(s"Cancelled before schedule: $rr")
-      // Update the state to ScheduleFailed, but do not throw exception here to avoid
-      // interrupting the ThreadWorker. Since the exception thrown here will not be
-      // caught by the main loop of ThreadWorker. (same as below)
-      case _ =>
-        rr.state = ScheduleFailed(new IllegalStateException("Unexpected state"))
-        logError(s"Unexpected state before schedule: $rr")
-    }
+    futTask.runner.withStateLock { rr =>
+      // Check the runner state
+      rr.state match {
+        // Handle the cancelled case first
+        case Cancelled =>
+          rr.state = ScheduleFailed(new IllegalStateException("cancelled"))
+          logWarning(s"Runner being cancelled ahead of execution: $rr")
 
-    // Resource acquisition
-    if (rr.state == Pending) {
-      // Talk to the ResourcePool to acquire resource for the runner
-      val acqStatus = mgr.acquireResource(rr, timeoutMs)
-      // Check if the runner has been cancelled during the resource acquisition
-      if (rr.state == Cancelled) {
-        rr.state = ScheduleFailed(new IllegalStateException("cancelled"))
-        logWarning(s"Cancelled during resource acquisition: $rr")
-      } else {
+        // Normal case
+        case init: Init =>
+          // Update the runner state: Init -> Pending
+          rr.state = Pending
+          // register all the callbacks for the first time
+          if (init.firstTime) {
+            setupReleaseCallback(futTask)
+          }
+
+        // Unexpected states
+        case _ =>
+          // If we throw an exception here, it will crash the ThreadWorker without signaling
+          // the caller. So we just mark the state as ScheduleFailed to pass the exception to
+          // the caller via FutureTask.get().
+          rr.state = ScheduleFailed(new IllegalStateException("Unexpected state"))
+          logError(s"Unexpected state before schedule: $rr")
+      }
+
+      // Acquire resource if everything goes well
+      if (rr.state == Pending) {
+        // Talk to the ResourcePool to acquire resource for the runner
+        val acqStatus = mgr.acquireResource(rr, timeoutMs)
         // The runner should still be in Pending state if not being cancelled
         require(rr.state == Pending, s"Runner $rr is expected to be in Pending state")
         // Update the runner state based on the acquisition result
@@ -229,97 +233,115 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
   }
 
   override def afterExecute(r: Runnable, t: Throwable): Unit = {
-    // Only RapidsFutureTask is expected here
-    val futTask: RapidsFutureTask[_] = r match {
+    val futTask = parseFutureTask(r)
+
+    futTask.runner.withStateLock { rr =>
+      // Throw the unexpected exception if exists, since the FutureTask should have caught
+      // and recorded the exception internally.
+      if (t != null) {
+        rr.state = ExecFailed(t)
+        // Also try to fail the Spark task which launched this runner.
+        rr.sparkTaskContext.foreach { ctx =>
+          TrampolineUtil.markTaskFailed(ctx, t)
+        }
+        logError(s"Uncaught exception from $futTask: ${t.getMessage}", t)
+        throw new RuntimeException(t)
+      }
+
+      // Check the runner state
+      rr.state match {
+        case Cancelled => // very rare case: cancelled between execution and afterExecute
+        case Completed => // successful execution
+        case ExecFailed(_) => // failed execution (ScheduleFailed should be cast to ExecFailed)
+        case Pending => // timeout during resource acquisition
+        case _ => throw new IllegalStateException(s"Unexpected state: $rr")
+      }
+      // Handle eager release cases
+      if (rr.isHoldingResource) {
+        val needReleaseNow: Boolean = rr.state match {
+          case Cancelled | ExecFailed(_) => true
+          case Completed =>
+            rr.result match {
+              case None =>
+                throw new IllegalStateException(s"In Completed State but NO Result: $rr")
+              case Some(_: FastReleaseResult[_]) => true
+              case _ => false
+            }
+          // Only runners in (`Completed`, `ExecFailed`, `Cancelled`) may hold resource
+          case state =>
+            throw new IllegalStateException(s"State($state) should NOT hold Resource: $rr")
+        }
+        if (needReleaseNow) {
+          rr.releaseResourceCallback()
+        }
+      }
+      // Requeue runners which failed to acquire resource and bypassed the execution.
+      if (rr.state == Pending) {
+        futTask.scheduleTime += timeoutMs * 1000000L
+        rr.state = Init(firstTime = false) // reset to Init state for re-scheduling
+        val reAddSuccess = workQueue.add(futTask)
+        require(reAddSuccess, s"Failed to re-add $futTask to the work queue after execution")
+        logDebug(s"Re-add timeout runner: $futTask")
+      }
+    }
+  }
+
+  private def parseFutureTask(r: Runnable): RapidsFutureTask[_] = {
+    r match {
       case fut: RapidsFutureTask[_] => fut
       case _ => throw new RuntimeException(s"Unexpected runnable: ${r.getClass.getName}")
-    }
-    val rr = futTask.runner
-
-    // Throw the unexpected exception if exists, since the FutureTask should have caught
-    // and recorded the exception internally.
-    if (t != null) {
-      rr.state = ExecFailed(t)
-      // Also try to fail the Spark task which launched this runner.
-      rr.sparkTaskContext.foreach { ctx =>
-        TrampolineUtil.markTaskFailed(ctx, t)
-      }
-      logError(s"Uncaught exception from $futTask: ${t.getMessage}", t)
-      throw new RuntimeException(t)
-    }
-
-    // Check the runner state
-    rr.state match {
-      case Completed => // successful execution
-      case ExecFailed(_) => // failed execution (ScheduleFailed should be cast to ExecFailed)
-      case Pending => // timeout during resource acquisition
-      case Cancelled => // very rare case: cancelled between execution and afterExecute
-      case _ => throw new IllegalStateException(s"Unexpected state: $rr")
-    }
-
-    // Handle eager release cases
-    if (rr.isHoldingResource) {
-      val needReleaseNow: Boolean = rr.state match {
-        case ExecFailed(_) | Cancelled => true
-        case Completed =>
-          rr.result match {
-            case None =>
-              throw new IllegalStateException(s"In Completed State but NO Result: $rr")
-            case Some(_: FastReleaseResult[_]) => true
-            case _ => false
-          }
-        // Only runners in (`Completed`, `ExecFailed`, `Cancelled`) may hold resource
-        case state =>
-          throw new IllegalStateException(s"State($state) should NOT hold Resource: $rr")
-      }
-      if (needReleaseNow) {
-        rr.releaseResourceCallback()
-      }
-    } else if (rr.state == Pending) {
-      // Requeue runners which failed to acquire resource and bypassed the execution.
-      futTask.scheduleTime += timeoutMs * 1000000L
-      rr.state = Init(firstTime = false) // reset to Init state for re-scheduling
-      val reAddSuccess = workQueue.add(futTask)
-      require(reAddSuccess, s"Failed to re-add $futTask to the work queue after execution")
-      logDebug(s"Re-add timeout runner: $futTask")
     }
   }
 
   private def setupReleaseCallback[T](fut: RapidsFutureTask[T]): Unit = {
-    val runner = fut.runner
     // Bind the resource release callback to the AsyncRunner
-    runner.releaseResourceCallback = () => {
-      require(runner.isHoldingResource, s"call relCallback without holding resource: $runner")
-      require(runner.state == Cancelled ||
-          runner.state == Completed ||
-          runner.state.isInstanceOf[ExecFailed],
-        s"Runner $runner is expected to be: Cancelled | Completed | ExecFailed")
-      // Modify the states of HostMemoryPool
-      mgr.releaseResource(runner)
-      // Finalize the runner state
-      runner.state match {
-        case Completed => // Completed -> Closed
-          runner.state = Closed(None)
-        case ExecFailed(ex) => // ExecFailed -> Closed
-          runner.state = Closed(Some(ex))
-        case Cancelled => // Cancelled -> Closed
-          runner.state = Closed(Some(new IllegalStateException("cancelled")))
-        case _ =>
-          throw new IllegalStateException(s"Should NOT reach here: $runner")
+    fut.runner.releaseResourceCallback = () => {
+      fut.runner.withStateLock {
+        // Check if resource has already been released while waiting for StateLock
+        case rr if rr.isHoldingResource =>
+          require(rr.state == Cancelled ||
+              rr.state == Completed || rr.state.isInstanceOf[ExecFailed],
+            s"Runner $rr is expected to be: Cancelled | Completed | ExecFailed")
+          // Modify the states of HostMemoryPool
+          mgr.releaseResource(rr)
+          // Finalize the runner state
+          rr.state match {
+            case Completed => // Completed -> Closed
+              rr.state = Closed(None)
+            case ExecFailed(ex) => // ExecFailed -> Closed
+              rr.state = Closed(Some(ex))
+            case Cancelled => // Cancelled -> Closed
+              rr.state = Closed(Some(new IllegalStateException("cancelled")))
+            case _ =>
+              throw new IllegalStateException(s"Should NOT reach here: $rr")
+          }
+
+        case rr => // already released
+          logWarning(s"Resource has already been released by other thread: $rr")
       }
     }
+
     // Register a callback to ensure the AsyncRunner being fully closed when the Spark task
     // completes, regardless of whether the task succeeds or fails. This is a safety net to
     // prevent resource leaks in case that Spark task is killed or fails unexpectedly.
-    runner.sparkTaskContext.foreach { ctx =>
+    fut.runner.sparkTaskContext.foreach { ctx =>
       ctx.addTaskCompletionListener(new TaskCompletionListener {
         override def onTaskCompletion(context: TaskContext): Unit = {
           // 1. If the runner is still running, we try to cancel it first
-          if (fut.runner.state == Running) {
-            fut.cancel(true)
+          if (fut.runner.getState == Running) {
+            fut.cancel(true) // mayInterruptIfRunning = true
           }
           // 2. Mark the runner as Cancelled
-          fut.runner.state = Cancelled
+          fut.runner.withStateLock { rr =>
+            rr.state match {
+              case Init(_) => rr.state = Cancelled // Init -> Cancelled
+              case Pending => rr.state = Cancelled // Pending -> Cancelled
+              case Running => rr.state = Cancelled // Running -> Cancelled
+              case ScheduleFailed(_) => rr.state = Cancelled // ScheduleFailed -> Cancelled
+              case Completed => rr.state = Cancelled // Completed -> Cancelled
+              case Cancelled | ExecFailed(_) | Closed(_) => // do nothing
+            }
+          }
           // 3. If the runner is still holding resource, we release it
           if (fut.runner.isHoldingResource) {
             fut.runner.releaseResourceCallback()

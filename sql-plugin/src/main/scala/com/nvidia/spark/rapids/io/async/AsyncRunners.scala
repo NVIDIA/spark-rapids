@@ -19,12 +19,11 @@ package com.nvidia.spark.rapids.io.async
 import java.util.concurrent.Callable
 import java.util.concurrent.atomic.AtomicLong
 import java.util.function.LongUnaryOperator
-
 import scala.collection.mutable
-
 import com.nvidia.spark.rapids.jni.TaskPriority
-
 import org.apache.spark.TaskContext
+
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * Marker trait for resources required by AsyncRunners.
@@ -188,7 +187,6 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T]
 
   def call(): AsyncResult[T] = {
-    require(state == Running, s"AsyncRunner.call() called in invalid state: $this")
     require(result.isEmpty, s"AsyncRunner.call() should only be called once: $this")
 
     val startTime = System.nanoTime()
@@ -201,8 +199,6 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
     metricsBuilder.setExecutionTimeMs(System.nanoTime() - startTime)
 
     result = Some(buildResult(resultData, metricsBuilder.build()))
-    // Update the runner state: Running -> Completed
-    state = Completed
     result.get
   }
 
@@ -255,6 +251,19 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
 
   @volatile private var holdResource = false
 
+  def getState: AsyncRunnerState = state
+
+  def withStateLock[R](fn: AsyncRunner[T] => R): R = {
+    require(!stateLock.isHeldByCurrentThread, "withStateLock should not be called recursively")
+    stateLock.lock()
+    try {
+      fn(this)
+    } finally {
+      stateLock.unlock()
+    }
+  }
+
+  private val stateLock = new ReentrantLock()
   @volatile private[async] var state: AsyncRunnerState = Init(firstTime = true)
 
   // Unique ID for the runner, mainly for logging and tracking purpose.
