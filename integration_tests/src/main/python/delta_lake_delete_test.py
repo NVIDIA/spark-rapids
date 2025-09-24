@@ -173,7 +173,7 @@ def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or not is_spark_353_or_later(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-@pytest.mark.parametrize("reader_type", ["COALESCING", "MULTITHREADED"])
+@pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
 def test_delta_deletion_vector_perfile_read(spark_tmp_path, reader_type):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
