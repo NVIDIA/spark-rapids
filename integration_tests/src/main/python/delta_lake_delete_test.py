@@ -19,8 +19,7 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
-    with_cpu_session, with_gpu_session, is_before_spark_353
-from src.main.python.spark_session import is_spark_353_or_later
+    with_cpu_session, with_gpu_session, is_before_spark_353, is_spark_353_or_later
 
 delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
@@ -171,23 +170,29 @@ def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
                "FilterExec", "MapElementsExec", "ProjectExec")
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or not is_spark_353_or_later(), \
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
 @pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
-def test_delta_deletion_vector_read(spark_tmp_path, reader_type):
+# a='' shouldn't match anything as a is an int
+@pytest.mark.parametrize("condition", ["where a = 0", "", "where a = ''"])
+def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
                                use_cdf=False, enable_deletion_vectors=True)
     def write_func(path):
-        delete_sql="DELETE FROM delta.`{}` where a = 0".format(path)
+        delete_sql=f"DELETE FROM delta.`{path}` {condition}"
         def delete_func(spark):
-            spark.sql(delete_sql)
+            count = spark.sql(delete_sql).collect()[0][0]
+            if condition != "where a = ''":
+                assert(count > 0)
+            else:
+                assert(count == 0)
         return delete_func
 
     def read_parquet_sql(data_path):
-        return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
+        return lambda spark : spark.sql(f"select * from delta.`{data_path}`")
 
     enable_conf = copy_and_update(delta_delete_enabled_conf,
                                   {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})

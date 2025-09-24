@@ -211,12 +211,18 @@ abstract class GpuShuffleExchangeExecBase(
 
   // Spark doesn't report totalTime for this operator so we override metrics
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME_NEW_SHUFFLE_READ ->
+      createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ),
+    OP_TIME_NEW_SHUFFLE_WRITE ->
+      createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE),
     PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
     COPY_TO_HOST_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_TO_HOST_TIME)
   ) ++ additionalMetrics
+
+  override def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW_SHUFFLE_READ)
 
   override def nodeName: String = "GpuColumnarExchange"
 
@@ -240,6 +246,9 @@ abstract class GpuShuffleExchangeExecBase(
    */
   @transient
   lazy val shuffleDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+    val descendantOpTimeMetrics = getDescendantOpTimeMetrics
+    val opTimeNewShuffleWrite = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
+    
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
@@ -250,13 +259,16 @@ abstract class GpuShuffleExchangeExecBase(
       useMultiThreadedShuffle,
       allMetrics,
       writeMetrics,
-      additionalMetrics)
+      additionalMetrics,
+      opTimeNewShuffleWrite,
+      descendantOpTimeMetrics,
+      enableOpTimeTrackingRdd)
   }
 
   /**
    * Caches the created ShuffleBatchRDD so we can reuse that.
    */
-  private var cachedShuffleRDD: ShuffledBatchRDD = null
+  private var cachedShuffleRDD: RDD[ColumnarBatch] = null
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -339,7 +351,10 @@ object GpuShuffleExchangeExecBase {
       useMultiThreadedShuffle: Boolean,
       metrics: Map[String, GpuMetric],
       writeMetrics: Map[String, SQLMetric],
-      additionalMetrics: Map[String, GpuMetric])
+      additionalMetrics: Map[String, GpuMetric],
+      opTimeNewShuffleWrite: Option[GpuMetric] = None,
+      descendantOpTimeMetrics: Seq[GpuMetric] = Seq.empty,
+      enableOpTimeTrackingRdd: Boolean = true)
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
       case _: GpuRoundRobinPartitioning => true
@@ -438,6 +453,14 @@ object GpuShuffleExchangeExecBase {
       }
     }
 
+    // Apply OP_TIME_NEW tracking to rddWithPartitionIds if opTimeNewMetric is provided
+    val finalRddWithPartitionIds = opTimeNewShuffleWrite match {
+      case Some(opTimeMetric) if enableOpTimeTrackingRdd =>
+        new GpuOpTimeTrackingRDD[Product2[Int, ColumnarBatch]](
+          rddWithPartitionIds, opTimeMetric, descendantOpTimeMetrics)
+      case _ => rddWithPartitionIds
+    }
+
     // Now, we manually create a GpuShuffleDependency. Because pairs in rddWithPartitionIds
     // are in the form of (partitionId, row) and every partitionId is in the expected range
     // [0, part.numPartitions - 1]. The partitioner of this is a PartitionIdPassthrough.
@@ -445,7 +468,7 @@ object GpuShuffleExchangeExecBase {
     // detect it and do further processing if needed.
     val dependency =
     new GpuShuffleDependency[Int, ColumnarBatch, ColumnarBatch](
-      rddWithPartitionIds,
+      finalRddWithPartitionIds,
       new BatchPartitionIdPassthrough(newPartitioning.numPartitions),
       sparkTypes,
       serializer,
