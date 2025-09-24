@@ -31,7 +31,7 @@ import org.apache.spark.sql.types.{ByteType, DataType, DataTypes, DateType, Inte
 case class GpuBucketExpression(numBuckets: Expression, value: Expression)
   extends GpuBinaryExpression {
 
-  private lazy val sanityCheckResult = sanityCheck()
+  private lazy val sanityCheckResult: Unit = sanityCheck()
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): CudfColumnVector = {
     throw new IllegalStateException("GpuBucketExpression requires first argument to be scalar, " +
@@ -39,9 +39,7 @@ case class GpuBucketExpression(numBuckets: Expression, value: Expression)
   }
 
   override def doColumnar(numBuckets: GpuScalar, rhs: GpuColumnVector): CudfColumnVector = {
-    if (!sanityCheckResult) {
-      throw new IllegalStateException("GpuBucketExpression iceberg sanity check failed.")
-    }
+    sanityCheckResult
 
     val hash = withResource(cast(rhs.getBase)) { castedValue =>
       Hash.murmurHash32(0, Array(castedValue))
@@ -58,7 +56,7 @@ case class GpuBucketExpression(numBuckets: Expression, value: Expression)
     }
   }
 
-  private def sanityCheck(): Boolean = {
+  private def sanityCheck(): Unit = {
     require(numBuckets.dataType == DataTypes.IntegerType,
       s"buckets number must be an integer, got ${numBuckets.dataType}")
 
@@ -67,8 +65,6 @@ case class GpuBucketExpression(numBuckets: Expression, value: Expression)
 
     require(GpuBucketExpression.isSupportedValueType(value.dataType),
       s"Bucket function does not support type ${value.dataType} as values")
-
-    true
   }
 
 

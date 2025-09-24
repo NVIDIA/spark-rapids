@@ -16,14 +16,20 @@ from typing import Callable, Any
 import pytest
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
+from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf
 from marks import iceberg, ignore_order, allow_non_gpu
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                                reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = [
+    pytest.mark.skipif(not is_spark_35x(),
+                       reason="Current spark-rapids only support spark 3.5.x")
+
+    @pytest.mark.skipif(is_iceberg_remote_catalog(),
+                        reason="https://github.com/NVIDIA/spark-rapids/issues/13471")
+]
 
 
 def do_test_insert_into_table_sql(spark_tmp_table_factory,
