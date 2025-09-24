@@ -329,7 +329,7 @@ class DeltaMultiFileParquetPartitionReader(
     tablePath: Option[String],
     metrics: Map[String, GpuMetric]) extends PartitionReader[ColumnarBatch] {
 
-  private val filesIterator = files.iterator
+  private val filesMap = files.map(f => f.filePath.toString() -> f).toMap
   private var file: PartitionedFile = null
   private var rowIndex: Long = 0L
   private var rowIndexFilterOpt: Option[RapidsRowIndexFilter] = None
@@ -351,7 +351,7 @@ class DeltaMultiFileParquetPartitionReader(
   override def get(): ColumnarBatch = {
     val batch = reader.get()
     if (file == null || !compareFile(file)) {
-      file = filesIterator.next()
+      file = filesMap(InputFileUtils.getCurInputFilePath())
       rowIndex = 0
       rowIndexFilterOpt = RapidsDeletionVectorUtils
         .getRowIndexFilter(file, isRowDeletedColumnOpt, serializableConf, tablePath)
