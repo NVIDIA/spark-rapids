@@ -149,6 +149,7 @@ Greatest,4
 HiveGenericUDF,4
 HiveHash,4
 HiveSimpleUDF,4
+HiveUDAFFunction,4
 Hour,4
 HyperLogLogPlusPlus,4
 Hypot,4
@@ -243,6 +244,8 @@ Round,4
 RoundCeil,4
 RoundFloor,4
 RowNumber,4
+ScalaAggregator,4
+ScalaUDAF,4
 ScalaUDF,4
 ScalarSubquery,4
 Second,4
