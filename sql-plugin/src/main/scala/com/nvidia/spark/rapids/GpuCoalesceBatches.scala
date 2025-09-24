@@ -600,7 +600,7 @@ abstract class AbstractGpuCoalesceIterator(
    * @return The coalesced batch
    */
   override def next(): ColumnarBatch = withResource(
-    new MetricRange(Seq(opTime), excludeMetric = streamTime)) { _ =>
+    new MetricRange(Seq(opTime), excludeMetric = Seq(streamTime))) { _ =>
     if (coalesceBatchIterator.hasNext) {
       val batch = coalesceBatchIterator.next()
       if (wasLastBatch) {
