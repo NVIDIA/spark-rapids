@@ -234,35 +234,33 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
       case fut: RapidsFutureTask[_] => fut
       case _ => throw new RuntimeException(s"Unexpected runnable: ${r.getClass.getName}")
     }
+    val rr = futTask.runner
 
     // Throw the unexpected exception if exists, since the FutureTask should have caught
     // and recorded the exception internally.
     if (t != null) {
-      futTask.runner.state = ExecFailed(t)
+      rr.state = ExecFailed(t)
       // Also try to fail the Spark task which launched this runner.
-      futTask.runner.sparkTaskContext.foreach { ctx =>
+      rr.sparkTaskContext.foreach { ctx =>
         TrampolineUtil.markTaskFailed(ctx, t)
       }
       logError(s"Uncaught exception from $futTask: ${t.getMessage}", t)
       throw new RuntimeException(t)
     }
 
-    val rr = futTask.runner
-    // Update the runner state
+    // Check the runner state
     rr.state match {
-      // Running -> Completed
-      case Running => rr.state = Completed
-      // ScheduleFailed -> remains ScheduleFailed
-      // ExecFailed -> remains ExecFailed
-      // Cancelled -> remains Cancelled
-      case ExecFailed(_) | ScheduleFailed(_) | Pending =>
-      case _ =>
-        throw new IllegalStateException(s"Unexpected state: $rr")
+      case Completed => // successful execution
+      case ExecFailed(_) => // failed execution (ScheduleFailed should be cast to ExecFailed)
+      case Pending => // timeout during resource acquisition
+      case Cancelled => // very rare case: cancelled between execution and afterExecute
+      case _ => throw new IllegalStateException(s"Unexpected state: $rr")
     }
+
     // Handle eager release cases
     if (rr.isHoldingResource) {
       val needReleaseNow: Boolean = rr.state match {
-        case ExecFailed(_) => true
+        case ExecFailed(_) | Cancelled => true
         case Completed =>
           rr.result match {
             case None =>
@@ -270,7 +268,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
             case Some(_: FastReleaseResult[_]) => true
             case _ => false
           }
-        // Only runners in `Completed` and `ExecFailed` may hold resource
+        // Only runners in (`Completed`, `ExecFailed`, `Cancelled`) may hold resource
         case state =>
           throw new IllegalStateException(s"State($state) should NOT hold Resource: $rr")
       }

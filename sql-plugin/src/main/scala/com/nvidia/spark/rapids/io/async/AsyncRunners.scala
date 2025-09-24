@@ -188,7 +188,8 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   protected def buildResult(resultData: T, metrics: AsyncMetrics): AsyncResult[T]
 
   def call(): AsyncResult[T] = {
-    require(result.isEmpty, "AsyncRunner.call() should only be called once")
+    require(state == Running, s"AsyncRunner.call() called in invalid state: $this")
+    require(result.isEmpty, s"AsyncRunner.call() should only be called once: $this")
 
     val startTime = System.nanoTime()
     val resultData = try {
@@ -200,6 +201,8 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
     metricsBuilder.setExecutionTimeMs(System.nanoTime() - startTime)
 
     result = Some(buildResult(resultData, metricsBuilder.build()))
+    // Update the runner state: Running -> Completed
+    state = Completed
     result.get
   }
 
