@@ -2721,8 +2721,10 @@ class MultiFileCloudParquetPartitionReader(
     override protected def buildResult(resultData: BufferInfo,
         metrics: AsyncMetrics): RunnerResult = {
       val releaseCallback: () => Unit = () => {
-        if (isHoldingResource) {
-          releaseResourceCallback()
+        if (this.isHoldingResource) {
+          this.withStateLock { _ =>
+            this.releaseResourceCallback()
+          }
         }
       }
       new DecayReleaseResult[BufferInfo](resultData, metrics, releaseCallback)

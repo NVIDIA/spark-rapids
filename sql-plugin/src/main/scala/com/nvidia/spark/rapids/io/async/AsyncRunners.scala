@@ -253,8 +253,32 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
 
   @volatile private var holdResource = false
 
+  /**
+   * Get the current state of the AsyncRunner, nonblocking method.
+   */
   def getState: AsyncRunnerState = state
 
+  /**
+   * Set the state of the AsyncRunner, blocking method.
+   */
+  def setState(newState: AsyncRunnerState): Unit = {
+    if (stateLock.isHeldByCurrentThread) {
+      state = newState
+    } else {
+      withStateLock { _ =>
+        state = newState
+      }
+    }
+  }
+
+  @volatile private var state: AsyncRunnerState = Init(firstTime = true)
+
+  def isHoldingStateLock: Boolean = stateLock.isHeldByCurrentThread
+
+  /**
+   * Helper method to execute a function while holding the state lock, which means that
+   * no other thread can modify the state of the AsyncRunner during the execution.
+   */
   def withStateLock[R](fn: AsyncRunner[T] => R): R = {
     require(!stateLock.isHeldByCurrentThread, "withStateLock should not be called recursively")
     stateLock.lock()
@@ -266,7 +290,6 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
   }
 
   private val stateLock = new ReentrantLock()
-  @volatile private[async] var state: AsyncRunnerState = Init(firstTime = true)
 
   // Unique ID for the runner, mainly for logging and tracking purpose.
   private[async] val runnerId: Long = AsyncRunner.nextRunnerId()
