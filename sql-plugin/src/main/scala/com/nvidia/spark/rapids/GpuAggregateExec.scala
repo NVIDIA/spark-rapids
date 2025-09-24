@@ -1495,7 +1495,7 @@ class GpuMergeAggregateIterator(
     }
     withResource(defaultValues) { _ =>
       val numRows = 1
-      val vecs = defaultValues.safeMap(GpuColumnVector.from(_, numRows))
+      val vecs = defaultValues.toSeq.safeMap(GpuColumnVector.from(_, numRows))
       new ColumnarBatch(vecs.toArray, numRows)
     }
   }

@@ -470,13 +470,13 @@ object GpuUDAFMeta {
       TypeSig.all,
       repeatingParamCheck =
         Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
-    (expr, conf, p, r) => new ImperativeAggExprMeta(expr, conf, p, r) {
-      private val opRapidsUDAF = GpuScalaUDF.getRapidsUDFInstance[RapidsUDAF](expr.udaf)
+    (sUdaf, conf, p, r) => new ImperativeAggExprMeta(sUdaf, conf, p, r) {
+      private val opRapidsUDAF = GpuScalaUDF.getRapidsUDFInstance[RapidsUDAF](sUdaf.udaf)
 
       override def tagAggForGpu(): Unit = {
         if (opRapidsUDAF.isEmpty) {
-          val udfClass = expr.udaf.getClass
-          willNotWorkOnGpu(s"${expr.name} implemented by $udfClass does not " +
+          val udfClass = sUdaf.udaf.getClass
+          willNotWorkOnGpu(s"${sUdaf.name} implemented by $udfClass does not " +
             s"provide a GPU implementation")
         }
       }
@@ -485,10 +485,10 @@ object GpuUDAFMeta {
         require(opRapidsUDAF.isDefined)
         GpuScalaUDAF(
           opRapidsUDAF.get,
-          expr.dataType,
+          sUdaf.dataType,
           childExprs,
-          expr.udafName,
-          expr.nullable)
+          sUdaf.udafName,
+          sUdaf.nullable)
       }
     }
   )
@@ -502,23 +502,23 @@ object GpuUDAFMeta {
         TypeSig.all,
         repeatingParamCheck =
           Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
-      (expr, conf, p, r) => new TypedImperativeAggExprMeta(expr, conf, p, r) {
-        private val opRapidsUDAF = GpuScalaUDF.getRapidsUDFInstance[RapidsUDAF](expr.agg)
+      (sAgg, conf, p, r) => new TypedImperativeAggExprMeta(sAgg, conf, p, r) {
+        private val opRapidsUDAF = GpuScalaUDF.getRapidsUDFInstance[RapidsUDAF](sAgg.agg)
 
         override def tagAggForGpu(): Unit = {
           if (opRapidsUDAF.isEmpty) {
-            val udfClass = expr.agg.getClass
-            willNotWorkOnGpu(s"${expr.name} implemented by $udfClass does not " +
+            val udfClass = sAgg.agg.getClass
+            willNotWorkOnGpu(s"${sAgg.name} implemented by $udfClass does not " +
               s"provide a GPU implementation")
           }
         }
 
         override def aggBufferAttribute: AttributeReference = {
           opRapidsUDAF.map { rapidsUDAF =>
-            AdvAggTypeUtils.attrFromTypes(expr.name, rapidsUDAF.aggBufferTypes())
+            AdvAggTypeUtils.attrFromTypes(sAgg.name, rapidsUDAF.aggBufferTypes())
           }.getOrElse(
             // opRapidsUDAF is None, so it will fallback to CPU, use the CPU one.
-            expr.aggBufferAttributes.head
+            sAgg.aggBufferAttributes.head
           )
         }
 
@@ -527,9 +527,9 @@ object GpuUDAFMeta {
           GpuScalaAggregator(
             opRapidsUDAF.get,
             childExprs,
-            expr.dataType,
-            expr.nullable,
-            expr.aggregatorName)
+            sAgg.dataType,
+            sAgg.nullable,
+            sAgg.aggregatorName)
         }
       }
     )
