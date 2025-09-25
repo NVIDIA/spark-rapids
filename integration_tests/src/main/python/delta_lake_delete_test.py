@@ -138,14 +138,12 @@ def test_delta_deletion_vector(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path))
 
-fallback_readers_pre_353=["PERFILE", "MULTITHREADED", "COALESCING"]
-fallback_readers_353_plus=["COALESCING"]
 @allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_spark_353_or_later(),
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-@pytest.mark.parametrize("reader_type", fallback_readers_pre_353 if is_before_spark_353() else fallback_readers_353_plus, ids=idfn)
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
 def test_delta_deletion_vector_read_fallback(spark_tmp_path, reader_type):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
@@ -175,7 +173,7 @@ def test_delta_deletion_vector_read_fallback(spark_tmp_path, reader_type):
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED"])
+@pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
 # a='' shouldn't match anything as a is an int
 @pytest.mark.parametrize("condition", ["where a = 0", "", "where a = ''"])
 def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):

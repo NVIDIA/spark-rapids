@@ -395,8 +395,6 @@ case class GpuFileSourceScanExec(
     "numFiles" -> createMetric(ESSENTIAL_LEVEL, "number of files read"),
     "metadataTime" -> createTimingMetric(ESSENTIAL_LEVEL, "metadata time"),
     "filesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "size of files read"),
-    "isRowDeletedColumnGenTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time skiprow gen"),
-    "rowIndexColumnGenTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time row index gen"),
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
@@ -420,6 +418,14 @@ case class GpuFileSourceScanExec(
           // Track the actual data size read from the file system, excluding data being pruned
           // by meta-level pruning.
           bf += "readBufferSize" -> createSizeMetric(DEBUG_LEVEL, "size of read buffer")
+          // This metric is used to post the time spent in generating the `skip_row` column
+          // in Delta Lake 3.3.0+
+          bf += "isRowDeletedColumnGenTime" ->
+            createNanoTimingMetric(ESSENTIAL_LEVEL, "time skiprow gen")
+          // This metric is used to post the time spent in generating the `row_index` column
+          // in Delta Lake 3.3.0+
+          bf += "rowIndexColumnGenTime" ->
+              createNanoTimingMetric(ESSENTIAL_LEVEL, "time row index gen")
         }
         bf.result()
       case _ =>

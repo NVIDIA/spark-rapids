@@ -20,6 +20,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.HostColumnVector._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
 import com.nvidia.spark.rapids.parquet._
 import org.apache.hadoop.conf.Configuration
@@ -219,8 +220,10 @@ case class GpuDelta33xParquetFileFormat(
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
 
     if (fileScan.rapidsConf.isParquetCoalesceFileReadEnabled) {
-      logWarning("Coalescing is not supported when Deletion Vectors are enabled, " +
-        "using the multi-threaded reader")
+      logWarning("Coalescing is not supported when `delta.enableDeletionVectors=true`, " +
+        "using the multi-threaded reader. For more details on the Parquet reader types " +
+        "please look at 'spark.rapids.sql.format.parquet.reader.type' config at " +
+        "https://nvidia.github.io/spark-rapids/docs/additional-functionality/advanced_configs.html")
     }
 
     new DeltaMultiFileReaderFactory(
@@ -319,10 +322,8 @@ class DeltaMultiFileReaderFactory(
   private val schemaWithIndices = readDataSchema.fields.zipWithIndex
   def findColumn(name: String): Option[ColumnMetadata] = {
     val results = schemaWithIndices.filter(_._1.name == name)
-    if (results.length > 1) {
-      throw new IllegalArgumentException(
-        s"There are more than one column with name=`$name` requested in the reader output")
-    }
+    require(results.length <= 1,
+      s"There are more than one column with name=`$name` requested in the reader output")
     results.headOption.map(e => ColumnMetadata(e._2, e._1))
   }
 
@@ -585,8 +586,8 @@ object RapidsDeletionVectorUtils {
       metrics("rowIndexColumnGenTime") += System.nanoTime() - startTime
       val indexVectorTuples = new ArrayBuffer[(Int, org.apache.spark.sql.vectorized.ColumnVector)]
       try {
-        if (rowIndexColumnOpt.isDefined) {
-          indexVectorTuples += (rowIndexColumnOpt.get.index -> rowIndexGpuCol.incRefCount())
+        rowIndexColumnOpt.foreach { rowIndexCol =>
+          indexVectorTuples += (rowIndexCol.index -> rowIndexGpuCol.incRefCount())
         }
         startTime = System.nanoTime()
         val isRowDeletedVector = rowIndexFilterOpt.get.materializeIntoVector(rowIndexGpuCol)
@@ -594,7 +595,8 @@ object RapidsDeletionVectorUtils {
         indexVectorTuples += (isRowDeletedColumnOpt.get.index -> isRowDeletedVector)
         replaceVectors(batch, indexVectorTuples.toSeq: _*)
       } catch {
-        case e: Exception => indexVectorTuples.foreach(item => item._2.close())
+        case e: Throwable =>
+          indexVectorTuples.map(_.2).safeClose(e)
           throw e
       }
     }
