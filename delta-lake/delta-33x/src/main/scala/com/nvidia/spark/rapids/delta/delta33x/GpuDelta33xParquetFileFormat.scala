@@ -596,7 +596,7 @@ object RapidsDeletionVectorUtils {
         replaceVectors(batch, indexVectorTuples.toSeq: _*)
       } catch {
         case e: Throwable =>
-          indexVectorTuples.map(_._2).safeClose()
+          indexVectorTuples.map(_._2).safeClose(e)
           throw e
       }
     }
