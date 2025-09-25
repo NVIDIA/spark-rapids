@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.HostColumnVector._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
@@ -34,16 +33,14 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.deletionvectors._
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.delta.storage.dv.HadoopFileSystemDVStore
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources._
-import org.apache.spark.sql.types.{ByteType, LongType, MetadataBuilder, StructType}
+import org.apache.spark.sql.types.{LongType, MetadataBuilder, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -460,18 +457,10 @@ object RapidsDeletionVectorUtils {
     }
   }
 
-  private def getRowIndexPosSimple(start: Long, end: Long): RapidsHostColumnVector = {
+  private def getRowIndexPosSimple(start: Long, end: Long): GpuColumnVector = {
     val size = (end - start).toInt
-    withResource(new RapidsHostColumnBuilder(new BasicType(false, DType.INT64), size)) {
-      rowIndexVectorBuilder =>
-        // populate the row index column value.
-        var i = 0L
-        while (i < size) {
-          rowIndexVectorBuilder.append(i)
-          i += 1
-        }
-        new RapidsHostColumnVector(org.apache.spark.sql.types.LongType,
-          rowIndexVectorBuilder.build())
+    withResource(Scalar.fromLong(start)) { startScalar =>
+      GpuColumnVector.from(ColumnVector.sequence(startScalar, size), LongType)
     }
   }
   /**
@@ -555,123 +544,18 @@ object RapidsDeletionVectorUtils {
     metrics: Map[String, GpuMetric]): ColumnarBatch = {
 
     var startTime = System.nanoTime()
-    val rowIndexCol = getRowIndexPosSimple(rowIndex, size)
-    metrics("rowIndexColumnGenTime") += System.nanoTime() - startTime
-
-    val indexVectorTuples = new ArrayBuffer[(Int, org.apache.spark.sql.vectorized.ColumnVector)]
-
-    withResource(rowIndexCol.getBase) { host =>
-      withResource(GpuColumnVector.from(host.copyToDevice(), rowIndexCol.dataType())) {
-        rowIndexGpuCol =>
-          if (rowIndexColumnOpt.isDefined) {
-            indexVectorTuples += (rowIndexColumnOpt.get.index -> rowIndexGpuCol.incRefCount())
-          }
-          startTime = System.nanoTime()
-          val isRowDeletedVector = rowIndexFilterOpt.get
-            .materializeIntoVector(rowIndex, rowIndex + size, rowIndexGpuCol)
-          metrics("isRowDeletedColumnGenTime") += System.nanoTime() - startTime
-          indexVectorTuples += (isRowDeletedColumnOpt.get.index -> isRowDeletedVector)
-          replaceVectors(batch, indexVectorTuples.toSeq: _*)
+    withResource(getRowIndexPosSimple(rowIndex, rowIndex + size)) { rowIndexGpuCol =>
+      metrics("rowIndexColumnGenTime") += System.nanoTime() - startTime
+      val indexVectorTuples = new ArrayBuffer[(Int, org.apache.spark.sql.vectorized.ColumnVector)]
+      if (rowIndexColumnOpt.isDefined) {
+        indexVectorTuples += (rowIndexColumnOpt.get.index -> rowIndexGpuCol.incRefCount())
       }
+      startTime = System.nanoTime()
+      val isRowDeletedVector = rowIndexFilterOpt.get.materializeIntoVector(rowIndexGpuCol)
+      metrics("isRowDeletedColumnGenTime") += System.nanoTime() - startTime
+      indexVectorTuples += (isRowDeletedColumnOpt.get.index -> isRowDeletedVector)
+      replaceVectors(batch, indexVectorTuples.toSeq: _*)
     }
-  }
-}
 
-trait RapidsRowIndexFilter {
-  def materializeIntoVector(start: Long, end: Long, rowIndexCol: GpuColumnVector): GpuColumnVector
-}
-
-final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-  def materializeIntoVector(
-    start: Long,
-    end: Long,
-    rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = bitmap.toArray
-    val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
-      }
-    val indicesToDelete = withResource(containsMarkedRows) { containsMarkedRows =>
-      containsMarkedRows.not()
-    }
-    withResource(indicesToDelete) { indicesToDelete =>
-      GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
-    }
-  }
-}
-
-final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-  def materializeIntoVector(
-    start: Long,
-    end: Long,
-    rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = bitmap.toArray
-    val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
-      }
-    withResource(containsMarkedRows) { containsMarkedRows =>
-      GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
-    }
-  }
-}
-
-private object RapidsKeepMarkedRowsFilter extends RapidsRowIndexMarkingFiltersBuilder {
-
-  override def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter = RapidsDropAllRowsFilter
-
-  override def getFilterForNonEmptyDeletionVector(
-    bitmap: RoaringBitmapArray): RapidsRowIndexFilter = new RapidsKeepMarkedRowsFilter(bitmap)
-}
-
-private object RapidsDropMarkedRowsFilter extends RapidsRowIndexMarkingFiltersBuilder {
-
-  override def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter = RapidsKeepAllRowsFilter
-
-  override def getFilterForNonEmptyDeletionVector(
-    bitmap: RoaringBitmapArray): RapidsRowIndexFilter = new RapidsDropMarkedRowsFilter(bitmap)
-
-}
-
-private object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
-  def materializeIntoVector(
-    start: Long,
-    end: Long, rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(1.toByte)) { one =>
-      GpuColumnVector.from(one, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
-}
-
-private object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
-  def materializeIntoVector(
-    start: Long,
-    end: Long,
-    rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(0.toByte)) { zero =>
-      GpuColumnVector.from(zero, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
-}
-
-trait RapidsRowIndexMarkingFiltersBuilder {
-  def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter
-  def getFilterForNonEmptyDeletionVector(bitmap: RoaringBitmapArray): RapidsRowIndexFilter
-
-  def createInstance(
-      deletionVector: DeletionVectorDescriptor,
-      hadoopConf: Configuration,
-      tablePath: Option[Path]): RapidsRowIndexFilter = {
-    if (deletionVector.cardinality == 0) {
-      getFilterForEmptyDeletionVector()
-    } else {
-      require(tablePath.nonEmpty, "Table path is required for non-empty deletion vectors")
-      val dvStore = new HadoopFileSystemDVStore(hadoopConf)
-      val storedBitmap = StoredBitmap.create(deletionVector, tablePath.get)
-      val bitmap = storedBitmap.load(dvStore)
-      getFilterForNonEmptyDeletionVector(bitmap)
-    }
   }
 }
