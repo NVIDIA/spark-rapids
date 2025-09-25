@@ -2179,7 +2179,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     val CPU, GPU = Value
   }
 
-  val SHUFFLE_KUDO_MODE = conf("spark.rapids.shuffle.kudo.serializer.mode")
+  val SHUFFLE_KUDO_MODE = conf("spark.rapids.shuffle.kudo.serializer.write.mode")
     .doc("Kudo serializer mode. " +
       "\"CPU\": serialize shuffle outputs on the cpu. " +
       "\"GPU\": serialize shuffle outputs on the gpu. ")
