@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.HostColumnVector._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
@@ -218,9 +219,9 @@ case class GpuDelta33xParquetFileFormat(
     new DeltaMultiFileReaderFactory(
       fileScan.conf,
       broadcastedConf,
-      fileScan.relation.dataSchema,
-      fileScan.requiredSchema,
-      fileScan.readPartitionSchema,
+      prepareSchema(fileScan.relation.dataSchema),
+      prepareSchema(fileScan.requiredSchema),
+      prepareSchema(fileScan.readPartitionSchema),
       pushedFilters,
       fileScan.rapidsConf,
       fileScan.allMetrics,
@@ -456,7 +457,7 @@ object RapidsDeletionVectorUtils {
     iterator.map {
       case cb: ColumnarBatch =>
         val size = cb.numRows()
-        val newBatch = replaceBatch(0L, cb, size, rowIndexColumnOpt, isRowDeletedColumnOpt,
+        val newBatch = replaceBatch(rowIndex, cb, size, rowIndexColumnOpt, isRowDeletedColumnOpt,
           rowIndexFilterOpt, metrics)
         rowIndex += size
         newBatch
@@ -545,6 +546,25 @@ object RapidsDeletionVectorUtils {
     }
   }
 
+  /**
+  * Replaces vector columns in a given batch with new columns representing row indices and skip_row
+  *
+  * Generates a new row index column and, if present, an "is row deleted" column based on the
+  * provided filter. Both columns are added or replaced in the input batch according to the
+  * specified column metadata.
+  *
+  * @param batch                  Input {@link ColumnarBatch} to be updated with replacement
+  *                               columns.
+  * @param size                   The number of rows in the batch.
+  * @param rowIndexColumnOpt      Optional metadata for the row index column.
+  * @param isRowDeletedColumnOpt  Optional metadata for the deleted row marker column.
+  * @param rowIndexFilterOpt      Optional deletion vector filter for materializing "is deleted"
+  *                               status.
+  * @param metrics                Map for tracking time spent in specific stages, keyed by metric
+  *                               name.
+  * @return                       A new {@link ColumnarBatch} with replaced/added columns for
+  *                               row indices and deletion status.
+  */
   private def replaceBatch(rowIndex: Long,
     batch: ColumnarBatch,
     size: Int,
@@ -571,6 +591,5 @@ object RapidsDeletionVectorUtils {
           throw e
       }
     }
-
   }
 }
