@@ -86,10 +86,10 @@ object CpuBridgeTaskComparator extends Comparator[Runnable] {
  * task context propagation, and RmmSpark integration.
  */
 object GpuCpuBridgeThreadPool extends Logging {
-  
-  // Configuration - these could be made configurable via RapidsConf
-  val MIN_ROWS_FOR_PARALLEL = 10000  // Don't parallelize small batches
-  private val TARGET_ROWS_PER_SUBBATCH = 20000  // Target size for each sub-batch
+
+  // We want a decent number of rows because the code is more efficient
+  // with larger batches, even on the CPU
+  private val MIN_ROWS_PER_SUBBATCH = 2000000  // Min size for each sub-batch
   
   // Lazy initialization of the thread pool
   @volatile private var threadPool: Option[ThreadPoolExecutor] = None
@@ -182,7 +182,7 @@ object GpuCpuBridgeThreadPool extends Logging {
    * Determine if a batch should be processed in parallel based on its size.
    */
   def shouldParallelize(numRows: Int): Boolean = {
-    numRows >= MIN_ROWS_FOR_PARALLEL
+    numRows >= MIN_ROWS_PER_SUBBATCH
   }
   
   /**
@@ -193,7 +193,7 @@ object GpuCpuBridgeThreadPool extends Logging {
       1
     } else {
       val poolSize = getConfiguredTaskSlots
-      val idealSubBatches = Math.ceil(numRows.toDouble / TARGET_ROWS_PER_SUBBATCH).toInt
+      val idealSubBatches = Math.ceil(numRows.toDouble / MIN_ROWS_PER_SUBBATCH).toInt
       Math.min(idealSubBatches, poolSize * 2) // Allow up to 2x pool size for better utilization
     }
   }

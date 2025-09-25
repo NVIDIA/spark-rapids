@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, Literal}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, BoundReference, Expression, ExprId, Literal}
 import org.apache.spark.sql.execution.ScalarSubquery
 
 /**
@@ -30,8 +30,8 @@ object GpuCpuBridgeOptimizer extends Logging {
     if (exprs.nonEmpty && exprs.head.conf.isCpuBridgeEnabled) {
       exprs.foreach { child =>
         if (!child.canExprTreeBeReplaced && canRunOnCpuOrGpuRecursively(child)) {
-          // Then we want to move some things to the CPU as needed
-          moveToCpuIfNeededRecursively(child, isParentOnCpu = false)
+          // Minimize data movement for this expression tree assuming the consumer is on GPU
+          optimizeByMinimizingMovement(child)
         }
       }
     }
@@ -51,7 +51,7 @@ object GpuCpuBridgeOptimizer extends Logging {
    * or if all of its inputs are scalar-like (yielding a scalar result as well).
    * Zero-arity non-literal expressions are not treated as scalar-like.
    */
-  private def isScalarLike(exprMeta: BaseExprMeta[_]): Boolean = {
+  def isScalarLike(exprMeta: BaseExprMeta[_]): Boolean = {
     exprMeta.wrapped match {
       case _: Literal => true
       case _: ScalarSubquery => true
@@ -60,73 +60,268 @@ object GpuCpuBridgeOptimizer extends Logging {
     }
   }
 
-  /**
-   * Move an expression to the GPU/CPU bridge if it has to or if it would be
-   * less data movement if it did run on the CPU, this means that it has more inputs
-   * and outputs on the CPU than on the GPU. This is not 100% perfect in all cases,
-   * but is a best effort calculation because it is expensive to calculate it
-   * perfectly. We do try to take into account scalar values as best we can, but it
-   * is not perfect.
-   * @param expr the expression to possibly move
-   * @param isParentOnCpu Indicates if the parent expression was replaced and is on
-   *                      the CPU. A "parent" consumes the output of this expression
-   *                      so it indicates that the output of this expression will be
-   *                      moved to the CPU too.
-   * @return true if this was placed on the CPU bridge else false
-   */
-  private def moveToCpuIfNeededRecursively(expr: BaseExprMeta[_],
-                                           isParentOnCpu: Boolean): Boolean = {
-    if (expr.willUseGpuCpuBridge) {
-      // Some expression trees are reused. If we are here, then we don't need to go any
-      // deeper
-      true
-    } else if (!expr.canThisBeReplaced && expr.canMoveToCpuBridge) {
-      expr.childExprs.foreach { child =>
-        moveToCpuIfNeededRecursively(child, isParentOnCpu = true)
-      }
-      expr.moveToCpuBridge()
-      true
-    } else if (expr.canThisBeReplaced && expr.canMoveToCpuBridge) {
-      // We need to check the cost of moving this (data movement only for now)
-      // Prefer to keep scalar inputs/outputs co-located with their consumer/producer.
-      val (scalarChildren, nonScalarChildren) = expr.childExprs.partition(isScalarLike)
-
-      // Consider only non-scalar children for initial cost comparison, because we can
-      // always co-locate scalar children with the chosen side at low compute cost but
-      // high transfer cost.
-      val maxPossibleCost: Int = nonScalarChildren.length + 1 // +1 accounts for this expr's output
-      // Penalize parent mismatch more when this expression is scalar-like (output is scalar)
-      val parentCostUnit = if (isParentOnCpu) { if (isScalarLike(expr)) 2 else 1 } else 0
-      val childrenMovedToCpu = nonScalarChildren.map { child =>
-        moveToCpuIfNeededRecursively(child, isParentOnCpu = false)
-      }
-      val costToStayOnGPU = childrenMovedToCpu.count(b => b) + parentCostUnit
-      val costToMoveDataToCPU = maxPossibleCost - costToStayOnGPU
-
-      // prefer the GPU if things are equal
-      if (costToStayOnGPU > costToMoveDataToCPU) {
-        expr.moveToCpuBridge()
-        // Ensure scalar-like children are co-located on CPU to avoid expensive transfers
-        scalarChildren.foreach { child =>
-          moveToCpuIfNeededRecursively(child, isParentOnCpu = true)
-        }
-        true
-      } else {
-        // Keep this on GPU. Visit scalar children to keep them co-located on GPU as well.
-        scalarChildren.foreach { child =>
-          moveToCpuIfNeededRecursively(child, isParentOnCpu = false)
-        }
-        false
-      }
-    } else {
-      // This cannot run on the bridge, so check its children. If it can be replaced
-      // then it might run on the GPU fully. If not this is only needed so we can
-      // properly output metadata when that logging is enabled.
-      expr.childExprs.foreach { child =>
-        moveToCpuIfNeededRecursively(child, isParentOnCpu = !expr.canThisBeReplaced)
-      }
-      false
+  /** True if this meta wraps a data leaf that identifies a column input. */
+  def isDataLeaf(exprMeta: BaseExprMeta[_]): Boolean = {
+    exprMeta.wrapped match {
+      case _: AttributeReference => true
+      case BoundReference(_, _, _) => true
+      case _ => false
     }
+  }
+
+  // ------------------------------
+  // Cost-based placement optimizer
+  // ------------------------------
+
+  private sealed trait ExecSide
+  private case object OnGpu extends ExecSide
+  private case object OnCpu extends ExecSide
+
+  private sealed trait InputKey
+  private case class AttrKey(exprId: ExprId) extends InputKey
+  private case class BoundKey(ordinal: Int) extends InputKey
+
+  private case class PlacementCost(gpuCost: Int, cpuCost: Int, cpuRequiredLeaves: Set[InputKey])
+
+  /** Identify an input key for leaves that represent data-carrying inputs. */
+  private def leafInputKey(expr: Expression): Option[InputKey] = expr match {
+    case ar: AttributeReference => Some(AttrKey(ar.exprId))
+    case BoundReference(ordinal, _, _) => Some(BoundKey(ordinal))
+    case _ => None
+  }
+
+  /**
+   * Optimize an expression tree by minimizing estimated data movement, using a
+   * bottom-up dynamic programming approach. We assume the parent/consumer is running
+   * on the GPU at the root, so we include the cost of moving the root's output when
+   * placed on CPU. If we need to add expression costs in the future, we can do so.
+   */
+  def optimizeByMinimizingMovement(root: BaseExprMeta[_]): Unit = {
+    val costCache = scala.collection.mutable.HashMap[BaseExprMeta[_], PlacementCost]()
+
+    def sideName(s: ExecSide): String = s match {
+      case OnGpu => "GPU"
+      case OnCpu => "CPU"
+    }
+
+    // Enumerate all child subsets to compute exact CPU placement cost and leaves
+    def chooseCpuSubset(
+        parent: BaseExprMeta[_],
+        childMetas: Seq[BaseExprMeta[_]],
+        childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
+      val n = childMetas.length
+      var bestCost = Int.MaxValue
+      var bestLeaves: Set[InputKey] = Set.empty
+      var bestSubset: Set[Int] = Set.empty
+
+      var mask = 0
+      val maxMask = 1 << n
+      while (mask < maxMask) {
+        var sumCpu = 0
+        var sumGpu = 0
+        var leaves = Set.empty[InputKey]
+        var valid = true
+        var i = 0
+        while (i < n && valid) {
+          val meta = childMetas(i)
+          val costs = childCosts(i)
+          val onCpu = (mask & (1 << i)) != 0
+          if (onCpu) {
+            if (costs.cpuCost == Int.MaxValue) valid = false
+            else {
+              sumCpu += costs.cpuCost
+              leaves ++= costs.cpuRequiredLeaves
+            }
+          } else {
+            if (costs.gpuCost == Int.MaxValue) {
+              valid = false
+            } else {
+              val moveOut = if (isScalarLike(meta)) 0 else 1
+              sumGpu += costs.gpuCost + moveOut
+            }
+          }
+          i += 1
+        }
+        if (valid) {
+          // IMPORTANT: Do NOT include leaves.size here; we charge import cost only at the
+          // CPU region boundary of the current parent, not per child subtree. This prevents
+          // double-charging when merging child CPU regions into a parent CPU region.
+          val total = sumCpu + sumGpu
+
+          // Log this subset
+          val chosenStr = {
+            val b = new StringBuilder
+            var j = 0
+            var first = true
+            while (j < n) {
+              if ((mask & (1 << j)) != 0) {
+                if (!first) b.append(',')
+                b.append(j)
+                first = false
+              }
+              j += 1
+            }
+            b.toString
+          }
+          logError(s"Subset mask=$mask [$chosenStr] sumCpu=$sumCpu sumGpu=$sumGpu " + 
+            s"leaves=${leaves.size} total=$total")
+          // Tie-breaking policy: favor GPU on ties → prefer fewer children on CPU.
+          // Implement by preferring smaller chosen subset size on equal total cost.
+          val chosenSize = java.lang.Integer.bitCount(mask)
+          val bestSize = java.lang.Integer.bitCount({
+            var acc = 0; bestSubset.foreach(i => acc |= (1 << i)); acc
+          })
+          val takeThis = (total < bestCost) ||
+                         (total == bestCost && 
+                           (chosenSize < bestSize || 
+                             (chosenSize == bestSize && 
+                               leaves.size < bestLeaves.size)))
+          if (takeThis) {
+            bestCost = total
+            bestLeaves = leaves
+            // materialize subset indices
+            var chosen: Set[Int] = Set.empty
+            var j = 0
+            while (j < n) {
+              if ((mask & (1 << j)) != 0) chosen += j
+              j += 1
+            }
+            bestSubset = chosen
+
+            logError(s"New best subset mask=$mask cost=$bestCost leaves=${bestLeaves.size} " + 
+              s"chosen=${bestSubset.mkString(",")}")
+          }
+        }
+        mask += 1
+      }
+      logError(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
+        s"cost=$bestCost leaves=${bestLeaves.size} chosen=${bestSubset.mkString(",")}")
+      (bestSubset, bestCost, bestLeaves)
+    }
+
+    def computeCosts(expr: BaseExprMeta[_]): PlacementCost = {
+      costCache.getOrElseUpdate(expr, {
+        // Base case: data-carrying leaf input (AttributeReference/BoundReference)
+        val maybeLeaf: Option[PlacementCost] = expr.wrapped match {
+          case e: Expression =>
+            leafInputKey(e).map { key =>
+              // Conceptually placeable on either side at zero subtree cost; when placed on
+              // CPU, record the input as a required leaf so we can transfer it once per
+              // CPU region.
+              val pc = PlacementCost(
+                gpuCost = 0,
+                cpuCost = 0,
+                cpuRequiredLeaves = Set[InputKey](key))
+              logError(s"Cost[leaf] ${expr.wrapped.getClass.getSimpleName}: gpu=0 cpu=0 " +
+                s"leaves=${pc.cpuRequiredLeaves.size}")
+              pc
+            }
+          case _ => None
+        }
+        maybeLeaf.getOrElse {
+          // Compute child costs first
+          val childCosts = expr.childExprs.map(computeCosts)
+
+          val gpuAllowed = expr.canThisBeReplaced
+          val cpuAllowed = expr.canMoveToCpuBridge
+
+          // Cost if this node runs on GPU
+          val gpuTotal: Int = if (gpuAllowed) {
+            expr.childExprs.zip(childCosts).map { case (childMeta, costs) =>
+              // Choose child side to minimize (child cost + edge move of child's output if needed)
+              val childGpu = costs.gpuCost
+              val childCpu = costs.cpuCost
+              val moveCpuChildOutput = if (isScalarLike(childMeta)) 0 else 1
+              val cpuChoice =
+                if (childCpu == Int.MaxValue) Int.MaxValue else childCpu + moveCpuChildOutput
+              val gpuChoice = childGpu
+              Math.min(cpuChoice, gpuChoice)
+            }.sum
+          } else Int.MaxValue
+
+          // Exact CPU cost via subset enumeration
+          val (_, cpuTotal, cpuLeaves): (Set[Int], Int, Set[InputKey]) = if (cpuAllowed) {
+            chooseCpuSubset(expr, expr.childExprs, childCosts)
+          } else (Set.empty[Int], Int.MaxValue, Set.empty[InputKey])
+
+          val result = PlacementCost(gpuTotal, cpuTotal, cpuLeaves)
+          logError(
+            s"Cost ${expr.wrapped.getClass.getSimpleName}: gpuAllowed=$gpuAllowed " +
+            s"cpuAllowed=$cpuAllowed gpuTotal=$gpuTotal cpuTotal=$cpuTotal " +
+            s"cpuLeaves=${cpuLeaves.size}")
+          result
+        }
+      })
+    }
+
+    // Compute subtree costs
+    val rootCosts = computeCosts(root)
+
+    // Root consumer is on GPU → include edge penalty for root output if on CPU
+    val rootCpuWithOutputMove = if (rootCosts.cpuCost == Int.MaxValue) Int.MaxValue
+      else rootCosts.cpuCost + rootCosts.cpuRequiredLeaves.size + (if (isScalarLike(root)) 0 else 1)
+    val rootGpuWithOutputMove = rootCosts.gpuCost // output already on GPU; no move
+
+    val chooseRootSide: ExecSide = {
+      if (rootGpuWithOutputMove != Int.MaxValue &&
+          rootGpuWithOutputMove <= rootCpuWithOutputMove) {
+        OnGpu
+      } else {
+        OnCpu
+      }
+    }
+
+    logError(
+      s"Root costs: gpu=$rootGpuWithOutputMove cpu=$rootCpuWithOutputMove " +
+      s"chosen=${sideName(chooseRootSide)}")
+
+    // Second pass: assign sides to minimize costs and apply moveToCpuBridge where needed
+    def assignSides(expr: BaseExprMeta[_], chosenSide: ExecSide): Unit = {
+      // Place current node
+      chosenSide match {
+        case OnCpu if expr.canMoveToCpuBridge && !expr.willUseGpuCpuBridge => expr.moveToCpuBridge()
+        case _ => // keep on GPU or already on CPU bridge
+      }
+      logError(s"Place ${expr.wrapped.getClass.getSimpleName} on ${sideName(chosenSide)}")
+
+      // Place children to minimize (childCost + edge penalty)
+      val childCosts = expr.childExprs.map { child =>
+        costCache.getOrElse(child, computeCosts(child))
+      }
+
+      chosenSide match {
+        case OnGpu =>
+          expr.childExprs.zip(childCosts).foreach { case (childMeta, costs) =>
+            val moveCpuChildOutput = if (isScalarLike(childMeta)) 0 else 1
+            val gpuCandidate = if (costs.gpuCost == Int.MaxValue) Int.MaxValue
+              else costs.gpuCost
+            val cpuCandidate = if (costs.cpuCost == Int.MaxValue) Int.MaxValue
+              else costs.cpuCost + moveCpuChildOutput
+
+            val childSide =
+              if (gpuCandidate <= cpuCandidate || cpuCandidate == Int.MaxValue) OnGpu else OnCpu
+
+            logError(
+              s"Child ${childMeta.wrapped.getClass.getSimpleName}: gpuCand=$gpuCandidate " +
+              s"cpuCand=$cpuCandidate choose=${sideName(childSide)} " +
+              s"parent=${sideName(chosenSide)}")
+
+            assignSides(childMeta, childSide)
+          }
+        case OnCpu =>
+          // Use exact best subset assignment under CPU parent
+          val (subset, _, _) = chooseCpuSubset(expr, expr.childExprs, childCosts)
+          expr.childExprs.zipWithIndex.foreach { case (childMeta, idx) =>
+            // Force scalar-like children to co-locate with CPU parent
+            val side = if (isScalarLike(childMeta) || subset.contains(idx)) OnCpu else OnGpu
+            logError(s"Child ${childMeta.wrapped.getClass.getSimpleName}: " + 
+              s"choose=${sideName(side)} parent=CPU")
+            assignSides(childMeta, side)
+          }
+      }
+    }
+
+    assignSides(root, chooseRootSide)
   }
 
   /**
