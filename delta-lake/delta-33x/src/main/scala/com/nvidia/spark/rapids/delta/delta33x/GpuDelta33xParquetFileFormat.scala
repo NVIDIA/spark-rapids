@@ -449,8 +449,10 @@ case class GpuDelta33xParquetFileFormat(
           markedRowIndicesCol =>
             rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
         }
-      withResource(containsMarkedRows.not()) { indicesToDelete =>
-        GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
+      withResource(containsMarkedRows) { containsMarkedRows =>
+        withResource(containsMarkedRows.not()) { indicesToDelete =>
+          GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
+        }
       }
     }
   }
@@ -463,7 +465,9 @@ case class GpuDelta33xParquetFileFormat(
           markedRowIndicesCol =>
             rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
         }
-      GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
+      withResource(containsMarkedRows) { containsMarkedRows =>
+        GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
+      }
     }
   }
 
@@ -486,13 +490,17 @@ case class GpuDelta33xParquetFileFormat(
 
   private object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
     def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-      GpuColumnVector.from(Scalar.fromByte(1.toByte), rowIndexCol.getRowCount.toInt, ByteType)
+      withResource(Scalar.fromByte(1.toByte)) { one =>
+        GpuColumnVector.from(one, rowIndexCol.getRowCount.toInt, ByteType)
+      }
     }
   }
 
   private object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
     def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-      GpuColumnVector.from(Scalar.fromByte(0.toByte), rowIndexCol.getRowCount.toInt, ByteType)
+      withResource(Scalar.fromByte(0.toByte)) { zero =>
+        GpuColumnVector.from(zero, rowIndexCol.getRowCount.toInt, ByteType)
+      }
     }
   }
 
