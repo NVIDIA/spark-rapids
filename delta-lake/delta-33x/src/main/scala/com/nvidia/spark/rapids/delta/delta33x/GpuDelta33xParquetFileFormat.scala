@@ -306,7 +306,7 @@ class DeltaMultiFileReaderFactory(
     tablePath: Option[String]
     ) extends GpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
       dataSchema, readDataSchema, partitionSchema,
-      filters, rapidsConf, metrics, queryUsesInputFile = false) {
+      filters, rapidsConf, metrics, queryUsesInputFile = true) {
 
   private val schemaWithIndices = readDataSchema.fields.zipWithIndex
   def findColumn(name: String): Option[ColumnMetadata] = {
