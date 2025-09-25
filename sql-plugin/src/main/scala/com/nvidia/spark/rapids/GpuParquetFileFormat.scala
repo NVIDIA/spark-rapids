@@ -17,11 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.time.ZoneId
-
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.DateTimeRebase
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.shims.parquet._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
@@ -29,7 +29,6 @@ import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
 import org.apache.parquet.hadoop.codec.CodecConfig
 import org.apache.parquet.hadoop.util.ContextUtil
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
@@ -283,7 +282,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext,
-            statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
           debugOutputPath: Option[String]): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
           dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
@@ -313,9 +312,10 @@ class GpuParquetWriter(
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugDumpPath: Option[String],
     holdGpuBetweenBatches: Boolean,
-    useAsyncWrite: Boolean)
+    useAsyncWrite: Boolean,
+    fileIO: RapidsFileIO)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet", true, statsTrackers,
-    debugDumpPath, holdGpuBetweenBatches, useAsyncWrite) {
+    debugDumpPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>

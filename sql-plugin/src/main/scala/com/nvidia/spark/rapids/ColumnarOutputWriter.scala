@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.io.async.{AsyncOutputStream, TrafficController}
+import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsOutputFile, RapidsOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -78,7 +79,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugDumpPath: Option[String],
     holdGpuBetweenBatches: Boolean = false,
-    useAsyncWrite: Boolean = false) extends HostBufferConsumer with Logging {
+    useAsyncWrite: Boolean = false,
+    rapidsFileIO: RapidsFileIO) extends HostBufferConsumer with Logging {
 
   // Length of the file written so far. This is used to track the size of the file
   private var fileLength: Long = 0L
@@ -125,24 +127,22 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private val trafficController: TrafficController = TrafficController.getWriteInstance
 
-  private def openOutputStream(): OutputStream = {
-    val hadoopPath = new Path(path)
-    val fs = hadoopPath.getFileSystem(conf)
-    fs.create(hadoopPath, false)
+  private def openOutputFile(): RapidsOutputFile = {
+    rapidsFileIO.newOutputFile(path())
   }
 
   // This is implemented as a method to make it easier to subclass
   // ColumnarOutputWriter in the tests, and override this behavior.
-  protected def getOutputStream: OutputStream = {
+  protected def getOutputStream: RapidsOutputStream = {
     if (useAsyncWrite) {
       logWarning("Async output write enabled")
-      AsyncOutputStream(() => openOutputStream(), trafficController, statsTrackers)
+      AsyncOutputStream(() => openOutputFile().create(false), trafficController, statsTrackers)
     } else {
-      openOutputStream()
+      openOutputFile().create(false)
     }
   }
 
-  protected val outputStream: OutputStream = getOutputStream
+  protected val outputStream: RapidsOutputStream = getOutputStream
 
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] var anythingWritten = false
@@ -303,7 +303,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 object ColumnarOutputWriter {
   // write buffers to outputStream via tempBuffer and close buffers
   def writeBufferedData(buffers: mutable.Queue[(HostMemoryBuffer, Long)],
-      tempBuffer: Array[Byte], outputStream: OutputStream): Unit = {
+      tempBuffer: Array[Byte], outputStream: RapidsOutputStream): Unit = {
     val toProcess = buffers.dequeueAll(_ => true)
     try {
       toProcess.foreach { case (buffer, len) =>
