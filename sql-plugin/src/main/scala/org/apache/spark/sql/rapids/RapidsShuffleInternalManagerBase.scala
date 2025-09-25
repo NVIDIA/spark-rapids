@@ -430,12 +430,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               val compressedOutputStream = blockManager.serializerManager.wrapStream(
                 ShuffleBlockId(shuffleId, mapId, reducePartitionId), buffer)
 
-              withResource(compressedOutputStream) { compressedStream =>
-                val serializationStream = serializerInstance.serializeStream(compressedStream)
-                withResource(serializationStream) { serializer =>
-                  serializer.writeKey(key.asInstanceOf[Any])
-                  serializer.writeValue(value.asInstanceOf[Any])
-                }
+              val serializationStream = serializerInstance.serializeStream(compressedOutputStream)
+              withResource(serializationStream) { serializer =>
+                serializer.writeKey(key.asInstanceOf[Any])
+                serializer.writeValue(value.asInstanceOf[Any])
               }
 
               // Track total data size
