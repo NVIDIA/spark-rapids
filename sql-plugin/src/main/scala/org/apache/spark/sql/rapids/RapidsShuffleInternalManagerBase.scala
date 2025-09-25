@@ -550,7 +550,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         logInfo(s"Using optimized single batch write path for shuffle $shuffleId")
         writeSingleBatchDirect(records, mapOutputWriter)
       } else {
-        // per reduce partition idgs
+        // per reduce partition ids
         // open all the writers ahead of time (Spark does this already)
         val openStartTime = System.nanoTime()
         (0 until numPartitions).map { i =>
