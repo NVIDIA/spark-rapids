@@ -27,8 +27,8 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
-import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.NumberConverter
@@ -2284,7 +2284,8 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val appendZeroNum = (d - scale).max(0).min(d)
     val (intPart, decTemp) = if (roundingScale <= 0) {
       withResource(ArrayBuffer.empty[ColumnVector]) { resourceArray =>
-        val intPart = withResource(Arithmetic.round(cv, roundingScale, RoundMode.HALF_EVEN)) { rounded =>
+        val intPart = withResource(Arithmetic.round(cv, roundingScale, 
+          RoundMode.HALF_EVEN)) { rounded =>
           rounded.castTo(DType.STRING)
         }
         resourceArray += intPart
