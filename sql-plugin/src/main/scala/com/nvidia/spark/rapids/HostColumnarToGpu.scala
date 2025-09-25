@@ -267,7 +267,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
         bytesCopied += batchBuilder.copyColumnar(batch.column(i), i, rows)
       }
       totalRows += rows
-      batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, bytesCopied, rows)
+      if (rows > 0) {
+        batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, bytesCopied, rows)
+      }
     }
   }
 
