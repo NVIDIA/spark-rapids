@@ -21,10 +21,12 @@ import com.nvidia.spark.rapids.GpuUserDefinedFunction
 import org.apache.hadoop.hive.ql.exec.{UDAF, UDF}
 import org.apache.hadoop.hive.ql.udf.generic.{AbstractGenericUDAFResolver, GenericUDF}
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, SafeProjection, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
-import org.apache.spark.sql.rapids.aggregate.GpuTypedUDAFFunctionBase
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.hive.HiveUDAFFunction
+import org.apache.spark.sql.rapids.aggregate.{CpuToGpuBufferTransition, GpuToCpuBufferTransition, GpuTypedUDAFFunctionBase}
+import org.apache.spark.sql.types.{DataType, StructType}
 
 /** Common implementation across Hive UDFs */
 trait GpuHiveUDFBase extends GpuUserDefinedFunction {
@@ -84,5 +86,78 @@ case class GpuHiveUDAFFunction(
     funcWrapper.createFunction[UDAF]().asInstanceOf[RapidsUDAF]
   } else {
     funcWrapper.createFunction[AbstractGenericUDAFResolver]().asInstanceOf[RapidsUDAF]
+  }
+}
+
+object HiveUDAFUtils {
+  private[rapids] def cpuAggBufferType(hiveUDAF: HiveUDAFFunction): DataType = {
+    try {
+      // 'partialResultDataType' is private, so have to get it via the reflection.
+      val pdtMethod = hiveUDAF.getClass.getMethod(
+        "org$apache$spark$sql$hive$HiveUDAFFunction$$partialResultDataType")
+      pdtMethod.invoke(hiveUDAF).asInstanceOf[DataType]
+    } catch {
+      case t: Throwable => throw new IllegalStateException("Can not get the aggregate " +
+        "buffer type via 'partialResultDataType' from CPU HiveUDAFFunction", t)
+    }
+  }
+}
+
+case class G2cHiveUDAFBufferTransition(
+    child: Expression,
+    cpuBufType: DataType) extends GpuToCpuBufferTransition {
+  private lazy val unsafeProj = if (cpuBufType.isInstanceOf[StructType]) {
+    // GPU always uses a struct type for agg buffer, but CPU does not, depending on
+    // the users implementation. So if a struct is used by CPU, then no need to
+    // flatten it here.
+    UnsafeProjection.create(Array(child.dataType))
+  } else {
+    UnsafeProjection.create(child.dataType.asInstanceOf[StructType].map(_.dataType).toArray)
+  }
+
+  private lazy val wrapRow: InternalRow => InternalRow =
+    if (cpuBufType.isInstanceOf[StructType]) {
+      // CPU expects a single struct column
+      val wrappedRow = new GenericInternalRow(1)
+      inputRow => {
+        wrappedRow.update(0, inputRow)
+        wrappedRow
+      }
+    } else {
+      identity[InternalRow]
+    }
+
+  override protected def nullSafeEval(input: Any): Array[Byte] = {
+    unsafeProj(wrapRow(input.asInstanceOf[InternalRow])).getBytes
+  }
+}
+
+case class C2gHiveUDAFBufferTransition(
+    child: Expression,
+    cpuBufType: DataType,
+    gpuType: DataType) extends CpuToGpuBufferTransition {
+  override val dataType: DataType = gpuType
+
+  // GPU always uses a struct type for agg buffer, but CPU does not, depending on
+  // the users implementation. So if a struct is used by CPU, then no need to
+  // flatten it here.
+  private lazy val projTypes = if (cpuBufType.isInstanceOf[StructType]) {
+    Array(gpuType)
+  } else {
+    gpuType.asInstanceOf[StructType].map(_.dataType).toArray
+  }
+  private lazy val row = new UnsafeRow(projTypes.length)
+  private lazy val objectProj: InternalRow => InternalRow =
+    if (cpuBufType.isInstanceOf[StructType]) {
+      inputRow =>
+        SafeProjection.create(projTypes)(inputRow).get(0, gpuType).asInstanceOf[InternalRow]
+    } else {
+      inputRow => SafeProjection.create(projTypes)(inputRow)
+    }
+
+  override protected def nullSafeEval(input: Any): InternalRow = {
+    val bytes = input.asInstanceOf[Array[Byte]]
+    row.pointTo(bytes, bytes.length)
+    objectProj(row)
   }
 }

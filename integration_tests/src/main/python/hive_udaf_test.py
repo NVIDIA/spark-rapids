@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import gen_df, IntegerGen, int_gen, long_gen, idfn
 from spark_session import with_spark_session
 from hive_udf_utils import *
-from marks import ignore_order
+from marks import ignore_order, allow_non_gpu
 
 projected_aggs_list = [
     "average_agg(i), average_agg(l)",
@@ -46,8 +46,7 @@ def test_groupby_with_hive_average_udaf(aggs):
         lambda spark: hive_udaf_eval_fn(spark, data_gens),
         "groupby_hive_udaf_table",
         "SELECT g, {} FROM groupby_hive_udaf_table GROUP BY g".format(aggs),
-        conf={"spark.sql.catalogImplementation": "hive"},
-        debug=True)
+        conf={"spark.sql.catalogImplementation": "hive"})
 
 
 @ignore_order(local=True)
@@ -59,3 +58,19 @@ def test_reduction_with_hive_average_udaf(aggs):
         "reduction_hive_udaf_table",
         "SELECT {} FROM reduction_hive_udaf_table".format(aggs),
         conf={"spark.sql.catalogImplementation": "hive"})
+
+
+@ignore_order(local=True)
+@allow_non_gpu("ObjectHashAggregateExec", "ProjectExec")
+@pytest.mark.parametrize("aggs", projected_aggs_list[0:2], ids=idfn)
+@pytest.mark.parametrize("repl_mode", ["partial", "final"], ids=idfn)
+def test_groupby_with_mixed_hive_average_udaf(aggs, repl_mode):
+    with_spark_session(skip_if_no_hive)
+    # 'g' is the group key column, so at most 52 groups (include nulls)
+    data_gens = [["g", IntegerGen(min_val=0, max_val=50)], ["i", int_gen], ["l", long_gen]]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: hive_udaf_eval_fn(spark, data_gens),
+        "groupby_hive_udaf_table",
+        "SELECT g, {} FROM groupby_hive_udaf_table GROUP BY g".format(aggs),
+        conf={"spark.sql.catalogImplementation": "hive",
+              "spark.rapids.sql.hashAgg.replaceMode": repl_mode})

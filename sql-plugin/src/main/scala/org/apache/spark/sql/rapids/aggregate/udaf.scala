@@ -22,7 +22,8 @@ import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuColumnVector, GpuExpres
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray, AutoCloseableProducingSeq}
 
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, UserDefinedExpression}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, SafeProjection, UnsafeProjection, UnsafeRow, UserDefinedExpression}
 import org.apache.spark.sql.execution.aggregate.{ScalaAggregator, ScalaUDAF}
 import org.apache.spark.sql.rapids.GpuScalaUDF
 import org.apache.spark.sql.types._
@@ -461,6 +462,32 @@ case class GpuScalaAggregator(
   override val name: String = aggregatorName.getOrElse(function.getClass.getSimpleName)
 }
 
+case class C2gUDAFBufferTransition(
+    child: Expression,
+    gpuType: DataType) extends CpuToGpuBufferTransition {
+  override val dataType: DataType = gpuType
+
+  private lazy val childrenTypes = gpuType.asInstanceOf[StructType].map(_.dataType)
+  private lazy val row = new UnsafeRow(childrenTypes.length)
+  private lazy val objectProj = SafeProjection.create(childrenTypes.toArray)
+
+  override protected def nullSafeEval(input: Any): InternalRow = {
+    val bytes = input.asInstanceOf[Array[Byte]]
+    row.pointTo(bytes, bytes.length)
+    objectProj(row)
+  }
+}
+
+case class G2cUDAFBufferTransition(child: Expression) extends GpuToCpuBufferTransition {
+  private lazy val unsafeProj = UnsafeProjection.create(
+    child.dataType.asInstanceOf[StructType].map(_.dataType).toArray
+  )
+
+  override protected def nullSafeEval(input: Any): Array[Byte] = {
+    unsafeProj(input.asInstanceOf[InternalRow]).getBytes
+  }
+}
+
 object GpuUDAFMeta {
   def scalaUDAFMeta: ExprRule[ScalaUDAF] = GpuOverrides.expr[ScalaUDAF](
     "User Defined Aggregate Function, the UDAF can choose to implement a RAPIDS" +
@@ -531,7 +558,16 @@ object GpuUDAFMeta {
             sAgg.nullable,
             sAgg.aggregatorName)
         }
+
+        override val supportBufferConversion: Boolean = true
+
+        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter = {
+          (child: Expression) => C2gUDAFBufferTransition(child, aggBufferAttribute.dataType)
+        }
+
+        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter = {
+          (child: Expression) => G2cUDAFBufferTransition(child)
+        }
       }
     )
 }
-

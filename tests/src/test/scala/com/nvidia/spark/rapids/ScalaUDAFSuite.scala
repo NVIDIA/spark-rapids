@@ -99,7 +99,11 @@ class IntAverageUDAF extends UserDefinedAggregateFunction with RapidsUDAF {
 
   override def update(buffer: MutableAggregationBuffer, input: Row): Unit = {
     if (!input.isNullAt(0)) {
-      buffer(0) = buffer.getLong(0) + input.getInt(0) // sum
+      buffer(0) = if(buffer.isNullAt(0)) {
+        input.getInt(0).toLong
+      } else {
+        buffer.getLong(0) + input.getInt(0)
+      } // sum
       buffer(1) = buffer.getLong(1) + 1L // count
     }
   }

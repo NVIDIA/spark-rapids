@@ -20,6 +20,7 @@ import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, GroupByAggregati
 import com.nvidia.spark.{RapidsSimpleGroupByAggregation, RapidsUDAF, RapidsUDAFGroupByAggregation}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.{functions, Encoder, Encoders}
 import org.apache.spark.sql.expressions.Aggregator
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType, StringType, StructField, StructType}
@@ -27,10 +28,10 @@ import org.apache.spark.sql.types.{DataType, IntegerType, LongType, StringType, 
 class ScalaAggregatorSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual(testName = "Groupby with ScalaAggregator Average",
-      groupbyStringsIntsIntsFromCsv) { df =>
+      groupbyStringsIntsIntsFromCsv, repart = 7) { df =>
     // This is a basic smoke-test of the Scala UDAF framework, not an exhaustive test of
     // the specific UDAF implementation itself.
-    df.repartition(7).createOrReplaceTempView("groupby_scala_average_udaf_test_table")
+    df.createOrReplaceTempView("groupby_scala_average_udaf_test_table")
     df.sparkSession.udf.register("intAverage", functions.udaf(new IntAverageAggregator))
     df.sparkSession.sql(sqlText = """
       SELECT count(c1_int), intAverage(c1_int), max(c2_int), intAverage(c2_int)
@@ -40,10 +41,10 @@ class ScalaAggregatorSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual(testName = "Reduction with ScalaAggregator Average",
-      groupbyStringsIntsIntsFromCsv) { df =>
+      groupbyStringsIntsIntsFromCsv, repart = 7) { df =>
     // This is a basic smoke-test of the Scala UDAF framework, not an exhaustive test of
     // the specific UDAF implementation itself.
-    df.repartition(7).createOrReplaceTempView("reduction_scala_average_udaf_test_table")
+    df.createOrReplaceTempView("reduction_scala_average_udaf_test_table")
     df.sparkSession.udf.register("intAverage", functions.udaf(new IntAverageAggregator))
     df.sparkSession.sql(sqlText = """
       SELECT intAverage(c1_int), count(c1_int), intAverage(c2_int), max(c2_int)
@@ -69,6 +70,28 @@ class ScalaAggregatorSuite extends SparkQueryCompareTestSuite {
       SELECT intAverage(c1_int), count(c1_int), intAverage(c2_int), max(c2_int)
       FROM reduction_scala_average_udaf_test_table
     """)
+  }
+
+  Seq("partial", "final").foreach { replaceMode =>
+    val fallType = if (replaceMode == "partial") "Gpu2Cpu" else "Cpu2Gpu"
+    IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqual(
+      testName = s"Groupby with $fallType ScalaAggregator Average",
+      groupbyStringsIntsIntsFromCsv,
+      repart = 7,
+      execsAllowedNonGpu = Seq("ObjectHashAggregateExec", "ProjectExec"),
+      conf = new SparkConf().set("spark.rapids.sql.hashAgg.replaceMode", replaceMode)
+    ) { df =>
+      // This is a basic smoke-test of the Scala UDAF framework, not an exhaustive test of
+      // the specific UDAF implementation itself.
+      df.createOrReplaceTempView("groupby_scala_average_udaf_test_table")
+      df.sparkSession.udf.register("intAverage", functions.udaf(new IntAverageAggregator))
+      df.sparkSession.sql(sqlText =
+        """
+        SELECT count(c1_int), intAverage(c1_int), max(c2_int), intAverage(c2_int)
+        FROM groupby_scala_average_udaf_test_table
+        GROUP BY key_str
+      """)
+    }
   }
 }
 

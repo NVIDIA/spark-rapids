@@ -34,7 +34,7 @@ import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.aggregate.AdvAggTypeUtils
+import org.apache.spark.sql.rapids.aggregate.{AdvAggTypeUtils, CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types._
@@ -178,6 +178,19 @@ class HiveProviderImpl extends HiveProviderCmdShims {
               a.nullable,
               a.dataType,
               a.isUDAFBridgeRequired)
+          }
+
+          override val supportBufferConversion: Boolean = true
+
+          override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter = {
+            (child: Expression) =>
+              C2gHiveUDAFBufferTransition(child, HiveUDAFUtils.cpuAggBufferType(a),
+                aggBufferAttribute.dataType)
+          }
+
+          override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter = {
+            (child: Expression) =>
+              G2cHiveUDAFBufferTransition(child, HiveUDAFUtils.cpuAggBufferType(a))
           }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
