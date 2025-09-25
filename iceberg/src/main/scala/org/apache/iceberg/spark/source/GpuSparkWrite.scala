@@ -18,7 +18,7 @@ package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
@@ -133,6 +133,22 @@ object GpuSparkWrite {
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
     classOf[SparkWrite].isAssignableFrom(cpuClass)
   }
+
+  def tagForGpu(cpuWrite: Write, meta: SparkPlanMeta[_]): Unit = {
+    if (!supports(cpuWrite.getClass)) {
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
+        s"but got: ${cpuWrite.getClass.getName}")
+      return
+    }
+
+    val dataFileFormat: FileFormat = FieldUtils.readField(cpuWrite, "format", true)
+      .asInstanceOf[FileFormat]
+
+    if (!dataFileFormat.equals(FileFormat.PARQUET)) {
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: $dataFileFormat")
+    }
+  }
+
 
   def convert(cpuWrite: Write): GpuSparkWrite = {
     new GpuSparkWrite(cpuWrite.asInstanceOf[SparkWrite])

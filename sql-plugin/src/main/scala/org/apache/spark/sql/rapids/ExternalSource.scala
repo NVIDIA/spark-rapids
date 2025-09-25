@@ -235,22 +235,42 @@ object ExternalSource extends Logging {
   }
 
   def tagForGpu(
-    ignore: AppendDataExec,
+    cpuExec: AppendDataExec,
     meta: AppendDataExecMeta): Unit = {
-    meta.willNotWorkOnGpu(s"AppendDataExec is not supported")
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Append data $writeClass is not supported")
+    }
   }
 
   def convertToGpu(
     cpuExec: AppendDataExec,
     meta: AppendDataExecMeta): GpuExec = {
-    throw new IllegalStateException("AppendDataExec is not supported")
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
   }
 
   def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
-    meta.willNotWorkOnGpu(s"StaticInvoke is not supported")
+    if (hasIcebergJar) {
+      icebergProvider.tagForGpu(expr, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"StaticInvoke is not supported")
+    }
   }
 
   def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
-    throw new IllegalStateException("StaticInvoke is not supported")
+    if (hasIcebergJar) {
+      icebergProvider.convertToGpu(expr, meta)
+    } else {
+      throw new IllegalStateException("StaticInvoke is not supported")
+    }
   }
 }

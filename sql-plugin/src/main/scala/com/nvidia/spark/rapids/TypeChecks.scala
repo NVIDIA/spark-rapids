@@ -1155,7 +1155,7 @@ object StaticInvokeCheck extends ExprChecks {
   }
 
   /**
-   * Partially supports all the output types since `Invoke` is a dynamic expression.
+   * Partially supports all the output types since `StaticInvoke` is a dynamic expression.
    */
   override def support(dataType: TypeEnum.Value):
   Map[ExpressionContext, Map[String, SupportLevel]] = {
