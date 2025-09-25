@@ -20,10 +20,9 @@ import java.io.{IOException, UncheckedIOException}
 import java.net.URI
 import java.util.Objects
 
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
 import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
@@ -40,6 +39,7 @@ import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
 import org.apache.parquet.hadoop.metadata.BlockMetaData
+import scala.collection.JavaConverters._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -48,23 +48,24 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class IcebergPartitionedFile(
-    file: InputFile,
+    file: IcebergInputFile,
     split: Option[(Long, Long)] = None,
     filter: Option[Expression] = None) {
 
-  lazy val urlEncodedPath: String = new Path(file.location()).toUri.toString
+  lazy val urlEncodedPath: String = new Path(file.getDelegate.location()).toUri.toString
   lazy val path: Path = new Path(new URI(urlEncodedPath))
 
   def parquetReadOptions: ParquetReadOptions = {
-    GpuIcebergParquetReader.buildReaderOptions(file, split)
+    GpuIcebergParquetReader.buildReaderOptions(file.getDelegate, split)
   }
 
   def newReader: ParquetFileReader = {
     try {
-      ParquetFileReader.open(GpuParquetIO.file(file), parquetReadOptions)
+      ParquetFileReader.open(GpuParquetIO.file(file.getDelegate), parquetReadOptions)
     } catch {
       case e: IOException =>
-        throw new UncheckedIOException(s"Failed to open Parquet file: ${file.location()}", e)
+        throw new UncheckedIOException(s"Failed to newInputFile Parquet file: " +
+          s"${file.getDelegate.location()}", e)
     }
   }
 
@@ -72,12 +73,12 @@ case class IcebergPartitionedFile(
     split match {
       case Some((start, length)) =>
         PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty,
-          file.location(),
+          file.getDelegate.location(),
           start,
           length)
       case None =>
         PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty,
-          file.location(),
+          file.getDelegate.location(),
           0,
           file.getLength)
     }
@@ -86,6 +87,12 @@ case class IcebergPartitionedFile(
   def start: Long = split.map(_._1).getOrElse(0L)
 
   def length: Long = split.map(_._2).getOrElse(file.getLength)
+
+  def isSame(p: PartitionedFile) = {
+    this.urlEncodedPath == p.filePath.urlEncoded &&
+      this.start == p.start &&
+      this.length == p.length
+  }
 
   override def hashCode(): Int = {
     Objects.hash(urlEncodedPath, split)
@@ -152,8 +159,9 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       requiredSchema: Schema,
       typeWithIds: ShadedMessageType,
       filter: Option[Expression])
-  : Seq[ShadedBlockMetaData] = {
+  : Seq[(ShadedBlockMetaData, Int)] = {
     val blocks = reader.getRowGroups.asScala
+      .zipWithIndex
 
     filter.map { f =>
       val statsFilter = new ParquetMetricsRowGroupFilter(requiredSchema,
@@ -166,7 +174,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         f,
         conf.caseSensitive)
 
-      blocks.filter { rowGroup =>
+      blocks.filter { case (rowGroup, _) =>
           statsFilter.shouldRead(typeWithIds, rowGroup) &&
             dictFilter.shouldRead(typeWithIds, rowGroup, reader.getDictionaryReader(rowGroup)) &&
             bloomFilter.shouldRead(typeWithIds, rowGroup, reader.getBloomFilterDataReader(rowGroup))
@@ -196,8 +204,8 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       }
       val (typeWithIds, fileReadSchema) = projectSchema(fileSchema, requiredSchema)
       val filteredBlocks = filterRowGroups(reader, requiredSchema, typeWithIds, file.filter)
-      val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b.getOrdinal))
-      val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks)
+      val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b._2))
+      val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
       val partReaderSparkSchema = TypeWithSchemaVisitor.visit(requiredSchema.asStruct(),
           fileReadSchema, new SparkSchemaConverter)
@@ -235,7 +243,7 @@ object GpuIcebergParquetReader {
         }
         optionsBuilder = HadoopReadOptions.builder(conf)
       case _ =>
-        throw new UnsupportedOperationException("Only Hadoop files are supported for now")
+        optionsBuilder = ParquetReadOptions.builder()
     }
     split.foreach { case (start, length) =>
       optionsBuilder = optionsBuilder.withRange(start, start + length)

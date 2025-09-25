@@ -389,6 +389,7 @@ case class GpuFileSourceScanExec(
   }
 
   override lazy val allMetrics = Map(
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
     "numFiles" -> createMetric(ESSENTIAL_LEVEL, "number of files read"),
@@ -405,8 +406,20 @@ case class GpuFileSourceScanExec(
   ) ++ fileCacheMetrics ++ {
     relation.fileFormat match {
       case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
-        Map(READ_FS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_FS_TIME),
-          WRITE_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_WRITE_BUFFER_TIME))
+        val bf = Map.newBuilder[String, GpuMetric]
+        bf += READ_FS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_FS_TIME)
+        bf += WRITE_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+          DESCRIPTION_WRITE_BUFFER_TIME)
+        if (rapidsConf.isParquetMultiThreadReadEnabled) {
+          // Track the task number of multithreaded asynchronous I/O workloads
+          bf += "numPartedFiles" -> createMetric(DEBUG_LEVEL, "number of PartitionedFiles")
+        }
+        if (relation.fileFormat.isInstanceOf[GpuReadParquetFileFormat]) {
+          // Track the actual data size read from the file system, excluding data being pruned
+          // by meta-level pruning.
+          bf += "readBufferSize" -> createSizeMetric(DEBUG_LEVEL, "size of read buffer")
+        }
+        bf.result()
       case _ =>
         Map.empty[String, GpuMetric]
     }

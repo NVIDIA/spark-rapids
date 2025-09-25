@@ -59,7 +59,8 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     executor = new ThrottlingExecutor(
       Executors.newSingleThreadExecutor(),
       trafficController,
-      Seq(new GpuWriteTaskStatsTracker(new Configuration(), taskMetrics))
+      new StatsUpdaterForWriteFunc(
+        Seq(new GpuWriteTaskStatsTracker(new Configuration(), taskMetrics))).func
     )
   }
 
@@ -197,7 +198,6 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
       // Wait until the waitingTask is submitted.
       waitingTaskSubmitted.await(longTimeoutSec, TimeUnit.SECONDS)
       actualMaxThrottleTimeNs = math.max(actualMaxThrottleTimeNs, actualWaitTimeNs.get())
-      executor.updateMetrics()
 
       // Skip the check on the min throttle time as the first task never waits.
 
@@ -220,7 +220,6 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     runningTask.latch.countDown()
 
     // Verify the average throttle time.
-    executor.updateMetrics()
     assert(Seq.range(0, 10).sum * TimeUnit.MILLISECONDS.toNanos(10).toDouble / taskCount <=
       taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_AVG_THROTTLE_TIME_KEY).value)
   }

@@ -19,7 +19,7 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
-    with_cpu_session, with_gpu_session, is_databricks143_or_later
+    with_cpu_session, with_gpu_session, is_before_spark_353
 
 delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
@@ -63,16 +63,19 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
     delta_sql_delete_test(spark_tmp_path, use_cdf, dest_table_func, delete_sql, checker, enable_deletion_vectors,
                           partition_columns)
 
+fallback_test_params = [{"spark.rapids.sql.format.delta.write.enabled": "false"},
+                        {"spark.rapids.sql.format.parquet.enabled": "false"},
+                        {"spark.rapids.sql.format.parquet.write.enabled": "false"},
+                        {"spark.rapids.sql.command.DeleteCommand": "false"},
+                        ]
+if is_before_spark_353():
+    # DeleteCommand is disabled by default before Spark 3.5.3
+    fallback_test_params.append(delta_writes_enabled_conf)
+
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.parametrize("disable_conf",
-                          [{"spark.rapids.sql.format.delta.write.enabled": "false"},
-                           {"spark.rapids.sql.format.parquet.enabled": "false"},
-                           {"spark.rapids.sql.format.parquet.write.enabled": "false"},
-                           {"spark.rapids.sql.command.DeleteCommand": "false"},
-                           delta_writes_enabled_conf  # Test disabled by default
-                           ], ids=idfn)
+@pytest.mark.parametrize("disable_conf", fallback_test_params, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
 def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf, enable_deletion_vectors):
@@ -129,9 +132,6 @@ def test_delta_deletion_vector(spark_tmp_path):
 
     def read_parquet_sql(data_path):
         return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
-
-    disable_conf = copy_and_update(delta_delete_enabled_conf,
-        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
 
     with_cpu_session(setup_tables)
     with_cpu_session(write_func(data_path))

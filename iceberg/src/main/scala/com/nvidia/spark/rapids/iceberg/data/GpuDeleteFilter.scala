@@ -21,12 +21,12 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, LazySpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
+import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter2.{filterAndDrop, mergeColumn, DELETE_EXTRA_METADATA_COLUMN_IDS, DELETE_EXTRA_METADATA_COLUMNS, POS_DELETE_SCHEMA}
 import com.nvidia.spark.rapids.iceberg.fieldIndex
 import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetReaderConf
 import org.apache.iceberg.{DeleteFile, FileContent, MetadataColumns, Schema}
-import org.apache.iceberg.io.InputFile
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.types.Types
 import org.apache.iceberg.types.Types.NestedField
@@ -39,15 +39,16 @@ import org.apache.spark.sql.types.{BooleanType, DataType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuDeleteFilter(
+    private val rapidsFileIO: IcebergFileIO,
     private val tableSchema: Schema,
-    val inputFiles: Map[String, InputFile],
+    val inputFiles: Map[String, IcebergInputFile],
     val parquetConf: GpuIcebergParquetReaderConf,
     private val deletes: Seq[DeleteFile],
     deleteLoaderProvider: => Option[GpuDeleteLoader] = None) extends Logging with AutoCloseable {
   private lazy val readSchema = parquetConf.expectedSchema
 
   private lazy val deleteLoader = deleteLoaderProvider.getOrElse(
-    new DefaultDeleteLoader(inputFiles, parquetConf))
+    new DefaultDeleteLoader(rapidsFileIO, inputFiles, parquetConf))
 
   private lazy val (eqDeleteFiles, posDeleteFiles) = {
     deletes.find(d => d.content() != FileContent.EQUALITY_DELETES &&
@@ -111,8 +112,8 @@ class GpuDeleteFilter(
    * input schema.
    * 2. This method will delete the rows that are marked as deleted.
    *
-   * @param input Input column batches, which will be closed by after this method returns.
-   * @return Ouput column batches with rows deleted based on the filter result.
+   * @param input Input column batches, which will be closed after this method returns.
+   * @return Output column batches with rows deleted based on the filter result.
    */
   def filterAndDelete(input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
     val dropMask = Array.fill[Boolean](filterOutputSparkDataTypes.length)(false)
@@ -249,7 +250,7 @@ class GpuDeleteFilter(
       buildKeys,
       probeKeys,
       requiredSchema.columns().size(),
-      parquetConf.metrics(OP_TIME),
+      parquetConf.metrics(OP_TIME_LEGACY),
       parquetConf.metrics(JOIN_TIME)))
   }
 
@@ -296,7 +297,7 @@ class GpuDeleteFilter(
       buildKeys,
       probeKeys,
       requiredSchema.columns().size(),
-      parquetConf.metrics(OP_TIME),
+      parquetConf.metrics(OP_TIME_LEGACY),
       parquetConf.metrics(JOIN_TIME))
   }
 

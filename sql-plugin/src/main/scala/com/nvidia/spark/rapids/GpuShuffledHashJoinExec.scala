@@ -173,7 +173,7 @@ case class GpuShuffledHashJoinExec(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
@@ -217,7 +217,7 @@ case class GpuShuffledHashJoinExec(
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
@@ -353,7 +353,7 @@ object GpuShuffledHashJoinExec extends Logging {
           val gpuBuildIter = if (isBuildSerialized) {
             // batches on host, move them to GPU
             new GpuShuffleCoalesceIterator(safeIter.asInstanceOf[Iterator[CoalescedHostResult]],
-              buildDataType, coalesceMetrics)
+              buildDataType)
           } else { // batches already on GPU
             safeIter.asInstanceOf[Iterator[ColumnarBatch]]
           }
@@ -488,7 +488,7 @@ object GpuShuffledHashJoinExec extends Logging {
     val singleBatchIter = new GpuCoalesceIterator(inputIter,
       inputAttrs.map(_.dataType).toArray, goal,
       NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
-      coalesceMetrics(GpuMetric.CONCAT_TIME), coalesceMetrics(GpuMetric.OP_TIME),
+      coalesceMetrics(GpuMetric.CONCAT_TIME), coalesceMetrics(GpuMetric.OP_TIME_LEGACY),
       "single build batch")
     ConcatAndConsumeAll.getSingleBatchWithVerification(singleBatchIter, inputAttrs)
   }
@@ -501,12 +501,14 @@ object GpuShuffledHashJoinExec extends Logging {
       coalesceMetrics: Map[String, GpuMetric]): Option[Iterator[CoalescedHostResult]] = {
     var retIter: Option[Iterator[CoalescedHostResult]] = None
     if (iter.hasNext && iter.head.numCols() == 1) {
+      val concatTime = coalesceMetrics(GpuMetric.CONCAT_TIME)
       iter.head.column(0) match {
         case _: KudoSerializedTableColumn =>
-          retIter = Some(new KudoHostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics,
-            dataTypes, readOption))
+          retIter = Some(new KudoHostShuffleCoalesceIterator(iter, targetSize, dataTypes,
+            concatTimeMetric = concatTime, readOption = readOption))
         case _: SerializedTableColumn =>
-          retIter = Some(new HostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics))
+          retIter = Some(new HostShuffleCoalesceIterator(iter, targetSize,
+            concatTimeMetric = concatTime))
         case _ => // should be gpu batches
       }
     }

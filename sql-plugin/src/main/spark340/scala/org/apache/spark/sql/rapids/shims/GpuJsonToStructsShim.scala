@@ -29,6 +29,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "400"}
+{"spark": "401"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -50,7 +51,7 @@ object GpuJsonToStructsShim {
         // legacy behavior
         withResource(Scalar.fromString(" ")) { space =>
           withResource(input.strip(space)) { trimmed =>
-            GpuCast.castStringToDate(trimmed)
+            GpuCast.castStringToDate(trimmed, ansiMode = false)
           }
         }
       case Some(f) =>
@@ -68,7 +69,7 @@ object GpuJsonToStructsShim {
       case None =>
         // legacy behavior
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode =
+          GpuCast.castStringToDate(trimmed, ansiMode =
             GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case Some(f) =>

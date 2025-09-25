@@ -79,22 +79,25 @@ object GpuOrcFileFormat extends Logging {
         "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
     }
 
-    // For date type, timezone needs to be checked also. This is because JVM timezone and UTC
-    // timezone offset is considered when getting [[java.sql.date]] from
-    // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
-    // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
     val types = schema.map(_.dataType).toSet
     val hasBools = schema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
         t.isInstanceOf[BooleanType])
     }
 
-    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
-      if (!GpuOverrides.isUTCTimezone()) {
-        meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
-          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
-          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+    if (!meta.conf.orcReadIgnoreWriterTimezone) {
+      // For timestamp type, timezone needs to be checked.
+      // This is because JVM timezone and UTC timezone offset is considered when
+      // reading timestamp type from ORC file.
+      if (types.exists(GpuOverrides.isOrContainsTimestamp)) {
+        if (!GpuOverrides.isUTCTimezone()) {
+          meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
+            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+            s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+        }
       }
+    } else {
+      // Ignore the write timezones in the stripe footers, we support, skip the checks.
     }
 
     if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
@@ -122,7 +125,7 @@ object GpuOrcFileFormat extends Logging {
 
     val orcOptions = new OrcOptions(options, sqlConf)
     orcOptions.compressionCodec match {
-      case "NONE" | "SNAPPY" | "ZSTD" =>
+      case "NONE" | "SNAPPY" | "ZSTD" | "ZLIB" =>
       case c => meta.willNotWorkOnGpu(s"compression codec $c is not supported")
     }
 

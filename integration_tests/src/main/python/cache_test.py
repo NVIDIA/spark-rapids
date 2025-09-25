@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from conftest import is_not_utc
 from data_gen import *
+from pyspark import StorageLevel
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_spark_350_or_351
 from join_test import create_df
-from marks import incompat, allow_non_gpu, ignore_order
+from marks import incompat, allow_non_gpu, allow_non_gpu_conditional, ignore_order, disable_ansi_mode
 import pyspark.mllib.linalg as mllib
 import pyspark.ml.linalg as ml
 
@@ -222,6 +223,8 @@ def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
                                         # i.e. 'extract(years from d) will actually convert the
                                         # entire interval to year
                                         ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
+# https://github.com/NVIDIA/spark-rapids/issues/12700
+@disable_ansi_mode
 def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     def with_cache(cache):
         select_expr_df, select_expr_project = select_expr
@@ -360,3 +363,60 @@ def test_inmem_cache_count():
 @pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
 def test_batch_no_cols(with_x_session):
     function_to_test_on_df(with_x_session, lambda spark: unary_op_df(spark, int_gen).drop("a"), lambda df: df.count(), test_conf={})
+
+@ignore_order(local=True)
+@allow_non_gpu("ShuffleExchangeExec", "ColumnarToRowExec")
+@allow_non_gpu_conditional(is_spark_350_or_351(), "InMemoryTableScanExec")
+@pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+def test_aqe_cache_version_specific_behavior(data_gen, enable_vectorized_conf):
+    """
+    Test InMemoryTableScan + AQE behavior across Spark versions.
+    - Spark 3.2.0-3.4.x: InMemoryTableScan works on GPU
+    - Spark 3.5.0-3.5.1: InMemoryTableScan disabled by default due to missing InMemoryTableScanLike trait
+    - Spark 3.5.2+: InMemoryTableScan works on GPU with proper trait support
+    """
+
+    def do_it(spark):
+        df1 = unary_op_df(spark, data_gen).orderBy('a').cache()
+        df2 = unary_op_df(spark, data_gen).withColumnRenamed("a", "r_a").cache()
+        df1.count()
+        df2.count()
+        return df1.join(df2, df1.a == df2.r_a, 'Outer')
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=enable_vectorized_conf)
+
+@ignore_order(local=True)
+@allow_non_gpu("CollectLimitExec", "ShuffleExchangeExec", "ColumnarToRowExec")
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@allow_non_gpu_conditional(is_spark_350_or_351(), "InMemoryTableScanExec")
+def test_persist_with_groupby_join_version_specific(enable_vectorized_conf):
+    """
+    Expected behavior:
+    - Spark 3.2.0-3.4.x: InMemoryTableScan works on GPU
+    - Spark 3.5.0-3.5.1: InMemoryTableScan falls back to CPU due to missing InMemoryTableScanLike trait
+    - Spark 3.5.2+: InMemoryTableScan works on GPU with proper trait support
+    """
+
+    def do_it(spark):
+        df = spark.range(0, 1000, 1, 2).select(
+            f.col("id").alias("_1"),
+            f.col("id").alias("_2")
+        )
+
+        ee = df.select(
+            f.col("_1").alias("src"),
+            f.col("_2").alias("dst")
+        ).persist(StorageLevel.MEMORY_AND_DISK)
+        ee.count()
+
+        minNbrs1 = ee.groupBy("src").agg(
+            f.min(f.col("dst")).alias("min_number")
+        ).persist(StorageLevel.MEMORY_AND_DISK)
+        minNbrs1.count()
+
+        ee.join(minNbrs1, "src")
+
+        return ee.join(minNbrs1, "src")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=enable_vectorized_conf)

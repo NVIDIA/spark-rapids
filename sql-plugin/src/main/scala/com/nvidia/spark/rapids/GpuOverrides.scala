@@ -36,6 +36,7 @@ import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonToStructsReaderType
@@ -94,6 +95,7 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     protected val checks: Option[TypeChecks[_]],
     final val tag: ClassTag[INPUT]) extends DataFromReplacementRule {
 
+  private var _noteDoc: Option[String] = None
   private var _incompatDoc: Option[String] = None
   private var _disabledDoc: Option[String] = None
   private var _visible: Boolean = true
@@ -101,9 +103,20 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
   def isVisible: Boolean = _visible
   def description: String = desc
 
+  override def noteDoc: Option[String] = _noteDoc
   override def incompatDoc: Option[String] = _incompatDoc
   override def disabledMsg: Option[String] = _disabledDoc
   override def getChecks: Option[TypeChecks[_]] = checks
+
+  /**
+   * Mark this expression with an extra note.
+   * @param str a description of the extra note.
+   * @return this for chaining.
+   */
+  final def note(str: String) : this.type = {
+    _noteDoc = Some(str)
+    this
+  }
 
   /**
    * Mark this expression as incompatible with the original Spark version
@@ -165,12 +178,20 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     confKeyCache
   }
 
-  def notes(): Option[String] = if (incompatDoc.isDefined) {
-    Some(s"This is not 100% compatible with the Spark version because ${incompatDoc.get}")
-  } else if (disabledMsg.isDefined) {
-    Some(s"This is disabled by default because ${disabledMsg.get}")
-  } else {
-    None
+  def notes(): Option[String] = {
+    val msg = if (incompatDoc.isDefined) {
+      Some(s"This is not 100% compatible with the Spark version because ${incompatDoc.get}")
+    } else if (disabledMsg.isDefined) {
+      Some(s"This is disabled by default because ${disabledMsg.get}")
+    } else {
+      None
+    }
+
+    if (msg.isEmpty && noteDoc.isEmpty) {
+      None
+    } else {
+      Some(noteDoc.getOrElse("") + msg.getOrElse(""))
+    }
   }
 
   def confHelp(asTable: Boolean = false, sparkSQLFunctions: Option[String] = None): Unit = {
@@ -915,9 +936,9 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-                TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
+          + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.ansiIntervals)
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](
@@ -1496,6 +1517,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitAndAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitAndAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[BitOrAgg](
       "Returns the bitwise OR of all non-null input values",
@@ -1505,6 +1528,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitOrAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitOrAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[BitXorAgg](
       "Returns the bitwise XOR of all non-null input values",
@@ -1514,6 +1539,8 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[BitXorAgg](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuBitXorAgg(childExprs.head)
+
+        override def needsAnsiCheck: Boolean = false
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
@@ -1915,6 +1942,13 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
 
+        override def tagExprForGpu(): Unit = {
+          // Check if this Add expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_add is not supported on GPU")
+          }
+        }
+
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
             willNotWorkInAst("AST Addition does not support ANSI mode.")
@@ -1936,6 +1970,13 @@ object GpuOverrides extends Logging {
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagExprForGpu(): Unit = {
+          // Check if this Subtract expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_subtract is not supported on GPU")
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
@@ -2215,6 +2256,10 @@ object GpuOverrides extends Logging {
         repeatingParamCheck = Some(RepeatingParamCheck(
           "input", TypeSig.all, TypeSig.all))),
       (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
+
+        // Spark Count agg returns Long and does not check Ansi mode and overflow
+        override def needsAnsiCheck: Boolean = false
+
         override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
             willNotWorkOnGpu("count of multiple columns not supported")
@@ -2283,7 +2328,14 @@ object GpuOverrides extends Logging {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
           checkAndTagFloatAgg(inputDataType, this.conf, this)
+
+          // Check if this Sum expression is in TRY mode context
+          if (TryModeShim.isTryMode(a)) {
+            willNotWorkOnGpu("try_sum is not supported on GPU")
+          }
         }
+
+        override def needsAnsiCheck: Boolean = false
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuSum(childExprs.head, a.dataType)
@@ -3087,6 +3139,30 @@ object GpuOverrides extends Logging {
           GpuTransformValues(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
+    expr[MapZipWith](
+      "Filters entries in a map using the function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument1",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("argument2",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            TypeSig.all))),
+      (in, conf, p, r) => new ExprMeta[MapZipWith](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuMapZipWith(childExprs.head.convertToGpu(), 
+          childExprs(1).convertToGpu(), childExprs(2).convertToGpu())
+        }
+      }),
     expr[MapFilter](
       "Filters entries in a map using the function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3373,61 +3449,14 @@ object GpuOverrides extends Logging {
         override final def convertToGpu(): GpuExpression =
           GpuConcatWs(childExprs.map(_.convertToGpu()))
       }),
-    expr[Murmur3Hash] (
+    expr[Murmur3Hash](
       "Murmur3 hash operator",
-      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
-        repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-              TypeSig.STRUCT + TypeSig.ARRAY).nested() +
-              TypeSig.psNote(TypeEnum.ARRAY, "Arrays of structs are not supported"),
-          TypeSig.all))),
-      (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
-        override val childExprs: Seq[BaseExprMeta[_]] = a.children
-          .map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-
-        override def tagExprForGpu(): Unit = {
-          val arrayWithStructsHashing = a.children.exists(e =>
-            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-              {
-                case ArrayType(_: StructType, _) => true
-                case _ => false
-              })
-          )
-          if (arrayWithStructsHashing) {
-            willNotWorkOnGpu("hashing arrays with structs is not supported")
-          }
-        }
-
-        def convertToGpu(): GpuExpression =
-          GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
-      }),
+      HashExprChecks.murmur3ProjectChecks,
+      Murmur3HashExprMeta.apply),
     expr[XxHash64](
       "xxhash64 hash operator",
-      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG,
-        repeatingParamCheck = Some(RepeatingParamCheck("input",
-          XxHash64Shims.supportedTypes, TypeSig.all))),
-      (a, conf, p, r) => new ExprMeta[XxHash64](a, conf, p, r) {
-        override val childExprs: Seq[BaseExprMeta[_]] = a.children
-          .map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-
-        override def tagExprForGpu(): Unit = {
-          val maxDepth = a.children.map(
-            c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
-          if (maxDepth > Hash.MAX_STACK_DEPTH) {
-            willNotWorkOnGpu(s"The data type requires a stack depth of $maxDepth, " +
-              s"which exceeds the GPU limit of ${Hash.MAX_STACK_DEPTH}. " +
-              "The algorithm to calculate stack depth: " +
-              "1: Primitive type counts 1 depth; " +
-              "2: Array of Structure counts:  1  + depthOf(Structure); " +
-              "3: Array of Other counts: depthOf(Other); " +
-              "4: Structure counts: 1 + max of depthOf(child); " +
-              "5: Map counts: 2 + max(depthOf(key), depthOf(value)); "
-            )
-          }
-        }
-        def convertToGpu(): GpuExpression =
-          GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
-      }),
+      HashExprChecks.xxhash64ProjectChecks,
+      XxHash64ExprMeta.apply),
     expr[HiveHash](
       "hive hash operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
@@ -3518,9 +3547,6 @@ object GpuOverrides extends Logging {
           Some(RepeatingParamCheck("key", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (a.failOnError) {
-            willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
-          }
 
           extractStringLit(a.children(1)) match {
             // In Spark, the key in parse_url could act like a regex, but GPU will match the key
@@ -3548,7 +3574,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(): GpuExpression = {
-          GpuParseUrl(childExprs.map(_.convertToGpu()))
+          GpuParseUrl(childExprs.map(_.convertToGpu()), a.failOnError)
         }
       }),
     expr[Length](
@@ -3932,7 +3958,7 @@ object GpuOverrides extends Logging {
 
         override def tagExprForGpu(): Unit = {
           a.schema match {
-            case MapType(_: StringType, _: StringType, _) => ()
+            case MapType(StringType, StringType, _) => ()
             case st: StructType =>
               if (hasDuplicateFieldNames(st)) {
                 willNotWorkOnGpu("from_json on GPU does not support duplicate field " +
@@ -4110,6 +4136,16 @@ object GpuOverrides extends Logging {
         }
       }
     ),
+    expr[Uuid](
+      desc = "Uuid",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING),
+      (a, conf, p, r) => new GpuUuidMeta(a, conf, p, r)
+    ),
+    expr[StaticInvoke](
+      desc = "StaticInvoke",
+      StaticInvokeCheck,
+      (a, conf, p, r) => new StaticInvokeMeta(a, conf, p, r)
+    ).note("The supported types are not deterministic since it's a dynamic expression"),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 

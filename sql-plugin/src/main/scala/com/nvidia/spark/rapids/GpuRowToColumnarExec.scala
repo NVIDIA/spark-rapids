@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -589,6 +589,7 @@ class RowToColumnarIterator(
     rowIter: Iterator[InternalRow],
     localSchema: StructType,
     localGoal: CoalesceSizeGoal,
+    batchSizeBytes: Long,
     converters: GpuRowToColumnConverter,
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
@@ -597,6 +598,7 @@ class RowToColumnarIterator(
     opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
+  private var initialRows = 0
   private var targetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
@@ -618,15 +620,18 @@ class RowToColumnarIterator(
         if (localSchema.fields.isEmpty) {
           // if there are no columns then we just default to a small number
           // of rows for the first batch
+          // TODO do we even need to allocate anything here?
           targetRows = 1024
+          initialRows = targetRows
         } else {
           val sampleRows = GpuBatchUtils.VALIDITY_BUFFER_BOUNDARY_ROWS
           val sampleBytes = GpuBatchUtils.estimateGpuMemory(localSchema, sampleRows)
           targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
+          initialRows = GpuBatchUtils.estimateRowCount(batchSizeBytes, sampleBytes, sampleRows)
         }
       }
 
-      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows)) { builders =>
+      withResource(new GpuColumnarBatchBuilder(localSchema, initialRows)) { builders =>
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
@@ -879,7 +884,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
   }
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS)
   )
@@ -891,7 +896,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val streamTime = gpuLongMetric(STREAM_TIME)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val localGoal = goal
     val rowBased = child.execute()
 
@@ -911,8 +916,10 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
         numInputRows, numOutputRows, numOutputBatches))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
+      val conf = new RapidsConf(child.conf)
+      val batchSizeBytes = conf.gpuTargetBatchSizeBytes
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, converters,
+        localSchema, localGoal, batchSizeBytes, converters,
         numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
     }
   }

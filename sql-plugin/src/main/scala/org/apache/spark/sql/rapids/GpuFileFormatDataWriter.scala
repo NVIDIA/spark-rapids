@@ -184,6 +184,15 @@ abstract class GpuFileFormatDataWriter(
   /** Writes a columnar batch of records */
   def write(batch: ColumnarBatch): Unit
 
+  /** Get the operator time metric for timing collection */
+  def operatorTimeMetric: GpuMetric = {
+    statsTrackers.find(_.isInstanceOf[GpuWriteTaskStatsTracker]) match {
+      case Some(tracker: GpuWriteTaskStatsTracker) =>
+        tracker.opTimeNew
+      case _ => NoopMetric
+    }
+  }
+
   protected val reportSingleWriter = true
 
   private def updateWritersNumber(): Unit = {
@@ -763,9 +772,15 @@ class GpuDynamicPartitionDataConcurrentWriter(
           withResource(pendingBatches.dequeue())(_.getColumnarBatch())
         }
       }
+      val (sortMetric, sortOpTime) =
+        statsTrackers.find(_.isInstanceOf[GpuWriteTaskStatsTracker]).map { tc =>
+          val tt = tc.asInstanceOf[GpuWriteTaskStatsTracker]
+          (tt.sortTime, tt.sortOpTime)
+        }.getOrElse((NoopMetric, NoopMetric))
+
       val sortIter = GpuOutOfCoreSortIterator(pendingCbsIter ++ iterator,
         new GpuSorter(spec.sortOrder, spec.output), GpuSortExec.targetSize(spec.batchSize),
-        NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+        sortOpTime, sortMetric, NoopMetric, NoopMetric)
       while (sortIter.hasNext) {
         // write with sort-based sequential writer
         super.write(sortIter.next())

@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
@@ -215,11 +215,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           SparkShimImpl.newBroadcastQueryStageExec(e,
             GpuBroadcastToRowExec(keys, b.mode, e.plan))
         case b: GpuBroadcastExchangeExec =>
-          // This should never happen as AQE with a BroadcastQueryStageExec should
-          // only show up on a reused exchange, but just in case we try to do the right
-          // thing here
+          // This is very rare, but it can happen
+          val keys = b.output.map { a => a.asInstanceOf[Expression] }
           SparkShimImpl.newBroadcastQueryStageExec(e,
-            BroadcastExchangeExec(b.mode, GpuColumnarToRowExec(b)))
+            GpuBroadcastToRowExec(keys, b.mode, e.plan))
         case other =>
           throw new IllegalStateException(s"Don't know how to handle a " +
             s"BroadcastQueryStageExec with $other")
@@ -235,7 +234,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(Array(newChild))
 
     case p =>
-      p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
+      SparkShimImpl.handleTableCacheInOptimizeAdaptiveTransitions(p, parent) match {
+        case Some(handledPlan) => handledPlan
+        case None => p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
+      }
   }
 
   /**
@@ -869,7 +871,8 @@ object GpuTransitionOverrides {
         } else {
           sqse.plan
         }
-      case _ => plan
+      case _ =>
+        SparkShimImpl.getTableCacheNonQueryStagePlan(plan).getOrElse(plan)
     }
   }
 

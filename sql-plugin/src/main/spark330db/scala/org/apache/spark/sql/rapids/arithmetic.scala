@@ -32,6 +32,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "400"}
+{"spark": "401"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -65,7 +66,7 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
       resultDecimalType(p1, s1, p2, s2)
     case _ => lhs.dataType
   }
-  override def dataType: DataType = dataTypeInternal(left, right)
+  override lazy val dataType: DataType = dataTypeInternal(left, right)
 
   protected def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     throw new IllegalStateException(
@@ -407,13 +408,27 @@ case class GpuPmod(
   }
 }
 
+object GpuDecimalDivide {
+  def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
+    val ansi = SQLConf.get.ansiEnabled
+    GpuDecimalDivide(left, right, dataType, ansi, ansi)
+  }
+
+  def apply(left: Expression, right: Expression, dataType: DecimalType,
+            failOnError: Boolean): GpuDecimalDivide =
+    GpuDecimalDivide(left, right, dataType, failOnError, failOnError)
+}
+
 case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
-    override val dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    dt: DecimalType,
+    override val failOnError: Boolean,
+    override val failOnDivideByZero: Boolean)
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
   override def inputType: AbstractDataType = DecimalType
+
+  override lazy val dataType: DecimalType = dt
 
   override def symbol: String = "/"
 
@@ -451,11 +466,13 @@ case class GpuDecimalDivide(
 case class GpuDecimalMultiply(
     left: Expression,
     right: Expression,
-    override val dataType: DecimalType,
+    dt: DecimalType,
     useLongMultiply: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic
     with GpuDecimalMultiplyBase {
   override def inputType: AbstractDataType = DecimalType
+
+  override lazy val dataType: DecimalType = dt
 
   override def symbol: String = "*"
 
@@ -501,13 +518,15 @@ case class GpuIntegralDivide(
 case class GpuIntegralDecimalDivide(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    override val failOnError: Boolean = SQLConf.get.ansiEnabled)
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
+  override val failOnDivideByZero: Boolean = failOnError
+
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   def integerDivide: Boolean = true
 
-  override def dataType: DataType = LongType
+  override lazy val dataType: DataType = LongType
 
   override def symbol: String = "/"
 

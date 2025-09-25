@@ -57,7 +57,9 @@ class GpuProjectExecMeta(
     val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
-      if (childExprs.forall(_.canThisBeAst)) {
+      // cuDF requires return column is fixed width
+      val allReturnTypesFixedWidth = gpuExprs.forall(e => GpuBatchUtils.isFixedWidth(e.dataType))
+      if (allReturnTypesFixedWidth && childExprs.forall(_.canThisBeAst)) {
         return GpuProjectAstExec(gpuExprs, gpuChild)
       }
       // explain AST because this is optional and it is sometimes hard to debug
@@ -66,6 +68,10 @@ class GpuProjectExecMeta(
             .filter(_.nonEmpty)
         if (explain.nonEmpty) {
           logWarning(s"AST PROJECT\n$explain")
+        }
+        if (!allReturnTypesFixedWidth) {
+          logWarning(s"AST PROJECT\n  have non fixed return column, " +
+            s"return types: ${gpuExprs.map(_.dataType)}")
         }
       }
     }
@@ -220,7 +226,7 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
   def projectList: Seq[Expression]
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -669,12 +675,12 @@ case class GpuProjectExec(
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     KEY_NUM_PRE_SPLIT -> createMetric(DEBUG_LEVEL, "num pre-splits"),
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
       conf)
@@ -729,7 +735,7 @@ case class GpuProjectAstExec(
       input: Iterator[ColumnarBatch]): GpuColumnarBatchIterator = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val outputTypes = output.map(_.dataType).toArray
     new GpuColumnarBatchIterator(true) {
@@ -1125,7 +1131,7 @@ case class GpuFilterExec(
     Seq[AnyRef](coalesceAfter.asInstanceOf[java.lang.Boolean])
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
@@ -1159,7 +1165,7 @@ case class GpuFilterExec(
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
       conf)
@@ -1198,7 +1204,7 @@ case class GpuSampleExec(
     seed: Long, child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def output: Seq[Attribute] = {
     child.output
@@ -1221,7 +1227,7 @@ case class GpuSampleExec(
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
 
     val rdd = child.executeColumnar()
     // CPU consistent, first generates sample row indexes by CPU, then gathers by GPU
@@ -1274,7 +1280,7 @@ case class GpuFastSampleExec(
     child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def output: Seq[Attribute] = {
     child.output
@@ -1298,7 +1304,7 @@ case class GpuFastSampleExec(
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val rdd = child.executeColumnar()
 
     // CPU inconsistent, uses GPU sample JNI
@@ -1472,7 +1478,7 @@ case class GpuRangeExec(
   override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY)
   )
 
   override def outputOrdering: Seq[SortOrder] = {
@@ -1501,7 +1507,7 @@ case class GpuRangeExec(
   protected override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val maxRowCountPerBatch = Math.min(targetSizeBytes/8, Int.MaxValue)
 
     if (isEmptyRange) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -226,13 +226,14 @@ object GpuFileFormatWriter extends Logging {
           }
           // TODO: Using a GPU ordering as a CPU ordering here. Should be OK for now since we do not
           //       support bucket expressions yet and the rest should be simple attributes.
+          val sortTrackers = statsTrackers.filter(_.isInstanceOf[GpuWriteJobStatsTracker])
           val sort = GpuSortExec(
             orderingExpr,
             global = false,
             child = empty2NullPlan,
             sortType = sortType
-          )(orderingExpr).executeColumnar()
-          (sort, None)
+          )(orderingExpr, Some(sortTrackers.asInstanceOf[Seq[GpuWriteJobStatsTracker]]))
+          (sort.executeColumnar(), None)
         }
       }
 
@@ -242,6 +243,16 @@ object GpuFileFormatWriter extends Logging {
         sparkSession.sparkContext.parallelize(Array.empty[ColumnarBatch], 1)
       } else {
         rdd
+      }
+
+      // Collect exclude metrics from the plan
+      val excludeMetrics = plan match {
+        case gpuExec: GpuExec =>
+          val currentMetric = gpuExec.getOpTimeNewMetric.toSeq
+          val childMetrics = gpuExec.getDescendantOpTimeMetrics
+          currentMetric ++ childMetrics
+        case _ =>
+          Seq.empty[GpuMetric]
       }
 
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
@@ -259,7 +270,8 @@ object GpuFileFormatWriter extends Logging {
             committer,
             iterator = iter,
             concurrentOutputWriterSpec = concurrentOutputWriterSpec,
-            baseDebugOutputPath = baseDebugOutputPath)
+            baseDebugOutputPath = baseDebugOutputPath,
+            excludeMetrics = excludeMetrics)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -294,7 +306,8 @@ object GpuFileFormatWriter extends Logging {
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
-      baseDebugOutputPath: Option[String]): WriteTaskResult = {
+      baseDebugOutputPath: Option[String],
+      excludeMetrics: Seq[GpuMetric]): WriteTaskResult = {
 
     val jobId = RapidsHadoopWriterUtils.createJobID(jobTrackerId, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -333,23 +346,26 @@ object GpuFileFormatWriter extends Logging {
         }
       }
 
-    try {
-      Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
-        // Execute the task to write rows out and commit the task.
-        dataWriter.writeWithIterator(iterator)
-        dataWriter.commit()
-      })(catchBlock = {
-        // If there is an error, abort the task
-        dataWriter.abort()
-        logError(s"Job $jobId aborted.")
-      }, finallyBlock = {
-        dataWriter.close()
-      })
-    } catch {
-      case e: FetchFailedException =>
-        throw e
-      case t: Throwable =>
-        throw new SparkException("Task failed while writing rows.", t)
+    // Use GpuMetric.ns to automatically collect execution time
+    dataWriter.operatorTimeMetric.ns(excludeMetrics) {
+      try {
+        Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
+          // Execute the task to write rows out and commit the task.
+          dataWriter.writeWithIterator(iterator)
+          dataWriter.commit()
+        })(catchBlock = {
+          // If there is an error, abort the task
+          dataWriter.abort()
+          logError(s"Job $jobId aborted.")
+        }, finallyBlock = {
+          dataWriter.close()
+        })
+      } catch {
+        case e: FetchFailedException =>
+          throw e
+        case t: Throwable =>
+          throw new SparkException("Task failed while writing rows.", t)
+      }
     }
   }
 

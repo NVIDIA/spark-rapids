@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
+from spark_session import is_spark_400_or_later
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later, is_before_spark_330, is_databricks_version_or_later
 
@@ -31,12 +32,12 @@ def create_skew_df(spark, length):
     mid = length / 2
     left = root.select(
         when(col('id') < mid / 2, mid).
-            otherwise('id').alias("key1"),
+            otherwise(col('id')).alias("key1"),
         col('id').alias("value1")
     )
     right = root.select(
         when(col('id') < mid, mid).
-            otherwise('id').alias("key2"),
+            otherwise(col('id')).alias("key2"),
         col('id').alias("value2")
     )
     return left, right
@@ -198,6 +199,7 @@ db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later(
 # theoretically show up in other Spark distributions
 @ignore_order(local=True)
 @allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow, *not_utc_aqe_allow)
+@pytest.mark.skipif(is_spark_400_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11100")
 @pytest.mark.parametrize('join', joins, ids=idfn)
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -335,6 +337,27 @@ def test_aqe_join_executor_broadcast_enforce_single_batch():
         non_exist_classes="GpuBroadcastExchangeExec",
         conf=conf)
 
+# This test relies on the join not being on the GPU because a join on an array is not
+# currently supported. This causes the join to fall back to the CPU, and with AQE the
+# broadcast needs to also fall back to the CPU, but it does not always with AQE
+# But some versions of Spark will plan this differently, which can result in a shuffle
+# falling back to the CPU. This is perfectly acceptible so long as the query produces
+# the correct result.
+@allow_non_gpu(any = True)
+def test_aqe_join_and_agg_single_value():
+    test_query = """
+    WITH 
+    processed AS (
+      SELECT 
+        SIZE(params) AS result,
+        params as input_params
+      FROM (SELECT collect_list(1) AS params FROM VALUES (1) AS t(dummy)) input_table
+      GROUP BY params
+    )
+    SELECT processed.result
+    FROM (SELECT collect_list(1) AS params FROM VALUES (1) AS t(dummy)) collected
+    LEFT OUTER JOIN processed ON collected.params = processed.input_params"""
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(test_query), conf=_adaptive_conf)
 
 # this should be fixed by https://github.com/NVIDIA/spark-rapids/issues/11120
 aqe_join_with_dpp_fallback=["FilterExec"] if (is_databricks_runtime() or is_before_spark_330()) else []

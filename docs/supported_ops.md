@@ -11503,6 +11503,103 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="4">MapZipWith</td>
+<td rowSpan="4">`map_zip_with`</td>
+<td rowSpan="4">Filters entries in a map using the function</td>
+<td rowSpan="4">None</td>
+<td rowSpan="4">project</td>
+<td>argument1</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT, DAYTIME, YEARMONTH</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>argument2</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT, DAYTIME, YEARMONTH</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>function</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT, DAYTIME, YEARMONTH</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT, DAYTIME, YEARMONTH</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT, DAYTIME, YEARMONTH</em></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT, DAYTIME, YEARMONTH</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">Md5</td>
 <td rowSpan="2">`md5`</td>
 <td rowSpan="2">MD5 hash operator</td>
@@ -11552,6 +11649,34 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+<th>DAYTIME</th>
+<th>YEARMONTH</th>
 </tr>
 <tr>
 <td rowSpan="2">MicrosToTimestamp</td>
@@ -11654,34 +11779,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-<th>DAYTIME</th>
-<th>YEARMONTH</th>
 </tr>
 <tr>
 <td rowSpan="2">Minute</td>
@@ -18798,6 +18895,34 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="1">Uuid</td>
+<td rowSpan="1">`uuid`</td>
+<td rowSpan="1">Uuid</td>
+<td rowSpan="1">None</td>
+<td rowSpan="1">project</td>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">WeekDay</td>
 <td rowSpan="2">`weekday`</td>
 <td rowSpan="2">Returns the day of the week (0 = Monday...6=Sunday)</td>
@@ -22652,6 +22777,34 @@ are limited.
 <th>UDT</th>
 <th>DAYTIME</th>
 <th>YEARMONTH</th>
+</tr>
+<tr>
+<td rowSpan="1">StaticInvoke</td>
+<td rowSpan="1"> </td>
+<td rowSpan="1">StaticInvoke</td>
+<td rowSpan="1">The supported types are not deterministic since it's a dynamic expression</td>
+<td rowSpan="1">project</td>
+<td>result</td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
 </tr>
 <tr>
 <td rowSpan="2">NormalizeNaNAndZero</td>
