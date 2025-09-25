@@ -23,6 +23,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
+import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
@@ -92,7 +93,9 @@ object Delta33xProvider extends DeltaIOProvider {
       val session = meta.wrapped.session
       val useMetadataRowIndex =
         session.sessionState.conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
-      if (useMetadataRowIndex) {
+      val requiredSchema = meta.wrapped.requiredSchema
+      val isRowDeletedCol =  requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
+      if (useMetadataRowIndex && isRowDeletedCol) {
         meta.willNotWorkOnGpu("we don't support generating metadata row index for " +
           s"${meta.wrapped.getClass.getSimpleName}")
       }
