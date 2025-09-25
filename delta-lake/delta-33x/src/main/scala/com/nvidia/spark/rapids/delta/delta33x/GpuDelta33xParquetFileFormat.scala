@@ -216,10 +216,15 @@ case class GpuDelta33xParquetFileFormat(
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
     new DeltaMultiFileReaderFactory(
-      fileScan,
-      useMetadataRowIndex = false,
+      fileScan.conf,
       broadcastedConf,
+      fileScan.relation.dataSchema,
+      fileScan.requiredSchema,
+      fileScan.readPartitionSchema,
       pushedFilters,
+      fileScan.rapidsConf,
+      fileScan.allMetrics,
+      useMetadataRowIndex = false,
       tablePath)
   }
 
@@ -289,16 +294,21 @@ case class GpuDelta33xParquetFileFormat(
 }
 
 class DeltaMultiFileReaderFactory(
-    fileScan: GpuFileSourceScanExec,
-    useMetadataRowIndex: Boolean,
+    @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
-    pushedFilters: Array[Filter],
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    partitionSchema: StructType,
+    filters: Array[Filter],
+    @transient rapidsConf: RapidsConf,
+    metrics: Map[String, GpuMetric],
+    useMetadataRowIndex: Boolean,
     tablePath: Option[String]
-    ) extends GpuParquetMultiFilePartitionReaderFactory(fileScan.conf, broadcastedConf,
-      fileScan.relation.dataSchema, fileScan.requiredSchema, fileScan.readPartitionSchema,
-      pushedFilters, fileScan.rapidsConf, fileScan.allMetrics, fileScan.queryUsesInputFile) {
+    ) extends GpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
+      dataSchema, readDataSchema, partitionSchema,
+      filters, rapidsConf, metrics, queryUsesInputFile = false) {
 
-  private val schemaWithIndices = fileScan.requiredSchema.fields.zipWithIndex
+  private val schemaWithIndices = readDataSchema.fields.zipWithIndex
   def findColumn(name: String): Option[ColumnMetadata] = {
     val results = schemaWithIndices.filter(_._1.name == name)
     if (results.length > 1) {
@@ -547,14 +557,19 @@ object RapidsDeletionVectorUtils {
     withResource(getRowIndexPosSimple(rowIndex, rowIndex + size)) { rowIndexGpuCol =>
       metrics("rowIndexColumnGenTime") += System.nanoTime() - startTime
       val indexVectorTuples = new ArrayBuffer[(Int, org.apache.spark.sql.vectorized.ColumnVector)]
-      if (rowIndexColumnOpt.isDefined) {
-        indexVectorTuples += (rowIndexColumnOpt.get.index -> rowIndexGpuCol.incRefCount())
+      try {
+        if (rowIndexColumnOpt.isDefined) {
+          indexVectorTuples += (rowIndexColumnOpt.get.index -> rowIndexGpuCol.incRefCount())
+        }
+        startTime = System.nanoTime()
+        val isRowDeletedVector = rowIndexFilterOpt.get.materializeIntoVector(rowIndexGpuCol)
+        metrics("isRowDeletedColumnGenTime") += System.nanoTime() - startTime
+        indexVectorTuples += (isRowDeletedColumnOpt.get.index -> isRowDeletedVector)
+        replaceVectors(batch, indexVectorTuples.toSeq: _*)
+      } catch {
+        case e: Exception => indexVectorTuples.foreach(item => item._2.close())
+          throw e
       }
-      startTime = System.nanoTime()
-      val isRowDeletedVector = rowIndexFilterOpt.get.materializeIntoVector(rowIndexGpuCol)
-      metrics("isRowDeletedColumnGenTime") += System.nanoTime() - startTime
-      indexVectorTuples += (isRowDeletedColumnOpt.get.index -> isRowDeletedVector)
-      replaceVectors(batch, indexVectorTuples.toSeq: _*)
     }
 
   }

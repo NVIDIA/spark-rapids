@@ -23,7 +23,6 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
-import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
@@ -90,19 +89,6 @@ object Delta33xProvider extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      val requiredSchema = meta.wrapped.requiredSchema
-      if (meta.conf.isParquetCoalesceFileReadEnabled) {
-        if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
-          meta.willNotWorkOnGpu(
-            s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is  not supported for " +
-              s"${RapidsReaderType.withName(meta.conf.get(RapidsConf.PARQUET_READER_TYPE))}")
-        }
-        if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
-          meta.willNotWorkOnGpu(
-            s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported for " +
-              s"${RapidsReaderType.withName(meta.conf.get(RapidsConf.PARQUET_READER_TYPE))}")
-        }
-      }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
