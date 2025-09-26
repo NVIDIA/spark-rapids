@@ -26,10 +26,8 @@ class GpuFanoutDataWriter(
   writerFactory: GpuSparkFileWriterFactory,
   fileFactory: OutputFileFactory,
   io: FileIO,
-  targetFileSize: Long,
-) extends FanoutWriter[SpillableColumnarBatch, DataWriteResult] {
+  targetFileSize: Long) extends FanoutWriter[SpillableColumnarBatch, DataWriteResult] {
   private val dataFiles = Lists.newArrayList[DataFile]()
-
 
   override def newWriter(partitionSpec: PartitionSpec, structLike: StructLike):
   FileWriter[SpillableColumnarBatch, DataWriteResult] = {

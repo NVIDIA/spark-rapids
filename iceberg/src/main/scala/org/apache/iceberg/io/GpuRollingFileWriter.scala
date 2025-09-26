@@ -53,7 +53,7 @@ trait GpuRollingFileWriter[W <: FileWriter[SpillableColumnarBatch, R], R] extend
     currentWriter.get.write(batch)
     currentFileRows += batch.numRows()
 
-    if (currentFileRows >= targetFileSize) {
+    if (currentWriter.get.length() >= targetFileSize) {
       closeCurrentWriter()
       openCurrentWriter()
     }
