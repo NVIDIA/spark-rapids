@@ -1222,6 +1222,7 @@ trait GpuHashJoin extends GpuJoinExec {
           compareNullsEqual, opTime, joinTime)
       case _ =>
         if (boundCondition.isDefined) {
+          println(s"BRIDGE_DEBUG: Inner join attempting AST conversion for condition: ${boundCondition.get}")
           // ConditionalHashJoinIterator will close the compiled condition
           val compiledCondition =
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
@@ -1229,6 +1230,7 @@ trait GpuHashJoin extends GpuJoinExec {
             lazyStream, boundStreamKeys, streamedPlan.output, compiledCondition,
             targetSize, joinType, buildSide, compareNullsEqual, opTime, joinTime)
         } else {
+          println(s"BRIDGE_DEBUG: Inner join using simple hash join (no condition)")
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, None,
             lazyStream, boundStreamKeys, streamedPlan.output, targetSize, joinType, buildSide,
             compareNullsEqual, opTime, joinTime)

@@ -1275,9 +1275,14 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * from converting it to a bridge expression.
    */
   final def requiresAstConversion(): Unit = {
+    println(s"BRIDGE_DEBUG: Setting mustBeAst=true on ${wrapped.getClass.getSimpleName}")
     mustBeAst = true
     // Also mark all children as requiring AST
-    childExprs.foreach(_.requiresAstConversion())
+    childExprs.foreach { child =>
+      println(s"BRIDGE_DEBUG: Propagating mustBeAst to child " +
+        s"${child.wrapped.getClass.getSimpleName}")
+      child.requiresAstConversion()
+    }
   }
 
   /**
@@ -1287,9 +1292,18 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   final def canThisBeAst: Boolean = {
     tagForAst()
-    // An expression cannot be AST if it cannot be replaced (disabled) or if it has 
-    // AST-specific issues
-    canThisBeReplaced && childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
+    // An expression cannot be AST if it cannot be replaced (disabled), uses CPU bridge,
+    // or has AST-specific issues  
+    val result = canThisBeReplaced && !willUseGpuCpuBridge && 
+      childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
+    if (wrapped.getClass.getSimpleName == "GreaterThan" || 
+        wrapped.getClass.getSimpleName == "Add" ||
+        willUseGpuCpuBridge) {
+      println(s"BRIDGE_DEBUG: canThisBeAst(${wrapped.getClass.getSimpleName}) = $result " +
+        s"canReplace=${canThisBeReplaced} usesBridge=${willUseGpuCpuBridge} " +
+        s"wrapperType=${this.getClass.getSimpleName}")
+    }
+    result
   }
 
   /**
@@ -1305,6 +1319,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   final def requireAstForGpu(): Unit = {
     // Mark this expression tree as requiring AST
+    println(s"BRIDGE_DEBUG: requireAstForGpu() called on ${wrapped.getClass.getSimpleName}")
     requiresAstConversion()
     
     tagForAst()
