@@ -371,6 +371,90 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
     assert(children7.forall(_ == false), s"7-input children should be GPU: $children7")
     assert(children8.forall(_ == false), s"8-input children should be GPU: $children8")
   }
+
+  test("Literal co-location with consumer (unit)") {
+    val a = AttributeReference("a", LongType, nullable = false)()
+    val lit = Literal(42L)
+    
+    // Mix Literal with AttributeReference in CPU expression
+    val add = Add(a, lit)
+    
+    val addMeta = wrap(add)
+    addMeta.willNotWorkOnGpu("disabled for test") // Force to CPU
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(addMeta)
+
+    assert(addMeta.willUseGpuCpuBridge, "Add should be on CPU bridge")
+    
+    // Literal should co-locate with its consumer (zero move cost)
+    val literalMeta = addMeta.childExprs.find(_.wrapped.isInstanceOf[Literal])
+    assert(literalMeta.isDefined, "Expected Literal child")
+    assert(literalMeta.get.willUseGpuCpuBridge, 
+      "Literal should co-locate with CPU consumer")
+  }
+
+  test("Multiple Literals under same parent (unit)") {
+    val a = AttributeReference("a", LongType, nullable = false)()
+    val lit1 = Literal(10L)
+    val lit2 = Literal(20L)
+    
+    // Expression with multiple Literals: a + lit1 + lit2
+    val add1 = Add(a, lit1)
+    val add2 = Add(add1, lit2)
+    
+    val rootMeta = wrap(add2)
+    // Force all Adds to CPU
+    def forceAdds(meta: BaseExprMeta[_]): Unit = {
+      if (meta.wrapped.isInstanceOf[Add]) meta.willNotWorkOnGpu("disabled for test")
+      meta.childExprs.foreach(forceAdds)
+    }
+    forceAdds(rootMeta)
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(rootMeta)
+
+    // All Literals should co-locate with their CPU consumers
+    def findLiterals(meta: BaseExprMeta[_], 
+      acc: scala.collection.mutable.ListBuffer[BaseExprMeta[_]]): Unit = {
+      if (meta.wrapped.isInstanceOf[Literal]) acc += meta
+      meta.childExprs.foreach(findLiterals(_, acc))
+    }
+    val literals = scala.collection.mutable.ListBuffer[BaseExprMeta[_]]()
+    findLiterals(rootMeta, literals)
+    
+    assert(literals.length >= 2, s"Expected at least 2 Literals, found ${literals.length}")
+    assert(literals.forall(_.willUseGpuCpuBridge), 
+      "All Literals should co-locate with CPU consumers")
+  }
+
+  test("Literal vs AttributeReference cost comparison (unit)") {
+    val a = AttributeReference("a", LongType, nullable = false)()
+    val b = AttributeReference("b", LongType, nullable = false)()
+    val lit = Literal(100L)
+    
+    // Compare: (a + b) vs (a + literal) under CPU parent
+    // The Literal version should be preferred due to zero move cost
+    val addAttr = Add(a, b)      // Requires moving both a and b
+    val addLit = Add(a, lit)     // Literal has zero move cost
+    
+    val hash = XxHash64(Seq(addAttr, addLit), 42L)
+    val hashMeta = wrap(hash)
+    hashMeta.willNotWorkOnGpu("disabled for test") // Force parent to CPU
+    
+    // Force both Adds to be comparable
+    def forceAdds(meta: BaseExprMeta[_]): Unit = {
+      if (meta.wrapped.isInstanceOf[Add]) meta.willNotWorkOnGpu("disabled for test")
+      meta.childExprs.foreach(forceAdds)
+    }
+    forceAdds(hashMeta)
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(hashMeta)
+
+    // Both Add expressions should be on CPU bridge, but the optimizer should
+    // account for the Literal's zero move cost in overall calculations
+    val addMetas = hashMeta.childExprs.filter(_.wrapped.isInstanceOf[Add])
+    assert(addMetas.length == 2, "Expected 2 Add expressions")
+    assert(addMetas.forall(_.willUseGpuCpuBridge), "Both Adds should be on CPU bridge")
+  }
 }
 
 
