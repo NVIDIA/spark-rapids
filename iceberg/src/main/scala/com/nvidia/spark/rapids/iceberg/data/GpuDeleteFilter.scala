@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, LazySpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
 import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter2.{filterAndDrop, mergeColumn, DELETE_EXTRA_METADATA_COLUMN_IDS, DELETE_EXTRA_METADATA_COLUMNS, POS_DELETE_SCHEMA}
 import com.nvidia.spark.rapids.iceberg.fieldIndex
@@ -250,7 +250,7 @@ class GpuDeleteFilter(
       buildKeys,
       probeKeys,
       requiredSchema.columns().size(),
-      parquetConf.metrics(OP_TIME),
+      parquetConf.metrics(OP_TIME_LEGACY),
       parquetConf.metrics(JOIN_TIME)))
   }
 
@@ -297,7 +297,7 @@ class GpuDeleteFilter(
       buildKeys,
       probeKeys,
       requiredSchema.columns().size(),
-      parquetConf.metrics(OP_TIME),
+      parquetConf.metrics(OP_TIME_LEGACY),
       parquetConf.metrics(JOIN_TIME))
   }
 

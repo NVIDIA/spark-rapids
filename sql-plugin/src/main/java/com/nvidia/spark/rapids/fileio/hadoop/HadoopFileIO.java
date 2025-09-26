@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.fileio.hadoop;
 
-import com.nvidia.spark.rapids.fileio.RapidsFileIO;
-import com.nvidia.spark.rapids.fileio.RapidsInputFile;
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
+import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.spark.util.SerializableConfiguration;
