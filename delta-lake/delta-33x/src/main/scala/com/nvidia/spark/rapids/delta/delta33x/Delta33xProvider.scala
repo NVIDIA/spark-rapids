@@ -97,18 +97,18 @@ object Delta33xProvider extends DeltaIOProvider {
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
-  case class GpuIncrementMeticMeta(
+  case class GpuIncrementMetricMeta(
     cpuInc: IncrementMetric,
     override val conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) {
     override def convertToGpu(): GpuExpression = {
       val gpuChild = childExprs.head.convertToGpu()
-      GpuIncrementMetic(cpuInc, gpuChild)
+      GpuIncrementMetric(cpuInc, gpuChild)
     }
   }
 
-  case class GpuIncrementMetic(cpuInc: IncrementMetric, override val child: Expression) 
+  case class GpuIncrementMetric(cpuInc: IncrementMetric, override val child: Expression)
     extends ShimUnaryExpression with GpuExpression {
 
     override def dataType: DataType = child.dataType
@@ -129,7 +129,7 @@ object Delta33xProvider extends DeltaIOProvider {
     GpuOverrides.expr[IncrementMetric](
       "IncrementMetric",
       ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.all, TypeSig.all),
-      GpuIncrementMeticMeta
+      GpuIncrementMetricMeta
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
