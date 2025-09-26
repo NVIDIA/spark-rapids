@@ -107,7 +107,7 @@ object HostColumnarToGpu extends Logging {
     ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
     def getSize(buf: ByteBuffer): Long = {
       if (buf != null) {
-        buf.limit() - buf.position()
+        buf.remaining()
       } else {
         0L
       }
