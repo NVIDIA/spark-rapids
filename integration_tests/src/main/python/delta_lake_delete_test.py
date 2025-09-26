@@ -19,8 +19,7 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
-    with_cpu_session, with_gpu_session, is_before_spark_353
-from src.main.python.spark_session import is_spark_353_or_later
+    with_cpu_session, with_gpu_session, is_before_spark_353, is_spark_353_or_later
 
 delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
@@ -142,9 +141,10 @@ def test_delta_deletion_vector(spark_tmp_path):
 @allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_spark_353_or_later(), \
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_spark_353_or_later(),
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
+def test_delta_deletion_vector_read_fallback(spark_tmp_path, reader_type):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
@@ -165,7 +165,7 @@ def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
     with_cpu_session(setup_tables, conf=enable_conf)
     with_cpu_session(write_func(data_path), conf=enable_conf)
 
-    assert_gpu_fallback_collect(read_parquet_sql(data_path), "FileSourceScanExec", conf={"spark.rapids.sql.format.parquet.reader.type": "PERFILE"})
+    assert_gpu_fallback_collect(read_parquet_sql(data_path), "FileSourceScanExec", conf={"spark.rapids.sql.format.parquet.reader.type": reader_type})
 
 @allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
                "FilterExec", "MapElementsExec", "ProjectExec")
@@ -173,9 +173,10 @@ def test_delta_deletion_vector_perfile_read_fallback(spark_tmp_path):
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
+@pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
 # a='' shouldn't match anything as a is an int
 @pytest.mark.parametrize("condition", ["where a = 0", "", "where a = ''"])
-def test_delta_deletion_vector_perfile_read(spark_tmp_path, condition):
+def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
@@ -200,7 +201,7 @@ def test_delta_deletion_vector_perfile_read(spark_tmp_path, condition):
     with_cpu_session(setup_tables, conf=enable_conf)
     with_cpu_session(write_func(data_path), conf=enable_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf={"spark.rapids.sql.format.parquet.reader.type": "PERFILE",
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type,
                                                                             # we need to set the useMetadataRowIndex = false as there are other
                                                                             # hidden metadata columns that we don't support on the GPU
                                                                             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "false"})
