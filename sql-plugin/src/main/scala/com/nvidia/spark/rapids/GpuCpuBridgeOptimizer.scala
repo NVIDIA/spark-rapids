@@ -97,7 +97,9 @@ object GpuCpuBridgeOptimizer extends Logging {
    * placed on CPU. If we need to add expression costs in the future, we can do so.
    */
   def optimizeByMinimizingMovement(root: BaseExprMeta[_]): Unit = {
+    val startTimeNs = System.nanoTime()
     val costCache = scala.collection.mutable.HashMap[BaseExprMeta[_], PlacementCost]()
+    var subsetEvaluations: Long = 0L
 
     def sideName(s: ExecSide): String = s match {
       case OnGpu => "GPU"
@@ -117,6 +119,7 @@ object GpuCpuBridgeOptimizer extends Logging {
       var mask = 0
       val maxMask = 1 << n
       while (mask < maxMask) {
+        subsetEvaluations += 1
         var sumCpu = 0
         var sumGpu = 0
         var leaves = Set.empty[InputKey]
@@ -163,7 +166,7 @@ object GpuCpuBridgeOptimizer extends Logging {
             }
             b.toString
           }
-          logError(s"Subset mask=$mask [$chosenStr] sumCpu=$sumCpu sumGpu=$sumGpu " + 
+          logDebug(s"Subset mask=$mask [$chosenStr] sumCpu=$sumCpu sumGpu=$sumGpu " + 
             s"leaves=${leaves.size} total=$total")
           // Tie-breaking policy: favor GPU on ties → prefer fewer children on CPU.
           // Implement by preferring smaller chosen subset size on equal total cost.
@@ -188,13 +191,13 @@ object GpuCpuBridgeOptimizer extends Logging {
             }
             bestSubset = chosen
 
-            logError(s"New best subset mask=$mask cost=$bestCost leaves=${bestLeaves.size} " + 
+            logDebug(s"New best subset mask=$mask cost=$bestCost leaves=${bestLeaves.size} " + 
               s"chosen=${bestSubset.mkString(",")}")
           }
         }
         mask += 1
       }
-      logError(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
+      logDebug(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
         s"cost=$bestCost leaves=${bestLeaves.size} chosen=${bestSubset.mkString(",")}")
       (bestSubset, bestCost, bestLeaves)
     }
@@ -212,7 +215,7 @@ object GpuCpuBridgeOptimizer extends Logging {
                 gpuCost = 0,
                 cpuCost = 0,
                 cpuRequiredLeaves = Set[InputKey](key))
-              logError(s"Cost[leaf] ${expr.wrapped.getClass.getSimpleName}: gpu=0 cpu=0 " +
+              logDebug(s"Cost[leaf] ${expr.wrapped.getClass.getSimpleName}: gpu=0 cpu=0 " +
                 s"leaves=${pc.cpuRequiredLeaves.size}")
               pc
             }
@@ -245,7 +248,7 @@ object GpuCpuBridgeOptimizer extends Logging {
           } else (Set.empty[Int], Int.MaxValue, Set.empty[InputKey])
 
           val result = PlacementCost(gpuTotal, cpuTotal, cpuLeaves)
-          logError(
+          logDebug(
             s"Cost ${expr.wrapped.getClass.getSimpleName}: gpuAllowed=$gpuAllowed " +
             s"cpuAllowed=$cpuAllowed gpuTotal=$gpuTotal cpuTotal=$cpuTotal " +
             s"cpuLeaves=${cpuLeaves.size}")
@@ -271,7 +274,7 @@ object GpuCpuBridgeOptimizer extends Logging {
       }
     }
 
-    logError(
+    logDebug(
       s"Root costs: gpu=$rootGpuWithOutputMove cpu=$rootCpuWithOutputMove " +
       s"chosen=${sideName(chooseRootSide)}")
 
@@ -282,7 +285,7 @@ object GpuCpuBridgeOptimizer extends Logging {
         case OnCpu if expr.canMoveToCpuBridge && !expr.willUseGpuCpuBridge => expr.moveToCpuBridge()
         case _ => // keep on GPU or already on CPU bridge
       }
-      logError(s"Place ${expr.wrapped.getClass.getSimpleName} on ${sideName(chosenSide)}")
+      logDebug(s"Place ${expr.wrapped.getClass.getSimpleName} on ${sideName(chosenSide)}")
 
       // Place children to minimize (childCost + edge penalty)
       val childCosts = expr.childExprs.map { child =>
@@ -301,7 +304,7 @@ object GpuCpuBridgeOptimizer extends Logging {
             val childSide =
               if (gpuCandidate <= cpuCandidate || cpuCandidate == Int.MaxValue) OnGpu else OnCpu
 
-            logError(
+            logDebug(
               s"Child ${childMeta.wrapped.getClass.getSimpleName}: gpuCand=$gpuCandidate " +
               s"cpuCand=$cpuCandidate choose=${sideName(childSide)} " +
               s"parent=${sideName(chosenSide)}")
@@ -314,7 +317,7 @@ object GpuCpuBridgeOptimizer extends Logging {
           expr.childExprs.zipWithIndex.foreach { case (childMeta, idx) =>
             // Force scalar-like children to co-locate with CPU parent
             val side = if (isScalarLike(childMeta) || subset.contains(idx)) OnCpu else OnGpu
-            logError(s"Child ${childMeta.wrapped.getClass.getSimpleName}: " + 
+            logDebug(s"Child ${childMeta.wrapped.getClass.getSimpleName}: " + 
               s"choose=${sideName(side)} parent=CPU")
             assignSides(childMeta, side)
           }
@@ -322,6 +325,15 @@ object GpuCpuBridgeOptimizer extends Logging {
     }
 
     assignSides(root, chooseRootSide)
+
+    val elapsedMs = (System.nanoTime() - startTimeNs) / 1000000.0
+    // Compute max depth of the expression meta tree (root counts as 1)
+    def maxDepth(meta: BaseExprMeta[_]): Int =
+      if (meta.childExprs.isEmpty) 1 else 1 + meta.childExprs.map(maxDepth).max
+      
+    logError(s"optimizeByMinimizingMovement: nodes=${costCache.size} " +
+      s"depth=${maxDepth(root)} " +
+      s"subsets=$subsetEvaluations timeMs=$elapsedMs")
   }
 
   /**

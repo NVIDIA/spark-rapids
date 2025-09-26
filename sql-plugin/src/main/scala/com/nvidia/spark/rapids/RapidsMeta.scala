@@ -323,7 +323,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childScans.foreach(_.tagForGpu())
     childParts.foreach(_.tagForGpu())
     childExprs.foreach(_.tagForGpu())
-    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(childExprs)
+    // Allow subclasses (e.g., SparkPlanMeta) to run expression-tree optimizations once
+    runChildExprBridgeOptimization()
     childDataWriteCmds.foreach(_.tagForGpu())
     childRunnableCmds.foreach(_.tagForGpu())
     childPlans.foreach(_.tagForGpu())
@@ -349,6 +350,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
     tagSelfForGpu()
   }
+
+  // Hook for subclasses to run expression-level optimizations at the appropriate layer.
+  // Default no-op so non-plan metas do not run bridge optimization.
+  protected def runChildExprBridgeOptimization(): Unit = {}
 
   /**
    * Do any extra checks and tag yourself if you are compatible or not.  Be aware that this may
@@ -682,6 +687,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   override val childScans: Seq[ScanMeta[_]] = Seq.empty
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
+  override protected def runChildExprBridgeOptimization(): Unit = {
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(childExprs)
+  }
 
   def namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] = Map.empty
 
