@@ -54,16 +54,6 @@ public class HadoopOutputStream extends RapidsOutputStream {
     }
 
     @Override
-    public void sync() throws IOException {
-        out.hsync();
-    }
-
-    @Override
-    public OutputStream getWrappedStream() {
-        return out;
-    }
-
-    @Override
     public void close() throws IOException {
         if (!closed) {
             out.close();

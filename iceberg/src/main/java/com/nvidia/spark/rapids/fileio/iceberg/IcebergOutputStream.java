@@ -52,11 +52,6 @@ public class IcebergOutputStream extends RapidsOutputStream {
   }
 
   @Override
-  public void sync() throws IOException {
-    out.flush();
-  }
-
-  @Override
   public void close() throws IOException {
     if (!closed) {
       out.close();
