@@ -54,6 +54,10 @@ object Delta33xProvider extends DeltaIOProvider {
     write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
   }
 
+  override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
+    super.isSupportedFormat(format) || format == classOf[GpuDelta33xParquetFileFormat]
+  }
+
   override def tagForGpu(
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): Unit = {
