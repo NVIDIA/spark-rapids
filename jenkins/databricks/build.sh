@@ -63,7 +63,29 @@ initialize()
     sudo apt install -y rsync
 
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
-        wget https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /tmp
+        # DBFS cache for Maven
+        DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/workspace/cache"}
+        MAVEN_CACHE_FILE=${MAVEN_CACHE_FILE:-"$DBFS_CACHE_DIR/apache-maven-3.6.3-bin.tar.gz"}
+        MAVEN_URL=${MAVEN_URL:-"https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz"}
+        
+        # Create cache directory if it doesn't exist
+        mkdir -p "$DBFS_CACHE_DIR"
+        
+        # Check if file exists in DBFS cache
+        if [[ -f "$MAVEN_CACHE_FILE" ]]; then
+            echo "Found Maven in DBFS cache, copying to /tmp..."
+            cp "$MAVEN_CACHE_FILE" /tmp/apache-maven-3.6.3-bin.tar.gz
+        else
+            echo "Maven not found in DBFS cache, downloading from archive.apache.org..."
+            if wget "$MAVEN_URL" -P /tmp; then
+                echo "Download successful, caching to DBFS..."
+                cp /tmp/apache-maven-3.6.3-bin.tar.gz "$MAVEN_CACHE_FILE"
+            else
+                echo "Download failed"
+                exit 1
+            fi
+        fi
+        
         tar xf /tmp/apache-maven-3.6.3-bin.tar.gz -C $HOME
         rm -f /tmp/apache-maven-3.6.3-bin.tar.gz
         sudo ln -s $HOME/apache-maven-3.6.3/bin/mvn /usr/local/bin/mvn
