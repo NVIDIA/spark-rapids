@@ -26,6 +26,7 @@ import com.databricks.sql.transaction.tahoe.{DeltaErrors, DeltaLog, DeltaOptions
 import com.databricks.sql.transaction.tahoe.catalog.BucketTransform
 import com.databricks.sql.transaction.tahoe.commands.{TableCreationModes, WriteIntoDelta}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaSourceUtils, DeltaSQLConf}
+import com.nvidia.spark.rapids.{GpuSupportsWrite, GpuV1Write}
 import com.nvidia.spark.rapids.RapidsConf
 import org.apache.hadoop.fs.Path
 
@@ -33,7 +34,7 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, CatalogUtils, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, SupportsWrite, Table, TableCapability, TableCatalog, TableChange}
+import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, Table, TableCapability, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.catalog.TableCapability._
 import org.apache.spark.sql.connector.expressions.{FieldReference, IdentityTransform, Transform}
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, V1Write, WriteBuilder}
@@ -43,12 +44,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.InsertableRelation
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
-
-/** A trait used to identify Delta tables that are GPU-aware. */
-trait GpuDeltaSupportsWrite extends SupportsWrite
-
-/** A trait used to identify Delta V1Write that is GPU-aware */
-trait GpuDeltaV1Write extends V1Write
 
 trait GpuDeltaCatalogBase extends StagingTableCatalog {
   val spark: SparkSession = SparkSession.active
@@ -311,7 +306,7 @@ trait GpuDeltaCatalogBase extends StagingTableCatalog {
       val partitions: Array[Transform],
       override val properties: util.Map[String, String],
       operation: TableCreationModes.CreationMode
-  ) extends StagedTable with GpuDeltaSupportsWrite {
+  ) extends StagedTable with GpuSupportsWrite {
 
     private var asSelectQuery: Option[DataFrame] = None
     private var writeOptions: Map[String, String] = Map.empty
@@ -375,7 +370,7 @@ trait GpuDeltaCatalogBase extends StagingTableCatalog {
      * WriteBuilder for creating a Delta table.
      */
     private class DeltaV1WriteBuilder extends WriteBuilder {
-      override def build(): V1Write = new GpuDeltaV1Write {
+      override def build(): V1Write = new GpuV1Write {
         override def toInsertableRelation(): InsertableRelation = {
           new InsertableRelation {
             override def insert(data: DataFrame, overwrite: Boolean): Unit = {

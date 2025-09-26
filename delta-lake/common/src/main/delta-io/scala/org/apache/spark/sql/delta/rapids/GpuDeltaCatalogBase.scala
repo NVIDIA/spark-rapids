@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.Locale
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.{GpuSupportsWrite, GpuV1Write}
 import com.nvidia.spark.rapids.RapidsConf
 import org.apache.hadoop.fs.Path
 
@@ -29,7 +30,7 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, CatalogUtils, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, SupportsWrite, Table, TableCapability, TableCatalog, TableChange}
+import org.apache.spark.sql.connector.catalog.{Identifier, StagedTable, StagingTableCatalog, Table, TableCapability, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.catalog.TableCapability._
 import org.apache.spark.sql.connector.expressions.{FieldReference, IdentityTransform, Transform}
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, V1Write, WriteBuilder}
@@ -294,7 +295,7 @@ trait GpuDeltaCatalogBase extends StagingTableCatalog {
       val partitions: Array[Transform],
       override val properties: util.Map[String, String],
       operation: TableCreationModes.CreationMode
-  ) extends StagedTable with SupportsWrite {
+  ) extends StagedTable with GpuSupportsWrite {
 
     private var asSelectQuery: Option[DataFrame] = None
     private var writeOptions: Map[String, String] = Map.empty
@@ -358,7 +359,7 @@ trait GpuDeltaCatalogBase extends StagingTableCatalog {
      * WriteBuilder for creating a Delta table.
      */
     private class DeltaV1WriteBuilder extends WriteBuilder {
-      override def build(): V1Write = new V1Write {
+      override def build(): V1Write = new GpuV1Write {
         override def toInsertableRelation(): InsertableRelation = {
           new InsertableRelation {
             override def insert(data: DataFrame, overwrite: Boolean): Unit = {
