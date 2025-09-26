@@ -377,9 +377,7 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
     ./run_pyspark_from_build.sh
 
   # Spark Connect smoke test (available in Spark 3.5.6+)
-  MAJOR=$(echo "$SPARK_VER" | cut -d. -f1)
-  MINOR=$(echo "$SPARK_VER" | cut -d. -f2)
-  if (( MAJOR > 3 || (MAJOR == 3 && MINOR >= 6) )); then
+  if printf '%s\n' "3.5.6" "$SPARK_VER" | sort -V | head -1 | grep -q "3.5.6"; then
     SPARK_CONNECT_SMOKE_TEST=1 \
       ./run_pyspark_from_build.sh
   fi
