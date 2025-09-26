@@ -18,7 +18,7 @@ package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
@@ -27,7 +27,7 @@ import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
-import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
+import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
 import org.apache.spark.api.java.JavaSparkContext
@@ -134,6 +134,22 @@ object GpuSparkWrite {
     classOf[SparkWrite].isAssignableFrom(cpuClass)
   }
 
+  def tagForGpu(cpuWrite: Write, meta: SparkPlanMeta[_]): Unit = {
+    if (!supports(cpuWrite.getClass)) {
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
+        s"but got: ${cpuWrite.getClass.getName}")
+      return
+    }
+
+    val dataFileFormat: FileFormat = FieldUtils.readField(cpuWrite, "format", true)
+      .asInstanceOf[FileFormat]
+
+    if (!dataFileFormat.equals(FileFormat.PARQUET)) {
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: $dataFileFormat")
+    }
+  }
+
+
   def convert(cpuWrite: Write): GpuSparkWrite = {
     new GpuSparkWrite(cpuWrite.asInstanceOf[SparkWrite])
   }
@@ -190,7 +206,7 @@ class GpuUnpartitionedDataWriter(
   val spec: PartitionSpec,
   val targetFileSize: Long)
   extends DataWriter[ColumnarBatch] {
-  private val delegate = new RollingDataWriter[SpillableColumnarBatch](
+  private val delegate = new GpuRollingDataWriter(
     fileWriterFactory,
     fileFactory,
     io,
@@ -240,9 +256,10 @@ class GpuPartitionedDataWriter(
 
   private val delegate: PartitioningWriter[SpillableColumnarBatch, DataWriteResult] =
     if (fanoutEnabled) {
-      new FanoutDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io, targetFileSize)
+      new GpuFanoutDataWriter(writerFactory, fileFactory, io,
+        targetFileSize)
     } else {
-      new ClusteredDataWriter[SpillableColumnarBatch](writerFactory, fileFactory, io,
+      new GpuClusteredDataWriter(writerFactory, fileFactory, io,
         targetFileSize)
     }
 

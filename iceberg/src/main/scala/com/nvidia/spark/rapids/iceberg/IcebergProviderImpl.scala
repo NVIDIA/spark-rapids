@@ -85,7 +85,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
   override def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
     if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
-      val Seq(left, right) = meta.childExprs.map(_.convertToGpu().asInstanceOf[GpuExpression])
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
       GpuBucketExpression(left, right)
     } else {
       throw new IllegalStateException(
@@ -109,6 +109,8 @@ class IcebergProviderImpl extends IcebergProvider {
     }
 
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+
+    GpuSparkWrite.tagForGpu(cpuExec.write, meta)
   }
 
   override def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
