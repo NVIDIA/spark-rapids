@@ -134,7 +134,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   // This is implemented as a method to make it easier to subclass
   // ColumnarOutputWriter in the tests, and override this behavior.
-  protected def getOutputStream: RapidsOutputStream = {
+  protected def getOutputStream: OutputStream = {
     if (useAsyncWrite) {
       logWarning("Async output write enabled")
       AsyncOutputStream(() => openOutputFile().create(false), trafficController, statsTrackers)
@@ -304,7 +304,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 object ColumnarOutputWriter {
   // write buffers to outputStream via tempBuffer and close buffers
   def writeBufferedData(buffers: mutable.Queue[(HostMemoryBuffer, Long)],
-      tempBuffer: Array[Byte], outputStream: RapidsOutputStream): Unit = {
+      tempBuffer: Array[Byte], outputStream: OutputStream): Unit = {
     val toProcess = buffers.dequeueAll(_ => true)
     try {
       toProcess.foreach { case (buffer, len) =>
