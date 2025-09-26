@@ -18,15 +18,14 @@ package org.apache.spark.sql.hive.rapids
 
 import java.nio.charset.Charset
 import java.util.Locale
-
-import ai.rapids.cudf.{CompressionType, CSVWriterOptions, DType, ParquetWriterOptions, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
+import ai.rapids.cudf.{CSVWriterOptions, CompressionType, DType, ParquetWriterOptions, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims.BucketingUtilsShim
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
@@ -217,9 +216,10 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
           dataSchema: StructType,
           context: TaskAttemptContext,
           statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-          debugOutputPath: Option[String]): ColumnarOutputWriter = {
+          debugOutputPath: Option[String],
+          fileIO: RapidsFileIO): ColumnarOutputWriter = {
         new GpuHiveParquetWriter(path, dataSchema, context, compressionType, statsTrackers,
-          debugOutputPath)
+          debugOutputPath, fileIO)
       }
     }
   }
@@ -228,9 +228,10 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
 class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
     context: TaskAttemptContext, compType: CompressionType,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-    debugOutputPath: Option[String])
+    debugOutputPath: Option[String],
+    fileIO: RapidsFileIO)
   extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true, statsTrackers,
-    debugOutputPath) {
+    debugOutputPath, fileIO) {
 
   override protected val tableWriter: CudfTableWriter = {
     val optionsBuilder = SchemaUtils

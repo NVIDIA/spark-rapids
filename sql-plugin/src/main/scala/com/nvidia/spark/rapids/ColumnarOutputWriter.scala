@@ -64,7 +64,8 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
       dataSchema: StructType,
       context: TaskAttemptContext,
       statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-      debugOutputPath: Option[String]): ColumnarOutputWriter
+      debugOutputPath: Option[String],
+      fileIO: RapidsFileIO): ColumnarOutputWriter
 }
 
 /**

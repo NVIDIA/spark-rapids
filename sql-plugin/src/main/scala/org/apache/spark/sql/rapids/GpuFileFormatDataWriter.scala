@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.shims.GpuFileFormatDataWriterShim
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -623,7 +624,8 @@ class GpuDynamicPartitionDataSingleWriter(
       dataSchema = description.dataColumns.toStructType,
       context = taskAttemptContext,
       statsTrackers = statsTrackers,
-      debugOutputPath = debugOutputPath)
+      debugOutputPath = debugOutputPath,
+      description.fileIO)
 
     statsTrackers.foreach(_.newFile(currentPath))
     outWriter
@@ -983,6 +985,8 @@ class GpuWriteJobDescription(
     val statsTrackers: Seq[ColumnarWriteJobStatsTracker],
     val concurrentWriterPartitionFlushSize: Long)
   extends Serializable {
+
+  lazy val fileIO: HadoopFileIO = new HadoopFileIO(serializableHadoopConf.value)
 
   assert(AttributeSet(allColumns) == AttributeSet(partitionColumns ++ dataColumns),
     s"""

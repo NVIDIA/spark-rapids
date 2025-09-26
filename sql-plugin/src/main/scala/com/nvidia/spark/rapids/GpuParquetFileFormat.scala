@@ -29,6 +29,7 @@ import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
 import org.apache.parquet.hadoop.codec.CodecConfig
 import org.apache.parquet.hadoop.util.ContextUtil
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
@@ -283,10 +284,11 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           dataSchema: StructType,
           context: TaskAttemptContext,
           statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-          debugOutputPath: Option[String]): ColumnarOutputWriter = {
+          debugOutputPath: Option[String],
+          fileIO: RapidsFileIO): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
           dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
-          statsTrackers, debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled)
+          statsTrackers, debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled, fileIO)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {

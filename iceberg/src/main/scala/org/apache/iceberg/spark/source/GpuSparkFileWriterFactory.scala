@@ -37,6 +37,7 @@ class GpuSparkFileWriterFactory(val table: Table,
   val deleteFileFormat: FileFormat,
   val columnarOutputWriterFactory: ColumnarOutputWriterFactory,
   val hadoopConf: SerializableConfiguration,
+  val fileIO: IcebergFileIO
 ) extends FileWriterFactory[SpillableColumnarBatch] {
   require(dataFileFormat == FileFormat.PARQUET,
     s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $dataFileFormat")
@@ -81,8 +82,8 @@ class GpuSparkFileWriterFactory(val table: Table,
       dataSchema = dataSparkType,
       context = taskAttemptContext,
       statsTrackers = Seq(jobStatsTracker.newTaskInstance()),
-      debugOutputPath = None
-    ).asInstanceOf[GpuParquetWriter]
+      debugOutputPath = None,
+      fileIO).asInstanceOf[GpuParquetWriter]
 
     new GpuIcebergParquetAppender(
       gpuWriter,

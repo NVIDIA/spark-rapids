@@ -17,10 +17,10 @@
 package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.Job
@@ -29,7 +29,6 @@ import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, Me
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
 import org.apache.iceberg.io.{ClusteredDataWriter, DataWriteResult, FanoutDataWriter, FileIO, OutputFileFactory, PartitioningWriter, RollingDataWriter}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
-
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
@@ -167,6 +166,9 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
   val outputWriterFactory: ColumnarOutputWriterFactory,
   val hadoopConf: SerializableConfiguration,
 ) extends DataWriterFactory {
+
+  private lazy val fileIO: IcebergFileIO = new IcebergFileIO(tableBroadcast.value.io())
+
   override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] = {
     val table = tableBroadcast.value
     val spec = table.specs().get(outputSpecId)
