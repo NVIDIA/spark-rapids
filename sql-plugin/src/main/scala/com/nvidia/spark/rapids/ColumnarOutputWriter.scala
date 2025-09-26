@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.io.async.{AsyncOutputStream, TrafficController}
-import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsOutputFile, RapidsOutputStream}
+import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsOutputFile}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
