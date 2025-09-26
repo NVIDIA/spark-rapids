@@ -77,6 +77,30 @@ object GpuDeviceManager extends Logging {
    */
   def getDeviceId(): Option[Int] = deviceId
 
+  // For testing purposes only - allows forcing integrated GPU behavior
+  private var forceIntegratedGpu: Option[Boolean] = None
+
+  /**
+   * For testing: force integrated GPU behavior regardless of actual hardware
+   */
+  def setForceIntegratedGpuForTesting(force: Boolean): Unit = {
+    forceIntegratedGpu = Some(force)
+  }
+
+  /**
+   * For testing: reset forced integrated GPU behavior
+   */
+  def resetForceIntegratedGpuForTesting(): Unit = {
+    forceIntegratedGpu = None
+  }
+
+  /**
+   * Check if we should treat the GPU as integrated (for testing or actual hardware)
+   */
+  private def isIntegratedGpu: Boolean = {
+    forceIntegratedGpu.getOrElse(DeviceAttr.isIntegratedGPU == 1)
+  }
+
   @volatile private var poolSizeLimit = 0L
 
   // Never split below 100 MiB (but this is really just for testing)
@@ -228,12 +252,16 @@ object GpuDeviceManager extends Logging {
 
   private def toMiB(x: Long): Double = x / 1024 / 1024.0
 
-  private def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
+  /**
+   * Compute RMM pool size based on configuration and GPU memory info.
+   * Visible for testing.
+   */
+  def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
     def truncateToAlignment(x: Long): Long = x & ~511L
 
     // For integrated GPUs, we treat memory as shared between CPU and GPU
     // The effective GPU memory is physical_total * integratedGpuMemoryFraction
-    val effectiveGpuTotal = if (DeviceAttr.isIntegratedGPU == 1) {
+    val effectiveGpuTotal = if (isIntegratedGpu) {
       (info.total * conf.integratedGpuMemoryFraction).toLong
     } else {
       info.total
@@ -254,9 +282,9 @@ object GpuDeviceManager extends Logging {
         } else {
           conf.rmmAllocReserve
         }
-      var poolAllocation = truncateToAlignment(
-        (conf.rmmAllocFraction * (Math.min(info.free, effectiveGpuTotal) - reserveAmount)).toLong)
       val effectiveFree = Math.min(info.free, effectiveGpuTotal)
+      var poolAllocation = truncateToAlignment(
+        (conf.rmmAllocFraction * (effectiveFree - reserveAmount)).toLong)
       val errorPhrase = "The pool allocation of " +
         s"${toMiB(poolAllocation)} MiB (effective free: ${toMiB(effectiveFree)}," +
         s"${RapidsConf.RMM_ALLOC_FRACTION}: (=${conf.rmmAllocFraction}," +
@@ -501,7 +529,7 @@ object GpuDeviceManager extends Logging {
       } else {
         // in case we cannot query the host for available memory due to environmental
         // constraints, we can fall back to minMemoryLimit via saying there's no available
-        lazy val availableHostMemory = if (DeviceAttr.isIntegratedGPU == 1) {
+        lazy val availableHostMemory = if (isIntegratedGpu) {
           (memCheck.getAvailableMemoryBytes(conf).getOrElse(0L) * (1.0 -
           conf.integratedGpuMemoryFraction)).toLong
         } else {
