@@ -23,12 +23,8 @@ from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_
 from marks import iceberg, ignore_order, allow_non_gpu
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 
-pytestmark = [
-    pytest.mark.skipif(not is_spark_35x(),
-                       reason="Current spark-rapids only support spark 3.5.x"),
-    pytest.mark.skipif(is_iceberg_remote_catalog(),
-                        reason="https://github.com/NVIDIA/spark-rapids/issues/13471")
-]
+pytestmark = pytest.mark.skipif(not is_spark_35x(),
+                       reason="Current spark-rapids only support spark 3.5.x")
 
 
 def do_test_insert_into_table_sql(spark_tmp_table_factory,
