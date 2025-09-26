@@ -143,7 +143,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
   }
 
-  protected val outputStream: RapidsOutputStream = getOutputStream
+  protected val outputStream: OutputStream = getOutputStream
 
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] var anythingWritten = false

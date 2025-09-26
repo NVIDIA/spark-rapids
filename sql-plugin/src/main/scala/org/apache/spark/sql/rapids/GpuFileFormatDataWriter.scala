@@ -280,7 +280,8 @@ class GpuSingleDirectoryDataWriter(
       dataSchema = description.dataColumns.toStructType,
       context = taskAttemptContext,
       statsTrackers = statsTrackers,
-      debugOutputPath = debugOutputPath)
+      debugOutputPath = debugOutputPath,
+      fileIO = description.fileIO)
 
     statsTrackers.foreach(_.newFile(currentPath))
   }
