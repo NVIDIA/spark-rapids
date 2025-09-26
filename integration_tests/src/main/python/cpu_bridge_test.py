@@ -73,6 +73,9 @@ def test_cpu_bridge_complex_expression_tree(codegen_enabled):
             "a", "b", "c",
             # Complex expression mixing CPU bridge (Add) and GPU (Multiply) operations
             "a + (b * c) as mixed",
+            "a + b + 5 as add_1",
+            "a + c + 2 as add_2",
+            "a > 0 as pred",
             "case when a > 0 then a + b + 5 else a + c + 2 end as conditional"
         )
     

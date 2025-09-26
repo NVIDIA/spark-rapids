@@ -112,7 +112,11 @@ object GpuCpuBridgeOptimizer extends Logging {
         childMetas: Seq[BaseExprMeta[_]],
         childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
       val n = childMetas.length
-      val heuristicThreshold = 12
+      // Heuristic cutoff (child arity) for switching from exact subset enumeration
+      // to an approximate strategy.
+      // This default was found by experimentation. On a fairly modern CPU
+      // 8 children costs over 1 ms to compute, but the heuristic can do it in under 500 us.
+      val heuristicThreshold = 7
       if (n > heuristicThreshold) {
         // Dual-greedy heuristic for large fan-out. Evaluate two O(n) strategies and
         // choose the one with the lower final score = localTotal + uniqueImports.
@@ -311,7 +315,7 @@ object GpuCpuBridgeOptimizer extends Logging {
         }
         mask += 1
       }
-      logError(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
+      logDebug(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
         s"cost=$bestCost leaves=${bestLeaves.size} chosen=${bestSubset.mkString(",")}")
       (bestSubset, bestCost, bestLeaves)
     }
@@ -431,7 +435,7 @@ object GpuCpuBridgeOptimizer extends Logging {
             chooseCpuSubset(expr, expr.childExprs, childCosts)
           val effectiveTotal = if (localTotal == Int.MaxValue) Int.MaxValue
             else localTotal + leavesForSubset.size
-          logError(s"CPU parent assign: subset=${subset.mkString(",")} localTotal=$localTotal " +
+          logDebug(s"CPU parent assign: subset=${subset.mkString(",")} localTotal=$localTotal " +
             s"leaves=${leavesForSubset.size} effectiveWithImports=$effectiveTotal")
           expr.childExprs.zipWithIndex.foreach { case (childMeta, idx) =>
             // Force scalar-like children to co-locate with CPU parent
@@ -450,7 +454,7 @@ object GpuCpuBridgeOptimizer extends Logging {
     def maxDepth(meta: BaseExprMeta[_]): Int =
       if (meta.childExprs.isEmpty) 1 else 1 + meta.childExprs.map(maxDepth).max
       
-    logError(s"optimizeByMinimizingMovement: nodes=${costCache.size} " +
+    logDebug(s"optimizeByMinimizingMovement: nodes=${costCache.size} " +
       s"depth=${maxDepth(root)} " +
       s"subsets=$subsetEvaluations timeMs=$elapsedMs")
   }
@@ -459,7 +463,7 @@ object GpuCpuBridgeOptimizer extends Logging {
    * Optimize a GPU expression tree by merging adjacent CPU bridge expressions.
    * This should be called after initial GPU/CPU tagging but before execution.
    */
-  def optimizeBridgeExpressions(expr: GpuExpression): GpuExpression = {
+  def optimizeByMergeingBridgeExpressions(expr: GpuExpression): GpuExpression = {
     expr match {
       case bridge: GpuCpuBridgeExpression =>
         // Check if any of this bridge's inputs are also bridge expressions

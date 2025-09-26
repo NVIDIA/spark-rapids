@@ -173,7 +173,7 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
       s"CPU XxHash64: ${hashMeta.childExprs}")
   }
 
-  test("Heuristic boundary: 12 vs 13 XxHash64 inputs yield consistent placement (unit)") {
+  test("Heuristic boundary: 7 vs 8 XxHash64 inputs yield consistent placement (unit)") {
     def run(n: Int): (Boolean, Seq[Boolean]) = {
       val inputs = (1 to n).map(i => AttributeReference(s"a$i", LongType, nullable = false)())
       val hash = XxHash64(inputs, 42L)
@@ -183,13 +183,13 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
       (meta.willUseGpuCpuBridge, meta.childExprs.map(_.willUseGpuCpuBridge))
     }
 
-    val (m12, kids12) = run(12) // exact enumeration path
-    val (m13, kids13) = run(13) // heuristic path
+    val (m7, kids7) = run(7)   // exact enumeration path
+    val (m8, kids8) = run(8)   // heuristic path
 
-    assert(m12 && m13, "Parents should be on CPU bridge")
+    assert(m7 && m8, "Parents should be on CPU bridge")
     // Expect all children on GPU in both cases under tie-breaking that prefers GPU
-    assert(kids12.forall(_ == false), s"Expected all 12 children on GPU: $kids12")
-    assert(kids13.forall(_ == false), s"Expected all 13 children on GPU: $kids13")
+    assert(kids7.forall(_ == false), s"Expected all 7 children on GPU: $kids7")
+    assert(kids8.forall(_ == false), s"Expected all 8 children on GPU: $kids8")
   }
 
   test("Heuristic: 13 mixed Add/Multiply children into XxHash64 under CPU (unit)") {
