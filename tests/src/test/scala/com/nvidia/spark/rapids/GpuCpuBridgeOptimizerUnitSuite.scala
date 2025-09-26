@@ -249,6 +249,128 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
     val onCpu = meta.childExprs.map(_.willUseGpuCpuBridge)
     assert(onCpu.forall(_ == false), s"Expected all children on GPU: $onCpu")
   }
+
+  test("Deeply nested bridges (4+ levels) merge correctly (unit)") {
+    val a = AttributeReference("a", LongType, nullable = false)()
+    val b = AttributeReference("b", LongType, nullable = false)()
+    val c = AttributeReference("c", LongType, nullable = false)()
+    val d = AttributeReference("d", LongType, nullable = false)()
+
+    // Create deeply nested structure: (((a + b) + c) + d) + 100
+    // Force all Adds to CPU to create nested bridge structure
+    val innerAdd1 = Add(a, b)                    // Level 1: a + b  
+    val innerAdd2 = Add(innerAdd1, c)            // Level 2: (a + b) + c
+    val innerAdd3 = Add(innerAdd2, d)            // Level 3: ((a + b) + c) + d
+    val outerAdd = Add(innerAdd3, Literal(100L)) // Level 4: (((a + b) + c) + d) + 100
+
+    val rootMeta = wrap(outerAdd)
+    
+    // Force all Add expressions to CPU bridge to create nested bridges
+    def forceAdds(meta: BaseExprMeta[_]): Unit = {
+      if (meta.wrapped.isInstanceOf[Add]) meta.willNotWorkOnGpu("disabled for test")
+      meta.childExprs.foreach(forceAdds)
+    }
+    forceAdds(rootMeta)
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(rootMeta)
+
+    // Verify that optimization completed without errors and creates bridges
+    assert(rootMeta.willUseGpuCpuBridge, "Root Add should be on CPU bridge")
+    
+    // Count depth of bridge nesting in the final converted expression
+    val converted = rootMeta.convertToGpu()
+    def countBridgeDepth(expr: Any): Int = expr match {
+      case bridge: GpuCpuBridgeExpression =>
+        val depths = bridge.gpuInputs.map(countBridgeDepth)
+        1 + (if (depths.nonEmpty) depths.max else 0)
+      case _ => 0
+    }
+    
+    val bridgeDepth = countBridgeDepth(converted)
+    // After merging, we should have fewer nested bridges than the original structure
+    assert(bridgeDepth >= 1, s"Expected at least 1 bridge level, got $bridgeDepth")
+    assert(bridgeDepth < 4, s"Bridge merging should reduce nesting, got $bridgeDepth levels")
+  }
+
+  test("All scalar children under CPU parent (unit)") {
+    // Test edge case where all children are scalar-like (Literals)
+    val lit1 = Literal(10L)
+    val lit2 = Literal(20L) 
+    val lit3 = Literal(30L)
+    val add = Add(Add(lit1, lit2), lit3)
+
+    val addMeta = wrap(add)
+    // Force Add to CPU
+    def forceAdds(meta: BaseExprMeta[_]): Unit = {
+      if (meta.wrapped.isInstanceOf[Add]) meta.willNotWorkOnGpu("disabled for test")
+      meta.childExprs.foreach(forceAdds)
+    }
+    forceAdds(addMeta)
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(addMeta)
+
+    // All expressions should be on CPU bridge since parent is forced to CPU
+    // and scalars should co-locate with their consumer
+    assert(addMeta.willUseGpuCpuBridge, "Root Add should be on CPU bridge")
+    
+    // Find all nested Add expressions
+    def collectAdds(meta: BaseExprMeta[_], 
+      acc: scala.collection.mutable.ListBuffer[BaseExprMeta[_]]): Unit = {
+      if (meta.wrapped.isInstanceOf[Add]) acc += meta
+      meta.childExprs.foreach(collectAdds(_, acc))
+    }
+    val adds = scala.collection.mutable.ListBuffer[BaseExprMeta[_]]()
+    collectAdds(addMeta, adds)
+    
+    assert(adds.nonEmpty, "Expected nested Add expressions")
+    assert(adds.forall(_.willUseGpuCpuBridge), "All Adds should be on CPU bridge")
+    
+    // Literals should be co-located (on bridge) with their consuming expressions
+    def collectLiterals(meta: BaseExprMeta[_], 
+      acc: scala.collection.mutable.ListBuffer[BaseExprMeta[_]]): Unit = {
+      if (meta.wrapped.isInstanceOf[Literal]) acc += meta
+      meta.childExprs.foreach(collectLiterals(_, acc))
+    }
+    val literals = scala.collection.mutable.ListBuffer[BaseExprMeta[_]]()
+    collectLiterals(addMeta, literals)
+    
+    assert(literals.nonEmpty, "Expected Literal expressions")
+    assert(literals.forall(_.willUseGpuCpuBridge), 
+      "All Literals should co-locate with CPU parent on bridge")
+  }
+
+  test("Performance boundary: heuristic vs exact enumeration (unit)") {
+    // Test that results are consistent between exact (n=6) and heuristic (n=8) paths
+    def createTestExpr(n: Int): BaseExprMeta[_] = {
+      val inputs = (1 to n).map(i => AttributeReference(s"col$i", LongType, nullable = false)())
+      val hash = XxHash64(inputs, 42L)
+      val meta = wrap(hash)
+      meta.willNotWorkOnGpu("disabled for test") // Force to CPU for subset enumeration
+      meta
+    }
+
+    val exact6 = createTestExpr(6)
+    val exact7 = createTestExpr(7)  // Still exact
+    val heuristic8 = createTestExpr(8)  // Heuristic
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(exact6)
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(exact7)
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(heuristic8)
+
+    // All should be on CPU bridge
+    assert(exact6.willUseGpuCpuBridge, "6-input hash should be on CPU bridge")
+    assert(exact7.willUseGpuCpuBridge, "7-input hash should be on CPU bridge")
+    assert(heuristic8.willUseGpuCpuBridge, "8-input hash should be on CPU bridge")
+
+    // Children placement should be consistent (all GPU due to tie-breaking)
+    val children6 = exact6.childExprs.map(_.willUseGpuCpuBridge)
+    val children7 = exact7.childExprs.map(_.willUseGpuCpuBridge)
+    val children8 = heuristic8.childExprs.map(_.willUseGpuCpuBridge)
+
+    assert(children6.forall(_ == false), s"6-input children should be GPU: $children6")
+    assert(children7.forall(_ == false), s"7-input children should be GPU: $children7")
+    assert(children8.forall(_ == false), s"8-input children should be GPU: $children8")
+  }
 }
 
 

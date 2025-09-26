@@ -233,6 +233,17 @@ object GpuCpuBridgeOptimizer extends Logging {
       var bestLeaves: Set[InputKey] = Set.empty
       var bestSubset: Set[Int] = Set.empty
 
+      // Pre-compute scalar mask for efficiency in inner loop
+      val scalarMask = {
+        var mask = 0
+        var i = 0
+        while (i < n) {
+          if (isScalarLike(childMetas(i))) mask |= (1 << i)
+          i += 1
+        }
+        mask
+      }
+
       var mask = 0
       val maxMask = 1 << n
       while (mask < maxMask) {
@@ -243,7 +254,6 @@ object GpuCpuBridgeOptimizer extends Logging {
         var valid = true
         var i = 0
         while (i < n && valid) {
-          val meta = childMetas(i)
           val costs = childCosts(i)
           val onCpu = (mask & (1 << i)) != 0
           if (onCpu) {
@@ -257,8 +267,11 @@ object GpuCpuBridgeOptimizer extends Logging {
             if (costs.gpuCost == Int.MaxValue) {
               valid = false
             } else {
-              val moveOut = if (isScalarLike(meta)) 0 else 1
-              sumGpu += costs.gpuCost + moveOut
+              sumGpu += costs.gpuCost
+              // Use pre-computed scalar mask for move cost (more efficient than isScalarLike call)
+              if ((scalarMask & (1 << i)) == 0) {
+                sumGpu += 1  // Move cost for non-scalar
+              }
             }
           }
           i += 1
