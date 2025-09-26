@@ -112,6 +112,51 @@ object GpuCpuBridgeOptimizer extends Logging {
         childMetas: Seq[BaseExprMeta[_]],
         childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
       val n = childMetas.length
+      val heuristicThreshold = 12
+      if (n > heuristicThreshold) {
+        // Heuristic fast path for large fan-out: independent per-child choice.
+        // Ties favor GPU.
+        var sumCpu = 0
+        var sumGpu = 0
+        var leaves: Set[InputKey] = Set.empty
+        var subset: Set[Int] = Set.empty
+        var valid = true
+        var i = 0
+        while (i < n && valid) {
+          val meta = childMetas(i)
+          val costs = childCosts(i)
+          val gpuAllowed = costs.gpuCost != Int.MaxValue
+          val cpuAllowed = costs.cpuCost != Int.MaxValue
+          if (!gpuAllowed && !cpuAllowed) {
+            valid = false
+          } else if (!gpuAllowed) {
+            // must choose CPU
+            subset += i
+            sumCpu += costs.cpuCost
+            leaves ++= costs.cpuRequiredLeaves
+          } else if (!cpuAllowed) {
+            // must choose GPU
+            val moveOut = if (isScalarLike(meta)) 0 else 1
+            sumGpu += costs.gpuCost + moveOut
+          } else {
+            val moveOut = if (isScalarLike(meta)) 0 else 1
+            val gpuAlt = costs.gpuCost + moveOut
+            if (costs.cpuCost < gpuAlt) {
+              subset += i
+              sumCpu += costs.cpuCost
+              leaves ++= costs.cpuRequiredLeaves
+            } else {
+              // prefer GPU on ties
+              sumGpu += gpuAlt
+            }
+          }
+          i += 1
+        }
+        val total = if (valid) sumCpu + sumGpu else Int.MaxValue
+        logDebug(s"Heuristic subset for ${parent.wrapped.getClass.getSimpleName}: " +
+          s"cost=$total leaves=${leaves.size} chosen=${subset.mkString(",")}")
+        return (subset, total, leaves)
+      }
       var bestCost = Int.MaxValue
       var bestLeaves: Set[InputKey] = Set.empty
       var bestSubset: Set[Int] = Set.empty
@@ -130,8 +175,9 @@ object GpuCpuBridgeOptimizer extends Logging {
           val costs = childCosts(i)
           val onCpu = (mask & (1 << i)) != 0
           if (onCpu) {
-            if (costs.cpuCost == Int.MaxValue) valid = false
-            else {
+            if (costs.cpuCost == Int.MaxValue) {
+              valid = false
+            } else {
               sumCpu += costs.cpuCost
               leaves ++= costs.cpuRequiredLeaves
             }
@@ -197,7 +243,7 @@ object GpuCpuBridgeOptimizer extends Logging {
         }
         mask += 1
       }
-      logDebug(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
+      logError(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
         s"cost=$bestCost leaves=${bestLeaves.size} chosen=${bestSubset.mkString(",")}")
       (bestSubset, bestCost, bestLeaves)
     }
@@ -313,7 +359,12 @@ object GpuCpuBridgeOptimizer extends Logging {
           }
         case OnCpu =>
           // Use exact best subset assignment under CPU parent
-          val (subset, _, _) = chooseCpuSubset(expr, expr.childExprs, childCosts)
+          val (subset, localTotal, leavesForSubset) = 
+            chooseCpuSubset(expr, expr.childExprs, childCosts)
+          val effectiveTotal = if (localTotal == Int.MaxValue) Int.MaxValue
+            else localTotal + leavesForSubset.size
+          logError(s"CPU parent assign: subset=${subset.mkString(",")} localTotal=$localTotal " +
+            s"leaves=${leavesForSubset.size} effectiveWithImports=$effectiveTotal")
           expr.childExprs.zipWithIndex.foreach { case (childMeta, idx) =>
             // Force scalar-like children to co-locate with CPU parent
             val side = if (isScalarLike(childMeta) || subset.contains(idx)) OnCpu else OnGpu

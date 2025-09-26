@@ -154,6 +154,98 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
     assert(adds.nonEmpty, "Expected Add expressions inside CaseWhen")
     assert(adds.forall(_.willUseGpuCpuBridge), s"Expected all Adds on CPU bridge: $adds")
   }
+
+  test("Heuristic: CPU XxHash64 with 13 inputs favors GPU children (unit)") {
+    val inputs = (1 to 13).map(i => AttributeReference(s"a$i", LongType, nullable = false)())
+    val hash = XxHash64(inputs, 42L)
+
+    val hashMeta = wrap(hash)
+    // Force parent to CPU to trigger subset selection
+    hashMeta.willNotWorkOnGpu("disabled for test")
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(hashMeta)
+
+    assert(hashMeta.willUseGpuCpuBridge, "Parent XxHash64 should be on CPU bridge")
+    // With independent per-child choice under CPU parent, ties favor GPU → expect 
+    // no children on CPU
+    val childOnCpu = hashMeta.childExprs.filter(_.willUseGpuCpuBridge)
+    assert(childOnCpu.isEmpty, s"Expected all children on GPU under " +
+      s"CPU XxHash64: ${hashMeta.childExprs}")
+  }
+
+  test("Heuristic boundary: 12 vs 13 XxHash64 inputs yield consistent placement (unit)") {
+    def run(n: Int): (Boolean, Seq[Boolean]) = {
+      val inputs = (1 to n).map(i => AttributeReference(s"a$i", LongType, nullable = false)())
+      val hash = XxHash64(inputs, 42L)
+      val meta = wrap(hash)
+      meta.willNotWorkOnGpu("disabled for test")
+      GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(meta)
+      (meta.willUseGpuCpuBridge, meta.childExprs.map(_.willUseGpuCpuBridge))
+    }
+
+    val (m12, kids12) = run(12) // exact enumeration path
+    val (m13, kids13) = run(13) // heuristic path
+
+    assert(m12 && m13, "Parents should be on CPU bridge")
+    // Expect all children on GPU in both cases under tie-breaking that prefers GPU
+    assert(kids12.forall(_ == false), s"Expected all 12 children on GPU: $kids12")
+    assert(kids13.forall(_ == false), s"Expected all 13 children on GPU: $kids13")
+  }
+
+  test("Heuristic: 13 mixed Add/Multiply children into XxHash64 under CPU (unit)") {
+    // Use distinct leaves per child to avoid shared-leaf advantage for CPU
+    val children: Seq[org.apache.spark.sql.catalyst.expressions.Expression] =
+      (1 to 13).map { i =>
+        val ai = AttributeReference(s"a$i", LongType, nullable = false)()
+        if ((i & 1) == 0) Add(ai, Literal(i.toLong)) else Multiply(ai, Literal(i.toLong))
+      }
+    val hash = XxHash64(children, 42L)
+    val meta = wrap(hash)
+    meta.willNotWorkOnGpu("disabled for test")
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(meta)
+
+    assert(meta.willUseGpuCpuBridge, "Parent XxHash64 should be on CPU bridge")
+    // Expect GPU due to global tie (CPU import count equals GPU move-outs); tie-break prefers GPU
+    val onCpu = meta.childExprs.map(_.willUseGpuCpuBridge)
+    assert(onCpu.forall(_ == false), s"Expected all children on GPU: $onCpu")
+  }
+
+  test("Heuristic: shared leaf under CPU parent → CPU strictly cheaper (unit)") {
+    // All children share the same leaf, so importing once for the CPU parent is cheaper
+    val a = AttributeReference("a", LongType, nullable = false)()
+    val children: Seq[org.apache.spark.sql.catalyst.expressions.Expression] =
+      (1 to 13).map { i =>
+        if ((i & 1) == 0) Add(a, Literal(i.toLong)) else Multiply(a, Literal(i.toLong))
+      }
+    val hash = XxHash64(children, 42L)
+    val meta = wrap(hash)
+    // Force parent to CPU
+    meta.willNotWorkOnGpu("disabled for test")
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(meta)
+
+    assert(meta.willUseGpuCpuBridge, "Parent XxHash64 should be on CPU bridge")
+    val onCpu = meta.childExprs.map(_.willUseGpuCpuBridge)
+    assert(onCpu.forall(_ == true), s"Expected all children on CPU: $onCpu")
+  }
+
+  test("Heuristic: distinct leaves under GPU parent → GPU strictly cheaper (unit)") {
+    // Parent stays on GPU; moving CPU child outputs would cost 1 per child → choose GPU
+    val children: Seq[org.apache.spark.sql.catalyst.expressions.Expression] =
+      (1 to 13).map { i =>
+        val ai = AttributeReference(s"a$i", LongType, nullable = false)()
+        if ((i & 1) == 0) Add(ai, Literal(i.toLong)) else Multiply(ai, Literal(i.toLong))
+      }
+    val hash = XxHash64(children, 42L)
+    val meta = wrap(hash)
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(meta)
+
+    assert(!meta.willUseGpuCpuBridge, "Parent should remain on GPU")
+    val onCpu = meta.childExprs.map(_.willUseGpuCpuBridge)
+    assert(onCpu.forall(_ == false), s"Expected all children on GPU: $onCpu")
+  }
 }
 
 
