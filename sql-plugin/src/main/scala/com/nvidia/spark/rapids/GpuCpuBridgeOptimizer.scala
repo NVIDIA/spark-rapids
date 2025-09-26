@@ -491,34 +491,13 @@ object GpuCpuBridgeOptimizer extends Logging {
   private def mergeBridgeExpressions(
       parentBridge: GpuCpuBridgeExpression): GpuCpuBridgeExpression = {
     
-    logError(s"=== MERGE DEBUG: Starting merge of " + 
-      s"bridge with ${parentBridge.gpuInputs.length} inputs")
-    parentBridge.gpuInputs.zipWithIndex.foreach { case (input, idx) =>
-      input match {
-        case bridge: GpuCpuBridgeExpression =>
-          logError(s"  Input[$idx]: Bridge with ${bridge.gpuInputs.length} " + 
-          s"GPU inputs, CPU expr: ${bridge.cpuExpression}")
-        case other =>
-          logError(s"  Input[$idx]: Direct GPU expr: $other")
-      }
-    }
-    logError(s"  Parent CPU expr: ${parentBridge.cpuExpression}")
-    
     // Collect all GPU inputs and create mapping for BoundReference remapping
     val (flattenedGpuInputs, inputMapping) = flattenBridgeInputs(parentBridge.gpuInputs)
-    
-    logError(s"=== MERGE DEBUG: After flattening, ${flattenedGpuInputs.length} GPU inputs:")
-    flattenedGpuInputs.zipWithIndex.foreach { case (input, idx) =>
-      logError(s"  Flattened[$idx]: $input")
-    }
-    logError(s"  Input mapping: $inputMapping")
     
     // Rewrite the parent CPU expression to substitute bridge expressions and 
     // remap BoundReferences
     val mergedCpuExpr = rewriteCpuExpression(parentBridge.cpuExpression, 
       parentBridge.gpuInputs, inputMapping)
-    
-    logError(s"=== MERGE DEBUG: Final merged CPU expr: $mergedCpuExpr")
     
     GpuCpuBridgeExpression(
       gpuInputs = flattenedGpuInputs,
@@ -540,37 +519,30 @@ object GpuCpuBridgeOptimizer extends Logging {
   private def flattenBridgeInputs(
       inputs: Seq[Expression]): (Seq[Expression], Map[Int, InputMapping]) = {
     
-    logError(s"    FLATTEN DEBUG: Starting with ${inputs.length} inputs")
     val flattenedInputs = scala.collection.mutable.ListBuffer[Expression]()
     val inputMapping = scala.collection.mutable.Map[Int, InputMapping]()
     
     inputs.zipWithIndex.foreach { case (input, originalIndex) =>
-      logError(s"      Processing input[$originalIndex]: $input")
       input match {
         case bridge: GpuCpuBridgeExpression =>
           // Recursively flatten this bridge's inputs
           val nestedResult =  flattenBridgeInputs(bridge.gpuInputs)
           val nestedInputs = nestedResult._1
           val startIndex = flattenedInputs.length
-          logError(s"        Bridge: startIndex=$startIndex, " + 
-            s"adding ${nestedInputs.length} nested inputs")
           flattenedInputs ++= nestedInputs
           
           if (nestedInputs.nonEmpty) {
             val endIndex = flattenedInputs.length - 1
             val indices = startIndex to endIndex
-            logError(s"        Bridge: endIndex=$endIndex, indices=$indices")
             inputMapping(originalIndex) = BridgeInputMapping(bridge, indices)
           } else {
             // Bridge has no GPU inputs - use empty sequence
-            logError(s"        Bridge: empty inputs")
             inputMapping(originalIndex) = BridgeInputMapping(bridge, Seq.empty)
           }
           
         case gpuExpr =>
           // Regular GPU expression - add directly
           val index = flattenedInputs.length
-          logError(s"        Direct: index=$index")
           flattenedInputs += gpuExpr
           inputMapping(originalIndex) = DirectInputMapping(index)
       }
@@ -655,24 +627,17 @@ object GpuCpuBridgeOptimizer extends Logging {
     
     cpuExpr.transformUp {
       case BoundReference(ordinal, dataType, nullable) =>
-        logError(s"    REMAP DEBUG: Processing BoundReference($ordinal, $dataType, $nullable)")
         inputMapping.get(ordinal) match {
           case Some(BridgeInputMapping(bridge, indices)) =>
-            logError(s"      -> Bridge mapping: indices=$indices")
-            logError(s"      -> Bridge CPU expr: ${bridge.cpuExpression}")
             // This BoundReference points to a bridge - substitute the bridge's CPU expression
             // and remap its BoundReferences using the index mapping
-            val remapped = remapBoundReferencesWithIndexMapping(bridge.cpuExpression, indices)
-            logError(s"      -> Remapped expr: $remapped")
-            remapped
+            remapBoundReferencesWithIndexMapping(bridge.cpuExpression, indices)
             
           case Some(DirectInputMapping(newIndex)) =>
-            logError(s"      -> Direct mapping: $ordinal -> $newIndex")
             // This BoundReference points to a direct GPU input - update the index
             BoundReference(newIndex, dataType, nullable)
             
           case None =>
-            logError(s"      -> ERROR: No mapping found for ordinal $ordinal")
             throw new IllegalStateException(
                 s"Invalid BoundReference ordinal $ordinal during bridge merging")
         }
