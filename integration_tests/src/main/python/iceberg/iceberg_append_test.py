@@ -157,6 +157,33 @@ def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+def test_insert_into_partitioned_table_unsupported_partition_fallback(
+        spark_tmp_table_factory, format_version, write_distribution_mode):
+    table_prop = {"format-version": format_version,
+                  "write.distribution-mode": write_distribution_mode}
+
+    def insert_data(spark, table_name: str):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        view_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(view_name)
+        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    create_iceberg_table(table_name,
+                         partition_col_sql="truncate(5, _c6)",
+                         table_prop=table_prop)
+
+    assert_gpu_fallback_collect(lambda spark: insert_data(spark, table_name),
+                                "AppendDataExec",
+                                conf = iceberg_write_enabled_conf)
+
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 @pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
                          ids=lambda x: f"write_distribution_mode={x}")
