@@ -62,6 +62,8 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           includeRetry,
           mockJobDescription.statsTrackers.map(_.newTaskInstance()),
           None,
+          false,
+          false,
           mockJobDescription.fileIO) {
 
     // this writer (for tests) doesn't do anything and passes through the
