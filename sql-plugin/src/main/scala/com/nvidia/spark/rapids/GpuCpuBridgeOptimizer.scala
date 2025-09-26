@@ -463,7 +463,7 @@ object GpuCpuBridgeOptimizer extends Logging {
    * Optimize a GPU expression tree by merging adjacent CPU bridge expressions.
    * This should be called after initial GPU/CPU tagging but before execution.
    */
-  def optimizeByMergeingBridgeExpressions(expr: GpuExpression): GpuExpression = {
+  def optimizeByMergingBridgeExpressions(expr: GpuExpression): GpuExpression = {
     expr match {
       case bridge: GpuCpuBridgeExpression =>
         // Check if any of this bridge's inputs are also bridge expressions
@@ -510,8 +510,9 @@ object GpuCpuBridgeOptimizer extends Logging {
   
   /**
    * Flatten bridge inputs by collecting all non-bridge GPU inputs and creating a mapping
-   * from original input positions to final flattened positions. Includes deduplication
-   * to reduce memory transfers and code size.
+   * from original input positions to final flattened positions. Uses memoization to
+   * prevent redundant recursive calls and improve performance with deep nesting.
+   * Includes deduplication to reduce memory transfers and code size.
    * 
    * @param inputs The original bridge inputs (mix of bridges and GPU expressions)
    * @return (flattened GPU inputs, mapping from input index to position range in flattened inputs)
@@ -519,43 +520,55 @@ object GpuCpuBridgeOptimizer extends Logging {
   private def flattenBridgeInputs(
       inputs: Seq[Expression]): (Seq[Expression], Map[Int, InputMapping]) = {
     
-    val flattenedInputs = scala.collection.mutable.ListBuffer[Expression]()
-    val inputMapping = scala.collection.mutable.Map[Int, InputMapping]()
+    // Use memoization to avoid redundant flattening of the same bridge
+    val flattenCache = scala.collection.mutable.Map[GpuCpuBridgeExpression, 
+      (Seq[Expression], Map[Int, InputMapping])]()
     
-    inputs.zipWithIndex.foreach { case (input, originalIndex) =>
-      input match {
-        case bridge: GpuCpuBridgeExpression =>
-          // Recursively flatten this bridge's inputs
-          val nestedResult =  flattenBridgeInputs(bridge.gpuInputs)
-          val nestedInputs = nestedResult._1
-          val startIndex = flattenedInputs.length
-          flattenedInputs ++= nestedInputs
-          
-          if (nestedInputs.nonEmpty) {
-            val endIndex = flattenedInputs.length - 1
-            val indices = startIndex to endIndex
-            inputMapping(originalIndex) = BridgeInputMapping(bridge, indices)
-          } else {
-            // Bridge has no GPU inputs - use empty sequence
-            inputMapping(originalIndex) = BridgeInputMapping(bridge, Seq.empty)
-          }
-          
-        case gpuExpr =>
-          // Regular GPU expression - add directly
-          val index = flattenedInputs.length
-          flattenedInputs += gpuExpr
-          inputMapping(originalIndex) = DirectInputMapping(index)
+    def flattenWithCache(inputs: Seq[Expression]): (Seq[Expression], Map[Int, InputMapping]) = {
+      val flattenedInputs = scala.collection.mutable.ListBuffer[Expression]()
+      val inputMapping = scala.collection.mutable.Map[Int, InputMapping]()
+      
+      inputs.zipWithIndex.foreach { case (input, originalIndex) =>
+        input match {
+          case bridge: GpuCpuBridgeExpression =>
+            // Check cache first to avoid redundant work
+            val (nestedInputs, _) = flattenCache.getOrElseUpdate(bridge, {
+              flattenWithCache(bridge.gpuInputs)
+            })
+            
+            val startIndex = flattenedInputs.length
+            flattenedInputs ++= nestedInputs
+            
+            if (nestedInputs.nonEmpty) {
+              val endIndex = flattenedInputs.length - 1
+              val indices = startIndex to endIndex
+              inputMapping(originalIndex) = BridgeInputMapping(bridge, indices)
+            } else {
+              // Bridge has no GPU inputs - use empty sequence
+              inputMapping(originalIndex) = BridgeInputMapping(bridge, Seq.empty)
+            }
+            
+          case gpuExpr =>
+            // Regular GPU expression - add directly
+            val index = flattenedInputs.length
+            flattenedInputs += gpuExpr
+            inputMapping(originalIndex) = DirectInputMapping(index)
+        }
       }
+      
+      (flattenedInputs.toSeq, inputMapping.toMap)
     }
+    
+    val (flattenedInputs, inputMapping) = flattenWithCache(inputs)
     
     // Apply deduplication to the flattened inputs
     val (deduplicatedInputs, deduplicationMapping) = 
-      deduplicateFlattenedInputs(flattenedInputs.toSeq)
+      deduplicateFlattenedInputs(flattenedInputs)
     
     // Update input mappings to account for deduplication
     val finalInputMapping = inputMapping.map { case (originalIndex, mapping) =>
       originalIndex -> updateMappingAfterDeduplication(mapping, deduplicationMapping)
-    }.toMap
+    }
     
     (deduplicatedInputs, finalInputMapping)
   }
@@ -658,11 +671,20 @@ object GpuCpuBridgeOptimizer extends Logging {
     
     expr.transformUp {
       case BoundReference(ordinal, dataType, nullable) =>
-        if (ordinal < indices.length) {
-          BoundReference(indices(ordinal), dataType, nullable)
-        } else {
+        if (ordinal < 0) {
           throw new IllegalStateException(
-            s"BoundReference ordinal $ordinal out of bounds for indices $indices")
+            s"BoundReference ordinal $ordinal is negative during bridge merging")
+        } else if (ordinal >= indices.length) {
+          throw new IllegalStateException(
+            s"BoundReference ordinal $ordinal out of bounds for indices $indices " +
+            s"(max ordinal: ${indices.length - 1})")
+        } else {
+          val newIndex = indices(ordinal)
+          if (newIndex < 0) {
+            throw new IllegalStateException(
+              s"Mapped index $newIndex is negative for ordinal $ordinal")
+          }
+          BoundReference(newIndex, dataType, nullable)
         }
     }
   }

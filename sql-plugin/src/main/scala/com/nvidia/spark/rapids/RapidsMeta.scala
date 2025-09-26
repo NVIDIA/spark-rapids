@@ -1447,7 +1447,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
       codegenEnabled = conf.isBridgeCodegenEnabled)
 
     // Apply bridge optimization to merge adjacent bridge expressions
-    GpuCpuBridgeOptimizer.optimizeByMergeingBridgeExpressions(bridgeExpression)
+    GpuCpuBridgeOptimizer.optimizeByMergingBridgeExpressions(bridgeExpression)
   }
 
   /**
