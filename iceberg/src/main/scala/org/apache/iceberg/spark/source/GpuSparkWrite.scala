@@ -187,8 +187,8 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
       table.sortOrder(),
       format,
       outputWriterFactory,
-      hadoopConf
-    )
+      hadoopConf,
+      fileIO)
 
     if (spec.isUnpartitioned) {
       new GpuUnpartitionedDataWriter(writerFactory, outputFileFactory, io, spec, targetFileSize)
