@@ -15,6 +15,7 @@ SubqueryBroadcastExec,3.0
 TakeOrderedAndProjectExec,3.0
 UnionExec,3.0
 AQEShuffleReadExec,3.0
+TableCacheQueryStageExec,3.0
 HashAggregateExec,4.5
 ObjectHashAggregateExec,3.0
 SortAggregateExec,3.0
@@ -22,6 +23,7 @@ InMemoryTableScanExec,3.0
 DataWritingCommandExec,3.0
 ExecutedCommandExec,3.0
 WriteFilesExec,3.0
+AppendDataExec,3.0
 AppendDataExecV1,3.0
 AtomicCreateTableAsSelectExec,3.0
 AtomicReplaceTableAsSelectExec,3.0
@@ -262,6 +264,7 @@ SpecifiedWindowFrame,4
 Sqrt,4
 Stack,4
 StartsWith,4
+StaticInvoke,4
 StddevPop,4
 StddevSamp,4
 StringInstr,4
@@ -299,6 +302,7 @@ UnboundedPreceding$,4
 UnixTimestamp,4
 UnscaledValue,4
 Upper,4
+Uuid,4
 VariancePop,4
 VarianceSamp,4
 WeekDay,4

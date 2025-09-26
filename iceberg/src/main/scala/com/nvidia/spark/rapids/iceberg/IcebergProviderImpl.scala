@@ -19,10 +19,14 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
-import org.apache.iceberg.spark.source.GpuSparkBatchQueryScan
+import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuOverrides, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, WriteFileOp}
+import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
+import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
 
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.connector.write.Write
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
 
 class IcebergProviderImpl extends IcebergProvider {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -69,5 +73,50 @@ class IcebergProviderImpl extends IcebergProvider {
       "Iceberg scan",
       ClassTag(cpuIcebergScanClass))
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+  }
+
+  override def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
+    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
+      GpuBucketExpression.tagExprForGpu(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"StaticInvoke of ${expr.staticObject.getName} is not supported on GPU")
+    }
+  }
+
+  override def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
+    if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuBucketExpression(left, right)
+    } else {
+      throw new IllegalStateException(
+        s"Should have been caught in tagExprForGpu: ${expr.staticObject.getName}")
+    }
+  }
+
+  override def isSupportedWrite(write: Class[_ <: Write]): Boolean = {
+    GpuSparkWrite.supports(write)
+  }
+
+  override def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit = {
+    if (!meta.conf.isIcebergEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG} to true")
+    }
+
+    if (!meta.conf.isIcebergWriteEnabled) {
+      meta.willNotWorkOnGpu("Iceberg output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG_WRITE} to true")
+    }
+
+    FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+
+    GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+  }
+
+  override def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
+    GpuAppendDataExec(
+      new GpuOverrides().apply(cpuExec.query),
+      cpuExec.refreshCache,
+      GpuSparkWrite.convert(cpuExec.write))
   }
 }

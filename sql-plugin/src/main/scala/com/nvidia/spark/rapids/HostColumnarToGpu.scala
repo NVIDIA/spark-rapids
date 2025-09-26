@@ -70,7 +70,7 @@ object HostColumnarToGpu extends Logging {
   def arrowColumnarCopy(
       cv: ColumnVector,
       ab: ai.rapids.cudf.ArrowColumnBuilder,
-      rows: Int): ju.List[ReferenceManager] = {
+      rows: Int): (ju.List[ReferenceManager], java.lang.Long) = {
     val valVector = cv match {
       case v: ArrowColumnVector =>
         try {
@@ -105,7 +105,16 @@ object HostColumnarToGpu extends Logging {
         // swallow the exception and assume no offsets buffer
     }
     ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
-    referenceManagers.result().asJava
+    def getSize(buf: ByteBuffer): Long = {
+      if (buf != null) {
+        buf.remaining()
+      } else {
+        0L
+      }
+    }
+    // total bytes added is data + validity + offsets (if present)
+    val bytesAdded = getSize(dataBuf) + getSize(validity) + getSize(offsets)
+    (referenceManagers.result().asJava, bytesAdded)
   }
 
   // Data type is passed explicitly to allow overriding the reported type from the column vector.
@@ -115,7 +124,7 @@ object HostColumnarToGpu extends Logging {
       cv: ColumnVector,
       b: RapidsHostColumnBuilder,
       dataType: DataType,
-      rows: Int): Unit = {
+      rows: Int): Long = {
     dataType match {
       case NullType =>
         ColumnarCopyHelper.nullCopy(b, rows)
@@ -253,10 +262,14 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     withResource(new MetricRange(copyBufTime)) { _ =>
       val rows = batch.numRows()
+      var bytesCopied = 0L
       for (i <- 0 until batch.numCols()) {
-        batchBuilder.copyColumnar(batch.column(i), i, rows)
+        bytesCopied += batchBuilder.copyColumnar(batch.column(i), i, rows)
       }
       totalRows += rows
+      if (rows > 0) {
+        batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, bytesCopied, rows)
+      }
     }
   }
 
@@ -326,7 +339,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
     COPY_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_BUFFER_TIME)
@@ -360,7 +373,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val copyBufTime = gpuLongMetric(COPY_BUFFER_TIME)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
 
     // cache in a local to avoid serializing the plan
     val outputSchema = schema

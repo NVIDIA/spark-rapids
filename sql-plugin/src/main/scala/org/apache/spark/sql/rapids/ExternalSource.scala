@@ -25,12 +25,13 @@ import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -234,6 +235,46 @@ object ExternalSource extends Logging {
       deltaProvider.convertToGpu(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+    cpuExec: AppendDataExec,
+    meta: AppendDataExecMeta): Unit = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Append data $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+    cpuExec: AppendDataExec,
+    meta: AppendDataExecMeta): GpuExec = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
+    if (hasIcebergJar) {
+      icebergProvider.tagForGpu(expr, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"StaticInvoke is not supported")
+    }
+  }
+
+  def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
+    if (hasIcebergJar) {
+      icebergProvider.convertToGpu(expr, meta)
+    } else {
+      throw new IllegalStateException("StaticInvoke is not supported")
     }
   }
 }
