@@ -140,7 +140,12 @@ object Delta33xProvider extends DeltaIOProvider {
 
   case class GpuIncrementMetic(cpuInc: IncrementMetric, override val child: Expression) 
     extends ShimUnaryExpression with GpuExpression {
+
     override def dataType: DataType = child.dataType
+    override lazy val deterministic: Boolean = cpuInc.deterministic
+
+    // metric update for a particular branch
+    override def hasSideEffects: Boolean = true
 
     override def prettyName: String = "gpu_" + cpuInc.prettyName
 

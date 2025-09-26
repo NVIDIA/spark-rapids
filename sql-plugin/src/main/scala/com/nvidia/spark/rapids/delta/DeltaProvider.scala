@@ -55,7 +55,7 @@ trait DeltaProvider {
 
   def getStrategyRules: Seq[SparkStrategy]
 
-  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
@@ -110,8 +110,6 @@ object NoDeltaProvider extends DeltaProvider {
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 
   override def getStrategyRules: Seq[SparkStrategy] = Nil
 
