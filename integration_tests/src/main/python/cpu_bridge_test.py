@@ -15,6 +15,7 @@
 import pytest
 
 from pyspark.sql.functions import col
+import pyspark.sql.functions as f
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
 from marks import allow_non_gpu
 from data_gen import *
@@ -220,3 +221,235 @@ def test_generate_outer_fallback():
         lambda spark: spark.sql("SELECT array(struct(1, 'a'), struct(2, 'b')) as x")\
             .repartition(1).selectExpr("inline_outer(x)"),
         "GenerateExec", conf = conf)
+
+# ==============================================================================
+# AST-REQUIRED OPERATIONS - Bridge expressions should cause operator fallback
+# These operations require Catalyst AST analysis and cannot use bridge expressions
+# ==============================================================================
+
+@ignore_order(local=True)
+def test_cpu_bridge_inner_join_post_filter_works():
+    """Inner join with bridge expressions in condition should work with post-filtering"""
+    def test_func(spark):
+        # Use small range with overlap to ensure matches
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=10)), 
+                             ('a', IntegerGen(min_val=1, max_val=100))], length=50)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=10)), 
+                              ('b', IntegerGen(min_val=1, max_val=100))], length=20)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # True conditional join: equality condition + non-equality condition with bridge expression
+        # This requires complex AST analysis that cannot use bridge expressions
+        return spark.sql("""
+            SELECT /*+ BROADCAST(right_table) */ 
+                   left_table.id, left_table.a, right_table.id as right_id, right_table.b
+            FROM left_table 
+            JOIN right_table ON left_table.id = right_table.id 
+                              AND left_table.a + 10 > right_table.b + 5
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should work: Inner joins support post-filtering with disabled expressions  
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+
+@allow_non_gpu('BroadcastHashJoinExec')
+@ignore_order(local=True)
+def test_cpu_bridge_outer_join_fallback():
+    """Outer join with bridge expressions in condition should cause join fallback"""
+    def test_func(spark):
+        # Use small range with overlap to ensure matches
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=10)), 
+                             ('a', IntegerGen(min_val=1, max_val=100))], length=50)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=10)), 
+                              ('b', IntegerGen(min_val=1, max_val=100))], length=20)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # Left outer join with disabled Add expressions in condition
+        # Should fall back: Outer joins require AST conversion for conditions
+        return spark.sql("""
+            SELECT /*+ BROADCAST(right_table) */ 
+                   left_table.id, left_table.a, right_table.id as right_id, right_table.b
+            FROM left_table 
+            LEFT JOIN right_table ON left_table.id = right_table.id 
+                                   AND left_table.a + 10 > right_table.b + 5
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should fall back: Outer joins require AST conversion for conditions
+    assert_gpu_fallback_collect(test_func, 'BroadcastHashJoinExec', conf=conf)
+
+
+@ignore_order(local=True)
+def test_cpu_bridge_simple_equality_join_works():
+    """Simple equality joins with bridge expressions in select should work"""
+    def test_func(spark):
+        # Use small range with overlap to ensure matches
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=5)), 
+                             ('a', IntegerGen(min_val=1, max_val=20))], length=30)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=5)), 
+                              ('b', IntegerGen(min_val=1, max_val=20))], length=15)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # Simple equality join with bridge expressions in SELECT, not join condition
+        return spark.sql("""
+            SELECT /*+ BROADCAST(right_table) */ 
+                   left_table.id, 
+                   left_table.a + 10 as left_sum,
+                   right_table.b + 20 as right_sum
+            FROM left_table 
+            JOIN right_table ON left_table.id = right_table.id
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should work: bridge expressions in select, simple equality in join
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+
+@allow_non_gpu('ShuffleExchangeExec')
+@ignore_order(local=True)
+def test_cpu_bridge_hash_partitioning_fallback():
+    """Bridge expressions in partitioning should cause shuffle fallback"""
+    def test_func(spark):
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=2000)
+        # Partition by expression containing bridge - should cause shuffle fallback
+        # because hash partitioning requires GPU-native hash functions
+        return df.repartition(10, df.a + df.b).groupBy("c").count()
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_fallback_collect(test_func, 'ShuffleExchangeExec', conf=conf)
+
+
+@allow_non_gpu('GpuColumnarToRowExec', 'SortExec')
+@ignore_order(local=True)
+def test_cpu_bridge_sort_key_fallback():
+    """Bridge expressions in sort keys should cause sort fallback"""
+    def test_func(spark):
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen)], length=1000)
+        # Sort by bridge expression should cause sort fallback
+        # because columnar sort algorithms need GPU expressions
+        return df.orderBy(df.a + df.b).collect()
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_fallback_collect(test_func, 'SortExec', conf=conf)
+
+
+@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
+@ignore_order(local=True)
+def test_cpu_bridge_group_by_key_fallback():
+    """Bridge expressions as grouping keys should cause aggregation fallback"""
+    def test_func(spark):
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen)], length=2000)
+        # Group by bridge expression should cause aggregation fallback
+        # because hash aggregation relies on GPU hash functions
+        return df.groupBy(df.a + df.b).agg(f.sum("c").alias("total"))
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_fallback_collect(test_func, 'HashAggregateExec', conf=conf)
+
+
+@allow_non_gpu('WindowExec')
+def test_cpu_bridge_window_partition_key_fallback():
+    """Bridge expressions in window partition keys should cause window fallback"""
+    def test_func(spark):
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen)], length=1000)
+        # Window partition by bridge expression should cause window fallback
+        return df.selectExpr(
+            "a", "b", "c",
+            "row_number() over (partition by a + b order by c) as row_num",
+            "sum(c) over (partition by a + b order by c) as running_sum"
+        )
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_fallback_collect(test_func, 'WindowExec', conf=conf)
+
+
+@allow_non_gpu('WindowExec')  
+def test_cpu_bridge_window_order_key_fallback():
+    """Bridge expressions in window order keys should cause window fallback"""
+    def test_func(spark):
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=1000)
+        # Window order by bridge expression should cause window fallback
+        return df.selectExpr(
+            "a", "b", "c",
+            "row_number() over (partition by c order by a + b) as row_num",
+            "lag(a, 1) over (partition by c order by a + b) as prev_a"
+        )
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_fallback_collect(test_func, 'WindowExec', conf=conf)
+
+
+# ==============================================================================
+# PREDICATE PUSHDOWN TESTS - Bridge expressions in filter predicates
+# These test scenarios where bridge expressions in filters affect scan operations
+# ==============================================================================
+
+@allow_non_gpu('FileSourceScanExec')
+def test_cpu_bridge_predicate_pushdown_parquet_fallback():
+    """Bridge expressions in filters that get pushed to file scans should cause scan fallback"""
+    def test_func(spark):
+        # Create a DataFrame and save as parquet
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=2000)
+        temp_path = "/tmp/test_bridge_parquet"
+        df.coalesce(1).write.mode("overwrite").parquet(temp_path)
+        
+        # Read back with filter containing bridge expression
+        # Spark will try to push down the filter, but bridge expressions cannot be pushed
+        return spark.read.parquet(temp_path).filter((col("a") + col("b")) > 100)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_fallback_collect(test_func, 'FileSourceScanExec', conf=conf)
+
+
+@allow_non_gpu('FileSourceScanExec')  
+def test_cpu_bridge_complex_predicate_pushdown_fallback():
+    """Complex bridge expressions in filters should cause scan fallback"""
+    def test_func(spark):
+        # Create test data
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen), ('d', string_gen)], length=1500)
+        temp_path = "/tmp/test_bridge_complex_parquet"
+        df.coalesce(1).write.mode("overwrite").parquet(temp_path)
+        
+        # Complex filter with multiple bridge expressions
+        return spark.read.parquet(temp_path).filter(
+            ((col("a") + col("b")) > 50) & 
+            ((col("b") + col("c")) < 200) &
+            (col("d").isNotNull())
+        )
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_fallback_collect(test_func, 'FileSourceScanExec', conf=conf)
+
+
+# Test that simple filters without bridge expressions still work on GPU
+def test_cpu_bridge_simple_predicate_pushdown_works():
+    """Simple predicates without bridge expressions should still use GPU scan"""
+    def test_func(spark):
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=1000)
+        temp_path = "/tmp/test_bridge_simple_parquet"
+        df.coalesce(1).write.mode("overwrite").parquet(temp_path)
+        
+        # Simple filter that can be pushed down - should work on GPU
+        return spark.read.parquet(temp_path).filter((col("a") > 50) & (col("b") < 100))
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])  # Add disabled but not used in filter
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+
+# Test mixed scenario: bridge expression in select but simple predicate
+def test_cpu_bridge_mixed_select_and_predicate():
+    """Bridge in select with simple predicate should work correctly"""
+    def test_func(spark):
+        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen)], length=1000)
+        # Bridge expression in select, simple predicate - should work
+        return df.filter(col("c") > 50).selectExpr("a", "b", "c", "a + b as sum")
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)

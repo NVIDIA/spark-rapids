@@ -1111,6 +1111,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
 
   private val cannotBeAstReasons: mutable.Set[String] = mutable.Set.empty
+  private var mustBeAst = false
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
   override val childExprs: Seq[BaseExprMeta[_]] =
@@ -1269,9 +1270,26 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   final def willNotWorkInAst(because: String): Unit = cannotBeAstReasons.add(because)
 
+  /**
+   * Mark this expression as requiring AST conversion. This prevents the bridge optimizer
+   * from converting it to a bridge expression.
+   */
+  final def requiresAstConversion(): Unit = {
+    mustBeAst = true
+    // Also mark all children as requiring AST
+    childExprs.foreach(_.requiresAstConversion())
+  }
+
+  /**
+   * Check if this expression has been marked as requiring AST conversion.
+   */
+  final def mustBeAstExpression: Boolean = mustBeAst
+
   final def canThisBeAst: Boolean = {
     tagForAst()
-    childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
+    // An expression cannot be AST if it cannot be replaced (disabled) or if it has 
+    // AST-specific issues
+    canThisBeReplaced && childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
   }
 
   /**
@@ -1280,10 +1298,15 @@ abstract class BaseExprMeta[INPUT <: Expression](
    */
   lazy val canSelfBeAst = {
     tagForAst()
-    cannotBeAstReasons.isEmpty
+    // An expression cannot be AST if it cannot be replaced (disabled) or if it has 
+    // AST-specific issues
+    canThisBeReplaced && cannotBeAstReasons.isEmpty
   }
 
   final def requireAstForGpu(): Unit = {
+    // Mark this expression tree as requiring AST
+    requiresAstConversion()
+    
     tagForAst()
     cannotBeAstReasons.foreach { reason =>
       willNotWorkOnGpu(s"AST is required and $reason")

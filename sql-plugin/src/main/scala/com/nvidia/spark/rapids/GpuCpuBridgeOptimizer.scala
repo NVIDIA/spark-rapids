@@ -30,11 +30,26 @@ object GpuCpuBridgeOptimizer extends Logging {
     if (exprs.nonEmpty && exprs.head.conf.isCpuBridgeEnabled) {
       exprs.foreach { child =>
         if (!child.canExprTreeBeReplaced && canRunOnCpuOrGpuRecursively(child)) {
-          // Minimize data movement for this expression tree assuming the consumer is on GPU
-          optimizeByMinimizingMovement(child)
+          // Check if this expression tree requires AST conversion (marked during tagging)
+          if (!requiresAst(child)) {
+            // Minimize data movement for this expression tree assuming the consumer is on GPU
+            optimizeByMinimizingMovement(child)
+          } else {
+            logDebug(s"Skipping bridge optimization for ${child.wrapped.getClass.getSimpleName} " +
+              "because it requires AST conversion")
+          }
         }
       }
     }
+  }
+  
+  /**
+   * Check if an expression tree requires AST conversion by looking for expressions
+   * that have been marked as requiring AST during the tagging phase.
+   */
+  private def requiresAst(expr: BaseExprMeta[_]): Boolean = {
+    // Check if this expression was marked as requiring AST during tagging
+    expr.mustBeAstExpression || expr.childExprs.exists(requiresAst)
   }
 
   private def canRunOnCpuOrGpuRecursively(expr: BaseExprMeta[_]): Boolean = {
