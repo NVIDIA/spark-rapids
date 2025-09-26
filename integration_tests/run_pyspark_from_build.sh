@@ -448,7 +448,8 @@ else
         echo "Running Spark Connect smoke test..."
         # Gate on Spark version (3.5.6+ has Connect support with external jars. Example:plugin jar)
         # https://github.com/apache/spark/pull/50475
-        if [[ "$VERSION_STRING" < "3.5.6" ]]; then
+        # Version-aware compare: skip if VERSION_STRING < 3.5.6
+        if ! printf '%s\n' "$VERSION_STRING" "3.5.6" | sort -V | head -1 | grep -qx "3.5.6"; then
             echo "SKIPPING Spark Connect smoke test - requires Spark 3.5.6+ but found $VERSION_STRING"
             exit 0
         fi
@@ -513,13 +514,15 @@ else
         fi
 
         # Wait for Connect server to listen
+        service_ready=0
         for i in $(seq 1 60); do
             if timeout 1 bash -c "</dev/tcp/${CONNECT_HOST}/${CONNECT_PORT}" 2>/dev/null; then
+                service_ready=1
                 break
             fi
             sleep 1
         done
-        if ! timeout 1 bash -c "</dev/tcp/${CONNECT_HOST}/${CONNECT_PORT}" 2>/dev/null; then
+        if (( service_ready != 1 )); then
             echo "ERROR: Connect server failed to start on ${CONNECT_HOST}:${CONNECT_PORT}"
             exit 1
         fi
