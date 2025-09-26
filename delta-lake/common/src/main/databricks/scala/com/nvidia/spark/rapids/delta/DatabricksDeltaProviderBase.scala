@@ -21,7 +21,6 @@ import java.lang.reflect.Field
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 
-import com.databricks.sql.execution.metric.IncrementMetric
 import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
@@ -29,12 +28,9 @@ import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteComma
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaSupportsWrite, GpuDeltaV1Write}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.FileSourceScanExec
@@ -44,9 +40,7 @@ import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCr
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Common implementation of the DeltaProvider interface for all Databricks versions.
@@ -293,37 +287,6 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
   protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
      rapidsConf: RapidsConf): V1Write
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-    GpuOverrides.expr[IncrementMetric](
-      "IncrementMetric",
-      ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.all, TypeSig.all),
-      GpuIncrementMeticMeta
-    )
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-}
-
-case class GpuIncrementMeticMeta(
-  cpuInc: IncrementMetric,
-  override val conf: RapidsConf,
-  p: Option[RapidsMeta[_, _, _]],
-  r: DataFromReplacementRule) extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) {
-  override def convertToGpu(): GpuExpression = {
-    val gpuChild = childExprs.head.convertToGpu()
-    GpuIncrementMetic(cpuInc, gpuChild)
-  }
-}
-
-case class GpuIncrementMetic(cpuInc: IncrementMetric, override val child: Expression) 
-  extends ShimUnaryExpression with GpuExpression {
-  override def dataType: DataType = child.dataType
-
-  override def prettyName: String = "gpu_" + cpuInc.prettyName
-
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    cpuInc.metric.add(batch.numRows())
-    child.columnarEval(batch)
-  }
 }
 
 class DeltaCreatableRelationProviderMeta(
