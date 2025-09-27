@@ -149,7 +149,7 @@ object GpuTypeShims {
       cv: ColumnVector,
       b: RapidsHostColumnBuilder,
       dataType: DataType,
-      rows: Int): Unit = dataType match {
+      rows: Int): Long = dataType match {
     case DayTimeIntervalType(_, _) =>
       ColumnarCopyHelper.longCopy(cv, b, rows)
     case YearMonthIntervalType(_, _) =>

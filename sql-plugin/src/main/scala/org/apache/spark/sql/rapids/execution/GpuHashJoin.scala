@@ -1062,8 +1062,6 @@ trait GpuJoinExec extends ShimBinaryExecNode with GpuExec {
   def leftKeys: Seq[Expression]
   def rightKeys: Seq[Expression]
   def isSkewJoin: Boolean = false
-
-  override def coalesceAfter: Boolean = true
 }
 
 trait GpuHashJoin extends GpuJoinExec {

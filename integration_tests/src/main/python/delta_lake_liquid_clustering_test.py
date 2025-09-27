@@ -107,7 +107,7 @@ def setup_clustered_table_sql(spark, path, table_name, view_name):
         """)
 
 
-@allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow, "CreateTableExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),

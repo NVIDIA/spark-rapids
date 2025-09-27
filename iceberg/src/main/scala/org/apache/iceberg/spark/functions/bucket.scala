@@ -19,7 +19,7 @@ package org.apache.iceberg.spark.functions
 import scala.util.{Success, Try}
 
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar}
+import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.Hash
 import org.apache.iceberg.spark.functions.GpuBucketExpression.cast
@@ -28,17 +28,10 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.types.{ByteType, DataType, DataTypes, DateType, IntegerType, LongType, ShortType, TimestampNTZType, TimestampType}
 
-case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
+case class GpuBucketExpression(numBuckets: Expression, value: Expression)
   extends GpuBinaryExpression {
 
-  require(numBuckets.dataType == DataTypes.IntegerType,
-    s"buckets number must be an integer, got ${numBuckets.dataType}")
-
-  require(!value.nullable,
-    s"Bucket function does not support nullable values for type ${value.dataType}")
-
-  require(GpuBucketExpression.isSupportedValueType(value.dataType),
-    s"Bucket function does not support type ${value.dataType} as values")
+  private lazy val sanityCheckResult: Unit = sanityCheck()
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): CudfColumnVector = {
     throw new IllegalStateException("GpuBucketExpression requires first argument to be scalar, " +
@@ -46,6 +39,8 @@ case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
   }
 
   override def doColumnar(numBuckets: GpuScalar, rhs: GpuColumnVector): CudfColumnVector = {
+    sanityCheckResult
+
     val hash = withResource(cast(rhs.getBase)) { castedValue =>
       Hash.murmurHash32(0, Array(castedValue))
     }
@@ -59,6 +54,17 @@ case class GpuBucketExpression(numBuckets: GpuExpression, value: GpuExpression)
     withResource(nonNegativeHash) { _ =>
       nonNegativeHash.mod(numBuckets.getBase, DType.INT32)
     }
+  }
+
+  private def sanityCheck(): Unit = {
+    require(numBuckets.dataType == DataTypes.IntegerType,
+      s"buckets number must be an integer, got ${numBuckets.dataType}")
+
+    require(!value.nullable,
+      s"Bucket function does not support nullable values for type ${value.dataType}")
+
+    require(GpuBucketExpression.isSupportedValueType(value.dataType),
+      s"Bucket function does not support type ${value.dataType} as values")
   }
 
 
