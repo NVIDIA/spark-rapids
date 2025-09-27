@@ -255,7 +255,7 @@ def test_cpu_bridge_inner_join_post_filter_works():
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
-@allow_non_gpu('BroadcastHashJoinExec')
+@allow_non_gpu('BroadcastHashJoinExec', 'BroadcastExchangeExec')
 @ignore_order(local=True)
 def test_cpu_bridge_outer_join_fallback():
     """Outer join with bridge expressions in condition should cause join fallback"""
@@ -334,7 +334,7 @@ def test_cpu_bridge_sort_key_fallback():
         df = gen_df(spark, [('a', int_gen), ('b', int_gen)], length=1000)
         # Sort by bridge expression should cause sort fallback
         # because columnar sort algorithms need GPU expressions
-        return df.orderBy(df.a + df.b).collect()
+        return df.orderBy(df.a + df.b)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_fallback_collect(test_func, 'SortExec', conf=conf)

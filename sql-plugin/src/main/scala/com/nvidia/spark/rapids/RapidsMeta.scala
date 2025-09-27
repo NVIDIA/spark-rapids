@@ -665,6 +665,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   def requireAstForGpuOn(exprMeta: BaseExprMeta[_]): Unit = {
+    println(s"BRIDGE_DEBUG: requireAstForGpuOn called on " +
+      s"${exprMeta.wrapped.getClass.getSimpleName} from ${this.getClass.getSimpleName}")
     // willNotWorkOnGpu does not deduplicate reasons. Most of the time that is fine
     // but here we want to avoid adding the reason twice, because this method can be
     // called multiple times, and also the reason can automatically be added in if
@@ -1320,6 +1322,11 @@ abstract class BaseExprMeta[INPUT <: Expression](
   final def requireAstForGpu(): Unit = {
     // Mark this expression tree as requiring AST
     println(s"BRIDGE_DEBUG: requireAstForGpu() called on ${wrapped.getClass.getSimpleName}")
+    
+    // Undo any bridge optimization that was applied before the AST requirement
+    // This handles the case where bridge optimizer ran first, then AST was required later
+    undoBridgeOptimization()
+    
     requiresAstConversion()
     
     tagForAst()
@@ -1517,6 +1524,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
    */
   final def canMoveToCpuBridge: Boolean = conf.isBridgeAllowedForExpression(expr.getClass)
 
+  // Shared constant for bridge optimization reason
+  private val BRIDGE_OPTIMIZATION_REASON = "it avoids excess CPU and GPU transfers"
+  
   final def moveToCpuBridge(): Unit = {
     if (!canMoveToCpuBridge) {
       throw new IllegalStateException("trying to move to bridge when not allowed")
@@ -1526,7 +1536,24 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (willRunViaCpuBridgeReasons.get.isEmpty) {
       // We need something so it will move to the GPU and this is the only reason
       // right now
-      willRunViaCpuBridgeReasons.get.add("it avoids excess CPU and GPU transfers")
+      willRunViaCpuBridgeReasons.get.add(BRIDGE_OPTIMIZATION_REASON)
+    }
+  }
+  
+  final def undoBridgeOptimization(): Unit = {
+    // Undo bridge optimization by moving reasons back to cannotBeReplacedReasons
+    // and removing the bridge optimization reason
+    if (willUseGpuCpuBridge) {
+      // Move non-optimization reasons back to cannotBeReplacedReasons
+      val nonOptimizationReasons = 
+        willRunViaCpuBridgeReasons.get.filterNot(_ == BRIDGE_OPTIMIZATION_REASON)
+      cannotBeReplacedReasons.get ++= nonOptimizationReasons
+      
+      // Clear bridge reasons
+      willRunViaCpuBridgeReasons.get.clear()
+      
+      // Apply to children recursively
+      childExprs.foreach(_.undoBridgeOptimization())
     }
   }
 }

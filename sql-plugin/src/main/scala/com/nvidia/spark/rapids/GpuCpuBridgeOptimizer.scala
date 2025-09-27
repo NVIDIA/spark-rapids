@@ -28,11 +28,17 @@ object GpuCpuBridgeOptimizer extends Logging {
 
   def checkAndOptimizeExpressionMetas(exprs: Seq[BaseExprMeta[_]]): Unit = {
     if (exprs.nonEmpty && exprs.head.conf.isCpuBridgeEnabled) {
-      exprs.foreach { child =>
+      logError(s"BRIDGE_DEBUG: checkAndOptimizeExpressionMetas called " +
+        s"with ${exprs.length} expressions")
+      exprs.zipWithIndex.foreach { case (child, idx) =>
+        logError(s"BRIDGE_DEBUG: Expression[$idx]: ${child.wrapped.getClass.getSimpleName} " +
+          s"canExprTreeBeReplaced=${child.canExprTreeBeReplaced} " +
+          s"canRunOnCpuOrGpu=${canRunOnCpuOrGpuRecursively(child)}")
+        
         if (!child.canExprTreeBeReplaced && canRunOnCpuOrGpuRecursively(child)) {
           // Check if this expression tree requires AST conversion (marked during tagging)
           val childRequiresAst = requiresAst(child)
-          logError(s"BRIDGE_DEBUG: Expression ${child.wrapped.getClass.getSimpleName} " +
+          logError(s"BRIDGE_DEBUG: Expression[$idx] ${child.wrapped.getClass.getSimpleName} " +
             s"requiresAst=$childRequiresAst mustBeAst=${child.mustBeAstExpression} " +
             s"canThisBeAst=${child.canThisBeAst}")
           if (!childRequiresAst) {
@@ -565,36 +571,36 @@ object GpuCpuBridgeOptimizer extends Logging {
       (Seq[Expression], Map[Int, InputMapping])]()
     
     def flattenWithCache(inputs: Seq[Expression]): (Seq[Expression], Map[Int, InputMapping]) = {
-      val flattenedInputs = scala.collection.mutable.ListBuffer[Expression]()
-      val inputMapping = scala.collection.mutable.Map[Int, InputMapping]()
-      
-      inputs.zipWithIndex.foreach { case (input, originalIndex) =>
-        input match {
-          case bridge: GpuCpuBridgeExpression =>
+    val flattenedInputs = scala.collection.mutable.ListBuffer[Expression]()
+    val inputMapping = scala.collection.mutable.Map[Int, InputMapping]()
+    
+    inputs.zipWithIndex.foreach { case (input, originalIndex) =>
+      input match {
+        case bridge: GpuCpuBridgeExpression =>
             // Check cache first to avoid redundant work
             val (nestedInputs, _) = flattenCache.getOrElseUpdate(bridge, {
               flattenWithCache(bridge.gpuInputs)
             })
             
-            val startIndex = flattenedInputs.length
-            flattenedInputs ++= nestedInputs
-            
-            if (nestedInputs.nonEmpty) {
-              val endIndex = flattenedInputs.length - 1
+          val startIndex = flattenedInputs.length
+          flattenedInputs ++= nestedInputs
+          
+          if (nestedInputs.nonEmpty) {
+            val endIndex = flattenedInputs.length - 1
               val indices = startIndex to endIndex
               inputMapping(originalIndex) = BridgeInputMapping(bridge, indices)
-            } else {
+          } else {
               // Bridge has no GPU inputs - use empty sequence
               inputMapping(originalIndex) = BridgeInputMapping(bridge, Seq.empty)
-            }
-            
-          case gpuExpr =>
-            // Regular GPU expression - add directly
-            val index = flattenedInputs.length
-            flattenedInputs += gpuExpr
-            inputMapping(originalIndex) = DirectInputMapping(index)
-        }
+          }
+          
+        case gpuExpr =>
+          // Regular GPU expression - add directly
+          val index = flattenedInputs.length
+          flattenedInputs += gpuExpr
+          inputMapping(originalIndex) = DirectInputMapping(index)
       }
+    }
       
       (flattenedInputs.toSeq, inputMapping.toMap)
     }
