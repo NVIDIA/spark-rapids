@@ -469,13 +469,39 @@ def test_cpu_bridge_hash_partitioning_fallback():
 def test_cpu_bridge_sort_key():
     """Bridge expressions in sort keys should work, but not in the partitioning"""
     def test_func(spark):
-        df = gen_df(spark, [('a', int_gen), ('b', int_gen)], length=1000)
+        # Use non-overlapping ranges to avoid ambiguous sort results
+        # a: 1-50, b: 100-150, so a+b ranges from 101-200 (no overlaps possible)
+        # No nulls to avoid null + anything = null ambiguity
+        df = gen_df(spark, [
+            ('a', IntegerGen(min_val=1, max_val=50, nullable=False)), 
+            ('b', IntegerGen(min_val=100, max_val=150, nullable=False))
+        ], length=1000)
         # Sort by bridge expression should cause shuffle fallback for partitioning
         # but the sort itself should work on GPU
-        return df.orderBy(df.a + df.b)
+        # Secondary sort by 'a' eliminates any remaining ambiguity
+        return df.orderBy(df.a + df.b, df.a)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_fallback_collect(test_func, 'ShuffleExchangeExec', conf=conf)
+
+
+def test_cpu_bridge_sort_with_limit():
+    """Bridge expressions in sort keys with LIMIT should work entirely on GPU"""
+    def test_func(spark):
+        # Use non-overlapping ranges to avoid ambiguous sort results
+        # a: 1-100, b: 1000-1100, so a+b ranges from 1001-1200 (no overlaps)
+        # No nulls to avoid null + anything = null ambiguity
+        df = gen_df(spark, [
+            ('a', IntegerGen(min_val=1, max_val=100, nullable=False)), 
+            ('b', IntegerGen(min_val=1000, max_val=1100, nullable=False))
+        ], length=500)
+        
+        # Sort by bridge expression with limit - uses top-K algorithm, no shuffle needed
+        # Secondary sort by 'a' eliminates any remaining ambiguity
+        return df.orderBy(df.a + df.b, df.a).limit(50)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
 @ignore_order(local=True)
