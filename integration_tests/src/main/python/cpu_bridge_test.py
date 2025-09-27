@@ -223,8 +223,7 @@ def test_generate_outer_fallback():
         "GenerateExec", conf = conf)
 
 # ==============================================================================
-# AST-REQUIRED OPERATIONS - Bridge expressions should cause operator fallback
-# These operations require Catalyst AST analysis and cannot use bridge expressions
+# Join tests in join condition
 # ==============================================================================
 
 @ignore_order(local=True)
@@ -310,6 +309,145 @@ def test_cpu_bridge_simple_equality_join_works():
     conf = create_cpu_bridge_fallback_conf(['Add'])
     # Should work: bridge expressions in select, simple equality in join
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+@allow_non_gpu('SortMergeJoinExec')
+@ignore_order(local=True)
+def test_cpu_bridge_sort_merge_left_outer_join_fallback():
+    """Left outer join with bridge expressions in condition should cause SortMergeJoin fallback"""
+    def test_func(spark):
+        # Use larger range to force sort-merge join instead of broadcast
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
+                             ('a', IntegerGen(min_val=1, max_val=100))], length=500)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
+                              ('b', IntegerGen(min_val=1, max_val=100))], length=200)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # Left outer join with disabled Add expressions in condition
+        # Should fall back: Outer joins require AST conversion for conditions
+        return spark.sql("""
+            SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
+            FROM left_table
+            LEFT JOIN right_table ON left_table.id = right_table.id
+                                   AND left_table.a + 10 > right_table.b + 5
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should fall back: Outer joins require AST conversion for conditions
+    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
+
+@allow_non_gpu('SortMergeJoinExec')
+@ignore_order(local=True)
+def test_cpu_bridge_sort_merge_right_outer_join_fallback():
+    """Right outer join with bridge expressions in condition should cause SortMergeJoin fallback"""
+    def test_func(spark):
+        # Use larger range to force sort-merge join instead of broadcast
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
+                             ('a', IntegerGen(min_val=1, max_val=100))], length=200)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
+                              ('b', IntegerGen(min_val=1, max_val=100))], length=500)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # Right outer join with disabled Add expressions in condition
+        # Should fall back: Outer joins require AST conversion for conditions
+        return spark.sql("""
+            SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
+            FROM left_table
+            RIGHT JOIN right_table ON left_table.id = right_table.id
+                                    AND left_table.a + 10 > right_table.b + 5
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should fall back: Outer joins require AST conversion for conditions
+    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
+
+@allow_non_gpu('SortMergeJoinExec')
+@ignore_order(local=True)
+def test_cpu_bridge_sort_merge_full_outer_join_fallback():
+    """Full outer join with bridge expressions in condition should cause SortMergeJoin fallback"""
+    def test_func(spark):
+        # Use larger range to force sort-merge join instead of broadcast
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
+                             ('a', IntegerGen(min_val=1, max_val=100))], length=300)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
+                              ('b', IntegerGen(min_val=1, max_val=100))], length=300)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # Full outer join with disabled Add expressions in condition
+        # Should fall back: Outer joins require AST conversion for conditions
+        return spark.sql("""
+            SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
+            FROM left_table
+            FULL OUTER JOIN right_table ON left_table.id = right_table.id
+                                         AND left_table.a + 10 > right_table.b + 5
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should fall back: Outer joins require AST conversion for conditions
+    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
+
+@ignore_order(local=True)
+def test_cpu_bridge_inner_join_with_bridge_expressions_works():
+    """Inner join with bridge expressions in condition should work on GPU (no fallback needed)"""
+    def test_func(spark):
+        # Use smaller range to allow broadcast join
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=10)), 
+                             ('a', IntegerGen(min_val=1, max_val=100))], length=50)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=10)), 
+                              ('b', IntegerGen(min_val=1, max_val=100))], length=20)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # Inner join with disabled Add expressions in condition
+        # Should work on GPU: Inner joins can use post-filtering for non-AST conditions
+        return spark.sql("""
+            SELECT /*+ BROADCAST(right_table) */
+                   left_table.id, left_table.a, right_table.id as right_id, right_table.b
+            FROM left_table
+            INNER JOIN right_table ON left_table.id = right_table.id
+                                    AND left_table.a + 10 > right_table.b + 5
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should work on GPU: Inner joins don't require AST for conditions
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+@allow_non_gpu('SortMergeJoinExec')
+@ignore_order(local=True)
+def test_cpu_bridge_hash_join_left_outer_fallback():
+    """Left outer join with bridge expressions should cause fallback (may be SortMergeJoin or ShuffledHashJoin)"""
+    def test_func(spark):
+        # Use medium range - not small enough for broadcast
+        left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=100)), 
+                             ('a', IntegerGen(min_val=1, max_val=100))], length=200)
+        right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=100)), 
+                              ('b', IntegerGen(min_val=1, max_val=100))], length=150)
+        
+        left.createOrReplaceTempView("left_table")
+        right.createOrReplaceTempView("right_table")
+        
+        # Disable adaptive query execution for predictable behavior
+        spark.conf.set("spark.sql.adaptive.enabled", "false")
+        spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "false")
+        
+        # Left outer join with disabled Add expressions in condition
+        return spark.sql("""
+            SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
+            FROM left_table
+            LEFT JOIN right_table ON left_table.id = right_table.id
+                                   AND left_table.a + 10 > right_table.b + 5
+        """)
+    
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    # Should fall back: Outer joins require AST conversion for conditions
+    # Spark may choose SortMergeJoin or ShuffledHashJoin depending on configuration
+    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
 
 
 @allow_non_gpu('ShuffleExchangeExec')
