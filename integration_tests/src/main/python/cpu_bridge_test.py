@@ -478,18 +478,16 @@ def test_cpu_bridge_sort_key_fallback():
     assert_gpu_fallback_collect(test_func, 'SortExec', conf=conf)
 
 
-@allow_non_gpu('HashAggregateExec', 'ShuffleExchangeExec')
 @ignore_order(local=True)
-def test_cpu_bridge_group_by_key_fallback():
-    """Bridge expressions as grouping keys should cause aggregation fallback"""
+def test_cpu_bridge_group_by_key_works():
+    """Bridge expressions as grouping keys should work via project rewrite"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen)], length=2000)
-        # Group by bridge expression should cause aggregation fallback
-        # because hash aggregation relies on GPU hash functions
+        # Group by bridge expression should work - Spark rewrites to project first
         return df.groupBy(df.a + df.b).agg(f.sum("c").alias("total"))
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'HashAggregateExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
 def test_cpu_bridge_window_partition_key_works():
