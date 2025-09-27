@@ -492,12 +492,11 @@ def test_cpu_bridge_group_by_key_fallback():
     assert_gpu_fallback_collect(test_func, 'HashAggregateExec', conf=conf)
 
 
-@allow_non_gpu('WindowExec')
-def test_cpu_bridge_window_partition_key_fallback():
-    """Bridge expressions in window partition keys should cause window fallback"""
+def test_cpu_bridge_window_partition_key_works():
+    """Bridge expressions in window partition keys should work via project rewrite"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen)], length=1000)
-        # Window partition by bridge expression should cause window fallback
+        # Window partition by bridge expression should work - Spark rewrites to project first
         return df.selectExpr(
             "a", "b", "c",
             "row_number() over (partition by a + b order by c) as row_num",
@@ -505,15 +504,14 @@ def test_cpu_bridge_window_partition_key_fallback():
         )
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'WindowExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
-@allow_non_gpu('WindowExec')  
-def test_cpu_bridge_window_order_key_fallback():
-    """Bridge expressions in window order keys should cause window fallback"""
+def test_cpu_bridge_window_order_key_works():
+    """Bridge expressions in window order keys should work via project rewrite"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=1000)
-        # Window order by bridge expression should cause window fallback
+        # Window order by bridge expression should work - Spark rewrites to project first
         return df.selectExpr(
             "a", "b", "c",
             "row_number() over (partition by c order by a + b) as row_num",
@@ -521,7 +519,7 @@ def test_cpu_bridge_window_order_key_fallback():
         )
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'WindowExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
 # ==============================================================================
