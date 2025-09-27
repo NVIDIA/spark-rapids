@@ -29,7 +29,8 @@ def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, codegen_enabled=Tr
     """Create config that enables CPU bridge and disables specific GPU expressions"""
     conf = {
         'spark.rapids.sql.expression.cpuBridge.enabled': True,
-        'spark.rapids.sql.expression.cpuBridge.codegenEnabled': codegen_enabled
+        'spark.rapids.sql.expression.cpuBridge.codegenEnabled': codegen_enabled,
+        'spark.sql.ansi.enabled': False  # Disable ANSI mode to prevent arithmetic overflow exceptions
     }
     # Disable specific GPU expressions to force CPU bridge fallback
     for expr_name in disabled_gpu_expressions:
