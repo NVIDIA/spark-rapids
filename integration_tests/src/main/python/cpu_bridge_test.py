@@ -450,24 +450,22 @@ def test_cpu_bridge_hash_join_left_outer_fallback():
     assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
 
 
-@allow_non_gpu('ShuffleExchangeExec')
 @ignore_order(local=True)
-def test_cpu_bridge_hash_partitioning_fallback():
-    """Bridge expressions in partitioning should cause shuffle fallback"""
+def test_cpu_bridge_hash_partitioning_works():
+    """Bridge expressions in partitioning should work with partition bridge optimization"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=2000)
-        # Partition by expression containing bridge - should cause shuffle fallback
-        # because hash partitioning requires GPU-native hash functions
+        # Partition by expression containing bridge - with partition bridge optimization,
+        # hash partitioning should work entirely on GPU
         return df.repartition(10, df.a + df.b).groupBy("c").count()
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'ShuffleExchangeExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
 @ignore_order(local=True)
-@allow_non_gpu('ShuffleExchangeExec')
 def test_cpu_bridge_sort_key():
-    """Bridge expressions in sort keys should work, but not in the partitioning"""
+    """Bridge expressions in sort keys should work entirely on GPU with partition bridge optimization"""
     def test_func(spark):
         # Use non-overlapping ranges to avoid ambiguous sort results
         # a: 1-50, b: 100-150, so a+b ranges from 101-200 (no overlaps possible)
@@ -476,13 +474,13 @@ def test_cpu_bridge_sort_key():
             ('a', IntegerGen(min_val=1, max_val=50, nullable=False)), 
             ('b', IntegerGen(min_val=100, max_val=150, nullable=False))
         ], length=1000)
-        # Sort by bridge expression should cause shuffle fallback for partitioning
-        # but the sort itself should work on GPU
+        # Sort by bridge expression - with partition bridge optimization,
+        # both partitioning and sort should work on GPU
         # Secondary sort by 'a' eliminates any remaining ambiguity
         return df.orderBy(df.a + df.b, df.a)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'ShuffleExchangeExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
 def test_cpu_bridge_sort_with_limit():

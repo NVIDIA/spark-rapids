@@ -518,6 +518,10 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
   }
 
   def tagPartForGpu(): Unit = {}
+
+  override protected def runChildExprBridgeOptimization(): Unit = {
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(childExprs)
+  }
 }
 
 /**
