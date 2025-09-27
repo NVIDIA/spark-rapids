@@ -517,7 +517,12 @@ def test_cpu_bridge_group_by_key_works():
 def test_cpu_bridge_window_partition_key_works():
     """Bridge expressions in window partition keys should work via project rewrite"""
     def test_func(spark):
-        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen)], length=1000)
+        # Use unique values for ordering to ensure deterministic ROW_NUMBER() results
+        df = gen_df(spark, [
+            ('a', IntegerGen(min_val=1, max_val=50, nullable=False)), 
+            ('b', IntegerGen(min_val=100, max_val=150, nullable=False)), 
+            ('c', UniqueLongGen(nullable=False))
+        ], length=1000)
         # Window partition by bridge expression should work - Spark rewrites to project first
         return df.selectExpr(
             "a", "b", "c",
@@ -532,12 +537,19 @@ def test_cpu_bridge_window_partition_key_works():
 def test_cpu_bridge_window_order_key_works():
     """Bridge expressions in window order keys should work via project rewrite"""
     def test_func(spark):
-        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=1000)
+        # Use non-overlapping ranges and unique ordering to ensure deterministic results
+        df = gen_df(spark, [
+            ('a', IntegerGen(min_val=1, max_val=50, nullable=False)), 
+            ('b', IntegerGen(min_val=1000, max_val=1050, nullable=False)), 
+            ('c', StringGen(pattern='[a-d]', nullable=False)),  # Small set for partitioning
+            ('order_key', UniqueLongGen(nullable=False))  # Unique ordering column
+        ], length=1000)
         # Window order by bridge expression should work - Spark rewrites to project first
+        # Use unique order_key as secondary sort to ensure deterministic ROW_NUMBER() and LAG()
         return df.selectExpr(
             "a", "b", "c",
-            "row_number() over (partition by c order by a + b) as row_num",
-            "lag(a, 1) over (partition by c order by a + b) as prev_a"
+            "row_number() over (partition by c order by a + b, order_key) as row_num",
+            "lag(a, 1) over (partition by c order by a + b, order_key) as prev_a"
         )
     
     conf = create_cpu_bridge_fallback_conf(['Add'])

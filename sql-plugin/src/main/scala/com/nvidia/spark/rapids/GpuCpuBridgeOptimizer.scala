@@ -28,25 +28,12 @@ object GpuCpuBridgeOptimizer extends Logging {
 
   def checkAndOptimizeExpressionMetas(exprs: Seq[BaseExprMeta[_]]): Unit = {
     if (exprs.nonEmpty && exprs.head.conf.isCpuBridgeEnabled) {
-      logError(s"BRIDGE_DEBUG: checkAndOptimizeExpressionMetas called " +
-        s"with ${exprs.length} expressions")
-      exprs.zipWithIndex.foreach { case (child, idx) =>
-        logError(s"BRIDGE_DEBUG: Expression[$idx]: ${child.wrapped.getClass.getSimpleName} " +
-          s"canExprTreeBeReplaced=${child.canExprTreeBeReplaced} " +
-          s"canRunOnCpuOrGpu=${canRunOnCpuOrGpuRecursively(child)}")
-        
+      exprs.foreach { child =>
         if (!child.canExprTreeBeReplaced && canRunOnCpuOrGpuRecursively(child)) {
           // Check if this expression tree requires AST conversion (marked during tagging)
-          val childRequiresAst = requiresAst(child)
-          logError(s"BRIDGE_DEBUG: Expression[$idx] ${child.wrapped.getClass.getSimpleName} " +
-            s"requiresAst=$childRequiresAst mustBeAst=${child.mustBeAstExpression} " +
-            s"canThisBeAst=${child.canThisBeAst}")
-          if (!childRequiresAst) {
+          if (!requiresAst(child)) {
             // Minimize data movement for this expression tree assuming the consumer is on GPU
             optimizeByMinimizingMovement(child)
-          } else {
-            logError(s"BRIDGE_DEBUG: Skipping bridge optimization for " +
-              s"${child.wrapped.getClass.getSimpleName} because it requires AST conversion")
           }
         }
       }
@@ -59,15 +46,7 @@ object GpuCpuBridgeOptimizer extends Logging {
    */
   private def requiresAst(expr: BaseExprMeta[_]): Boolean = {
     // Check if this expression was marked as requiring AST during tagging
-    val thisMustBeAst = expr.mustBeAstExpression
-    val childrenRequireAst = expr.childExprs.exists(requiresAst)
-    val result = thisMustBeAst || childrenRequireAst
-    if (expr.wrapped.getClass.getSimpleName == "GreaterThan" || 
-        expr.wrapped.getClass.getSimpleName == "Add") {
-      logError(s"BRIDGE_DEBUG: requiresAst(${expr.wrapped.getClass.getSimpleName}) = $result " +
-        s"(thisMustBeAst=$thisMustBeAst, childrenRequireAst=$childrenRequireAst)")
-    }
-    result
+    expr.mustBeAstExpression || expr.childExprs.exists(requiresAst)
   }
 
   private def canRunOnCpuOrGpuRecursively(expr: BaseExprMeta[_]): Boolean = {

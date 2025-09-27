@@ -48,14 +48,9 @@ class GpuBroadcastHashJoinMeta(
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
     val allCanBeAst = conditionMeta.forall(_.canThisBeAst)
-    println(s"BRIDGE_DEBUG: BroadcastHashJoin convertToGpu - allCanBeAst=$allCanBeAst")
-    conditionMeta.foreach(c => println(s"BRIDGE_DEBUG: Condition " +
-      s"${c.wrapped.getClass.getSimpleName} canThisBeAst=${c.canThisBeAst}"))
     val (joinCondition, filterCondition) = if (allCanBeAst) {
-      println("BRIDGE_DEBUG: Using AST path - condition goes to join")
       (condition, None)
     } else {
-      println("BRIDGE_DEBUG: Using post-filter path - condition goes to filter")
       (None, condition)
     }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())

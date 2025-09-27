@@ -669,8 +669,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   def requireAstForGpuOn(exprMeta: BaseExprMeta[_]): Unit = {
-    println(s"BRIDGE_DEBUG: requireAstForGpuOn called on " +
-      s"${exprMeta.wrapped.getClass.getSimpleName} from ${this.getClass.getSimpleName}")
     // willNotWorkOnGpu does not deduplicate reasons. Most of the time that is fine
     // but here we want to avoid adding the reason twice, because this method can be
     // called multiple times, and also the reason can automatically be added in if
@@ -1281,14 +1279,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * from converting it to a bridge expression.
    */
   final def requiresAstConversion(): Unit = {
-    println(s"BRIDGE_DEBUG: Setting mustBeAst=true on ${wrapped.getClass.getSimpleName}")
     mustBeAst = true
     // Also mark all children as requiring AST
-    childExprs.foreach { child =>
-      println(s"BRIDGE_DEBUG: Propagating mustBeAst to child " +
-        s"${child.wrapped.getClass.getSimpleName}")
-      child.requiresAstConversion()
-    }
+    childExprs.foreach(_.requiresAstConversion())
   }
 
   /**
@@ -1300,16 +1293,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
     tagForAst()
     // An expression cannot be AST if it cannot be replaced (disabled), uses CPU bridge,
     // or has AST-specific issues  
-    val result = canThisBeReplaced && !willUseGpuCpuBridge && 
+    canThisBeReplaced && !willUseGpuCpuBridge && 
       childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
-    if (wrapped.getClass.getSimpleName == "GreaterThan" || 
-        wrapped.getClass.getSimpleName == "Add" ||
-        willUseGpuCpuBridge) {
-      println(s"BRIDGE_DEBUG: canThisBeAst(${wrapped.getClass.getSimpleName}) = $result " +
-        s"canReplace=${canThisBeReplaced} usesBridge=${willUseGpuCpuBridge} " +
-        s"wrapperType=${this.getClass.getSimpleName}")
-    }
-    result
   }
 
   /**
@@ -1324,9 +1309,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   final def requireAstForGpu(): Unit = {
-    // Mark this expression tree as requiring AST
-    println(s"BRIDGE_DEBUG: requireAstForGpu() called on ${wrapped.getClass.getSimpleName}")
-    
     // Undo any bridge optimization that was applied before the AST requirement
     // This handles the case where bridge optimizer ran first, then AST was required later
     undoBridgeOptimization()
