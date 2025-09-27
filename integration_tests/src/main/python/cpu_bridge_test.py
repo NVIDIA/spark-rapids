@@ -529,53 +529,55 @@ def test_cpu_bridge_window_order_key_fallback():
 # These test scenarios where bridge expressions in filters affect scan operations
 # ==============================================================================
 
-@allow_non_gpu('FileSourceScanExec')
-def test_cpu_bridge_predicate_pushdown_parquet_fallback():
-    """Bridge expressions in filters that get pushed to file scans should cause scan fallback"""
+def test_cpu_bridge_predicate_pushdown_parquet_works(spark_tmp_path):
+    """Check we didn't break predicate push down when bridge expressions are enabled"""
+    # Generate data once and write to parquet
+    data_path = spark_tmp_path + '/BRIDGE_PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=2000)
+                     .coalesce(1).write.mode("overwrite").parquet(data_path))
+    
     def test_func(spark):
-        # Create a DataFrame and save as parquet
-        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=2000)
-        temp_path = "/tmp/test_bridge_parquet"
-        df.coalesce(1).write.mode("overwrite").parquet(temp_path)
-        
         # Read back with filter containing bridge expression
-        # Spark will try to push down the filter, but bridge expressions cannot be pushed
-        return spark.read.parquet(temp_path).filter((col("a") + col("b")) > 100)
+        # Predicate pushdown should work because those expressions are
+        # treated differently.
+        return spark.read.parquet(data_path).filter((col("a") + col("b")) > 100)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'FileSourceScanExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
-@allow_non_gpu('FileSourceScanExec')  
-def test_cpu_bridge_complex_predicate_pushdown_fallback():
-    """Complex bridge expressions in filters should cause scan fallback"""
+def test_cpu_bridge_complex_predicate_pushdown_works(spark_tmp_path):
+    """Check we didn't break predicate push down when bridge expressions are enabled"""
+    # Generate data once and write to parquet
+    data_path = spark_tmp_path + '/BRIDGE_COMPLEX_PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen), ('d', string_gen)], length=1500)
+                     .coalesce(1).write.mode("overwrite").parquet(data_path))
+    
     def test_func(spark):
-        # Create test data
-        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen), ('d', string_gen)], length=1500)
-        temp_path = "/tmp/test_bridge_complex_parquet"
-        df.coalesce(1).write.mode("overwrite").parquet(temp_path)
-        
-        # Complex filter with multiple bridge expressions
-        return spark.read.parquet(temp_path).filter(
+        return spark.read.parquet(data_path).filter(
             ((col("a") + col("b")) > 50) & 
             ((col("b") + col("c")) < 200) &
             (col("d").isNotNull())
         )
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'FileSourceScanExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
 # Test that simple filters without bridge expressions still work on GPU
-def test_cpu_bridge_simple_predicate_pushdown_works():
+def test_cpu_bridge_simple_predicate_pushdown_works(spark_tmp_path):
     """Simple predicates without bridge expressions should still use GPU scan"""
+    # Generate data once and write to parquet
+    data_path = spark_tmp_path + '/BRIDGE_SIMPLE_PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=1000)
+                     .coalesce(1).write.mode("overwrite").parquet(data_path))
+    
     def test_func(spark):
-        df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=1000)
-        temp_path = "/tmp/test_bridge_simple_parquet"
-        df.coalesce(1).write.mode("overwrite").parquet(temp_path)
-        
         # Simple filter that can be pushed down - should work on GPU
-        return spark.read.parquet(temp_path).filter((col("a") > 50) & (col("b") < 100))
+        return spark.read.parquet(data_path).filter((col("a") > 50) & (col("b") < 100))
     
     conf = create_cpu_bridge_fallback_conf(['Add'])  # Add disabled but not used in filter
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
