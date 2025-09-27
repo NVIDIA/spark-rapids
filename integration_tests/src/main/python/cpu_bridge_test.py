@@ -464,18 +464,18 @@ def test_cpu_bridge_hash_partitioning_fallback():
     assert_gpu_fallback_collect(test_func, 'ShuffleExchangeExec', conf=conf)
 
 
-@allow_non_gpu('GpuColumnarToRowExec', 'SortExec')
 @ignore_order(local=True)
-def test_cpu_bridge_sort_key_fallback():
-    """Bridge expressions in sort keys should cause sort fallback"""
+@allow_non_gpu('ShuffleExchangeExec')
+def test_cpu_bridge_sort_key():
+    """Bridge expressions in sort keys should work, but not in the partitioning"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen)], length=1000)
-        # Sort by bridge expression should cause sort fallback
-        # because columnar sort algorithms need GPU expressions
+        # Sort by bridge expression should cause shuffle fallback for partitioning
+        # but the sort itself should work on GPU
         return df.orderBy(df.a + df.b)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    assert_gpu_fallback_collect(test_func, 'SortExec', conf=conf)
+    assert_gpu_fallback_collect(test_func, 'ShuffleExchangeExec', conf=conf)
 
 
 @ignore_order(local=True)
