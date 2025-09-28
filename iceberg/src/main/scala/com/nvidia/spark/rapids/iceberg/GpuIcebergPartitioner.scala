@@ -17,11 +17,9 @@
 package com.nvidia.spark.rapids.iceberg
 
 import java.lang.Math.toIntExact
-
 import scala.collection.JavaConverters._
-
-import ai.rapids.cudf.{ColumnVector => CudfColumnVector, OrderByArg, Scalar, Table}
-import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, RapidsHostColumnVector, SpillableColumnarBatch, SpillPriorities}
+import ai.rapids.cudf.{OrderByArg, Scalar, Table, ColumnVector => CudfColumnVector}
+import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, RapidsHostColumnVector, SpillPriorities, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -29,13 +27,12 @@ import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner.toPartitionKeys
 import org.apache.iceberg.{PartitionField, PartitionSpec, Schema, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
-import org.apache.iceberg.spark.functions.GpuBucketExpression
+import org.apache.iceberg.spark.functions.{GpuBucket, GpuBucketExpression, GpuTransform}
 import org.apache.iceberg.types.Types
-
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.catalyst.expressions.NamedExpression.newExprId
 import org.apache.spark.sql.types.{DataType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 /**
  * A GPU based Iceberg partitioner that partitions the input columnar batch into multiple
@@ -168,13 +165,10 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     val inputRefExpr = GpuBoundReference(inputIndex, sparkField.dataType,
       sparkField.nullable)(newExprId, s"input$inputIndex")
 
-    transform.toString match {
+    GpuTransform(transform.toString) match {
       // bucket transform is like "bucket[16]"
-      case s if s.startsWith("bucket") =>
-        val bucket = s.substring("bucket[".length, s.length - 1).toInt
+      case GpuBucket(bucket) =>
         GpuBucketExpression(GpuLiteral.create(bucket), inputRefExpr)
-      case other =>
-        throw new IllegalArgumentException(s"Unsupported transform: $other")
     }
   }
 }

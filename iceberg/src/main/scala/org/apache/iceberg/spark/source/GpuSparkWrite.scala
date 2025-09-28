@@ -17,7 +17,6 @@
 package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
@@ -28,8 +27,9 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
 import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
+import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
-
+import org.apache.spark.Success
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
@@ -41,6 +41,8 @@ import org.apache.spark.sql.connector.write.streaming.StreamingWrite
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
+
+import scala.util.{Failure, Success}
 
 
 class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionAndOrdering  {
@@ -146,6 +148,32 @@ object GpuSparkWrite {
 
     if (!dataFileFormat.equals(FileFormat.PARQUET)) {
       meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: $dataFileFormat")
+    }
+
+    val table: Table = FieldUtils.readField(cpuWrite, "table", true).asInstanceOf[Table]
+    val partitionSpec = table.spec()
+
+    val dsSchema = FieldUtils.readField(cpuWrite, "dsSchema", true)
+      .asInstanceOf[StructType]
+    val writeSchema = FieldUtils.readField(cpuWrite, "writeSchema", true)
+      .asInstanceOf[Schema]
+
+    if (partitionSpec.isPartitioned) {
+      for (partitionField <- partitionSpec.fields().asScala) {
+        val transform = partitionField.transform()
+        GpuTransform.tryFrom(transform) match {
+          case Success(t) => {
+            val fieldTransform = GpuFieldTransform(partitionField.sourceId(), t)
+            if (!fieldTransform.supports(dsSchema, writeSchema)) {
+              meta.willNotWorkOnGpu(
+                s"Iceberg partition transform $transform is not supported on GPU")
+            }
+          }
+          case Failure(e) => meta.willNotWorkOnGpu(
+            s"Iceberg partition transform $transform is not supported on GPU")
+        }
+      }
+      meta.willNotWorkOnGpu("Iceberg identity partition transform is not supported on GPU")
     }
   }
 
