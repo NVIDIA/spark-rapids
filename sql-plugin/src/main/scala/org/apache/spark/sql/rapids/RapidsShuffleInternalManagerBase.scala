@@ -305,7 +305,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    * waits for each partition to complete and writes them in order (0,1,2,3...).
    */
   private def writeSingleBatchDirect(
-      records: TimeTrackingIterator,
+      records: Iterator[Product2[Any, Any]],
       mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
     
     import java.io.ByteArrayOutputStream
@@ -532,9 +532,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   }
 
   private def write(records: TimeTrackingIterator): Unit = {
-    // Check if we can use the optimized path for single batch tasks
-    import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
-    
     // Timestamp when the main processing begins
     val processingStart: Long = System.nanoTime()
     val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
@@ -546,15 +543,29 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       val partLengths = if (!records.hasNext) {
         commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
       } else {
-        val bufferedIterator = new CloseableBufferedIterator(records)
-        val recordForFirstPartition = bufferedIterator.head
+        val bufferedIterator = new CloseableBufferedIterator(
+          records.map { r =>
+            new AutoCloseable with Product2[Any, Any] {
+              override def close(): Unit = {
+                r._2 match {
+                  case cb: ColumnarBatch => cb.close()
+                  case _ =>
+                }
+              }
+              override def _1: Any = r._1
+              override def _2: Any = r._2
+              override def canEqual(that: Any): Boolean = true
+            }
+          }
+        )
+        val recordForFirstPartition = bufferedIterator.head.asInstanceOf[Product2[Any, Any]]
 
         recordForFirstPartition._1 match {
           case batch: ColumnarBatch if GpuColumnVector.isTaggedAsSubPartitionOfFinalBatch(batch) =>
             // Optimized path for single batch tasks: bypass diskBlockObjectWriters
             // and write directly to partWriter using serializer
             logInfo(s"Using optimized single batch write path for shuffle $shuffleId")
-            writeSingleBatchDirect(records, mapOutputWriter)
+            writeSingleBatchDirect(bufferedIterator, mapOutputWriter)
           case _ =>
             // per reduce partition ids
             // open all the writers ahead of time (Spark does this already)
@@ -583,9 +594,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             var batchSizeComputeTimeNs: Long = 0L
 
             try {
-              while (records.hasNext) {
+              while (bufferedIterator.hasNext) {
                 // get the record
-                val record = records.next()
+                val record = bufferedIterator.next()
                 val key = record._1
                 val value = record._2
                 val reducePartitionId: Int = partitioner.getPartition(key)
@@ -667,7 +678,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // serialization and the write. The latter involves computations in upstream execs,
             // ColumnarBatch size estimation, and the time blocked on the limiter.
             val writeTimeNs = (System.nanoTime() - processingStart) -
-              records.getIterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
+              records.getIterateTimeNs - // CAUTION: normally we should use bufferedIterator
+                                         // instead of records
+              batchSizeComputeTimeNs - waitTimeOnLimiterNs
 
             val combineTimeStart = System.nanoTime()
             val pl = writePartitionedData(mapOutputWriter)
