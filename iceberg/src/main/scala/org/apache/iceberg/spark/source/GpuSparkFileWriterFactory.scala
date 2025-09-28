@@ -24,9 +24,8 @@ import org.apache.iceberg.{FileFormat, MetricsConfig, PartitionSpec, SortOrder, 
 import org.apache.iceberg.deletes.{EqualityDeleteWriter, PositionDeleteWriter}
 import org.apache.iceberg.encryption.EncryptedOutputFile
 import org.apache.iceberg.io.{DataWriter, FileWriterFactory}
-
 import org.apache.spark.sql.execution.datasources.GpuWriteFiles
-import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
+import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 
@@ -42,11 +41,6 @@ class GpuSparkFileWriterFactory(val table: Table,
     s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $dataFileFormat")
   require(deleteFileFormat == FileFormat.PARQUET,
     s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $deleteFileFormat")
-
-  private lazy val jobStatsTracker = GpuWriteJobStatsTracker(
-    serializableHadoopConf = hadoopConf,
-    basicMetrics = GpuWriteJobStatsTracker.basicMetrics,
-    taskMetrics = GpuWriteJobStatsTracker.taskMetrics)
 
   private lazy val taskAttemptContext: TaskAttemptContext = GpuWriteFiles
     .calcHadoopTaskAttemptContext(hadoopConf.value)
@@ -80,7 +74,8 @@ class GpuSparkFileWriterFactory(val table: Table,
       path = path,
       dataSchema = dataSparkType,
       context = taskAttemptContext,
-      statsTrackers = Seq(jobStatsTracker.newTaskInstance()),
+      statsTrackers = Seq(new GpuWriteTaskStatsTracker(hadoopConf.value,
+        GpuWriteJobStatsTracker.taskMetrics)),
       debugOutputPath = None
     ).asInstanceOf[GpuParquetWriter]
 
