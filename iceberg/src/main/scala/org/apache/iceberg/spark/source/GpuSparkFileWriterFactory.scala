@@ -26,7 +26,7 @@ import org.apache.iceberg.encryption.EncryptedOutputFile
 import org.apache.iceberg.io.{DataWriter, FileWriterFactory}
 
 import org.apache.spark.sql.execution.datasources.GpuWriteFiles
-import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
+import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 
