@@ -940,7 +940,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return false;
     }
     for (int col = 0; col < numCols; col++) {
-      if (!((GpuColumnVectorBase)batch.column(col)).isKnownSubPartitionOfOnlyBatch()) {
+      if (!((ColumnVectorWithState)batch.column(col)).isKnownSubPartitionOfOnlyBatch()) {
         return false;
       }
     }
