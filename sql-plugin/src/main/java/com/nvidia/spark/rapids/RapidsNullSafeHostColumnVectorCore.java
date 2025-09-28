@@ -28,7 +28,7 @@ import org.apache.spark.unsafe.types.UTF8String;
  * return the default value of a type when trying to read a null.
  * The performance may not be good enough, so use it only when there is no other way.
  */
-public class RapidsNullSafeHostColumnVectorCore extends ColumnVector {
+public class RapidsNullSafeHostColumnVectorCore extends ColumnVectorWithState {
   private final RapidsHostColumnVectorCore rapidsHcvc;
   private final RapidsNullSafeHostColumnVectorCore[] cachedChildren;
 

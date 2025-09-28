@@ -40,7 +40,7 @@ import java.math.BigDecimal;
  * is on the host, and we want to keep as much of the data on the device as possible.
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
-public class RapidsHostColumnVectorCore extends ColumnVector {
+public class RapidsHostColumnVectorCore extends ColumnVectorWithState {
 
   private final HostColumnVectorCore cudfCv;
   private final RapidsHostColumnVectorCore[] cachedChildren;

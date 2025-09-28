@@ -23,45 +23,8 @@ import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
 /** Base class for all GPU column vectors. */
-abstract class GpuColumnVectorBase extends ColumnVector {
+abstract class GpuColumnVectorBase extends ColumnVectorWithState {
   private final static String BAD_ACCESS = "DATA ACCESS MUST BE ON A HOST VECTOR";
-
-  private boolean isFinalBatch = false;
-  // This is slightly different than isFinalBach, the current batch may not be the final batch,
-  // but it is a sub-partition of the final batch.
-  private boolean isSubPartitionOfFinalBatch = false;
-
-  /**
-   * Set if this is a part of the final batch for this partition or not.
-   * @param isFinal true if this is part of the final batch or false if unknown.
-   */
-  public final void setFinalBatch(boolean isFinal) {
-    isFinalBatch = isFinal;
-  }
-
-  /**
-   * Is this the final batch or is it unknown.
-   * @return true if it is known to be a part of the final batch, else false if it is unknown
-   */
-  public boolean isKnownFinalBatch() {
-    return isFinalBatch;
-  }
-
-  /**
-   * Set if this is a sub-partition of the final batch for this partition or not.
-   * @param isFinal true if this is part of the final batch or false if unknown.
-   */
-  public final void setSubPartitionOfFinalBatch(boolean isFinal) {
-    isSubPartitionOfFinalBatch = isFinal;
-  }
-
-  /**
-   * Is this a sub-partition of the final batch or is it unknown.
-   * @return true if it is known to be a part of the final batch, else false if it is unknown
-   */
-  public boolean isKnownSubPartitionOfFinalBatch() {
-    return isSubPartitionOfFinalBatch;
-  }
 
   protected GpuColumnVectorBase(DataType type) {
     super(type);

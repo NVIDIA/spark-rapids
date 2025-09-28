@@ -29,7 +29,7 @@ import org.apache.spark.unsafe.types.UTF8String;
  * Wraps a GpuColumnVector but only points to a slice of it.  This is intended to only be used
  * during shuffle after the data is partitioned and before it is serialized.
  */
-public class SlicedGpuColumnVector extends ColumnVector {
+public class SlicedGpuColumnVector extends ColumnVectorWithState {
   private final RapidsHostColumnVector wrap;
   private final int start;
   private final int end;

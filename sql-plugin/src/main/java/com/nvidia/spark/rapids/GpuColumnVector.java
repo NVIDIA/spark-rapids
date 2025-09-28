@@ -926,7 +926,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static ColumnarBatch tagAsSubPartitionOfFinalBatch(ColumnarBatch batch) {
     int numCols = batch.numCols();
     for (int col = 0; col < numCols; col++) {
-      ((GpuColumnVectorBase)batch.column(col)).setSubPartitionOfFinalBatch(true);
+      ((ColumnVectorWithState)batch.column(col)).setSubPartitionOfFinalBatch(true);
     }
     return batch;
   }

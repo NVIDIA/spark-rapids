@@ -418,6 +418,20 @@ object GpuShuffleExchangeExecBase {
               // Get a non-empty batch or the last batch. So still need to
               // check if it is empty for the later case.
               if (batch.numRows > 0) {
+
+                // Check if this is the only batch. We do it before partitioning
+                // because partitioning may release the semaphore, making it time
+                // consuming to do hasNext check.
+                if (isFirstCall) {
+                  isFirstCall = false
+
+                  if (!iter.hasNext) {
+                    partitioned.foreach(batch => {
+                      GpuColumnVector.tagAsSubPartitionOfFinalBatch(batch._1)
+                    })
+                  }
+                }
+
                 partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
                 partitioned.foreach(batches => {
                   metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
@@ -426,18 +440,6 @@ object GpuShuffleExchangeExecBase {
                 at = 0
               } else {
                 batch.close()
-              }
-            }
-
-            // Check if this is the first call and iterator has no more data
-            // If so, set the ThreadLocal flag indicating single batch task
-            if (isFirstCall) {
-              isFirstCall = false
-
-              if (!iter.hasNext) {
-                partitioned.foreach(batch => {
-                  GpuColumnVector.tagAsSubPartitionOfFinalBatch(batch._1)
-                })
               }
             }
           }
