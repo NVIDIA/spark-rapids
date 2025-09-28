@@ -18,6 +18,7 @@ package org.apache.spark.sql.hive.rapids
 
 import java.nio.charset.Charset
 import java.util.Locale
+
 import ai.rapids.cudf.{CSVWriterOptions, CompressionType, DType, ParquetWriterOptions, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
@@ -26,6 +27,7 @@ import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims.BucketingUtilsShim
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
