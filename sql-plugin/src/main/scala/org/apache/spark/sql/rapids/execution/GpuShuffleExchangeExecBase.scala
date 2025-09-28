@@ -402,7 +402,8 @@ object GpuShuffleExchangeExecBase {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
-          private var isFirstCall = true
+          private var isFirstCheck = true
+          private var isSingleBatch = true
           private def partNextBatch(): Unit = {
             if (partitioned != null) {
               partitioned.map(_._1).safeClose()
@@ -422,19 +423,21 @@ object GpuShuffleExchangeExecBase {
                 // Check if this is the only batch. We do it before partitioning
                 // because partitioning may release the semaphore, making it time
                 // consuming to do hasNext check.
-                if (isFirstCall) {
-                  isFirstCall = false
+                if (isFirstCheck) {
+                  isFirstCheck = false
 
                   if (!iter.hasNext) {
-                    partitioned.foreach(batch => {
-                      GpuColumnVector.tagAsSubPartitionOfFinalBatch(batch._1)
-                    })
+                    isSingleBatch = true
                   }
                 }
 
                 partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+
                 partitioned.foreach(batches => {
                   metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+                  if (isSingleBatch) {
+                    GpuColumnVector.tagAsSubPartitionOfOnlyBatch(batches._1)
+                  }
                 })
                 metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
                 at = 0

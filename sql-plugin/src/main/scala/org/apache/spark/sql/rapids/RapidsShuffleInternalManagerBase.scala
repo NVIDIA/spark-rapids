@@ -561,7 +561,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val recordForFirstPartition = bufferedIterator.head.asInstanceOf[Product2[Any, Any]]
 
         recordForFirstPartition._1 match {
-          case batch: ColumnarBatch if GpuColumnVector.isTaggedAsSubPartitionOfFinalBatch(batch) =>
+          case batch: ColumnarBatch if GpuColumnVector.isTaggedAsSubPartitionOfOnlyBatch(batch) =>
             // Optimized path for single batch tasks: bypass diskBlockObjectWriters
             // and write directly to partWriter using serializer
             logInfo(s"Using optimized single batch write path for shuffle $shuffleId")
