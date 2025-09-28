@@ -20,8 +20,8 @@ import java.lang.Math.toIntExact
 
 import scala.collection.JavaConverters._
 
-import ai.rapids.cudf.{OrderByArg, Scalar, Table, ColumnVector => CudfColumnVector}
-import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, RapidsHostColumnVector, SpillPriorities, SpillableColumnarBatch}
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, OrderByArg, Scalar, Table}
+import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, RapidsHostColumnVector, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -35,7 +35,7 @@ import org.apache.iceberg.types.Types
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.catalyst.expressions.NamedExpression.newExprId
 import org.apache.spark.sql.types.{DataType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
  * A GPU based Iceberg partitioner that partitions the input columnar batch into multiple
