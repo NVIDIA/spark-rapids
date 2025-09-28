@@ -96,8 +96,9 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
         if [[ ! -d $HOME/spark-3.2.0-bin-hadoop3.2 ]]; then
             # DBFS cache for Spark
             DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/cached_jars"}
-            SPARK_CACHE_FILE=${SPARK_CACHE_FILE:-"$DBFS_CACHE_DIR/spark-3.2.0-bin-hadoop3.2.tgz"}
-            SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-3.2.0/spark-3.2.0-bin-hadoop3.2.tgz"}
+            JAR_FILE_NAME=${JAR_FILE_NAME:-"spark-3.2.0-bin-hadoop3.2.tgz"}
+            SPARK_CACHE_FILE=${SPARK_CACHE_FILE:-"$DBFS_CACHE_DIR/$JAR_FILE_NAME"}
+            SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-3.2.0/$JAR_FILE_NAME"}
             
             # Create cache directory if it doesn't exist
             mkdir -p "$DBFS_CACHE_DIR"
@@ -105,19 +106,19 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             # Check if file exists in DBFS cache
             if [[ -f "$SPARK_CACHE_FILE" ]]; then
                 echo "Found Spark in DBFS cache, copying to /tmp..."
-                cp "$SPARK_CACHE_FILE" /tmp/spark-3.2.0-bin-hadoop3.2.tgz
+                cp "$SPARK_CACHE_FILE" "/tmp/$JAR_FILE_NAME"
             else
                 echo "Spark not found in DBFS cache, downloading from archive.apache.org..."
                 if wget "$SPARK_URL" -P /tmp; then
                     echo "Download successful, caching to DBFS..."
-                    cp /tmp/spark-3.2.0-bin-hadoop3.2.tgz "$SPARK_CACHE_FILE"
+                    cp "/tmp/$JAR_FILE_NAME" "$SPARK_CACHE_FILE"
                 else
                     echo "Download failed"
                     exit 1
                 fi
             fi
-            tar xf /tmp/spark-3.2.0-bin-hadoop3.2.tgz -C $HOME
-            rm -f /tmp/spark-3.2.0-bin-hadoop3.2.tgz
+            tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
+            rm -f "/tmp/$JAR_FILE_NAME"
         fi
         SPARK_HOME=$HOME/spark-3.2.0-bin-hadoop3.2 \
         SPARK_SHELL_SMOKE_TEST=1 \
