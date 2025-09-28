@@ -527,6 +527,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "integrated GPU systems where memory is shared between CPU and GPU. The remaining " +
         "fraction (1 - this value) will be allocated to CPU memory. Only applies when " +
         "DeviceAttr.isIntegratedGPU == 1.")
+    .internal()
     .startupOnly()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
