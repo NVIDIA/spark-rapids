@@ -38,6 +38,7 @@ import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, Write, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
+import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -103,6 +104,11 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       dsSchema
     )
 
+    val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)
+    val statsTracker = new GpuWriteJobStatsTracker(serializedHadoopConf,
+      GpuWriteJobStatsTracker.basicMetrics,
+      GpuWriteJobStatsTracker.taskMetrics)
+
     new GpuWriterFactory(
       tableBroadcast,
       queryId,
@@ -114,8 +120,8 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       useFanout,
       writeProps.asScala.toMap,
       outputWriterFactory,
-      new SerializableConfiguration(job.getConfiguration)
-    )
+      statsTracker,
+      serializedHadoopConf)
   }
 
   private[source] def files(messages: Array[WriterCommitMessage]): Seq[DataFile] = {
@@ -165,8 +171,10 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
   val useFanout: Boolean,
   val ignore: Map[String, String],
   val outputWriterFactory: ColumnarOutputWriterFactory,
-  val hadoopConf: SerializableConfiguration,
+  val statsTracker: GpuWriteJobStatsTracker,
+  val hadoopConf: SerializableConfiguration
 ) extends DataWriterFactory {
+
   override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] = {
     val table = tableBroadcast.value
     val spec = table.specs().get(outputSpecId)
@@ -185,8 +193,8 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
       table.sortOrder(),
       format,
       outputWriterFactory,
-      hadoopConf
-    )
+      statsTracker.newTaskInstance(),
+      hadoopConf)
 
     if (spec.isUnpartitioned) {
       new GpuUnpartitionedDataWriter(writerFactory, outputFileFactory, io, spec, targetFileSize)
