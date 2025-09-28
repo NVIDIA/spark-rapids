@@ -19,7 +19,7 @@ package org.apache.spark.sql.hive.rapids
 import java.nio.charset.Charset
 import java.util.Locale
 
-import ai.rapids.cudf.{CSVWriterOptions, CompressionType, DType, ParquetWriterOptions, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
+import ai.rapids.cudf.{CompressionType, CSVWriterOptions, DType, ParquetWriterOptions, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
