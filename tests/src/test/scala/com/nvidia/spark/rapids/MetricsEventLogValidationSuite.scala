@@ -407,8 +407,8 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     println(f"Operator time ratio: ${operatorTimeRatio * 100.0}%.1f%% of executor run time")
     println(f"Expected range: 0.0%% - 80.0%% of executor run time")
 
-    assert(totalOperatorTime >= minExpectedOperatorTime,
-      f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should be at least 0%% " +
+    assert(totalOperatorTime > minExpectedOperatorTime,
+      f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should be at least >0%% " +
         f"of total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
         f"but was only ${operatorTimeRatio * 100.0}%.1f%%")
 
