@@ -95,7 +95,7 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
     if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
         if [[ ! -d $HOME/spark-3.2.0-bin-hadoop3.2 ]]; then
             # DBFS cache for Spark
-            DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/workspace/cici_cache"}
+            DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/workspace/databricks/cached_jars"}
             SPARK_CACHE_FILE=${SPARK_CACHE_FILE:-"$DBFS_CACHE_DIR/spark-3.2.0-bin-hadoop3.2.tgz"}
             SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-3.2.0/spark-3.2.0-bin-hadoop3.2.tgz"}
             

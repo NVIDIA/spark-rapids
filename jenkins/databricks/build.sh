@@ -64,7 +64,7 @@ initialize()
 
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
         # DBFS cache for Maven
-        DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/workspace/cache"}
+        DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/workspace/databricks/cached_jars"}
         MAVEN_CACHE_FILE=${MAVEN_CACHE_FILE:-"$DBFS_CACHE_DIR/apache-maven-3.6.3-bin.tar.gz"}
         MAVEN_URL=${MAVEN_URL:-"https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz"}
         
