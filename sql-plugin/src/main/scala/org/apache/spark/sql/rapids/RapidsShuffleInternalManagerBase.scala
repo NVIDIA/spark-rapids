@@ -350,18 +350,23 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             val futures = partitionFutures.get(nextPartitionToWrite)
             if (futures != null) {
               // Wait for all compression tasks to complete for this partition
+              // and collect record sizes
               import scala.collection.JavaConverters._
-              futures.asScala.foreach { future =>
+              val recordSizesToRelease = futures.asScala.map { future =>
                 try {
-                  future.get() // Wait for completion
+                  future.get() // Wait for completion and get record size
                 } catch {
                   case ee: ExecutionException =>
                     throw ee.getCause
                 }
-              }
+              }.toList
 
               // Write this partition
               writePartitionBuffer(nextPartitionToWrite, partitionBuffers, mapOutputWriter)
+              
+              // Release limiter for all records in this partition after processing is complete
+              recordSizesToRelease.foreach(recordSize => limiter.release(recordSize))
+              
               nextPartitionToWrite += 1
             } else {
               // no data for this partition
@@ -421,27 +426,23 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val slotNum = RapidsShuffleInternalManagerBase.getNextWriterSlot
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           withResource(cb) { _ =>
-            try {
-              // Get or create buffer for this partition
-              val buffer = partitionBuffers.computeIfAbsent(reducePartitionId,
-                _ => new ByteArrayOutputStream())
+            // Get or create buffer for this partition
+            val buffer = partitionBuffers.computeIfAbsent(reducePartitionId,
+              _ => new ByteArrayOutputStream())
 
-              // Serialize + compress to memory buffer
-              val compressedOutputStream = blockManager.serializerManager.wrapStream(
-                ShuffleBlockId(shuffleId, mapId, reducePartitionId), buffer)
+            // Serialize + compress to memory buffer
+            val compressedOutputStream = blockManager.serializerManager.wrapStream(
+              ShuffleBlockId(shuffleId, mapId, reducePartitionId), buffer)
 
-              val serializationStream = serializerInstance.serializeStream(compressedOutputStream)
-              withResource(serializationStream) { serializer =>
-                serializer.writeKey(key.asInstanceOf[Any])
-                serializer.writeValue(value.asInstanceOf[Any])
-              }
-
-              // Track total data size
-              totalDataSize.addAndGet(recordSize)
-              recordSize // Return record size
-            } finally {
-              limiter.release(recordSize)
+            val serializationStream = serializerInstance.serializeStream(compressedOutputStream)
+            withResource(serializationStream) { serializer =>
+              serializer.writeKey(key.asInstanceOf[Any])
+              serializer.writeValue(value.asInstanceOf[Any])
             }
+
+            // Track total data size
+            totalDataSize.addAndGet(recordSize)
+            recordSize // Return record size
           }
         })
         
