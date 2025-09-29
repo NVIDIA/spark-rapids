@@ -493,8 +493,6 @@ else
             CONNECT_PORT=$(pick_free_port)
         fi
         CONNECT_SERVER_URL="sc://${CONNECT_HOST}:${CONNECT_PORT}"
-        # TEMP: measure elapsed time for the Spark Connect smoke test
-        CONNECT_TEST_START_EPOCH=$(date +%s)
 
         cleanup_connect_server() {
             if [[ -f "${SPARK_HOME}/sbin/stop-connect-server.sh" ]]; then
@@ -502,11 +500,6 @@ else
             fi
             pkill -f "org.apache.spark.sql.connect.service.SparkConnectServer" || true
             pkill -f "spark-shell.*--remote" || true
-            # TEMP: print total elapsed time in seconds for the Spark Connect smoke test
-            if [[ -n "$CONNECT_TEST_START_EPOCH" ]]; then
-                CONNECT_TEST_END_EPOCH=$(date +%s)
-                echo "Spark Connect smoke test elapsed: $(( CONNECT_TEST_END_EPOCH - CONNECT_TEST_START_EPOCH ))s"
-            fi
         }
         trap cleanup_connect_server EXIT
 
