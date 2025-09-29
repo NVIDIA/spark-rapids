@@ -29,7 +29,7 @@ import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner.toPartitionKeys
 import org.apache.iceberg.{PartitionField, PartitionSpec, Schema, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
-import org.apache.iceberg.spark.functions.GpuBucketExpression
+import org.apache.iceberg.spark.functions.{GpuBucket, GpuBucketExpression, GpuTransform}
 import org.apache.iceberg.types.Types
 
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
@@ -168,13 +168,10 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     val inputRefExpr = GpuBoundReference(inputIndex, sparkField.dataType,
       sparkField.nullable)(newExprId, s"input$inputIndex")
 
-    transform.toString match {
+    GpuTransform(transform.toString) match {
       // bucket transform is like "bucket[16]"
-      case s if s.startsWith("bucket") =>
-        val bucket = s.substring("bucket[".length, s.length - 1).toInt
+      case GpuBucket(bucket) =>
         GpuBucketExpression(GpuLiteral.create(bucket), inputRefExpr)
-      case other =>
-        throw new IllegalArgumentException(s"Unsupported transform: $other")
     }
   }
 }
