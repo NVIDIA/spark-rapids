@@ -683,9 +683,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         allowedExprs.foreach(expr => errorMessage.append(s"    - $expr\n"))
       }
       
-      errorMessage.append(s"\nTo fix this test, add the disallowed expression class names to the ")
-      errorMessage.append(s"@allow_non_gpu marker or testingAllowedNonGpu configuration.")
-      
       throw new IllegalArgumentException(errorMessage.toString())
     }
   }
