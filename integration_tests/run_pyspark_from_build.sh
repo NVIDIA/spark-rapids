@@ -493,6 +493,8 @@ else
             CONNECT_PORT=$(pick_free_port)
         fi
         CONNECT_SERVER_URL="sc://${CONNECT_HOST}:${CONNECT_PORT}"
+        # TEMP: measure elapsed time for the Spark Connect smoke test
+        CONNECT_TEST_START_EPOCH=$(date +%s)
 
         cleanup_connect_server() {
             if [[ -f "${SPARK_HOME}/sbin/stop-connect-server.sh" ]]; then
@@ -500,6 +502,11 @@ else
             fi
             pkill -f "org.apache.spark.sql.connect.service.SparkConnectServer" || true
             pkill -f "spark-shell.*--remote" || true
+            # TEMP: print total elapsed time in seconds for the Spark Connect smoke test
+            if [[ -n "$CONNECT_TEST_START_EPOCH" ]]; then
+                CONNECT_TEST_END_EPOCH=$(date +%s)
+                echo "Spark Connect smoke test elapsed: $(( CONNECT_TEST_END_EPOCH - CONNECT_TEST_START_EPOCH ))s"
+            fi
         }
         trap cleanup_connect_server EXIT
 
@@ -527,9 +534,15 @@ else
             exit 1
         fi
 
-        # Run a simple query using a small Python Connect client and assert expected result and check for GPU operator.
-        output=$(CONNECT_URL="$CONNECT_SERVER_URL" PYTHONPATH="${SPARK_HOME}/python:${PY4J_FILE}" \
-            python - <<'PY'
+        # Create a venv and install only pyspark[connect] to ensure a pure Python client
+        CONNECT_CLIENT_VENV="${RUN_DIR}/connect_client_venv"
+        python -m venv "$CONNECT_CLIENT_VENV"
+        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --upgrade pip >/dev/null
+        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "pyspark[connect]==${VERSION_STRING}" >/dev/null
+
+        # Run a simple query using the Connect client and assert expected result and GPU operator in the plan
+        output=$(CONNECT_URL="$CONNECT_SERVER_URL" \
+            timeout 120s "$CONNECT_CLIENT_VENV/bin/python" - <<'PY'
 import os
 from pyspark.sql import SparkSession
 url = os.environ["CONNECT_URL"]
@@ -540,6 +553,12 @@ print(f'SC_RESULT={res}')
 spark.stop()
 PY
 )
+        client_rc=$?
+        if (( client_rc != 0 )); then
+            # Exit due to client timeout/failure from the 120s timeout wrapper
+            echo "ERROR: Spark Connect client timed out after 120s"
+            exit 1
+        fi
         # Verify numeric result marker and GPU plan element
         if ! grep -Fq 'SC_RESULT=4950' <<< "$output"; then
             echo "ERROR: Expected result SC_RESULT=4950 not found in Connect output"
