@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
@@ -74,6 +75,9 @@ object ExternalSource extends Logging {
 
   lazy val execRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     deltaProvider.getExecRules
+
+  lazy val exprRules: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    deltaProvider.getExprs
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
