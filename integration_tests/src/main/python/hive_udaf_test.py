@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import gen_df, IntegerGen, int_gen, long_gen, idfn
-from spark_session import with_spark_session
+from spark_session import with_spark_session, is_databricks_runtime
 from hive_udf_utils import *
 from marks import ignore_order, allow_non_gpu
 
@@ -61,6 +61,7 @@ def test_reduction_with_hive_average_udaf(aggs):
 
 
 @ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support mixed aggs")
 @allow_non_gpu("ObjectHashAggregateExec", "ProjectExec")
 @pytest.mark.parametrize("aggs", projected_aggs_list[0:2], ids=idfn)
 @pytest.mark.parametrize("repl_mode", ["partial", "final"], ids=idfn)
