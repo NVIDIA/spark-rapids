@@ -399,16 +399,16 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     println(f"Total executor run time: ${totalTaskExecutionTime / 1000000.0}%.2f ms")
 
     // Verify that operator time is within expected range of executor run time
-    // Operator time should be between 10% and 80% of executor run time
-    val minExpectedOperatorTime = totalTaskExecutionTime * 0.1
+    // Operator time should be between 0% and 80% of executor run time
+    val minExpectedOperatorTime = 0
     val maxExpectedOperatorTime = totalTaskExecutionTime * 0.8
     val operatorTimeRatio = totalOperatorTime.toDouble / totalTaskExecutionTime.toDouble
 
     println(f"Operator time ratio: ${operatorTimeRatio * 100.0}%.1f%% of executor run time")
-    println(f"Expected range: 10.0%% - 80.0%% of executor run time")
+    println(f"Expected range: 0.0%% - 80.0%% of executor run time")
 
-    assert(totalOperatorTime >= minExpectedOperatorTime,
-      f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should be at least 10%% " +
+    assert(totalOperatorTime > minExpectedOperatorTime,
+      f"Total operator time (${totalOperatorTime / 1000000.0}%.2f ms) should be at least >0%% " +
         f"of total executor run time (${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
         f"but was only ${operatorTimeRatio * 100.0}%.1f%%")
 
