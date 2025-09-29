@@ -98,11 +98,9 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/cached_jars"}
             JAR_FILE_NAME=${JAR_FILE_NAME:-"spark-3.2.0-bin-hadoop3.2.tgz"}
             SPARK_CACHE_FILE=${SPARK_CACHE_FILE:-"$DBFS_CACHE_DIR/$JAR_FILE_NAME"}
-            SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-3.2.0/$JAR_FILE_NAME"}
-            
+            SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-3.2.0/$JAR_FILE_NAME"} 
             # Create cache directory if it doesn't exist
             mkdir -p "$DBFS_CACHE_DIR"
-            
             # Check if file exists in DBFS cache
             if [[ -f "$SPARK_CACHE_FILE" ]]; then
                 echo "Found Spark in DBFS cache, copying to /tmp..."
@@ -111,7 +109,7 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
                 echo "Spark not found in DBFS cache, downloading from archive.apache.org..."
                 if wget "$SPARK_URL" -P /tmp; then
                     echo "Download successful, caching to DBFS..."
-                    cp "/tmp/$JAR_FILE_NAME" "$SPARK_CACHE_FILE"
+                    cp "/tmp/$JAR_FILE_NAME" "$SPARK_CACHE_FILE" || true
                 else
                     echo "Download failed"
                     exit 1

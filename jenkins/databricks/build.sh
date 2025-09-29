@@ -68,10 +68,8 @@ initialize()
         JAR_FILE_NAME=${JAR_FILE_NAME:-"apache-maven-3.6.3-bin.tar.gz"}
         MAVEN_CACHE_FILE=${MAVEN_CACHE_FILE:-"$DBFS_CACHE_DIR/$JAR_FILE_NAME"}
         MAVEN_URL=${MAVEN_URL:-"https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/$JAR_FILE_NAME"}
-        
         # Create cache directory if it doesn't exist
-        mkdir -p "$DBFS_CACHE_DIR"
-        
+        mkdir -p "$DBFS_CACHE_DIR"        
         # Check if file exists in DBFS cache
         if [[ -f "$MAVEN_CACHE_FILE" ]]; then
             echo "Found Maven in DBFS cache, copying to /tmp..."
@@ -80,7 +78,7 @@ initialize()
             echo "Maven not found in DBFS cache, downloading from archive.apache.org..."
             if wget "$MAVEN_URL" -P /tmp; then
                 echo "Download successful, caching to DBFS..."
-                cp "/tmp/$JAR_FILE_NAME" "$MAVEN_CACHE_FILE"
+                cp "/tmp/$JAR_FILE_NAME" "$MAVEN_CACHE_FILE" || true
             else
                 echo "Download failed"
                 exit 1
