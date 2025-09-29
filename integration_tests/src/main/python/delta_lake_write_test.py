@@ -487,11 +487,7 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, enable_deletion_ve
             gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -499,11 +495,7 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, enable_deletion_ve
             gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .mode("overwrite")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
 
@@ -528,22 +520,14 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
             .mode("append")
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
             .mode("overwrite")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
