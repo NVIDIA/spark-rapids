@@ -488,7 +488,7 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, enable_deletion_ve
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
         lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
+            .option("readChangeFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
@@ -500,7 +500,7 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, enable_deletion_ve
             .mode("overwrite")
             .save(path),
         lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
+            .option("readChangeFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
@@ -529,7 +529,7 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
         lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
+            .option("readChangeFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
@@ -540,7 +540,7 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
             .mode("overwrite")
             .save(path),
         lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
+            .option("readChangeFeed", "true")
             .option("startingVersion", 0)
             .load(path)
             .drop("_commit_timestamp"),
