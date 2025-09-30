@@ -834,7 +834,11 @@ case class GpuGenerateExec(
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY)
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
+    CPU_BRIDGE_PROCESSING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME),
+    CPU_BRIDGE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_WAIT_TIME)
   )
 
   override def output: Seq[Attribute] = requiredChildOutput ++ generatorOutput
@@ -862,6 +866,9 @@ case class GpuGenerateExec(
           GpuBindReferences.bindGpuReferences(expressions, child.output).toArray
         val boundOthersProjectList =
           GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output).toArray
+        // Inject CPU bridge metrics into bound expressions
+        GpuMetric.injectMetrics(boundLazyProjectList, allMetrics)
+        GpuMetric.injectMetrics(boundOthersProjectList, allMetrics)
         val outputSchema = output.map(_.dataType).toArray
 
         child.executeColumnar().mapPartitions { iter =>
@@ -881,6 +888,9 @@ case class GpuGenerateExec(
           GpuBindReferences.bindGpuReferences(generator.children, child.output)
         val othersProjectList: Seq[GpuExpression] =
           GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output)
+        // Inject CPU bridge metrics into bound expressions
+        GpuMetric.injectMetrics(genProjectList, allMetrics)
+        GpuMetric.injectMetrics(othersProjectList, allMetrics)
 
         child.executeColumnar().flatMap { inputFromChild =>
           doGenerateAndClose(inputFromChild, genProjectList, othersProjectList,

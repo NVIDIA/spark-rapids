@@ -685,8 +685,6 @@ case class GpuProjectExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
-    val cpuBridgeProcessingTime = gpuLongMetric(CPU_BRIDGE_PROCESSING_TIME)
-    val cpuBridgeWaitTime = gpuLongMetric(CPU_BRIDGE_WAIT_TIME)
     
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
       conf)
@@ -1152,7 +1150,11 @@ case class GpuFilterExec(
     Seq[AnyRef](coalesceAfter.asInstanceOf[java.lang.Boolean])
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
+    CPU_BRIDGE_PROCESSING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME),
+    CPU_BRIDGE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_WAIT_TIME))
 
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
@@ -1190,6 +1192,8 @@ case class GpuFilterExec(
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
       conf)
+    // Inject CPU bridge metrics into bound expressions
+    boundCondition.injectMetrics(allMetrics)
     rdd.flatMap { batch =>
       GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
         numOutputBatches, opTime)
