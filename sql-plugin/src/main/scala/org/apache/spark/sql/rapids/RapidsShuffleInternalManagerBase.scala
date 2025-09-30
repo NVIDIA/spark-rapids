@@ -349,7 +349,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         partitionId: Int,
         start: Long,
         end: Long,
-        isLastForCurrentPartition: Boolean,
+        doCleanUp: Boolean,
         partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
         mapOutputWriter: ShuffleMapOutputWriter): Unit = {
 
@@ -365,7 +365,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             unfinishedStream.get.write(buffer.getBuf, start.toInt, (end - start).toInt)
           }
 
-          if (isLastForCurrentPartition) {
+          if (doCleanUp) {
             // Clean up buffer after use
             buffer.close()
             partitionBuffers.remove(partitionId)
@@ -378,7 +378,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           }
         case None =>
           throw new IllegalStateException(s"No buffer found for partition $partitionId, " +
-            s"start=$start, end=$end, isLast=$isLastForCurrentPartition")
+            s"start=$start, end=$end, isLast=$doCleanUp")
       }
     }
 
@@ -389,12 +389,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         while (!processingComplete.get() || currentPartitionToWrite != maxPartitionSeen.get()) {
           if (currentPartitionToWrite <= maxPartitionSeen.get()) {
             // Wait for this partition's compression futures to complete
-            var lastForThisPartition = false
+            var containsLastForThisPartition = false
             var futures: java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]] = null
             maxPartitionSeen.synchronized {
               futures = partitionFutures.get(currentPartitionToWrite)
               if (currentPartitionToWrite < maxPartitionSeen.get()) {
-                lastForThisPartition = true
+                containsLastForThisPartition = true
               }
             }
 
@@ -414,7 +414,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L),
                   partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L) +
                     compressedSize,
-                  lastForThisPartition,
+                  doCleanUp = false,
                   partitionBuffers,
                   mapOutputWriter)
 
@@ -429,13 +429,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 limiter.release(recordSize)
               }
 
-              if (lastForThisPartition) {
-                if (!newFutureTouched) {
-                  // just to trigger clean up
-                  writePartitionBuffer(currentPartitionToWrite, 0, 0,
-                    isLastForCurrentPartition = true,
-                    partitionBuffers, mapOutputWriter)
-                }
+              if (containsLastForThisPartition) {
+                // just to trigger clean up
+                writePartitionBuffer(currentPartitionToWrite, 0, 0,
+                  doCleanUp = true,
+                  partitionBuffers, mapOutputWriter)
+
                 currentPartitionToWrite += 1
               } else {
                 if (!newFutureTouched) {
