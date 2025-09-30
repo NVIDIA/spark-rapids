@@ -242,9 +242,6 @@ run_iceberg_tests() {
   local test_type=${1:-'default'}
   if [[ "$test_type" == "default" ]]; then
     echo "!!! Running iceberg tests"
-    # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
-    # Disabling them may slow down the tests, so we increase memory here.
-    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
     PYSP_TEST_spark_driver_memory="6G" \
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
@@ -256,10 +253,7 @@ run_iceberg_tests() {
     echo "!!! Running iceberg tests with rest catalog"
     ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
 org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
-        # Latest iceberg has some updates which may increase memory usage, such as metadata cache.
-        # Disabling them may slow down the tests, so we increase memory here.
         ICEBERG_TEST_REMOTE_CATALOG='1' \
-        env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
         PYSP_TEST_spark_driver_memory="6G" \
         PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
         PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
@@ -300,7 +294,6 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
     # These steps are included in the test pipeline.
     # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
     ICEBERG_TEST_REMOTE_CATALOG='1' \
-    env 'PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false' \
         PYSP_TEST_spark_driver_memory="6G" \
         PYSP_TEST_spark_jars_packages="$ICEBERG_S3TABLES_JARS" \
         PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
