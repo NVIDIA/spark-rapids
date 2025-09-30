@@ -46,7 +46,7 @@ fi
 
 $WGET_CMD $PROJECT_TEST_REPO/com/nvidia/rapids-4-spark-integration-tests_$SCALA_BINARY_VER/$PROJECT_TEST_VER/rapids-4-spark-integration-tests_$SCALA_BINARY_VER-$PROJECT_TEST_VER-pytest.tar.gz
 
-RAPIDS_INT_TESTS_HOME="$WORKSPACE/integration_tests/"
+RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
 # The version of pytest.tar.gz that is uploaded is the one built against spark320 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
 
@@ -86,7 +86,7 @@ if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$p_ver"|| \
   exit 1
 fi
 
-#tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
+tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
 . jenkins/hadoop-def.sh $SPARK_VER ${SCALA_BINARY_VER}
 $WGET_CMD $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
