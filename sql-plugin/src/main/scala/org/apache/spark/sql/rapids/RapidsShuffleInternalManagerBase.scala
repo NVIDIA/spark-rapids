@@ -349,7 +349,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       override def run(): Unit = {
         var currentPartitionToWrite = 0
         
-        while (!processingComplete.get() || currentPartitionToWrite <= maxPartitionSeen.get()) {
+        while (!processingComplete.get() || currentPartitionToWrite != maxPartitionSeen.get()) {
           if (currentPartitionToWrite <= maxPartitionSeen.get()) {
             // Wait for this partition's compression futures to complete
             var lastForThisPartition = false
@@ -398,12 +398,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
               if (!newFutureTouched) {
                 // Sleep briefly to avoid busy waiting
-                log.warn("processingComplete: " + processingComplete +
-                  "currentPartitionToWrite : " + currentPartitionToWrite +
-                  " maxPartitionSeen: " + maxPartitionSeen.get() +
-                  " futures.size: " + futures.size() +
-                  " partitionFuturesProgress: " +
-                  partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0))
                 Thread.sleep(1)
               }
             } else {
@@ -498,7 +492,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           maxPartitionSeen.set(math.max(maxPartitionSeen.get(), reducePartitionId))
         }
       }
-      
+
+      maxPartitionSeen.set(maxPartitionSeen.get() + 1) // mark end of partitions
+
       // Signal that main thread is done processing
       processingComplete.set(true)
 
