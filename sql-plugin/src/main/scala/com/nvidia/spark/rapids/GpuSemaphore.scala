@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.util
 import java.util.Map
 import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -271,6 +272,13 @@ object GpuSemaphore {
     }
   }
 
+  /**
+   * Indicates if there are any working threads that are currently blocked waiting for the GPU.
+   */
+  def isDeviceBusy: Boolean = {
+    getInstance.blockingThreadCounter.get() > 0
+  }
+
   // For now we are going to have one permit for each 32 MiB of GPU memory.
   private val PERMIT_MEMORY_SIZE: Long = 32L * 1024 * 1024
 
@@ -316,7 +324,8 @@ object GpuSemaphore {
  * rare.
  */
 private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
-                                      memoryEstimator: GpuStageMemoryEstimator) extends Logging {
+                                      memoryEstimator: GpuStageMemoryEstimator,
+                                      numWaitThreads: AtomicLong) extends Logging {
   /**
    * This holds threads that are not on the GPU yet. Most of the time they are
    * blocked waiting for the semaphore to let them on, but it may hold one
@@ -377,6 +386,7 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
     }
     blockedThreads.remove(t)
     activeThreads.add(t)
+    numWaitThreads.decrementAndGet()
   }
 
   /**
@@ -388,6 +398,7 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
     // All threads start out in blocked, but will move out of it inside of the while loop.
     synchronized {
       blockedThreads.add(t)
+      numWaitThreads.incrementAndGet()
     }
     var done = false
     var shouldBlockOnSemaphore = false
@@ -504,6 +515,7 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
 }
 
 private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Logging {
+
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
@@ -512,15 +524,6 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
-
-  def lastSemAcqAndRelTime(context: TaskContext): (Long, Long) = {
-    val taskAttemptId = context.taskAttemptId()
-    if (!tasks.containsKey(taskAttemptId)) {
-      (0, 0)
-    } else {
-      tasks.get(taskAttemptId).lastAcquireAndReleaseTime
-    }
-  }
 
   private val stageEstimators = {
     val lru = new util.LinkedHashMap[Int, GpuStageMemoryEstimator]() {
@@ -535,19 +538,32 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
     util.Collections.synchronizedMap(lru)
   }
 
+  // Executor-wide global counter for threads that are blocked waiting for the GPU semaphore
+  private val blockingThreadCounter = new AtomicLong(0L)
+
+  // Get the last time this task acquired & released the semaphore
+  private def lastSemAcqAndRelTime(context: TaskContext): (Long, Long) = {
+    val taskAttemptId = context.taskAttemptId()
+    if (!tasks.containsKey(taskAttemptId)) {
+      (0, 0)
+    } else {
+      tasks.get(taskAttemptId).lastAcquireAndReleaseTime
+    }
+  }
+
   def tryAcquire(context: TaskContext): TryAcquireResult = {
     // Make sure that the thread/task is registered before we try and block
     TaskRegistryTracker.registerThreadForRetry()
     val taskAttemptId = context.taskAttemptId()
     val stageId = context.stageId()
     val stageEstimate = stageEstimators.computeIfAbsent(stageId, _ => {
-      new GpuStageMemoryEstimator(stageId, 
+      new GpuStageMemoryEstimator(stageId,
         computeDefaultMemory(SQLConf.get),
         isDynamicEnabled(SQLConf.get))
     })
     val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
       onTaskCompletion(context, completeTask)
-      new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate)
+      new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate, blockingThreadCounter)
     })
     if (taskInfo.tryAcquire(semaphore, taskAttemptId)) {
       GpuDeviceManager.initializeFromTask()
@@ -578,7 +594,7 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
       val taskAttemptId = context.taskAttemptId()
       val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
         onTaskCompletion(context, completeTask)
-        new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate)
+        new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate, blockingThreadCounter)
       })
       taskInfo.blockUntilReady(semaphore)
       GpuDeviceManager.initializeFromTask()
@@ -637,9 +653,9 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
         }
       }
       logWarning(s"Dumping stack traces. The semaphore sees ${tasks.size()} tasks, " +
-        s"${stackTracesSemaphoreHeld.size} threads are holding onto the semaphore. " +
-        stackTracesSemaphoreHeld.mkString("\n", "\n", "\n") +
-        otherStackTraces.mkString("\n", "\n", "\n"))
+          s"${stackTracesSemaphoreHeld.size} threads are holding onto the semaphore. " +
+          stackTracesSemaphoreHeld.mkString("\n", "\n", "\n") +
+          otherStackTraces.mkString("\n", "\n", "\n"))
     } catch {
       case t: Throwable =>
         logWarning("Unable to obtain stack traces in the semaphore.", t)
