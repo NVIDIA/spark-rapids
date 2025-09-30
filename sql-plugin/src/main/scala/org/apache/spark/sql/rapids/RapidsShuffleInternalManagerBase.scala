@@ -565,7 +565,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           partitionBuffers.remove(partitionId)
         }
       case None =>
-        // TODO: really need?
         // Empty partition, still need to call getPartitionWriter for ordering
         val partWriter = mapOutputWriter.getPartitionWriter(partitionId)
         partWriter.openStream().close() // Empty partition
