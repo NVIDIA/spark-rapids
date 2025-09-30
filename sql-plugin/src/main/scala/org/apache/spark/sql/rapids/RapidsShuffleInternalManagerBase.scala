@@ -383,7 +383,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
                 // Update progress
                 partitionBytesProgress.put(currentPartitionToWrite,
-                  partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0) +
+                  partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L) +
                     compressedSize)
                 partitionFuturesProgress.put(currentPartitionToWrite,
                   partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0) + 1)
@@ -480,9 +480,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           }
         })
         
-        // Add future to partition's queue
-        futures.add(future)
         maxPartitionSeen.synchronized {
+          // Add future to partition's queue
+          futures.add(future)
           // Track the maximum partition seen for writer thread
           maxPartitionSeen.set(math.max(maxPartitionSeen.get(), reducePartitionId))
         }
