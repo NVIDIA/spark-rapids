@@ -377,7 +377,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             partitionBytesProgress.remove(partitionId)
           }
         case None =>
-          throw new IllegalStateException(s"No buffer found for partition $partitionId")
+          throw new IllegalStateException(s"No buffer found for partition $partitionId, " +
+            s"start=$start, end=$end, isLast=$isLastForCurrentPartition")
       }
     }
 
@@ -504,26 +505,33 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // ensure same partition tasks run serially
         val slotNum = RapidsShuffleInternalManagerBase.getNextWriterSlot
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
-          withResource(cb) { _ =>
-            // Get or create buffer for this partition
-            val buffer = partitionBuffers.computeIfAbsent(reducePartitionId,
-              _ => new OpenByteArrayOutputStream())
-            val originLength = buffer.getCount
+          try {
+            withResource(cb) { _ =>
+              // Get or create buffer for this partition
+              val buffer = partitionBuffers.computeIfAbsent(reducePartitionId,
+                _ => new OpenByteArrayOutputStream())
+              val originLength = buffer.getCount
 
-            // Serialize + compress to memory buffer
-            val compressedOutputStream = blockManager.serializerManager.wrapStream(
-              ShuffleBlockId(shuffleId, mapId, reducePartitionId), buffer)
+              // Serialize + compress to memory buffer
+              val compressedOutputStream = blockManager.serializerManager.wrapStream(
+                ShuffleBlockId(shuffleId, mapId, reducePartitionId), buffer)
 
-            val serializationStream = serializerInstance.serializeStream(compressedOutputStream)
-            withResource(serializationStream) { serializer =>
-              serializer.writeKey(key.asInstanceOf[Any])
-              serializer.writeValue(value.asInstanceOf[Any])
+              val serializationStream = serializerInstance.serializeStream(compressedOutputStream)
+              withResource(serializationStream) { serializer =>
+                serializer.writeKey(key.asInstanceOf[Any])
+                serializer.writeValue(value.asInstanceOf[Any])
+              }
+
+              // Track total data size
+              totalDataSize.addAndGet(recordSize)
+              // return (original size, compressed size)
+              (recordSize, (buffer.getCount - originLength).toLong)
             }
-
-            // Track total data size
-            totalDataSize.addAndGet(recordSize)
-            // return (original size, compressed size)
-            (recordSize, (buffer.getCount - originLength).toLong)
+          } catch {
+            case e: Exception => {
+              logError(s"Exception in compression task for shuffle $shuffleId", e)
+              throw e
+            }
           }
         })
         
