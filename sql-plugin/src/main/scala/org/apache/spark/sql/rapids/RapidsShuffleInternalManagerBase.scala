@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import java.io.{File, FileInputStream}
+import java.io.{File, FileInputStream, OutputStream}
 import java.util.Optional
 import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
@@ -324,9 +324,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
 
     // Finish writing to memory (include compression)
-    val partitionFutures = {
+    val partitionFutures =
       new ConcurrentHashMap[Int, java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]]()
-    }
     // WriterTask writing to disk
     val partitionBytesProgress = new ConcurrentHashMap[Int, Long]()
     val partitionFuturesProgress = new ConcurrentHashMap[Int, Int]()
@@ -343,12 +342,49 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       }
     }
     val writerExecutor = Executors.newSingleThreadExecutor(writerThreadFactory)
-    
+
+    var unfinishedStream: Option[OutputStream] = None
+    // Helper method to write a single partition buffer
+    def writePartitionBuffer(
+        partitionId: Int,
+        start: Long,
+        end: Long,
+        isLastForCurrentPartition: Boolean,
+        partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
+        mapOutputWriter: ShuffleMapOutputWriter): Unit = {
+
+      // Write partition buffer to mapOutputWriter
+      Option(partitionBuffers.get(partitionId)) match {
+        case Some(buffer) =>
+          if (unfinishedStream.isEmpty) {
+            unfinishedStream = Some(
+              mapOutputWriter.getPartitionWriter(partitionId).openStream())
+          }
+
+          if (end - start > 0) {
+            unfinishedStream.get.write(buffer.getBuf, start.toInt, (end - start).toInt)
+          }
+
+          if (isLastForCurrentPartition) {
+            // Clean up buffer after use
+            buffer.close()
+            partitionBuffers.remove(partitionId)
+            unfinishedStream.get.close()
+            unfinishedStream = None
+
+            partitionFutures.remove(partitionId)
+            partitionFuturesProgress.remove(partitionId)
+            partitionBytesProgress.remove(partitionId)
+          }
+        case None =>
+          throw new IllegalStateException(s"No buffer found for partition $partitionId")
+      }
+    }
+
     // Writer task that processes partitions in order
     val writerTask = new Runnable {
       override def run(): Unit = {
         var currentPartitionToWrite = 0
-        
         while (!processingComplete.get() || currentPartitionToWrite != maxPartitionSeen.get()) {
           if (currentPartitionToWrite <= maxPartitionSeen.get()) {
             // Wait for this partition's compression futures to complete
@@ -393,12 +429,18 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               }
 
               if (lastForThisPartition) {
+                if (!newFutureTouched) {
+                  // just to trigger clean up
+                  writePartitionBuffer(currentPartitionToWrite, 0, 0,
+                    isLastForCurrentPartition = true,
+                    partitionBuffers, mapOutputWriter)
+                }
                 currentPartitionToWrite += 1
-              }
-
-              if (!newFutureTouched) {
-                // Sleep briefly to avoid busy waiting
-                Thread.sleep(1)
+              } else {
+                if (!newFutureTouched) {
+                  // Sleep briefly to avoid busy waiting
+                  Thread.sleep(1)
+                }
               }
             } else {
               // Empty partition, still need to call getPartitionWriter for ordering
@@ -548,32 +590,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
     // Commit all partitions and return partition lengths
     commitAllPartitions(mapOutputWriter, true /*non-empty checksums*/)
-  }
-  
-  // Helper method to write a single partition buffer
-  private def writePartitionBuffer(
-      partitionId: Int,
-      start: Long,
-      end: Long,
-      isLastForCurrentPartition: Boolean,
-      partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
-      mapOutputWriter: ShuffleMapOutputWriter): Unit = {
-    
-    // Write partition buffer to mapOutputWriter
-    Option(partitionBuffers.get(partitionId)) match {
-      case Some(buffer) =>
-        val partWriter = mapOutputWriter.getPartitionWriter(partitionId)
-        withResource(partWriter.openStream()) { outputStream =>
-          outputStream.write(buffer.getBuf, start.toInt, (end - start).toInt)
-        }
-        if (isLastForCurrentPartition) {
-          // Clean up buffer after use
-          buffer.close()
-          partitionBuffers.remove(partitionId)
-        }
-      case None =>
-        throw new IllegalStateException(s"No buffer found for partition $partitionId")
-    }
   }
 
   private def write(records: TimeTrackingIterator): Unit = {
