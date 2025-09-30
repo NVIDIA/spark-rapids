@@ -524,13 +524,15 @@ object GpuCpuBridgeOptimizer extends Logging {
     val mergedCpuExpr = rewriteCpuExpression(parentBridge.cpuExpression, 
       parentBridge.gpuInputs, inputMapping)
     
-    GpuCpuBridgeExpression(
+    val mergedExpression = GpuCpuBridgeExpression(
       gpuInputs = flattenedGpuInputs,
       cpuExpression = mergedCpuExpr,
       outputDataType = parentBridge.dataType,
       outputNullable = parentBridge.nullable,
       codegenEnabled = parentBridge.codegenEnabled
     )
+    // Preserve metrics from the parent bridge expression
+    mergedExpression
   }
   
   /**

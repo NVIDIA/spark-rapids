@@ -89,7 +89,10 @@ case class GpuExpandExec(
     PRE_PROJECT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, "pre-projection time"),
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    CPU_BRIDGE_PROCESSING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME),
+    CPU_BRIDGE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CPU_BRIDGE_WAIT_TIME))
 
   // The GroupExpressions can output data with arbitrary partitioning, so set it
   // as UNKNOWN partitioning
@@ -113,6 +116,8 @@ case class GpuExpandExec(
       if (boundPreprojections.exprTiers.size > 1) {
         logDebug("GPU expanding with pre-projection.")
         // We got some nested expressions, so pre-projection is good to enable.
+        // Inject metrics into pre-projection expressions
+        boundPreprojections.injectMetrics(metricsMap)
         projectionsForBind = preprojectedProjections
         attributesForBind = preprojectionList.map(_.toAttribute)
         val opMetric = metricsMap(OP_TIME_LEGACY)
@@ -128,6 +133,11 @@ case class GpuExpandExec(
 
     val boundProjections = projectionsForBind.map { pl =>
       GpuBindReferences.bindGpuReferencesTiered(pl, attributesForBind, conf)
+    }
+
+    // Inject CPU bridge metrics into bound expressions
+    boundProjections.foreach { boundProjection =>
+      boundProjection.injectMetrics(metricsMap)
     }
 
     child.executeColumnar().mapPartitions { it =>

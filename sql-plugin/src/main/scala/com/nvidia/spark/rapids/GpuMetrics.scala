@@ -24,8 +24,22 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuTaskMetrics
+
+/**
+ * Trait for expressions that can have metrics injected after binding.
+ * This allows execution nodes to inject their metrics into expressions
+ * without coupling the expression construction to metric availability.
+ */
+trait GpuMetricsInjectable {
+  /**
+   * Inject metrics into this expression. Called after binding but before execution.
+   * @param metrics Map of metric names to GpuMetric instances
+   */
+  def injectMetrics(metrics: Map[String, GpuMetric]): Unit
+}
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
   def >=(other: MetricsLevel): Boolean =
@@ -112,6 +126,8 @@ object GpuMetric extends Logging {
   val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
   val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
+  val CPU_BRIDGE_PROCESSING_TIME = "cpuBridgeProcessingTime"
+  val CPU_BRIDGE_WAIT_TIME = "cpuBridgeWaitTime"
   val COPY_TO_HOST_TIME = "d2hMemCopyTime"
   val READ_THROTTLING_TIME = "readThrottlingTime"
   val SYNC_READ_TIME = "shuffleSyncReadTime"
@@ -161,6 +177,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
   val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
+  val DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME = "CPU bridge processing time"
+  val DESCRIPTION_CPU_BRIDGE_WAIT_TIME = "CPU bridge wait time"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
   val DESCRIPTION_READ_THROTTLING_TIME = "read throttling time"
   val DESCRIPTION_SYNC_READ_TIME = "sync read time"
@@ -290,6 +308,31 @@ object GpuMetric extends Logging {
   object DEBUG_LEVEL extends MetricsLevel(0)
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
+
+  /**
+   * Inject metrics into expressions that implement GpuMetricsInjectable.
+   * Walks the expression tree and injects metrics into any expressions that support it.
+   * 
+   * @param expressions The expressions to inject metrics into
+   * @param metrics Map of metric names to GpuMetric instances
+   */
+  def injectMetrics(expressions: Seq[Expression], metrics: Map[String, GpuMetric]): Unit = {
+    expressions.foreach(injectMetricsIntoExpression(_, metrics))
+  }
+
+  /**
+   * Inject metrics into a single expression tree.
+   */
+  private def injectMetricsIntoExpression(expr: Expression, 
+      metrics: Map[String, GpuMetric]): Unit = {
+    expr match {
+      case injectable: GpuMetricsInjectable =>
+        injectable.injectMetrics(metrics)
+      case _ => // No metrics to inject
+    }
+    // Recursively inject into children
+    expr.children.foreach(injectMetricsIntoExpression(_, metrics))
+  }
 }
 
 sealed abstract class GpuMetric extends Serializable {

@@ -52,7 +52,8 @@ case class GpuCpuBridgeExpression(
     cpuExpression: Expression,
     outputDataType: DataType,
     outputNullable: Boolean,
-    codegenEnabled: Boolean) extends GpuExpression with ShimExpression with Logging with GpuBind {
+    codegenEnabled: Boolean) extends GpuExpression with ShimExpression with Logging 
+    with GpuBind with GpuMetricsInjectable {
 
   // Only GPU inputs are children for GPU expression tree traversal
   override def children: Seq[Expression] = gpuInputs ++ Seq(cpuExpression)
@@ -61,6 +62,19 @@ case class GpuCpuBridgeExpression(
   override def nullable: Boolean = outputNullable
   // Bridge expressions may contain CPU expressions with unknown side effects
   override def hasSideEffects: Boolean = true
+
+  // Mutable metrics fields - injected after binding
+  private var cpuBridgeProcessingTime: Option[GpuMetric] = None
+  private var cpuBridgeWaitTime: Option[GpuMetric] = None
+
+  /**
+   * Inject metrics into this expression. Called after binding but before execution.
+   */
+  override def injectMetrics(metrics: Map[String, GpuMetric]): Unit = {
+    import GpuMetric._
+    cpuBridgeProcessingTime = metrics.get(CPU_BRIDGE_PROCESSING_TIME)
+    cpuBridgeWaitTime = metrics.get(CPU_BRIDGE_WAIT_TIME)
+  }
 
   override def prettyName: String = "gpu_cpu_bridge"
 
@@ -96,8 +110,12 @@ case class GpuCpuBridgeExpression(
           GpuBoundReference(ordinal, lr.dataType, input(ordinal).nullable)(lr.exprId, lr.name)
       })
     }
-    GpuCpuBridgeExpression(boundGpuInputs, cpuExpression,
+    val boundExpression = GpuCpuBridgeExpression(boundGpuInputs, cpuExpression,
       outputDataType, outputNullable, codegenEnabled)
+    // Preserve metrics when binding
+    boundExpression.cpuBridgeProcessingTime = this.cpuBridgeProcessingTime
+    boundExpression.cpuBridgeWaitTime = this.cpuBridgeWaitTime
+    boundExpression
   }
 
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
@@ -112,17 +130,26 @@ case class GpuCpuBridgeExpression(
       return GpuColumnVector.fromNull(numRows, dataType)
     }
     
-    // Check if we should use parallel processing
-    // Note: Nondeterministic expressions are excluded from CPU bridge entirely,
-    // so all expressions reaching this point are safe for parallel processing
-    if (GpuCpuBridgeThreadPool.shouldParallelize(numRows)) {
-      logDebug(s"Using parallel processing for ${numRows} rows " +
-        s"(expression: ${cpuExpression.getClass.getSimpleName})")
-      evaluateInParallel(batch)
-    } else {
-      logDebug(s"Using sequential processing for ${numRows} rows " +
-        s"(expression: ${cpuExpression.getClass.getSimpleName})")
-      evaluateSequentially(batch)
+    // Time the entire CPU bridge operation from the SparkPlan perspective
+    val waitStartTime = System.nanoTime()
+    try {
+      // Check if we should use parallel processing
+      // Note: Nondeterministic expressions are excluded from CPU bridge entirely,
+      // so all expressions reaching this point are safe for parallel processing
+      val result = if (GpuCpuBridgeThreadPool.shouldParallelize(numRows)) {
+        logDebug(s"Using parallel processing for ${numRows} rows " +
+          s"(expression: ${cpuExpression.getClass.getSimpleName})")
+        evaluateInParallel(batch)
+      } else {
+        logDebug(s"Using sequential processing for ${numRows} rows " +
+          s"(expression: ${cpuExpression.getClass.getSimpleName})")
+        evaluateSequentially(batch)
+      }
+      result
+    } finally {
+      // Record the total wait time from the SparkPlan's perspective
+      val waitTime = System.nanoTime() - waitStartTime
+      cpuBridgeWaitTime.foreach(_.add(waitTime))
     }
   }
   
@@ -134,21 +161,29 @@ case class GpuCpuBridgeExpression(
     // Evaluate GPU input expressions and get GPU columns
     val gpuInputColumns = gpuInputs.safeMap(_.columnarEval(batch))
 
-    // Convert columnar data to rows for CPU expression evaluation
-    // Note: ColumnarBatch takes ownership of the columns, so we don't close them separately
-    val inputBatch = new ColumnarBatch(gpuInputColumns.toArray, numRows)
-    val rowIterator = new ColumnarToRowIterator(
-      Iterator.single(inputBatch),
-      NoopMetric,
-      NoopMetric,
-      NoopMetric,
-      NoopMetric,
-      nullSafe = false,
-      releaseSemaphore = false
-    )
+    // Time the CPU processing (columnar->row->CPU expr->columnar)
+    val processingStartTime = System.nanoTime()
+    try {
+      // Convert columnar data to rows for CPU expression evaluation
+      // Note: ColumnarBatch takes ownership of the columns, so we don't close them separately
+      val inputBatch = new ColumnarBatch(gpuInputColumns.toArray, numRows)
+      val rowIterator = new ColumnarToRowIterator(
+        Iterator.single(inputBatch),
+        NoopMetric,
+        NoopMetric,
+        NoopMetric,
+        NoopMetric,
+        nullSafe = false,
+        releaseSemaphore = false
+      )
 
-    // Delegate to evaluation function - ColumnarToRowIterator manages the batch lifecycle
-    evaluationFunction(rowIterator, numRows)
+      // Delegate to evaluation function - ColumnarToRowIterator manages the batch lifecycle
+      evaluationFunction(rowIterator, numRows)
+    } finally {
+      // Record the actual CPU processing time
+      val processingTime = System.nanoTime() - processingStartTime
+      cpuBridgeProcessingTime.foreach(_.add(processingTime))
+    }
   }
   
   /**
@@ -187,22 +222,30 @@ case class GpuCpuBridgeExpression(
         GpuCpuBridgeThreadPool.submitPrioritizedTask(task, subBatchSize)
       }
       
-      // Collect results from all sub-batches - these will be spillable results
-      futures.safeMap { future =>
-        Try(future.get()) match {
-          case Success(spillableResult) => 
-            // Convert spillable result back to regular GpuColumnVector for concatenation  
-            // The spillable result transfers ownership, so we don't need incRefCount
-            withResource(spillableResult) { _ =>
-              withResource(spillableResult.getColumnarBatch()) { cb =>
-                cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
+      // Time the CPU processing across all sub-batches
+      val processingStartTime = System.nanoTime()
+      try {
+        // Collect results from all sub-batches - these will be spillable results
+        futures.safeMap { future =>
+          Try(future.get()) match {
+            case Success(spillableResult) => 
+              // Convert spillable result back to regular GpuColumnVector for concatenation  
+              // The spillable result transfers ownership, so we don't need incRefCount
+              withResource(spillableResult) { _ =>
+                withResource(spillableResult.getColumnarBatch()) { cb =>
+                  cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
+                }
               }
-            }
-          case Failure(exception) =>
-            // Cancel remaining futures on error with proper resource cleanup
-            cleanupFuturesOnFailure(futures)
-            throw new RuntimeException("Sub-batch evaluation failed", exception)
+            case Failure(exception) =>
+              // Cancel remaining futures on error with proper resource cleanup
+              cleanupFuturesOnFailure(futures)
+              throw new RuntimeException("Sub-batch evaluation failed", exception)
+          }
         }
+      } finally {
+        // Record the total CPU processing time (includes thread pool wait + actual processing)
+        val processingTime = System.nanoTime() - processingStartTime
+        cpuBridgeProcessingTime.foreach(_.add(processingTime))
       }
     }
       
