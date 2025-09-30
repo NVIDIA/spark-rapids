@@ -20,7 +20,7 @@ import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuEquivalentExpressions
 import org.apache.spark.sql.types.DataType
@@ -41,23 +41,6 @@ trait GpuBind {
 }
 
 object GpuBindReferences extends Logging {
-
-  private[this] def postBindCheck[A <: Expression](base: A): Unit = {
-    base.foreach { expr =>
-      // The condition is needed to have it match what transform
-      // looks at, otherwise we can check things that would not be modified.
-      if (expr.containsChild.nonEmpty) {
-        expr match {
-          case _: GpuExpression =>
-          case _: SortOrder =>
-          case other =>
-            throw new IllegalArgumentException(
-              s"Found an expression that shouldn't be here ${other.getClass}")
-        }
-      }
-    }
-  }
-
   /**
    * An alternative to `Expression.transformDown`, but when a result is returned by `rule` it is
    * assumed that it handled processing exp and all of its children, so rule will not be called on
@@ -91,9 +74,7 @@ object GpuBindReferences extends Logging {
         }
     }
     val matchFunc = regularMatch.orElse(partial)
-    val ret = transformNoRecursionOnReplacement(expression)(matchFunc).asInstanceOf[R]
-    postBindCheck(ret)
-    ret
+    transformNoRecursionOnReplacement(expression)(matchFunc).asInstanceOf[R]
   }
 
   def bindGpuReference[A <: Expression](

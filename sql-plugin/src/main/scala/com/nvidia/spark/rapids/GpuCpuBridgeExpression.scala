@@ -26,7 +26,7 @@ import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, SpecificInternalRow, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{AttributeSeq, Expression, SpecificInternalRow, UnsafeProjection}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -52,10 +52,10 @@ case class GpuCpuBridgeExpression(
     cpuExpression: Expression,
     outputDataType: DataType,
     outputNullable: Boolean,
-    codegenEnabled: Boolean) extends GpuExpression with ShimExpression with Logging {
+    codegenEnabled: Boolean) extends GpuExpression with ShimExpression with Logging with GpuBind {
 
   // Only GPU inputs are children for GPU expression tree traversal
-  override def children: Seq[Expression] = gpuInputs
+  override def children: Seq[Expression] = gpuInputs ++ Seq(cpuExpression)
 
   override def dataType: DataType = outputDataType
   override def nullable: Boolean = outputNullable
@@ -80,6 +80,24 @@ case class GpuCpuBridgeExpression(
       ""
     }
     s"gpu_cpu_bridge(gpuInputs=[${gpuInputsSql}], cpuExpression=${cpuExpression.sql})"
+  }
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    // The CPU expressions are already bound, so we don't need/want to
+    // rebind them.
+
+    // Regular GPU binding does not properly handle
+    // named lambda variables. It would probably be good to fix this
+    // at some point, but this works for now...
+    val boundGpuInputs = gpuInputs.map { arg =>
+      GpuBindReferences.bindRefInternal[Expression, GpuExpression](arg, input, {
+        case lr: GpuNamedLambdaVariable if input.indexOf(lr.exprId) >= 0 =>
+          val ordinal = input.indexOf(lr.exprId)
+          GpuBoundReference(ordinal, lr.dataType, input(ordinal).nullable)(lr.exprId, lr.name)
+      })
+    }
+    GpuCpuBridgeExpression(boundGpuInputs, cpuExpression,
+      outputDataType, outputNullable, codegenEnabled)
   }
 
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =

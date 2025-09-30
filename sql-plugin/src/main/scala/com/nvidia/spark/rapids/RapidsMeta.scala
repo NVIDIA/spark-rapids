@@ -1457,15 +1457,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
           val deduplicatedIndex = inputMapping(originalIndex)
           val gpuExpr = deduplicatedGpuInputs(deduplicatedIndex)
           BoundReference(deduplicatedIndex, gpuExpr.dataType, gpuExpr.nullable): Expression
-        } else childMeta.wrapped match {
-          case ss: ScalarSubquery =>
-            // Keep ScalarSubquery as-is (no data transfer needed) but we do need
-            // to make sure it is ready
-            ss.updateResult()
-            childMeta.wrapped.asInstanceOf[Expression]
-          case _ =>
-            // Keep literal/CPU expression as-is (no data transfer needed)
-            childMeta.wrapped.asInstanceOf[Expression]
+        } else {
+          childMeta.wrapped.asInstanceOf[Expression]
         }
     }
     val boundCpuExpression = expr.withNewChildren(boundChildren)
