@@ -415,13 +415,10 @@ private[aggregate] class TypeUDAFCudfAggregate(
 trait GpuTypedUDAFFunctionBase extends GpuUDAFFunctionBase {
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = {
-    // TODO make it compatible with the Spark one by leveraging TypedImperativeAggExprMeta.
-    // Tracked by https://github.com/NVIDIA/spark-rapids/issues/13452
-    // The Spark ScalaAggregator returns only a BinaryType column as the aggregate buffer,
-    // but here is a StructType one.
+    // The Spark expects a single aggregate buffer, so GPU has to build a
+    // single struct type with the buffer types as its children.
     Seq(AdvAggTypeUtils.attrFromTypes(name, aggBufferTypes))
   }
-
 
   override def defaultValues: Array[GpuScalar] = {
     val childrenCols = withResource(super.defaultValues) { defValues =>
