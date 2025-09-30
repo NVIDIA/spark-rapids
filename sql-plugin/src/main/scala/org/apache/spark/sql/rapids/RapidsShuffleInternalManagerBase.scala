@@ -349,7 +349,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       override def run(): Unit = {
         var currentPartitionToWrite = 0
         
-        while (!processingComplete.get()) {
+        while (!processingComplete.get() || currentPartitionToWrite <= maxPartitionSeen.get()) {
           if (currentPartitionToWrite <= maxPartitionSeen.get()) {
             // Wait for this partition's compression futures to complete
             var lastForThisPartition = false
@@ -401,8 +401,13 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 Thread.sleep(1)
               }
             } else {
+              // Empty partition, still need to call getPartitionWriter for ordering
+              val partWriter = mapOutputWriter.getPartitionWriter(currentPartitionToWrite)
+              partWriter.openStream().close() // Empty partition
+
               // no data for this partition
               currentPartitionToWrite += 1
+
             }
           } else {
             // Sleep briefly to avoid busy waiting
@@ -565,9 +570,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           partitionBuffers.remove(partitionId)
         }
       case None =>
-        // Empty partition, still need to call getPartitionWriter for ordering
-        val partWriter = mapOutputWriter.getPartitionWriter(partitionId)
-        partWriter.openStream().close() // Empty partition
+        throw new IllegalStateException(s"No buffer found for partition $partitionId")
     }
   }
 
