@@ -398,6 +398,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
               if (!newFutureTouched) {
                 // Sleep briefly to avoid busy waiting
+                log.warn("processingComplete: " + processingComplete +
+                  "currentPartitionToWrite : " + currentPartitionToWrite +
+                  " maxPartitionSeen: " + maxPartitionSeen.get() +
+                  " futures.size: " + futures.size() +
+                  " partitionFuturesProgress: " +
+                  partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0))
                 Thread.sleep(1)
               }
             } else {
