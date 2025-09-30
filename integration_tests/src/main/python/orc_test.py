@@ -878,7 +878,7 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
         conf={})
 
 
-@allow_non_gpu("ProjectExec")
+@allow_non_gpu("ProjectExec", "StaticInvoke", "BoundReference", "Literal")
 @pytest.mark.skipif(is_before_spark_340(),
                     reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.skipif(is_databricks_version_or_later(13, 3),
@@ -899,7 +899,7 @@ def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, da
     """
     assert_gpu_fallback_collect(
         reader(std_input_path + '/' + data_file),
-        cpu_fallback_class_name="ProjectExec",
+        cpu_fallback_class_name="StaticInvoke",
         conf={})
 
 

@@ -176,7 +176,7 @@ def test_parse_url_supported(data_gen, part):
         ansi_disabled_conf  # ANSI mode failures are tested in test_parse_url_query_ansi_mode.
     )
 
-@allow_non_gpu('ProjectExec', 'ParseUrl')
+@allow_non_gpu('ProjectExec', 'ParseUrl', 'BoundReference', 'Literal')
 @pytest.mark.parametrize('part', unsupported_parts, ids=idfn)
 def test_parse_url_unsupported_fallback(part):
     assert_gpu_fallback_collect(
@@ -223,13 +223,13 @@ def test_parse_url_query_with_key_column():
     )
 
 @pytest.mark.parametrize('key', ['a?c', '*'], ids=idfn)
-@allow_non_gpu('ProjectExec', 'ParseUrl')
+@allow_non_gpu('ProjectExec', 'ParseUrl', 'BoundReference', 'Literal')
 def test_parse_url_query_with_key_regex_fallback(key):
     url_gen = StringGen(url_pattern_with_key)
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen)
             .selectExpr("a", "parse_url(a, 'QUERY', '" + key + "')"),
-            'ProjectExec')
+            'ParseUrl')
 
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
 def test_parse_url_with_key(part):
@@ -238,12 +238,12 @@ def test_parse_url_with_key(part):
         ansi_disabled_conf  # ANSI mode failures are tested in test_parse_url_query_ansi_mode.
     )
 
-@allow_non_gpu('ProjectExec', 'ParseUrl')
+@allow_non_gpu('ProjectExec', 'ParseUrl', 'BoundReference', 'Literal')
 @pytest.mark.parametrize('part', unsupported_parts, ids=idfn)
 def test_parse_url_with_key_fallback(part):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"),
-        'ProjectExec')
+        'ParseUrl')
 
 # Test for invalid URLs with different parts in ANSI mode
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)

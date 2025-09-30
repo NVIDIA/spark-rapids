@@ -76,7 +76,7 @@ def test_xxhash64_8_depth():
         lambda spark: unary_op_df(spark, gen_8_depth).selectExpr("a", "xxhash64(a)"))
 
 
-@allow_non_gpu("ProjectExec")
+@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
 def test_xxhash64_fallback_exceeds_stack_size_array_of_structure():
     gen_9_depth = (
         ArrayGen(  # depth += 1
@@ -94,10 +94,10 @@ def test_xxhash64_fallback_exceeds_stack_size_array_of_structure():
             max_length=1))
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
-        "ProjectExec")
+        "XxHash64")
 
 
-@allow_non_gpu("ProjectExec")
+@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
 def test_xxhash64_array_of_other():
     gen_9_depth = (
         ArrayGen(  # array(other: not struct): depth += 0
@@ -125,7 +125,7 @@ def test_xxhash64_array_of_other():
         {"spark.sql.legacy.allowHashOnMapType": True})
 
 
-@allow_non_gpu("ProjectExec")
+@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
 def test_xxhash64_fallback_exceeds_stack_size_structure():
     gen_9_depth = (
         StructGen([('l1',  # level 1
@@ -139,10 +139,10 @@ def test_xxhash64_fallback_exceeds_stack_size_structure():
                                                                                                         int_gen)]))]))]))]))]))]))]))]))  # level 9
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
-        "ProjectExec")
+        "XxHash64")
 
 
-@allow_non_gpu("ProjectExec")
+@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
 def test_xxhash64_fallback_exceeds_stack_size_map():
     gen_9_depth = (
         MapGen(  # depth += 2
@@ -160,7 +160,7 @@ def test_xxhash64_fallback_exceeds_stack_size_map():
             max_length=1))
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
-        "ProjectExec",
+        "XxHash64",
         {"spark.sql.legacy.allowHashOnMapType": True})
 
 def test_binary_sha1():

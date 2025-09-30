@@ -40,6 +40,9 @@ def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, codegen_enabled=Tr
         conf['spark.rapids.sql.expression.cpuBridge.disallowList'] = ','.join(disallowed_bridge_expressions)
     return conf
 
+# Only include Add and Boundreference Expressions to verify that the CPU bridge is working
+# as expected.
+@allow_non_gpu('Add', 'BoundReference')
 @pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
 def test_cpu_bridge_add_fallback(codegen_enabled):
     """Test CPU bridge when Add expression is forced to fall back to CPU"""
@@ -52,7 +55,9 @@ def test_cpu_bridge_add_fallback(codegen_enabled):
     conf = create_cpu_bridge_fallback_conf(['Add'], codegen_enabled=codegen_enabled)
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-
+# Only include Multiply and Boundreference Expressions to verify that the CPU bridge is working
+# as expected.
+@allow_non_gpu('Multiply', 'BoundReference')
 @pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
 def test_cpu_bridge_multiply_fallback(codegen_enabled):
     """Test CPU bridge when Multiply expression is forced to fall back to CPU"""
@@ -65,7 +70,7 @@ def test_cpu_bridge_multiply_fallback(codegen_enabled):
     conf = create_cpu_bridge_fallback_conf(['Multiply'], codegen_enabled=codegen_enabled)
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-
+@allow_non_gpu('Add', 'Multiply', 'BoundReference', 'Literal', 'CaseWhen', 'GreaterThan')
 @pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
 def test_cpu_bridge_complex_expression_tree(codegen_enabled):
     """Test CPU bridge with complex expression trees containing multiple fallbacks"""
@@ -85,7 +90,9 @@ def test_cpu_bridge_complex_expression_tree(codegen_enabled):
     conf = create_cpu_bridge_fallback_conf(['Add'], codegen_enabled=codegen_enabled)
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-
+# Currently we cannot cross the boundary of a Lambda function. That may change in the future.
+# but for now we only include what is required to work
+@allow_non_gpu('Add', 'BoundReference', 'Literal')
 @pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
 def test_cpu_bridge_higher_order_function_fallback(codegen_enabled):
     """Test CPU bridge with higher order functions where inner expressions fall back to CPU"""
@@ -106,6 +113,7 @@ def test_cpu_bridge_higher_order_function_fallback(codegen_enabled):
     conf = create_cpu_bridge_fallback_conf(['Add'], codegen_enabled=codegen_enabled)
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
+@allow_non_gpu('Add', 'BoundReference')
 def test_cpu_bridge_nondeterministic_works_next_to_bridge():
     """Test mixed scenario: some expressions use CPU bridge, others stay on GPU"""
     def test_func(spark):
@@ -142,7 +150,8 @@ def check_bloom_filter_join(confs, is_multi_column):
     all_confs = copy_and_update(bloom_filter_confs, partial_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=all_confs)
 
-@allow_non_gpu("ShuffleExchangeExec")
+@allow_non_gpu("ShuffleExchangeExec", "BloomFilterMightContain", "ScalarSubquery", "BoundReference", 
+"XxHash64", "GetStructField", "Remainder", "Literal", "And")
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
@@ -227,6 +236,7 @@ def test_generate_outer_fallback():
 # Join tests in join condition
 # ==============================================================================
 
+@allow_non_gpu('Add', 'BoundReference', 'Literal')
 @ignore_order(local=True)
 def test_cpu_bridge_inner_join_post_filter_works():
     """Inner join with bridge expressions in condition should work with post-filtering"""
@@ -283,7 +293,7 @@ def test_cpu_bridge_outer_join_fallback():
     # Should fall back: Outer joins require AST conversion for conditions
     assert_gpu_fallback_collect(test_func, 'BroadcastHashJoinExec', conf=conf)
 
-
+@allow_non_gpu('Add', 'BoundReference', 'Literal')
 @ignore_order(local=True)
 def test_cpu_bridge_simple_equality_join_works():
     """Simple equality joins with bridge expressions in select should work"""
@@ -392,6 +402,7 @@ def test_cpu_bridge_sort_merge_full_outer_join_fallback():
     # Should fall back: Outer joins require AST conversion for conditions
     assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
 
+@allow_non_gpu('Add', 'BoundReference', 'Literal')
 @ignore_order(local=True)
 def test_cpu_bridge_inner_join_with_bridge_expressions_works():
     """Inner join with bridge expressions in condition should work on GPU (no fallback needed)"""
@@ -450,7 +461,7 @@ def test_cpu_bridge_hash_join_left_outer_fallback():
     # Spark may choose SortMergeJoin or ShuffledHashJoin depending on configuration
     assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
 
-
+@allow_non_gpu('Add', 'BoundReference')
 @ignore_order(local=True)
 def test_cpu_bridge_hash_partitioning_works():
     """Bridge expressions in partitioning should work with partition bridge optimization"""
@@ -463,7 +474,7 @@ def test_cpu_bridge_hash_partitioning_works():
     conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-
+@allow_non_gpu('Add', 'BoundReference')
 @ignore_order(local=True)
 def test_cpu_bridge_sort_key():
     """Bridge expressions in sort keys should work entirely on GPU with partition bridge optimization"""
@@ -483,7 +494,7 @@ def test_cpu_bridge_sort_key():
     conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-
+@allow_non_gpu('Add', 'BoundReference')
 def test_cpu_bridge_sort_with_limit():
     """Bridge expressions in sort keys with LIMIT should work entirely on GPU"""
     def test_func(spark):
@@ -503,6 +514,7 @@ def test_cpu_bridge_sort_with_limit():
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
+@allow_non_gpu('Add', 'BoundReference')
 @ignore_order(local=True)
 def test_cpu_bridge_group_by_key_works():
     """Bridge expressions as grouping keys should work via project rewrite"""
@@ -514,7 +526,7 @@ def test_cpu_bridge_group_by_key_works():
     conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-
+@allow_non_gpu('Add', 'BoundReference')
 def test_cpu_bridge_window_partition_key_works():
     """Bridge expressions in window partition keys should work via project rewrite"""
     def test_func(spark):
@@ -535,6 +547,7 @@ def test_cpu_bridge_window_partition_key_works():
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
+@allow_non_gpu('Add', 'BoundReference')
 def test_cpu_bridge_window_order_key_works():
     """Bridge expressions in window order keys should work via project rewrite"""
     def test_func(spark):
@@ -562,6 +575,9 @@ def test_cpu_bridge_window_order_key_works():
 # These test scenarios where bridge expressions in filters affect scan operations
 # ==============================================================================
 
+# Note that this is only for the Filter after the Scan. The Scan itself does not
+# use the bridge expressions.
+@allow_non_gpu('Add', 'BoundReference')
 def test_cpu_bridge_predicate_pushdown_parquet_works(spark_tmp_path):
     """Check we didn't break predicate push down when bridge expressions are enabled"""
     # Generate data once and write to parquet
@@ -580,6 +596,8 @@ def test_cpu_bridge_predicate_pushdown_parquet_works(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
+@allow_non_gpu('Add', 'BoundReference', 'And', 'IsNotNull', 'GreaterThan', 'Literal', 'LessThan', 
+  'CaseWhen', 'GreaterThan')
 def test_cpu_bridge_complex_predicate_pushdown_works(spark_tmp_path):
     """Check we didn't break predicate push down when bridge expressions are enabled"""
     # Generate data once and write to parquet
@@ -617,6 +635,7 @@ def test_cpu_bridge_simple_predicate_pushdown_works(spark_tmp_path):
 
 
 # Test mixed scenario: bridge expression in select but simple predicate
+@allow_non_gpu('Add', 'BoundReference')
 def test_cpu_bridge_mixed_select_and_predicate():
     """Bridge in select with simple predicate should work correctly"""
     def test_func(spark):

@@ -296,14 +296,14 @@ def test_division_mixed_larger_dec(lhs, rhs):
                 f.col('a') / f.col('b')))
 
 @disable_ansi_mode
-def test_special_decimal_division():
-    for precision in range(1, 39):
-        for scale in range(-3, precision + 1):
-            print("PRECISION " + str(precision) + " SCALE " + str(scale))
-            data_gen = DecimalGen(precision, scale)
-            assert_gpu_and_cpu_are_equal_collect(
-                    lambda spark : two_col_df(spark, data_gen, data_gen).select(
-                        f.col('a') / f.col('b')))
+@pytest.mark.parametrize('precision', range(1, 39))
+def test_special_decimal_division(precision):
+    for scale in range(-3, precision + 1):
+        print("PRECISION " + str(precision) + " SCALE " + str(scale))
+        data_gen = DecimalGen(precision, scale)
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark : two_col_df(spark, data_gen, data_gen).select(
+                    f.col('a') / f.col('b')))
 
 @approximate_float # we should get the perfectly correct answer for floats except when casting a decimal to a float in some corner cases.
 @pytest.mark.parametrize('rhs', [float_gen, double_gen], ids=idfn)
@@ -372,7 +372,7 @@ def test_pmod(data_gen):
                 'pmod(a, b)'))
 
 
-@allow_non_gpu("ProjectExec", "Pmod")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Literal")
 @pytest.mark.parametrize('data_gen', test_pmod_fallback_decimal_gens + [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
 @disable_ansi_mode
 def test_pmod_fallback(data_gen):
@@ -471,7 +471,7 @@ def test_pmod_mixed_numeric(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"))
 
-@allow_non_gpu("ProjectExec", "Pmod")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Cast")
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
     DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
     ], ids=idfn)
@@ -482,7 +482,7 @@ def test_pmod_mixed_decimal_lhs(lhs, rhs):
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
         "Pmod")
 
-@allow_non_gpu("ProjectExec", "Pmod")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Cast")
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
     DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)
@@ -493,7 +493,7 @@ def test_pmod_mixed_decimal_rhs(lhs, rhs):
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
         "Pmod")
 
-@allow_non_gpu("ProjectExec", "Pmod")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference")
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
     DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
     ], ids=idfn)
@@ -639,7 +639,7 @@ def test_floor_scale_zero(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'RoundFloor', 'BoundReference', 'Cast', 'Literal')
 @pytest.mark.parametrize('data_gen', [long_gen] + _arith_decimal_gens_no_neg_scale_38_0_overflow, ids=idfn)
 def test_floor_scale_nonzero(data_gen):
     assert_gpu_fallback_collect(
@@ -1468,14 +1468,14 @@ def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
 
 
 # Test that try_* functions falls back to CPU when TRY mode is used
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'Add', 'BoundReference')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_try_add_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_add(a, b) as result"), "Add")
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'Divide', 'Cast', 'BoundReference')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_divide_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
@@ -1491,7 +1491,7 @@ def test_try_mod_fallback_to_cpu(data_gen):
             "try_mod(a, b) as result"), "Remainder")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_subtract is not supported before Spark 3.3.0")
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'Subtract', 'BoundReference')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_subtract_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
@@ -1499,7 +1499,7 @@ def test_try_subtract_fallback_to_cpu(data_gen):
             "try_subtract(a, b) as result"), "Subtract")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_multiply is not supported before Spark 3.3.0")
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'Multiply', 'BoundReference')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_multiply_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(

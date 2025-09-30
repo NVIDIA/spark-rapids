@@ -169,7 +169,10 @@ def test_aqe_broadcast_join_non_columnar_child(spark_tmp_path):
             """
         )
 
-    conf = copy_and_update(_adaptive_conf, { 'spark.rapids.sql.expression.Concat': 'false' })
+    # Disable the CPU Bridge because the test wants to know what happens when ProjectExec falls back to CPU
+    # Not what happens when the bridge falls back an expression.
+    conf = copy_and_update(_adaptive_conf, { 'spark.rapids.sql.expression.Concat': 'false',
+        'spark.rapids.sql.expression.cpuBridge.enabled': 'false' })
 
     if is_databricks113_or_later():
         assert_cpu_and_gpu_are_equal_collect_with_capture(do_it, exist_classes="GpuShuffleExchangeExec",conf=conf)
