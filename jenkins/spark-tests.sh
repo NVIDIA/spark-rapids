@@ -259,7 +259,7 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
         PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
           PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
           PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog" \
+          env 'PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog"' \
           PYSP_TEST_spark_sql_catalog_spark__catalog_uri="${ICEBERG_REST_CATALOG_URI:-'http://localhost:8181/catalog/'}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_credential="${ICEBERG_REST_CREDENTIAL}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri="${ICEBERG_REST_OAUTH2_SERVER_URI:-'http://localhost:8080/realms/iceberg/protocol/openid-connect/token'}" \
@@ -299,7 +299,7 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
         PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
         PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
+        env 'PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog"' \
         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="$S3TABLES_BUCKET_ARN" \
         ./run_pyspark_from_build.sh -s -m iceberg --iceberg
   fi
