@@ -155,7 +155,7 @@ def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory
 
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
                          ids=lambda x: f"write_distribution_mode={x}")
