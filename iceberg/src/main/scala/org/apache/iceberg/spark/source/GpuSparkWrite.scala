@@ -17,6 +17,7 @@
 package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
+import scala.util.{Failure, Success}
 
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
@@ -28,6 +29,7 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
 import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
+import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
 import org.apache.spark.api.java.JavaSparkContext
@@ -38,9 +40,11 @@ import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, Write, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
+import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
+
 
 
 class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionAndOrdering  {
@@ -103,6 +107,11 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       dsSchema
     )
 
+    val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)
+    val statsTracker = new GpuWriteJobStatsTracker(serializedHadoopConf,
+      GpuWriteJobStatsTracker.basicMetrics,
+      GpuWriteJobStatsTracker.taskMetrics)
+
     new GpuWriterFactory(
       tableBroadcast,
       queryId,
@@ -114,8 +123,8 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       useFanout,
       writeProps.asScala.toMap,
       outputWriterFactory,
-      new SerializableConfiguration(job.getConfiguration)
-    )
+      statsTracker,
+      serializedHadoopConf)
   }
 
   private[source] def files(messages: Array[WriterCommitMessage]): Seq[DataFile] = {
@@ -147,6 +156,30 @@ object GpuSparkWrite {
     if (!dataFileFormat.equals(FileFormat.PARQUET)) {
       meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: $dataFileFormat")
     }
+
+    val table: Table = FieldUtils.readField(cpuWrite, "table", true).asInstanceOf[Table]
+    val partitionSpec = table.spec()
+
+    val dsSchema = FieldUtils.readField(cpuWrite, "dsSchema", true)
+      .asInstanceOf[StructType]
+    val writeSchema = FieldUtils.readField(cpuWrite, "writeSchema", true)
+      .asInstanceOf[Schema]
+
+    if (partitionSpec.isPartitioned) {
+      for (partitionField <- partitionSpec.fields().asScala) {
+        val transform = partitionField.transform()
+        GpuTransform.tryFrom(transform) match {
+          case Success(t) =>
+            val fieldTransform = GpuFieldTransform(partitionField.sourceId(), t)
+            if (!fieldTransform.supports(dsSchema, writeSchema)) {
+              meta.willNotWorkOnGpu(
+                s"Iceberg partition transform $transform is not supported on GPU")
+            }
+          case Failure(_) => meta.willNotWorkOnGpu(
+            s"Iceberg partition transform $transform is not supported on GPU")
+        }
+      }
+    }
   }
 
 
@@ -165,8 +198,10 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
   val useFanout: Boolean,
   val ignore: Map[String, String],
   val outputWriterFactory: ColumnarOutputWriterFactory,
-  val hadoopConf: SerializableConfiguration,
+  val statsTracker: GpuWriteJobStatsTracker,
+  val hadoopConf: SerializableConfiguration
 ) extends DataWriterFactory {
+
   override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] = {
     val table = tableBroadcast.value
     val spec = table.specs().get(outputSpecId)
@@ -185,8 +220,8 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
       table.sortOrder(),
       format,
       outputWriterFactory,
-      hadoopConf
-    )
+      statsTracker.newTaskInstance(),
+      hadoopConf)
 
     if (spec.isUnpartitioned) {
       new GpuUnpartitionedDataWriter(writerFactory, outputFileFactory, io, spec, targetFileSize)
