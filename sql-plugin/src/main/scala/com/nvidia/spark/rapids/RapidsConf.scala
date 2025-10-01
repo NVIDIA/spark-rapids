@@ -464,7 +464,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "to run while keeping the overall plan on GPU. When enabled, expressions that have no " +
       "GPU implementation will automatically be wrapped in bridge expressions instead of " +
       "causing plan fallbacks.")
-    .internal()
     .booleanConf
     .createWithDefault(true)
 
@@ -475,13 +474,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault("")
 
-  val BRIDGE_CODEGEN_ENABLED = conf("spark.rapids.sql.expression.cpuBridge.codegenEnabled")
-    .doc("Enable code generation for CPU bridge expressions. When enabled, uses Spark's " +
-      "code generation framework for better performance. Falls back to interpreted " +
-      "evaluation if code generation fails.")
+  val CPU_BRIDGE_THREAD_POOL_SIZE = conf("spark.rapids.sql.cpuBridge.threadPoolSize")
+    .doc("Override the default CPU bridge thread pool size. When set to a positive value, " +
+      "uses this specific number of threads instead of the default calculation based on " +
+      "task slots. This is an internal config primarily for testing and debugging.")
     .internal()
-    .booleanConf
-    .createWithDefault(true)
+    .integerConf
+    .checkValue(v => v > 0, "Thread pool size must be positive")
+    .createOptional
+
 
   val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
     .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
@@ -3783,7 +3784,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     }
   }
 
-  lazy val isBridgeCodegenEnabled: Boolean = get(BRIDGE_CODEGEN_ENABLED)
+
+  /**
+   * Get the CPU bridge thread pool size override, if configured.
+   */
+  def getCpuBridgeThreadPoolSize: Option[Int] = get(CPU_BRIDGE_THREAD_POOL_SIZE).map(_.toInt)
 
   /**
    * Checks if a specific expression class should be allowed to use bridge expressions.

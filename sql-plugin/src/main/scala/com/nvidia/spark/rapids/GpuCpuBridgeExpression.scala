@@ -45,14 +45,12 @@ import org.apache.spark.unsafe.types.UTF8String
  * @param cpuExpression The CPU expression tree to evaluate (not included as children)
  * @param outputDataType The output data type of the expression
  * @param outputNullable Whether the output can be null
- * @param codegenEnabled Whether to use code generation for CPU evaluation
  */
 case class GpuCpuBridgeExpression(
     gpuInputs: Seq[Expression],
     cpuExpression: Expression,
     outputDataType: DataType,
-    outputNullable: Boolean,
-    codegenEnabled: Boolean) extends GpuExpression with ShimExpression with Logging 
+    outputNullable: Boolean) extends GpuExpression with ShimExpression with Logging 
     with GpuBind with GpuMetricsInjectable {
 
   // Only GPU inputs are children for GPU expression tree traversal
@@ -111,7 +109,7 @@ case class GpuCpuBridgeExpression(
       })
     }
     val boundExpression = GpuCpuBridgeExpression(boundGpuInputs, cpuExpression,
-      outputDataType, outputNullable, codegenEnabled)
+      outputDataType, outputNullable)
     // Preserve metrics when binding
     boundExpression.cpuBridgeProcessingTime = this.cpuBridgeProcessingTime
     boundExpression.cpuBridgeWaitTime = this.cpuBridgeWaitTime
@@ -387,23 +385,16 @@ case class GpuCpuBridgeExpression(
    */
   private def createEvaluationFunction(
     cpuExpression: Expression): (Iterator[InternalRow], Int) => GpuColumnVector = {
-    if (codegenEnabled) {
-      // Try code generation first for better performance
-      try {
-        logDebug(s"Using code generation for ${cpuExpression.getClass.getSimpleName}")
-        createCodegenEvaluationFunction(cpuExpression)
-      } catch {
-        case e: Exception =>
-          // Fall back to interpreted evaluation if code generation fails
-          logWarning(s"Code generation failed for ${cpuExpression.getClass.getSimpleName}, " +
-            s"falling back to interpreted evaluation: ${e.getMessage}")
-          createInterpretedEvaluationFunction(cpuExpression)
-      }
-    } else {
-      // Code generation disabled, use interpreted evaluation
-      logDebug(s"Code generation disabled, using interpreted evaluation for " +
-        s"${cpuExpression.getClass.getSimpleName}")
-      createInterpretedEvaluationFunction(cpuExpression)
+    // Always try code generation first for better performance
+    try {
+      logDebug(s"Using code generation for ${cpuExpression.getClass.getSimpleName}")
+      createCodegenEvaluationFunction(cpuExpression)
+    } catch {
+      case e: Exception =>
+        // Fall back to interpreted evaluation if code generation fails
+        logWarning(s"Code generation failed for ${cpuExpression.getClass.getSimpleName}, " +
+          s"falling back to interpreted evaluation: ${e.getMessage}")
+        createInterpretedEvaluationFunction(cpuExpression)
     }
   }
   

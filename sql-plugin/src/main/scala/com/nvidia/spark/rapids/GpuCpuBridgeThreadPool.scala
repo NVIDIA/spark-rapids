@@ -96,19 +96,29 @@ object GpuCpuBridgeThreadPool extends Logging {
   private val lock = new Object()
   
   /**
-   * Get the number of task slots configured for this executor.
+   * Get the thread pool size, either from config override or calculated from task slots.
    */
-  private def getConfiguredTaskSlots: Int = {
-    val sparkConf = SparkEnv.get.conf
-    // Use the Rapids plugin's method to estimate cores, which considers executor cores
-    val estimatedCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
-    val taskSlots = sparkConf.getInt("spark.task.cpus", 1)
-    val maxTasks = estimatedCores / taskSlots
+  private def getThreadPoolSize: Int = {
+    val rapidsConf = new RapidsConf(SparkEnv.get.conf)
     
-    logDebug(s"Estimated cores: $estimatedCores, task CPUs: $taskSlots, max tasks: $maxTasks")
-    
-    // Ensure we have at least 1 thread, but cap at a reasonable maximum
-    Math.max(1, maxTasks)
+    // Check for explicit override first
+    rapidsConf.getCpuBridgeThreadPoolSize match {
+      case Some(overrideSize) =>
+        logInfo(s"Using CPU bridge thread pool size override: $overrideSize")
+        overrideSize
+      case None =>
+        // Use default calculation based on task slots
+        val sparkConf = SparkEnv.get.conf
+        // Use the Rapids plugin's method to estimate cores, which considers executor cores
+        val estimatedCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
+        val taskSlots = sparkConf.getInt("spark.task.cpus", 1)
+        val maxTasks = estimatedCores / taskSlots
+        
+        logDebug(s"Estimated cores: $estimatedCores, task CPUs: $taskSlots, max tasks: $maxTasks")
+        
+        // Ensure we have at least 1 thread, but cap at a reasonable maximum
+        Math.max(1, maxTasks)
+    }
   }
   
   /**
@@ -136,10 +146,9 @@ object GpuCpuBridgeThreadPool extends Logging {
           threadPool match {
             case Some(pool) => pool
             case None =>
-              val poolSize = getConfiguredTaskSlots
+              val poolSize = getThreadPoolSize
               
-              logDebug(s"Creating CPU bridge thread pool with $poolSize threads " +
-                s"(based on task slot configuration)")
+              logDebug(s"Creating CPU bridge thread pool with $poolSize threads")
               
               // Create priority queue for task ordering
               val taskQueue = new PriorityBlockingQueue[Runnable](512, CpuBridgeTaskComparator)
@@ -192,7 +201,7 @@ object GpuCpuBridgeThreadPool extends Logging {
     if (!shouldParallelize(numRows)) {
       1
     } else {
-      val poolSize = getConfiguredTaskSlots
+      val poolSize = getThreadPoolSize
       val idealSubBatches = Math.ceil(numRows.toDouble / MIN_ROWS_PER_SUBBATCH).toInt
       Math.min(idealSubBatches, poolSize * 2) // Allow up to 2x pool size for better utilization
     }
