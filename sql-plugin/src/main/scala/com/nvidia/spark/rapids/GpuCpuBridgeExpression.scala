@@ -217,35 +217,29 @@ case class GpuCpuBridgeExpression(
     val subBatchResults = withResource(spillableInputBatch) { spillableInputBatch =>
       // Submit sub-batch processing tasks to the thread pool with priority
       val futures = ranges.map { case (startRow, endRow) =>
-        val task = new SpillableSubBatchEvaluationTask(spillableInputBatch, startRow, endRow)
+        val task = new SpillableSubBatchEvaluationTask(spillableInputBatch, startRow, endRow, 
+          cpuBridgeProcessingTime)
         val subBatchSize = endRow - startRow
         GpuCpuBridgeThreadPool.submitPrioritizedTask(task, subBatchSize)
       }
       
-      // Time the CPU processing across all sub-batches
-      val processingStartTime = System.nanoTime()
-      try {
-        // Collect results from all sub-batches - these will be spillable results
-        futures.safeMap { future =>
-          Try(future.get()) match {
-            case Success(spillableResult) => 
-              // Convert spillable result back to regular GpuColumnVector for concatenation  
-              // The spillable result transfers ownership, so we don't need incRefCount
-              withResource(spillableResult) { _ =>
-                withResource(spillableResult.getColumnarBatch()) { cb =>
-                  cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
-                }
+      // Collect results from all sub-batches - these will be spillable results
+      // Note: Wait time is measured at the columnarEval level, not here
+      futures.safeMap { future =>
+        Try(future.get()) match {
+          case Success(spillableResult) => 
+            // Convert spillable result back to regular GpuColumnVector for concatenation  
+            // The spillable result transfers ownership, so we don't need incRefCount
+            withResource(spillableResult) { _ =>
+              withResource(spillableResult.getColumnarBatch()) { cb =>
+                cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
               }
-            case Failure(exception) =>
-              // Cancel remaining futures on error with proper resource cleanup
-              cleanupFuturesOnFailure(futures)
-              throw new RuntimeException("Sub-batch evaluation failed", exception)
-          }
+            }
+          case Failure(exception) =>
+            // Cancel remaining futures on error with proper resource cleanup
+            cleanupFuturesOnFailure(futures)
+            throw new RuntimeException("Sub-batch evaluation failed", exception)
         }
-      } finally {
-        // Record the total CPU processing time (includes thread pool wait + actual processing)
-        val processingTime = System.nanoTime() - processingStartTime
-        cpuBridgeProcessingTime.foreach(_.add(processingTime))
       }
     }
       
@@ -261,7 +255,8 @@ case class GpuCpuBridgeExpression(
   private class SpillableSubBatchEvaluationTask(
       spillableInputBatch: SpillableColumnarBatch,
       startRow: Int,
-      endRow: Int) extends Callable[SpillableColumnarBatch] {
+      endRow: Int,
+      cpuBridgeProcessingTime: Option[GpuMetric]) extends Callable[SpillableColumnarBatch] {
     
     override def call(): SpillableColumnarBatch = {
       val subBatchSize = endRow - startRow
@@ -292,7 +287,14 @@ case class GpuCpuBridgeExpression(
         )
         val r = new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)
         try {
-          val result = evaluationFunction(rowIterator, subBatchInput.numRows())
+          // Time the actual CPU processing on this thread
+          val processingStartTime = System.nanoTime()
+          val result = try {
+            evaluationFunction(rowIterator, subBatchInput.numRows())
+          } finally {
+            val processingTime = System.nanoTime() - processingStartTime
+            cpuBridgeProcessingTime.foreach(_.add(processingTime))
+          }
 
           // Convert result to spillable format
           val resultBatch = new ColumnarBatch(Array(result), subBatchInput.numRows())

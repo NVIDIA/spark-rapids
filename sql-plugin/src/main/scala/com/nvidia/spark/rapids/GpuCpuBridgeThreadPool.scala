@@ -89,7 +89,7 @@ object GpuCpuBridgeThreadPool extends Logging {
 
   // We want a decent number of rows because the code is more efficient
   // with larger batches, even on the CPU
-  private val MIN_ROWS_PER_SUBBATCH = 2000000  // Min size for each sub-batch
+  private val MIN_ROWS_PER_SUBBATCH = 500000  // Min size for each sub-batch
   
   // Lazy initialization of the thread pool
   @volatile private var threadPool: Option[ThreadPoolExecutor] = None
