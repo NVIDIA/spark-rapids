@@ -44,7 +44,7 @@ class GpuBubbleTimerManager private {
    * Notify the manager that a thread starts to wait for GpuSemaphore.
    */
   def addWaiter(): Unit = {
-    // Pause timers once waiting thread occurs, which indicates that the GPU utility
+    // Pause timers once waiting thread occurs, which indicates that the GPU utilization
     // changes from underutilized to busy.
     if (waitingThreads.incrementAndGet() == 1) {
       traverseTimers(isStart = false)
