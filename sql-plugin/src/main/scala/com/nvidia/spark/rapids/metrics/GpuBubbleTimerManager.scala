@@ -69,7 +69,7 @@ class GpuBubbleTimerManager private {
     activeTimers += timer
   }
 
-  // Traverse all active timers to update their status as the update of GPU utility state.
+  // Traverse all active timers to update their status as the update of GPU utilization state.
   // This method is synchronized to ensure handling activeTimers in a thread-safe manner.
   private def traverseTimers(isStart: Boolean): Unit = synchronized {
     if (activeTimers.isEmpty) {
