@@ -369,6 +369,12 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
   EXPLAIN_ONLY_CPU_SMOKE_TEST=1 \
     ./run_pyspark_from_build.sh
 
+  # Spark Connect smoke test (available in Spark 3.5.6+)
+  if printf '%s\n' "3.5.6" "$SPARK_VER" | sort -V | head -1 | grep -q "3.5.6"; then
+    SPARK_CONNECT_SMOKE_TEST=1 \
+      ./run_pyspark_from_build.sh
+  fi
+
   # As '--packages' only works on the default cuda12 jar, it does not support classifiers
   # refer to issue : https://issues.apache.org/jira/browse/SPARK-20075
   # "$CLASSIFIER" == ''" is usally for the case running by developers,
