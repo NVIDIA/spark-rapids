@@ -20,6 +20,7 @@ import scala.collection.immutable.TreeMap
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -294,15 +295,16 @@ object GpuMetric extends Logging {
    */
   def gpuBubbleTime[T](bubbleTime: GpuMetric,
       wallTime: Option[GpuMetric] = None)(f: => T): T = {
-    // start a new clock
-    val timerId = GpuBubbleClockManager.newClock()
+    // start a new Timer
+    val timer = GpuBubbleTimerManager.newTimer()
     val start = System.nanoTime()
     try {
       f
     } finally {
-      wallTime.foreach(_.add(System.nanoTime() - start))
-      // settle the clock
-      bubbleTime += GpuBubbleClockManager.completeClock(timerId)
+      val end = System.nanoTime()
+      wallTime.foreach(_.add(end - start))
+      // settle the timer and accumulate the bubble time
+      bubbleTime += timer.close(end)
     }
   }
 

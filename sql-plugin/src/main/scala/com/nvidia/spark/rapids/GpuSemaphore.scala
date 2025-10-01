@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.util
 import java.util.Map
 import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
-import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -27,6 +26,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{NvtxColor, NvtxUniqueRange}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.{RmmSpark, TaskPriority}
+import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -272,13 +272,6 @@ object GpuSemaphore {
     }
   }
 
-  /**
-   * Indicates if there are any working threads that are currently blocked waiting for the GPU.
-   */
-  def isDeviceBusy: Boolean = {
-    getInstance.blockingThreadCounter.get() > 0
-  }
-
   // For now we are going to have one permit for each 32 MiB of GPU memory.
   private val PERMIT_MEMORY_SIZE: Long = 32L * 1024 * 1024
 
@@ -325,7 +318,7 @@ object GpuSemaphore {
  */
 private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
                                       memoryEstimator: GpuStageMemoryEstimator,
-                                      numWaitThreads: AtomicLong) extends Logging {
+                                      bubbleTimerMgr: GpuBubbleTimerManager) extends Logging {
   /**
    * This holds threads that are not on the GPU yet. Most of the time they are
    * blocked waiting for the semaphore to let them on, but it may hold one
@@ -385,8 +378,9 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
       throw new IllegalStateException("Should not move to active without holding the semaphore")
     }
     blockedThreads.remove(t)
+    // signal the GpuBubbleTimerManager about the decrease of blockedThreads
+    bubbleTimerMgr.removeWaiter()
     activeThreads.add(t)
-    numWaitThreads.decrementAndGet()
   }
 
   /**
@@ -398,7 +392,8 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
     // All threads start out in blocked, but will move out of it inside of the while loop.
     synchronized {
       blockedThreads.add(t)
-      numWaitThreads.incrementAndGet()
+      // signal the GpuBubbleTimerManager about the increase of blockedThreads
+      bubbleTimerMgr.addWaiter()
     }
     var done = false
     var shouldBlockOnSemaphore = false
@@ -538,8 +533,8 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
     util.Collections.synchronizedMap(lru)
   }
 
-  // Executor-wide global counter for threads that are blocked waiting for the GPU semaphore
-  private val blockingThreadCounter = new AtomicLong(0L)
+  // Executor-wide manager to track GPU bubble time metrics for all non-GPU workloads.
+  private val bubbleTimerMgr = GpuBubbleTimerManager.getInstance
 
   // Get the last time this task acquired & released the semaphore
   private def lastSemAcqAndRelTime(context: TaskContext): (Long, Long) = {
@@ -563,7 +558,7 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
     })
     val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
       onTaskCompletion(context, completeTask)
-      new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate, blockingThreadCounter)
+      new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate, bubbleTimerMgr)
     })
     if (taskInfo.tryAcquire(semaphore, taskAttemptId)) {
       GpuDeviceManager.initializeFromTask()
@@ -594,7 +589,7 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
       val taskAttemptId = context.taskAttemptId()
       val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
         onTaskCompletion(context, completeTask)
-        new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate, blockingThreadCounter)
+        new SemaphoreTaskInfo(stageId, taskAttemptId, stageEstimate, bubbleTimerMgr)
       })
       taskInfo.blockUntilReady(semaphore)
       GpuDeviceManager.initializeFromTask()
