@@ -124,6 +124,36 @@ abstract class GpuBroadcastHashJoinExecBase(
     }
   }
 
+  // Override to inject CPU bridge metrics into bound expressions
+  override protected lazy val (boundBuildKeys, boundStreamKeys) = {
+    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
+    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
+    
+    // Inject CPU bridge metrics
+    GpuMetric.injectMetrics(lkeys, allMetrics)
+    GpuMetric.injectMetrics(rkeys, allMetrics)
+
+    buildSide match {
+      case GpuBuildLeft => (lkeys, rkeys)
+      case GpuBuildRight => (rkeys, lkeys)
+    }
+  }
+
+  // Override to inject CPU bridge metrics into bound condition
+  override protected lazy val (numFirstConditionTableColumns, boundCondition) = {
+    val (buildOutput, streamOutput) = buildSide match {
+      case GpuBuildRight => (right.output, left.output)
+      case GpuBuildLeft => (left.output, right.output)
+    }
+    val boundCondition = condition.map { c =>
+      val bound = GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
+      // Inject CPU bridge metrics into the bound condition
+      GpuMetric.injectMetrics(Seq(bound), allMetrics)
+      bound
+    }
+    (streamOutput.size, boundCondition)
+  }
+
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
       bqse.plan.asInstanceOf[GpuBroadcastExchangeExec]

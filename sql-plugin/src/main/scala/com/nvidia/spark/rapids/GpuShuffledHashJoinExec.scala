@@ -178,11 +178,45 @@ case class GpuShuffledHashJoinExec(
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    CPU_BRIDGE_PROCESSING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME),
+    CPU_BRIDGE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_WAIT_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
       GpuHashPartitioning.getDistribution(cpuRightKeys))
+
+  // Override to inject CPU bridge metrics into bound expressions
+  override protected lazy val (boundBuildKeys, boundStreamKeys) = {
+    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
+    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
+    
+    // Inject CPU bridge metrics
+    GpuMetric.injectMetrics(lkeys, allMetrics)
+    GpuMetric.injectMetrics(rkeys, allMetrics)
+
+    buildSide match {
+      case GpuBuildLeft => (lkeys, rkeys)
+      case GpuBuildRight => (rkeys, lkeys)
+    }
+  }
+
+  // Override to inject CPU bridge metrics into bound condition
+  override protected lazy val (numFirstConditionTableColumns, boundCondition) = {
+    val (buildOutput, streamOutput) = buildSide match {
+      case GpuBuildRight => (right.output, left.output)
+      case GpuBuildLeft => (left.output, right.output)
+    }
+    val boundCondition = condition.map { c =>
+      val bound = GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
+      // Inject CPU bridge metrics into the bound condition
+      GpuMetric.injectMetrics(Seq(bound), allMetrics)
+      bound
+    }
+    (streamOutput.size, boundCondition)
+  }
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new UnsupportedOperationException(

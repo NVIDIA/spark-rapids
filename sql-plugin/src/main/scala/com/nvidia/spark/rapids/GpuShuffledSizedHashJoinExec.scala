@@ -110,10 +110,32 @@ object GpuShuffledSizedHashJoinExec {
         rightOutput: Seq[Attribute],
         condition: Option[Expression],
         buildSide: GpuBuildSide): BoundJoinExprs = {
+      bind(joinType, leftKeys, leftOutput, rightKeys, rightOutput, condition, buildSide, None)
+    }
+
+    /**
+     * Utility to bind join expressions with optional metrics injection.
+     */
+    def bind(
+        joinType: JoinType,
+        leftKeys: Seq[Expression],
+        leftOutput: Seq[Attribute],
+        rightKeys: Seq[Expression],
+        rightOutput: Seq[Attribute],
+        condition: Option[Expression],
+        buildSide: GpuBuildSide,
+        metrics: Option[Map[String, GpuMetric]]): BoundJoinExprs = {
       val leftTypes = leftOutput.map(_.dataType).toArray
       val rightTypes = rightOutput.map(_.dataType).toArray
       val boundLeftKeys = GpuBindReferences.bindGpuReferences(leftKeys, leftOutput)
       val boundRightKeys = GpuBindReferences.bindGpuReferences(rightKeys, rightOutput)
+      
+      // Inject CPU bridge metrics if provided
+      metrics.foreach { m =>
+        GpuMetric.injectMetrics(boundLeftKeys, m)
+        GpuMetric.injectMetrics(boundRightKeys, m)
+      }
+      
       val (boundBuildKeys, buildTypes, buildOutput, boundStreamKeys, streamTypes, streamOutput) =
         buildSide match {
           case GpuBuildRight =>
@@ -122,7 +144,10 @@ object GpuShuffledSizedHashJoinExec {
             (boundLeftKeys, leftTypes, leftOutput, boundRightKeys, rightTypes, rightOutput)
       }
       val boundCondition = condition.map { c =>
-        GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
+        val bound = GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
+        // Inject CPU bridge metrics into the bound condition
+        metrics.foreach(GpuMetric.injectMetrics(Seq(bound), _))
+        bound
       }
 
       val treatNullsEqual = GpuHashJoin.compareNullsEqual(joinType, boundBuildKeys)
@@ -381,7 +406,11 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    CPU_BRIDGE_PROCESSING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME),
+    CPU_BRIDGE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_WAIT_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -699,7 +728,7 @@ object GpuShuffledSymmetricHashJoinExec {
             }
           }
           val exprs = BoundJoinExprs.bind(joinType, leftKeys, leftOutput, rightKeys, rightOutput,
-            condition, buildSide)
+            condition, buildSide, Some(metrics))
           val (buildQueue, buildSize, streamQueue, rawStreamIter) = buildSide match {
             case GpuBuildRight =>
               buildTime += rightTime.value
@@ -820,7 +849,7 @@ object GpuShuffledAsymmetricHashJoinExec {
           case _ => throw new IllegalStateException(s"unexpected join type $joinType")
         }
       val exprs = BoundJoinExprs.bind(joinType, leftKeys, leftOutput, rightKeys,
-        rightOutput, condition, buildSide)
+        rightOutput, condition, buildSide, Some(metrics))
       val buildQueue = mutable.Queue.empty[T]
       val (buildRows, buildSize) = closeOnExcept(buildQueue) { _ =>
         fetchProbeTargetSize(probeBuildIter, buildQueue, gpuBatchSizeBytes)
