@@ -24,12 +24,10 @@ from spark_session import is_before_spark_330, is_databricks_runtime
 
 
 # Helper function to create config that forces specific expressions to CPU bridge
-def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, codegen_enabled=True,
-                                    disallowed_bridge_expressions=[]):
+def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, disallowed_bridge_expressions=[]):
     """Create config that enables CPU bridge and disables specific GPU expressions"""
     conf = {
         'spark.rapids.sql.expression.cpuBridge.enabled': True,
-        'spark.rapids.sql.expression.cpuBridge.codegenEnabled': codegen_enabled,
         'spark.sql.ansi.enabled': False  # Disable ANSI mode to prevent arithmetic overflow exceptions
     }
     # Disable specific GPU expressions to force CPU bridge fallback
@@ -43,8 +41,7 @@ def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, codegen_enabled=Tr
 # Only include Add and Boundreference Expressions to verify that the CPU bridge is working
 # as expected.
 @allow_non_gpu('Add', 'BoundReference')
-@pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
-def test_cpu_bridge_add_fallback(codegen_enabled):
+def test_cpu_bridge_add_fallback():
     """Test CPU bridge when Add expression is forced to fall back to CPU"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen)], length=1024)
@@ -52,14 +49,13 @@ def test_cpu_bridge_add_fallback(codegen_enabled):
         return df.selectExpr("a", "b", "a + a as s1", "b * b as p1")
     
     # Force Add to fall back to CPU bridge
-    conf = create_cpu_bridge_fallback_conf(['Add'], codegen_enabled=codegen_enabled)
+    conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 # Only include Multiply and Boundreference Expressions to verify that the CPU bridge is working
 # as expected.
 @allow_non_gpu('Multiply', 'BoundReference')
-@pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
-def test_cpu_bridge_multiply_fallback(codegen_enabled):
+def test_cpu_bridge_multiply_fallback():
     """Test CPU bridge when Multiply expression is forced to fall back to CPU"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', double_gen)], length=1024)
@@ -67,12 +63,11 @@ def test_cpu_bridge_multiply_fallback(codegen_enabled):
         return df.selectExpr("a", "b", "a + a as s1", "b * b as p1")
     
     # Force Multiply to fall back to CPU bridge
-    conf = create_cpu_bridge_fallback_conf(['Multiply'], codegen_enabled=codegen_enabled)
+    conf = create_cpu_bridge_fallback_conf(['Multiply'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 @allow_non_gpu('Add', 'Multiply', 'BoundReference', 'Literal', 'CaseWhen', 'GreaterThan')
-@pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
-def test_cpu_bridge_complex_expression_tree(codegen_enabled):
+def test_cpu_bridge_complex_expression_tree():
     """Test CPU bridge with complex expression trees containing multiple fallbacks"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', int_gen)], length=1000)
@@ -87,14 +82,13 @@ def test_cpu_bridge_complex_expression_tree(codegen_enabled):
         )
     
     # Force Add to CPU bridge, keep other expressions on GPU
-    conf = create_cpu_bridge_fallback_conf(['Add'], codegen_enabled=codegen_enabled)
+    conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 # Currently we cannot cross the boundary of a Lambda function. That may change in the future.
 # but for now we only include what is required to work
 @allow_non_gpu('Add', 'BoundReference', 'Literal')
-@pytest.mark.parametrize('codegen_enabled', [True, False], ids=['codegen_on', 'codegen_off'])
-def test_cpu_bridge_higher_order_function_fallback(codegen_enabled):
+def test_cpu_bridge_higher_order_function_fallback():
     """Test CPU bridge with higher order functions where inner expressions fall back to CPU"""
     def test_func(spark):
         df = gen_df(spark, [('arr', ArrayGen(int_gen, min_length=3, max_length=5))], length=1000)
@@ -110,7 +104,7 @@ def test_cpu_bridge_higher_order_function_fallback(codegen_enabled):
         )
     
     # Force Add to CPU bridge - this will affect expressions inside the lambda functions
-    conf = create_cpu_bridge_fallback_conf(['Add'], codegen_enabled=codegen_enabled)
+    conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 @allow_non_gpu('Add', 'BoundReference')
