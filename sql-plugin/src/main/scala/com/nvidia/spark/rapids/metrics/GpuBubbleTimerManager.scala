@@ -56,7 +56,7 @@ class GpuBubbleTimerManager private {
    */
   def removeWaiter(): Unit = {
     // Resume timers once there is no more waiting threads, which indicates that
-    // the GPU utility changes from busy to underutilized.
+    // the GPU utilization changes from busy to underutilized.
     if (waitingThreads.decrementAndGet() == 0) {
       traverseTimers(isStart = true)
     }
