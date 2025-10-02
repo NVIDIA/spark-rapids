@@ -414,7 +414,7 @@ object ProfilerOnDriver extends Logging {
       if (profilerErrored) {
         logDebug(s"Profiling: Error starting profiler from $executorId: $msg")
       } else {
-        logError(s"Profiling: Error starting profiler from $executorId: $msg. Supressing others.")
+        logError(s"Profiling: Error starting profiler from $executorId: $msg. Suppressing others.")
       }
       profilerErrored = true
       null
