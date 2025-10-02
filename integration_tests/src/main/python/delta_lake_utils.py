@@ -50,7 +50,9 @@ delta_meta_allow = [
     "Or",
     "IsNull",
     "Not",
-    "EqualTo"
+    "EqualTo",
+    "CheckOverflowInTableWrite",
+    "JsonToStructs"
 ]
 
 # Disable Deletion Vectors except for Databricks 14.3
