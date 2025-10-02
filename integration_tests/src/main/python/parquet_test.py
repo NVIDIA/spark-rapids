@@ -222,11 +222,11 @@ def test_parquet_read_multithread_flow_ctrl_round_trip(spark_tmp_path, parquet_g
             conf=rebase_write_corrected_conf)
     assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf=reader_confs)
 
-# Ensure that the multithreaded reader will not be blocked if the error is raised during the task
-# scheduling.
+# Ensure that the multithreaded reader with resource bounded pool can handle an excessive host
+# memory request that cannot be satisfied by the pool.
 @pytest.mark.parametrize('keep_order', [False, True], ids=idfn)
 @pytest.mark.parametrize('timeout', [0, 10, 1000, 10000], ids=idfn)
-def test_parquet_read_multithread_flow_ctrl_quick_crash(spark_tmp_path, keep_order, timeout):
+def test_parquet_read_multithread_flow_ctrl_excessive_req(spark_tmp_path, keep_order, timeout):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark: gen_df(spark, [('a', long_gen)]).write.parquet(data_path),
@@ -240,10 +240,7 @@ def test_parquet_read_multithread_flow_ctrl_quick_crash(spark_tmp_path, keep_ord
         'spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout': timeout,
         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': keep_order,
     }
-    fn = lambda ss: (read_parquet_sql(data_path))(ss).write.parquet(data_path + '_tmpout')
-    assert_spark_exception(
-            lambda: with_gpu_session(fn, conf=tiny_pool_conf),
-            "Invalid resource request: Task requires more host memory")
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf=tiny_pool_conf)
 
 
 """

@@ -30,7 +30,7 @@ import scala.language.implicitConversions
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableArray, AutoCloseableProducingSeq}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.io.async._
 import org.apache.commons.io.IOUtils
@@ -951,18 +951,20 @@ abstract class MultiFileCloudPartitionReaderBase(
     isDone = true
     closeCurrentFileHostBuffers()
     batchIter = EmptyGpuColumnarBatchIterator
-    tasks.asScala.foreach { task =>
-      if (task.isCancelled) {
-        // Do nothing if already cancelled
-      } else if (task.isDone) {
-        convertAsyncResult(task.get()).close()
-      } else {
+
+    // clean up Async Readers being left over
+    val needToClose = mutable.ArrayBuffer[BufferInfo]()
+    tasks.asScala.foreach {
+      case task if task.isCancelled => // Do nothing if already cancelled
+      case task if task.isDone => // Close all produced hmbs
+        needToClose += convertAsyncResult(task.get())
+      case task => // Task is still running
         // Note we are not interrupting thread here so it
         // will finish reading and then just discard. If we
         // interrupt HDFS logs warnings about being interrupted.
         task.cancel(false)
-      }
     }
+    needToClose.safeClose()
   }
 }
 

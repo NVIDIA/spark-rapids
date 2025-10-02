@@ -96,15 +96,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
     if (memoryRequire == 0L) {
       AcquireSuccessful(elapsedTime = 0L)
     }
-    // 2.2 If the request runner itself exceeds the maximum pool size, fail immediately by
-    // returning a failure signal
-    else if (memoryRequire > maxHostMemoryBytes) {
-      val invalidReq = new InvalidResourceRequest(
-        s"Task requires more host memory(${bytesToString(memoryRequire)})" +
-            s"than pool size(${bytesToString(maxHostMemoryBytes)})")
-      AcquireExcepted(invalidReq)
-    }
-    // 2.3 The main path for acquiring resource with blocking and timeout
+    // 2.2 The main path for acquiring resource with blocking and timeout
     else {
       var isDone = false
       var isTimeout = false

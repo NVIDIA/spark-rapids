@@ -40,12 +40,6 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T])
     extends FutureTask[AsyncResult[T]](runner) with Logging {
 
   override def run(): Unit = runner.withStateLock { rr =>
-    // Handle the cancelled case first
-    if (rr.getState == Cancelled) {
-      rr.setState(ScheduleFailed(new IllegalStateException("cancelled")))
-      logWarning(s"Runner being cancelled ahead of execution: $rr")
-    }
-
     rr.getState match {
       case Running =>
         // Pass the schedule time to the task metrics builder
@@ -60,6 +54,12 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T])
       case ScheduleFailed(ex: Throwable) =>
         // Trick: register a pre-hook to let `AsyncRunner.call` throw the exception
         rr.addPreHook(() => throw ex)
+        super.run()
+
+      // Handle the cancelled case as a special kind of ScheduleFailed
+      case Cancelled =>
+        logWarning(s"Runner being cancelled ahead of execution: $rr")
+        rr.addPreHook(() => throw new IllegalStateException("cancelled"))
         super.run()
 
       // Expected states to bypass the execution
@@ -186,18 +186,33 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     futTask.runner.withStateLock { rr =>
       // Check the runner state
       rr.getState match {
-        // Handle the cancelled case first
+        // Cancelled case: Cancelled -> ScheduleFailed
         case Cancelled =>
           rr.setState(ScheduleFailed(new IllegalStateException("cancelled")))
           logWarning(s"Runner being cancelled ahead of execution: $rr")
 
-        // Normal case
+        // The main path: Init -> Pending -> Running | Pending | ScheduleFailed
         case init: Init =>
           // Update the runner state: Init -> Pending
           rr.setState(Pending)
           // register all the callbacks for the first time
           if (init.firstTime) {
             setupReleaseCallback(futTask)
+          }
+          // Talk to the ResourcePool to acquire resource for the runner
+          val acqStatus = mgr.acquireResource(rr, timeoutMs)
+          // Update the runner state based on the acquisition result
+          acqStatus match {
+            // Proceed to execution: Pending -> Running
+            case s: AcquireSuccessful =>
+              rr.setState(Running)
+              futTask.scheduleTime += s.elapsedTime
+            // Fail the scheduling: Pending -> ScheduleFailed
+            case AcquireExcepted(ex) =>
+              rr.setState(ScheduleFailed(ex))
+              logError(s"$ex [$rr]")
+            // Bypass the execution: Pending -> Pending
+            case AcquireFailed =>
           }
 
         // Unexpected states
@@ -207,25 +222,6 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           // the caller via FutureTask.get().
           rr.setState(ScheduleFailed(new IllegalStateException("Unexpected state")))
           logError(s"Unexpected state before schedule: $rr")
-      }
-
-      // Acquire resource if everything goes well
-      if (rr.getState == Pending) {
-        // Talk to the ResourcePool to acquire resource for the runner
-        val acqStatus = mgr.acquireResource(rr, timeoutMs)
-        // Update the runner state based on the acquisition result
-        acqStatus match {
-          // Proceed to execution: Pending -> Running
-          case s: AcquireSuccessful =>
-            rr.setState(Running)
-            futTask.scheduleTime += s.elapsedTime
-          // Fail the scheduling: Pending -> ScheduleFailed
-          case AcquireExcepted(ex) =>
-            rr.setState(ScheduleFailed(ex))
-            logError(s"$ex [$rr]")
-          // Bypass the execution: Pending -> Pending
-          case AcquireFailed =>
-        }
       }
     }
   }
@@ -246,40 +242,37 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
         throw new RuntimeException(t)
       }
 
-      // Check the runner state
+      // Post execution state handling
       rr.getState match {
-        case Cancelled => // very rare case: cancelled between execution and afterExecute
+        case Cancelled | // very rare case: cancelled between execution and afterExecute
+             ExecFailed(_) => // failed execution (ScheduleFailed should be cast to ExecFailed)
+          // release holding resource immediately on exception
+          if (rr.isHoldingResource) {
+            rr.releaseResourceCallback()
+          }
+
         case Completed => // successful execution
-        case ExecFailed(_) => // failed execution (ScheduleFailed should be cast to ExecFailed)
+          // release holding resource eagerly if the output does not hold the resource
+          rr.result match {
+            case None =>
+              throw new IllegalStateException(s"In Completed State but NO Result: $rr")
+            case Some(_: FastReleaseResult[_]) if rr.isHoldingResource =>
+              rr.releaseResourceCallback()
+            case _ =>
+          }
+
         case Pending => // timeout during resource acquisition
-        case _ => throw new IllegalStateException(s"Unexpected state: $rr")
-      }
-      // Handle eager release cases
-      if (rr.isHoldingResource) {
-        val needReleaseNow: Boolean = rr.getState match {
-          case Cancelled | ExecFailed(_) => true
-          case Completed =>
-            rr.result match {
-              case None =>
-                throw new IllegalStateException(s"In Completed State but NO Result: $rr")
-              case Some(_: FastReleaseResult[_]) => true
-              case _ => false
-            }
           // Only runners in (`Completed`, `ExecFailed`, `Cancelled`) may hold resource
-          case s =>
-            throw new IllegalStateException(s"State($s) should NOT hold Resource: $rr")
-        }
-        if (needReleaseNow) {
-          rr.releaseResourceCallback()
-        }
-      }
-      // Requeue runners which failed to acquire resource and bypassed the execution.
-      if (rr.getState == Pending) {
-        futTask.scheduleTime += timeoutMs * 1000000L
-        rr.setState(Init(firstTime = false)) // reset to Init state for re-scheduling
-        val reAddSuccess = workQueue.add(futTask)
-        require(reAddSuccess, s"Failed to re-add $futTask to the work queue after execution")
-        logDebug(s"Re-add timeout runner: $futTask")
+          require(!rr.isHoldingResource, s"Pending state should NOT hold Resource: $rr")
+          // Requeue runners which failed to acquire resource and bypassed the execution.
+          futTask.scheduleTime += timeoutMs * 1000000L
+          rr.setState(Init(firstTime = false)) // reset to Init state for re-scheduling
+          val reAddSuccess = workQueue.add(futTask)
+          require(reAddSuccess, s"Failed to re-add $futTask to the work queue after execution")
+          logDebug(s"Re-add timeout runner: $futTask")
+
+        case _ =>
+          throw new IllegalStateException(s"Unexpected state: $rr")
       }
     }
   }

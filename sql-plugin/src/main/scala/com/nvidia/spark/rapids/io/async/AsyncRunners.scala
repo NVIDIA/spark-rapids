@@ -393,8 +393,6 @@ object AsyncRunner {
 
   // Adjust the priority based on the memory overhead to minimal the potential clogging:
   // lightweight tasks should have higher priority.
-  // Assert pre-adjusted priority is non-negative. Then, apply a penalty proportional to
-  // memory requirement (in KB) to the priority.
   private def hostMemoryPenalty(memoryBytes: Long, priority: Long): Long = {
     require(memoryBytes >= 0, s"Memory bytes must be non-negative, got: $memoryBytes")
     priority - (memoryBytes >> 10)
