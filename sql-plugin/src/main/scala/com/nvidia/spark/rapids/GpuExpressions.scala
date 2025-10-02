@@ -231,7 +231,10 @@ trait GpuExpression extends Expression {
    *   - when being non-deterministic, it is a Retryable and its children are all retryable.
    */
   lazy val retryable: Boolean = deterministic || {
-    val childrenAllRetryable = children.forall(_.asInstanceOf[GpuExpression].retryable)
+    val childrenAllRetryable = children.forall {
+      case c: GpuExpression => c.retryable
+      case _ => false
+    }
     if (selfNonDeterministic || children.forall(_.deterministic)) {
       // self is non-deterministic, so need to check if it is a Retryable.
       //
