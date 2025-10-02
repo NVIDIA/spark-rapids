@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.jni.DeviceAttr
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.spill.SpillFramework
 
@@ -75,6 +76,30 @@ object GpuDeviceManager extends Logging {
    * Exposes the device id used while initializing the RMM pool
    */
   def getDeviceId(): Option[Int] = deviceId
+
+  // For testing purposes only - allows forcing integrated GPU behavior
+  private var forceIntegratedGpu: Option[Boolean] = None
+
+  /**
+   * For testing: force integrated GPU behavior regardless of actual hardware
+   */
+  def setForceIntegratedGpuForTesting(force: Boolean): Unit = {
+    forceIntegratedGpu = Some(force)
+  }
+
+  /**
+   * For testing: reset forced integrated GPU behavior
+   */
+  def resetForceIntegratedGpuForTesting(): Unit = {
+    forceIntegratedGpu = None
+  }
+
+  /**
+   * Check if we should treat the GPU as integrated (for testing or actual hardware)
+   */
+  private def isIntegratedGpu: Boolean = {
+    forceIntegratedGpu.getOrElse(DeviceAttr.isIntegratedGPU == 1)
+  }
 
   @volatile private var poolSizeLimit = 0L
 
@@ -227,16 +252,29 @@ object GpuDeviceManager extends Logging {
 
   private def toMiB(x: Long): Double = x / 1024 / 1024.0
 
-  private def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
+  /**
+   * Compute RMM pool size based on configuration and GPU memory info.
+   * Visible for testing.
+   */
+  def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
     def truncateToAlignment(x: Long): Long = x & ~511L
+
+    // For integrated GPUs, we treat memory as shared between CPU and GPU
+    // The available GPU memory is physical_total * integratedGpuMemoryFraction
+    val availableGpuTotal = if (isIntegratedGpu) {
+      (info.total * conf.integratedGpuMemoryFraction).toLong
+    } else {
+      info.total
+    }
+    logInfo(s"availableGpuTotal: ${toMiB(availableGpuTotal)} MiB")
 
     // No checks when rmmExactAlloc is given. We are just going to go with the amount requested
     // with the proper alignment (which is a requirement for some allocators). This is because
     // it is for testing and we assume that the tests know what they are doing. If the conf becomes
     // public, then we need to do some more work.
     conf.rmmExactAlloc.map(truncateToAlignment).getOrElse {
-      val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
-      val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
+      val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * availableGpuTotal).toLong)
+      val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * availableGpuTotal).toLong)
       val reserveAmount =
         if (conf.isUCXShuffleManagerMode && conf.rmmPool.equalsIgnoreCase("ASYNC")) {
           // When using the async allocator, UCX calls `cudaMalloc` directly to allocate the
@@ -245,17 +283,19 @@ object GpuDeviceManager extends Logging {
         } else {
           conf.rmmAllocReserve
         }
+      val availableFree = Math.min(info.free, availableGpuTotal)
+      logInfo(s"availableGpuFree: ${toMiB(availableFree)} MiB")
       var poolAllocation = truncateToAlignment(
-        (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
+        (conf.rmmAllocFraction * (availableFree - reserveAmount)).toLong)
       val errorPhrase = "The pool allocation of " +
-        s"${toMiB(poolAllocation)} MiB (gpu.free: ${toMiB(info.free)}," +
+        s"${toMiB(poolAllocation)} MiB (gpu.free: ${toMiB(availableFree)}," +
         s"${RapidsConf.RMM_ALLOC_FRACTION}: (=${conf.rmmAllocFraction}," +
         s"${RapidsConf.RMM_ALLOC_RESERVE}: ${reserveAmount} => " +
         s"(gpu.free - reserve) * allocFraction = ${toMiB(poolAllocation)}) was "
       if (poolAllocation < minAllocation) {
         throw new IllegalArgumentException(errorPhrase +
             s"less than allocation of ${toMiB(minAllocation)} MiB (gpu.total: " +
-            s"${toMiB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MIN_FRACTION}: " +
+            s"${toMiB(availableGpuTotal)} MiB, ${RapidsConf.RMM_ALLOC_MIN_FRACTION}: " +
             s"${conf.rmmAllocMinFraction} => gpu.total *" +
             s"minAllocFraction = ${toMiB(minAllocation)} MiB). Please ensure that the GPU has " +
             s"enough free memory, or adjust configuration accordingly.")
@@ -263,7 +303,7 @@ object GpuDeviceManager extends Logging {
       if (maxAllocation < poolAllocation) {
         throw new IllegalArgumentException(errorPhrase +
             s"more than allocation of ${toMiB(maxAllocation)} MiB (gpu.total: " +
-            s"${toMiB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MAX_FRACTION}: " +
+            s"${toMiB(availableGpuTotal)} MiB, ${RapidsConf.RMM_ALLOC_MAX_FRACTION}: " +
             s"${conf.rmmAllocMaxFraction} => gpu.total *" +
             s"maxAllocFraction = ${toMiB(maxAllocation)} MiB). Please ensure that pool " +
             s"allocation does not exceed maximum allocation and adjust configuration accordingly.")
@@ -497,7 +537,12 @@ object GpuDeviceManager extends Logging {
       } else {
         // in case we cannot query the host for available memory due to environmental
         // constraints, we can fall back to minMemoryLimit via saying there's no available
-        lazy val availableHostMemory = memCheck.getAvailableMemoryBytes(conf).getOrElse(0L)
+        lazy val availableHostMemory = if (isIntegratedGpu) {
+          (memCheck.getAvailableMemoryBytes(conf).getOrElse(0L) * (1.0 -
+          conf.integratedGpuMemoryFraction)).toLong
+        } else {
+          memCheck.getAvailableMemoryBytes(conf).getOrElse(0L)
+        }
         val hostMemUsageFraction = .8
         // Spark calculates the total mem to allocate to the job as
         // val totalMemMiB =

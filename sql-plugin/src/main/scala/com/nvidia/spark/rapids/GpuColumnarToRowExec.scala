@@ -372,8 +372,7 @@ case class GpuColumnarToRowExec(
       cdata.mapPartitions(f)
     }
 
-    // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
-    wrapWithTimeTrackingRDD(rdd)
+    rdd
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {

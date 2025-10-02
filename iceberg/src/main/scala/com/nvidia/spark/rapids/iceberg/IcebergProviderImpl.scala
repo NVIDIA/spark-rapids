@@ -19,13 +19,14 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuOverrides, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
 
 class IcebergProviderImpl extends IcebergProvider {
@@ -85,7 +86,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
   override def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = {
     if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
-      val Seq(left, right) = meta.childExprs.map(_.convertToGpu().asInstanceOf[GpuExpression])
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
       GpuBucketExpression(left, right)
     } else {
       throw new IllegalStateException(
@@ -109,11 +110,17 @@ class IcebergProviderImpl extends IcebergProvider {
     }
 
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+
+    GpuSparkWrite.tagForGpu(cpuExec.write, meta)
   }
 
   override def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
+    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
+    if (!child.supportsColumnar) {
+      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
+    }
     GpuAppendDataExec(
-      new GpuOverrides().apply(cpuExec.query),
+      child,
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
   }

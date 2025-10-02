@@ -116,6 +116,8 @@ object GpuMetric extends Logging {
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
   val COPY_TO_HOST_TIME = "d2hMemCopyTime"
   val READ_THROTTLING_TIME = "readThrottlingTime"
+  val SMALL_JOIN_COUNT = "sizedSmallJoin"
+  val BIG_JOIN_COUNT = "sizedBigJoin"
   val SYNC_READ_TIME = "shuffleSyncReadTime"
   val ASYNC_READ_TIME = "shuffleAsyncReadTime"
 
@@ -167,6 +169,9 @@ object GpuMetric extends Logging {
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
   val DESCRIPTION_READ_THROTTLING_TIME = "read throttling time"
+
+  val DESCRIPTION_SMALL_JOIN_COUNT = "small joins"
+  val DESCRIPTION_BIG_JOIN_COUNT = "big joins"
   val DESCRIPTION_SYNC_READ_TIME = "sync read time"
   val DESCRIPTION_ASYNC_READ_TIME = "async read time"
 

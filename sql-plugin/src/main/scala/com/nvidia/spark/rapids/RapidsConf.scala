@@ -477,6 +477,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
+  private val INTEGRATED_GPU_MEMORY_FRACTION_KEY = "spark.rapids.memory.integratedGpuMemoryFraction"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
     .doc("The fraction of available (free) GPU memory that should be allocated for pooled " +
@@ -521,6 +522,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(ByteUnit.MiB.toBytes(640))
+
+  val INTEGRATED_GPU_MEMORY_FRACTION = conf(INTEGRATED_GPU_MEMORY_FRACTION_KEY)
+    .doc("The fraction of total physical memory that should be allocated to the GPU on " +
+        "integrated GPU systems where memory is shared between CPU and GPU. The remaining " +
+        "fraction (1 - this value) will be allocated to CPU memory. Only applies when " +
+        "DeviceAttr.isIntegratedGPU == 1.")
+    .internal()
+    .startupOnly()
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(0.6)
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
@@ -2865,7 +2877,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.12.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -3174,6 +3186,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocMinFraction: Double = get(RMM_ALLOC_MIN_FRACTION)
 
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
+
+  lazy val integratedGpuMemoryFraction: Double = get(INTEGRATED_GPU_MEMORY_FRACTION)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
