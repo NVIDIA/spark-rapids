@@ -31,7 +31,8 @@ TEXT_INPUT_EXEC='FileSourceScanExec'
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
 non_utc_file_source_scan_allow = ['FileSourceScanExec'] if is_not_utc() else []
 
-non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
+non_utc_project_allow = ['ProjectExec', 'StructsToJson', 'JsonToStructs', 'BoundReference', 
+  'Literal'] if is_not_utc() else []
 
 
 json_supported_gens = [

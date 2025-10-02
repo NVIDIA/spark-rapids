@@ -1427,6 +1427,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   def convertForGpuCpuBridge(): GpuExpression = {
+    if (!this.wrapped.deterministic) {
+      throw new IllegalStateException(s"$this is NOT deterministic!!!")
+    }
     // Separate literals and ScalarSubQueries from GPU-convertible expressions to optimize
     // data movement, and work around bugs in spark were only a Scala value is supported as input.
     val gpuInputsWithIndex = scala.collection.mutable.ListBuffer[(Expression, Int)]()
@@ -1500,7 +1503,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * configs)
    * @return true if it can, else false.
    */
-  final def canMoveToCpuBridge: Boolean = conf.isBridgeAllowedForExpression(expr.getClass)
+  final def canMoveToCpuBridge: Boolean = conf.isBridgeAllowedForExpression(expr)
 
   // Shared constant for bridge optimization reason
   private val BRIDGE_OPTIMIZATION_REASON = "it avoids excess CPU and GPU transfers"

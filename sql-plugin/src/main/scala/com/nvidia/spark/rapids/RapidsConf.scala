@@ -30,6 +30,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
 
@@ -3794,17 +3795,18 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * Checks if a specific expression class should be allowed to use bridge expressions.
    * Filters out expressions that cannot be directly executed (like aggregations).
    */
-  def isBridgeAllowedForExpression(exprClass: Class[_]): Boolean = {
+  def isBridgeAllowedForExpression(expression: Expression): Boolean = {
     if (!isCpuBridgeEnabled) return false
-    
+
+    val exprClass = expression.getClass
     // Check disallow list
     if (bridgeDisallowList.contains(exprClass.getName)) return false
     
     // Filter out expressions that cannot be directly executed
     if (isNonExecutableExpression(exprClass)) return false
     
-    // Exclude nondeterministic expressions for performance and correctness
-    if (isNondeterministicExpression(exprClass)) return false
+    // Exclude nondeterministic expressions for correctness
+    if (!expression.deterministic) return false
     
     true
   }
@@ -3820,17 +3822,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       classOf[WindowFunction].isAssignableFrom(exprClass) ||
       classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
       classOf[Generator].isAssignableFrom(exprClass)
-  }
-
-  /**
-   * Checks if an expression is nondeterministic and cannot be bridged.
-   * Nondeterministic expressions (uuid, rand, etc.) are excluded from CPU bridge
-   * for performance and correctness reasons.
-   */
-  private def isNondeterministicExpression(exprClass: Class[_]): Boolean = {
-    import org.apache.spark.sql.catalyst.expressions.Nondeterministic
-    // Check if the class implements Nondeterministic interface
-    classOf[Nondeterministic].isAssignableFrom(exprClass)
   }
 }
 

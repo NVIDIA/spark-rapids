@@ -25,7 +25,8 @@ import pyspark.sql.functions as f
 from timezones import all_timezones, fixed_offset_timezones, fixed_offset_timezones_iana, variable_offset_timezones, variable_offset_timezones_iana
 
 # Some operations only work in UTC specifically
-non_utc_tz_allow = ['ProjectExec'] if not is_utc() else []
+non_utc_tz_allow = ['ProjectExec', 'TruncTimestamp', 'Literal', 'BoundReference', 
+  'MonthsBetween'] if not is_utc() else []
 # Others work in all supported time zones
 
 # the last time that is configured to be supported by the GPU transition rules

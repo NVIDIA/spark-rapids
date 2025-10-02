@@ -143,14 +143,14 @@ def test_scan_json_allow_single_quotes_off(std_input_path, read_func, spark_tmp_
         {"allowSingleQuotes": "false"}),
         conf=_enable_all_types_json_scan_conf)
 
-@allow_non_gpu('ProjectExec', TEXT_INPUT_EXEC)
+@allow_non_gpu('ProjectExec', TEXT_INPUT_EXEC, 'JsonToStructs', 'BoundReference')
 def test_from_json_allow_single_quotes_off(std_input_path):
     schema = WITH_SQ_SCHEMA
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_SQ_FILE, "json").select(f.col('json'), f.from_json(f.col('json'), schema, {'allowSingleQuotes': "false"})),
         conf =_enable_json_to_structs_conf)
 
-@allow_non_gpu('ProjectExec', TEXT_INPUT_EXEC)
+@allow_non_gpu('ProjectExec', TEXT_INPUT_EXEC, 'JsonToStructs', 'BoundReference')
 def test_from_json_allow_single_quotes_off_map(std_input_path):
     schema = WITH_SQ_MAP_SCHEMA
     assert_gpu_and_cpu_are_equal_collect(
