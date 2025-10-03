@@ -174,6 +174,45 @@ def test_delta_deletion_vector_read_fallback(spark_tmp_path, reader_type):
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
 @pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
+@pytest.mark.parametrize("condition", ["where a > 23455 "])
+def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type, condition):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: two_col_df(spark, int_gen, IntegerGen(nullable=False, min_val=1, max_val=2, special_cases=[]), seed=12345).sort("a").repartition("b").coalesce(1),
+                               # dest_table_func=lambda spark: binary_op_df(spark, IntegerGen(min_val=-3268, max_val=3267, special_cases=[0,1,-1]), seed=12345).sort("a").repartition(1),
+                               use_cdf=False, enable_deletion_vectors=True)
+    def write_func(path):
+        delete_sql=f"DELETE FROM delta.`{path}` {condition}"
+        def delete_func(spark):
+            count = spark.sql(delete_sql).collect()[0][0]
+            if condition != "where a = ''":
+                assert(count > 0)
+            else:
+                assert(count == 0)
+        return delete_func
+
+    def read_parquet_sql(data_path):
+        return lambda spark : spark.sql(f"select * from delta.`{data_path}` where b = 1")
+
+    enable_conf = copy_and_update(delta_delete_enabled_conf,
+                                  {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+
+    with_cpu_session(setup_tables, conf=enable_conf)
+    with_cpu_session(write_func(data_path), conf=enable_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type,
+                                                                            # we need to set the useMetadataRowIndex = false as there are other
+                                                                            # hidden metadata columns that we don't support on the GPU
+                                                                            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "false"})
+
+@allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
+               "FilterExec", "MapElementsExec", "ProjectExec")
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
+                    reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
+@pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
 # a='' shouldn't match anything as a is an int
 @pytest.mark.parametrize("condition", ["where a = 0", "", "where a = ''"])
 def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):
