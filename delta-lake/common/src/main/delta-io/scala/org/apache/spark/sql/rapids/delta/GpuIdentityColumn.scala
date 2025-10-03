@@ -23,8 +23,6 @@ package org.apache.spark.sql.rapids.delta
 
 import com.nvidia.spark.rapids.delta.GpuDeltaIdentityColumnStatsTracker
 
-import org.apache.spark.sql.{Column}
-import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta.DeltaColumnMapping

@@ -120,9 +120,7 @@ case class GpuCheckDeltaInvariant(
       val hostBatch = new ColumnarBatch(filteredHostCols.toArray,
         filteredHostCols(0).getBase.getRowCount.toInt)
       val row = hostBatch.getRow(0)
-      throw DeltaInvariantViolationException(
-        check,
-        columnExtractors.view.mapValues(_.eval(row)).toMap)
+      throw DeltaInvariantViolationException(check, columnExtractors.mapValues(_.eval(row)).toMap)
     }
   }
 }
@@ -130,12 +128,7 @@ case class GpuCheckDeltaInvariant(
 object GpuCheckDeltaInvariant extends Logging {
   private val exprRule = GpuOverrides.expr[CheckDeltaInvariant](
     "checks a Delta Lake invariant expression",
-    ExprChecks.projectOnly(
-      TypeSig.all,
-      TypeSig.all,
-      paramCheck = Seq(ParamCheck("input", TypeSig.all, TypeSig.all)),
-      repeatingParamCheck = Some(RepeatingParamCheck("extra", TypeSig.all, TypeSig.all))
-    ),
+    ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.all, TypeSig.all),
     (c, conf, p, r) => new GpuCheckDeltaInvariantMeta(c, conf, p, r))
 
   def maybeConvertToGpu(

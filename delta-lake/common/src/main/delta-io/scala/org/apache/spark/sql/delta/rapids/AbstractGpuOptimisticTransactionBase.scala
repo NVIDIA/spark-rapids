@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.{GpuAlias, GpuColumnarToRowExec, GpuExec, GpuProj
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, NamedExpression}
 import org.apache.spark.sql.delta.{DeltaLog, Snapshot}
-import org.apache.spark.sql.delta.constraints.{CheckDeltaInvariant, Constraint, DeltaInvariantCheckerExec}
+import org.apache.spark.sql.delta.constraints.{Constraint, DeltaInvariantCheckerExec}
 import org.apache.spark.sql.delta.metering.DeltaLogging
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.SparkPlan

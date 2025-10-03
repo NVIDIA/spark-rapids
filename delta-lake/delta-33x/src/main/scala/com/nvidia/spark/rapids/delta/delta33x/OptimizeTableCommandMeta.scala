@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.delta.common.OptimizeTableCommandMetaBase
 import org.apache.spark.sql.delta.DeltaLog
 import org.apache.spark.sql.delta.commands.{DeltaCommand, OptimizeTableCommand}
 import org.apache.spark.sql.delta.rapids.delta33x.GpuOptimizeTableCommand
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class OptimizeTableCommandMeta(
