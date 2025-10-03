@@ -72,15 +72,6 @@ object GpuCpuBridgeOptimizer extends Logging {
     }
   }
 
-  /** True if this meta wraps a data leaf that identifies a column input. */
-  def isDataLeaf(exprMeta: BaseExprMeta[_]): Boolean = {
-    exprMeta.wrapped match {
-      case _: AttributeReference => true
-      case BoundReference(_, _, _) => true
-      case _ => false
-    }
-  }
-
   // ------------------------------
   // Cost-based placement optimizer
   // ------------------------------
