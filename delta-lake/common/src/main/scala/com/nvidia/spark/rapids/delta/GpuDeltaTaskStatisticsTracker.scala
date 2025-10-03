@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, EmptyRow, Expression, GenericInternalRow, MutableProjection, Projection, SpecificInternalRow, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, EmptyRow, Expression, GenericInternalRow, MutableProjection, Projection, RuntimeReplaceable, SpecificInternalRow, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, DeclarativeAggregate}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateMutableProjection
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
@@ -108,6 +108,9 @@ class GpuDeltaTaskStatisticsTracker(
       case ae: AggregateExpression if ae.aggregateFunction.isInstanceOf[DeclarativeAggregate] =>
         ae.aggregateFunction.asInstanceOf[DeclarativeAggregate].evaluateExpression
     }
+    // Spark 4.0: replace RuntimeReplaceable wrappers (e.g. StructsToJson) with
+    // their concrete runtime expressions so the projection is evaluable at runtime.
+    .transform { case rr: RuntimeReplaceable => rr.replacement }
 
   // See resultExpr above
   private val getStats: Projection = UnsafeProjection.create(
