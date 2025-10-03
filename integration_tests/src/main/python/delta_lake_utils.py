@@ -207,8 +207,9 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
         writer = writer.partitionBy(*partition_columns)
     properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
     sql_text += " TBLPROPERTIES ({})".format(properties)
-    options_str = ', '.join(key + ' = ' + value for key, value in options.items())
-    sql_text += f" OPTIONS ({options_str}) "
+    if options:
+        options_str = ', '.join(key + ' = ' + value for key, value in options.items())
+        sql_text += f" OPTIONS ({options_str}) "
     spark.sql(sql_text)
     writer.save(path)
 
