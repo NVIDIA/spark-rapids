@@ -191,7 +191,7 @@ def read_delta_path_with_cdf(spark, path):
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
 
-def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
+def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False, options=None):
     dest_df = dest_table_func(spark)
     # append to SQL-created table
     writer = dest_df.write.format("delta").mode("append")
@@ -207,7 +207,8 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
         writer = writer.partitionBy(*partition_columns)
     properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
     sql_text += " TBLPROPERTIES ({})".format(properties)
-    sql_text += " OPTIONS (parquet.block.size=4096)"
+    options_str = ', '.join(key + ' = ' + value for key, value in options.items())
+    sql_text += f" OPTIONS ({options_str}) "
     spark.sql(sql_text)
     writer.save(path)
 
