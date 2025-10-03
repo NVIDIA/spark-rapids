@@ -543,7 +543,7 @@ object RapidsDeletionVectorUtils {
         rowIndexFilter.createInstance(
           DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get.asInstanceOf[String]),
           serializableHadoopConf.value,
-          tablePath.map(new Path(_)))
+          tablePath.map(new Path(_))).asInstanceOf[RapidsRowIndexFilter]
       } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
         throw new IllegalStateException(
           s"Both ${FILE_ROW_INDEX_FILTER_ID_ENCODED} and ${FILE_ROW_INDEX_FILTER_TYPE} " +

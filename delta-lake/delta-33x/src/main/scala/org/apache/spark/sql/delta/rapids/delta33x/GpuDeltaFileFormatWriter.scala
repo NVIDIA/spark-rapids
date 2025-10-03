@@ -18,9 +18,8 @@ package org.apache.spark.sql.delta.rapids.delta33x
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.{TaskAttemptContext, TaskAttemptID}
-import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
-import org.apache.spark.sql.delta.files.DeltaFileFormatWriter.PartitionedTaskAttemptContextImpl
+import org.apache.spark.sql.delta.rapids.common.GpuDeltaFileFormatWriterCommon
 import org.apache.spark.sql.rapids.{GpuFileFormatWriterBase, GpuWriteJobDescription}
 
 object GpuDeltaFileFormatWriter extends GpuFileFormatWriterBase {
@@ -28,12 +27,6 @@ object GpuDeltaFileFormatWriter extends GpuFileFormatWriterBase {
   override def createTaskAttemptContext(description: GpuWriteJobDescription,
       hadoopConf: Configuration,
       taskAttemptId: TaskAttemptID): TaskAttemptContext = {
-    if (description.partitionColumns.isEmpty) {
-      new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
-    } else {
-      val partitionColumnToDataType = description.partitionColumns
-        .map(attr => (attr.name, attr.dataType)).toMap
-      new PartitionedTaskAttemptContextImpl(hadoopConf, taskAttemptId, partitionColumnToDataType)
-    }
+    GpuDeltaFileFormatWriterCommon.createTaskAttemptContext(description, hadoopConf, taskAttemptId)
   }
 }

@@ -16,14 +16,13 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
-import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.delta.common.OptimizeTableCommandMetaBase
 
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.delta.commands.{DeletionVectorUtils, OptimizeTableCommand}
-import org.apache.spark.sql.delta.commands.DeltaCommand
+import org.apache.spark.sql.delta.DeltaLog
+import org.apache.spark.sql.delta.commands.{DeltaCommand, OptimizeTableCommand}
 import org.apache.spark.sql.delta.rapids.delta33x.GpuOptimizeTableCommand
-import org.apache.spark.sql.delta.sources.DeltaSQLConf
+import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class OptimizeTableCommandMeta(
@@ -31,32 +30,11 @@ class OptimizeTableCommandMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends RunnableCommandMeta[OptimizeTableCommand](cmd, conf, parent, rule)
+  extends OptimizeTableCommandMetaBase(cmd, conf, parent, rule)
     with DeltaCommand {
 
-  override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaWriteEnabled) {
-      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-
-    val table = getDeltaTable(cmd.child, "OPTIMIZE")
-
-    // DV write unsupported on GPU
-    if (DeletionVectorUtils.deletionVectorsWritable(table.deltaLog.unsafeVolatileSnapshot) &&
-        cmd.conf.getConf(DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)) {
-      willNotWorkOnGpu("Deletion vectors are not supported on GPU")
-    }
-
-    // Z-Order or Clustered tables unsupported
-    if (cmd.zOrderBy.nonEmpty) {
-      willNotWorkOnGpu("Z-Order optimize is not supported on GPU")
-    }
-
-    // Ensure write path generally OK
-    RapidsDeltaUtils.tagForDeltaWrite(this,
-      table.deltaLog.unsafeVolatileSnapshot.schema, Some(table.deltaLog), Map.empty,
-      SparkSession.active)
+  override protected def getDeltaLogForOptimize(): DeltaLog = {
+    getDeltaTable(cmd.child, "OPTIMIZE").deltaLog
   }
 
   override def convertToGpu(): RunnableCommand = {

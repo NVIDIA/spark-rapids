@@ -16,59 +16,25 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
-import ai.rapids.cudf._
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import com.nvidia.spark.rapids.delta.common.{DropAllRowsFilterBase, DropMarkedRowsFilterBase, KeepAllRowsFilterBase, KeepMarkedRowsFilterBase, RapidsRowIndexFilterBase, RowIndexMarkingFiltersBuilderBase}
 
-import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.deletionvectors._
-import org.apache.spark.sql.delta.storage.dv.HadoopFileSystemDVStore
-import org.apache.spark.sql.types.{ByteType, LongType}
+import org.apache.spark.sql.delta.deletionvectors.RoaringBitmapArray
 
-trait RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector
-}
+trait RapidsRowIndexFilter extends RapidsRowIndexFilterBase
 
 /**
  * This creates a Rapids filter to create a skip_row column that will keep all the rows marked
  * in the bitmap. It's the inverse of RapidsDropMarkedRowsFilter
  */
-final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = bitmap.toArray
-    val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
-      }
-    val indicesToDelete = withResource(containsMarkedRows) { containsMarkedRows =>
-      containsMarkedRows.not()
-    }
-    withResource(indicesToDelete) { indicesToDelete =>
-      GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
-    }
-  }
-}
+final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray)
+  extends KeepMarkedRowsFilterBase(bitmap) with RapidsRowIndexFilter
 
 /**
  * This creates a Rapids filter to create a skip_row column that will drop all the rows marked
  * in the bitmap.
  */
-final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = bitmap.toArray
-    val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
-      }
-    withResource(containsMarkedRows) { containsMarkedRows =>
-      GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
-    }
-  }
-}
+final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray)
+  extends DropMarkedRowsFilterBase(bitmap) with RapidsRowIndexFilter
 
 /**
  * The object class used to create the keep marked rows filter
@@ -93,38 +59,12 @@ object RapidsDropMarkedRowsFilter extends RapidsRowIndexMarkingFiltersBuilder {
 
 }
 
-object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(1.toByte)) { one =>
-      GpuColumnVector.from(one, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
-}
+object RapidsDropAllRowsFilter extends DropAllRowsFilterBase with RapidsRowIndexFilter
 
-object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(0.toByte)) { zero =>
-      GpuColumnVector.from(zero, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
-}
+object RapidsKeepAllRowsFilter extends KeepAllRowsFilterBase with RapidsRowIndexFilter
 
-trait RapidsRowIndexMarkingFiltersBuilder {
-  def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter
-  def getFilterForNonEmptyDeletionVector(bitmap: RoaringBitmapArray): RapidsRowIndexFilter
-
-  def createInstance(
-     deletionVector: DeletionVectorDescriptor,
-     hadoopConf: Configuration,
-     tablePath: Option[Path]): RapidsRowIndexFilter = {
-    if (deletionVector.cardinality == 0) {
-      getFilterForEmptyDeletionVector()
-    } else {
-      require(tablePath.nonEmpty, "Table path is required for non-empty deletion vectors")
-      val dvStore = new HadoopFileSystemDVStore(hadoopConf)
-      val storedBitmap = StoredBitmap.create(deletionVector, tablePath.get)
-      val bitmap = storedBitmap.load(dvStore)
-      getFilterForNonEmptyDeletionVector(bitmap)
-    }
-  }
+trait RapidsRowIndexMarkingFiltersBuilder extends RowIndexMarkingFiltersBuilderBase {
+  override def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter
+  override def getFilterForNonEmptyDeletionVector(
+      bitmap: RoaringBitmapArray): RapidsRowIndexFilter
 }

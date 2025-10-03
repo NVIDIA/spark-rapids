@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * This file was derived from StatisticsCollection.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -167,7 +167,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
       schema.flatMap {
         case f @ StructField(name, s: StructType, _, _) =>
           val column = parent.map(_.getItem(name))
-              .getOrElse(new Column(UnresolvedAttribute.quoted(name)))
+              .getOrElse(org.apache.spark.sql.functions.col(name))
           val stats = collectStats(s, Some(column), parentFields :+ name, function)
           if (stats.nonEmpty) {
             Some(struct(stats: _*) as ShimDeltaColumnMapping.getPhysicalName(f))
@@ -177,7 +177,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
         case f @ StructField(name, _, _, _) =>
           val fieldPath = parentFields :+ name
           val column = parent.map(_.getItem(name))
-              .getOrElse(new Column(UnresolvedAttribute.quoted(name)))
+              .getOrElse(org.apache.spark.sql.functions.col(name))
           // Note: explodedDataSchema comes from dataSchema. In the read path, dataSchema comes
           // from the table's metadata.dataSchema, which is the same as tableDataSchema. In the
           // write path, dataSchema comes from the DataFrame schema. We then assume
