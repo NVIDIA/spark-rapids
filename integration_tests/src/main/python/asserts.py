@@ -252,6 +252,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
         read_func,
         base_path,
         mode,
+        exist_classes_in_any_plan=None,
         conf={}):
     conf = _prep_incompat_conf(conf)
 
@@ -263,10 +264,31 @@ def _assert_gpu_and_cpu_writes_are_equal(
     print('### GPU RUN ###')
     gpu_start = time.time()
     gpu_path = base_path + '/GPU'
-    with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
-    gpu_end = time.time()
-    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
-        gpu_end - gpu_start, cpu_end - cpu_start))
+    jvm = spark_jvm()
+    if exist_classes_in_any_plan:
+        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.startCapture()
+    try:
+        with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
+        gpu_end = time.time()
+        print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+            gpu_end - gpu_start, cpu_end - cpu_start))
+        if exist_classes_in_any_plan:
+            captured_plans = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.getResultsWithTimeout(10000)
+            assert len(captured_plans) > 0, "No GPU plans were captured"
+            for cls in exist_classes_in_any_plan:
+                found = False
+                for plan in captured_plans:
+                    try:
+                        # TODO: add contains()
+                        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContains(plan, cls)
+                        found = True
+                        break
+                    except:
+                        continue
+                assert found, f"{cls} is not found in any captured plan"
+    finally:
+        if exist_classes_in_any_plan:
+            jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.endCapture()
 
     (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
             lambda spark: read_func(spark, cpu_path), mode)
@@ -288,6 +310,16 @@ def assert_gpu_and_cpu_writes_are_equal_collect(write_func, read_func, base_path
     careful about the amount of data returned.
     """
     _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'COLLECT', conf=conf)
+
+def assert_gpu_and_cpu_writes_are_equal_collect_with_capture(write_func, read_func, base_path, exist_classes_in_any_plan, conf={}):
+    """
+    Assert when running write_func on both the CPU and the GPU and reading using read_func
+    on the CPU that the results are equal.
+    In this case the data is collected back to the driver and compared here, so be
+    careful about the amount of data returned.
+    Also capture the GPU plan and verify that it contains the specified classes.
+    """
+    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'COLLECT', exist_classes_in_any_plan=exist_classes_in_any_plan, conf=conf)
 
 def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_path, conf={}):
     """

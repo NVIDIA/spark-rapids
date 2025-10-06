@@ -34,6 +34,8 @@ delta_meta_allow = [
     "SortExec"
 ]
 
+delta_write = ["RapidsDeltaWrite"]
+
 # Disable Deletion Vectors except for Databricks 14.3
 def deletion_vector_values_with_350DB143_xfail_reasons(enabled_xfail_reason=None, disabled_xfail_reason=None):
     # We will always set the deletion vectors to False
