@@ -54,6 +54,3 @@ abstract class DeleteCommandMetaBase(
       Map.empty, SparkSession.active)
   }
 }
-
-
-

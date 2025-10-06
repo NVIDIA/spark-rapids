@@ -24,5 +24,3 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 object StatsExprShim {
   def unwrapRuntimeReplaceable(expr: Expression): Expression = expr
 }
-
-

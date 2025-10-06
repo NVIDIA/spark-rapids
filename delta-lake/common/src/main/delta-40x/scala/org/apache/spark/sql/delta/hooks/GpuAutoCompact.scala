@@ -43,8 +43,7 @@ trait GpuAutoCompactBase extends AutoCompactBase {
       committedVersion: Long,
       postCommitSnapshot: Snapshot,
       actions: Iterator[Action]): Unit = {
-    // Delta 4.0 may invoke post-commit hooks with a CommittedTransaction which is not a
-    // GpuOptimisticTransactionBase. Avoid casting and drive auto-compaction using only
+    // Avoid casting to GpuOptimisticTransactionBase and drive auto-compaction using only
     // DeltaTransaction plus commit actions.
     val conf = spark.sessionState.conf
     val autoCompactTypeOpt = getAutoCompactType(conf, postCommitSnapshot.metadata)

@@ -25,5 +25,3 @@ object StatsExprShim {
   def unwrapRuntimeReplaceable(expr: Expression): Expression =
     expr.transform { case rr: RuntimeReplaceable => rr.replacement }
 }
-
-
