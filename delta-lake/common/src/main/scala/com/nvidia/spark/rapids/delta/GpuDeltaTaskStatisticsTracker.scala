@@ -27,7 +27,8 @@ import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, EmptyRow, Expression, GenericInternalRow, MutableProjection, Projection, RuntimeReplaceable, SpecificInternalRow, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, EmptyRow, Expression, GenericInternalRow, MutableProjection, Projection, SpecificInternalRow, UnsafeProjection}
+import com.nvidia.spark.rapids.delta.shims.StatsExprShim
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, DeclarativeAggregate}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateMutableProjection
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
@@ -103,14 +104,13 @@ class GpuDeltaTaskStatisticsTracker(
   // This executes the whole statsColExpr in order to compute the final stats value for the file.
   // In order to evaluate it, we have to replace its aggregate functions with the corresponding
   // aggregates' evaluateExpressions that basically just return the results stored in aggBuffer.
-  private val resultExpr: Expression = statsColExpr
-    .transform {
+  private val resultExpr: Expression = {
+    val evaluatedAggs = statsColExpr.transform {
       case ae: AggregateExpression if ae.aggregateFunction.isInstanceOf[DeclarativeAggregate] =>
         ae.aggregateFunction.asInstanceOf[DeclarativeAggregate].evaluateExpression
     }
-    // Spark 4.0: replace RuntimeReplaceable wrappers (e.g. StructsToJson) with
-    // their concrete runtime expressions so the projection is evaluable at runtime.
-    .transform { case rr: RuntimeReplaceable => rr.replacement }
+    StatsExprShim.unwrapRuntimeReplaceable(evaluatedAggs)
+  }
 
   // See resultExpr above
   private val getStats: Projection = UnsafeProjection.create(
