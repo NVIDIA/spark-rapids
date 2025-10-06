@@ -23,12 +23,11 @@ package com.nvidia.spark.rapids.delta
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
+import com.nvidia.spark.rapids.delta.shims.{ShimJoinedProjection, StatsExprShim}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, EmptyRow, Expression, GenericInternalRow, MutableProjection, Projection, SpecificInternalRow, UnsafeProjection}
-import com.nvidia.spark.rapids.delta.shims.StatsExprShim
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, DeclarativeAggregate}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateMutableProjection
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
