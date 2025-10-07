@@ -372,7 +372,7 @@ def test_pmod(data_gen):
                 'pmod(a, b)'))
 
 
-@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Literal")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Literal", "PromotePrecision")
 @pytest.mark.parametrize('data_gen', test_pmod_fallback_decimal_gens + [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
 @disable_ansi_mode
 def test_pmod_fallback(data_gen):
@@ -471,7 +471,7 @@ def test_pmod_mixed_numeric(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"))
 
-@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Cast")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Cast", "PromotePrecision")
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
     DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
     ], ids=idfn)
@@ -482,7 +482,7 @@ def test_pmod_mixed_decimal_lhs(lhs, rhs):
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
         "Pmod")
 
-@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Cast")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "Cast", "PromotePrecision")
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
     DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)
@@ -493,7 +493,7 @@ def test_pmod_mixed_decimal_rhs(lhs, rhs):
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
         "Pmod")
 
-@allow_non_gpu("ProjectExec", "Pmod", "BoundReference")
+@allow_non_gpu("ProjectExec", "Pmod", "BoundReference", "PromotePrecision", "Cast")
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
     DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
     ], ids=idfn)
@@ -503,7 +503,7 @@ def test_pmod_mixed_decimal_rhs(lhs, rhs):
 @disable_ansi_mode
 def test_pmod_mixed_decimal(lhs, rhs):
     assert_gpu_fallback_collect(
-        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
+        lambda spark : two_col_df(spark, lhs, rhs, length=100).selectExpr("a", "b", "pmod(a, b)"),
         "Pmod")
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

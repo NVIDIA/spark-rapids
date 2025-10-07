@@ -3803,7 +3803,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     if (bridgeDisallowList.contains(exprClass.getName)) return false
     
     // Filter out expressions that cannot be directly executed
-    if (isNonExecutableExpression(exprClass)) return false
+    // for one reason or another
+    if (isNotAllowedExpression(exprClass)) return false
     
     // Exclude nondeterministic expressions for correctness
     if (!expression.deterministic) return false
@@ -3814,15 +3815,18 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   /**
    * Checks if an expression is non-executable and cannot be bridged.
    */
-  private def isNonExecutableExpression(exprClass: Class[_]): Boolean = {
-    import org.apache.spark.sql.catalyst.expressions.{BoundReference, Generator, NamedLambdaVariable, Unevaluable, WindowFunction}
+  private def isNotAllowedExpression(exprClass: Class[_]): Boolean = {
+    import org.apache.spark.sql.catalyst.expressions.{BoundReference, CheckOverflow, Generator, NamedLambdaVariable, TryEval,Unevaluable, WindowFunction}
     import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
     classOf[Unevaluable].isAssignableFrom(exprClass) ||
       classOf[AggregateFunction].isAssignableFrom(exprClass) ||
       classOf[WindowFunction].isAssignableFrom(exprClass) ||
       classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
       classOf[Generator].isAssignableFrom(exprClass) ||
-      classOf[BoundReference].isAssignableFrom(exprClass) // This is only used for some unit tests
+      // unit tests
+      classOf[BoundReference].isAssignableFrom(exprClass) || 
+      // All children of it need to be on the CPU
+      classOf[TryEval].isAssignableFrom(exprClass)
   }
 }
 
