@@ -18,6 +18,9 @@ from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, a
 from data_gen import *
 from delta_lake_utils import *
 from marks import *
+import os
+import glob
+import pyarrow.parquet as pq
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
     with_cpu_session, with_gpu_session, is_before_spark_353, is_spark_353_or_later
 
@@ -166,6 +169,73 @@ def test_delta_deletion_vector_read_fallback(spark_tmp_path, reader_type):
     with_cpu_session(write_func(data_path), conf=enable_conf)
 
     assert_gpu_fallback_collect(read_parquet_sql(data_path), "FileSourceScanExec", conf={"spark.rapids.sql.format.parquet.reader.type": reader_type})
+
+'''
+This test is specifically designed to setup a parquet file with multiple row groups and we 
+select a value from the last row group so the first ones get dropped to cause a misalignment 
+between the deletion vectors and the parquet file when reading 
+
+Example: only the first two values (-3268, -3267) are deleted 
+    <-- Row group 1 -->|<-- Row group 2 -->|<-- Row group 3 -->
+   |  -3268, -3267,...|.... 0  ,   1,......|...  3266, 3267  |
+dv:|   true, true,....|...false, false,....|... false, false | 
+
+After dropping Row group 1 and 2, we have a misalignment and now it shows 3266 and 3267 as deleted
+    <-- Row group 3 -->
+   |...  3266, 3267   |
+dv:|   true, true,....|...false, false,....|... false, false | 
+'''
+@allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
+               "FilterExec", "MapElementsExec", "ProjectExec")
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
+                    reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
+@pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
+def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                               # create records -3268 .... 3267 in sorted order so we can have predictable row groups
+                               # coalesce the partitions to have a single file with multiple row groups
+                               dest_table_func=lambda spark: unary_op_df(spark, IntegerGen(nullable=False, min_val=-3268, max_val=3267, special_cases=[]), seed=12345).sort("a").coalesce(1),
+                               # limiting the block size to make sure we have more than one row group
+                               use_cdf=False, enable_deletion_vectors=True, options={"parquet.block.size": "4096"})
+    def write_func(path):
+        # choose -3000 to make sure the deleted indices are towards the top of the file
+        delete_sql=f"DELETE FROM delta.`{path}` where a < -3000"
+        def delete_func(spark):
+            count = spark.sql(delete_sql).collect()[0][0]
+            assert(count > 0)
+        return delete_func
+
+    def read_parquet_sql(data_path, last_rg_value):
+        # selecting a number from the last row group to make sure the first row groups are dropped
+        return lambda spark : spark.sql(f"select * from delta.`{data_path}` where a = {last_rg_value}")
+
+    enable_conf = copy_and_update(delta_delete_enabled_conf,
+                                  {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+
+    with_cpu_session(setup_tables, conf=enable_conf)
+
+    # Find all parquet files in the directory
+    files = glob.glob(os.path.join(data_path, "*.parquet"))
+    assert(len(files) == 1)
+    parquet_file = pq.ParquetFile(files[0])
+    # We should have more than one row group so we can drop the first ones
+    assert(parquet_file.num_row_groups > 1)
+
+    last_rg_index = parquet_file.num_row_groups - 1
+    rg_meta = parquet_file.metadata.row_group(last_rg_index)
+    stats = rg_meta.column(0).statistics
+    lrg_min_value = stats.min
+
+    with_cpu_session(write_func(data_path), conf=enable_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path, lrg_min_value), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type,
+                                                                            # we need to set the useMetadataRowIndex = false as there are other
+                                                                            # hidden metadata columns that we don't support on the GPU
+                                                                            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "false"})
 
 @allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
                "FilterExec", "MapElementsExec", "ProjectExec")
