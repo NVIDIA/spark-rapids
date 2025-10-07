@@ -213,7 +213,8 @@ def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
 @pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
 @allow_non_gpu("ProjectExec", "Alias", "Literal", "DateAddInterval", "MakeInterval", "Cast",
                "ExtractIntervalYears", "Year", "Month", "Second", "ExtractIntervalMonths",
-               "ExtractIntervalSeconds", "SecondWithFraction", "ColumnarToRowExec")
+               "ExtractIntervalSeconds", "SecondWithFraction", "ColumnarToRowExec",
+               "BoundReference")
 @pytest.mark.parametrize('select_expr', [("NULL as d", "d"),
                                         # In order to compare the results, since pyspark doesn't
                                         # know how to parse interval types, we need to "extract"

@@ -30,8 +30,16 @@ object GpuCpuBridgeOptimizer extends Logging {
     if (exprs.nonEmpty && exprs.head.conf.isCpuBridgeEnabled) {
       exprs.foreach { child =>
         if (!child.canExprTreeBeReplaced && canRunOnCpuOrGpuRecursively(child)) {
-          // Check if this expression tree requires AST conversion (marked during tagging)
-          if (!requiresAst(child)) {
+          // Check if this expression tree contains an expression that prevents all bridge
+          // optimization (e.g., CheckOverflow whose CPU version takes BigDecimal input)
+          if (child.containsExpressionThatPreventsBridge) {
+            logDebug(s"Skipping bridge optimization for ${child.wrapped.getClass.getSimpleName} " +
+              "due to expression that prevents bridge optimization in tree")
+          } else if (requiresAst(child)) {
+            // Check if this expression tree requires AST conversion (marked during tagging)
+            logDebug(s"Skipping bridge optimization for ${child.wrapped.getClass.getSimpleName} " +
+              "due to AST requirement")
+          } else {
             // Minimize data movement for this expression tree assuming the consumer is on GPU
             optimizeByMinimizingMovement(child)
           }

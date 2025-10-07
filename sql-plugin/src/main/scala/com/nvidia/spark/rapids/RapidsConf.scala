@@ -30,7 +30,6 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
 
@@ -3790,44 +3789,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * Get the CPU bridge thread pool size override, if configured.
    */
   def getCpuBridgeThreadPoolSize: Option[Int] = get(CPU_BRIDGE_THREAD_POOL_SIZE).map(_.toInt)
-
-  /**
-   * Checks if a specific expression class should be allowed to use bridge expressions.
-   * Filters out expressions that cannot be directly executed (like aggregations).
-   */
-  def isBridgeAllowedForExpression(expression: Expression): Boolean = {
-    if (!isCpuBridgeEnabled) return false
-
-    val exprClass = expression.getClass
-    // Check disallow list
-    if (bridgeDisallowList.contains(exprClass.getName)) return false
-    
-    // Filter out expressions that cannot be directly executed
-    // for one reason or another
-    if (isNotAllowedExpression(exprClass)) return false
-    
-    // Exclude nondeterministic expressions for correctness
-    if (!expression.deterministic) return false
-    
-    true
-  }
-
-  /**
-   * Checks if an expression is non-executable and cannot be bridged.
-   */
-  private def isNotAllowedExpression(exprClass: Class[_]): Boolean = {
-    import org.apache.spark.sql.catalyst.expressions.{BoundReference, CheckOverflow, Generator, NamedLambdaVariable, TryEval,Unevaluable, WindowFunction}
-    import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-    classOf[Unevaluable].isAssignableFrom(exprClass) ||
-      classOf[AggregateFunction].isAssignableFrom(exprClass) ||
-      classOf[WindowFunction].isAssignableFrom(exprClass) ||
-      classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
-      classOf[Generator].isAssignableFrom(exprClass) ||
-      // unit tests
-      classOf[BoundReference].isAssignableFrom(exprClass) || 
-      // All children of it need to be on the CPU
-      classOf[TryEval].isAssignableFrom(exprClass)
-  }
 }
 
 case class OomInjectionConf(

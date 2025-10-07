@@ -503,7 +503,7 @@ def test_pmod_mixed_decimal_rhs(lhs, rhs):
 @disable_ansi_mode
 def test_pmod_mixed_decimal(lhs, rhs):
     assert_gpu_fallback_collect(
-        lambda spark : two_col_df(spark, lhs, rhs, length=100).selectExpr("a", "b", "pmod(a, b)"),
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr("pmod(a, b)"),
         "Pmod")
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

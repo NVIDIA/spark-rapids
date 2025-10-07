@@ -1499,11 +1499,63 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   /**
+   * Checks if this expression is compatible with CPU bridge execution.
+   * This determines whether THIS specific expression can be wrapped in a bridge.
+   * Can be overridden in specific expression metas to provide custom compatibility rules.
+   * 
+   * @return true if this expression can be executed via CPU bridge, false otherwise
+   */
+  def isBridgeCompatible: Boolean = {
+    import org.apache.spark.sql.catalyst.expressions.{Generator, NamedLambdaVariable, TryEval, Unevaluable, WindowFunction}
+    import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
+    
+    if (!conf.isCpuBridgeEnabled) return false
+    
+    val exprClass = expr.getClass
+    
+    // Check config-level disallow list
+    if (conf.bridgeDisallowList.contains(exprClass.getName)) return false
+    
+    // Filter out expression types that cannot be directly executed on CPU
+    if (classOf[Unevaluable].isAssignableFrom(exprClass) ||
+        classOf[AggregateFunction].isAssignableFrom(exprClass) ||
+        classOf[WindowFunction].isAssignableFrom(exprClass) ||
+        classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
+        classOf[Generator].isAssignableFrom(exprClass) ||
+        classOf[TryEval].isAssignableFrom(exprClass)) {
+      return false
+    }
+    
+    // Exclude nondeterministic expressions for correctness
+    if (!expr.deterministic) return false
+    
+    true
+  }
+  
+  /**
+   * Checks if the presence of this expression in a tree should prevent ALL bridge
+   * optimization for the entire plan node. 
+   * 
+   * @return true if this expression prevents all bridge optimization in the tree
+   */
+  def preventsTreeBridgeOptimization: Boolean = false
+  
+  /**
+   * Checks if this expression tree contains any expression that prevents bridge optimization.
+   * Used by the optimizer to determine if bridge optimization should be skipped entirely.
+   * 
+   * @return true if this expression or any child prevents bridge optimization
+   */
+  final def containsExpressionThatPreventsBridge: Boolean = {
+    preventsTreeBridgeOptimization || childExprs.exists(_.containsExpressionThatPreventsBridge)
+  }
+  
+  /**
    * Is this particular class allowed to run under the GpuCpuBridge (according to the
    * configs)
    * @return true if it can, else false.
    */
-  final def canMoveToCpuBridge: Boolean = conf.isBridgeAllowedForExpression(expr)
+  final def canMoveToCpuBridge: Boolean = isBridgeCompatible
 
   // Shared constant for bridge optimization reason
   private val BRIDGE_OPTIMIZATION_REASON = "it avoids excess CPU and GPU transfers"
