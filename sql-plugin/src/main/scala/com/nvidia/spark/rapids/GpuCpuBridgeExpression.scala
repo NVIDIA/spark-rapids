@@ -120,6 +120,11 @@ case class GpuCpuBridgeExpression(
     createEvaluationFunction(cpuExpression)
 
   @transient private lazy val resultType = GpuColumnVector.convertFrom(dataType, nullable)
+  
+  // Thread-local projection for code generation path - each thread gets its own projection
+  // to avoid internal memory reuse conflicts while allowing reuse across batches within a thread
+  @transient private lazy val threadLocalProjection: ThreadLocal[UnsafeProjection] = 
+    ThreadLocal.withInitial(() => createCodeGeneratedProjection(cpuExpression))
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
@@ -400,18 +405,18 @@ case class GpuCpuBridgeExpression(
   
   /**
    * Creates a codegen evaluation function that uses GpuRowToColumnConverter for UnsafeRow handling.
-   * Each batch creates a fresh UnsafeProjection to avoid data corruption from internal memory
-   * reuse.
+   * Uses thread-local UnsafeProjection to avoid expensive projection creation on each batch
+   * while preventing data corruption from internal memory reuse across threads.
    * Streams through the iterator without caching rows in memory.
    */
   private def createCodegenEvaluationFunction(
     cpuExpression: Expression): (Iterator[InternalRow], Int) => GpuColumnVector = {
     (rowIterator: Iterator[InternalRow], numRows: Int) => {
       withResource(new RapidsHostColumnBuilder(resultType, numRows)) { builder =>
-        // Create a fresh UnsafeProjection for this batch to avoid data corruption
-        // UnsafeProjection reuses internal memory, so we need a separate instance per batch
-        val projection = createCodeGeneratedProjection(cpuExpression)
-        
+        // Get thread-local projection - each thread has its own to avoid memory conflicts
+        // but the projection is reused across batches within the same thread for performance
+        val projection = threadLocalProjection.get()
+
         // Get the optimized converter for this data type and nullability
         val converter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
         
