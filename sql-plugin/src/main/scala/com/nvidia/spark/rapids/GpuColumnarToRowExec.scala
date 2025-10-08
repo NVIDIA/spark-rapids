@@ -21,6 +21,7 @@ import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -51,7 +52,7 @@ class AcceleratedColumnarToRowIterator(
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
   // This only works on fixedWidth types for now...
-  assert(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
+  assertInTests(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
   // We want to remap the rows to improve packing.  This means that they should be sorted by
   // the largest alignment to the smallest.
 
@@ -133,7 +134,7 @@ class AcceleratedColumnarToRowIterator(
             }
           }
         }
-        assert(it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
+        assertInTests(it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
         it.foreach { rowsCvList =>
           withResource(rowsCvList) { _ =>
             rowsCvList.foreach { rowsCv =>
