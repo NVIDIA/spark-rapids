@@ -48,7 +48,17 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 abstract class DeltaIOProvider extends DeltaProviderImplBase {
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
-    format == classOf[DeltaParquetFileFormat]
+    // We need to check if the DeltaParquetFileFormat class is loadable
+    // because we can run into a case where a customer runs with an
+    // untested version of Delta Lake. A similar case happened in our
+    // benchmarks, for details check
+    // https://github.com/NVIDIA/spark-rapids/issues/13519
+    val deltaFormat = "org.apache.spark.sql.delta.DeltaParquetFileFormat"
+    if (Try(ShimReflectionUtils.loadClass(deltaFormat)).isSuccess) {
+      format == classOf[DeltaParquetFileFormat]
+    } else {
+      return false
+    }
   }
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {

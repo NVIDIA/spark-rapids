@@ -37,3 +37,4 @@ case class GpuDelta33xParquetFileFormat(
     optimizationsEnabled,
     tablePath,
     isCDCRead)
+  
