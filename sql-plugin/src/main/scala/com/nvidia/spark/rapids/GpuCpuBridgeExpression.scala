@@ -27,6 +27,7 @@ import scala.util.{Failure, Success, Try}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeSeq, Expression, SpecificInternalRow, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -121,8 +122,28 @@ case class GpuCpuBridgeExpression(
 
   @transient private lazy val resultType = GpuColumnVector.convertFrom(dataType, nullable)
   
-  // Thread-local projection for code generation path - each thread gets its own projection
-  // to avoid internal memory reuse conflicts while allowing reuse across batches within a thread
+  // Thread-local direct-to-builder evaluator for optimal code generation path
+  // Each thread gets its own evaluator to avoid conflicts while allowing reuse across batches
+  @transient private lazy val threadLocalDirectEvaluator: 
+      Option[ThreadLocal[GeneratedDirectToBuilderEvaluator]] = {
+    try {
+      val evaluator = GeneratedDirectToBuilderEvaluator.generate(
+        cpuExpression, dataType, nullable)
+      Some(ThreadLocal.withInitial(() => evaluator))
+    } catch {
+      case _: UnsupportedOperationException =>
+        // Direct code generation not supported for this data type, will use fallback
+        None
+      case e: Exception =>
+        logWarning(s"Failed to generate direct-to-builder evaluator, " +
+          s"will use fallback: ${e.getMessage}")
+        None
+    }
+  }
+  
+  // Thread-local projection for fallback code generation path
+  // Each thread gets its own projection to avoid internal memory reuse conflicts
+  // while allowing reuse across batches within a thread
   @transient private lazy val threadLocalProjection: ThreadLocal[UnsafeProjection] = 
     ThreadLocal.withInitial(() => createCodeGeneratedProjection(cpuExpression))
 
@@ -404,33 +425,61 @@ case class GpuCpuBridgeExpression(
   }
   
   /**
-   * Creates a codegen evaluation function that uses GpuRowToColumnConverter for UnsafeRow handling.
-   * Uses thread-local UnsafeProjection to avoid expensive projection creation on each batch
+   * Creates a codegen evaluation function that writes directly to RapidsHostColumnBuilder.
+   * First tries the optimal direct-to-builder code generation. If that's not available,
+   * falls back to UnsafeProjection with GpuRowToColumnConverter.
+   * Uses thread-local evaluators/projections to avoid expensive creation on each batch
    * while preventing data corruption from internal memory reuse across threads.
    * Streams through the iterator without caching rows in memory.
    */
   private def createCodegenEvaluationFunction(
     cpuExpression: Expression): (Iterator[InternalRow], Int) => GpuColumnVector = {
-    (rowIterator: Iterator[InternalRow], numRows: Int) => {
-      withResource(new RapidsHostColumnBuilder(resultType, numRows)) { builder =>
-        // Get thread-local projection - each thread has its own to avoid memory conflicts
-        // but the projection is reused across batches within the same thread for performance
-        val projection = threadLocalProjection.get()
-
-        // Get the optimized converter for this data type and nullability
-        val converter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
+    
+    // Try to use the direct-to-builder path if available
+    threadLocalDirectEvaluator match {
+      case Some(directEvalThreadLocal) =>
+        // Optimal path: Generate code that writes directly to the builder
+        logDebug(s"Using direct-to-builder code generation for " +
+          s"${cpuExpression.getClass.getSimpleName}")
+        (rowIterator: Iterator[InternalRow], numRows: Int) => {
+          withResource(new RapidsHostColumnBuilder(resultType, numRows)) { builder =>
+            // Get thread-local evaluator - reused across batches within same thread
+            val evaluator = directEvalThreadLocal.get()
+            
+            // Process all rows directly into the builder
+            evaluator.processRows(rowIterator, builder)
+            
+            // Build the result column and put it on the GPU
+            closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
+              GpuColumnVector.from(resultCol, dataType)
+            }
+          }
+        }
         
-        // Stream through the iterator without caching - preserves memory efficiency
-        rowIterator.foreach { row =>
-          val resultRow = projection.apply(row)
-          converter.appendNoRet(resultRow, 0, builder)
-        }
+      case None =>
+        // Fallback path: Use UnsafeProjection with converter
+        logDebug(s"Using UnsafeProjection fallback for ${cpuExpression.getClass.getSimpleName}")
+        (rowIterator: Iterator[InternalRow], numRows: Int) => {
+          withResource(new RapidsHostColumnBuilder(resultType, numRows)) { builder =>
+            // Get thread-local projection - each thread has its own to avoid memory conflicts
+            // but the projection is reused across batches within the same thread for performance
+            val projection = threadLocalProjection.get()
 
-        // Build the result column and put it on the GPU
-        closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
-          GpuColumnVector.from(resultCol, dataType)
+            // Get the optimized converter for this data type and nullability
+            val converter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
+            
+            // Stream through the iterator without caching - preserves memory efficiency
+            rowIterator.foreach { row =>
+              val resultRow = projection.apply(row)
+              converter.appendNoRet(resultRow, 0, builder)
+            }
+
+            // Build the result column and put it on the GPU
+            closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
+              GpuColumnVector.from(resultCol, dataType)
+            }
+          }
         }
-      }
     }
   }
   
@@ -569,5 +618,256 @@ case class GpuCpuBridgeExpression(
     
     // Use Spark's code generation framework to create an optimized projection
     UnsafeProjection.create(expressions)
+  }
+}
+
+/**
+ * Trait for a generated evaluator that processes rows and writes directly to a 
+ * RapidsHostColumnBuilder. This eliminates the overhead of converting through UnsafeRow.
+ */
+trait GeneratedDirectToBuilderEvaluator {
+  /**
+   * Process rows from the iterator and append results directly to the builder.
+   * @param rowIterator Iterator of input rows
+   * @param builder The RapidsHostColumnBuilder to append results to
+   */
+  def processRows(rowIterator: Iterator[InternalRow], builder: RapidsHostColumnBuilder): Unit
+}
+
+/**
+ * Object that generates custom code for evaluating CPU expressions and writing
+ * directly to RapidsHostColumnBuilder, bypassing the UnsafeRow intermediate format.
+ * 
+ * This is similar to GeneratedInternalRowToCudfRowIterator but optimized for the
+ * CPU bridge use case.
+ */
+object GeneratedDirectToBuilderEvaluator extends Logging {
+  
+  /**
+   * Generate a custom evaluator that writes directly to the builder.
+   * @param cpuExpression The CPU expression to evaluate
+   * @param dataType The output data type
+   * @param nullable Whether the output can be null
+   * @return A generated evaluator function
+   */
+  def generate(
+      cpuExpression: Expression,
+      dataType: DataType,
+      nullable: Boolean): GeneratedDirectToBuilderEvaluator = {
+    
+    val ctx = new CodegenContext
+    val internalRow = ctx.freshName("internalRow")
+    ctx.currentVars = null
+    ctx.INPUT_ROW = internalRow
+    
+    // Generate code for the expression evaluation
+    val exprCode = cpuExpression.genCode(ctx)
+    val exprValue = exprCode.value
+    val exprIsNull = exprCode.isNull
+    
+    // Generate append code based on data type - using fixed name "builder" for parameter
+    val appendCode = generateAppendCode(
+      dataType, nullable, exprValue, exprIsNull, "builder")
+    
+    val evaluatorClassName = classOf[GeneratedDirectToBuilderEvaluator].getName
+    val builderClassName = classOf[RapidsHostColumnBuilder].getName
+    
+    val codeBody =
+      s"""
+         |public java.lang.Object generate(Object[] references) {
+         |  return new SpecificDirectToBuilderEvaluator(references);
+         |}
+         |
+         |final class SpecificDirectToBuilderEvaluator implements $evaluatorClassName {
+         |  private final Object[] references;
+         |  ${ctx.declareMutableStates()}
+         |  
+         |  public SpecificDirectToBuilderEvaluator(Object[] references) {
+         |    this.references = references;
+         |    ${ctx.initMutableStates()}
+         |  }
+         |  
+         |  public void processRows(
+         |      scala.collection.Iterator<org.apache.spark.sql.catalyst.InternalRow> rowIterator,
+         |      $builderClassName builder) {
+         |    while (rowIterator.hasNext()) {
+         |      org.apache.spark.sql.catalyst.InternalRow $internalRow = 
+         |           (org.apache.spark.sql.catalyst.InternalRow) rowIterator.next();
+         |      ${exprCode.code}
+         |      $appendCode
+         |    }
+         |  }
+         |  
+         |  ${ctx.declareAddedFunctions()}
+         |}
+       """.stripMargin
+    
+    val code = CodeFormatter.stripOverlappingComments(
+      new CodeAndComment(codeBody, ctx.getPlaceHolderToComments()))
+    
+    logDebug(s"Generated code for ${cpuExpression.getClass.getSimpleName}:\n" +
+      s"${CodeFormatter.format(code)}")
+    
+    try {
+      val (clazz, _) = CodeGenerator.compile(code)
+      clazz.generate(ctx.references.toArray).asInstanceOf[GeneratedDirectToBuilderEvaluator]
+    } catch {
+      case e: Exception =>
+        logWarning(s"Failed to compile generated code for " +
+          s"${cpuExpression.getClass.getSimpleName}: ${e.getMessage}")
+        logWarning(s"Generated code was:\n${CodeFormatter.format(code)}")
+        throw e
+    }
+  }
+  
+  /**
+   * Generate the code to append a value to the RapidsHostColumnBuilder.
+   * This generates specialized code for each data type to avoid overhead.
+   */
+  private def generateAppendCode(
+      dataType: DataType,
+      nullable: Boolean,
+      valueVar: String,
+      isNullVar: String,
+      builderRef: String): String = {
+    
+    dataType match {
+      case BooleanType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar);"
+        }
+        
+      case ByteType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar);"
+        }
+        
+      case ShortType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar);"
+        }
+        
+      case IntegerType | DateType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar);"
+        }
+        
+      case LongType | TimestampType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar);"
+        }
+        
+      case FloatType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar);"
+        }
+        
+      case DoubleType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar);"
+        }
+        
+      case StringType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.appendUTF8String($valueVar.getBytes());
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.appendUTF8String($valueVar.getBytes());"
+        }
+        
+      case BinaryType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.appendByteList($valueVar);
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.appendByteList($valueVar);"
+        }
+        
+      case _: DecimalType =>
+        if (nullable) {
+          s"""
+             |if ($isNullVar) {
+             |  $builderRef.appendNull();
+             |} else {
+             |  $builderRef.append($valueVar.toJavaBigDecimal());
+             |}
+           """.stripMargin
+        } else {
+          s"$builderRef.append($valueVar.toJavaBigDecimal());"
+        }
+        
+      case _ =>
+        // For complex or unsupported types, throw an exception
+        // The caller should fall back to the converter-based approach
+        throw new UnsupportedOperationException(
+          s"Direct code generation not supported for type $dataType. " +
+          "Will fall back to converter-based approach.")
+    }
   }
 }
