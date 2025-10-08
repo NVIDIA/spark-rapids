@@ -563,7 +563,7 @@ def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
         non_exist_classes='GpuFileSourceScanExec',
         conf=conf)
 
-@allow_non_gpu('FilterExec')
+@allow_non_gpu('FilterExec', 'Sha2', 'Cast', 'BoundReference', 'Literal')
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
