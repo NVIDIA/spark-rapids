@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta.delta40x
 
 import com.nvidia.spark.rapids.delta.common.GpuDeltaParquetFileFormatCommon
+
 import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
 
 /**

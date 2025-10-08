@@ -20,14 +20,15 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 import com.nvidia.spark.rapids.shims._
-import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.v2.AppendDataExecV1
+
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.v2.AppendDataExecV1
 
 object Delta33xProvider extends DeltaProviderBase {
 
