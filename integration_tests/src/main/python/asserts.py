@@ -252,7 +252,6 @@ def _assert_gpu_and_cpu_writes_are_equal(
         read_func,
         base_path,
         mode,
-        exist_classes_in_any_plan=None,
         conf={}):
     conf = _prep_incompat_conf(conf)
 

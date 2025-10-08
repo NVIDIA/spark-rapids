@@ -227,6 +227,25 @@ def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_d
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
 
 def assert_rapids_delta_write(do_test, conf):
+    """
+    Validates that a Delta write operation executed on the GPU produces the expected execution plans.
+    This function starts a plan capture mechanism using the Spark JVM's ExecutionPlanCaptureCallback,
+    runs the provided test function (`do_test`) within a GPU session, and collects the execution plans
+    generated during the write operation. It then checks that each expected Delta write class is present
+    in at least one captured plan.
+
+    Parameters
+    ----------
+    do_test : callable
+        A function that performs the Delta write operation to be validated.
+    conf : dict
+        A dictionary of configuration options to be passed to the GPU session.
+
+    Returns
+    -------
+    result : Any
+        The result returned by the `do_test` function.
+    """
     jvm = spark_jvm()
     jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.startCapture()
     try:
