@@ -855,20 +855,22 @@ abstract class MultiFileCloudPartitionReaderBase(
           val bufTime = metrics.getOrElse(BUFFER_TIME, NoopMetric)
           val filterTime = metrics.getOrElse(FILTER_TIME, NoopMetric)
           val scheduleTime = metrics.getOrElse(SCHEDULE_TIME, NoopMetric)
-          val bufWithSem = metrics.getOrElse(BUFFER_TIME_WITH_SEM, NoopMetric)
-          val filterWithSem = metrics.getOrElse(FILTER_TIME_WITH_SEM, NoopMetric)
-          val scheduleWithSem = metrics.getOrElse(SCHEDULE_TIME_WITH_SEM, NoopMetric)
+          val bufGpuIdleTime = metrics.getOrElse(BUFFER_TIME_BUBBLE, NoopMetric)
+          val filterGpuIdleTime = metrics.getOrElse(FILTER_TIME_BUBBLE, NoopMetric)
+          val scheduleGpuIdleTime = metrics.getOrElse(SCHEDULE_TIME_BUBBLE, NoopMetric)
 
           val fileBufsAndMeta = {
-            if (GpuMetric.isTimeMetric(bufTime) && GpuMetric.isTimeMetric(filterTime) &&
-              GpuMetric.isTimeMetric(bufWithSem) && GpuMetric.isTimeMetric(filterWithSem)) {
+            if (GpuMetric.isTimeMetric(bufTime) &&
+                GpuMetric.isTimeMetric(filterTime) &&
+                GpuMetric.isTimeMetric(bufGpuIdleTime) &&
+                GpuMetric.isTimeMetric(filterGpuIdleTime)) {
               // Collect wall clock time and semaphore time
               val taskContext = TaskContext.get()
               require(taskContext != null, "TaskContext should not be null")
 
               val wallClockInc = new LocalGpuMetric()
-              val semInc = new LocalGpuMetric()
-              val ret = GpuMetric.withSemaphoreTime(wallClockInc, semInc, taskContext) {
+              val gpuIdleTimeInc = new LocalGpuMetric()
+              val ret = GpuMetric.gpuBubbleTime(gpuIdleTimeInc, Some(wallClockInc)) {
                 getNextBuffersAndMeta()
               }
               val filterPct = ret.getFilterTimePct
@@ -877,9 +879,9 @@ abstract class MultiFileCloudPartitionReaderBase(
               filterTime += (wallClockInc.value * filterPct).toLong
               bufTime += (wallClockInc.value * bufferPct).toLong
               scheduleTime += (wallClockInc.value * schedulePct).toLong
-              filterWithSem += (semInc.value * filterPct).toLong
-              bufWithSem += (semInc.value * bufferPct).toLong
-              scheduleWithSem += (semInc.value * schedulePct).toLong
+              filterGpuIdleTime += (gpuIdleTimeInc.value * filterPct).toLong
+              bufGpuIdleTime += (gpuIdleTimeInc.value * bufferPct).toLong
+              scheduleGpuIdleTime += (gpuIdleTimeInc.value * schedulePct).toLong
               ret
             } else {
               // Collect wall clock time only

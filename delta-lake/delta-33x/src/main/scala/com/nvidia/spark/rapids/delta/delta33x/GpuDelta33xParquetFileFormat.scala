@@ -232,7 +232,7 @@ case class GpuDelta33xParquetFileFormat(
       prepareSchema(fileScan.relation.dataSchema),
       prepareSchema(fileScan.requiredSchema),
       prepareSchema(fileScan.readPartitionSchema),
-      pushedFilters,
+      prepareFiltersForRead(pushedFilters).toArray,
       fileScan.rapidsConf,
       fileScan.allMetrics,
       useMetadataRowIndex = false,
