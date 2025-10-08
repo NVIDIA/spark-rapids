@@ -423,7 +423,7 @@ def test_persist_with_groupby_join_version_specific(enable_vectorized_conf):
 
 @ignore_order(local=True)
 # Ensure base allow list is a tuple to satisfy pytest hook concatenation
-@allow_non_gpu("ColumnarToRowExec") #, "HashAggregateExec")
+@allow_non_gpu("")
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @allow_non_gpu_conditional(is_spark_350_or_351(), "InMemoryTableScanExec")
 def test_cached_groupby_sum_version_specific(enable_vectorized_conf):
