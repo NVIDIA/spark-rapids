@@ -21,7 +21,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 /**
  * Test suite to verify that AssertUtils correctly detects test environments
- * across different test runners (Maven, Bloop, IDEs, etc.)
+ * via the com.nvidia.spark.rapids.runningTests system property.
  */
 class AssertUtilsVerificationSuite extends AnyFunSuite {
 
@@ -51,54 +51,11 @@ class AssertUtilsVerificationSuite extends AnyFunSuite {
     assert(caught.getMessage.contains("custom error message"))
   }
 
-  test("print diagnostic information about test environment detection") {
-    // Print information about which detection methods fired
-    println("\n=== AssertUtils Test Environment Detection Diagnostics ===")
-    
-    // Check system properties
-    println("\nSystem Properties:")
-    println(s"  spark.testing = ${System.getProperty("spark.testing")}")
-    println(s"  spark.test.home = ${sys.props.get("spark.test.home")}")
-    println("  surefire.test.class.path = " + 
-      s"${sys.props.get("surefire.test.class.path").map(_ => "SET").getOrElse("NOT SET")}")
-    println(s"  maven.home = ${sys.props.get("maven.home")}")
-    println(s"  bloop.owner = ${sys.props.get("bloop.owner")}")
-    
-    // Check environment variables
-    println("\nEnvironment Variables:")
-    println(s"  PYTEST_CURRENT_TEST = ${sys.env.get("PYTEST_CURRENT_TEST")}")
-    
-    // Check classpath
-    println("\nClasspath Analysis:")
-    val cp = sys.props.get("java.class.path").getOrElse("")
-    println(s"  Contains 'bloop': ${cp.contains("bloop")}")
-    println(s"  Contains 'test-classes': ${cp.contains("test-classes")}")
-    println(s"  Contains 'scalatest': ${cp.contains("scalatest")}")
-    println(s"  Contains 'junit': ${cp.contains("junit")}")
-    
-    // Check stack trace
-    println("\nStack Trace Analysis:")
-    val stackTrace = Thread.currentThread().getStackTrace
-    val testFrameworkClasses = stackTrace.filter { element =>
-      val className = element.getClassName
-      className.contains("scalatest") ||
-      className.contains("junit") ||
-      className.contains("surefire") ||
-      className.contains("bloop") ||
-      className.contains("metals") ||
-      className.contains("Suite")
-    }
-    
-    if (testFrameworkClasses.isEmpty) {
-      println("  No test framework classes found in stack trace")
-    } else {
-      println("  Test framework classes in stack trace:")
-      testFrameworkClasses.take(5).foreach { element =>
-        println(s"    ${element.getClassName}.${element.getMethodName}")
-      }
-    }
-    
-    println("\n=== End Diagnostics ===\n")
+  test("verify test environment is correctly detected") {
+    // Verify the property that gates test assertions is set
+    val runningTests = System.getProperty("com.nvidia.spark.rapids.runningTests")
+    assert(runningTests == "true", 
+      s"com.nvidia.spark.rapids.runningTests property should be 'true' but was: $runningTests")
   }
 
   test("verify iterator assertion pattern works") {
@@ -133,8 +90,14 @@ class AssertUtilsVerificationSuite extends AnyFunSuite {
   test("verify collection traversal pattern works") {
     val largeCollection = (1 to 1000).toSeq
     
-    // This should traverse the collection in tests
-    assertInTests(largeCollection.forall(_ > 0), "All elements should be positive")
+    // This should traverse the collection, and fail at the last element
+    assertThrows[AssertionError] {
+      assertInTests(largeCollection.forall(i => i > 0 && i < 1000), 
+        "All elements should be positive and less than 1000")
+    }
+    
+    // This should traverse the collection, and not fail
+    assertInTests(largeCollection.forall(i => i > 0), "All elements should be positive")
     
     // No exception thrown means it worked
   }
