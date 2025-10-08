@@ -253,16 +253,17 @@ run_iceberg_tests() {
     echo "!!! Running iceberg tests with rest catalog"
     ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
 org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
-        ICEBERG_TEST_REMOTE_CATALOG='1' \
-        PYSP_TEST_spark_driver_memory="6G" \
-        PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
-        PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
+        env \
+          ICEBERG_TEST_REMOTE_CATALOG=1 \
+          PYSP_TEST_spark_driver_memory=6G \
+          PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
+          PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
           PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
           PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-          env 'PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=org.apache.iceberg.rest.RESTCatalog' \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_uri="${ICEBERG_REST_CATALOG_URI:-http://localhost:8181/catalog/}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_credential="${ICEBERG_REST_CREDENTIAL}" \
-          env "PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri=${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri="${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-lakekeeper}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-demo}" \
           ./run_pyspark_from_build.sh -m iceberg --iceberg
@@ -293,15 +294,16 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
     # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
     # These steps are included in the test pipeline.
     # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
-    ICEBERG_TEST_REMOTE_CATALOG='1' \
-        PYSP_TEST_spark_driver_memory="6G" \
-        PYSP_TEST_spark_jars_packages="$ICEBERG_S3TABLES_JARS" \
-        PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
-        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-        env 'PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=software.amazon.s3tables.iceberg.S3TablesCatalog' \
-        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="$S3TABLES_BUCKET_ARN" \
-        ./run_pyspark_from_build.sh -s -m iceberg --iceberg
+    env \
+      ICEBERG_TEST_REMOTE_CATALOG=1 \
+      PYSP_TEST_spark_driver_memory=6G \
+      PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
+      PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
+      PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${S3TABLES_BUCKET_ARN}" \
+      ./run_pyspark_from_build.sh -s -m iceberg --iceberg
   fi
 }
 
