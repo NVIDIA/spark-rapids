@@ -48,7 +48,9 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T])
         super.run()
         // Check if the runner completed successfully, since the exception shall be handled
         // quietly by FutureTask and recorded internally by `setException`.
-        if (super.isDone) {
+        // Note: `super.isDone` is also true even if the task finished unsuccessfully. Therefore,
+        // we need to check `rr.result` as well to determine if the task completed successfully
+        if (rr.result.nonEmpty && super.isDone) {
           // runner.call has completed successfully
           rr.setState(Completed)
         } else if (runner.getState.isInstanceOf[ExecFailed]) {
@@ -197,6 +199,12 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     val futTask = parseFutureTask(r)
 
     futTask.runner.withStateLock { rr =>
+      // Check if the Spark task has been interrupted before execution
+      rr.sparkTaskContext.foreach {
+        case ctx if ctx.isInterrupted() => rr.setState(Cancelled)
+        case  _ => // do nothing
+      }
+
       // Check the runner state
       rr.getState match {
         // Cancelled case: Cancelled -> ScheduleFailed
@@ -344,6 +352,9 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
     fut.runner.sparkTaskContext.foreach { ctx =>
       ctx.addTaskCompletionListener(new TaskCompletionListener {
         override def onTaskCompletion(context: TaskContext): Unit = {
+          if (context.isInterrupted()) {
+            logError(s"[onTaskComp] Handle runner as Task was interrupted: ${fut.runner}")
+          }
           // 1. If the runner is still running, we try to cancel it first
           if (fut.runner.getState == Running) {
             fut.cancel(true) // mayInterruptIfRunning = true
