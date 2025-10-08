@@ -134,7 +134,8 @@ class AcceleratedColumnarToRowIterator(
             }
           }
         }
-        assertInTests(it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
+        assertInTests(
+          it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
         it.foreach { rowsCvList =>
           withResource(rowsCvList) { _ =>
             rowsCvList.foreach { rowsCv =>

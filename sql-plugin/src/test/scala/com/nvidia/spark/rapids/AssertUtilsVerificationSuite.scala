@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.AssertUtils.assertInTests
-
 import org.scalatest.funsuite.AnyFunSuite
 
 /**
@@ -60,7 +59,8 @@ class AssertUtilsVerificationSuite extends AnyFunSuite {
     println("\nSystem Properties:")
     println(s"  spark.testing = ${System.getProperty("spark.testing")}")
     println(s"  spark.test.home = ${sys.props.get("spark.test.home")}")
-    println(s"  surefire.test.class.path = ${sys.props.get("surefire.test.class.path").map(_ => "SET").getOrElse("NOT SET")}")
+    println("  surefire.test.class.path = " + 
+      s"${sys.props.get("surefire.test.class.path").map(_ => "SET").getOrElse("NOT SET")}")
     println(s"  maven.home = ${sys.props.get("maven.home")}")
     println(s"  bloop.owner = ${sys.props.get("bloop.owner")}")
     
