@@ -46,8 +46,21 @@ class RapidsFutureTask[T](val runner: AsyncRunner[T])
         rr.metricsBuilder.setScheduleTimeMs(scheduleTime)
         scheduleTime = 0L
         super.run()
-        // Update the runner state: Running -> Completed
-        rr.setState(Completed)
+        // Check if the runner completed successfully, since the exception shall be handled
+        // quietly by FutureTask and recorded internally by `setException`.
+        if (super.isDone) {
+          // runner.call has completed successfully
+          rr.setState(Completed)
+        } else if (runner.getState.isInstanceOf[ExecFailed]) {
+          // runner.call has failed and the exception has been caught by setException
+        } else if (isCancelled) {
+          // the FutureTask was cancelled during execution by `cancel()`
+          rr.setState(Cancelled)
+        } else {
+          // Failed due to unexpected exceptions
+          val ex = new IllegalStateException("runner failed unexpectedly")
+          rr.setState(ExecFailed(ex))
+        }
 
       // Throw the ScheduleFailed exception within the scope of `FutureTask.run`, so that
       // the exception can be properly recorded and propagated to the caller of `get()`.
@@ -233,13 +246,15 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
       // Throw the unexpected exception if exists, since the FutureTask should have caught
       // and recorded the exception internally.
       if (t != null) {
-        rr.setState(ExecFailed(t))
+        if (rr.getState.isInstanceOf[ExecFailed]) {
+          rr.setState(ExecFailed(t))
+        }
         // Also try to fail the Spark task which launched this runner.
         rr.sparkTaskContext.foreach { ctx =>
           TrampolineUtil.markTaskFailed(ctx, t)
         }
+        // Do not throw non-Fatal error, in case it crashes the entire Spark Executor.
         logError(s"Uncaught exception from $futTask: ${t.getMessage}", t)
-        throw new RuntimeException(t)
       }
 
       // Post execution state handling
@@ -255,6 +270,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           // release holding resource eagerly if the output does not hold the resource
           rr.result match {
             case None =>
+              // Fatal error
               throw new IllegalStateException(s"In Completed State but NO Result: $rr")
             case Some(_: FastReleaseResult[_]) if rr.isHoldingResource =>
               rr.releaseResourceCallback()
@@ -267,11 +283,16 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           // Requeue runners which failed to acquire resource and bypassed the execution.
           futTask.scheduleTime += timeoutMs * 1000000L
           rr.setState(Init(firstTime = false)) // reset to Init state for re-scheduling
-          val reAddSuccess = workQueue.add(futTask)
-          require(reAddSuccess, s"Failed to re-add $futTask to the work queue after execution")
+          // Re-add the task to the work queue for re-execution
+          if (!workQueue.add(futTask)) {
+            // Fatal error
+            throw new RuntimeException(
+              s"Failed to re-add $futTask to the work queue after execution")
+          }
           logDebug(s"Re-add timeout runner: $futTask")
 
         case _ =>
+          // Fatal error
           throw new IllegalStateException(s"Unexpected state: $rr")
       }
     }
