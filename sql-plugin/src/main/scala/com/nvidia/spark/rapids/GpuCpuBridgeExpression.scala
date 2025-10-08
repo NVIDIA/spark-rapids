@@ -705,7 +705,7 @@ object GeneratedDirectToBuilderEvaluator extends Logging {
     val code = CodeFormatter.stripOverlappingComments(
       new CodeAndComment(codeBody, ctx.getPlaceHolderToComments()))
     
-    logDebug(s"Generated code for ${cpuExpression.getClass.getSimpleName}:\n" +
+    logDebug(s"Generated code for ${cpuExpression}:\n" +
       s"${CodeFormatter.format(code)}")
     
     try {
@@ -825,8 +825,10 @@ object GeneratedDirectToBuilderEvaluator extends Logging {
         
       case StringType =>
         if (nullable) {
+          // For reference types, also check if value is null since Spark codegen
+          // doesn't always update isNull when expressions return null
           s"""
-             |if ($isNullVar) {
+             |if ($isNullVar || $valueVar == null) {
              |  $builderRef.appendNull();
              |} else {
              |  $builderRef.appendUTF8String($valueVar.getBytes());
@@ -838,8 +840,10 @@ object GeneratedDirectToBuilderEvaluator extends Logging {
         
       case BinaryType =>
         if (nullable) {
+          // For reference types, also check if value is null since Spark codegen
+          // doesn't always update isNull when expressions return null
           s"""
-             |if ($isNullVar) {
+             |if ($isNullVar || $valueVar == null) {
              |  $builderRef.appendNull();
              |} else {
              |  $builderRef.appendByteList($valueVar);
@@ -851,8 +855,12 @@ object GeneratedDirectToBuilderEvaluator extends Logging {
         
       case _: DecimalType =>
         if (nullable) {
+          // For reference types, also check if value is null since Spark codegen
+          // doesn't always update isNull when expressions return null
+          // Example: ToNumberParser.parse() returns null for invalid formats but doesn't
+          // update the isNull flag
           s"""
-             |if ($isNullVar) {
+             |if ($isNullVar || $valueVar == null) {
              |  $builderRef.appendNull();
              |} else {
              |  $builderRef.append($valueVar.toJavaBigDecimal());
