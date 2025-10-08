@@ -426,8 +426,7 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
     "STATIC",
-    pytest.param("DYNAMIC", marks=pytest.mark.xfail(is_databricks_runtime(),
-                                                    reason="https://github.com/NVIDIA/spark-rapids/issues/9543"))
+    pytest.param("DYNAMIC", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9543 (DB), https://github.com/NVIDIA/spark-rapids/issues/13110 (OSS)"))
 ], ids=idfn)
 @pytest.mark.parametrize("clause", ["", "PARTITION (id)"], ids=idfn)
 def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_tmp_path, mode, clause):
@@ -450,8 +449,7 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
     "STATIC",
-    pytest.param("DYNAMIC", marks=pytest.mark.xfail(is_databricks_runtime(),
-                                                    reason="https://github.com/NVIDIA/spark-rapids/issues/9543"))
+    pytest.param("DYNAMIC", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9543 (DB), https://github.com/NVIDIA/spark-rapids/issues/13110 (OSS)"))
 ], ids=idfn)
 @pytest.mark.parametrize("clause", ["PARTITION (id, p = 2)", "PARTITION (p = 2, id)", "PARTITION (p = 2)"])
 def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, mode, clause):
@@ -678,7 +676,7 @@ def test_delta_write_constraint_not_null(spark_tmp_path):
     with_cpu_session(setup_table)
 
     # verify write of non-null values does not throw
-    with_gpu_session(lambda spark: unary_op_df(spark, not_null_gen).write.format("delta").mode("append").save(data_path),
+    assert_rapids_delta_write(lambda spark: unary_op_df(spark, not_null_gen).write.format("delta").mode("append").save(data_path),
                      conf=delta_writes_enabled_conf)
 
     # verify write of null value throws
@@ -705,7 +703,7 @@ def test_delta_write_constraint_check(spark_tmp_path):
     def gen_good_data(spark):
         return spark.range(1024).withColumn("x", f.col("id") + 1)
 
-    with_gpu_session(lambda spark: gen_good_data(spark).write.format("delta").mode("append").save(data_path),
+    assert_rapids_delta_write(lambda spark: gen_good_data(spark).write.format("delta").mode("append").save(data_path),
                      conf=delta_writes_enabled_conf)
 
     # verify write of values that violate the constraint throws
@@ -734,7 +732,7 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
     def gen_good_data(spark):
         return spark.range(100).withColumn("x", f.col("id") + 1)
     # TODO: Find a way to capture plan with DeltaInvariantCheckerExec
-    with_gpu_session(lambda spark: gen_good_data(spark).write.format("delta").mode("append").save(data_path),
+    assert_rapids_delta_write(lambda spark: gen_good_data(spark).write.format("delta").mode("append").save(data_path),
                      conf=add_disable_conf)
     # verify write of values that violate the constraint throws
     def gen_bad_data(spark):

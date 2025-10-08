@@ -56,6 +56,7 @@ def array_columns_to_sort_locally():
 _allow_any_non_gpu = False
 _non_gpu_allowed = []
 _per_test_ansi_mode_enabled = None
+_current_test_has_delta_marker = False
 
 def is_allowing_any_non_gpu():
     return _allow_any_non_gpu
@@ -66,6 +67,11 @@ def get_non_gpu_allowed():
 
 def is_per_test_ansi_mode_enabled():
     return _per_test_ansi_mode_enabled
+
+
+def current_test_has_delta_marker():
+    """Check if the current test has the @delta_lake marker."""
+    return _current_test_has_delta_marker
 
 
 def get_validate_execs_in_gpu_plan():
@@ -303,7 +309,10 @@ def pytest_runtest_setup(item):
         elif is_databricks_runtime():
             pytest.skip('Iceberg tests skipped on Databricks')
 
-    if item.get_closest_marker('delta_lake'):
+    global _current_test_has_delta_marker
+    _current_test_has_delta_marker = item.get_closest_marker('delta_lake') is not None
+
+    if _current_test_has_delta_marker:
         if not item.config.getoption('delta_lake'):
             pytest.skip('delta lake tests not configured to run')
 

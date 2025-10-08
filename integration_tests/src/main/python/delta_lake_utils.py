@@ -18,8 +18,9 @@ import pytest
 import re
 
 from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later, \
-    with_cpu_session
+    with_cpu_session, with_gpu_session
 from asserts import assert_equal
+from conftest import spark_jvm
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -224,3 +225,26 @@ def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_d
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
+
+def assert_rapids_delta_write(do_test, conf):
+    jvm = spark_jvm()
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.startCapture()
+    try:
+        result = with_gpu_session(do_test, conf=conf)
+        captured_plans = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.getResultsWithTimeout(10000)
+        # Some write functions are no-op. We may not capture any GPU plan.
+        if len(captured_plans) > 0:
+            for cls in delta_write:
+                found = False
+                for plan in captured_plans:
+                    try:
+                        # TODO: implement contains()
+                        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContains(plan, cls)
+                        found = True
+                        break
+                    except:
+                        continue
+                assert found, f"{cls} is not found in any captured plan"
+        return result
+    finally:
+        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.endCapture()

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect_with_capture, with_gpu_session
+from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_gpu_session
 from data_gen import copy_and_update, idfn
 from delta_lake_utils import *
 from marks import allow_non_gpu, delta_lake
@@ -86,11 +86,10 @@ def test_auto_compact_basic(spark_tmp_path, auto_compact_conf, enable_deletion_v
 
     conf_enable_auto_compact = copy_and_update(_conf, {auto_compact_conf: "true"})
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func=write_to_delta(enable_deletion_vectors, is_partitioned=False),
         read_func=read_data,
         base_path=data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=conf_enable_auto_compact)
 
     def read_metadata(spark, table_path):
@@ -140,11 +139,10 @@ def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf, enable_dele
 
     conf_enable_auto_compact = copy_and_update(_conf, {auto_compact_conf: "true"})
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func=write_to_delta(enable_deletion_vectors, is_partitioned=True),
         read_func=read_data,
         base_path=data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=conf_enable_auto_compact)
 
     def read_metadata(spark, table_path):

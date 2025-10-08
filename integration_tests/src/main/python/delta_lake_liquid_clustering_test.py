@@ -31,14 +31,14 @@ import pytest
 from typing import Callable, Dict
 from pyspark.sql.types import StringType, IntegerType
 
-from asserts import assert_gpu_fallback_write, assert_gpu_and_cpu_writes_are_equal_collect_with_capture
+from asserts import assert_gpu_fallback_write, assert_gpu_and_cpu_writes_are_equal_collect
 from conftest import is_databricks_runtime
 from data_gen import unary_op_df, int_gen, copy_and_update, SetValuesGen, string_gen, long_gen, \
     gen_df
 from delta_lake_delete_test import delta_delete_enabled_conf
 from delta_lake_merge_test import delta_merge_enabled_conf
 from delta_lake_update_test import delta_update_enabled_conf
-from delta_lake_utils import delta_meta_allow, delta_write, \
+from delta_lake_utils import delta_meta_allow, \
     delta_writes_enabled_conf, delta_write_fallback_allow, assert_gpu_and_cpu_delta_logs_equivalent
 from marks import allow_non_gpu, delta_lake, ignore_order
 from spark_session import is_databricks133_or_later, is_spark_353_or_later, is_spark_356_or_later, with_cpu_session
@@ -65,11 +65,10 @@ def test_delta_ctas_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factor
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=delta_writes_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -134,11 +133,10 @@ def test_delta_rtas_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factor
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=delta_writes_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -164,11 +162,10 @@ def test_delta_append_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_fact
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=delta_writes_enabled_conf
     )
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
@@ -198,11 +195,10 @@ def test_delta_insert_overwrite_static_sql_liquid_clustering(spark_tmp_path,
     conf = copy_and_update(delta_writes_enabled_conf,
                            {"spark.sql.sources.partitionOverwriteMode": "STATIC"})
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -214,6 +210,7 @@ def test_delta_insert_overwrite_static_sql_liquid_clustering(spark_tmp_path,
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13110")
 def test_delta_insert_overwrite_dynamic_sql_liquid_clustering(spark_tmp_path,
                                                                       spark_tmp_table_factory):
     def write_func(spark, path):
@@ -231,11 +228,10 @@ def test_delta_insert_overwrite_dynamic_sql_liquid_clustering(spark_tmp_path,
     conf = copy_and_update(delta_writes_enabled_conf,
                            {"spark.sql.sources.partitionOverwriteMode": "DYNAMIC"})
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -263,11 +259,10 @@ def test_delta_insert_overwrite_replace_where_sql_liquid_clustering(spark_tmp_pa
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=delta_writes_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -400,11 +395,10 @@ def test_delta_append_df_liquid_clustering(spark_tmp_path, spark_tmp_table_facto
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=delta_writes_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -429,11 +423,10 @@ def test_delta_insert_overwrite_df_liquid_clustering(spark_tmp_path,
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=delta_writes_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
@@ -456,10 +449,9 @@ def test_delta_insert_overwrite_replace_where_df_liquid_clustering(
 
     data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
 
-    assert_gpu_and_cpu_writes_are_equal_collect_with_capture(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        exist_classes_in_any_plan=delta_write,
         conf=delta_writes_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
