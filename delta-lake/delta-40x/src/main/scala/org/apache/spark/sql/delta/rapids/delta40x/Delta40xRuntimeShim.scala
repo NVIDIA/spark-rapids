@@ -17,37 +17,21 @@
 package org.apache.spark.sql.delta.rapids.delta40x
 
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.delta.{AcceptAllConfigChecker, DeltaConfigChecker, DeltaProvider}
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.delta.delta40x.{Delta40xProvider, GpuDeltaCatalog}
 
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
-import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot, TransactionExecutionObserver}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase, StartTransactionArg}
-import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.expressions.UserDefinedFunction
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, GpuOptimisticTransactionBase, StartTransactionArg}
 
 /**
  * Delta runtime shim for Delta 3.3.x on Spark 3.5.x.
  *
  * @note This class is instantiated via reflection from DeltaProbeImpl
  */
-class Delta40xRuntimeShim extends DeltaRuntimeShim {
-
-  override def getDeltaConfigChecker: DeltaConfigChecker = AcceptAllConfigChecker
+class Delta40xRuntimeShim extends DeltaRuntimeShimBase {
 
   override def getDeltaProvider: DeltaProvider = Delta40xProvider
-
-  override def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot = {
-    deltaLog.unsafeVolatileSnapshot
-  }
-
-  override def fileFormatFromLog(deltaLog: DeltaLog): FileFormat =
-    deltaLog.fileFormat(deltaLog.unsafeVolatileSnapshot.protocol,
-      deltaLog.unsafeVolatileSnapshot.metadata)
-
-  override def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean = false
 
   override def getGpuDeltaCatalog(
      cpuCatalog: DeltaCatalog,
@@ -55,13 +39,9 @@ class Delta40xRuntimeShim extends DeltaRuntimeShim {
     new GpuDeltaCatalog(cpuCatalog, rapidsConf)
   }
 
-  def startTransaction(arg: StartTransactionArg): GpuOptimisticTransactionBase = {
-    TransactionExecutionObserver.getObserver.startingTransaction {
-      new GpuOptimisticTransaction(arg.log, arg.catalogTable, arg.snapshot, arg.conf)
-    }.asInstanceOf[GpuOptimisticTransactionBase]
-  }
+  override protected def constructOptimisticTransaction(
+      arg: StartTransactionArg): GpuOptimisticTransactionBase =
+    new GpuOptimisticTransaction(arg.log, arg.catalogTable, arg.snapshot, arg.conf)
 
-  override def stringFromStringUdf(f: String => String): UserDefinedFunction = {
-    DeltaUDF.stringFromString(f)
-  }
+  // stringFromStringUdf inherited from base
 }
