@@ -296,19 +296,7 @@ def assert_gpu_and_cpu_writes_are_equal_collect(write_func, read_func, base_path
     In this case the data is collected back to the driver and compared here, so be
     careful about the amount of data returned.
     """
-    # Check if current test has delta_lake marker
-    from conftest import current_test_has_delta_marker
-    
-    if current_test_has_delta_marker():
-        print("✓ Delta Lake test detected - applying Delta write validation")
-        # Add Delta write validation classes
-        delta_write_classes = [
-            "RapidsDeltaWrite"
-        ]
-        _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'COLLECT', 
-                                             exist_classes_in_any_plan=delta_write_classes, conf=conf)
-    else:
-        _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'COLLECT', conf=conf)
+    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'COLLECT', conf=conf)
 
 def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_path, conf={}):
     """

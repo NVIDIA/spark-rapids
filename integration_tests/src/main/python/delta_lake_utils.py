@@ -237,13 +237,9 @@ def assert_rapids_delta_write(do_test, conf):
             for cls in delta_write:
                 found = False
                 for plan in captured_plans:
-                    try:
-                        # TODO: implement contains()
-                        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContains(plan, cls)
-                        found = True
+                    found = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.contains(plan, cls)
+                    if found:
                         break
-                    except:
-                        continue
                 assert found, f"{cls} is not found in any captured plan"
         return result
     finally:

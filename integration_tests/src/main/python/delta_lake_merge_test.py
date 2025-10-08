@@ -196,7 +196,7 @@ def test_delta_materialize_merge(spark_tmp_path, spark_tmp_table_factory):
 @pytest.mark.parametrize("table_ranges_expect_write", [
     ((range(10), range(20)), True),  # partial delete of target
     ((range(5), range(5)), True),  # full delete of target
-    ((range(10), range(20, 30)), False)  # no-op delete
+    ((range(10), range(20, 30)), False)  # no-op delete. gpu write is not expected
 ], ids=idfn)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"], ["b"], ["a", "b"]], ids=idfn)

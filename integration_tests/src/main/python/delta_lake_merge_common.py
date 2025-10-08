@@ -48,6 +48,13 @@ def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf, enabl
     check_func(data_path, do_merge)
 
 def assert_collect(do_merge, data_path, conf, expect_write=True):
+    """
+    Execute the do_merge function in both CPU and GPU sessions and compare the results.
+    :param do_merge: A function that takes a Spark session and a path, performs a merge operation, and returns the result.
+    :param data_path: The base path where CPU and GPU data are stored.
+    :param conf: Configuration settings for the Spark sessions.
+    :param expect_write: A boolean indicating whether to expect a write operation in the GPU session.
+    """
     cpu_path = data_path + "/CPU"
     gpu_path = data_path + "/GPU"
     cpu_result = with_cpu_session(lambda spark: do_merge(spark, cpu_path), conf=conf)
