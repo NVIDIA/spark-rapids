@@ -254,7 +254,7 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
       // Throw the unexpected exception if exists, since the FutureTask should have caught
       // and recorded the exception internally.
       if (t != null) {
-        if (rr.getState.isInstanceOf[ExecFailed]) {
+        if (!rr.getState.isInstanceOf[ExecFailed]) {
           rr.setState(ExecFailed(t))
         }
         // Also try to fail the Spark task which launched this runner.
@@ -299,7 +299,9 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           }
           logDebug(s"Re-add timeout runner: $futTask")
 
-        case _ =>
+        case _: Closed => // Do nothing since the runner has been closed
+
+        case _ => // should NOT reach here
           // Fatal error
           throw new IllegalStateException(s"Unexpected state: $rr")
       }
