@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ExprMeta
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{DateTimeUtils, GpuTimeZoneDB}
+import com.nvidia.spark.rapids.jni.{Arithmetic, DateTimeUtils, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimBinaryExpression, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, MonthsBetween, TimeZoneAwareExpression, ToUTCTimestamp, TruncDate, TruncTimestamp}
@@ -1418,7 +1418,7 @@ case class GpuMonthsBetween(ts1: Expression,
               }
               val roundedPartialMonth = if (needsRoundOff.get) {
                 withResource(partialMonth) { _ =>
-                  partialMonth.round(8)
+                  Arithmetic.round(partialMonth, 8)
                 }
               } else {
                 partialMonth
