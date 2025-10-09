@@ -184,14 +184,19 @@ def read_delta_path(spark, path):
     return spark.read.format("delta").load(path)
 
 def read_delta_path_with_cdf(spark, path):
-    return spark.read.format("delta") \
-        .option("readChangeDataFeed", "true").option("startingVersion", 0) \
-        .load(path).drop("_commit_timestamp")
+    df = spark.read.format("delta") \
+        .option("readChangeFeed", "true").option("startingVersion", 0) \
+        .load(path)
+    assert "_change_type" in df.columns
+    assert "_commit_version" in df.columns
+    assert "_commit_timestamp" in df.columns
+    # Drop the commit timestamp column since it will differ between CPU and GPU
+    return df.drop("_commit_timestamp")
 
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
 
-def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
+def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False, options=None):
     dest_df = dest_table_func(spark)
     # append to SQL-created table
     writer = dest_df.write.format("delta").mode("append")
@@ -207,6 +212,9 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
         writer = writer.partitionBy(*partition_columns)
     properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
     sql_text += " TBLPROPERTIES ({})".format(properties)
+    if options:
+        options_str = ', '.join(key + ' = ' + value for key, value in options.items())
+        sql_text += f" OPTIONS ({options_str}) "
     spark.sql(sql_text)
     writer.save(path)
 
