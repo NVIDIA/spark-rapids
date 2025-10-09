@@ -20,6 +20,7 @@ import scala.collection.immutable.TreeMap
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -70,7 +71,7 @@ class GpuMetricFactory(metricsConf: MetricsLevel, context: SparkContext) {
 object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
-  val BUFFER_TIME_WITH_SEM = "bufferTimeWithSem"
+  val BUFFER_TIME_BUBBLE = "bufferTimeBubble"
   val SCAN_TIME = "scanTime"
   val COPY_BUFFER_TIME = "copyBufferTime"
   val GPU_DECODE_TIME = "gpuDecodeTime"
@@ -91,7 +92,7 @@ object GpuMetric extends Logging {
   val AGG_TIME = "computeAggTime"
   val JOIN_TIME = "joinTime"
   val FILTER_TIME = "filterTime"
-  val FILTER_TIME_WITH_SEM = "filterTimeWithSem"
+  val FILTER_TIME_BUBBLE = "filterTimeBubble"
   val BUILD_DATA_SIZE = "buildDataSize"
   val BUILD_TIME = "buildTime"
   val STREAM_TIME = "streamTime"
@@ -114,12 +115,14 @@ object GpuMetric extends Logging {
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
   val COPY_TO_HOST_TIME = "d2hMemCopyTime"
   val READ_THROTTLING_TIME = "readThrottlingTime"
+  val SMALL_JOIN_COUNT = "sizedSmallJoin"
+  val BIG_JOIN_COUNT = "sizedBigJoin"
   val SYNC_READ_TIME = "shuffleSyncReadTime"
   val ASYNC_READ_TIME = "shuffleAsyncReadTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
-  val DESCRIPTION_BUFFER_TIME_WITH_SEM = "buffer time with Sem."
+  val DESCRIPTION_BUFFER_TIME_BUBBLE = "buffer time (GPU underloaded)"
   val DESCRIPTION_COPY_BUFFER_TIME = "copy buffer time"
   val DESCRIPTION_GPU_DECODE_TIME = "GPU decode time"
   val DESCRIPTION_NUM_INPUT_ROWS = "input rows"
@@ -139,7 +142,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_AGG_TIME = "aggregation time"
   val DESCRIPTION_JOIN_TIME = "join time"
   val DESCRIPTION_FILTER_TIME = "filter time"
-  val DESCRIPTION_FILTER_TIME_WITH_SEM = "filter time with Sem."
+  val DESCRIPTION_FILTER_TIME_BUBBLE = "filter time (GPU underloaded)"
   val DESCRIPTION_SCAN_TIME = "scan time"
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
@@ -163,6 +166,9 @@ object GpuMetric extends Logging {
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
   val DESCRIPTION_READ_THROTTLING_TIME = "read throttling time"
+
+  val DESCRIPTION_SMALL_JOIN_COUNT = "small joins"
+  val DESCRIPTION_BIG_JOIN_COUNT = "big joins"
   val DESCRIPTION_SYNC_READ_TIME = "sync read time"
   val DESCRIPTION_ASYNC_READ_TIME = "async read time"
 
@@ -284,6 +290,26 @@ object GpuMetric extends Logging {
       }
       wallTime.add(System.nanoTime() - start)
       semTime.add(semEnd - semStart - preBlockHead + partialTail)
+    }
+  }
+
+  /**
+   * Given a compute block, track its GpuBubbleTime along with the wall time.
+   * GpuBubbleTime is the time when the GPU is NOT fully utilized during the compute block,
+   * which is useful to identify CPU/IO-bound bottlenecks preventing full GPU utilization.
+   */
+  def gpuBubbleTime[T](bubbleTime: GpuMetric,
+      wallTime: Option[GpuMetric] = None)(f: => T): T = {
+    // start a new Timer
+    val timer = GpuBubbleTimerManager.newTimer()
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      val end = System.nanoTime()
+      wallTime.foreach(_.add(end - start))
+      // settle the timer and accumulate the bubble time
+      bubbleTime += timer.close(end)
     }
   }
 

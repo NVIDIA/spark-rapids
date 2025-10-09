@@ -68,6 +68,45 @@ def test_insert_into_unpartitioned_table(spark_tmp_table_factory, format_version
 
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+@pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
+def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory, format_version, write_distribution_mode,
+                                                partition_table):
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+
+    def create_table(spark, table_name: str):
+        sql = f"""CREATE TABLE {table_name} (id int, name string) USING ICEBERG """
+        if partition_table:
+            sql += "PARTITIONED BY (bucket(8, id)) "
+
+        sql += f"""TBLPROPERTIES (
+        'format-version' = '{format_version}',
+        'write.distribution-mode' = '{write_distribution_mode}')
+        """
+        spark.sql(sql)
+
+    with_cpu_session(lambda spark: create_table(spark, cpu_table_name))
+    with_cpu_session(lambda spark: create_table(spark, gpu_table_name))
+
+    def insert_data(spark, table_name: str):
+        spark.sql(f"INSERT INTO {table_name} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+
+    with_gpu_session(lambda spark: insert_data(spark, gpu_table_name),
+                     conf = iceberg_write_enabled_conf)
+    with_cpu_session(lambda spark: insert_data(spark, cpu_table_name),
+                     conf = iceberg_write_enabled_conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@iceberg
+@ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
@@ -151,7 +190,7 @@ def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory
 
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
                          ids=lambda x: f"write_distribution_mode={x}")
@@ -238,3 +277,5 @@ def test_insert_into_iceberg_table_fallback_when_conf_disabled(
     assert_gpu_fallback_collect(lambda spark: insert_data(spark, table_name),
                                 "AppendDataExec",
                                 conf = updated_conf)
+
+
