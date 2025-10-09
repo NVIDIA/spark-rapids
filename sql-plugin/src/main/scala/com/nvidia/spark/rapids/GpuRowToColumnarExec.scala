@@ -67,7 +67,7 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   }
 }
 
-private[rapids] object GpuRowToColumnConverter {
+object GpuRowToColumnConverter {
   // Sizes estimates for different things
   /*
    * size of an offset entry.  In general we have 1 more offset entry than rows, so
@@ -80,7 +80,7 @@ private[rapids] object GpuRowToColumnConverter {
   private def getConverterFor(field: StructField): TypeConverter =
     getConverterForType(field.dataType, field.nullable)
 
-  private[rapids] def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
+  def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
     (dataType, nullable) match {
       case (BooleanType, true) => BooleanConverter
       case (BooleanType, false) => NotNullBooleanConverter

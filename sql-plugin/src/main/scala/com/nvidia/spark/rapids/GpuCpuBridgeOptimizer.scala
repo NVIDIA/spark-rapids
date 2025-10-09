@@ -527,8 +527,7 @@ object GpuCpuBridgeOptimizer extends Logging {
       gpuInputs = flattenedGpuInputs,
       cpuExpression = mergedCpuExpr,
       outputDataType = parentBridge.dataType,
-      outputNullable = parentBridge.nullable,
-      directToBuilderCodegenEnabled = parentBridge.directToBuilderCodegenEnabled
+      outputNullable = parentBridge.nullable
     )
     mergedExpression
   }
