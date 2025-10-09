@@ -1470,7 +1470,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
       gpuInputs = deduplicatedGpuInputs,
       cpuExpression = boundCpuExpression,
       outputDataType = expr.dataType,
-      outputNullable = expr.nullable)
+      outputNullable = expr.nullable,
+      directToBuilderCodegenEnabled = conf.isCpuBridgeDirectToBuilderCodegenEnabled)
 
     // Apply bridge optimization to merge adjacent bridge expressions
     GpuCpuBridgeOptimizer.optimizeByMergingBridgeExpressions(bridgeExpression)

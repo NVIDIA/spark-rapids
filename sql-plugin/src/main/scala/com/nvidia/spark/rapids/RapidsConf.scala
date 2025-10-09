@@ -483,6 +483,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValue(v => v > 0, "Thread pool size must be positive")
     .createOptional
 
+  val CPU_BRIDGE_DIRECT_TO_BUILDER_CODEGEN = 
+      conf("spark.rapids.sql.cpuBridge.directToBuilderCodegen.enabled")
+    .doc("Enable direct-to-builder code generation optimization for CPU bridge expressions. " +
+      "When enabled, generates code that writes expression results directly to the column " +
+      "builder, bypassing intermediate UnsafeRow format. This can improve performance for " +
+      "some workloads but may cause JIT compilation overhead for others. Default is false.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
     .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
@@ -3789,6 +3798,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * Get the CPU bridge thread pool size override, if configured.
    */
   def getCpuBridgeThreadPoolSize: Option[Int] = get(CPU_BRIDGE_THREAD_POOL_SIZE).map(_.toInt)
+
+  /**
+   * Check if direct-to-builder code generation is enabled for CPU bridge expressions.
+   */
+  lazy val isCpuBridgeDirectToBuilderCodegenEnabled: Boolean = 
+    get(CPU_BRIDGE_DIRECT_TO_BUILDER_CODEGEN)
 }
 
 case class OomInjectionConf(

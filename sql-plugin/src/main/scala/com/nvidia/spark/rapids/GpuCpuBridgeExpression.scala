@@ -46,13 +46,15 @@ import org.apache.spark.unsafe.types.UTF8String
  * @param cpuExpression The CPU expression tree to evaluate (not included as children)
  * @param outputDataType The output data type of the expression
  * @param outputNullable Whether the output can be null
+ * @param directToBuilderCodegenEnabled Whether to use direct-to-builder codegen optimization
  */
 case class GpuCpuBridgeExpression(
     gpuInputs: Seq[Expression],
     cpuExpression: Expression,
     outputDataType: DataType,
-    outputNullable: Boolean) extends GpuExpression with ShimExpression with Logging 
-    with GpuBind with GpuMetricsInjectable {
+    outputNullable: Boolean,
+    directToBuilderCodegenEnabled: Boolean = false) extends GpuExpression with ShimExpression 
+    with Logging with GpuBind with GpuMetricsInjectable {
 
   // Only GPU inputs are children for GPU expression tree traversal
   override def children: Seq[Expression] = gpuInputs ++ Seq(cpuExpression)
@@ -110,7 +112,7 @@ case class GpuCpuBridgeExpression(
       })
     }
     val boundExpression = GpuCpuBridgeExpression(boundGpuInputs, cpuExpression,
-      outputDataType, outputNullable)
+      outputDataType, outputNullable, directToBuilderCodegenEnabled)
     // Preserve metrics when binding
     boundExpression.cpuBridgeProcessingTime = this.cpuBridgeProcessingTime
     boundExpression.cpuBridgeWaitTime = this.cpuBridgeWaitTime
@@ -124,20 +126,26 @@ case class GpuCpuBridgeExpression(
   
   // Thread-local direct-to-builder evaluator for optimal code generation path
   // Each thread gets its own evaluator to avoid conflicts while allowing reuse across batches
+  // Only enabled if the config flag is set
   @transient private lazy val threadLocalDirectEvaluator: 
       Option[ThreadLocal[GeneratedDirectToBuilderEvaluator]] = {
-    try {
-      val evaluator = GeneratedDirectToBuilderEvaluator.generate(
-        cpuExpression, dataType, nullable)
-      Some(ThreadLocal.withInitial(() => evaluator))
-    } catch {
-      case _: UnsupportedOperationException =>
-        // Direct code generation not supported for this data type, will use fallback
-        None
-      case e: Exception =>
-        logWarning(s"Failed to generate direct-to-builder evaluator, " +
-          s"will use fallback: ${e.getMessage}")
-        None
+    if (!directToBuilderCodegenEnabled) {
+      logDebug("Direct-to-builder codegen disabled by config")
+      None
+    } else {
+      try {
+        val evaluator = GeneratedDirectToBuilderEvaluator.generate(
+          cpuExpression, dataType, nullable)
+        Some(ThreadLocal.withInitial(() => evaluator))
+      } catch {
+        case _: UnsupportedOperationException =>
+          // Direct code generation not supported for this data type, will use fallback
+          None
+        case e: Exception =>
+          logWarning(s"Failed to generate direct-to-builder evaluator, " +
+            s"will use fallback: ${e.getMessage}")
+          None
+      }
     }
   }
   
