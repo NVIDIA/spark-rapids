@@ -97,15 +97,12 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* **Enhanced Databricks performance** with GPU-accelerated ColumnarToRow operations replacing CPU variants to avoid host-vector access under TableCache ([#13581](https://github.com/NVIDIA/spark-rapids/pull/13581))
-* **Delta Lake improvements** including disabled predicate pushdown filters in multithreaded Delta scan when reading Deletion Vectors ([#13569](https://github.com/NVIDIA/spark-rapids/pull/13569)) and better Delta Lake version compatibility ([#13558](https://github.com/NVIDIA/spark-rapids/pull/13558))
-* **Iceberg support enhancements** with comprehensive insert operations support ([#13545](https://github.com/NVIDIA/spark-rapids/pull/13545), [#13537](https://github.com/NVIDIA/spark-rapids/pull/13537), [#13539](https://github.com/NVIDIA/spark-rapids/pull/13539)), GpuRollingFileWriter implementation ([#13476](https://github.com/NVIDIA/spark-rapids/pull/13476)), and improved write job statistics tracking ([#13516](https://github.com/NVIDIA/spark-rapids/pull/13516))
-* **Deletion Vector support** for multithreaded Parquet reader with comprehensive read operations ([#13491](https://github.com/NVIDIA/spark-rapids/pull/13491)) and memory leak fixes ([#13490](https://github.com/NVIDIA/spark-rapids/pull/13490))
-* **Performance optimizations** including reduced overhead in operation time collection ([#13541](https://github.com/NVIDIA/spark-rapids/pull/13541)), refined column size estimation for Host2GPU operations ([#13499](https://github.com/NVIDIA/spark-rapids/pull/13499)), and improved metrics handling ([#13480](https://github.com/NVIDIA/spark-rapids/pull/13480))
-* **Reliability and stability improvements** with graceful fallback when libprofiler cannot be loaded ([#13563](https://github.com/NVIDIA/spark-rapids/pull/13563)), better error handling for unsupported Iceberg partitions ([#13515](https://github.com/NVIDIA/spark-rapids/pull/13515)), and improved test stability ([#13517](https://github.com/NVIDIA/spark-rapids/pull/13517), [#13481](https://github.com/NVIDIA/spark-rapids/pull/13481))
-* **Databricks-specific enhancements** including Delta change data feed fixes ([#13532](https://github.com/NVIDIA/spark-rapids/pull/13532)), Spark 4.0 event log compression support ([#13466](https://github.com/NVIDIA/spark-rapids/pull/13466)), and accelerated premerge testing with DBFS cache ([#13502](https://github.com/NVIDIA/spark-rapids/pull/13502))
-
-Note: This release includes 142+ merged pull requests with comprehensive improvements across performance, stability, and feature support.
+* **Enhanced Databricks performance** with GPU-accelerated ColumnarToRow operations replacing CPU variants to avoid host-vector access under TableCache
+* **Delta Lake improvements** including disabled predicate pushdown filters in multithreaded Delta scan when reading Deletion Vectors and better Delta Lake version compatibility
+* **Iceberg support enhancements** with comprehensive insert operations support, GpuRollingFileWriter implementation, and improved write job statistics tracking
+* **Deletion Vector support** for multithreaded Parquet reader with comprehensive read operations
+* **Performance optimizations** including reduced overhead in operation time collection, refined column size estimation for host to GPU operations, and improved metrics handling
+* **Reliability and stability improvements** with graceful fallback when libprofiler cannot be loaded, better error handling for unsupported Iceberg partitions
 
 Note: There is a known issue in the 25.10.0 release when decompressing gzip files on H100 GPUs.
 Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
