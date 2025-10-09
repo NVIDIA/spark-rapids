@@ -65,7 +65,8 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
     catalogTable: Option[CatalogTable],
     snapshot: Option[Snapshot],
     rapidsConf: RapidsConf)
-  extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf) {
+  extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf)
+  with Delta33xCommandShims {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -79,9 +80,12 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
   private def getGpuStatsColExpr(
       statsDataSchema: Seq[Attribute],
       statsCollection: GpuStatisticsCollection): Expression = {
-    Dataset.ofRows(spark, LocalRelation(statsDataSchema))
+    val analyzedExpr = createDataFrameForStats(
+      getActiveSparkSession,
+      LocalRelation(statsDataSchema))
       .select(to_json(statsCollection.statsCollector))
       .queryExecution.analyzed.expressions.head
+    postProcessStatsExpr(analyzedExpr)
   }
 
   /** Return the pair of optional stats tracker and stats collection class */
@@ -108,10 +112,8 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
         }
       }
 
-      val _spark = spark
-
       val statsCollection = new GpuStatisticsCollection {
-        override protected def spark: SparkSession = _spark
+        override protected def spark: SparkSession = getActiveSparkSession
         override val deletionVectorsSupported =
           DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).protocol
             .isFeatureSupported(DeletionVectorsTableFeature)
@@ -142,7 +144,7 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
       additionalConstraints: Seq[Constraint]): Seq[FileAction] = {
     hasWritten = true
 
-    val spark = inputData.sparkSession
+    val spark = getActiveSparkSession
     val (data, partitionSchema) = performCDCPartition(inputData)
     val outputPath = deltaLog.dataPath
 
@@ -162,7 +164,7 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
     // context to plan the AQE sub-plan properly with respect to columnar and row transitions.
     // We could force the AQE node to be columnar here by explicitly replacing the node, but that
     // breaks the connection between the queryExecution and the node that will actually execute.
-    val gpuWritePlan = Dataset.ofRows(spark, RapidsDeltaWrite(normalizedQueryExecution.logical))
+    val gpuWritePlan = createDataFrame(spark, RapidsDeltaWrite(normalizedQueryExecution.logical))
     val queryExecution = gpuWritePlan.queryExecution
 
     val partitioningColumns = getPartitioningColumns(partitionSchema, output)
