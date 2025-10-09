@@ -56,5 +56,3 @@ trait Delta33xCommandShims extends DeltaCommandShims {
 
   protected def postProcessStatsExpr(expr: Expression): Expression = expr
 }
-
-

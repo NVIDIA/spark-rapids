@@ -43,5 +43,4 @@ class Delta40xRuntimeShim extends DeltaRuntimeShimBase {
       arg: StartTransactionArg): GpuOptimisticTransactionBase =
     new GpuOptimisticTransaction(arg.log, arg.catalogTable, arg.snapshot, arg.conf)
 
-  // stringFromStringUdf inherited from base
 }

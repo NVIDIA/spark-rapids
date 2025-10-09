@@ -481,4 +481,3 @@ abstract class GpuDeltaCatalogBase(
     }
   }
 }
-

@@ -838,4 +838,3 @@ abstract class GpuCreateDeltaTableCommandBase(
     }
   }
 }
-

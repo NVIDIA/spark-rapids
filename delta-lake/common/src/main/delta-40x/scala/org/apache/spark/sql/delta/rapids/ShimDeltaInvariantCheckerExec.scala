@@ -32,5 +32,3 @@ object ShimDeltaInvariantCheckerExec {
     DeltaInvariantCheckerExec(plan, invariants)
   }
 }
-
-

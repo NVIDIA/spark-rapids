@@ -21,7 +21,6 @@ import ai.rapids.cudf.HostColumnVector._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
 import com.nvidia.spark.rapids.parquet._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -56,7 +55,7 @@ class GpuDeltaParquetFileFormatCommon(
     optimizationsEnabled: Boolean = true,
     tablePath: Option[String] = None,
     isCDCRead: Boolean = false
-  ) extends GpuDeltaParquetFileFormat with Logging {
+  ) extends com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat with Logging {
 
   // Validate either we have all arguments for DV enabled read or none of them.
   if (hasTablePath) {
@@ -499,5 +498,3 @@ object RapidsDeletionVectorUtils {
     }
   }
 }
-
-

@@ -69,5 +69,3 @@ abstract class DeltaRuntimeShimBase extends DeltaRuntimeShim {
   override def stringFromStringUdf(f: String => String): UserDefinedFunction =
     DeltaUDF.stringFromString(f)
 }
-
-
