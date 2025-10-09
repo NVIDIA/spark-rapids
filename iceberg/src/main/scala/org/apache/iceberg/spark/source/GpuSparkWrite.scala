@@ -95,7 +95,6 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       val tmpJob  = Job.getInstance(hadoopConf)
       tmpJob.setOutputKeyClass(classOf[Void])
       tmpJob.setOutputValueClass(classOf[InternalRow])
-//      FileOutputFormat.setOutputPath(tmpJob, new Path(table.location()))
       tmpJob
     }
 
