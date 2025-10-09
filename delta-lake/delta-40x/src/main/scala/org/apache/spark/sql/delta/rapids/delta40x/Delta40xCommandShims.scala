@@ -20,7 +20,7 @@ import org.apache.spark.sql.{Column, DataFrame, SparkSession => SqlSparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Expression, RuntimeReplaceable}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.classic.{SparkSession => ClassicSparkSession}
-import org.apache.spark.sql.delta.rapids.{DeltaCommandShims, GpuOptimisticTransactionShims}
+import org.apache.spark.sql.delta.rapids.DeltaCommandShims
 import org.apache.spark.sql.nvidia.DFUDFShims
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 
@@ -28,10 +28,9 @@ import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
  * Delta 4.0.x implementation of command shims.
  * Uses Spark 4.0's ClassicSparkSession and new Column APIs.
  */
-trait Delta40xCommandShims extends DeltaCommandShims with GpuOptimisticTransactionShims {
+trait Delta40xCommandShims extends DeltaCommandShims {
   override type RunSparkSession = SqlSparkSession
   override type OperationSparkSession = ClassicSparkSession
-  override type TxnSparkSession = ClassicSparkSession
 
   override def toOperationSparkSession(spark: RunSparkSession): OperationSparkSession = {
     spark.asInstanceOf[ClassicSparkSession]
@@ -54,18 +53,18 @@ trait Delta40xCommandShims extends DeltaCommandShims with GpuOptimisticTransacti
     classic.sharedState.cacheManager.recacheByPlan(classic, plan)
   }
 
-  // GpuOptimisticTransactionShims implementation
-  override protected def getActiveSparkSession: TxnSparkSession = {
+  // GpuOptimisticTransaction helper methods for Spark 4.0.x
+  protected def getActiveSparkSession: ClassicSparkSession = {
     TrampolineConnectShims.getActiveSession
   }
 
-  override protected def createDataFrameForStats(
-      spark: TxnSparkSession,
+  protected def createDataFrameForStats(
+      spark: ClassicSparkSession,
       plan: LogicalPlan): DataFrame = {
     TrampolineConnectShims.createDataFrame(TrampolineConnectShims.getActiveSession, plan)
   }
 
-  override protected def postProcessStatsExpr(expr: Expression): Expression = {
+  protected def postProcessStatsExpr(expr: Expression): Expression = {
     // Spark 4.0: JSON functions (e.g. StructsToJson) are RuntimeReplaceable and unevaluable.
     // Replace them with their concrete runtime expressions so they can be evaluated in tasks.
     expr.transform { case rr: RuntimeReplaceable => rr.replacement }

@@ -19,16 +19,15 @@ package org.apache.spark.sql.delta.rapids.delta33x
 import org.apache.spark.sql.{Column, DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.delta.rapids.{DeltaCommandShims, GpuOptimisticTransactionShims}
+import org.apache.spark.sql.delta.rapids.DeltaCommandShims
 
 /**
  * Delta 3.3.x implementation of command shims.
  * Uses the original Spark 3.x APIs.
  */
-trait Delta33xCommandShims extends DeltaCommandShims with GpuOptimisticTransactionShims {
+trait Delta33xCommandShims extends DeltaCommandShims {
   override type RunSparkSession = SparkSession
   override type OperationSparkSession = SparkSession
-  override type TxnSparkSession = SparkSession
 
   override def toOperationSparkSession(spark: RunSparkSession): OperationSparkSession = spark
 
@@ -46,16 +45,16 @@ trait Delta33xCommandShims extends DeltaCommandShims with GpuOptimisticTransacti
     spark.sharedState.cacheManager.recacheByPlan(spark, plan)
   }
 
-  // GpuOptimisticTransactionShims implementation
-  override protected def getActiveSparkSession: TxnSparkSession = SparkSession.active
+  // GpuOptimisticTransaction helper methods for Spark 3.3.x
+  protected def getActiveSparkSession: SparkSession = SparkSession.active
 
-  override protected def createDataFrameForStats(
-      spark: TxnSparkSession,
+  protected def createDataFrameForStats(
+      spark: SparkSession,
       plan: LogicalPlan): DataFrame = {
     Dataset.ofRows(spark, plan)
   }
 
-  override protected def postProcessStatsExpr(expr: Expression): Expression = expr
+  protected def postProcessStatsExpr(expr: Expression): Expression = expr
 }
 
 

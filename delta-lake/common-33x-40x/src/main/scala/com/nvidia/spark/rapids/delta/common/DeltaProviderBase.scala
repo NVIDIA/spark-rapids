@@ -174,5 +174,3 @@ class DeltaCreatableRelationProviderMeta(
 
   override def convertToGpu(): GpuCreatableRelationProvider = new GpuDeltaDataSource(conf)
 }
-
-

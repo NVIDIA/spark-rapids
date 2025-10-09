@@ -64,4 +64,3 @@ trait DeltaCommandShims {
    */
   def recacheByPlan(spark: RunSparkSession, plan: LogicalPlan): Unit
 }
-

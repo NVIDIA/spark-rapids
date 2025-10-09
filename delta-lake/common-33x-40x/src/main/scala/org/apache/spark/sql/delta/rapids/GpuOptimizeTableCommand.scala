@@ -106,4 +106,3 @@ case class GpuOptimizeTableCommand(
     ).optimize()
   }
 }
-
