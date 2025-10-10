@@ -35,8 +35,10 @@ trait IcebergProvider {
   def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec
 
   def isSupportedCatalog(catalogClass: Class[_]): Boolean
-  def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec, meta: AtomicCreateTableAsSelectExecMeta): Unit
-  def convertToGpu(cpuExec: AtomicCreateTableAsSelectExec, meta: AtomicCreateTableAsSelectExecMeta): GpuExec
+  def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec,
+                meta: AtomicCreateTableAsSelectExecMeta): Unit
+  def convertToGpu(cpuExec: AtomicCreateTableAsSelectExec,
+                   meta: AtomicCreateTableAsSelectExecMeta): GpuExec
 }
 
 object IcebergProvider {
