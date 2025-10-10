@@ -139,7 +139,7 @@ def test_ctas_unsupported_file_format_fallback(spark_tmp_table_factory,
 
     def run_ctas(spark):
         target = get_full_table_name(spark_tmp_table_factory)
-        _execute_ctas(spark,
+        return _execute_ctas(spark,
                       target,
                       spark_tmp_table_factory,
                       lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list))),
@@ -170,7 +170,7 @@ def test_ctas_fallback_when_conf_disabled(spark_tmp_table_factory,
 
     def run_ctas(spark):
         target = get_full_table_name(spark_tmp_table_factory)
-        _execute_ctas(spark,
+        return _execute_ctas(spark,
                       target,
                       spark_tmp_table_factory,
                       lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list))),
@@ -199,7 +199,7 @@ def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory,
     def run_ctas(spark):
         cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
         target = get_full_table_name(spark_tmp_table_factory)
-        _execute_ctas(spark,
+        return _execute_ctas(spark,
                       target,
                       spark_tmp_table_factory,
                       lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list))),
@@ -227,7 +227,7 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
     def run_ctas(spark):
         cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
         target = get_full_table_name(spark_tmp_table_factory)
-        _execute_ctas(spark,
+        return _execute_ctas(spark,
                       target,
                       spark_tmp_table_factory,
                       lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list))),
@@ -266,7 +266,7 @@ def test_ctas_partitioned_table_unsupported_partition_fallback(
 
     def run_ctas(spark):
         target = get_full_table_name(spark_tmp_table_factory)
-        _execute_ctas(spark,
+        return _execute_ctas(spark,
                       target,
                       spark_tmp_table_factory,
                       lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list))),
