@@ -152,6 +152,8 @@ object ExternalSource extends Logging {
     val catalogClass = cpuExec.catalog.getClass
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.tagForGpu(cpuExec, meta)
+    } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
+      icebergProvider.tagForGpu(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"catalog $catalogClass is not supported")
     }
@@ -163,6 +165,8 @@ object ExternalSource extends Logging {
     val catalogClass = cpuExec.catalog.getClass
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
+    } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
+      icebergProvider.convertToGpu(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }

@@ -26,7 +26,13 @@ import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, GpuAppendDataExec}
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
+import org.apache.spark.sql.connector.expressions.Transform
+import org.apache.spark.sql.execution.datasources.v2.rapids.GpuAtomicCreateTableAsSelectExec
+import org.apache.spark.sql.connector.catalog.Identifier
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.expressions.Attribute
 
 class IcebergProviderImpl extends IcebergProvider {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -95,6 +101,47 @@ class IcebergProviderImpl extends IcebergProvider {
 
   override def isSupportedWrite(write: Class[_ <: Write]): Boolean = {
     GpuSparkWrite.supports(write)
+  }
+
+  override def isSupportedCatalog(catalogClass: Class[_]): Boolean = {
+    classOf[org.apache.iceberg.spark.BaseCatalog].isAssignableFrom(catalogClass)
+  }
+
+  override def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    if (!meta.conf.isIcebergEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG.key} to true")
+    }
+
+    if (!meta.conf.isIcebergWriteEnabled) {
+      meta.willNotWorkOnGpu("Iceberg output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG_WRITE.key} to true")
+    }
+
+    FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+
+    // Ensure the query output can be planned on the GPU
+    val gpuChild = new GpuOverrides().apply(cpuExec.query)
+    if (!gpuChild.canThisBeReplaced) {
+      meta.willNotWorkOnGpu("Iceberg CTAS query cannot be executed on GPU")
+    }
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    val gpuQuery = meta.childPlans.head.convertIfNeeded()
+    GpuAtomicCreateTableAsSelectExec(
+      cpuExec.catalog.asInstanceOf[StagingTableCatalog],
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.plan,
+      gpuQuery,
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.ifNotExists)
   }
 
   override def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit = {
