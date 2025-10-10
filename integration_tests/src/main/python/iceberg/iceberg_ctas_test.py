@@ -40,7 +40,8 @@ def _execute_ctas(spark,
                   spark_tmp_table_factory,
                   df_gen: Callable,
                   table_prop: Dict[str, str],
-                  partition_col_sql: Optional[str] = None):
+                  partition_col_sql: Optional[str] = None,
+                  ret = True):
     view_name = spark_tmp_table_factory.get()
     df = df_gen(spark)
     df.createOrReplaceTempView(view_name)
@@ -49,9 +50,14 @@ def _execute_ctas(spark,
 
     partition_clause = "" if partition_col_sql is None else f"PARTITIONED BY ({partition_col_sql}) "
     props_sql = _props_to_sql(table_prop)
-    spark.sql(
+    df = spark.sql(
         f"CREATE TABLE {target_table} USING ICEBERG {partition_clause}"
         f"TBLPROPERTIES ({props_sql}) AS SELECT * FROM {view_name}")
+
+    if ret:
+        return df
+    else:
+        return None
 
 
 def _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
@@ -67,10 +73,10 @@ def _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
     cpu_table = f"{base_name}_cpu"
 
     with_gpu_session(lambda spark: _execute_ctas(spark, gpu_table, spark_tmp_table_factory,
-                                                 df_gen, table_prop, partition_col_sql),
+                                                 df_gen, table_prop, partition_col_sql, False),
                      conf=conf)
     with_cpu_session(lambda spark: _execute_ctas(spark, cpu_table, spark_tmp_table_factory,
-                                                 df_gen, table_prop, partition_col_sql),
+                                                 df_gen, table_prop, partition_col_sql, False),
                      conf=conf)
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
