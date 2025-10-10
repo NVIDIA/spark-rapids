@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,16 +35,16 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (input: cudf.ColumnVector) => input.reduce(ReductionAggregation.histogram(), DType.LIST)
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (input: cudf.ColumnView) => input.reduce(ReductionAggregation.histogram(), DType.LIST)
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.histogram()
   override val name: String = "CudfHistogram"
 }
 
 case class CudfMergeHistogram(override val dataType: DataType)
   extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (input: cudf.ColumnVector) =>
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (input: cudf.ColumnView) =>
       input.getType match {
         // This is called from updateAggregate in GpuPercentileWithFrequency.
         case DType.STRUCT => input.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)

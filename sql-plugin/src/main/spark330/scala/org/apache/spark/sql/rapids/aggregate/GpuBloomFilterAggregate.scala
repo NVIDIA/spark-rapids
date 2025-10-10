@@ -43,8 +43,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.aggregate
 
-import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, HostColumnVector, Scalar, Table}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import ai.rapids.cudf.{ColumnView, DType, GroupByAggregation, HostColumnVector, Scalar}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept}
 import com.nvidia.spark.rapids.GpuLiteral
 import com.nvidia.spark.rapids.jni.BloomFilter
 
@@ -109,7 +109,7 @@ object GpuBloomFilterAggregate {
 }
 
 case class GpuBloomFilterUpdate(numHashes: Int, numBits: Long) extends CudfAggregate {
-  override val reductionAggregate: ColumnVector => Scalar = (col: ColumnVector) => {
+  override val reductionAggregate: ColumnView => Scalar = (col: ColumnView) => {
     closeOnExcept(BloomFilter.create(numHashes, numBits)) { bloomFilter =>
       BloomFilter.put(bloomFilter, col)
       bloomFilter
@@ -125,20 +125,11 @@ case class GpuBloomFilterUpdate(numHashes: Int, numBits: Long) extends CudfAggre
 }
 
 case class GpuBloomFilterMerge() extends CudfAggregate {
-  override val reductionAggregate: ColumnVector => Scalar = (col: ColumnVector) => {
+  override val reductionAggregate: ColumnView => Scalar = (col: ColumnView) => {
     val nullCount = col.getNullCount
     if (nullCount == col.getRowCount) {
       // degenerate case, all columns are null
       Scalar.listFromNull(new HostColumnVector.BasicType(false, DType.UINT8))
-    } else if (nullCount > 0) {
-      // BloomFilter.merge does not handle nulls, so filter them out before merging
-      withResource(col.isNotNull) { isNotNull =>
-        withResource(new Table(col)) { table =>
-          withResource(table.filter(isNotNull)) { filtered =>
-            BloomFilter.merge(filtered.getColumn(0))
-          }
-        }
-      }
     } else {
       BloomFilter.merge(col)
     }

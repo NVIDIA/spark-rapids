@@ -36,8 +36,8 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class CudfCount(override val dataType: DataType) extends CudfAggregate {
-  override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => cudf.Scalar.fromInt((col.getRowCount - col.getNullCount).toInt)
+  override val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => cudf.Scalar.fromInt((col.getRowCount - col.getNullCount).toInt)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.count(NullPolicy.EXCLUDE)
   override val name: String = "CudfCount"
@@ -46,8 +46,8 @@ class CudfCount(override val dataType: DataType) extends CudfAggregate {
 class CudfSum(override val dataType: DataType) extends CudfAggregate {
   @transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
-  override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum(rapidsSumType)
+  override val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.sum(rapidsSumType)
 
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.sum()
@@ -56,8 +56,8 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate {
 }
 
 class CudfMax(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.max
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.max
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.max()
   override val name: String = "CudfMax"
@@ -73,8 +73,8 @@ object CudfAny {
 }
 
 class CudfMin(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.min
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.min
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.min()
   override val name: String = "CudfMin"
@@ -90,16 +90,16 @@ object CudfAll {
 }
 
 class CudfCollectList(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.collectList(), DType.LIST)
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.reduce(ReductionAggregation.collectList(), DType.LIST)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.collectList()
   override val name: String = "CudfCollectList"
 }
 
 class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.mergeLists(), DType.LIST)
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.reduce(ReductionAggregation.mergeLists(), DType.LIST)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.mergeLists()
   override val name: String = "CudfMergeLists"
@@ -113,8 +113,8 @@ class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
  * Note that dataType is ArrayType(child.dataType) here.
  */
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => {
       val collectSet = dataType match {
         case ArrayType(FloatType | DoubleType, _) =>
           ReductionAggregation.collectSet(
@@ -137,8 +137,8 @@ class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
 }
 
 class CudfMergeSets(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => {
       val mergeSets = dataType match {
         case ArrayType(FloatType | DoubleType, _) =>
           ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
@@ -164,8 +164,8 @@ class CudfNthLikeAggregate(opName: String, override val dataType: DataType, offs
     case NullPolicy.EXCLUDE => opName + "ExcludeNulls"
   }
 
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
 
   override lazy val groupByAggregate: GroupByAggregation = {
     GroupByAggregation.nth(offset, includeNulls)
@@ -192,8 +192,8 @@ object CudfNthLikeAggregate {
  * generated in the output of libcudf's M2 aggregate.
  */
 class CudfMean extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => {
       val count = col.getRowCount - col.getNullCount
       if (count == 0) {
         Scalar.fromDouble(0.0)
@@ -212,8 +212,8 @@ class CudfMean extends CudfAggregate {
 }
 
 class CudfM2 extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => {
       val count = col.getRowCount - col.getNullCount
       if (count == 0) {
         Scalar.fromDouble(0.0)
@@ -234,8 +234,8 @@ class CudfM2 extends CudfAggregate {
 }
 
 class CudfMergeM2 extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => {
       withResource(new NvtxRange("reduction-merge-m2", NvtxColor.ORANGE)) { _ =>
         withResource(col.copyToHost()) { hcv =>
           withResource(hcv.getChildColumnView(0)) { partialN =>
@@ -2213,7 +2213,7 @@ abstract class CudfMaxMinByAggregate(
 
   protected val reductionAggregation: ReductionAggregation
 
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = col => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar = col => {
     if (col.getNullCount == col.getRowCount) { // all nulls
       GpuScalar.from(null, dataType)
     } else {
@@ -2313,22 +2313,22 @@ case class GpuMinBy(valueExpr: Expression, orderingExpr: Expression)
 }
 
 class CudfBitAndAgg(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitAnd())
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.reduce(ReductionAggregation.bitAnd())
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitAnd()
   override val name: String = "CudfBitAndAgg"
 }
 
 class CudfBitOrAgg(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitOr())
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.reduce(ReductionAggregation.bitOr())
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitOr()
   override val name: String = "CudfBitOrAgg"
 }
 
 class CudfBitXorAgg(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.bitXor())
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (col: cudf.ColumnView) => col.reduce(ReductionAggregation.bitXor())
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.bitXor()
   override val name: String = "CudfBitXorAgg"
 }

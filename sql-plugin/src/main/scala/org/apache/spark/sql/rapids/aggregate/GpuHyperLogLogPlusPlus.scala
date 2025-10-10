@@ -35,8 +35,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class CudfHLLPP(override val dataType: DataType,
     precision: Int) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (input: cudf.ColumnVector) => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (input: cudf.ColumnView) => {
       if (input.getNullCount == input.getRowCount) {
         // For NullType column or all values are null,
         // return a struct scalar: struct(0L, 0L, ..., 0L)
@@ -61,8 +61,8 @@ case class CudfHLLPP(override val dataType: DataType,
 case class CudfMergeHLLPP(override val dataType: DataType,
     precision: Int)
   extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (input: cudf.ColumnVector) => {
+  override lazy val reductionAggregate: cudf.ColumnView => cudf.Scalar =
+    (input: cudf.ColumnView) => {
       val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.ReductionMerge, precision)
       input.reduce(ReductionAggregation.hostUDF(hll), DType.STRUCT)
     }

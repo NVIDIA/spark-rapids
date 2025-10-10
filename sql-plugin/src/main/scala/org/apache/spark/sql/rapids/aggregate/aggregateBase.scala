@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -282,7 +282,7 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
 trait CudfAggregate extends Serializable {
   // we use this to get the ordinal of the bound reference, s.t. we can ask cudf to perform
   // the aggregate on that column
-  val reductionAggregate: cudf.ColumnVector => cudf.Scalar
+  val reductionAggregate: cudf.ColumnView => cudf.Scalar
   val groupByAggregate: GroupByAggregation
   def dataType: DataType
   val name: String
