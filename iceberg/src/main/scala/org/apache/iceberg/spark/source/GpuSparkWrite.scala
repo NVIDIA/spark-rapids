@@ -215,8 +215,9 @@ object GpuSparkWrite {
   def tagForGpuCtas(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: SparkPlanMeta[_]): Unit = {
-    // Extract file format from table properties (default to parquet)
-    val properties: Map[String, String] = cpuExec.tableSpec.properties
+    val properties: Map[String, String] = Spark3Util
+      .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
+      .asScala.toMap
     val fileFormatStr = properties.getOrElse(TableProperties.DEFAULT_FILE_FORMAT,
       TableProperties.DEFAULT_FILE_FORMAT_DEFAULT)
 
