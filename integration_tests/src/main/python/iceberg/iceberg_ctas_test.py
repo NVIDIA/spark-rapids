@@ -49,7 +49,7 @@ def _execute_ctas(spark,
 
     partition_clause = "" if partition_col_sql is None else f"PARTITIONED BY ({partition_col_sql}) "
     props_sql = _props_to_sql(table_prop)
-    return spark.sql(
+    spark.sql(
         f"CREATE TABLE {target_table} USING ICEBERG {partition_clause}"
         f"TBLPROPERTIES ({props_sql}) AS SELECT * FROM {view_name}")
 
