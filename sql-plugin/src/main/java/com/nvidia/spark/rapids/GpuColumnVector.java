@@ -31,6 +31,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.function.Function;
 
+import scala.Tuple2;
+
 /**
  * A GPU accelerated version of the Spark ColumnVector.
  * Most of the standard Spark APIs should never be called, as they assume that the data
@@ -133,7 +135,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     public abstract void close();
 
-    public abstract void copyColumnar(ColumnVector cv, int colNum, int rows);
+    public abstract long copyColumnar(ColumnVector cv, int colNum, int rows);
 
     protected abstract ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex);
 
@@ -205,10 +207,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     @Override
-    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
-      referenceHolders[colNum].addReferences(
-        HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), rows)
-      );
+    public long copyColumnar(ColumnVector cv, int colNum, int rows) {
+      Tuple2<List<ReferenceManager>, Long> copyResult =
+          HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), rows);
+      referenceHolders[colNum].addReferences(copyResult._1);
+      return copyResult._2;
     }
 
     public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
@@ -268,9 +271,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     @Override
-    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
+    public long copyColumnar(ColumnVector cv, int colNum, int rows) {
       if (builders.length > 0) {
-        HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
+        return HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
+      } else {
+        return 0;
       }
     }
 

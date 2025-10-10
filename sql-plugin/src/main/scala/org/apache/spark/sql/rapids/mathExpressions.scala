@@ -22,7 +22,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, RoundMode}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -608,7 +608,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
       case DecimalType.Fixed(_, s) =>
         // Only needs to perform round when required scale < input scale
         val rounded = if (scaleVal < s) {
-          lhsValue.round(scaleVal, roundMode)
+          Arithmetic.round(lhsValue, scaleVal, roundMode)
         } else {
           lhsValue.incRefCount()
         }
@@ -672,7 +672,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
         }
       }
     } else {
-      lhs.round(scale, roundMode)
+      Arithmetic.round(lhs, scale, roundMode)
     }
   }
 
@@ -769,7 +769,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
       // just returns the original values
       lhs.incRefCount()
     } else {
-      lhs.round(scale, roundMode)
+      Arithmetic.round(lhs, scale, roundMode)
     }
   }
 

@@ -266,6 +266,7 @@ SpecifiedWindowFrame,4
 Sqrt,4
 Stack,4
 StartsWith,4
+StaticInvoke,4
 StddevPop,4
 StddevSamp,4
 StringInstr,4

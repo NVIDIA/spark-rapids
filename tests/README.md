@@ -2,7 +2,7 @@
 
 We have a stand-alone example that you can run in the [integration tests](../integration_tests).
 The example is based off of the mortgage dataset you can download
-[here](http://www.fanniemae.com/portal/funding-the-market/data/loan-performance-data.html)
+[here](https://capitalmarkets.fanniemae.com/credit-risk-transfer/single-family-credit-risk-transfer/fannie-mae-single-family-loan-performance-data)
 and the code is in the `com.nvidia.spark.rapids.tests.mortgage` package.
 
 ## Unit Tests

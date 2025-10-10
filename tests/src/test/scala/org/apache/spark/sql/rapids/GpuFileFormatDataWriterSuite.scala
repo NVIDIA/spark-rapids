@@ -61,7 +61,10 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           rangeName,
           includeRetry,
           mockJobDescription.statsTrackers.map(_.newTaskInstance()),
-          None) {
+          None,
+          false,
+          false,
+          mockJobDescription.fileIO) {
 
     // this writer (for tests) doesn't do anything and passes through the
     // batch passed to it when asked to transform, which is done to
@@ -95,7 +98,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       types,
       "",
       includeRetry))
-    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any(), any()))
+    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any(), any(), any()))
         .thenAnswer(_ => mockOutputWriter)
   }
 

@@ -476,6 +476,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
+  private val INTEGRATED_GPU_MEMORY_FRACTION_KEY = "spark.rapids.memory.integratedGpuMemoryFraction"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
     .doc("The fraction of available (free) GPU memory that should be allocated for pooled " +
@@ -521,6 +522,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(ByteUnit.MiB.toBytes(640))
 
+  val INTEGRATED_GPU_MEMORY_FRACTION = conf(INTEGRATED_GPU_MEMORY_FRACTION_KEY)
+    .doc("The fraction of total physical memory that should be allocated to the GPU on " +
+        "integrated GPU systems where memory is shared between CPU and GPU. The remaining " +
+        "fraction (1 - this value) will be allocated to CPU memory. Only applies when " +
+        "DeviceAttr.isIntegratedGPU == 1.")
+    .internal()
+    .startupOnly()
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(0.6)
+
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
@@ -565,6 +577,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "amount, but keep it to be a static number")
       .booleanConf
       .createWithDefault(true)
+
+  val MAX_CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.maxConcurrentGpuTasks")
+      .doc("The maximum number of tasks that can execute concurrently per GPU. " +
+        "This sets an upper bound on concurrent task execution regardless of " +
+        "available GPU memory permits. Set to 0 for no limit.")
+      .internal()
+      .integerConf
+      .createWithDefault(0)
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
@@ -1368,6 +1388,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValue(v => v >= 512, "The stripe size rows must be no less than 512.")
     .createOptional
 
+  val ORC_READ_IGNORE_WRITE_TIMEZONE =
+    conf("spark.rapids.sql.orc.read.ignore.write.timezone")
+      .doc("This is an experimental feature. When set to true, the ORC reader ignores the writer " +
+        "timezones in the stripe footers and use the reader timezone as writer timezone. " +
+        "When set to true, the user should guarantee the the writer timezones in the ORC " +
+        "file is the same as the reader.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
       "Pre-projection leverages the tiered projection to evaluate expressions that " +
@@ -1572,6 +1602,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("When set to false disables Iceberg input acceleration")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_ICEBERG_WRITE = conf("spark.rapids.sql.format.iceberg.write.enabled")
+    .doc("When set to false disables Iceberg write acceleration")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")
@@ -2598,6 +2633,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val OP_TIME_TRACKING_RDD_ENABLED = conf("spark.rapids.sql.exec.opTimeTrackingRDD.enabled")
+    .doc("Enable OpTimeTrackingRDD for all GPU operations. When true, OpTimeTrackingRDD " +
+      "wrappers will be created to track operation time. When false, can improve " +
+      "performance by avoiding overhead of operation time tracking.")
+    .booleanConf
+    .createWithDefault(true)
+
   val LORE_PARQUET_USE_ORIGINAL_NAMES =
     conf("spark.rapids.sql.lore.parquet.useOriginalSchemaNames")
       .doc("When enabled, LORE writes Parquet files using the original Spark schema names " +
@@ -2784,7 +2826,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.10.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.12.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -3022,6 +3064,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val concurrentGpuTasks: Option[Integer] = get(CONCURRENT_GPU_TASKS)
 
+  lazy val maxConcurrentGpuTasks: Integer = get(MAX_CONCURRENT_GPU_TASKS)
+
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val isRetryContextCheckEnabled: Boolean = get(TEST_RETRY_CONTEXT_CHECK_ENABLED)
@@ -3091,6 +3135,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocMinFraction: Double = get(RMM_ALLOC_MIN_FRACTION)
 
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
+
+  lazy val integratedGpuMemoryFraction: Double = get(INTEGRATED_GPU_MEMORY_FRACTION)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
@@ -3307,6 +3353,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val testOrcStripeSizeRows: Option[Integer] = get(TEST_ORC_STRIPE_SIZE_ROWS)
 
+  lazy val orcReadIgnoreWriterTimezone: Boolean = get(ORC_READ_IGNORE_WRITE_TIMEZONE)
+
   lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
@@ -3354,6 +3402,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
 
   lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
+
+  lazy val isIcebergWriteEnabled: Boolean = get(ENABLE_ICEBERG_WRITE)
 
   lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
 

@@ -22779,6 +22779,34 @@ are limited.
 <th>YEARMONTH</th>
 </tr>
 <tr>
+<td rowSpan="1">StaticInvoke</td>
+<td rowSpan="1"> </td>
+<td rowSpan="1">StaticInvoke</td>
+<td rowSpan="1">The supported types are not deterministic since it's a dynamic expression</td>
+<td rowSpan="1">project</td>
+<td>result</td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+<td><em>PS<br/>StaticInvoke is a dynamic expression, all types are partially supported.</em></td>
+</tr>
+<tr>
 <td rowSpan="2">NormalizeNaNAndZero</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Normalize NaN and zero</td>
@@ -24659,19 +24687,19 @@ dates or timestamps, or for a lack of type coercion support.
 </tr>
 <tr>
 <th>Write</th>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>

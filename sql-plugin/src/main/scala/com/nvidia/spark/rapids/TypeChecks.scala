@@ -1137,6 +1137,35 @@ object InvokeCheck extends ExprChecks {
 }
 
 /**
+ * This is specific to StaticInvoke, because it does not follow the typical parameter convention.
+ * StaticInvoke is a dynamic expression, it can wrap arbitrary expressions.
+ * This does very few checks, the main checks are in the `StaticInvokeExprMeta` class.
+ */
+object StaticInvokeCheck extends ExprChecks {
+
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+  }
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
+    if (exprMeta.context != ProjectExprContext) {
+      meta.willNotWorkOnGpu(s"this is not supported in the ${exprMeta.context} context")
+    }
+  }
+
+  /**
+   * Partially supports all the output types since `StaticInvoke` is a dynamic expression.
+   */
+  override def support(dataType: TypeEnum.Value):
+  Map[ExpressionContext, Map[String, SupportLevel]] = {
+    val projectSupport = new PartiallySupported(
+      note = Some("StaticInvoke is a dynamic expression, all types are partially supported."))
+    Map((ProjectExprContext, Map(("result", projectSupport))))
+  }
+}
+
+/**
  * This is specific to WindowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {

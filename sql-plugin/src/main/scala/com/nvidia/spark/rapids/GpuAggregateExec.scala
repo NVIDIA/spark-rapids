@@ -2249,7 +2249,7 @@ case class GpuHashAggregateExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_TASKS_REPARTITIONED -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_REPARTITIONED),
     NUM_TASKS_SKIPPED_AGG -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_SKIPPED_AGG),
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     AGG_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_AGG_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SORT_TIME),
@@ -2282,7 +2282,7 @@ case class GpuHashAggregateExec(
       numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES),
       numTasksRepartitioned = gpuLongMetric(NUM_TASKS_REPARTITIONED),
       numTasksSkippedAgg = gpuLongMetric(NUM_TASKS_SKIPPED_AGG),
-      opTime = gpuLongMetric(OP_TIME),
+      opTime = gpuLongMetric(OP_TIME_LEGACY),
       computeAggTime = gpuLongMetric(AGG_TIME),
       concatTime = gpuLongMetric(CONCAT_TIME),
       sortTime = gpuLongMetric(SORT_TIME),
