@@ -78,7 +78,4 @@ case class GpuAtomicCreateTableAsSelectExec(
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =
     throw new IllegalStateException("Columnar execution not supported")
-
-  override protected def withNewPlanInternal(newPlan: LogicalPlan): GpuAtomicCreateTableAsSelectExec =
-    copy(query = newPlan)
 }

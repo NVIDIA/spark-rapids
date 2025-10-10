@@ -28,8 +28,6 @@ from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 pytestmark = [
     pytest.mark.skipif(not is_spark_35x(),
                        reason="Current spark-rapids only support spark 3.5.x"),
-    pytest.mark.skipif(is_iceberg_remote_catalog(),
-                       reason="https://github.com/NVIDIA/spark-rapids/issues/13471")
 ]
 
 
@@ -55,8 +53,6 @@ def _execute_ctas(spark,
         f"CREATE TABLE {target_table} USING ICEBERG {partition_clause}"
         f"TBLPROPERTIES ({props_sql}) AS SELECT * FROM {view_name}")
 
-    spark.sql(f"DROP VIEW IF EXISTS {view_name}")
-
 
 def _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
                                 df_gen: Callable,
@@ -80,9 +76,6 @@ def _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
-
-    with_cpu_session(lambda spark: spark.sql(f"DROP TABLE IF EXISTS {cpu_table}"))
-    with_cpu_session(lambda spark: spark.sql(f"DROP TABLE IF EXISTS {gpu_table}"))
 
 
 @iceberg
@@ -187,3 +180,139 @@ def test_ctas_fallback_when_conf_disabled(spark_tmp_table_factory,
     assert_gpu_fallback_collect(run_ctas,
                                 'AtomicCreateTableAsSelectExec',
                                 conf=updated_conf)
+
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('AtomicCreateTableAsSelectExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory,
+                                                     format_version,
+                                                     write_distribution_mode):
+    table_prop = {
+        "format-version": format_version,
+        "write.distribution-mode": write_distribution_mode
+    }
+
+    def run_ctas(spark):
+        cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
+        target = get_full_table_name(spark_tmp_table_factory)
+        _execute_ctas(spark,
+                      target,
+                      spark_tmp_table_factory,
+                      lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list))),
+                      table_prop)
+
+    assert_gpu_fallback_collect(run_ctas,
+                                'AtomicCreateTableAsSelectExec',
+                                conf=iceberg_write_enabled_conf)
+
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('AtomicCreateTableAsSelectExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
+                                                   format_version,
+                                                   write_distribution_mode):
+    table_prop = {
+        "format-version": format_version,
+        "write.distribution-mode": write_distribution_mode
+    }
+
+    def run_ctas(spark):
+        cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
+        target = get_full_table_name(spark_tmp_table_factory)
+        _execute_ctas(spark,
+                      target,
+                      spark_tmp_table_factory,
+                      lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list))),
+                      table_prop,
+                      partition_col_sql="bucket(16, _c2)")
+
+    assert_gpu_fallback_collect(run_ctas,
+                                'AtomicCreateTableAsSelectExec',
+                                conf=iceberg_write_enabled_conf)
+
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('AtomicCreateTableAsSelectExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("_c2", id="identity"),
+    pytest.param("truncate(5, _c6)", id="truncate"),
+    pytest.param("year(_c9)", id="year"),
+    pytest.param("month(_c9)", id="month"),
+    pytest.param("day(_c9)", id="day"),
+    pytest.param("hour(_c9)", id="hour"),
+    pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
+])
+def test_ctas_partitioned_table_unsupported_partition_fallback(
+        spark_tmp_table_factory,
+        format_version,
+        write_distribution_mode,
+        partition_col_sql):
+    table_prop = {
+        "format-version": format_version,
+        "write.distribution-mode": write_distribution_mode
+    }
+
+    def run_ctas(spark):
+        target = get_full_table_name(spark_tmp_table_factory)
+        _execute_ctas(spark,
+                      target,
+                      spark_tmp_table_factory,
+                      lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list))),
+                      table_prop,
+                      partition_col_sql=partition_col_sql)
+
+    assert_gpu_fallback_collect(run_ctas,
+                                'AtomicCreateTableAsSelectExec',
+                                conf=iceberg_write_enabled_conf)
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
+                         ids=lambda x: f"write_distribution_mode={x}")
+@pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
+def test_ctas_from_values(spark_tmp_table_factory,
+                          format_version,
+                          write_distribution_mode,
+                          partition_table):
+    table_prop = {
+        "format-version": format_version,
+        "write.distribution-mode": write_distribution_mode
+    }
+
+    base_name = get_full_table_name(spark_tmp_table_factory)
+    gpu_table = f"{base_name}_gpu"
+    cpu_table = f"{base_name}_cpu"
+
+    def execute_ctas_from_values(spark, target_table: str):
+        spark.sql(f"DROP TABLE IF EXISTS {target_table}")
+        
+        partition_clause = "" if not partition_table else "PARTITIONED BY (bucket(8, id)) "
+        props_sql = _props_to_sql(table_prop)
+        
+        spark.sql(
+            f"CREATE TABLE {target_table} USING ICEBERG {partition_clause}"
+            f"TBLPROPERTIES ({props_sql}) AS "
+            f"SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, name)")
+
+    with_gpu_session(lambda spark: execute_ctas_from_values(spark, gpu_table),
+                     conf=iceberg_write_enabled_conf)
+    with_cpu_session(lambda spark: execute_ctas_from_values(spark, cpu_table),
+                     conf=iceberg_write_enabled_conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)

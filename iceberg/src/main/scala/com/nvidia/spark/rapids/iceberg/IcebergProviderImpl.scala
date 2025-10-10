@@ -19,9 +19,10 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
+import org.apache.iceberg.spark.supportsCatalog
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
@@ -29,12 +30,7 @@ import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, GpuAppendDataExec}
-import org.apache.spark.sql.connector.catalog.StagingTableCatalog
-import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.execution.datasources.v2.rapids.GpuAtomicCreateTableAsSelectExec
-import org.apache.spark.sql.connector.catalog.Identifier
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.expressions.Attribute
 
 class IcebergProviderImpl extends IcebergProvider {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -106,7 +102,7 @@ class IcebergProviderImpl extends IcebergProvider {
   }
 
   override def isSupportedCatalog(catalogClass: Class[_]): Boolean = {
-    classOf[org.apache.iceberg.spark.BaseCatalog].isAssignableFrom(catalogClass)
+    supportsCatalog(catalogClass)
   }
 
   override def tagForGpu(
@@ -123,24 +119,16 @@ class IcebergProviderImpl extends IcebergProvider {
     }
 
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
-
-    // Ensure the query output can be planned on the GPU
-    val gpuChild = new GpuOverrides().apply(cpuExec.query)
-    if (!gpuChild.canThisBeReplaced) {
-      meta.willNotWorkOnGpu("Iceberg CTAS query cannot be executed on GPU")
-    }
   }
 
   override def convertToGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
-    val gpuQuery = meta.childPlans.head.convertIfNeeded()
     GpuAtomicCreateTableAsSelectExec(
-      cpuExec.catalog.asInstanceOf[StagingTableCatalog],
+      cpuExec.catalog,
       cpuExec.ident,
       cpuExec.partitioning,
-      cpuExec.plan,
-      gpuQuery,
+      cpuExec.query,
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.ifNotExists)
