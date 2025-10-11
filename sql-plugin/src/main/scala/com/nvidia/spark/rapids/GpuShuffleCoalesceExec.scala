@@ -175,7 +175,7 @@ object GpuShuffleCoalesceUtils {
     } else {
       hostIter
     }
-    if (readOption.useAsync) { // not sure if need to handle this
+    if (readOption.useAsync) {
       new GpuShuffleAsyncCoalesceIterator(
         maybeBufferedIter.asInstanceOf[Iterator[CoalescedHostResult]], dataTypes, targetSize,
         outBatchesMetric, outRowsMetric, metricsMap(ASYNC_READ_TIME), opTimeMetric,
@@ -358,7 +358,6 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
             offsetsHost.setLong(i * 8L, currentOffset)
             table.getHeader.writeTo(dataHost, currentOffset)
             currentOffset += table.getHeader.getSerializedSize
-            // TODO are we actually making 2 copies and we should fix the deser code
             dataHost.copyFromHostBuffer(currentOffset, table.getBuffer, 0,
               table.getBuffer.getLength)
 
