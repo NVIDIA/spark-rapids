@@ -3488,7 +3488,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
-  lazy val shuffleKudoMode: ShuffleKudoMode.Value = ShuffleKudoMode.withName(get(SHUFFLE_KUDO_WRITE_MODE))
+  lazy val shuffleKudoMode: ShuffleKudoMode.Value =
+    ShuffleKudoMode.withName(get(SHUFFLE_KUDO_WRITE_MODE))
 
   lazy val shuffleKudoReadMode: ShuffleKudoMode.Value =
     ShuffleKudoMode.withName(get(SHUFFLE_KUDO_READ_MODE))

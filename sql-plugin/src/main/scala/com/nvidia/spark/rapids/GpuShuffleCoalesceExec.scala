@@ -166,7 +166,8 @@ object GpuShuffleCoalesceUtils {
         inRowsMetric, readThrottlingMetric)
     }
     val maybeBufferedIter: Iterator[_ <: AutoCloseable] = if (prefetchFirstBatch) {
-      val bufferedIter = new CloseableBufferedIterator(hostIter.asInstanceOf[Iterator[AutoCloseable]])
+      val bufferedIter =
+        new CloseableBufferedIterator(hostIter.asInstanceOf[Iterator[AutoCloseable]])
       withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
         // Force a coalesce of the first batch before we grab the GPU semaphore
         bufferedIter.headOption
@@ -242,7 +243,8 @@ class JCudfCoalescedHostResult(hostConcatResult: HostConcatResult) extends Coale
   override def getDataSize: Long = hostConcatResult.getTableHeader.getDataLen
 }
 
-class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn, CoalescedHostResult] {
+class JCudfTableOperator
+  extends SerializedTableOperator[SerializedTableColumn, CoalescedHostResult] {
   override def getDataLen(table: SerializedTableColumn): Long = table.header.getDataLen
 
   override def getNumRows(table: SerializedTableColumn): Int = table.header.getNumRows
@@ -674,7 +676,8 @@ class KudoGpuShuffleCoalesceIterator(
     concatTimeMetric, inputBatchesMetric, inputRowsMetric, readThrottlingMetric,
     readOption.useAsync) {
 
-  override protected val tableOperator: SerializedTableOperator[KudoSerializedTableColumn, ColumnarBatch] =
+  override protected val tableOperator:
+    SerializedTableOperator[KudoSerializedTableColumn, ColumnarBatch] =
     new KudoGpuTableOperator(dataTypes)
 }
 
