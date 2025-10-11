@@ -153,7 +153,7 @@ object GpuShuffleCoalesceUtils {
     val outRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
     val opTimeMetric = metricsMap(GpuMetric.OP_TIME_LEGACY)
     val readThrottlingMetric = metricsMap(GpuMetric.READ_THROTTLING_TIME)
-    val hostIter = if (readOption.kudoEnabled) {
+    val hostIter: Iterator[_ <: AutoCloseable] = if (readOption.kudoEnabled) {
       if (readOption.kudoMode == RapidsConf.ShuffleKudoMode.GPU) {
         new KudoGpuShuffleCoalesceIterator(iter, targetSize, dataTypes, concatTimeMetric,
           inBatchesMetric, inRowsMetric, readThrottlingMetric, readOption)
@@ -165,8 +165,8 @@ object GpuShuffleCoalesceUtils {
       new HostShuffleCoalesceIterator(iter, targetSize, concatTimeMetric, inBatchesMetric,
         inRowsMetric, readThrottlingMetric)
     }
-    val maybeBufferedIter = if (prefetchFirstBatch) {
-      val bufferedIter = new CloseableBufferedIterator(hostIter)
+    val maybeBufferedIter: Iterator[_ <: AutoCloseable] = if (prefetchFirstBatch) {
+      val bufferedIter = new CloseableBufferedIterator(hostIter.asInstanceOf[Iterator[AutoCloseable]])
       withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
         // Force a coalesce of the first batch before we grab the GPU semaphore
         bufferedIter.headOption
@@ -219,29 +219,16 @@ trait CoalescedHostResult extends AutoCloseable {
 }
 
 /**
- * A trait defining some operations on the table T.
- * This is used by HostCoalesceIteratorBase to separate the table operations from
+ * A trait defining some operations on the table T for concatenation.
+ * This is used by CoalesceIteratorBase to separate the table operations from
  * the shuffle read process.
  */
-sealed trait SerializedTableOperator[T <: AutoCloseable] {
+sealed trait SerializedTableOperator[T <: AutoCloseable, R] {
   def getDataLen(table: T): Long
 
   def getNumRows(table: T): Int
 
-  def concatOnHost(tables: Array[T]): CoalescedHostResult
-}
-
-/**
- * A trait defining some operations on the table T.
- * This is used by HostCoalesceIteratorBase to separate the table operations from
- * the shuffle read process.
- */
-sealed trait SerializedGpuTableOperator[T <: AutoCloseable] {
-  def getDataLen(table: T): Long
-
-  def getNumRows(table: T): Int
-
-  def concatOnGpu(tables: Array[T]): ColumnarBatch
+  def concat(tables: Array[T]): R
 }
 
 class JCudfCoalescedHostResult(hostConcatResult: HostConcatResult) extends CoalescedHostResult {
@@ -255,12 +242,12 @@ class JCudfCoalescedHostResult(hostConcatResult: HostConcatResult) extends Coale
   override def getDataSize: Long = hostConcatResult.getTableHeader.getDataLen
 }
 
-class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] {
+class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn, CoalescedHostResult] {
   override def getDataLen(table: SerializedTableColumn): Long = table.header.getDataLen
 
   override def getNumRows(table: SerializedTableColumn): Int = table.header.getNumRows
 
-  override def concatOnHost(tables: Array[SerializedTableColumn]): CoalescedHostResult = {
+  override def concat(tables: Array[SerializedTableColumn]): CoalescedHostResult = {
     assert(tables.nonEmpty, "no tables to be concatenated")
     val numCols = tables.head.header.getNumColumns
     val ret = if (numCols == 0) {
@@ -286,7 +273,7 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
 
 class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOption,
     taskIdentifier: String)
-  extends SerializedTableOperator[KudoSerializedTableColumn] {
+  extends SerializedTableOperator[KudoSerializedTableColumn, CoalescedHostResult] {
   require(kudo != null, "kudo serializer should not be null")
 
   override def getDataLen(column: KudoSerializedTableColumn): Long =
@@ -309,7 +296,7 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     }
   }
 
-  override def concatOnHost(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
+  override def concat(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
     require(columns.nonEmpty, "no tables to be concatenated")
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
@@ -327,7 +314,7 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
 
 
 class KudoGpuTableOperator(dataTypes: Array[DataType])
-  extends SerializedGpuTableOperator[KudoSerializedTableColumn] {
+  extends SerializedTableOperator[KudoSerializedTableColumn, ColumnarBatch] {
 
   override def getDataLen(column: KudoSerializedTableColumn): Long =
     column.spillableKudoTable.header
@@ -337,7 +324,7 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
     column.spillableKudoTable.header
       .getNumRows
 
-  override def concatOnGpu(columns: Array[KudoSerializedTableColumn]): ColumnarBatch = {
+  override def concat(columns: Array[KudoSerializedTableColumn]): ColumnarBatch = {
     require(columns.nonEmpty, "no tables to be concatenated")
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
@@ -385,12 +372,11 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
 }
 
 /**
- * Iterator that coalesces columnar batches that are expected to only contain
- * serialized tables from shuffle. The serialized tables within are collected up
- * to the target batch size and then concatenated on the host before handing
- * them to the caller on `.next()`
+ * Common base class for coalescing iterators that handles the core logic of
+ * collecting serialized tables and managing batch sizes. Subclasses handle
+ * the specific concatenation logic (host vs GPU) and async behavior.
  */
-abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
+abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
     iter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
     concatTimeMetric: GpuMetric,
@@ -398,36 +384,69 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
     useAsync: Boolean = false
-) extends Iterator[CoalescedHostResult] with AutoCloseable {
-  private[this] val serializedTables = new util.ArrayDeque[T]
-  @volatile private[this] var numTablesInBatch: Int = 0
-  @volatile private[this] var numRowsInBatch: Int = 0
-  @volatile private[this] var batchByteSize: Long = 0L
+) extends Iterator[R] with AutoCloseable {
+  protected[this] val serializedTables = new util.ArrayDeque[T]
+  @volatile protected[this] var numTablesInBatch: Int = 0
+  @volatile protected[this] var numRowsInBatch: Int = 0
+  @volatile protected[this] var batchByteSize: Long = 0L
 
-  private var executor: Option[ThrottlingExecutor] = None
+  protected val tableOperator: SerializedTableOperator[T, R]
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc)(close())
   }
 
-  // Don't try to call TaskContext.get().taskAttemptId() in the backend thread
-  private val taskAttemptID = Option(TaskContext.get()).
-    map(_.taskAttemptId().toString).getOrElse("unknown")
-
-  private var bufferingFuture: Option[Future[_]] = None
-
-  protected val tableOperator: SerializedTableOperator[T]
-
   override def close(): Unit = {
     serializedTables.forEach(_.close())
     serializedTables.clear()
-    executor.foreach { e =>
-      e.shutdownNow(10, TimeUnit.SECONDS)
+  }
+
+  protected def concatenateTables(tables: ArrayBuffer[T]): R = {
+    withResource(new MetricRange(concatTimeMetric)) { _ =>
+      withRetryNoSplit(tables.toSeq) { tablesSeq =>
+        tableOperator.concat(tablesSeq.toArray)
+      }
     }
   }
 
-  private def concatenateTablesInHost(): CoalescedHostResult = {
+  protected def bufferNextBatch(): Unit = {
+    if (numTablesInBatch == serializedTables.size()) {
+      var batchCanGrow = batchByteSize < targetBatchByteSize
+      while (batchCanGrow && iter.hasNext) {
+        closeOnExcept(iter.next()) { batch =>
+          inputBatchesMetric += 1
+          // don't bother tracking empty tables
+          if (batch.numRows > 0) {
+            inputRowsMetric += batch.numRows()
+            val tableColumn = batch.column(0).asInstanceOf[T]
+            batchCanGrow = canAddToBatch(tableColumn)
+            serializedTables.addLast(tableColumn)
+            // always add the first table to the batch even if its beyond the target limits
+            if (batchCanGrow || numTablesInBatch == 0) {
+              numTablesInBatch += 1
+              numRowsInBatch += tableOperator.getNumRows(tableColumn)
+              batchByteSize += tableOperator.getDataLen(tableColumn)
+            }
+          } else {
+            batch.close()
+          }
+        }
+      }
+    }
+  }
+
+  protected def canAddToBatch(nextTable: T): Boolean = {
+    if (batchByteSize + tableOperator.getDataLen(nextTable) > targetBatchByteSize) {
+      return false
+    }
+    if (numRowsInBatch.toLong + tableOperator.getNumRows(nextTable) > Integer.MAX_VALUE) {
+      return false
+    }
+    true
+  }
+
+  protected def updateBatchState(): Unit = {
     val input = new ArrayBuffer[T]()
     for (_ <- 0 until numTablesInBatch)
       input += serializedTables.removeFirst()
@@ -446,6 +465,50 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       batchByteSize = tableOperator.getDataLen(firstTable)
       numRowsInBatch = tableOperator.getNumRows(firstTable)
     }
+  }
+}
+
+/**
+ * Iterator that coalesces columnar batches that are expected to only contain
+ * serialized tables from shuffle. The serialized tables within are collected up
+ * to the target batch size and then concatenated on the host before handing
+ * them to the caller on `.next()`
+ */
+abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
+    iter: Iterator[ColumnarBatch],
+    targetBatchByteSize: Long,
+    concatTimeMetric: GpuMetric,
+    inputBatchesMetric: GpuMetric,
+    inputRowsMetric: GpuMetric,
+    readThrottlingMetric: GpuMetric,
+    useAsync: Boolean = false
+) extends CoalesceIteratorBase[T, CoalescedHostResult](
+    iter, targetBatchByteSize, concatTimeMetric, inputBatchesMetric,
+    inputRowsMetric, readThrottlingMetric, useAsync) {
+
+  private var executor: Option[ThrottlingExecutor] = None
+
+  // Don't try to call TaskContext.get().taskAttemptId() in the backend thread
+  private val taskAttemptID = Option(TaskContext.get()).
+    map(_.taskAttemptId().toString).getOrElse("unknown")
+
+  private var bufferingFuture: Option[Future[_]] = None
+
+  protected val tableOperator: SerializedTableOperator[T, CoalescedHostResult]
+
+  override def close(): Unit = {
+    super.close()
+    executor.foreach { e =>
+      e.shutdownNow(10, TimeUnit.SECONDS)
+    }
+  }
+
+  private def concatenateTablesInHost(): CoalescedHostResult = {
+    val input = new ArrayBuffer[T]()
+    for (_ <- 0 until numTablesInBatch)
+      input += serializedTables.removeFirst()
+
+    updateBatchState()
 
     if (useAsync && iter.hasNext) {
       if (executor.isEmpty) {
@@ -470,37 +533,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       ))
     }
 
-    withResource(new MetricRange(concatTimeMetric)) { _ =>
-      withRetryNoSplit(input.toSeq) { tables =>
-        tableOperator.concatOnHost(tables.toArray)
-      }
-    }
-  }
-
-  private def bufferNextBatch(): Unit = {
-    if (numTablesInBatch == serializedTables.size()) {
-      var batchCanGrow = batchByteSize < targetBatchByteSize
-      while (batchCanGrow && iter.hasNext) {
-        closeOnExcept(iter.next()) { batch =>
-          inputBatchesMetric += 1
-          // don't bother tracking empty tables
-          if (batch.numRows > 0) {
-            inputRowsMetric += batch.numRows()
-            val tableColumn = batch.column(0).asInstanceOf[T]
-            batchCanGrow = canAddToBatch(tableColumn)
-            serializedTables.addLast(tableColumn)
-            // always add the first table to the batch even if its beyond the target limits
-            if (batchCanGrow || numTablesInBatch == 0) {
-              numTablesInBatch += 1
-              numRowsInBatch += tableOperator.getNumRows(tableColumn)
-              batchByteSize += tableOperator.getDataLen(tableColumn)
-            }
-          } else {
-            batch.close()
-          }
-        }
-      }
-    }
+    concatenateTables(input)
   }
 
   override def hasNext(): Boolean = {
@@ -534,16 +567,6 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       concatenateTablesInHost()
     }
   }
-
-  private def canAddToBatch(nextTable: T): Boolean = {
-    if (batchByteSize + tableOperator.getDataLen(nextTable) > targetBatchByteSize) {
-      return false
-    }
-    if (numRowsInBatch.toLong + tableOperator.getNumRows(nextTable) > Integer.MAX_VALUE) {
-      return false
-    }
-    true
-  }
 }
 
 /**
@@ -560,85 +583,20 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
     useAsync: Boolean = false
-) extends Iterator[ColumnarBatch] with AutoCloseable {
-  private[this] val serializedTables = new util.ArrayDeque[T]
-  @volatile private[this] var numTablesInBatch: Int = 0
-  @volatile private[this] var numRowsInBatch: Int = 0
-  @volatile private[this] var batchByteSize: Long = 0L
+) extends CoalesceIteratorBase[T, ColumnarBatch](
+    iter, targetBatchByteSize, concatTimeMetric, inputBatchesMetric,
+    inputRowsMetric, readThrottlingMetric, useAsync) {
 
-  // Don't install the callback if in a unit test
-  Option(TaskContext.get()).foreach { tc =>
-    onTaskCompletion(tc)(close())
-  }
-
-  protected val tableOperator: SerializedGpuTableOperator[T]
-
-  override def close(): Unit = {
-    serializedTables.forEach(_.close())
-    serializedTables.clear()
-  }
+  protected val tableOperator: SerializedTableOperator[T, ColumnarBatch]
 
   private def concatenateTablesInGpu(): ColumnarBatch = {
     val input = new ArrayBuffer[T]()
     for (_ <- 0 until numTablesInBatch)
       input += serializedTables.removeFirst()
 
-    // Update the stats for the next batch in progress.
-    // Note that the modification of these variables will happen before
-    // the modifications in async bufferNextBatch(), we just need to ensure
-    // their visibility to the next thread.
-    numTablesInBatch = serializedTables.size
-    batchByteSize = 0
-    numRowsInBatch = 0
-    if (numTablesInBatch > 0) {
-      require(numTablesInBatch == 1,
-        "should only track at most one buffer that is not in a batch")
-      val firstTable = serializedTables.peekFirst()
-      batchByteSize = tableOperator.getDataLen(firstTable)
-      numRowsInBatch = tableOperator.getNumRows(firstTable)
-    }
+    updateBatchState()
 
-    withResource(new MetricRange(concatTimeMetric)) { _ =>
-      withRetryNoSplit(input.toSeq) { tables =>
-        tableOperator.concatOnGpu(tables.toArray)
-      }
-    }
-  }
-
-  private def canAddToBatch(nextTable: T): Boolean = {
-    if (batchByteSize + tableOperator.getDataLen(nextTable) > targetBatchByteSize) {
-      return false
-    }
-    if (numRowsInBatch.toLong + tableOperator.getNumRows(nextTable) > Integer.MAX_VALUE) {
-      return false
-    }
-    true
-  }
-
-  private def bufferNextBatch(): Unit = {
-    if (numTablesInBatch == serializedTables.size()) {
-      var batchCanGrow = batchByteSize < targetBatchByteSize
-      while (batchCanGrow && iter.hasNext) {
-        closeOnExcept(iter.next()) { batch =>
-          inputBatchesMetric += 1
-          // don't bother tracking empty tables
-          if (batch.numRows > 0) {
-            inputRowsMetric += batch.numRows()
-            val tableColumn = batch.column(0).asInstanceOf[T]
-            batchCanGrow = canAddToBatch(tableColumn)
-            serializedTables.addLast(tableColumn)
-            // always add the first table to the batch even if its beyond the target limits
-            if (batchCanGrow || numTablesInBatch == 0) {
-              numTablesInBatch += 1
-              numRowsInBatch += tableOperator.getNumRows(tableColumn)
-              batchByteSize += tableOperator.getDataLen(tableColumn)
-            }
-          } else {
-            batch.close()
-          }
-        }
-      }
-    }
+    concatenateTables(input)
   }
 
   override def hasNext(): Boolean = {
@@ -716,7 +674,7 @@ class KudoGpuShuffleCoalesceIterator(
     concatTimeMetric, inputBatchesMetric, inputRowsMetric, readThrottlingMetric,
     readOption.useAsync) {
 
-  override protected val tableOperator: SerializedGpuTableOperator[KudoSerializedTableColumn] =
+  override protected val tableOperator: SerializedTableOperator[KudoSerializedTableColumn, ColumnarBatch] =
     new KudoGpuTableOperator(dataTypes)
 }
 
