@@ -761,6 +761,7 @@ class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
     }
   }
 }
+
 class GpuGpuShuffleCoalesceIterator(iter: Iterator[ColumnarBatch],
     outputBatchesMetric: GpuMetric = NoopMetric,
     outputRowsMetric: GpuMetric = NoopMetric,
