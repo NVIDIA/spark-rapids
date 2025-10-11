@@ -132,7 +132,8 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
           ).withDefaultValue(com.nvidia.spark.rapids.NoopMetric)
           val serializer = new GpuColumnarBatchSerializer(serializerMetrics, dataTypes,
             RapidsConf.ShuffleKudoMode.GPU, true, false)
-          withResource(serializer.newInstance().serializeStream(byteOutputStream)) { serializationStream =>
+          withResource(serializer.newInstance().
+            serializeStream(byteOutputStream)) { serializationStream =>
             // Write the serialized batches to the stream
             serializedPartitions.foreach { batch =>
               serializationStream.writeKey(0)

@@ -449,10 +449,6 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
   }
 
   protected def updateBatchState(): Unit = {
-    val input = new ArrayBuffer[T]()
-    for (_ <- 0 until numTablesInBatch)
-      input += serializedTables.removeFirst()
-
     // Update the stats for the next batch in progress.
     // Note that the modification of these variables will happen before
     // the modifications in async bufferNextBatch(), we just need to ensure
@@ -467,6 +463,14 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
       batchByteSize = tableOperator.getDataLen(firstTable)
       numRowsInBatch = tableOperator.getNumRows(firstTable)
     }
+  }
+
+  protected def extractAndUpdateBatch(): ArrayBuffer[T] = {
+    val input = new ArrayBuffer[T]()
+    for (_ <- 0 until numTablesInBatch)
+      input += serializedTables.removeFirst()
+    updateBatchState()
+    input
   }
 }
 
@@ -506,11 +510,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   }
 
   private def concatenateTablesInHost(): CoalescedHostResult = {
-    val input = new ArrayBuffer[T]()
-    for (_ <- 0 until numTablesInBatch)
-      input += serializedTables.removeFirst()
-
-    updateBatchState()
+    val input = extractAndUpdateBatch()
 
     if (useAsync && iter.hasNext) {
       if (executor.isEmpty) {
@@ -592,12 +592,7 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   protected val tableOperator: SerializedTableOperator[T, ColumnarBatch]
 
   private def concatenateTablesInGpu(): ColumnarBatch = {
-    val input = new ArrayBuffer[T]()
-    for (_ <- 0 until numTablesInBatch)
-      input += serializedTables.removeFirst()
-
-    updateBatchState()
-
+    val input = extractAndUpdateBatch()
     concatenateTables(input)
   }
 
