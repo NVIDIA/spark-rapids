@@ -30,7 +30,6 @@ import org.apache.spark.internal.Logging
 case class PrioritizedCpuBridgeTask[T](
     task: Callable[T],
     taskContext: TaskContext,
-    batchSize: Int,
     submitTime: Long = System.nanoTime()) extends Callable[T] {
   
   // Higher priority = lower value (processed first)
@@ -180,10 +179,9 @@ object GpuCpuBridgeThreadPool extends Logging {
    * Submit a prioritized task to the thread pool.
    * The task will inherit the current task context and be prioritized appropriately.
    */
-  def submitPrioritizedTask[T](task: Callable[T], 
-    batchSize: Int): java.util.concurrent.Future[T] = {
+  def submitPrioritizedTask[T](task: Callable[T]): java.util.concurrent.Future[T] = {
     val currentTaskContext = TaskContext.get()
-    val prioritizedTask = PrioritizedCpuBridgeTask(task, currentTaskContext, batchSize)
+    val prioritizedTask = PrioritizedCpuBridgeTask(task, currentTaskContext)
     getThreadPool.submit(prioritizedTask)
   }
   

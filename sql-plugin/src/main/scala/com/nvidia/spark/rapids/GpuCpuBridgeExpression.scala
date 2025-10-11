@@ -224,8 +224,7 @@ case class GpuCpuBridgeExpression(
       val futures = ranges.map { case (startRow, endRow) =>
         val task = new SpillableSubBatchEvaluationTask(spillableInputBatch, startRow, endRow, 
           cpuBridgeProcessingTime)
-        val subBatchSize = endRow - startRow
-        GpuCpuBridgeThreadPool.submitPrioritizedTask(task, subBatchSize)
+        GpuCpuBridgeThreadPool.submitPrioritizedTask(task)
       }
       
       // Collect results from all sub-batches - these will be spillable results
@@ -290,8 +289,7 @@ case class GpuCpuBridgeExpression(
           nullSafe = false,
           releaseSemaphore = false
         )
-        val r = new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)
-        try {
+        withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
           // Time the actual CPU processing on this thread
           val processingStartTime = System.nanoTime()
           val result = try {
@@ -304,8 +302,6 @@ case class GpuCpuBridgeExpression(
           // Convert result to spillable format
           val resultBatch = new ColumnarBatch(Array(result), subBatchInput.numRows())
           SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        } finally {
-          r.close()
         }
       }
     }
