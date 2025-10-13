@@ -2214,7 +2214,10 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
   private lazy val bufferOrdering: AttributeReference =
     AttributeReference("ordering", orderingExpr.dataType)()
 
-  override lazy val initialValues: Seq[Expression] = Seq(GpuLiteral(null, valueExpr.dataType))
+  override def aggBufferAttributes: Seq[AttributeReference] = Seq(bufferValue, bufferOrdering)
+
+  override lazy val initialValues: Seq[Expression] =
+    Seq(GpuLiteral(null, valueExpr.dataType), GpuLiteral(null, orderingExpr.dataType))
 
   // The ordering column is used as input for reduction/groupby to find the argmin/argmax index.
   override lazy val inputProjection: Seq[Expression] = Seq(orderingExpr)
@@ -2222,15 +2225,16 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   // Extract the extremum value from argmin/argmax index.
   override lazy val postUpdate: Seq[Expression] =
-    Seq(GpuGather(bufferValue, cudfArgMinMaxAggregate.attr))
+    Seq(GpuGather(valueExpr, cudfArgMinMaxAggregate.attr),
+      GpuGather(orderingExpr, cudfArgMinMaxAggregate.attr))
 
+  override lazy val preMerge: Seq[Expression] = Seq(bufferOrdering)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(cudfArgMinMaxAggregate)
   override lazy val postMerge: Seq[Expression] =
-    Seq(GpuGather(bufferValue, cudfArgMinMaxAggregate.attr))
+    Seq(GpuGather(bufferValue, cudfArgMinMaxAggregate.attr),
+      GpuGather(bufferOrdering, cudfArgMinMaxAggregate.attr))
 
   override lazy val evaluateExpression: Expression = bufferValue
-
-  override def aggBufferAttributes: Seq[AttributeReference] = Seq(bufferValue, bufferOrdering)
 
   override def children: Seq[Expression] = Seq(valueExpr, orderingExpr)
 
