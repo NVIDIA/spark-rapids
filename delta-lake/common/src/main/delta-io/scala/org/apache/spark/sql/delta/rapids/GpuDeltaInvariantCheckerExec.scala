@@ -45,7 +45,7 @@ case class GpuDeltaInvariantCheckerExec(
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     if (checks.isEmpty) return child.executeColumnar()
-    val boundRefs = checks.map(_.withBoundReferences(child.output))
+    val boundRefs = checks.map(_.withBoundReferences(child.output, allMetrics))
 
     child.executeColumnar().mapPartitionsInternal { batches =>
       batches.map { batch =>

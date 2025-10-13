@@ -687,10 +687,7 @@ case class GpuProjectExec(
     val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
     
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
-      conf)
-    
-    // Inject CPU bridge metrics into bound expressions
-    boundProjectList.injectMetrics(allMetrics)
+      conf, allMetrics)
     
     val localEnablePreSplit = enablePreSplit
 
@@ -744,7 +741,8 @@ case class GpuProjectAstExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
-    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
+    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output,
+      allMetrics)
     val outputTypes = output.map(_.dataType).toArray
     new GpuColumnarBatchIterator(true) {
       private[this] var maybeSplittedItr: Iterator[ColumnarBatch] = Iterator.empty
@@ -1191,9 +1189,7 @@ case class GpuFilterExec(
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
-      conf)
-    // Inject CPU bridge metrics into bound expressions
-    boundCondition.injectMetrics(allMetrics)
+      conf, allMetrics)
     rdd.flatMap { batch =>
       GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
         numOutputBatches, opTime)

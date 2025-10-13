@@ -957,7 +957,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
           val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
             numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-            concatTime, opTime)
+            concatTime, opTime, allMetrics)
           batches.mapPartitions { iter =>
             f(iter)
           }

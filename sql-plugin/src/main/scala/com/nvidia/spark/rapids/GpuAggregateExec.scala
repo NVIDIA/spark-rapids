@@ -365,7 +365,8 @@ class AggHelper(
     aggregateExpressions: Seq[GpuAggregateExpression],
     forceMerge: Boolean,
     conf: SQLConf,
-    isSorted: Boolean = false) extends Serializable {
+    isSorted: Boolean = false,
+    metrics: Option[Map[String, GpuMetric]] = None) extends Serializable {
 
   private var doSortAgg = isSorted
 
@@ -446,22 +447,23 @@ class AggHelper(
   } else {
     inputAttributes
   }
-  val preStepBound = GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
-    preStepAttributes.toList, conf)
+  val preStepBound = metrics match {
+    case Some(m) =>
+      GpuBindReferences.bindGpuReferencesTiered(preStep.toList, preStepAttributes.toList, conf, m)
+    case None =>
+      GpuBindReferences.bindGpuReferencesTieredInternal(preStep.toList,
+        preStepAttributes.toList, conf)
+  }
 
   // a bound expression that is applied after the cuDF aggregate
-  private val postStepBound = GpuBindReferences.bindGpuReferencesTiered(postStep.toList,
-    postStepAttr.toList, conf)
-
-  /**
-   * Inject CPU bridge metrics into bound expressions.
-   * This should be called after the AggHelper is created but before it's used for processing.
-   * @param metrics Map of metric names to GpuMetric instances
-   */
-  def injectMetrics(metrics: Map[String, GpuMetric]): Unit = {
-    preStepBound.injectMetrics(metrics)
-    postStepBound.injectMetrics(metrics)
+  private val postStepBound = metrics match {
+    case Some(m) =>
+      GpuBindReferences.bindGpuReferencesTiered(postStep.toList, postStepAttr.toList, conf, m)
+    case None =>
+      GpuBindReferences.bindGpuReferencesTieredInternal(postStep.toList,
+        postStepAttr.toList, conf)
   }
+
 
   /**
    * Apply the "pre" step: preMerge for merge, or pass-through in the update case
@@ -811,10 +813,12 @@ object GpuAggFinalPassIterator {
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
       val finalProjections = groupingAttributes ++
         aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
-      val bound = Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
-      // Inject CPU bridge metrics if provided
-      metrics.foreach(m => bound.foreach(GpuMetric.injectMetrics(_, m)))
-      bound
+      metrics match {
+        case Some(m) =>
+          Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes, m))
+        case None =>
+          Some(GpuBindReferences.bindGpuReferencesInternal(finalProjections, aggBufferAttributes))
+      }
     } else {
       None
     }
@@ -830,26 +834,28 @@ object GpuAggFinalPassIterator {
     // - Final or Complete mode: we use resultExpressions to pick out the correct columns that
     //   finalReferences has pre-processed for us
     val boundResultReferences = if (modeInfo.hasPartialMode || modeInfo.hasPartialMergeMode) {
-      val bound = GpuBindReferences.bindGpuReferences(
-        resultExpressions,
-        resultExpressions.map(_.toAttribute))
-      // Inject CPU bridge metrics if provided
-      metrics.foreach(GpuMetric.injectMetrics(bound, _))
-      bound
+      metrics match {
+        case Some(m) =>
+          GpuBindReferences.bindGpuReferences(resultExpressions,
+            resultExpressions.map(_.toAttribute), m)
+        case None =>
+          GpuBindReferences.bindGpuReferencesInternal(resultExpressions,
+            resultExpressions.map(_.toAttribute))
+      }
     } else if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      val bound = GpuBindReferences.bindGpuReferences(
-        resultExpressions,
-        finalAttributes)
-      // Inject CPU bridge metrics if provided
-      metrics.foreach(GpuMetric.injectMetrics(bound, _))
-      bound
+      metrics match {
+        case Some(m) =>
+          GpuBindReferences.bindGpuReferences(resultExpressions, finalAttributes, m)
+        case None =>
+          GpuBindReferences.bindGpuReferencesInternal(resultExpressions, finalAttributes)
+      }
     } else {
-      val bound = GpuBindReferences.bindGpuReferences(
-        resultExpressions,
-        groupingAttributes)
-      // Inject CPU bridge metrics if provided
-      metrics.foreach(GpuMetric.injectMetrics(bound, _))
-      bound
+      metrics match {
+        case Some(m) =>
+          GpuBindReferences.bindGpuReferences(resultExpressions, groupingAttributes, m)
+        case None =>
+          GpuBindReferences.bindGpuReferencesInternal(resultExpressions, groupingAttributes)
+      }
     }
     BoundExpressionsModeAggregates(
       boundFinalProjections,
@@ -954,7 +960,8 @@ class GpuMergeAggregateIterator(
     conf: SQLConf,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
-    localInputRowsCount: LocalGpuMetric
+    localInputRowsCount: LocalGpuMetric,
+    allMetrics: Option[Map[String, GpuMetric]] = None
 )
   extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
@@ -1039,8 +1046,11 @@ class GpuMergeAggregateIterator(
       val groupingAttributes = groupingExpressions.map(_.toAttribute)
       val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+      // No metrics needed here - we're just binding AttributeReferences to GpuBoundReferences
+      // for hash key computation, not executing complex expressions
       val hashKeys: Seq[GpuExpression] =
-        GpuBindReferences.bindGpuReferences(groupingAttributes, aggBufferAttributes.toSeq)
+        GpuBindReferences.bindGpuReferencesInternal(groupingAttributes,
+          aggBufferAttributes.toSeq)
 
       val repartitionHappened = AggregateUtils.iterateAndRepartition(
         AggregateUtils.streamAggregateNeighours(
@@ -1074,15 +1084,7 @@ class GpuMergeAggregateIterator(
 
   private lazy val concatAndMergeHelper =
     new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
-      forceMerge = true, conf, isSorted = false)
-
-  /**
-   * Inject CPU bridge metrics into the concatAndMergeHelper.
-   * This should be called once during execution setup.
-   */
-  def injectMetricsIntoHelpers(metrics: Map[String, GpuMetric]): Unit = {
-    concatAndMergeHelper.injectMetrics(metrics)
-  }
+      forceMerge = true, conf, isSorted = false, metrics = allMetrics)
 
   private case class ConcatIterator(
       input: CloseableBufferedIterator[SpillableColumnarBatch],
@@ -1992,9 +1994,8 @@ case class GpuHashAggregateExec(
       expectedOrdering) && expectedOrdering.nonEmpty
     val localEstimatedPreProcessGrowth = estimatedPreProcessGrowth
 
-    val boundGroupExprs = GpuBindReferences.bindGpuReferencesTiered(groupingExprs, inputAttrs, conf)
-    // Inject CPU bridge metrics into bound grouping expressions
-    boundGroupExprs.injectMetrics(allMetrics)
+    val boundGroupExprs = GpuBindReferences.bindGpuReferencesTiered(groupingExprs,
+      inputAttrs, conf, allMetrics)
 
     rdd.mapPartitions { cbIter =>
       val postBoundReferences = GpuAggFinalPassIterator.setupReferences(groupingExprs,
@@ -2175,7 +2176,7 @@ class DynamicGpuPartialAggregateIterator(
     val sortedIter = if (alreadySorted) {
       inputIter
     } else {
-      val sorter = new GpuSorter(ordering, inputAttrs)
+      val sorter = new GpuSorter(ordering, inputAttrs, Some(allMetrics))
       GpuOutOfCoreSortIterator(inputIter,
         sorter,
         configuredTargetBatchSize,
@@ -2232,10 +2233,9 @@ class DynamicGpuPartialAggregateIterator(
       conf,
       allowNonFullyAggregatedOutput,
       skipAggPassReductionRatio,
-      localInputRowsMetrics
+      localInputRowsMetrics,
+      Some(allMetrics)
     )
-    // Inject CPU bridge metrics into the merge iterator's helpers
-    mergeIter.injectMetricsIntoHelpers(allMetrics)
 
     GpuAggFinalPassIterator.makeIter(mergeIter, postBoundReferences, metrics)
   }
@@ -2244,9 +2244,7 @@ class DynamicGpuPartialAggregateIterator(
     if (aggIter.isEmpty) {
       val preProcessAggHelper = new AggHelper(
         inputAttrs, groupingExprs, aggregateExprs,
-        forceMerge = false, isSorted = true, conf = conf)
-      // Inject CPU bridge metrics into the helper
-      preProcessAggHelper.injectMetrics(allMetrics)
+        forceMerge = false, isSorted = true, conf = conf, metrics = Some(allMetrics))
       val (inputIter, doSinglePassAgg) = if (allowSinglePassAgg) {
         if (forceSinglePassAgg || alreadySorted) {
           (cbIter, true)

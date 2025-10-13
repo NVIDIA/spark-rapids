@@ -170,13 +170,12 @@ case class GpuWindowExec(
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val opTime = gpuLongMetric(GpuMetric.OP_TIME_LEGACY)
 
-    val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
-    // Inject CPU bridge metrics into bound expressions
-    GpuMetric.injectMetrics(boundWindowOps, allMetrics)
-    GpuMetric.injectMetrics(boundPartitionSpec, allMetrics)
-    GpuMetric.injectMetrics(boundOrderSpec, allMetrics)
+    val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output,
+      allMetrics)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec,
+      child.output, allMetrics)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output,
+      allMetrics)
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,

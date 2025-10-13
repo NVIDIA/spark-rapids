@@ -79,7 +79,7 @@ object ZOrderRules {
           val sortCol = AttributeReference("sort_col", child.dataType, child.nullable)()
           val ourSortOrder =
             SortOrder(sortCol, singleOrder.direction, singleOrder.nullOrdering, Seq.empty)
-          val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol))
+          val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol), None)
           val gpuPart = new GpuRangePartitioner(rangeBounds, sorter)
           GpuPartitionerExpr(child, gpuPart)
         }

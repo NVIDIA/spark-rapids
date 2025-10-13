@@ -136,7 +136,7 @@ case class GpuFlatMapGroupsInPandasExec(
       // Projects each input batch into the deduplicated schema, and splits
       // into separate group batches to sends them to Python group by group later.
       val pyInputIter = projectAndGroup(inputIter, localChildOutput, dedupAttrs, groupingOffsets,
-          mNumInputRows, mNumInputBatches)
+          mNumInputRows, mNumInputBatches, allMetrics)
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.

@@ -38,7 +38,7 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
     val repeatOutput = GpuUnboundedToUnboundedAggWindowIterator.repeatOps(aggOutput)
 
     val finalProject = GpuUnboundedToUnboundedAggWindowIterator.computeFinalProject(
-      rideAlongOutput, repeatOutput, repeatOutput ++ rideAlongOutput)
+      rideAlongOutput, repeatOutput, repeatOutput ++ rideAlongOutput, Map.empty)
 
     val conf = GpuUnboundedToUnboundedAggStages(Seq.empty, Seq.empty, Seq.empty,
                                                 Seq.empty, finalProject)

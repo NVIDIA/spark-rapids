@@ -153,9 +153,9 @@ case class GpuFlatMapCoGroupsInPandasExec(
       if (leftIter.isEmpty && rightIter.isEmpty) Iterator.empty else {
         // project and group for left and right
         val leftGroupedIter = projectAndGroup(leftIter, left.output, leftDedupAttrs,
-          leftGroupingOffsets, numInputRows, numInputBatches)
+          leftGroupingOffsets, numInputRows, numInputBatches, allMetrics)
         val rightGroupedIter = projectAndGroup(rightIter, right.output, rightDedupAttrs,
-          rightGroupingOffsets, numInputRows, numInputBatches)
+          rightGroupingOffsets, numInputRows, numInputBatches, allMetrics)
         // Cogroup the data
         val pyInputIter = new CoGroupedIterator(leftGroupedIter, leftDedupAttrs,
           leftGroupingOffsets, rightGroupedIter, rightDedupAttrs,  rightGroupingOffsets)

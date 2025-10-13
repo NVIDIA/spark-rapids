@@ -863,12 +863,9 @@ case class GpuGenerateExec(
       // perform optimized lazy generation via `generator.fixedLenLazyArrayGenerate`
       case expressions if expressions.nonEmpty =>
         val boundLazyProjectList =
-          GpuBindReferences.bindGpuReferences(expressions, child.output).toArray
+          GpuBindReferences.bindGpuReferences(expressions, child.output, allMetrics).toArray
         val boundOthersProjectList =
-          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output).toArray
-        // Inject CPU bridge metrics into bound expressions
-        GpuMetric.injectMetrics(boundLazyProjectList, allMetrics)
-        GpuMetric.injectMetrics(boundOthersProjectList, allMetrics)
+          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output, allMetrics).toArray
         val outputSchema = output.map(_.dataType).toArray
 
         child.executeColumnar().mapPartitions { iter =>
@@ -885,12 +882,9 @@ case class GpuGenerateExec(
       // Otherwise, perform common generation via `generator.generate`
       case _ =>
         val genProjectList: Seq[GpuExpression] =
-          GpuBindReferences.bindGpuReferences(generator.children, child.output)
+          GpuBindReferences.bindGpuReferences(generator.children, child.output, allMetrics)
         val othersProjectList: Seq[GpuExpression] =
-          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output)
-        // Inject CPU bridge metrics into bound expressions
-        GpuMetric.injectMetrics(genProjectList, allMetrics)
-        GpuMetric.injectMetrics(othersProjectList, allMetrics)
+          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output, allMetrics)
 
         child.executeColumnar().flatMap { inputFromChild =>
           doGenerateAndClose(inputFromChild, genProjectList, othersProjectList,

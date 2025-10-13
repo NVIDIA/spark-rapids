@@ -30,7 +30,7 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
   private val ref = GpuBoundReference(0, IntegerType, nullable = false)(ExprId(0), "a")
   private val sortOrder = SortOrder(ref, Ascending)
   private val attrs = AttributeReference(ref.name, ref.dataType, ref.nullable)()
-  private val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs))
+  private val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs), None)
   private val NUM_ROWS = 100
 
   private def batchIter(batches: Int): Iterator[ColumnarBatch] =

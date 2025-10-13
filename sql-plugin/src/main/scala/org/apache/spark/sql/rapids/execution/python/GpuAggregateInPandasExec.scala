@@ -133,8 +133,10 @@ case class GpuAggregateInPandasExec(
       // First projects the input batches to (groupingExpressions + allInputs), which is minimum
       // necessary for the following processes.
       // Doing this can reduce the data size to be split, probably getting a better performance.
-      val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions, childOutput)
-      val pyInputRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs, childOutput)
+      val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions,
+        childOutput, allMetrics)
+      val pyInputRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs,
+        childOutput, allMetrics)
       val miniIter = inputIter.map { batch =>
         mNumInputBatches += 1
         mNumInputRows += batch.numRows()
@@ -199,7 +201,8 @@ case class GpuAggregateInPandasExec(
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
 
         val combinedAttrs = gpuGroupingExpressions.map(_.toAttribute) ++ pyOutAttributes
-        val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs)
+        val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs,
+          allMetrics)
         // Gets the combined batch for each group and projects for the output.
         new CombiningIterator(batchProducer.getBatchQueue, pyOutputIterator,
             pyRunner.asInstanceOf[GpuArrowOutput], mNumOutputRows,

@@ -1149,8 +1149,8 @@ trait GpuHashJoin extends GpuJoinExec {
     GpuHashJoin.compareNullsEqual(joinType, buildKeys)
 
   protected lazy val (boundBuildKeys, boundStreamKeys) = {
-    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
-    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
+    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output, allMetrics)
+    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output, allMetrics)
 
     buildSide match {
       case GpuBuildLeft => (lkeys, rkeys)
@@ -1164,7 +1164,8 @@ trait GpuHashJoin extends GpuJoinExec {
       case GpuBuildLeft => (left.output, right.output)
     }
     val boundCondition = condition.map { c =>
-      GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
+      GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput,
+        allMetrics)
     }
     (streamOutput.size, boundCondition)
   }

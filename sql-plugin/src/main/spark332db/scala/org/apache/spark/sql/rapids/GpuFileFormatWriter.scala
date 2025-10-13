@@ -182,7 +182,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
 
       // build `WriteFilesSpec` for `WriteFiles`
       val concurrentOutputWriterSpecFunc = (plan: SparkPlan) => {
-        val orderingExpr = GpuBindReferences.bindReferences(requiredOrdering
+        // Using Internal method: simple SortOrder expressions for file writing
+        val orderingExpr = GpuBindReferences.bindReferencesInternal(requiredOrdering
           .map(attr => SortOrder(attr, Ascending)), outputSpec.outputColumns)
         // this sort plan does not execute, only use its output
         val sortPlan = createSortPlan(plan, orderingExpr, useStableSort, statsTrackers)
@@ -236,7 +237,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
         // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
         // the physical plan may have different attribute ids due to optimizer removing some
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
-        val orderingExpr = GpuBindReferences.bindReferences(
+        // Using Internal method: simple SortOrder expressions for file writing
+        val orderingExpr = GpuBindReferences.bindReferencesInternal(
           requiredOrdering
             .map(attr => SortOrder(attr, Ascending)), outputSpec.outputColumns)
         val batchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sparkSession.sessionState.conf)
