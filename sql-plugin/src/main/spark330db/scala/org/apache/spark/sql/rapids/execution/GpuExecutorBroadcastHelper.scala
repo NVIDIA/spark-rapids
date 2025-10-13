@@ -74,7 +74,7 @@ object GpuExecutorBroadcastHelper {
     // to ensure this always a single batch for the following step.
     val shuffleMetrics = Map(
       CONCAT_TIME -> metricsMap(CONCAT_TIME),
-      OP_TIME -> metricsMap(OP_TIME),
+      OP_TIME_LEGACY -> metricsMap(OP_TIME_LEGACY),
     ).withDefaultValue(NoopMetric)
 
     val iter = shuffleDataIterator(shuffleData)
@@ -91,7 +91,7 @@ object GpuExecutorBroadcastHelper {
       NoopMetric, // numOutputBatches
       NoopMetric, // collectTime
       metricsMap(CONCAT_TIME), // concatTime
-      metricsMap(OP_TIME), // opTime
+      metricsMap(OP_TIME_LEGACY), // opTime
       "GpuBroadcastHashJoinExec").asInstanceOf[Iterator[ColumnarBatch]]
   }
 

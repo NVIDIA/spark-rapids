@@ -31,6 +31,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "400"}
+{"spark": "401"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources
 
@@ -38,6 +39,9 @@ import java.util.Date
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.mapreduce.{TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
+import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
 import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
@@ -195,5 +199,33 @@ object GpuWriteFiles {
     p.collectFirst {
       case w: GpuWriteFilesExec => w
     }
+  }
+
+  /**
+   * Create hadoop task attempt context from current spark task context and given hadoop conf.
+   * <br/>
+   *
+   * Note that the given hadoop conf will be modified to set necessary configs.
+   * @param hadoopConf Hadoop configuration
+   * @return Hadoop task attempt context
+   */
+  def calcHadoopTaskAttemptContext(hadoopConf: Configuration): TaskAttemptContext = {
+    val tc = TaskContext.get()
+    if (tc == null) {
+      throw new IllegalStateException("TaskContext is not available")
+    }
+
+    val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
+    val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, tc.stageId())
+    val taskId = new TaskID(jobId, TaskType.MAP, tc.partitionId())
+    val taskAttemptId = new TaskAttemptID(taskId, tc.attemptNumber())
+
+    hadoopConf.set("mapreduce.job.id", jobId.toString)
+    hadoopConf.set("mapreduce.task.id",  taskAttemptId.getTaskID.toString)
+    hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
+    hadoopConf.setBoolean("mapreduce.task.ismap", true)
+    hadoopConf.setInt("mapreduce.task.partition", 0)
+
+    new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
 }

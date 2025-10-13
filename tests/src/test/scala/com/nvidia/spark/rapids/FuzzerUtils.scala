@@ -75,61 +75,68 @@ object FuzzerUtils {
         field.dataType match {
           case DataTypes.ByteType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextByte()) match {
+              maybeNull(rand, field.nullable, r.nextByte()) match {
                 case Some(value) => builder.append(value)
                 case None => builder.appendNull()
               }
             })
           case DataTypes.ShortType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextShort) match {
+              maybeNull(rand, field.nullable, r.nextShort) match {
                 case Some(value) => builder.append(value)
                 case None => builder.appendNull()
               }
             })
           case DataTypes.IntegerType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextInt()) match {
+              maybeNull(rand, field.nullable, r.nextInt()) match {
                 case Some(value) => builder.append(value)
                 case None => builder.appendNull()
               }
             })
           case DataTypes.LongType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextLong()) match {
+              maybeNull(rand, field.nullable, r.nextLong()) match {
                 case Some(value) => builder.append(value)
                 case None => builder.appendNull()
               }
             })
           case DataTypes.FloatType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextFloat()) match {
+              maybeNull(rand, field.nullable, r.nextFloat()) match {
                 case Some(value) => builder.append(value)
                 case None => builder.appendNull()
               }
             })
           case DataTypes.DoubleType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextDouble()) match {
+              maybeNull(rand, field.nullable, r.nextDouble()) match {
                 case Some(value) => builder.append(value)
                 case None => builder.appendNull()
               }
             })
           case DataTypes.StringType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextString()) match {
+              maybeNull(rand, field.nullable, r.nextString()) match {
                 case Some(value) => builder.append(value)
                 case None => builder.appendNull()
               }
             })
           case dt: DecimalType =>
             rows.foreach(_ => {
-              maybeNull(rand, r.nextLong()) match {
+              maybeNull(rand, field.nullable, r.nextLong()) match {
                 case Some(value) =>
                   // bounding unscaledValue with precision
                   val invScale = (dt.precision to ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION)
                     .foldLeft(10L)((x, _) => x * 10)
                   builder.append(BigDecimal(value / invScale, dt.scale).bigDecimal)
+                case None => builder.appendNull()
+              }
+            })
+          case DataTypes.BinaryType =>
+            rows.foreach(_ => {
+              maybeNull(rand, field.nullable, r.nextBytes()) match {
+                case Some(value) => builder.appendByteList(value, 0, value.length)
                 case None => builder.appendNull()
               }
             })
@@ -160,8 +167,8 @@ object FuzzerUtils {
   }
 
 
-  private def maybeNull[T](r: Random, nonNullValue: => T): Option[T] = {
-    if (r.nextFloat() < 0.2) {
+  private def maybeNull[T](r: Random, nullable: Boolean, nonNullValue: => T): Option[T] = {
+    if (nullable && r.nextFloat() < 0.2) {
       None
     }  else {
       Some(nonNullValue)
@@ -357,11 +364,19 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
     b.toString
   }
 
+  def nextBytes(): Array[Byte] = {
+    val length = r.nextInt(options.maxBytesLen)
+    val bytes = new Array[Byte](length)
+    r.nextBytes(bytes)
+    bytes
+  }
+
 }
 
 case class FuzzerOptions(
     validStringChars: Option[String] = None,
     maxStringLen: Int = 64,
+    maxBytesLen: Int = 64,
     intMin: Int = Int.MinValue,
     intMax: Int = Int.MaxValue,
     longMin: Long = Long.MinValue,

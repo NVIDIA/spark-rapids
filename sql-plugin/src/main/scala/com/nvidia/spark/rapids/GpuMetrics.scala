@@ -80,7 +80,10 @@ object GpuMetric extends Logging {
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
   val PARTITION_SIZE = "partitionSize"
   val NUM_PARTITIONS = "numPartitions"
-  val OP_TIME = "opTime"
+  val OP_TIME_LEGACY = "opTimeLegacy"
+  val OP_TIME_NEW = "opTimeNew"
+  val OP_TIME_NEW_SHUFFLE_WRITE = "opTimeNewShuffleWrite"
+  val OP_TIME_NEW_SHUFFLE_READ = "opTimeNewShuffleRead"
   val COLLECT_TIME = "collectTime"
   val CONCAT_TIME = "concatTime"
   val SORT_TIME = "sortTime"
@@ -110,6 +113,9 @@ object GpuMetric extends Logging {
   val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
   val COPY_TO_HOST_TIME = "d2hMemCopyTime"
+  val READ_THROTTLING_TIME = "readThrottlingTime"
+  val SYNC_READ_TIME = "shuffleSyncReadTime"
+  val ASYNC_READ_TIME = "shuffleAsyncReadTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -122,7 +128,10 @@ object GpuMetric extends Logging {
   val DESCRIPTION_NUM_OUTPUT_BATCHES = "output columnar batches"
   val DESCRIPTION_PARTITION_SIZE = "partition data size"
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
-  val DESCRIPTION_OP_TIME = "op time"
+  val DESCRIPTION_OP_TIME_LEGACY = "op time (legacy)"
+  val DESCRIPTION_OP_TIME_NEW = "op time"
+  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partition & serial)"
+  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ = "op time (shuffle read)"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
   val DESCRIPTION_SORT_TIME = "sort time"
@@ -153,6 +162,9 @@ object GpuMetric extends Logging {
   val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
+  val DESCRIPTION_READ_THROTTLING_TIME = "read throttling time"
+  val DESCRIPTION_SYNC_READ_TIME = "sync read time"
+  val DESCRIPTION_ASYNC_READ_TIME = "async read time"
 
   /**
    * Determine if a GpuMetric wraps a TimingMetric or NanoTimingMetric.
@@ -193,14 +205,18 @@ object GpuMetric extends Logging {
   }
 
   def ns[T](metrics: GpuMetric*)(f: => T): T = {
-    val initedMetrics = metrics.map(m => (m, m.tryActivateTimer()))
+    ns(metrics, Seq.empty)(f)
+  }
+
+  def ns[T](metrics: Seq[GpuMetric], excludeMetrics: Seq[GpuMetric])(f: => T): T = {
+    val initedMetrics = metrics.map(m => (m, m.tryActivateTimer(excludeMetrics)))
     val start = System.nanoTime()
     try {
       f
     } finally {
       val taken = System.nanoTime() - start
       initedMetrics.foreach { case (m, isTrack) =>
-        if (isTrack) m.deactivateTimer(taken)
+        if (isTrack) m.deactivateTimer(taken, excludeMetrics)
       }
     }
   }
@@ -288,34 +304,56 @@ sealed abstract class GpuMetric extends Serializable {
   // excluding semaphore wait time
   var companionGpuMetric: Option[GpuMetric] = None
   private var semWaitTimeWhenActivated = 0L
+  private var excludeMetricsWhenActivated: Seq[Long] = Seq.empty
 
-  final def tryActivateTimer(): Boolean = {
+  def tryActivateTimer(excludeMetrics: Seq[GpuMetric]): Boolean = {
     if (!isTimerActive) {
       isTimerActive = true
       semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
+      excludeMetricsWhenActivated = excludeMetrics.map(_.value)
       true
     } else {
       false
     }
   }
 
-  final def deactivateTimer(duration: Long): Unit = {
+  def deactivateTimer(duration: Long, excludeMetrics: Seq[GpuMetric]): Unit = {
     if (isTimerActive) {
       isTimerActive = false
+
+      val totalExcludeTime = if (excludeMetrics.length == excludeMetricsWhenActivated.length) {
+        excludeMetrics.zip(excludeMetricsWhenActivated)
+          .map { case (metric, startValue) => metric.value - startValue }
+          .sum
+      } else {
+        throw new IllegalStateException(
+          s"the excludeMetrics size ${excludeMetrics.length} does not match " +
+            s"excludeMetricsWhenActivated size ${excludeMetricsWhenActivated.length}")
+      }
+
       companionGpuMetric.foreach(c =>
-        c.add(duration - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)))
+        c.add(duration
+          - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)
+          - totalExcludeTime
+        ))
       semWaitTimeWhenActivated = 0L
-      add(duration)
+      excludeMetricsWhenActivated = Seq.empty
+
+      add(duration - totalExcludeTime)
     }
   }
 
   final def ns[T](f: => T): T = {
-    if (tryActivateTimer()) {
+    ns(Seq.empty)(f)
+  }
+
+  final def ns[T](excludeMetrics: Seq[GpuMetric])(f: => T): T = {
+    if (tryActivateTimer(excludeMetrics)) {
       val start = System.nanoTime()
       try {
         f
       } finally {
-        deactivateTimer(System.nanoTime() - start)
+        deactivateTimer(System.nanoTime() - start, excludeMetrics)
       }
     } else {
       f
@@ -328,6 +366,9 @@ object NoopMetric extends GpuMetric {
   override def add(v: Long): Unit = ()
   override def set(v: Long): Unit = ()
   override def value: Long = 0
+
+  override def tryActivateTimer(excludeMetrics: Seq[GpuMetric]): Boolean = false
+  override def deactivateTimer(duration: Long, excludeMetrics: Seq[GpuMetric]): Unit = ()
 }
 
 final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsExclSemWait: Boolean = false)

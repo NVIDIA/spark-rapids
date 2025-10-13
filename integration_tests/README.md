@@ -263,7 +263,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-25.08.0-tests.jar,rapids-4-spark-integration-tests_2.12-25.08.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-25.10.0-tests.jar,rapids-4-spark-integration-tests_2.12-25.10.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -286,7 +286,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 assumes CUDA 12 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.08.0-cuda12.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.10.0-cuda12.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -457,7 +457,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 12:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.08.0-cuda12.jar,rapids-4-spark-tests_2.12-25.08.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.08.0-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.08.0-cuda12.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.10.0-cuda12.jar,rapids-4-spark-tests_2.12-25.10.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.10.0-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.10.0-cuda12.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -482,7 +482,7 @@ To run iceberg tests against aws s3tables catalog, we need to setup several thin
 1. Run `aws configure` to setup aws credentials and region.
 2. Create a s3tables [table bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-create.html), and fetch its arn
 3. Create a namespace with name `default` under the table bucket created in step 2.
-4. Add environment `ICEBERG_TEST_S3TABLES=1`
+4. Add environment `ICEBERG_TEST_REMOTE_CATALOG=1`
 5. Set spark catalog implementation s3 tables: 
    `--conf spark.sql.catalog.spark_catalog.catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog"`
 6. Set spark warehouse to table bucket arn in step 2: `--conf spark.sql.catalog.spark_catalog.warehouse=<table bucket arn>`

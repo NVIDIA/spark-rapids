@@ -39,14 +39,16 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "400"}
+{"spark": "401"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import java.math.BigInteger
 
-import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, DType, RoundMode, Scalar}
+import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{BoolUtils, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
@@ -159,7 +161,7 @@ object IntervalUtils {
     // check Inf, -Inf, NaN
     checkDoubleInfNan(doubleCv)
 
-    withResource(doubleCv.round(RoundMode.HALF_UP)) { roundedDouble =>
+    withResource(Arithmetic.round(doubleCv, RoundMode.HALF_UP)) { roundedDouble =>
       // throws exception if the result exceeds int limits
       withResource(roundedDouble.castTo(DType.INT64)) { long =>
         castLongToIntWithOverflowCheck(long)
@@ -191,7 +193,7 @@ object IntervalUtils {
     val MIN_LONG_AS_DOUBLE: Double = -9.223372036854776E18
     val MAX_LONG_AS_DOUBLE_PLUS_ONE: Double = 9.223372036854776E18
 
-    withResource(doubleCv.round(RoundMode.HALF_UP)) { z =>
+    withResource(Arithmetic.round(doubleCv, RoundMode.HALF_UP)) { z =>
       withResource(Scalar.fromDouble(MAX_LONG_AS_DOUBLE_PLUS_ONE)) { max =>
         withResource(z.greaterOrEqualTo(max)) { invalid =>
           if (BoolUtils.isAnyValidTrue(invalid)) {
@@ -322,7 +324,7 @@ object IntervalUtils {
       leftDecimal.div(q, dT)
     }
     withResource(t) { t =>
-      t.round(RoundMode.HALF_UP)
+      Arithmetic.round(t, RoundMode.HALF_UP)
     }
   }
 }

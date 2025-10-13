@@ -19,9 +19,9 @@ package org.apache.spark.sql.rapids
 import java.{lang => jl}
 import java.io.ObjectInputStream
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-
-import scala.collection.mutable
+import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{NvtxId, NvtxRegistry}
@@ -224,6 +224,9 @@ class GpuTaskMetrics extends Serializable {
   // This is used to track the max parallelism of multithreaded readers
   private val multithreadReaderMaxParallelism = new MaxLongAccumulator
 
+  // This is used to track the maximum concurrent tasks in PrioritySemaphore
+  private val maxConcurrentGpuTasks = new MaxLongAccumulator
+
   // Spill
   private val spillToHostTimeNs = new NanoSecondAccumulator
   private val spillToDiskTimeNs = new NanoSecondAccumulator
@@ -244,22 +247,23 @@ class GpuTaskMetrics extends Serializable {
 
   private var maxDiskBytesAllocated: Long = 0
 
-  def getDiskBytesAllocated: Long = GpuTaskMetrics.diskBytesAllocated
+  def getDiskBytesAllocated: Long = GpuTaskMetrics.diskBytesAllocated.get()
 
   def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
 
-  def getHostBytesAllocated: Long = GpuTaskMetrics.hostBytesAllocated
+  def getHostBytesAllocated: Long = GpuTaskMetrics.hostBytesAllocated.get()
 
   def getMaxHostBytesAllocated: Long = maxHostBytesAllocated
 
   def incHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = {
     GpuTaskMetrics.incHostBytesAllocated(bytes, isPinned)
-    maxHostBytesAllocated = maxHostBytesAllocated.max(GpuTaskMetrics.hostBytesAllocated)
+    maxHostBytesAllocated = maxHostBytesAllocated.max(GpuTaskMetrics.hostBytesAllocated.get())
     if (isPinned) {
-      maxPinnedBytesAllocated = maxPinnedBytesAllocated.max(GpuTaskMetrics.pinnedBytesAllocated)
+      maxPinnedBytesAllocated =
+        maxPinnedBytesAllocated.max(GpuTaskMetrics.pinnedBytesAllocated.get())
     } else {
       maxPageableBytesAllocated = maxPageableBytesAllocated.max(
-        GpuTaskMetrics.pageableBytesAllocated)
+        GpuTaskMetrics.pageableBytesAllocated.get())
     }
   }
 
@@ -269,7 +273,7 @@ class GpuTaskMetrics extends Serializable {
 
   def incDiskBytesAllocated(bytes: Long): Unit = {
     GpuTaskMetrics.incDiskBytesAllocated(bytes)
-    maxDiskBytesAllocated = maxDiskBytesAllocated.max(GpuTaskMetrics.diskBytesAllocated)
+    maxDiskBytesAllocated = maxDiskBytesAllocated.max(GpuTaskMetrics.diskBytesAllocated.get())
   }
 
   def decDiskBytesAllocated(bytes: Long): Unit = {
@@ -295,7 +299,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuOnGpuTasksWaitingGPUAvgCount" -> onGpuTasksInWaitingQueueAvgCount,
     "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
     "gpuMaxTaskFootprint" -> maxGpuFootprint,
-    "multithreadReaderMaxParallelism" -> multithreadReaderMaxParallelism
+    "multithreadReaderMaxParallelism" -> multithreadReaderMaxParallelism,
+    "gpuMaxConcurrentGpuTasks" -> maxConcurrentGpuTasks
   )
 
   def register(sc: SparkContext): Unit = {
@@ -427,7 +432,11 @@ class GpuTaskMetrics extends Serializable {
     onGpuTasksInWaitingQueueMaxCount.add(num)
   }
 
-  def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = synchronized {
+  def recordConcurrentGpuTasks(currentConcurrentTasks: Long): Unit = {
+    maxConcurrentGpuTasks.add(currentConcurrentTasks)
+  }
+
+  def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = {
     multithreadReaderMaxParallelism.add(parallelism)
   }
 }
@@ -436,59 +445,56 @@ class GpuTaskMetrics extends Serializable {
  * Provides task level metrics
  */
 object GpuTaskMetrics extends Logging {
-  private val taskLevelMetrics = mutable.Map[Long, GpuTaskMetrics]()
+  private val taskLevelMetrics = new ConcurrentHashMap[Long, GpuTaskMetrics]()
 
-  private var hostBytesAllocated: Long = 0
-  private var pageableBytesAllocated: Long = 0
-  private var pinnedBytesAllocated: Long = 0
-  private var diskBytesAllocated: Long = 0
+  private val hostBytesAllocated = new AtomicLong(0)
+  private val pageableBytesAllocated = new AtomicLong(0)
+  private val pinnedBytesAllocated = new AtomicLong(0)
+  private val diskBytesAllocated = new AtomicLong(0)
 
-  private def incHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = synchronized {
-    hostBytesAllocated += bytes
+  private def incHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = {
+    hostBytesAllocated.addAndGet(bytes)
     if (isPinned) {
-      pinnedBytesAllocated += bytes
+      pinnedBytesAllocated.addAndGet(bytes)
     } else {
-      pageableBytesAllocated += bytes
+      pageableBytesAllocated.addAndGet(bytes)
     }
   }
 
-  private def decHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = synchronized {
-    hostBytesAllocated -= bytes
+  private def decHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = {
+    hostBytesAllocated.addAndGet(-bytes)
     if (isPinned) {
-      pinnedBytesAllocated -= bytes
+      pinnedBytesAllocated.addAndGet(-bytes)
     } else {
-      pageableBytesAllocated -= bytes
+      pageableBytesAllocated.addAndGet(-bytes)
     }
   }
 
-  def incDiskBytesAllocated(bytes: Long): Unit = synchronized {
-    diskBytesAllocated += bytes
+  def incDiskBytesAllocated(bytes: Long): Unit = {
+    diskBytesAllocated.addAndGet(bytes)
   }
 
-  def decDiskBytesAllocated(bytes: Long): Unit = synchronized {
-    diskBytesAllocated -= bytes
+  def decDiskBytesAllocated(bytes: Long): Unit = {
+    diskBytesAllocated.addAndGet(-bytes)
   }
 
-  def registerOnTask(metrics: GpuTaskMetrics): Unit = synchronized {
+  def registerOnTask(metrics: GpuTaskMetrics): Unit = {
     val tc = TaskContext.get()
     if (tc != null) {
       val id = tc.taskAttemptId()
       // avoid double registering the task metrics...
-      if (!taskLevelMetrics.contains(id)) {
-        taskLevelMetrics.put(id, metrics)
+      if (taskLevelMetrics.putIfAbsent(id, metrics) == null) {
         onTaskCompletion(tc, tc =>
-          synchronized {
-            taskLevelMetrics.remove(tc.taskAttemptId())
-          }
+          taskLevelMetrics.remove(tc.taskAttemptId())
         )
       }
     }
   }
 
-  def get: GpuTaskMetrics = synchronized {
+  def get: GpuTaskMetrics = {
     val tc = TaskContext.get()
     val metrics = if (tc != null) {
-      taskLevelMetrics.get(tc.taskAttemptId())
+      Option(taskLevelMetrics.get(tc.taskAttemptId()))
     } else {
       None
     }

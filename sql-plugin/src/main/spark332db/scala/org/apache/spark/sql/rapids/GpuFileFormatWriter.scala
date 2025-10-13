@@ -31,6 +31,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "400"}
+{"spark": "401"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -262,6 +263,16 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
         rdd
       }
 
+      // Collect exclude metrics from the plan
+      val excludeMetrics = plan match {
+        case gpuExec: GpuExec =>
+          val currentMetric = gpuExec.getOpTimeNewMetric.toSeq
+          val childMetrics = gpuExec.getDescendantOpTimeMetrics
+          currentMetric ++ childMetrics
+        case _ =>
+          Seq.empty[GpuMetric]
+      }
+
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
@@ -277,7 +288,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
             committer,
             iterator = iter,
             concurrentOutputWriterSpec = concurrentOutputWriterSpec,
-            baseDebugOutputPath = baseDebugOutputPath)
+            baseDebugOutputPath = baseDebugOutputPath,
+            excludeMetrics = excludeMetrics)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -387,7 +399,8 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
-      baseDebugOutputPath: Option[String]): WriteTaskResult = {
+      baseDebugOutputPath: Option[String],
+      excludeMetrics: Seq[GpuMetric] = Seq.empty): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -426,23 +439,26 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
         }
       }
 
-    try {
-      Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
-        // Execute the task to write rows out and commit the task.
-        dataWriter.writeWithIterator(iterator)
-        dataWriter.commit()
-      })(catchBlock = {
-        // If there is an error, abort the task
-        dataWriter.abort()
-        logError(s"Job $jobId aborted.")
-      }, finallyBlock = {
-        dataWriter.close()
-      })
-    } catch {
-      case e: FetchFailedException =>
-        throw e
-      case t: Throwable =>
-        throw new SparkException("Task failed while writing rows.", t)
+    // Use GpuMetric.ns to automatically collect execution time
+    dataWriter.operatorTimeMetric.ns(excludeMetrics) {
+      try {
+        Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
+          // Execute the task to write rows out and commit the task.
+          dataWriter.writeWithIterator(iterator)
+          dataWriter.commit()
+        })(catchBlock = {
+          // If there is an error, abort the task
+          dataWriter.abort()
+          logError(s"Job $jobId aborted.")
+        }, finallyBlock = {
+          dataWriter.close()
+        })
+      } catch {
+        case e: FetchFailedException =>
+          throw e
+        case t: Throwable =>
+          throw new SparkException("Task failed while writing rows.", t)
+      }
     }
   }
 

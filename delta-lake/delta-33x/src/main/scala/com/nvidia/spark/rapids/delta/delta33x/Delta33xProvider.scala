@@ -17,27 +17,30 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.{DeltaIOProvider, GpuDeltaDataSource, RapidsDeltaUtils}
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.fs.Path
-import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
-import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
+import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
 import org.apache.spark.sql.delta.catalog.{DeltaCatalog, DeltaTableV2}
-import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
+import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
+import org.apache.spark.sql.delta.metric.IncrementMetric
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils.PROP_CLUSTERING_COLUMNS
-import org.apache.spark.sql.delta.skipping.clustering.temp.ClusterByTransform
-import org.apache.spark.sql.delta.sources.DeltaDataSource
+import org.apache.spark.sql.delta.sources.{DeltaDataSource, DeltaSQLConf}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object Delta33xProvider extends DeltaIOProvider {
 
@@ -57,22 +60,8 @@ object Delta33xProvider extends DeltaIOProvider {
     write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
   }
 
-  override def tagForGpu(cpuExec: AtomicCreateTableAsSelectExec,
-      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
-  }
-
-  override def tagForGpu(cpuExec: AtomicReplaceTableAsSelectExec,
-      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.partitioning.exists(_.isInstanceOf[ClusterByTransform])) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
+  override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
+    super.isSupportedFormat(format) || format == classOf[GpuDelta33xParquetFileFormat]
   }
 
   override def tagForGpu(
@@ -83,23 +72,10 @@ object Delta33xProvider extends DeltaIOProvider {
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
 
-    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-    }
-
     cpuExec.table match {
       case _: DeltaTableV2 => super.tagForGpu(cpuExec, meta)
       case _: GpuDeltaCatalog#GpuStagedDeltaTableV2 =>
       case _ => meta.willNotWorkOnGpu(s"${cpuExec.table} table class not supported on GPU")
-    }
-  }
-
-  override def tagForGpu(cpuExec: OverwriteByExpressionExecV1,
-      meta: OverwriteByExpressionExecV1Meta): Unit = {
-    super.tagForGpu(cpuExec, meta)
-
-    if (cpuExec.table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-      meta.willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
     }
   }
 
@@ -114,21 +90,60 @@ object Delta33xProvider extends DeltaIOProvider {
           (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r)),
       GpuOverrides.runnableCmd[MergeIntoCommand](
           "Merge of a source query/table into a Delta Lake table",
-          (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
+          (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r)),
+      GpuOverrides.runnableCmd[OptimizeTableCommand](
+          "Optimize a Delta Lake table",
+          (a, conf, p, r) => new OptimizeTableCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
+
+  case class GpuIncrementMetricMeta(
+    cpuInc: IncrementMetric,
+    override val conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) {
+    override def convertToGpu(): GpuExpression = {
+      val gpuChild = childExprs.head.convertToGpu()
+      GpuIncrementMetric(cpuInc, gpuChild)
+    }
+  }
+
+  case class GpuIncrementMetric(cpuInc: IncrementMetric, override val child: Expression)
+    extends ShimUnaryExpression with GpuExpression {
+
+    override def dataType: DataType = child.dataType
+    override lazy val deterministic: Boolean = cpuInc.deterministic
+
+    // metric update for a particular branch
+    override def hasSideEffects: Boolean = true
+
+    override def prettyName: String = "gpu_" + cpuInc.prettyName
+
+    override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+      cpuInc.metric.add(batch.numRows())
+      child.columnarEval(batch)
+    }
+  }
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[IncrementMetric](
+      "IncrementMetric",
+      ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.all, TypeSig.all),
+      GpuIncrementMetricMeta
+    )
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
+      val session = meta.wrapped.session
+      val useMetadataRowIndex =
+        session.sessionState.conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
       val requiredSchema = meta.wrapped.requiredSchema
-      if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
-      }
-      if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported")
+      val isRowDeletedCol =  requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
+      if (useMetadataRowIndex && isRowDeletedCol) {
+        meta.willNotWorkOnGpu("we don't support generating metadata row index for " +
+          s"${meta.wrapped.getClass.getSimpleName}")
       }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
@@ -207,11 +222,6 @@ class DeltaCreatableRelationProviderMeta(
       val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
       RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
         saveCmd.options, SparkSession.active)
-
-      val table = source.getTable(saveCmd.schema, Array.empty, saveCmd.options.asJava)
-      if (table.properties().containsKey(PROP_CLUSTERING_COLUMNS)) {
-        willNotWorkOnGpu("Delta Lake liquid clustering not supported on gpu yet.")
-      }
     } else {
       willNotWorkOnGpu("no path specified for Delta Lake table")
     }

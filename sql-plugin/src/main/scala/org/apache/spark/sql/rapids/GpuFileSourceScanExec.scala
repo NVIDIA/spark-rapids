@@ -389,6 +389,7 @@ case class GpuFileSourceScanExec(
   }
 
   override lazy val allMetrics = Map(
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
     "numFiles" -> createMetric(ESSENTIAL_LEVEL, "number of files read"),
@@ -417,6 +418,16 @@ case class GpuFileSourceScanExec(
           // Track the actual data size read from the file system, excluding data being pruned
           // by meta-level pruning.
           bf += "readBufferSize" -> createSizeMetric(DEBUG_LEVEL, "size of read buffer")
+        }
+        if (ExternalSource.isSupportedFormat(relation.fileFormat.getClass)) {
+          // This metric is used to post the time spent in generating the `skip_row` column
+          // in Delta Lake 3.3.0+
+          bf += "isRowDeletedColumnGenTime" ->
+            createNanoTimingMetric(ESSENTIAL_LEVEL, "time skiprow gen")
+          // This metric is used to post the time spent in generating the `row_index` column
+          // in Delta Lake 3.3.0+
+          bf += "rowIndexColumnGenTime" ->
+              createNanoTimingMetric(ESSENTIAL_LEVEL, "time row index gen")
         }
         bf.result()
       case _ =>
