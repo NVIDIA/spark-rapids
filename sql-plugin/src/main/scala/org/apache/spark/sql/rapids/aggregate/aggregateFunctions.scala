@@ -2204,7 +2204,7 @@ class CudfArgMax() extends CudfArgMinMaxBase() {
 }
 
 abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
-    extends GpuAggregateFunction with Serializable {
+  extends GpuAggregateFunction with Serializable {
 
   // Must be an instance of either CudfArgMin or CudfArgMax.
   protected val cudfArgMinMaxAggregate: CudfAggregate
@@ -2241,7 +2241,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 }
 
 case class GpuMaxBy(valueExpr: Expression, orderingExpr: Expression)
-    extends GpuMaxMinByBase(valueExpr, orderingExpr) {
+  extends GpuMaxMinByBase(valueExpr, orderingExpr) {
 
   override def prettyName: String = "max_by"
 
@@ -2249,7 +2249,7 @@ case class GpuMaxBy(valueExpr: Expression, orderingExpr: Expression)
 }
 
 case class GpuMinBy(valueExpr: Expression, orderingExpr: Expression)
-    extends GpuMaxMinByBase(valueExpr, orderingExpr) {
+  extends GpuMaxMinByBase(valueExpr, orderingExpr) {
 
   override def prettyName: String = "min_by"
 
