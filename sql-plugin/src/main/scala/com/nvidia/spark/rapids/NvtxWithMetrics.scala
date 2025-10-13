@@ -31,17 +31,22 @@ object NvtxWithMetrics {
  *  NvtxRange with option to pass one or more nano timing metric(s) that are updated upon close
  *  by the amount of time spent in the range
  */
-class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
+class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: Seq[GpuMetric],
+    excludeMetric: Seq[GpuMetric] = Seq.empty)
   extends NvtxRange(name, color) {
 
-  val needTracks = metrics.map(_.tryActivateTimer())
+  // add a convenient constructor
+  def this(name: String, color: NvtxColor, metrics: GpuMetric*) =
+    this(name, color, metrics.toSeq)
+
+  val needTracks = metrics.map(_.tryActivateTimer(excludeMetric))
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
     metrics.toSeq.zip(needTracks).foreach { pair =>
       if (pair._2) {
-        pair._1.deactivateTimer(time)
+        pair._1.deactivateTimer(time, excludeMetric)
       }
     }
     super.close()
@@ -71,15 +76,20 @@ object NvtxIdWithMetrics {
   }
 }
 
-class MetricRange(val metrics: GpuMetric*) extends AutoCloseable {
-  val needTracks = metrics.map(_.tryActivateTimer())
+class MetricRange(val metrics: Seq[GpuMetric], val excludeMetric: Seq[GpuMetric] = Seq.empty)
+  extends AutoCloseable {
+
+  // add a convenient constructor
+  def this(metrics: GpuMetric*) = this(metrics.toSeq)
+
+  val needTracks = metrics.map(_.tryActivateTimer(excludeMetric))
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
     metrics.toSeq.zip(needTracks).foreach { pair =>
       if (pair._2) {
-        pair._1.deactivateTimer(time)
+        pair._1.deactivateTimer(time, excludeMetric)
       }
     }
   }

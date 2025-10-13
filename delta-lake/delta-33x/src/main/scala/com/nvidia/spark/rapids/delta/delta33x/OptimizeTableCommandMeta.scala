@@ -23,7 +23,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.commands.{DeletionVectorUtils, OptimizeTableCommand}
 import org.apache.spark.sql.delta.commands.DeltaCommand
 import org.apache.spark.sql.delta.rapids.delta33x.GpuOptimizeTableCommand
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.command.RunnableCommand
 
@@ -52,11 +51,6 @@ class OptimizeTableCommandMeta(
     // Z-Order or Clustered tables unsupported
     if (cmd.zOrderBy.nonEmpty) {
       willNotWorkOnGpu("Z-Order optimize is not supported on GPU")
-    }
-    val isClustered = ClusteredTableUtils.getClusterBySpecOptional(
-      table.deltaLog.unsafeVolatileSnapshot).isDefined
-    if (isClustered) {
-      willNotWorkOnGpu("Liquid clustering is not supported on GPU")
     }
 
     // Ensure write path generally OK

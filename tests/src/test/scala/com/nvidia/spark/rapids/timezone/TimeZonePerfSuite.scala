@@ -68,13 +68,19 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
    */
   override def beforeAll(): Unit = {
     super.beforeAll()
-    withCpuSparkSession(
-      spark => createDF(spark).write.mode("overwrite").parquet(path))
+    if (enablePerfTest) {
+      // create a parquet file for testing
+      withCpuSparkSession(
+        spark => createDF(spark).write.mode("overwrite").parquet(path))
+    }
   }
 
   override def afterAll(): Unit = {
     super.afterAll()
-    FileUtils.deleteRecursively(new File(path))
+    if (enablePerfTest) {
+      // delete the parquet file
+      FileUtils.deleteRecursively(new File(path))
+    }
   }
 
   val year1980 = Instant.parse("1980-01-01T00:00:00Z").getEpochSecond * 1000L * 1000L

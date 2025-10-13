@@ -76,6 +76,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.delta.lowShuffleMerge.enabled"></a>spark.rapids.sql.delta.lowShuffleMerge.enabled|Option to turn on the low shuffle merge for Delta Lake. Currently there are some limitations for this feature: 1. We only support Databricks Runtime 13.3 and Deltalake 2.4. 2. The file scan mode must be set to PERFILE 3. The deletion vector size must be smaller than spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold |false|Runtime
 <a name="sql.detectDeltaCheckpointQueries"></a>spark.rapids.sql.detectDeltaCheckpointQueries|Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime
 <a name="sql.detectDeltaLogQueries"></a>spark.rapids.sql.detectDeltaLogQueries|Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime
+<a name="sql.exec.opTimeTrackingRDD.enabled"></a>spark.rapids.sql.exec.opTimeTrackingRDD.enabled|Enable OpTimeTrackingRDD for all GPU operations. When true, OpTimeTrackingRDD wrappers will be created to track operation time. When false, can improve performance by avoiding overhead of operation time tracking.|true|Runtime
 <a name="sql.fast.sample"></a>spark.rapids.sql.fast.sample|Option to turn on fast sample. If enable it is inconsistent with CPU sample because of GPU sample algorithm is inconsistent with CPU.|false|Runtime
 <a name="sql.format.avro.enabled"></a>spark.rapids.sql.format.avro.enabled|When set to true enables all avro input and output acceleration. (only input is currently supported anyways)|false|Runtime
 <a name="sql.format.avro.multiThreadedRead.maxNumFilesParallel"></a>spark.rapids.sql.format.avro.multiThreadedRead.maxNumFilesParallel|A limit on the maximum number of files per task processed in parallel on the CPU side before the file is sent to the GPU. This affects the amount of host memory used when reading the files in parallel. Used with MULTITHREADED reader, see spark.rapids.sql.format.avro.reader.type.|2147483647|Runtime
@@ -93,6 +94,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration. Array/Struct/Map columns are unsupported for write acceleration.|true|Runtime
 <a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to false disables all Iceberg acceleration|true|Runtime
 <a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to false disables Iceberg input acceleration|true|Runtime
+<a name="sql.format.iceberg.write.enabled"></a>spark.rapids.sql.format.iceberg.write.enabled|When set to false disables Iceberg write acceleration|false|Runtime
 <a name="sql.format.json.enabled"></a>spark.rapids.sql.format.json.enabled|When set to true enables all json input and output acceleration. (only input is currently supported anyways)|true|Runtime
 <a name="sql.format.json.read.enabled"></a>spark.rapids.sql.format.json.read.enabled|When set to true enables json input acceleration|true|Runtime
 <a name="sql.format.orc.enabled"></a>spark.rapids.sql.format.orc.enabled|When set to false disables all orc input and output acceleration|true|Runtime
@@ -430,6 +432,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Sum"></a>spark.rapids.sql.expression.Sum|`sum`|Sum aggregate operator|true|None|
 <a name="sql.expression.VariancePop"></a>spark.rapids.sql.expression.VariancePop|`var_pop`|Aggregation computing population variance|true|None|
 <a name="sql.expression.VarianceSamp"></a>spark.rapids.sql.expression.VarianceSamp|`var_samp`, `variance`|Aggregation computing sample variance|true|None|
+<a name="sql.expression.StaticInvoke"></a>spark.rapids.sql.expression.StaticInvoke| |StaticInvoke|true|The supported types are not deterministic since it's a dynamic expression|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero| |Normalize NaN and zero|true|None|
 <a name="sql.expression.ScalarSubquery"></a>spark.rapids.sql.expression.ScalarSubquery| |Subquery that will return only one row and one column|true|None|
 <a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance|true|None|

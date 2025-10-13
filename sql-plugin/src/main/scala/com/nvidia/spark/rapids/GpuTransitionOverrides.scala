@@ -174,6 +174,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // We wrap custom shuffle readers with a coalesce batches operator here.
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
+    // Leave TableCacheQueryStage wrapper intact and let shims decide behavior.
+    case p if SparkShimImpl.getTableCacheNonQueryStagePlan(p).nonEmpty =>
+      p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
+
     case c2re: ColumnarToRowExec if
         SparkShimImpl.checkCToRWithExecBroadcastAQECoalPart(c2re, parent) =>
       val shuffle = SparkShimImpl.getShuffleFromCToRWithExecBroadcastAQECoalPart(c2re)
@@ -199,6 +203,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
+
+    // If Spark wrapped a TableCache query stage with a CPU ColumnarToRow, replace it with
+    // a GPU ColumnarToRow to avoid CPU accessing GPU vectors.
+    case ColumnarToRowExec(e) if SparkShimImpl.getTableCacheNonQueryStagePlan(e).nonEmpty =>
+      GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       // In Spark an AdaptiveSparkPlanExec when doing a broadcast expects to only ever see
@@ -868,7 +877,8 @@ object GpuTransitionOverrides {
         } else {
           sqse.plan
         }
-      case _ => plan
+      case _ =>
+        SparkShimImpl.getTableCacheNonQueryStagePlan(plan).getOrElse(plan)
     }
   }
 
