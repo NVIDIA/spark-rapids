@@ -60,7 +60,7 @@ class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: Seq[GpuMetric
 object NvtxIdWithMetrics {
 
   def apply[V](nvtxId: NvtxId, metrics: GpuMetric*)(block: => V): V = {
-    val needTracks = metrics.map(_.tryActivateTimer())
+    val needTracks = metrics.map(_.tryActivateTimer(Seq.empty))
     val start = System.nanoTime()
 
     try {
@@ -69,7 +69,7 @@ object NvtxIdWithMetrics {
       val time = System.nanoTime() - start
       metrics.toSeq.zip(needTracks).foreach { pair =>
         if (pair._2) {
-          pair._1.deactivateTimer(time)
+          pair._1.deactivateTimer(time, Seq.empty)
         }
       }
     }

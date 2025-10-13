@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 
 import scala.collection.immutable.TreeMap
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.{SparkContext, TaskContext}
