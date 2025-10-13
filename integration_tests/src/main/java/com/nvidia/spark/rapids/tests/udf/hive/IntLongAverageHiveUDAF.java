@@ -165,9 +165,11 @@ public class IntLongAverageHiveUDAF extends AbstractGenericUDAFResolver implemen
       if (partial != null) {
         AverageAggBuf buf = (AverageAggBuf) aggBuffer;
         long count = countFieldOI.get(tempOI.getStructFieldData(partial, countField));
-        long sum = sumFieldOI.get(tempOI.getStructFieldData(partial, sumField));
         buf.count += count;
-        buf.sum += sum;
+        Object sumValue = tempOI.getStructFieldData(partial, sumField);
+        if (sumValue != null) {
+          buf.sum += sumFieldOI.get(sumValue);
+        }
       }
     }
 
