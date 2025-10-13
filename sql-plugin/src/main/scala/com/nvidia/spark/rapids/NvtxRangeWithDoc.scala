@@ -134,6 +134,34 @@ object NvtxRegistry {
   val GET_MAP_SIZES_BY_EXEC_ID: NvtxId = NvtxId("getMapSizesByExecId", NvtxColor.CYAN,
     "Call to internal Spark API for retrieving size and location of shuffle map output blocks")
 
+  val GPU_COALESCE_BATCHES_COLLECT: NvtxId = NvtxId("GpuCoalesceBatches: collect", NvtxColor.BLUE,
+    "GPU combining of small batches post-kernel processing")
+
+  val BUILD_BATCH_COLLECT: NvtxId = NvtxId("build batch: collect", NvtxColor.BLUE,
+    "Perform a join where the build side fits in a single GPU batch")
+
+  val GPU_COALESCE_ITERATOR: NvtxId = NvtxId("AbstractGpuCoalesceIterator", NvtxColor.BLUE,
+    "Default range for a code path in the AbstractGpuCoalesceIterator for an op which " +
+      "is not explicitly documented in its own range")
+
+  val SHUFFLED_JOIN_STREAM: NvtxId = NvtxId("shuffled join stream", NvtxColor.BLUE,
+    "GpuShuffledHashJoinExec op is preparing build batches for join")
+
+  val HASH_JOIN_BUILD: NvtxId = NvtxId("hash join build", NvtxColor.BLUE,
+    "IO time on the build side data for the following join")
+
+  val PROBE_LEFT: NvtxId = NvtxId("probe left", NvtxColor.BLUE,
+    "Probing the left side of a join input iterator to get the data size for preparing the join")
+
+  val PROBE_RIGHT: NvtxId = NvtxId("probe right", NvtxColor.BLUE,
+    "Probing the right side of a join input iterator to get the data size for preparing the join")
+
+  val FETCH_JOIN_STREAM: NvtxId = NvtxId("fetch join stream", NvtxColor.BLUE,
+    "IO time on the stream side data for the following join")
+
+  val BROADCAST_JOIN_STREAM: NvtxId = NvtxId("broadcast join stream", NvtxColor.BLUE,
+    "time it takes to materialize a broadcast batch on the host")
+
   val GPU_KUDO_SERIALIZE: NvtxId = NvtxId("gpuKudoSerialize", NvtxColor.YELLOW,
     "Perform kudo serialization on the gpu")
 
@@ -158,6 +186,15 @@ object NvtxRegistry {
     register(QUEUE_FETCHED)
     register(RAPIDS_CACHING_WRITER_WRITE)
     register(GET_MAP_SIZES_BY_EXEC_ID)
+    register(GPU_COALESCE_BATCHES_COLLECT)
+    register(BUILD_BATCH_COLLECT)
+    register(GPU_COALESCE_ITERATOR)
+    register(SHUFFLED_JOIN_STREAM)
+    register(HASH_JOIN_BUILD)
+    register(PROBE_LEFT)
+    register(PROBE_RIGHT)
+    register(FETCH_JOIN_STREAM)
+    register(BROADCAST_JOIN_STREAM)
     register(GPU_KUDO_SERIALIZE)
     register(GPU_KUDO_COPY_TO_HOST)
     register(GPU_KUDO_SLICE_BUFFERS)

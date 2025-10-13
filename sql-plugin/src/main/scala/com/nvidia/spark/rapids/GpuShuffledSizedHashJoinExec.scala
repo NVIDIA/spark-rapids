@@ -672,8 +672,10 @@ object GpuShuffledSymmetricHashJoinExec {
       val rightTime = new LocalGpuMetric
       val buildTime = metrics(BUILD_TIME)
       val streamTime = metrics(STREAM_TIME)
-      val leftIter = new CollectTimeIterator("probe left", setupForProbe(rawLeftIter), leftTime)
-      val rightIter = new CollectTimeIterator("probe right", setupForProbe(rawRightIter), rightTime)
+      val leftIter = new CollectTimeIterator(NvtxRegistry.PROBE_LEFT,
+        setupForProbe(rawLeftIter), leftTime)
+      val rightIter = new CollectTimeIterator(NvtxRegistry.PROBE_RIGHT,
+        setupForProbe(rawRightIter), rightTime)
       closeOnExcept(mutable.Queue.empty[T]) { leftQueue =>
         closeOnExcept(mutable.Queue.empty[T]) { rightQueue =>
           var leftSize = 0L
@@ -723,7 +725,7 @@ object GpuShuffledSymmetricHashJoinExec {
           } else {
             baseBuildIter
           }
-          val streamIter = new CollectTimeIterator("fetch join stream",
+          val streamIter = new CollectTimeIterator(NvtxRegistry.FETCH_JOIN_STREAM,
             setupForJoin(streamQueue, rawStreamIter, exprs.streamTypes, gpuBatchSizeBytes, metrics),
             streamTime)
           JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
