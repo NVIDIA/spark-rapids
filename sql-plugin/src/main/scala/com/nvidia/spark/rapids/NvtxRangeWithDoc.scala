@@ -148,7 +148,7 @@ object NvtxRegistry {
     "GpuShuffledHashJoinExec op is preparing build batches for join")
 
   val HASH_JOIN_BUILD: NvtxId = NvtxId("hash join build", NvtxColor.BLUE,
-    "Return multiple batches as the build side data for the following sub-partitioning join")
+    "IO time on the build side data for the following sub-partitioning join")
 
   val PROBE_LEFT: NvtxId = NvtxId("probe left", NvtxColor.BLUE,
     "Probing the left side of a join input iterator to get the data size for preparing the join")
@@ -157,12 +157,11 @@ object NvtxRegistry {
     "Probing the right side of a join input iterator to get the data size for preparing the join")
 
   val FETCH_JOIN_STREAM: NvtxId = NvtxId("fetch join stream", NvtxColor.BLUE,
-    "stream iterator time for GpuShuffleSizeHashJoinExec")
+    "IO time on the stream side data for the following sub-partitioning join")
 
   val BROADCAST_JOIN_STREAM: NvtxId = NvtxId("broadcast join stream", NvtxColor.BLUE,
-    "GpuBroadcastHashJoinExec.getBroadcastBuiltBatchAndStreamIter -  Gets the ColumnarBatch for " +
-      "the build side and the stream iterator by acquiring the GPU only after first stream batch " +
-      "has been streamed to GPU.")
+    "time it takes to materialize a broadcast batch on the host")
+
   val GPU_KUDO_SERIALIZE: NvtxId = NvtxId("gpuKudoSerialize", NvtxColor.YELLOW,
     "Perform kudo serialization on the gpu")
 
