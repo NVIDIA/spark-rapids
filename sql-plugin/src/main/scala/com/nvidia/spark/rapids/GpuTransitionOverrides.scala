@@ -627,6 +627,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case bridge: GpuCpuBridgeExpression =>
         // For bridge expressions, validate the CPU expressions inside
         assertBridgeExpressionsAllowed(bridge, conf)
+      case _: BoundReference | _: Literal =>
+          // These are always allowed, and ignored
       case _: GpuExpression =>
         // Regular GPU expressions are allowed
       case _ =>
