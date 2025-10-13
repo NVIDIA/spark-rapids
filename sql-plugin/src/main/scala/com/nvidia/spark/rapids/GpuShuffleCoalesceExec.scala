@@ -609,6 +609,7 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       bufferNextBatch()
     }
 
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     withResource(new NvtxRange("concatTablesInGpu", NvtxColor.ORANGE)) { _ =>
       concatenateTablesInGpu()
     }
@@ -733,7 +734,6 @@ class GpuGpuShuffleCoalesceIterator(iter: Iterator[ColumnarBatch],
       throw new NoSuchElementException("No more columnar batches")
     }
     withResource(new NvtxRange("GPU Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
       GpuMetric.ns(opTimeMetric) {
         val batch = iter.next()
         outputBatchesMetric += 1
