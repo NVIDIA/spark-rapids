@@ -22,7 +22,7 @@ Name | Description
 gpuKudoSerialize|Perform kudo serialization on the gpu
 getMapSizesByExecId|Call to internal Spark API for retrieving size and location of shuffle map output blocks
 probe right|Probing the right side of a join input iterator to get the data size for preparing the join
-fetch join stream|IO time on the stream side data for the following sub-partitioning join
+fetch join stream|IO time on the stream side data for the following join
 shuffled join stream|GpuShuffledHashJoinExec op is preparing build batches for join
 Acquire GPU|Time waiting for GPU semaphore to be acquired
 Release GPU|Releasing the GPU semaphore
@@ -37,7 +37,7 @@ AbstractGpuCoalesceIterator|Default range for a code path in the AbstractGpuCoal
 ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
 ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
 gpuKudoCopyToHost|copy gpu kudo serialized outputs back to the host
-hash join build|IO time on the build side data for the following sub-partitioning join
+hash join build|IO time on the build side data for the following join
 probe left|Probing the left side of a join input iterator to get the data size for preparing the join
 build batch: collect|Perform a join where the build side fits in a single GPU batch
 BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
