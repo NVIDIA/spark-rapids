@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.fileio.iceberg;
 
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
+import com.nvidia.spark.rapids.jni.fileio.RapidsOutputFile;
 import org.apache.iceberg.io.FileIO;
 
 import java.io.IOException;
@@ -47,5 +48,10 @@ public class IcebergFileIO implements RapidsFileIO {
   @Override
   public IcebergInputFile newInputFile(String path) throws IOException {
     return new IcebergInputFile(delegate.newInputFile(path));
+  }
+
+  @Override
+  public IcebergOutputFile newOutputFile(String path) throws IOException {
+    return new IcebergOutputFile(delegate.newOutputFile(path));
   }
 }

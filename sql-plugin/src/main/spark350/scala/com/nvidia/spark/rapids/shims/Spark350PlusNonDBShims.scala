@@ -169,14 +169,6 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
     super.getExecs ++ shimExecs
   }
 
-  override def handleTableCacheInOptimizeAdaptiveTransitions(plan: SparkPlan,
-      parent: Option[SparkPlan]): Option[SparkPlan] = {
-    plan match {
-      case tcqs: TableCacheQueryStageExec => Some(tcqs)
-      case _ => None
-    }
-  }
-
   override def getTableCacheNonQueryStagePlan(plan: SparkPlan): Option[SparkPlan] = {
     plan match {
       case tcqs: TableCacheQueryStageExec => Some(tcqs.plan)

@@ -22,10 +22,9 @@ import scala.util.{Failure, Success}
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
-import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.Job
-import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
 import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
@@ -96,7 +95,6 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       val tmpJob  = Job.getInstance(hadoopConf)
       tmpJob.setOutputKeyClass(classOf[Void])
       tmpJob.setOutputValueClass(classOf[InternalRow])
-      FileOutputFormat.setOutputPath(tmpJob, new Path(table.location()))
       tmpJob
     }
 
@@ -202,6 +200,8 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
   val hadoopConf: SerializableConfiguration
 ) extends DataWriterFactory {
 
+  private lazy val fileIO: IcebergFileIO = new IcebergFileIO(tableBroadcast.value.io())
+
   override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] = {
     val table = tableBroadcast.value
     val spec = table.specs().get(outputSpecId)
@@ -221,7 +221,8 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
       format,
       outputWriterFactory,
       statsTracker.newTaskInstance(),
-      hadoopConf)
+      hadoopConf,
+      fileIO)
 
     if (spec.isUnpartitioned) {
       new GpuUnpartitionedDataWriter(writerFactory, outputFileFactory, io, spec, targetFileSize)

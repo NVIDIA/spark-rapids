@@ -421,3 +421,30 @@ def test_persist_with_groupby_join_version_specific(enable_vectorized_conf):
         return ee.join(minNbrs1, "src")
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=enable_vectorized_conf)
+
+@ignore_order(local=True)
+# Ensure base allow list is a tuple to satisfy pytest hook concatenation
+@allow_non_gpu("")
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@allow_non_gpu_conditional(is_spark_350_or_351(), "InMemoryTableScanExec")
+def test_cached_groupby_sum_version_specific(enable_vectorized_conf):
+    """
+    Validate aggregation on a cached query works without errors across Spark versions.
+    Expected behavior:
+    - Spark 3.5.0-3.5.1: InMemoryTableScan falls back to CPU by default
+    - Spark 3.5.2+: InMemoryTableScan works on GPU
+    """
+
+    def do_it(spark):
+        spark.sql(
+            """
+            SELECT id, value FROM VALUES (1, 10.0), (2, 20.0) AS t(id, value)
+            """).createOrReplaceTempView("t_simple")
+
+        df = spark.sql("""SELECT SUM(value) AS s FROM t_simple GROUP BY id""").cache()
+
+        # Populate the cache
+        df.count()
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=enable_vectorized_conf)
