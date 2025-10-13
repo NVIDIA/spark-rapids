@@ -363,7 +363,7 @@ def test_aqe_join_and_agg_single_value():
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(test_query), conf=_adaptive_conf)
 
 # this should be fixed by https://github.com/NVIDIA/spark-rapids/issues/11120
-aqe_join_with_dpp_fallback=["FilterExec", "InSubqueryExec", "BoundReference"] if (is_databricks_runtime() or is_before_spark_330()) else []
+aqe_join_with_dpp_fallback=["FilterExec", "InSubqueryExec"] if (is_databricks_runtime() or is_before_spark_330()) else []
 if is_databricks_version_or_later(14, 3):
     aqe_join_with_dpp_fallback.append("CollectLimitExec")
 

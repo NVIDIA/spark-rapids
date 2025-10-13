@@ -33,8 +33,6 @@ delta_meta_allow = [
     "SerializeFromObjectExec",
     "SortExec",
     "Add",
-    "BoundReference",
-    "Literal",
     "ScalaUDF",
     "And",
     "Subtract",

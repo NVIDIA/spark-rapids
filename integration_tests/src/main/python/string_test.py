@@ -104,7 +104,7 @@ def test_substring_index(data_gen,delim):
                 f.substring_index(f.col('a'), delim, -4)))
 
 
-@allow_non_gpu('ProjectExec', 'SubstringIndex', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'SubstringIndex')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('([ABC]{0,3}_?){0,7}')], ids=idfn)
 def test_unsupported_fallback_substring_index(data_gen):
     delim_gen = StringGen(pattern="_")
@@ -138,7 +138,7 @@ def test_lpad():
                 'LPAD(a, -1, "G")'))
 
 
-@allow_non_gpu('ProjectExec', 'StringLPad', 'BoundReference', 'Literal')
+@allow_non_gpu('ProjectExec', 'StringLPad')
 def test_unsupported_fallback_lpad():
     gen = mk_str_gen('.{0,5}')
     pad_gen = StringGen(pattern="G")
@@ -171,7 +171,7 @@ def test_rpad():
                 'RPAD(a, -1, "G")'))
 
 
-@allow_non_gpu('ProjectExec', 'StringRPad', 'BoundReference', 'Literal')
+@allow_non_gpu('ProjectExec', 'StringRPad')
 def test_unsupported_fallback_rpad():
     gen = mk_str_gen('.{0,5}')
     pad_gen = StringGen(pattern="G")
@@ -215,7 +215,7 @@ def test_locate():
                 'locate("_", a, NULL)'))
 
 
-@allow_non_gpu('ProjectExec', 'StringLocate', 'BoundReference', 'Literal')
+@allow_non_gpu('ProjectExec', 'StringLocate')
 def test_unsupported_fallback_locate():
     gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
     pos_gen = IntegerGen()
@@ -258,7 +258,7 @@ def test_instr():
                 'instr(NULL, NULL)'))
 
 
-@allow_non_gpu('ProjectExec', 'StringInstr', 'BoundReference', 'Literal')
+@allow_non_gpu('ProjectExec', 'StringInstr')
 def test_unsupported_fallback_instr():
     gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
 
@@ -282,7 +282,7 @@ def test_contains():
                 f.col('a').contains(''),
                 f.col('a').contains(None)))
 
-@allow_non_gpu('ProjectExec', 'Contains', 'BoundReference', 'Literal')
+@allow_non_gpu('ProjectExec', 'Contains')
 def test_unsupported_fallback_contains():
     gen = StringGen(pattern='[a-z]')
     def assert_gpu_did_fallback(op):
@@ -339,7 +339,7 @@ def test_startswith():
                 f.col('a').startswith(None),
                 f.col('a').startswith('A\ud720')))
 
-@allow_non_gpu('ProjectExec', 'StartsWith', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'StartsWith')
 def test_unsupported_fallback_startswith():
     gen = StringGen(pattern='[a-z]')
 
@@ -368,7 +368,7 @@ def test_endswith():
                 f.col('a').endswith('A\ud720')))
 
 
-@allow_non_gpu('ProjectExec', 'EndsWith', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'EndsWith')
 def test_unsupported_fallback_endswith():
     gen = StringGen(pattern='[a-z]')
 
@@ -457,7 +457,7 @@ def test_concat_ws_sql_col_sep():
 
 @pytest.mark.skipif(is_databricks_runtime(),
     reason='Databricks optimizes out concat_ws call in this case')
-@allow_non_gpu('ProjectExec', 'Alias', 'ConcatWs', 'BoundReference')
+@allow_non_gpu('ProjectExec', 'Alias', 'ConcatWs')
 def test_concat_ws_sql_col_sep_only_sep_specified():
     gen = StringGen(nullable=True)
     sep = StringGen('[-,*,+,!]', nullable=True)
@@ -642,7 +642,7 @@ def test_replace():
                 'REPLACE(a, "T", "")'))
 
 
-@allow_non_gpu('ProjectExec', 'StringReplace', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'StringReplace')
 def test_unsupported_fallback_replace():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     def assert_gpu_did_fallback(sql_text):
@@ -673,7 +673,7 @@ def test_translate():
                 'translate("AaBbCc", "abc", "1")'))
 
 @incompat
-@allow_non_gpu('ProjectExec', 'StringTranslate', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'StringTranslate')
 def test_unsupported_fallback_translate():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     def assert_gpu_did_fallback(sql_text):
@@ -782,7 +782,7 @@ def test_like():
                 f.col('a').like('_?|}{_%'),
                 f.col('a').like('%a{3}%')))
 
-@allow_non_gpu('ProjectExec', 'Like', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'Like')
 def test_unsupported_fallback_like():
     gen = StringGen('[a-z]')
     def assert_gpu_did_fallback(sql_text):
@@ -794,7 +794,7 @@ def test_unsupported_fallback_like():
     assert_gpu_did_fallback("a like a")
 
 
-@allow_non_gpu('ProjectExec', 'RLike', 'BoundReference', 'Literal')
+@allow_non_gpu('ProjectExec', 'RLike')
 def test_unsupported_fallback_rlike():
     gen = StringGen('\/lit\/')
 

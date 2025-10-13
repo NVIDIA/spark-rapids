@@ -76,7 +76,7 @@ def test_xxhash64_8_depth():
         lambda spark: unary_op_df(spark, gen_8_depth).selectExpr("a", "xxhash64(a)"))
 
 
-@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
+@allow_non_gpu("ProjectExec", "XxHash64")
 def test_xxhash64_fallback_exceeds_stack_size_array_of_structure():
     gen_9_depth = (
         ArrayGen(  # depth += 1
@@ -97,7 +97,7 @@ def test_xxhash64_fallback_exceeds_stack_size_array_of_structure():
         "XxHash64")
 
 
-@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
+@allow_non_gpu("ProjectExec", "XxHash64")
 def test_xxhash64_array_of_other():
     gen_9_depth = (
         ArrayGen(  # array(other: not struct): depth += 0
@@ -125,7 +125,7 @@ def test_xxhash64_array_of_other():
         {"spark.sql.legacy.allowHashOnMapType": True})
 
 
-@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
+@allow_non_gpu("ProjectExec", "XxHash64")
 def test_xxhash64_fallback_exceeds_stack_size_structure():
     gen_9_depth = (
         StructGen([('l1',  # level 1
@@ -142,7 +142,7 @@ def test_xxhash64_fallback_exceeds_stack_size_structure():
         "XxHash64")
 
 
-@allow_non_gpu("ProjectExec", "XxHash64", "BoundReference")
+@allow_non_gpu("ProjectExec", "XxHash64")
 def test_xxhash64_fallback_exceeds_stack_size_map():
     gen_9_depth = (
         MapGen(  # depth += 2

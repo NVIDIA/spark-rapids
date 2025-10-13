@@ -175,7 +175,7 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
           s"estimated=$numEstimated numBits=$numBits",
         buildData,
         Seq("LocalTableScanExec", "ShuffleExchangeExec", 
-          "BloomFilterMightContain", "ScalarSubquery", "BoundReference"),
+          "BloomFilterMightContain", "ScalarSubquery"),
         conf = bloomFilterEnabledConf.clone()
           .set("spark.rapids.sql.expression.BloomFilterMightContain", "false")
           .set("spark.rapids.sql.expression.cpuBridge.enabled", "true")

@@ -1347,7 +1347,7 @@ def test_bloom_filter_join(batch_size, is_multi_column, kudo_enabled):
                             is_multi_column=is_multi_column)
 
 @allow_non_gpu("FilterExec", "ShuffleExchangeExec", "And", "BloomFilterMightContain", "GetStructField", 
-  "ScalarSubquery", "XxHash64", "BoundReference", "Remainder", "Literal")
+  "ScalarSubquery", "XxHash64", "Remainder")
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")

@@ -194,7 +194,7 @@ def test_split_optimized_no_re_combined():
             conf=_regexp_conf)
 
 # See https://github.com/NVIDIA/spark-rapids/issues/6958 for issue with zero-width match
-@allow_non_gpu('ProjectExec', 'StringSplit', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'StringSplit')
 def test_split_unsupported_fallback():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
         .with_special_case('boo:and:foo')
@@ -230,7 +230,7 @@ def test_split_regexp_disabled_no_fallback():
         ), conf
     )
 
-@allow_non_gpu('ProjectExec', 'StringSplit', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'StringSplit')
 def test_split_regexp_disabled_fallback():
     conf = { 'spark.rapids.sql.regexp.enabled': 'false' }
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
@@ -302,7 +302,7 @@ def test_re_replace_repetition():
         conf=_regexp_conf)
 
 
-@allow_non_gpu('ProjectExec', 'RegExpReplace', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_re_replace_issue_5492():
     # https://github.com/NVIDIA/spark-rapids/issues/5492
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
@@ -520,7 +520,7 @@ def test_regexp_extract_no_match():
 
 # if we determine that the index is out of range we fall back to CPU and let
 # Spark take care of the error handling
-@allow_non_gpu('ProjectExec', 'RegExpExtract', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_negative():
     message = "The specified group index cannot be less than zero" if is_before_spark_350() and not (is_databricks_runtime() and spark_version() == "3.4.1") else \
         "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract` is invalid"
@@ -534,7 +534,7 @@ def test_regexp_extract_idx_negative():
 
 # if we determine that the index is out of range we fall back to CPU and let
 # Spark take care of the error handling
-@allow_non_gpu('ProjectExec', 'RegExpExtract', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_out_of_bounds():
     message = "Regex group count is 3, but the specified group index is 4" if is_before_spark_350() and not (is_databricks_runtime() and spark_version() == "3.4.1") else \
         "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract` is invalid: Expects group index between 0 and 3, but got 4."
@@ -789,7 +789,7 @@ def test_rlike_null_pattern():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike NULL'))
 
-@allow_non_gpu('ProjectExec', 'RLike', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RLike')
 def test_rlike_fallback_empty_group():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_fallback_collect(
@@ -798,7 +798,7 @@ def test_rlike_fallback_empty_group():
             'RLike',
         conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RLike', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RLike')
 def test_rlike_fallback_empty_pattern():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_fallback_collect(
@@ -836,7 +836,7 @@ def test_rlike_missing_escape():
                 'a rlike "a[a-b-]"'),
         conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RLike', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RLike')
 def test_rlike_fallback_possessive_quantifier():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')
     assert_gpu_fallback_collect(
@@ -868,7 +868,7 @@ def test_regexp_extract_all_idx_positive(slices):
             ),
         conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RegExpExtractAll', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_negative():
     message = "The specified group index cannot be less than zero" if is_before_spark_350() and not (is_databricks_runtime() and spark_version() == "3.4.1") else \
         "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract_all` is invalid"
@@ -881,7 +881,7 @@ def test_regexp_extract_all_idx_negative():
         error_message=message,
         conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RegExpExtractAll', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_out_of_bounds():
     message = "Regex group count is 2, but the specified group index is 3" if is_before_spark_350() and not (is_databricks_runtime() and spark_version() == "3.4.1") else \
         "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract_all` is invalid: Expects group index between 0 and 2, but got 3."
@@ -922,7 +922,7 @@ def test_regexp_replace_unicode_support():
         ),
         conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RegExpReplace', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_regexp_replace_fallback_configured_off():
     gen = mk_str_gen('[abcdef]{0,2}')
 
@@ -938,7 +938,7 @@ def test_regexp_replace_fallback_configured_off():
     )
 
 
-@allow_non_gpu('ProjectExec', 'RegExpExtract', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_unsupported_fallback_regexp_extract():
     gen = mk_str_gen('[abcdef]{0,2}')
     regex_gen = StringGen(r'\[a-z\]\+')
@@ -960,7 +960,7 @@ def test_unsupported_fallback_regexp_extract():
     assert_gpu_did_fallback('REGEXP_EXTRACT("PROD", reg_ex, num)')
 
 
-@allow_non_gpu('ProjectExec', 'RegExpExtractAll', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_unsupported_fallback_regexp_extract_all():
     gen = mk_str_gen('[abcdef]{0,2}')
     regex_gen = StringGen(r'\[a-z\]\+')
@@ -981,7 +981,7 @@ def test_unsupported_fallback_regexp_extract_all():
     assert_gpu_did_fallback('REGEXP_EXTRACT_ALL("PROD", reg_ex, num)')
 
 
-@allow_non_gpu('ProjectExec', 'RegExpReplace', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_unsupported_fallback_regexp_replace():
     gen = StringGen('[abcdef]{0,2}').with_special_case('').with_special_pattern(r'[^\\$]{0,10}')
     regex_gen = StringGen(r'\[a-z\]\+')
@@ -1056,7 +1056,7 @@ def test_regexp_split_unicode_support():
             'split(a, "[o]", -2)'),
             conf=_regexp_conf)
 
-@allow_non_gpu('ProjectExec', 'RLike', 'BoundReference','Literal')
+@allow_non_gpu('ProjectExec', 'RLike')
 def test_regexp_memory_fallback():
     gen = StringGen('test')
     assert_gpu_fallback_collect(

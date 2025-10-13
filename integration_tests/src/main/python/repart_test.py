@@ -267,7 +267,7 @@ def test_hash_repartition_exact_fallback(gen, num_parts, kudo_enabled):
         conf = {'spark.rapids.sql.partitioning.hashFunction.enabled': False,
                 kudo_enabled_conf_key: kudo_enabled})
 
-@allow_non_gpu("ProjectExec", "Murmur3Hash", "BoundReference")
+@allow_non_gpu("ProjectExec", "Murmur3Hash")
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('b1', long_gen)]))], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_hash_fallback_bridge(data_gen, kudo_enabled):

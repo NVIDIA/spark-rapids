@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, BoundReference, Expression, Literal, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
@@ -649,6 +649,24 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     
     // Recursively collect all CPU expressions in the bridge
     def collectCpuExpressions(expr: Expression, path: String = ""): Unit = {
+      // Literal and BoundReference are always allowed in CPU bridge expressions
+      expr match {
+        case _: Literal | _: BoundReference =>
+          // Skip validation for Literal and BoundReference - they're always allowed
+          // Still need to check their children recursively
+          expr.children.zipWithIndex.foreach { case (child, index) =>
+            val currentPath = if (path.isEmpty) {
+              expr.getClass.getSimpleName
+            } else {
+              s"$path.${expr.getClass.getSimpleName}"
+            }
+            collectCpuExpressions(child, s"$currentPath.child[$index]")
+          }
+          return
+        case _ =>
+          // Continue with normal validation for other expressions
+      }
+      
       val currentPath = if (path.isEmpty) {
         expr.getClass.getSimpleName 
       } else {

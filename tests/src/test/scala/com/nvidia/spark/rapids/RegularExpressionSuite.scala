@@ -51,7 +51,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     nullableStringsFromCsv,
     // The ProjectExec is needed only if the gpu cpu bridge is disabled.
     execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "BoundReference", "Literal"), conf = conf) {
+      "RegExpReplace", "AttributeReference"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'a',strings)")
   }
 
@@ -77,7 +77,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     "RegExpReplace",
     // The ProjectExec is needed only if the gpu cpu bridge is disabled.
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "BoundReference", "Literal"), conf = conf) {
+      "RegExpReplace", "AttributeReference"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'','D')")
   }
 

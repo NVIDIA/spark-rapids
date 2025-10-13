@@ -61,8 +61,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
         .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
         .set("spark.sql.ansi.enabled", "false"),
       // The ProjectExec is needed only if the gpu cpu bridge is disabled.
-      execsAllowedNonGpu = Seq("ProjectExec", "Alias", "BoundReference", "GetTimestamp", 
-        "UnixTimestamp", "Literal", "ShuffleExchangeExec")) {
+      execsAllowedNonGpu = Seq("ProjectExec", "Alias", "GetTimestamp", 
+        "UnixTimestamp", "ShuffleExchangeExec")) {
     // until we fix https://github.com/NVIDIA/spark-rapids/issues/2118 we need to fall
     // back to CPU when parsing two-digit years
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yy"))
@@ -190,8 +190,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")
         .set("spark.sql.ansi.enabled", "false"),
       // The ProjectExec is needed only if the gpu cpu bridge is disabled.
-      execsAllowedNonGpu = Seq("ProjectExec", "Alias", "BoundReference", "Literal", 
-        "UnixTimestamp")) {
+      execsAllowedNonGpu = Seq("ProjectExec", "Alias", "UnixTimestamp")) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss.SSS"))
   }
 
@@ -207,8 +206,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       LEGACY_TIME_PARSER_POLICY_CONF,
       repart = 1,
       // The ProjectExec is needed only if the gpu cpu bridge is disabled.
-      execsAllowedNonGpu = Seq("ProjectExec", "Alias", "BoundReference", "Literal", 
-        "UnixTimestamp")) {
+      execsAllowedNonGpu = Seq("ProjectExec", "Alias", "UnixTimestamp")) {
     df => {
       val formatString = "u" // we do not support this legacy format on GPU
       df.withColumn("c1", unix_timestamp(col("c0"), formatString))

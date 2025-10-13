@@ -150,7 +150,7 @@ def test_cast_string_date_invalid_values_ansi_on(invalid):
 
 # test try_cast in Spark versions >= 320 and < 340
 @pytest.mark.skipif(is_before_spark_320() or is_spark_340_or_later() or is_databricks113_or_later(), reason="try_cast only in Spark 3.2+")
-@allow_non_gpu('ProjectExec', 'TryCast', 'BoundReference')
+@allow_non_gpu('ProjectExec', 'TryCast')
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_try_cast_string_date_fallback(invalid):
     assert_gpu_fallback_collect(
@@ -160,7 +160,7 @@ def test_try_cast_string_date_fallback(invalid):
 
 # test try_cast in Spark versions >= 340
 @pytest.mark.skipif(not (is_spark_340_or_later() or is_databricks113_or_later()), reason="Cast with EvalMode only in Spark 3.4+")
-@allow_non_gpu('ProjectExec','Cast', 'BoundReference')
+@allow_non_gpu('ProjectExec','Cast')
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_try_cast_string_date_fallback_340(invalid):
     assert_gpu_fallback_collect(
@@ -814,7 +814,7 @@ def test_cast_int_to_string_not_UTC():
 
 not_utc_fallback_test_params = [(timestamp_gen, 'STRING')]
 
-@allow_non_gpu('ProjectExec', 'Cast', 'BoundReference')
+@allow_non_gpu('ProjectExec', 'Cast')
 @pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params, ids=idfn)
 def test_cast_fallback_not_UTC(from_gen, to_type):
     assert_gpu_fallback_collect(
