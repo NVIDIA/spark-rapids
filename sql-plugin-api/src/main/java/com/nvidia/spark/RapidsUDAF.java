@@ -31,8 +31,8 @@ public interface RapidsUDAF {
    * Provides an array of default values for the aggregation result. This is
    * used when a reduction aggregation does not have any rows to aggregate.
    * <br/>
-   * @return An array of cudf Scalar and its Spark type representing the output
-   *         of the updateAggregation stage of processing. The output of this
+   * @return An array of cudf Scalar representing the output of the
+   *         updateAggregation stage of processing. The output of this
    *         may still be merged with other tasks.
    */
   Scalar[] getDefaultValue();
