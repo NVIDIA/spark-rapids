@@ -1,5 +1,5 @@
 # Change log
-Generated on 2025-10-10
+Generated on 2025-10-13
 
 ## Release 25.10
 
@@ -85,6 +85,8 @@ Generated on 2025-10-10
 ### PRs
 |||
 |:---|:---|
+|[#13593](https://github.com/NVIDIA/spark-rapids/pull/13593)|[DOC] update the download doc for 2510 release [skip ci]|
+|[#13587](https://github.com/NVIDIA/spark-rapids/pull/13587)|Update dependency version JNI, private, hybrid to 25.10.0|
 |[#13581](https://github.com/NVIDIA/spark-rapids/pull/13581)|Avoid host-vector access under TableCache by replacing CPU ColumnarToRow with GPU variant|
 |[#13580](https://github.com/NVIDIA/spark-rapids/pull/13580)|Remove nested quotes and double quotes [skip ci]|
 |[#13569](https://github.com/NVIDIA/spark-rapids/pull/13569)|Disable predicate pushdown filters in MULTITHREADED Delta Scan when reading Deletion Vectors|
