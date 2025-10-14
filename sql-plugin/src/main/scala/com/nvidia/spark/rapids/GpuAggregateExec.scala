@@ -545,7 +545,9 @@ class AggHelper(
    *
    * @param toAggregateBatch - input (to the agg) batch from the child directly in the
    *                         merge case, or from the `inputProjection` in the update case.
-   * @return a pre-processed batch that can be later cuDF aggregated
+   * @param metrics - the GpuHashAggregateMetrics for this aggregation.
+   * @return a pre-processed batch that can be later cuDF aggregated, along with the
+   *         output sizes for advanced aggregates.
    */
   def preProcess(
       toAggregateBatch: ColumnarBatch,
@@ -644,7 +646,8 @@ class AggHelper(
    * Invoke reduction functions as defined in each `CudfAggregate`
    *
    * @param preProcessed - a batch after the "pre" step
-   * @return
+   * @param advArgLens - argument sizes of advanced aggregates.
+   * @return a reduced batch and the output sizes of advanced aggregates.
    */
   def performReduction(
       preProcessed: ColumnarBatch,
@@ -676,42 +679,13 @@ class AggHelper(
     }
   }
 
-  // This is not used yet since it is for the RapidsAdvancedGroupByAggregation,
-  // which is not supported now.
-  private def insertAdvancedColsAndClose(cb: ColumnarBatch,
-      advCols: Array[Array[GpuColumnVector]], starts: Array[Int]): ColumnarBatch = {
-    if (advCols.isEmpty) {
-      return cb
-    }
-    withResource(cb) { _ =>
-      try {
-        var inId = 0
-        val outCVs = new ArrayBuffer[GpuColumnVector]()
-        advCols.zip(starts).foreach { case (cols, start) =>
-          require(inId < start)
-          outCVs ++= (inId until start).map(i =>
-            cb.column(i).asInstanceOf[GpuColumnVector]
-          )
-          outCVs ++= cols
-          inId = start
-        }
-        if (inId < cb.numCols()) {
-          outCVs ++= (inId until cb.numCols()).map(i =>
-            cb.column(i).asInstanceOf[GpuColumnVector]
-          )
-        }
-        GpuColumnVector.incRefCounts(new ColumnarBatch(outCVs.toArray, cb.numRows()))
-      } finally {
-        advCols.flatten.safeClose()
-      }
-    }
-  }
-
   /**
    * Used to produce a group-by aggregate
    *
    * @param preProcessed the batch after the "pre" step
-   * @return a Table that has been cuDF aggregated
+   * @param advArgLens - argument sizes of advanced aggregates.
+   * @return a Table that has been cuDF aggregated, along with the
+   *         output sizes for advanced aggregates.
    */
   def performGroupByAggregation(preProcessed: ColumnarBatch,
       advArgLens: Seq[Int]): (ColumnarBatch, Seq[Int]) = {
@@ -726,55 +700,37 @@ class AggHelper(
           case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
         }
 
+        // process advanced aggregates
         var accArgStart = advAggStart
         val advOutLens = new ArrayBuffer[Int]()
-        // The following 3 variables are not used yet,
-        // They are designed for the RapidsAdvancedGroupByAggregation support
-        var accOutStart = accArgStart
-        val advAggCols = new ArrayBuffer[Array[GpuColumnVector]]()
-        val advAggStarts = new ArrayBuffer[Int]()
-        val aggCb = try {
-          val advAggsOnColumns = advCudfAggregates.zip(advArgLens).flatMap {
-            case ((advAgg, _), argLen) =>
-              val ret = if (advAgg.supportAdvanced) {
-                // TODO implement this,
-                //  tracked by https://github.com/NVIDIA/spark-rapids/issues/13453
-                // advAggStarts += accOutStart
-                // val tmp = advAgg.aggregateGrouped(keyOffs, args)
-                // advOutLens += tmp.length
-                // Seq.empty
-                throw new UnsupportedOperationException("Advanced aggregate is " +
-                  "not supported yet")
-              } else {
-                val tmp = advAgg.aggregate(Array.range(accArgStart, accArgStart + argLen))
-                advOutLens += tmp.length
-                accOutStart += tmp.length
-                tmp
-              }
-              accArgStart += argLen
-              ret
-          }
-
-          // perform the aggregate
-          val aggTbl = preProcessedTbl
-            .groupBy(groupOptions, groupingOrdinals: _*)
-            .aggregate((cudfAggsOnColumn ++ advAggsOnColumns).toSeq: _*)
-
-          withResource(aggTbl) { _ =>
-            // The output types of advanced aggs can not be predicated, instead need to
-            // infer them from the output columns.
-            val advAggTypes = (postStepDataTypes.length until aggTbl.getNumberOfColumns).map {
-              advColIx => AdvAggTypeUtils.infer(aggTbl.getColumn(advColIx))
+        val advAggsOnColumns = advCudfAggregates.zip(advArgLens).flatMap {
+          case ((advAgg, _), argLen) =>
+            val ret = if (advAgg.supportAdvanced) {
+              // Should not come here
+              throw new UnsupportedOperationException("Advanced aggregate is " +
+                "not supported yet")
+            } else {
+              advAgg.aggregate(Array.range(accArgStart, accArgStart + argLen))
             }
-            GpuColumnVector.from(aggTbl, (postStepDataTypes ++ advAggTypes).toArray)
-          }
-        } catch {
-          case t: Throwable =>
-            advAggCols.flatten.safeClose(t)
-            throw t
+            accArgStart += argLen
+            advOutLens += ret.length
+            ret
         }
-        (insertAdvancedColsAndClose(aggCb, advAggCols.toArray, advAggStarts.toArray),
-          advOutLens.toSeq)
+
+        // perform the aggregate
+        val aggTbl = preProcessedTbl
+          .groupBy(groupOptions, groupingOrdinals: _*)
+          .aggregate((cudfAggsOnColumn ++ advAggsOnColumns).toSeq: _*)
+
+        withResource(aggTbl) { _ =>
+          // The output types of advanced aggs can not be predicated, instead need to
+          // infer them from the output columns.
+          val advAggTypes = (postStepDataTypes.length until aggTbl.getNumberOfColumns).map {
+            advColIx => AdvAggTypeUtils.infer(aggTbl.getColumn(advColIx))
+          }
+          (GpuColumnVector.from(aggTbl, (postStepDataTypes ++ advAggTypes).toArray),
+            advOutLens.toSeq)
+        }
       }
     }
   }
@@ -865,6 +821,7 @@ class AggHelper(
    * postUpdate for update, or postMerge for merge
    *
    * @param aggregatedSpillable - cuDF aggregated batch
+   * @param advArgLens - argument sizes of advanced aggregates.
    * @return output batch from the aggregate
    */
   def postProcess(

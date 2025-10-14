@@ -31,6 +31,8 @@ public interface RapidsUDAF {
    * Provides an array of default values for the aggregation result. This is
    * used when a reduction aggregation does not have any rows to aggregate.
    * <br/>
+   * Rapids will close these Scalars after being converted to columns.
+   * <br/>
    * @return An array of cudf Scalar representing the output of the
    *         updateAggregation stage of processing. The output of this
    *         may still be merged with other tasks.
@@ -42,12 +44,14 @@ public interface RapidsUDAF {
    * This method is similar to a regular RapidsUDF but returns an array of
    * ColumnVectors. By default, this is a no-op and will just return the
    * arguments passed in.
+   * <br/>
+   * Users should close the input columns to avoid GPU memory leak, while the
+   * returned columns will be closed by the Rapids automatically.
    *
    * @param numRows The number of rows to process. This is for cases
    *               like a `COUNT(*)`, where there may be no arguments to a UDAF.
    *               This is not common.
-   * @param args An array of ColumnVector arguments. They should be closed when
-   *            no longer needed.
+   * @param args An array of ColumnVector arguments.
    * @return An array of ColumnVectors representing the pre-processed data.
    */
   default ColumnVector[] preProcess(int numRows, ColumnVector[] args) {
@@ -81,9 +85,11 @@ public interface RapidsUDAF {
    * result. This method returns a single ColumnVector, which is the final
    * result of the aggregation.
    * <br/>
+   * Users should close the input columns to avoid GPU memory leak. But the
+   * returned column will be closed by the Rapids automatically.
+   * <br/>
    * @param numRows The number of rows in the aggregated data.
    * @param args An array of ColumnVector arguments from the final aggregation step.
-   *            They should be closed when no longer needed.
    * @param outType The final data type of this UDAF
    * @return A single ColumnVector representing the final UDAF result.
    */

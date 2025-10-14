@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.aggregate
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, GroupByAggregationOnColumn, Scalar}
-import com.nvidia.spark.{RapidsAdvancedGroupByAggregation, RapidsSimpleGroupByAggregation, RapidsUDAF, RapidsUDAFGroupByAggregation}
+import com.nvidia.spark.{RapidsSimpleGroupByAggregation, RapidsUDAF, RapidsUDAFGroupByAggregation}
 import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnsignedIntegerType, GpuUnsignedLongType, GpuUserDefinedFunction, ImperativeAggExprMeta, RepeatingParamCheck, TypedImperativeAggExprMeta, TypeSig}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray, AutoCloseableProducingSeq}
@@ -134,11 +134,11 @@ private[aggregate] class UDAFCudfAggregate(
 
   // Type of UDAF check is done by initialing this field when constructing an instance.
   override val supportAdvanced: Boolean = udafAgg match {
-    case _: RapidsAdvancedGroupByAggregation => true
+    // "RapidsAdvancedGroupByAggregation => true" will be supported in the future.
     case _: RapidsSimpleGroupByAggregation => false
     case u =>
       throw new UnsupportedOperationException(s"${u.getClass} is NOT a child of " +
-        "'RapidsSimpleGroupByAggregation' or 'RapidsAdvancedGroupByAggregation'.")
+        "'RapidsSimpleGroupByAggregation'")
   }
 
   override def preStepAndClose(
@@ -171,12 +171,9 @@ private[aggregate] class UDAFCudfAggregate(
   override def aggregateAdvanced(
       keyOffsets: ColumnVector,
       groupedData: Array[GpuColumnVector]): Array[GpuColumnVector] = {
-    val advUdafAgg = udafAgg.asInstanceOf[RapidsAdvancedGroupByAggregation]
-    closeOnExcept(advUdafAgg.aggregateGrouped(keyOffsets, groupedData.map(_.getBase))) { ret =>
-      ret.map { cudfCol =>
-        GpuColumnVector.from(cudfCol, AdvAggTypeUtils.infer(cudfCol))
-      }
-    }
+    // Should not come here, just in case
+    throw new UnsupportedOperationException("`RapidsAdvancedGroupByAggregation`" +
+      " is not supported yet")
   }
 
   override def aggregate(inputIndices: Array[Int]): Array[GroupByAggregationOnColumn] = {

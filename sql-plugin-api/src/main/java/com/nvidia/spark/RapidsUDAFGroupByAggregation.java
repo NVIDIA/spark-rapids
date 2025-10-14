@@ -24,17 +24,19 @@ import ai.rapids.cudf.Scalar;
  * the contract for different aggregation strategies.
  * <p/>
  * Please do not try and extend from this interface directly.
- * `RapidsSimpleGroupByAggregation` and `RapidsAdvancedGroupByAggregation` are
- * currently supported as interfaces to directly implement. More may be added
- * in the future.
+ * `RapidsSimpleGroupByAggregation` is currently supported as interfaces to directly
+ * implement. More may be added in the future.
  */
 public interface RapidsUDAFGroupByAggregation {
   /**
    * An optional pre-step for the aggregation. By default, this is a no-op
    * and will just return the arguments passed in.
-   *
+   * <br/>
+   * Users should close the input columns to avoid GPU memory leak, but the
+   * returned columns will be closed by the Rapids automatically.
+   * <br/>
    * @param numRows The number of rows.
-   * @param args An array of input ColumnVectors. They should be closed when no longer needed.
+   * @param args An array of input ColumnVectors.
    * @return An array of ColumnVectors.
    */
   default ColumnVector[] preStep(int numRows, ColumnVector[] args) {
@@ -45,6 +47,8 @@ public interface RapidsUDAFGroupByAggregation {
    * Performs a reduction on the pre-step output (no keys). The
    * output of this will be turned into a ColumnVector and possibly
    * combined with other rows before being processed more.
+   * <br/>
+   * Rapids will close both the input columns and returned Scalars automatically.
    *
    * @param numRows The number of rows to process.
    * @param preStepData The output from the preStep method.
@@ -56,6 +60,9 @@ public interface RapidsUDAFGroupByAggregation {
    * A post-process step for the aggregation. It takes the output of the
    * aggregations and performs any processing needed to make it match the
    * input to the merge aggregation.
+   * <br/>
+   * Users should close the input columns to avoid GPU memory leak, but the
+   * returned columns will be closed by the Rapids automatically.
    *
    * @param aggregatedData The output from the aggregation step. They should be
    *                      closed when no longer needed.
