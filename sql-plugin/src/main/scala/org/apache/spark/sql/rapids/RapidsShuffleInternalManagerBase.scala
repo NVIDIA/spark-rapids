@@ -298,6 +298,38 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     write(new TimeTrackingIterator(records))
   }
 
+
+  /**
+   * Increment the reference count and get the memory size for a value.
+   * This method handles ColumnarBatch values with SlicedGpuColumnVector or
+   * SlicedSerializedColumnVector columns.
+   *
+   * @param value the value to process (typically a ColumnarBatch)
+   * @return a tuple of (ColumnarBatch with incremented ref count, memory size)
+   */
+  private def incRefCountAndGetSize(value: Any): (ColumnarBatch, Long) = {
+    value match {
+      case columnarBatch: ColumnarBatch =>
+        if (columnarBatch.numCols() > 0) {
+          columnarBatch.column(0) match {
+            case _: SlicedGpuColumnVector =>
+              (SlicedGpuColumnVector.incRefCount(columnarBatch),
+                SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
+            case _: SlicedSerializedColumnVector =>
+              (SlicedSerializedColumnVector.incRefCount(columnarBatch),
+                SlicedSerializedColumnVector.getTotalHostMemoryUsed(
+                  columnarBatch))
+            case _ =>
+              (null, 0L)
+          }
+        } else {
+          (columnarBatch, 0L)
+        }
+      case _ =>
+        (null, 0L)
+    }
+  }
+
   /**
    * Optimized write path for single batch tasks that leverages streaming parallel processing
    * with pipelined partition writing.
@@ -402,28 +434,32 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // Wait for all compression tasks to complete for this partition
               // and collect record sizes
               import scala.collection.JavaConverters._
-              var newFutureTouched = false
+              var newFutureTouched = false // True means that the writer thread is ahead of the submitting thread
+              val futuresProgress = partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0)
               futures.asScala.zipWithIndex.filter(pair => {
-                pair._2 >= partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0)
+                pair._2 >= futuresProgress
               }).foreach { future =>
                 newFutureTouched = true
                 val (recordSize, compressedSize) = future._1.get()
 
                 // Write this partition
+                val bytesProgress = partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L)
                 writePartitionBuffer(currentPartitionToWrite,
-                  partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L),
-                  partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L) +
-                    compressedSize,
+                  bytesProgress,
+                  bytesProgress + compressedSize,
                   doCleanUp = false,
                   partitionBuffers,
                   mapOutputWriter)
 
                 // Update progress
-                partitionBytesProgress.put(currentPartitionToWrite,
-                  partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L) +
-                    compressedSize)
-                partitionFuturesProgress.put(currentPartitionToWrite,
-                  partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0) + 1)
+                partitionBytesProgress.put(currentPartitionToWrite, bytesProgress + compressedSize)
+                partitionFuturesProgress.compute(currentPartitionToWrite, (key, value) => {
+                  if (value == null) {
+                    1
+                  } else {
+                    value + 1
+                  }
+                })
 
                 // Release limiter for all records in this partition after processing is complete
                 limiter.release(recordSize)
@@ -475,25 +511,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           _ => new java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]())
 
 
-        val (cb, recordSize) = value match {
-          case columnarBatch: ColumnarBatch =>
-            if (columnarBatch.numCols() > 0) {
-              columnarBatch.column(0) match {
-                case _: SlicedGpuColumnVector =>
-                  (SlicedGpuColumnVector.incRefCount(columnarBatch),
-                    SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
-                case _: SlicedSerializedColumnVector =>
-                  (SlicedSerializedColumnVector.incRefCount(columnarBatch),
-                    SlicedSerializedColumnVector.getTotalHostMemoryUsed(columnarBatch))
-                case _ =>
-                  (null, 0L)
-              }
-            } else {
-              (columnarBatch, 0L)
-            }
-          case _ =>
-            (null, 0L)
-        }
+        val (cb, recordSize) = incRefCountAndGetSize(value)
 
         // Acquire limiter and process compression task immediately
         val waitOnLimiterStart = System.nanoTime()
@@ -678,25 +696,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   // we close batches actively in the `records` iterator as we get the next batch
                   // this makes sure it is kept alive while a task is able to handle it.
                   val sizeComputeStart = System.nanoTime()
-                  val (cb, size) = value match {
-                    case columnarBatch: ColumnarBatch =>
-                      if (columnarBatch.numCols() > 0) {
-                        columnarBatch.column(0) match {
-                          case _: SlicedGpuColumnVector =>
-                            (SlicedGpuColumnVector.incRefCount(columnarBatch),
-                              SlicedGpuColumnVector.getTotalHostMemoryUsed(columnarBatch))
-                          case _: SlicedSerializedColumnVector =>
-                            (SlicedSerializedColumnVector.incRefCount(columnarBatch),
-                              SlicedSerializedColumnVector.getTotalHostMemoryUsed(columnarBatch))
-                          case _ =>
-                            (null, 0L)
-                        }
-                      } else {
-                        (columnarBatch, 0L)
-                      }
-                    case _ =>
-                      (null, 0L)
-                  }
+                  val (cb, size) = incRefCountAndGetSize(value)
                   val waitOnLimiterStart = System.nanoTime()
                   batchSizeComputeTimeNs += waitOnLimiterStart - sizeComputeStart
                   limiter.acquireOrBlock(size)
