@@ -454,13 +454,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
                 // Update progress
                 partitionBytesProgress.put(currentPartitionToWrite, bytesProgress + compressedSize)
-                partitionFuturesProgress.compute(currentPartitionToWrite, (key, value) => {
-                  if (value == null) {
-                    1
-                  } else {
-                    value + 1
-                  }
-                })
+                partitionFuturesProgress.compute(currentPartitionToWrite, 
+                  (key, value) => { value + 1 }
+                )
 
                 // Release limiter for all records in this partition after processing is complete
                 limiter.release(recordSize)
