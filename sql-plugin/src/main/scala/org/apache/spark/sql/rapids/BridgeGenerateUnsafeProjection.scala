@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * A projection that writes directly to RapidsHostColumnBuilders.
@@ -39,17 +40,160 @@ abstract class BridgeUnsafeProjection {
 }
 
 /**
+ * Interpreted implementation of BridgeUnsafeProjection.
+ * Falls back to direct expression evaluation when code generation fails.
+ * Shares the same append logic as GpuCpuBridgeExpression.
+ */
+class InterpretedBridgeUnsafeProjection(expressions: Seq[Expression]) 
+  extends BridgeUnsafeProjection {
+  
+  // Create optimized append functions once for each expression
+  private val appendFunctions = expressions.map { expr =>
+    BridgeUnsafeProjection.createOptimizedAppendFunction(expr.dataType, expr.nullable)
+  }
+  
+  override def apply(rows: Iterator[InternalRow],
+    builders: Array[RapidsHostColumnBuilder]): Unit = {
+    rows.foreach { row =>
+      expressions.zipWithIndex.foreach { case (expr, idx) =>
+        val result = expr.eval(row)
+        appendFunctions(idx)(result, builders(idx))
+      }
+    }
+  }
+}
+
+/**
  * The factory object for `UnsafeProjection`.
  */
 object BridgeUnsafeProjection
   extends CodeGeneratorWithInterpretedFallback[Seq[Expression], BridgeUnsafeProjection] {
 
   override protected def createCodeGeneratedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
+    // Just call generate directly - let any exceptions propagate naturally
+    // The CodeGeneratorWithInterpretedFallback base class will catch exceptions 
+    // and fall back to createInterpretedObject
     BridgeGenerateUnsafeProjection.generate(in, SQLConf.get.subexpressionEliminationEnabled)
   }
 
   override protected def createInterpretedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
-    throw new IllegalStateException("I DON'T WANT INTERPRETED")
+    new InterpretedBridgeUnsafeProjection(in)
+  }
+
+  /**
+   * Creates an optimized append function for the specific data type and nullability.
+   * Similar to how TypeConverter generates specialized functions, this avoids the overhead
+   * of evaluating the data type on every append operation.
+   * 
+   * This is SHARED code used by both:
+   * - InterpretedBridgeUnsafeProjection (when codegen fails)
+   * - GpuCpuBridgeExpression (for the existing interpreted evaluation path)
+   */
+  def createOptimizedAppendFunction(dataType: DataType, 
+    nullable: Boolean): (Any, RapidsHostColumnBuilder) => Unit = {
+    import com.nvidia.spark.rapids.GpuRowToColumnConverter
+    import org.apache.spark.sql.catalyst.expressions.SpecificInternalRow
+    
+    dataType match {
+      // Primitive types - generate specialized functions
+      case BooleanType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Boolean])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Boolean])
+      
+      case ByteType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Byte])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Byte])
+      
+      case ShortType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Short])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Short])
+      
+      case IntegerType | DateType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Int])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Int])
+      
+      case LongType | TimestampType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Long])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Long])
+      
+      case FloatType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Float])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Float])
+      
+      case DoubleType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Double])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Double])
+      
+      case StringType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else {
+            val utf8String = value.asInstanceOf[UTF8String]
+            builder.appendUTF8String(utf8String.getBytes)
+          }
+        else (value: Any, builder: RapidsHostColumnBuilder) => {
+          val utf8String = value.asInstanceOf[UTF8String]
+          builder.appendUTF8String(utf8String.getBytes)
+        }
+      
+      case BinaryType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) {
+            builder.appendNull() 
+          } else {
+            builder.appendByteList(value.asInstanceOf[Array[Byte]])
+          }
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.appendByteList(value.asInstanceOf[Array[Byte]])
+      
+      case _: DecimalType =>
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) {
+            builder.appendNull() 
+          } else {
+            builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
+          }
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
+      
+      case _: YearMonthIntervalType =>
+        // YearMonthIntervalType is stored as Int (number of months)
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Int])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Int])
+      
+      case _: DayTimeIntervalType =>
+        // DayTimeIntervalType is stored as Long (number of microseconds)
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Long])
+        else (value: Any, builder: RapidsHostColumnBuilder) => 
+          builder.append(value.asInstanceOf[Long])
+      
+      case _ =>
+        // For complex types or unsupported types, fall back to TypeConverter
+        // Only pay the SpecificInternalRow overhead when we actually need it
+        val converter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
+        val resultRow = new SpecificInternalRow(Array(dataType))
+        
+        (value: Any, builder: RapidsHostColumnBuilder) => {
+          resultRow.update(0, value)
+          converter.append(resultRow, 0, builder)
+        }
+    }
   }
 
   /**
@@ -100,6 +244,26 @@ object BridgeGenerateUnsafeProjection extends
 
   case class Schema(dataType: DataType, nullable: Boolean)
 
+  /**
+   * Check if we can generate efficient code for this data type.
+   * Returns false for types that would require fallback to GpuRowToColumnConverter in codegen.
+   * This allows fast-fail before attempting expensive code generation.
+   */
+  private def canSupportDirectCodegen(dataType: DataType): Boolean = {
+    dataType match {
+      case BooleanType | ByteType | ShortType | IntegerType | DateType | 
+           LongType | TimestampType | FloatType | DoubleType | StringType |
+           BinaryType | _: DecimalType | NullType => true
+      case ArrayType(elementType, _) => canSupportDirectCodegen(elementType)
+      case st: StructType => st.fields.forall(f => canSupportDirectCodegen(f.dataType))
+      case MapType(kt, vt, _) => canSupportDirectCodegen(kt) && canSupportDirectCodegen(vt)
+      case CalendarIntervalType => true
+      case _: YearMonthIntervalType => true
+      case _: DayTimeIntervalType => true
+      case _ => false
+    }
+  }
+
   /** Returns true iff we support this data type. */
   def canSupport(dataType: DataType): Boolean = UserDefinedType.sqlType(dataType) match {
     case NullType => true
@@ -125,7 +289,8 @@ object BridgeGenerateUnsafeProjection extends
     
     dataType match {
       case BooleanType | ByteType | ShortType | IntegerType | DateType | 
-           LongType | TimestampType | FloatType | DoubleType =>
+           LongType | TimestampType | FloatType | DoubleType | 
+           _: YearMonthIntervalType | _: DayTimeIntervalType =>
         if (nullable) {
           s"""
              |if ($isNullVar) {
@@ -212,7 +377,11 @@ object BridgeGenerateUnsafeProjection extends
         }
         
       case _ =>
-        null
+        // This should never be reached due to canSupportDirectCodegen check
+        // But if it is, throw an exception that will trigger interpreted fallback
+        throw new UnsupportedOperationException(
+          s"Cannot generate direct append code for unsupported type: $dataType. " +
+          s"Layer 2 check should have prevented this.")
     }
   }
   
@@ -233,20 +402,16 @@ object BridgeGenerateUnsafeProjection extends
     val elementIsNullVar = ctx.freshName("elementIsNull")
     
     // Generate code to append each element
+    // generateBuilderAppendCode now throws for unsupported types instead of returning null
     val elementAppendCode = generateBuilderAppendCode(ctx, elementType, containsNull,
       elementVar, elementIsNullVar, childBuilderVar)
     
-    val loopBody = if (elementAppendCode != null) {
-      s"""
-         |boolean $elementIsNullVar = $arrayVar.isNullAt($iVar);
-         |${CodeGenerator.javaType(elementType)} $elementVar = 
-         |  ${CodeGenerator.getValue(arrayVar, elementType, iVar)};
-         |$elementAppendCode
-       """.stripMargin
-    } else {
-      // Fallback for unsupported element types
-      return null
-    }
+    val loopBody = s"""
+       |boolean $elementIsNullVar = $arrayVar.isNullAt($iVar);
+       |${CodeGenerator.javaType(elementType)} $elementVar = 
+       |  ${CodeGenerator.getValue(arrayVar, elementType, iVar)};
+       |$elementAppendCode
+     """.stripMargin
     
     val nullCheck = if (nullable) {
       s"""
@@ -284,6 +449,7 @@ object BridgeGenerateUnsafeProjection extends
     val structVar = ctx.freshName("struct")
     
     // Generate code for each field
+    // generateBuilderAppendCode now throws for unsupported types instead of returning null
     val fieldAppends = structType.fields.zipWithIndex.map { case (field, idx) =>
       val fieldBuilderVar = ctx.freshName(s"fieldBuilder$idx")
       val fieldValueVar = ctx.freshName(s"fieldValue$idx")
@@ -292,19 +458,14 @@ object BridgeGenerateUnsafeProjection extends
       val fieldAppendCode = generateBuilderAppendCode(ctx, field.dataType, field.nullable,
         fieldValueVar, fieldIsNullVar, fieldBuilderVar)
       
-      if (fieldAppendCode != null) {
-        s"""
-           |${classOf[RapidsHostColumnBuilder].getName} $fieldBuilderVar = 
-           |  $builderRef.getChild($idx);
-           |boolean $fieldIsNullVar = $structVar.isNullAt($idx);
-           |${CodeGenerator.javaType(field.dataType)} $fieldValueVar = 
-           |  ${CodeGenerator.getValue(structVar, field.dataType, idx.toString)};
-           |$fieldAppendCode
-         """.stripMargin
-      } else {
-        // Fallback for unsupported field types
-        return null
-      }
+      s"""
+         |${classOf[RapidsHostColumnBuilder].getName} $fieldBuilderVar = 
+         |  $builderRef.getChild($idx);
+         |boolean $fieldIsNullVar = $structVar.isNullAt($idx);
+         |${CodeGenerator.javaType(field.dataType)} $fieldValueVar = 
+         |  ${CodeGenerator.getValue(structVar, field.dataType, idx.toString)};
+         |$fieldAppendCode
+       """.stripMargin
     }.mkString("\n")
     
     val nullCheck = if (nullable) {
@@ -359,9 +520,6 @@ object BridgeGenerateUnsafeProjection extends
     val valueAppendCode = generateBuilderAppendCode(ctx, valueType, valueContainsNull,
       valueElemVar, valueIsNullVar, valueBuilderVar)
     
-    if (keyAppendCode == null || valueAppendCode == null) {
-      return null
-    }
     
     val loopBody = s"""
        |boolean $keyIsNullVar = $keysVar.isNullAt($iVar);
@@ -694,6 +852,15 @@ object BridgeGenerateUnsafeProjection extends
   private def create(
       expressions: Seq[Expression],
       subexpressionEliminationEnabled: Boolean): BridgeUnsafeProjection = {
+    // Check upfront if we can support all types with direct codegen
+    // This provides a fast-fail mechanism before attempting expensive codegen
+    val unsupportedTypes = expressions.map(_.dataType).filterNot(canSupportDirectCodegen)
+    if (unsupportedTypes.nonEmpty) {
+      throw new UnsupportedOperationException(
+        s"Cannot generate code for types: ${unsupportedTypes.mkString(", ")}. " +
+        "Falling back to interpreted evaluation.")
+    }
+    
     val ctx = newCodeGenContext()
 
     // Generate code to evaluate all expressions with subexpression elimination
@@ -705,20 +872,15 @@ object BridgeGenerateUnsafeProjection extends
     // Generate append code for each expression
     val appendCodes = expressions.zip(exprEvals).zipWithIndex.map { 
       case ((expr, exprEval), idx) =>
-        // Generate direct builder append code
+        // Generate builder append code with fallback to GpuRowToColumnConverter
         val directAppendCode = generateBuilderAppendCode(ctx,
           expr.dataType, expr.nullable, exprEval.value.toString, 
           exprEval.isNull.toString, s"builders[$idx]")
         
-        if (directAppendCode != null) {
-          s"""
-             |${exprEval.code}
-             |$directAppendCode
-           """.stripMargin
-        } else {
-          throw new IllegalStateException(
-            s"Unsupported data type for direct builder append: ${expr.dataType}")
-        }
+        s"""
+           |${exprEval.code}
+           |$directAppendCode
+         """.stripMargin
     }
     
     val processRowBody = Seq(

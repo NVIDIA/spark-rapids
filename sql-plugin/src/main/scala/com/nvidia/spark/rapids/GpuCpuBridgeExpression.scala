@@ -26,11 +26,10 @@ import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeSeq, Expression, SpecificInternalRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeSeq, Expression}
 import org.apache.spark.sql.rapids.BridgeUnsafeProjection
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * A GPU expression that wraps a CPU expression subtree. This allows individual CPU expressions
@@ -117,9 +116,6 @@ case class GpuCpuBridgeExpression(
     boundExpression
   }
 
-  @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
-    createEvaluationFunction(cpuExpression)
-
   @transient private lazy val resultType = GpuColumnVector.convertFrom(dataType, nullable)
   
   // Thread-local projection for code generation path
@@ -127,6 +123,9 @@ case class GpuCpuBridgeExpression(
   // while allowing reuse across batches within a thread
   @transient private lazy val threadLocalProjection: ThreadLocal[BridgeUnsafeProjection] =
     ThreadLocal.withInitial(() => createCodeGeneratedProjection(cpuExpression))
+  
+  @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
+    createEvaluationFunction(cpuExpression)
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
@@ -385,20 +384,13 @@ case class GpuCpuBridgeExpression(
    * Creates an evaluation function for the CPU expression.
    * Takes an iterator of rows and the expected row count, produces a complete 
    * GpuColumnVector result.
+   * 
+   * Uses code generation by default. If codegen fails, Spark's CodeGeneratorWithInterpretedFallback
+   * will automatically create an InterpretedBridgeUnsafeProjection instead.
    */
   private def createEvaluationFunction(
     cpuExpression: Expression): (Iterator[InternalRow], Int) => GpuColumnVector = {
-    // Always try code generation first for better performance
-    try {
-      logDebug(s"Using code generation for ${cpuExpression.getClass.getSimpleName}")
-      createCodegenEvaluationFunction(cpuExpression)
-    } catch {
-      case e: Exception =>
-        // Fall back to interpreted evaluation if code generation fails
-        logWarning(s"Code generation failed for ${cpuExpression.getClass.getSimpleName}, " +
-          s"falling back to interpreted evaluation: ${e.getMessage}")
-        createInterpretedEvaluationFunction(cpuExpression)
-    }
+    createCodegenEvaluationFunction(cpuExpression)
   }
   
   /**
@@ -429,129 +421,6 @@ case class GpuCpuBridgeExpression(
     }
   }
   
-  /**
-   * Creates an interpreted evaluation function that goes directly from Any value to 
-   * RapidsHostColumnBuilder.
-   * Preserves the original interpreted path efficiency - no GpuRowToColumnConverter overhead.
-   * Streams through the iterator without caching rows in memory.
-   */
-  private def createInterpretedEvaluationFunction(
-    cpuExpression: Expression): (Iterator[InternalRow], Int) => GpuColumnVector = {
-    // Generate a specialized append function once based on the data 
-    // type (similar to TypeConverter pattern)
-    val appendFunction = createOptimizedAppendFunction(dataType, nullable)
-    
-    (rowIterator: Iterator[InternalRow], numRows: Int) => {
-      withResource(new RapidsHostColumnBuilder(resultType, numRows)) { builder =>
-        // Stream through the iterator without caching - preserves memory efficiency
-        rowIterator.foreach { row =>
-          val result = cpuExpression.eval(row)
-          appendFunction(result, builder)
-        }
-        
-        // Build the result column and put it on the GPU
-        closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
-          GpuColumnVector.from(resultCol, dataType)
-        }
-      }
-    }
-  }
-  
-  /**
-   * Creates an optimized append function for the specific data type and nullability.
-   * Similar to how TypeConverter generates specialized functions, this avoids the overhead
-   * of evaluating the data type on every append operation.
-   */
-  private def createOptimizedAppendFunction(dataType: DataType, 
-    nullable: Boolean): (Any, RapidsHostColumnBuilder) => Unit = {
-    dataType match {
-      // Primitive types - generate specialized functions
-      case BooleanType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Boolean])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Boolean])
-      
-      case ByteType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Byte])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Byte])
-      
-      case ShortType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Short])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Short])
-      
-      case IntegerType | DateType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Int])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Int])
-      
-      case LongType | TimestampType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Long])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Long])
-      
-      case FloatType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Float])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Float])
-      
-      case DoubleType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Double])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Double])
-      
-      case StringType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else {
-            val utf8String = value.asInstanceOf[UTF8String]
-            builder.appendUTF8String(utf8String.getBytes)
-          }
-        else (value: Any, builder: RapidsHostColumnBuilder) => {
-          val utf8String = value.asInstanceOf[UTF8String]
-          builder.appendUTF8String(utf8String.getBytes)
-        }
-      
-      case BinaryType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) {
-            builder.appendNull() 
-          } else {
-            builder.appendByteList(value.asInstanceOf[Array[Byte]])
-          }
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.appendByteList(value.asInstanceOf[Array[Byte]])
-      
-      case _: DecimalType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) {
-            builder.appendNull() 
-          } else {
-            builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
-          }
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
-      
-      case _ =>
-        // For complex types or unsupported types, fall back to TypeConverter
-        // Only pay the SpecificInternalRow overhead when we actually need it
-        logDebug(s"Using TypeConverter fallback for complex/unsupported type: $dataType")
-        val converter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
-        val resultRow = new SpecificInternalRow(Array(dataType))
-        
-        (value: Any, builder: RapidsHostColumnBuilder) => {
-          resultRow.update(0, value)
-          converter.append(resultRow, 0, builder)
-        }
-    }
-  }
   
   /**
    * Creates a code-generated projection for the CPU expression using Spark's code generation.
