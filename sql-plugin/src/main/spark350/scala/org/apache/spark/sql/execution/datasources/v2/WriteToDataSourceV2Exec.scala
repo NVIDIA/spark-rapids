@@ -197,7 +197,8 @@ case class GpuOverwritePartitionsDynamicExec(
       "GpuOverwritePartitionsDynamicExec does not support columnar execution")
   }
 
-  override protected def withNewChildInternal(newChild: SparkPlan): GpuOverwritePartitionsDynamicExec = {
+  override protected def withNewChildInternal(newChild: SparkPlan):
+  GpuOverwritePartitionsDynamicExec = {
     copy(inner = newChild)
   }
 }
