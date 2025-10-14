@@ -77,20 +77,12 @@ case class GpuCpuBridgeExpression(
   override def prettyName: String = "gpu_cpu_bridge"
 
   override def toString: String = {
-    val gpuInputsStr = if (gpuInputs.nonEmpty) {
-      gpuInputs.map(_.toString).mkString(", ")
-    } else {
-      ""
-    }
+    val gpuInputsStr = gpuInputs.map(_.toString).mkString(", ")
     s"GpuCpuBridge(gpuInputs=[${gpuInputsStr}], cpuExpression=${cpuExpression.toString})"
   }
 
   override def sql: String = {
-    val gpuInputsSql = if (gpuInputs.nonEmpty) {
-      gpuInputs.map(_.sql).mkString(", ")
-    } else {
-      ""
-    }
+    val gpuInputsSql = gpuInputs.map(_.sql).mkString(", ")
     s"gpu_cpu_bridge(gpuInputs=[${gpuInputsSql}], cpuExpression=${cpuExpression.sql})"
   }
 
@@ -122,10 +114,10 @@ case class GpuCpuBridgeExpression(
   // Each thread gets its own projection to avoid internal memory reuse conflicts
   // while allowing reuse across batches within a thread
   @transient private lazy val threadLocalProjection: ThreadLocal[BridgeUnsafeProjection] =
-    ThreadLocal.withInitial(() => createCodeGeneratedProjection(cpuExpression))
+    ThreadLocal.withInitial(() => createCodeGeneratedProjection())
   
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
-    createEvaluationFunction(cpuExpression)
+    createEvaluationFunction()
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
@@ -388,22 +380,7 @@ case class GpuCpuBridgeExpression(
    * Uses code generation by default. If codegen fails, Spark's CodeGeneratorWithInterpretedFallback
    * will automatically create an InterpretedBridgeUnsafeProjection instead.
    */
-  private def createEvaluationFunction(
-    cpuExpression: Expression): (Iterator[InternalRow], Int) => GpuColumnVector = {
-    createCodegenEvaluationFunction(cpuExpression)
-  }
-  
-  /**
-   * Creates a code-generated evaluation function that writes to the RapidsHostColumnBuilder.
-   * Uses BridgeUnsafeProjection for code generation that writes directly to the builder.
-   * Uses thread-local projections to avoid expensive creation on each batch
-   * while preventing data corruption from internal memory reuse across threads.
-   * Streams through the iterator without caching rows in memory.
-   */
-  private def createCodegenEvaluationFunction(
-    cpuExpression: Expression): (Iterator[InternalRow], Int) => GpuColumnVector = {
-    
-    logDebug(s"Using code generation for ${cpuExpression.getClass.getSimpleName}")
+  private def createEvaluationFunction(): (Iterator[InternalRow], Int) => GpuColumnVector = {
     (rowIterator: Iterator[InternalRow], numRows: Int) => {
       withResource(new RapidsHostColumnBuilder(resultType, numRows)) { builder =>
         // Get thread-local projection - each thread has its own to avoid memory conflicts
@@ -423,15 +400,10 @@ case class GpuCpuBridgeExpression(
   
   
   /**
-   * Creates a code-generated projection for the CPU expression using Spark's code generation.
+   * Creates a code-generated projection for the CPU expression using a 
+   * modified version of Spark's code generation.
    * This provides much better performance than interpreted evaluation.
    */
-  private def createCodeGeneratedProjection(expr: Expression): BridgeUnsafeProjection = {
-    // Create a projection that evaluates the expression and returns the result
-    // The projection takes the input row and produces a single-column result
-    val expressions = Seq(expr)
-    
-    // Use Spark's code generation framework to create an optimized projection
-    BridgeUnsafeProjection.create(expressions)
-  }
+  private def createCodeGeneratedProjection(): BridgeUnsafeProjection =
+    BridgeUnsafeProjection.create(Seq(cpuExpression))
 }
