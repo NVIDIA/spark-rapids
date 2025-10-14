@@ -18,7 +18,9 @@ package com.nvidia.spark.rapids.fileio.hadoop;
 
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
+import com.nvidia.spark.rapids.jni.fileio.RapidsOutputFile;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.spark.util.SerializableConfiguration;
 
@@ -38,12 +40,18 @@ public class HadoopFileIO implements RapidsFileIO {
     }
 
     @Override
-    public RapidsInputFile newInputFile(String path) throws IOException {
+    public HadoopInputFile newInputFile(String path) throws IOException {
         return this.newInputFile(new Path(path));
     }
 
     @Override
-    public RapidsInputFile newInputFile(Path path) throws IOException {
+    public HadoopInputFile newInputFile(Path path) throws IOException {
         return HadoopInputFile.create(path, hadoopConf.value());
+    }
+
+    @Override
+    public HadoopOutputFile newOutputFile(String path) throws IOException {
+        Objects.requireNonNull(path, "path can't be null");
+        return HadoopOutputFile.create(new Path(path), hadoopConf.value());
     }
 }

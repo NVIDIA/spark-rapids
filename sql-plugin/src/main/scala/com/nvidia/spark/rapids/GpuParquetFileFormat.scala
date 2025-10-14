@@ -22,6 +22,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.DateTimeRebase
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.shims.parquet._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
@@ -283,11 +284,12 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext,
-            statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-          debugOutputPath: Option[String]): ColumnarOutputWriter = {
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+          debugOutputPath: Option[String],
+          fileIO: RapidsFileIO): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
           dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
-          statsTrackers, debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled)
+          statsTrackers, debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled, fileIO)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -313,9 +315,10 @@ class GpuParquetWriter(
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugDumpPath: Option[String],
     holdGpuBetweenBatches: Boolean,
-    useAsyncWrite: Boolean)
+    useAsyncWrite: Boolean,
+    fileIO: RapidsFileIO)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet", true, statsTrackers,
-    debugDumpPath, holdGpuBetweenBatches, useAsyncWrite) {
+    debugDumpPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
