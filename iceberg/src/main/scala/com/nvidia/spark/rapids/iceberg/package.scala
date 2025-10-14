@@ -20,7 +20,7 @@ import org.apache.iceberg.Schema
 import scala.collection.JavaConverters._
 
 package object iceberg {
-  private[iceberg] def fieldIndex(schema: Schema, fieldId: Int): Int = {
+  def fieldIndex(schema: Schema, fieldId: Int): Int = {
     val idx = schema
       .columns()
       .asScala

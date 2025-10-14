@@ -53,11 +53,17 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk tzdata git wget
 
 # Install maven 3.8+ to be compatible with JDK17 on Ubuntu
+# maintain also specific version in the internal artifactory to accelerate the build
 ARG MAVEN_VERSION=3.8.4
-RUN wget https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz && \
-    tar xf apache-maven-$MAVEN_VERSION-bin.tar.gz -C /usr/local/ && \
-    rm -rf apache-maven-$MAVEN_VERSION-bin.tar.gz && \
-    ln -sf /usr/local/apache-maven-$MAVEN_VERSION/bin/mvn /usr/bin/mvn
+ARG MAVEN_BASE_URL=https://archive.apache.org/dist/maven/maven-3
+
+ENV MAVEN_TGZ=apache-maven-${MAVEN_VERSION}-bin.tar.gz
+ENV MAVEN_URL=${MAVEN_BASE_URL}/${MAVEN_VERSION}/binaries/${MAVEN_TGZ}
+
+RUN wget "$MAVEN_URL" -O "/tmp/${MAVEN_TGZ}" && \
+    tar xf "/tmp/${MAVEN_TGZ}" -C /usr/local/ && \
+    rm -f "/tmp/${MAVEN_TGZ}" && \
+    ln -sf "/usr/local/apache-maven-${MAVEN_VERSION}/bin/mvn" /usr/bin/mvn
 
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
