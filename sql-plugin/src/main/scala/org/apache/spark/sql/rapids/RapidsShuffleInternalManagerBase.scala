@@ -435,8 +435,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // Wait for all compression tasks to complete for this partition
               // and collect record sizes
               import scala.collection.JavaConverters._
-              var newFutureTouched = false // True means that the writer thread is ahead of the submitting thread
-              val futuresProgress = partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0)
+              var newFutureTouched = 
+                false // True means that the writer thread is ahead of the submitting thread
+              val futuresProgress =
+                 partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0)
               futures.asScala.zipWithIndex.filter(pair => {
                 pair._2 >= futuresProgress
               }).foreach { future =>
