@@ -372,5 +372,5 @@ def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns, 
         dest_table.delete("b > 'c'")
     read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
     assert_gpu_and_cpu_writes_are_equal_collect(do_delete, read_func, data_path,
-                                                             conf=delta_delete_enabled_conf)
+                                                conf=delta_delete_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
