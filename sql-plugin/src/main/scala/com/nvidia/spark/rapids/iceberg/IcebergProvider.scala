@@ -34,8 +34,10 @@ trait IcebergProvider {
   def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit
   def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec
 
-  def tagForGpu(cpuExec: OverwritePartitionsDynamicExec, meta: OverwritePartitionsDynamicExecMeta): Unit
-  def convertToGpu(cpuExec: OverwritePartitionsDynamicExec, meta: OverwritePartitionsDynamicExecMeta): GpuExec
+  def tagForGpu(cpuExec: OverwritePartitionsDynamicExec,
+                meta: OverwritePartitionsDynamicExecMeta): Unit
+  def convertToGpu(cpuExec: OverwritePartitionsDynamicExec,
+                   meta: OverwritePartitionsDynamicExecMeta): GpuExec
 }
 
 object IcebergProvider {
