@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 
 import scala.collection.immutable.TreeMap
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.{SparkContext, TaskContext}
@@ -466,17 +464,17 @@ final class LocalGpuMetric extends GpuMetric {
 }
 
 class CollectTimeIterator[T](
-    nvtxName: String,
+    nvtxId: NvtxId,
     it: Iterator[T],
     collectTime: GpuMetric) extends Iterator[T] {
   override def hasNext: Boolean = {
-    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
+    NvtxIdWithMetrics(nvtxId, collectTime) {
       it.hasNext
     }
   }
 
   override def next(): T = {
-    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
+    NvtxIdWithMetrics(nvtxId, collectTime) {
       it.next
     }
   }
