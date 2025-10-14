@@ -2185,7 +2185,7 @@ abstract class CudfArgMinMaxBase() extends CudfAggregate {
     if (col.getNullCount == col.getRowCount) { // all nulls
       GpuScalar.from(null, dataType)
     } else {
-      col.reduce(cudfReductionOp)
+      col.reduce(cudfReductionOp, DType.INT32)
     }
   }
   override val dataType: DataType = IntegerType
@@ -2223,6 +2223,14 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
   override lazy val inputProjection: Seq[Expression] = Seq(orderingExpr)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(cudfArgMinMaxAggregate)
 
+  override lazy val postUpdateAttr: Seq[AttributeReference] =
+    updateAggregates.map(_.attr) :+ (valueExpr match {
+      case attr: AttributeReference => attr
+      case _ => throw new IllegalArgumentException("Not an AttributeReference")
+    }) :+ (orderingExpr match {
+      case attr: AttributeReference => attr
+      case _ => throw new IllegalArgumentException("Not an AttributeReference")
+    })
   // Extract the extremum value from argmin/argmax index.
   override lazy val postUpdate: Seq[Expression] =
     Seq(GpuGather(valueExpr, cudfArgMinMaxAggregate.attr),
@@ -2230,6 +2238,8 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   override lazy val preMerge: Seq[Expression] = Seq(bufferOrdering)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(cudfArgMinMaxAggregate)
+  override lazy val postMergeAttr: Seq[AttributeReference] =
+    mergeAggregates.map(_.attr) :+ bufferValue :+ bufferOrdering
   override lazy val postMerge: Seq[Expression] =
     Seq(GpuGather(bufferValue, cudfArgMinMaxAggregate.attr),
       GpuGather(bufferOrdering, cudfArgMinMaxAggregate.attr))
