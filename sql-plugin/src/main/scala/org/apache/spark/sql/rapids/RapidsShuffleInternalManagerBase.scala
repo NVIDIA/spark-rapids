@@ -364,6 +364,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
     val maxPartitionSeen = new AtomicInteger(-1)
     val processingComplete = new AtomicBoolean(false)
+    val writerCondition = new Object() // Condition variable to wake up writer thread
 
     // Create dedicated writer thread (not using queueWriteTask)
     val writerThreadFactory = new ThreadFactory {
@@ -474,8 +475,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 currentPartitionToWrite += 1
               } else {
                 if (!newFutureTouched) {
-                  // Sleep briefly to avoid busy waiting
-                  Thread.sleep(1)
+                  // Wait for new data or completion signal
+                  writerCondition.synchronized {
+                    writerCondition.wait(1)
+                  }
                 }
               }
             } else {
@@ -488,8 +491,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
             }
           } else {
-            // Sleep briefly to avoid busy waiting
-            Thread.sleep(1)
+            // Wait for new partitions to be available
+            writerCondition.synchronized {
+              writerCondition.wait(1)
+            }
           }
         }
       }
@@ -558,12 +563,23 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           // Track the maximum partition seen for writer thread
           maxPartitionSeen.set(math.max(maxPartitionSeen.get(), reducePartitionId))
         }
+        // Wake up writer thread when new data is available
+        // Note: This is called for each record to ensure writer can proceed
+        // immediately. The cost is low since notifyAll on an unwaited condition
+        // is very cheap, and it eliminates potential 1ms delays.
+        writerCondition.synchronized {
+          writerCondition.notifyAll()
+        }
       }
 
       maxPartitionSeen.set(maxPartitionSeen.get() + 1) // mark end of partitions
 
       // Signal that main thread is done processing
       processingComplete.set(true)
+      // Wake up writer thread to check completion status
+      writerCondition.synchronized {
+        writerCondition.notifyAll()
+      }
 
       // Wait for writer thread to complete all partitions
       try {

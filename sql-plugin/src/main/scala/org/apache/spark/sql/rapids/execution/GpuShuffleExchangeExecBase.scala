@@ -427,6 +427,11 @@ object GpuShuffleExchangeExecBase {
                   isFirstCheck = false
 
                   if (!iter.hasNext) {
+                    // It is concerning from a memory pressure standpoint. We don't know what is 
+                    // upstream of this node so asking if there is more could require us to fully
+                    // materialize the next batch. And exhaustively checking each operator's implementation
+                    // seems to be impossible. For now we think that the performance benefit outweighs
+                    // the potential risk of memory pressure.
                     isSingleBatch = true
                   }
                 }
