@@ -96,8 +96,13 @@ public interface RapidsUDAF {
   ColumnVector postProcess(int numRows, ColumnVector[] args, DataType outType);
 
   /**
-   * Data types of the aggregate buffer. This is similar as the "bufferSchema" of
-   * class UserDefinedAggregateFunction in Spark.
+   * Data types of the aggregate buffer.
+   * <br/>
+   * It is better to align with the "bufferSchema" of "UserDefinedAggregateFunction", or
+   * the "bufferEncoder" of "Aggregator" in Spark. Otherwise, data corruption are likely
+   * to happen when some operations of this aggregation fall back to CPU. E.g. Partial
+   * aggregates runs on CPU but final aggregates runs on GPU, or vice-versa. This is rare
+   * but just in case.
    */
   DataType[] aggBufferTypes();
 }
