@@ -40,3 +40,14 @@ class GpuBatchAppend(write: GpuSparkWrite) extends GpuBaseBatchWrite(write) {
     write.commitOperation(append, s"append with $numFiles new data files")
   }
 }
+
+class GpuDynamicOverwrite(
+    write: GpuSparkWrite,
+    cpuBatchWrite: BatchWrite) extends GpuBaseBatchWrite(write) {
+  
+  override def commit(messages: Array[WriterCommitMessage]): Unit = {
+    // Delegate to the CPU version's commit method
+    // The CPU version handles all the complex logic for dynamic partition overwrite
+    cpuBatchWrite.commit(messages)
+  }
+}

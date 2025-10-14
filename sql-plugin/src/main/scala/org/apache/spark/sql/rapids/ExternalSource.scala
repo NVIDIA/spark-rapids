@@ -31,7 +31,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1, OverwritePartitionsDynamicExec}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -253,6 +253,30 @@ object ExternalSource extends Logging {
   def convertToGpu(
     cpuExec: AppendDataExec,
     meta: AppendDataExecMeta): GpuExec = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+    cpuExec: OverwritePartitionsDynamicExec,
+    meta: OverwritePartitionsDynamicExecMeta): Unit = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Overwrite partitions dynamic $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+    cpuExec: OverwritePartitionsDynamicExec,
+    meta: OverwritePartitionsDynamicExecMeta): GpuExec = {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
