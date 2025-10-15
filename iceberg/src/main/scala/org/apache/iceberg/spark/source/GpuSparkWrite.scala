@@ -51,7 +51,19 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
   private[source] val format: FileFormat = FieldUtils.readField(cpu, "format", true)
     .asInstanceOf[FileFormat]
 
-  override def toBatch: BatchWrite = new GpuBatchAppend(this)
+  override def toBatch: BatchWrite = {
+    // Get the CPU BatchWrite to determine the operation type
+    val cpuBatchWrite = cpu.toBatch
+    
+    // Check if this is an overwrite operation
+    val isOverwrite = cpuBatchWrite.getClass.getSimpleName == "OverwriteByFilter"
+    
+    if (isOverwrite) {
+      new GpuOverwriteByFilter(this, cpuBatchWrite)
+    } else {
+      new GpuBatchAppend(this)
+    }
+  }
 
   override def toStreaming: StreamingWrite = throw new UnsupportedOperationException(
     "GpuSparkWrite does not support streaming write")
@@ -175,6 +187,35 @@ object GpuSparkWrite {
             }
           case Failure(_) => meta.willNotWorkOnGpu(
             s"Iceberg partition transform $transform is not supported on GPU")
+        }
+      }
+    }
+
+    // Check if this is an overwrite operation and validate it
+    val isOverwrite = try {
+      val cpuBatchWrite = cpuWrite.asInstanceOf[SparkWrite].toBatch
+      cpuBatchWrite.getClass.getSimpleName == "OverwriteByFilter"
+    } catch {
+      case _: Exception => false
+    }
+
+    if (isOverwrite) {
+      // Extract overwrite expression to check if it's static overwrite
+      val overwriteExpr = try {
+        FieldUtils.readField(cpuWrite, "overwriteExpr", true)
+          .asInstanceOf[org.apache.iceberg.expressions.Expression]
+      } catch {
+        case _: Exception => null
+      }
+
+      // For now, we only support static overwrite (where overwriteExpr is null or AlwaysTrue)
+      // Dynamic overwrite with complex expressions is not yet supported
+      if (overwriteExpr != null) {
+        val exprString = overwriteExpr.toString
+        // Check if it's not a simple static overwrite (AlwaysTrue or similar)
+        if (!exprString.contains("true") || exprString.contains("ref(")) {
+          meta.willNotWorkOnGpu("Only static overwrite (full table/partition overwrite) is " +
+            "supported for Iceberg on GPU. Dynamic overwrite with filters is not yet supported.")
         }
       }
     }

@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, StaticInvokeMeta, VersionUtils}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, GpuExec, GpuExpression, OverwriteByExpressionExecMeta, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, StaticInvokeMeta, VersionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
-import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, OverwriteByExpressionExec}
 
 /** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
 trait IcebergProvider {
@@ -33,6 +33,8 @@ trait IcebergProvider {
   def isSupportedWrite(write: Class[_ <: Write]): Boolean
   def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit
   def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec
+  def tagForGpu(cpuExec: OverwriteByExpressionExec, meta: OverwriteByExpressionExecMeta): Unit
+  def convertToGpu(cpuExec: OverwriteByExpressionExec, meta: OverwriteByExpressionExecMeta): GpuExec
 }
 
 object IcebergProvider {

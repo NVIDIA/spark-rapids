@@ -40,3 +40,11 @@ class GpuBatchAppend(write: GpuSparkWrite) extends GpuBaseBatchWrite(write) {
     write.commitOperation(append, s"append with $numFiles new data files")
   }
 }
+
+class GpuOverwriteByFilter(write: GpuSparkWrite, cpuOverwrite: BatchWrite) 
+    extends GpuBaseBatchWrite(write) {
+  override def commit(messages: Array[WriterCommitMessage]): Unit = {
+    // Delegate to CPU OverwriteByFilter's commit method
+    cpuOverwrite.commit(messages)
+  }
+}
