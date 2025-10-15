@@ -241,7 +241,7 @@ def test_insert_overwrite_unpartitioned_table_all_cols_fallback(spark_tmp_table_
         df = gen_df(spark, list(zip(cols, iceberg_full_gens_list)), seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
 
     def overwrite_data(spark, table_name: str):
         df = this_gen_df(spark)
@@ -285,7 +285,7 @@ def test_insert_overwrite_partitioned_table_all_cols_fallback(spark_tmp_table_fa
         df = gen_df(spark, list(zip(cols, iceberg_full_gens_list)), seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
 
     def overwrite_data(spark, table_name: str):
         cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
@@ -329,7 +329,7 @@ def test_insert_overwrite_partitioned_table_unsupported_partition_fallback(
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
     
     def overwrite_data(spark, table_name: str):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -370,7 +370,7 @@ def test_insert_overwrite_table_unsupported_file_format_fallback(
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
     
     def overwrite_data(spark, table_name: str):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -410,7 +410,7 @@ def test_insert_overwrite_iceberg_table_fallback_when_conf_disabled(
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
     
     def overwrite_data(spark, table_name: str):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
