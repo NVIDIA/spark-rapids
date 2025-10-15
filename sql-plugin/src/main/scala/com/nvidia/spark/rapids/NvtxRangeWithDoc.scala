@@ -446,6 +446,15 @@ object NvtxRegistry {
   val SLICE_INTERNAL_CPU: NvtxId = NvtxId("sliceInternalOnCpu", NvtxColor.CYAN,
     "Slicing partition data on CPU")
 
+  val PARTITION_FOR_JOIN: NvtxId = NvtxId("partition for join", NvtxColor.CYAN,
+    "Hash partitioning data for join operation")
+
+  val CALCULATE_PART: NvtxId = NvtxId("Calculate part", NvtxColor.CYAN,
+    "Calculating hash partition assignments")
+
+  val SUB_JOIN_PART: NvtxId = NvtxId("Sub-join part", NvtxColor.CYAN,
+    "Hash partitioning for sub-join operation")
+
   val WINDOW_EXEC: NvtxId = NvtxId("window", NvtxColor.CYAN,
     "Executing window operation on batch")
 
@@ -638,6 +647,9 @@ object NvtxRegistry {
     register(SHUFFLE_CONCAT_CPU)
     register(SLICE_INTERNAL_GPU)
     register(SLICE_INTERNAL_CPU)
+    register(PARTITION_FOR_JOIN)
+    register(CALCULATE_PART)
+    register(SUB_JOIN_PART)
     register(WINDOW_EXEC)
     register(EXPAND_EXEC_PROJECTIONS)
     register(LIMIT_AND_OFFSET)

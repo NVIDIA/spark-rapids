@@ -1351,7 +1351,7 @@ abstract class JoinPartitioner(
     withRetryNoSplit(spillableBatch) { _ =>
       opTime.ns {
         val partsTable = hashPartitionAndClose(spillableBatch.getColumnarBatch(), numPartitions,
-          "partition for join")
+          NvtxRegistry.PARTITION_FOR_JOIN)
         val contigTables = withResource(partsTable) { _ =>
           partsTable.getTable.contiguousSplit(partsTable.getPartitions.tail: _*)
         }
