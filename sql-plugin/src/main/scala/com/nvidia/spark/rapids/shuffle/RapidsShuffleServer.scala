@@ -21,7 +21,7 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executor}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{RapidsConf, RapidsShuffleHandle, ShuffleMetadata}
+import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -325,7 +325,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       var toTryAgain: ArrayBuffer[BufferSendState] = null
       var supressedErrors: ArrayBuffer[Throwable] = null
       bufferSendStates.foreach { bufferSendState =>
-        withResource(new NvtxRange(s"doHandleTransferRequest", NvtxColor.CYAN)) { _ =>
+        NvtxRegistry.SHUFFLE_TRANSFER_REQUEST {
           require(bufferSendState.hasMoreSends, "Attempting to handle a complete transfer request.")
 
           // For each `BufferSendState` we ask for a bounce buffer fill up

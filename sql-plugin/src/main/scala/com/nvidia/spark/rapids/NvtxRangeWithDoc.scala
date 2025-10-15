@@ -419,6 +419,33 @@ object NvtxRegistry {
   val BUFFER_FILE_SPLIT: NvtxId = NvtxId("Buffer file split", NvtxColor.YELLOW,
     "Buffering file split for reading")
 
+  val FILE_FORMAT_READ_BATCH: NvtxId = NvtxId("file format readBatch", NvtxColor.GREEN,
+    "Reading batch of data from file format (Parquet/ORC/Avro/CSV/JSON)")
+
+  val FILE_FORMAT_WRITE: NvtxId = NvtxId("GPU file format write", NvtxColor.BLUE,
+    "Writing batch of data to file format on GPU")
+
+  val TASK_RANGE: NvtxId = NvtxId("Spark Task", NvtxColor.DARK_GREEN,
+    "Spark task execution range for stage and task tracking")
+
+  val SHUFFLE_TRANSFER_REQUEST: NvtxId = NvtxId("Shuffle Transfer Request", NvtxColor.CYAN,
+    "Handling shuffle data transfer request")
+
+  val ASYNC_SHUFFLE_READ: NvtxId = NvtxId("Async Shuffle Read", NvtxColor.BLUE,
+    "Asynchronous shuffle read operation")
+
+  val ASYNC_SHUFFLE_BUFFER: NvtxId = NvtxId("Async Shuffle Buffer", NvtxColor.ORANGE,
+    "Asynchronous shuffle buffering operation")
+
+  val SHUFFLE_CONCAT_CPU: NvtxId = NvtxId("Shuffle Concat CPU", NvtxColor.PURPLE,
+    "Concatenating shuffle data on CPU")
+
+  val SLICE_INTERNAL_GPU: NvtxId = NvtxId("sliceInternalOnGpu", NvtxColor.CYAN,
+    "Slicing partition data on GPU")
+
+  val SLICE_INTERNAL_CPU: NvtxId = NvtxId("sliceInternalOnCpu", NvtxColor.CYAN,
+    "Slicing partition data on CPU")
+
   val WINDOW_EXEC: NvtxId = NvtxId("window", NvtxColor.CYAN,
     "Executing window operation on batch")
 
@@ -602,6 +629,15 @@ object NvtxRegistry {
     register(ORC_DECODE)
     register(AVRO_DECODE)
     register(BUFFER_FILE_SPLIT)
+    register(FILE_FORMAT_READ_BATCH)
+    register(FILE_FORMAT_WRITE)
+    register(TASK_RANGE)
+    register(SHUFFLE_TRANSFER_REQUEST)
+    register(ASYNC_SHUFFLE_READ)
+    register(ASYNC_SHUFFLE_BUFFER)
+    register(SHUFFLE_CONCAT_CPU)
+    register(SLICE_INTERNAL_GPU)
+    register(SLICE_INTERNAL_CPU)
     register(WINDOW_EXEC)
     register(EXPAND_EXEC_PROJECTIONS)
     register(LIMIT_AND_OFFSET)

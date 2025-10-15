@@ -20,7 +20,7 @@ import java.io.{BufferedOutputStream, DataOutputStream, OutputStream}
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange, TableWriter}
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, JCudfSerialization, TableWriter}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -241,7 +241,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   // protected for testing
   protected[this] def bufferBatchAndClose(batch: ColumnarBatch): Long = {
     val startTimestamp = System.nanoTime
-    withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+    NvtxRegistry.FILE_FORMAT_WRITE {
       withResource(transformAndClose(batch)) { maybeTransformed =>
         encodeAndBufferToHost(maybeTransformed)
       }

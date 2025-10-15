@@ -414,7 +414,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val isFirstChunk = partFile.start == 0 && isFirstChunkForIterator
       val table = readToTable(isFirstChunk)
       try {
