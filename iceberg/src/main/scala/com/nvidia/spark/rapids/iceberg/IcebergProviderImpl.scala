@@ -125,7 +125,8 @@ class IcebergProviderImpl extends IcebergProvider {
       GpuSparkWrite.convert(cpuExec.write))
   }
 
-  override def tagForGpu(cpuExec: OverwriteByExpressionExec, meta: OverwriteByExpressionExecMeta): Unit = {
+  override def tagForGpu(cpuExec: OverwriteByExpressionExec,
+                         meta: OverwriteByExpressionExecMeta): Unit = {
     if (!meta.conf.isIcebergEnabled) {
       meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_ICEBERG} to true")
@@ -141,7 +142,8 @@ class IcebergProviderImpl extends IcebergProvider {
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
   }
 
-  override def convertToGpu(cpuExec: OverwriteByExpressionExec, meta: OverwriteByExpressionExecMeta): GpuExec = {
+  override def convertToGpu(cpuExec: OverwriteByExpressionExec,
+                            meta: OverwriteByExpressionExecMeta): GpuExec = {
     var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
     if (!child.supportsColumnar) {
       child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
