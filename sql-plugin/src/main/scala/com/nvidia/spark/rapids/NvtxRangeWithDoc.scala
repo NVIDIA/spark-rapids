@@ -569,6 +569,15 @@ object NvtxRegistry {
   val CONCAT_PENDING: NvtxId = NvtxId("concat pending", NvtxColor.CYAN,
     "Concatenating pending batches")
 
+  val GPU_COALESCE_BATCHES_CONCAT: NvtxId = NvtxId("GpuCoalesceBatches concat", NvtxColor.CYAN,
+    "Concatenating batches in GpuCoalesceBatches")
+
+  val SINGLE_BUILD_BATCH_CONCAT: NvtxId = NvtxId("single build batch concat", NvtxColor.CYAN,
+    "Concatenating batches for single build batch")
+
+  val HOST_COLUMNAR_TO_GPU_CONCAT: NvtxId = NvtxId("HostColumnarToGpu concat", NvtxColor.CYAN,
+    "Concatenating batches in HostColumnarToGpu")
+
   // Decode operations
   val HIVE_DECODE: NvtxId = NvtxId("HIVE decode", NvtxColor.DARK_GREEN,
     "Decoding Hive table data")
@@ -826,6 +835,9 @@ object NvtxRegistry {
     register(HILBERT_INDEX)
     register(GPU_PARTITIONER)
     register(CONCAT_PENDING)
+    register(GPU_COALESCE_BATCHES_CONCAT)
+    register(SINGLE_BUILD_BATCH_CONCAT)
+    register(HOST_COLUMNAR_TO_GPU_CONCAT)
     register(HIVE_DECODE)
     register(JSON_DECODE_SCAN)
     register(CSV_DECODE)

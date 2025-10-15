@@ -248,7 +248,10 @@ case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
 object OpNameNvtxMap {
   private val map = Map(
     "GpuCoalesceBatches: collect" -> NvtxRegistry.GPU_COALESCE_BATCHES_COLLECT,
-    "build batch: collect" -> NvtxRegistry.BUILD_BATCH_COLLECT
+    "build batch: collect" -> NvtxRegistry.BUILD_BATCH_COLLECT,
+    "GpuCoalesceBatches concat" -> NvtxRegistry.GPU_COALESCE_BATCHES_CONCAT,
+    "single build batch concat" -> NvtxRegistry.SINGLE_BUILD_BATCH_CONCAT,
+    "HostColumnarToGpu concat" -> NvtxRegistry.HOST_COLUMNAR_TO_GPU_CONCAT
   )
 
   def get(opName: String): Option[NvtxId] = map.get(opName)
@@ -636,7 +639,9 @@ abstract class AbstractGpuCoalesceIterator(
           wasLastBatch
         }
 
-        NvtxIdWithMetrics(NvtxRegistry.CONCAT_PENDING, concatTime) {
+        NvtxIdWithMetrics(
+            OpNameNvtxMap.get(s"$opName concat").getOrElse(NvtxRegistry.CONCAT_PENDING),
+            concatTime) {
           goal match {
             case _: SplittableGoal if supportsRetryIterator =>
               coalesceBatchIterator = getCoalesceRetryIterator
