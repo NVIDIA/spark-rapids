@@ -131,8 +131,7 @@ trait GpuPartitioning extends Partitioning {
     // We have to wrap the NvtxWithMetrics over both copyToHostAsync and corresponding CudaSync,
     // because the copyToHostAsync calls above are not guaranteed to be asynchronous (e.g.: when
     // the copy is from pageable memory, and we're not guaranteed to be using pinned memory).
-    val hostPartColumns = withResource(
-      new NvtxWithMetrics("PartitionD2H", NvtxColor.CYAN, memCopyTime)) { _ =>
+    val hostPartColumns = NvtxIdWithMetrics(NvtxRegistry.PARTITION_D2H, memCopyTime) {
       val hostColumns = withResource(partitionColumns) { _ =>
         withRetryNoSplit {
           partitionColumns.safeMap(_.copyToHostAsync(Cuda.DEFAULT_STREAM))

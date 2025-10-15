@@ -231,8 +231,7 @@ object AggregateUtils extends Logging {
         return
       }
 
-      withResource(new NvtxWithMetrics("agg repartition",
-        NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.AGG_REPARTITION, metrics.repartitionTime) {
 
         withResource(new GpuBatchSubPartitioner(
           Iterator(withRetryNoSplit(batch)(_.getColumnarBatch())),

@@ -313,6 +313,179 @@ object NvtxRegistry {
   val ROUND_ROBIN_PARTITION_SLICE: NvtxId = NvtxId("Round robin partition slice",
     NvtxColor.BLUE, "Slicing data for round-robin partitioning")
 
+  // Filter operations
+  val FILTER_BATCH: NvtxId = NvtxId("filter batch", NvtxColor.YELLOW,
+    "Filtering rows from a columnar batch")
+
+  // Project operations
+  val PROJECT_EXEC: NvtxId = NvtxId("ProjectExec", NvtxColor.CYAN,
+    "Executing projection operation on columnar batch")
+
+  val PROJECT_AST: NvtxId = NvtxId("Project AST", NvtxColor.CYAN,
+    "Applying AST-based projection to batch")
+
+  val COMPILE_ASTS: NvtxId = NvtxId("Compile ASTs", NvtxColor.ORANGE,
+    "Compiling abstract syntax trees for expression evaluation")
+
+  // Aggregate operations
+  val COMPUTE_AGGREGATE: NvtxId = NvtxId("computeAggregate", NvtxColor.CYAN,
+    "Computing aggregation on input batch")
+
+  val FINALIZE_AGG: NvtxId = NvtxId("finalize agg", NvtxColor.DARK_GREEN,
+    "Finalizing aggregation results")
+
+  val POST_PROCESS_AGG: NvtxId = NvtxId("post-process", NvtxColor.ORANGE,
+    "Post-processing aggregation results")
+
+  val CONCATENATE_BATCHES: NvtxId = NvtxId("concatenateBatches", NvtxColor.BLUE,
+    "Concatenating multiple batches into one")
+
+  val AGG_REPARTITION: NvtxId = NvtxId("agg repartition", NvtxColor.PURPLE,
+    "Repartitioning data for aggregation")
+
+  val REPARTITION_AGG_ITERATOR_NEXT: NvtxId = NvtxId("RepartitionAggregateIterator.next",
+    NvtxColor.CYAN, "Fetching next batch from repartition aggregate iterator")
+
+  val DYNAMIC_SORT_HEURISTIC: NvtxId = NvtxId("dynamic sort heuristic", NvtxColor.BLUE,
+    "Applying dynamic sort heuristic for aggregation")
+
+  // Sort operations
+  val SORT: NvtxId = NvtxId("sort", NvtxColor.DARK_GREEN,
+    "Sorting columnar data")
+
+  val MERGE_SORT: NvtxId = NvtxId("merge sort", NvtxColor.DARK_GREEN,
+    "Merge sorting multiple sorted batches")
+
+  val SORT_OP: NvtxId = NvtxId("sort op", NvtxColor.WHITE,
+    "General sort operation")
+
+  val SORT_ORDER: NvtxId = NvtxId("sort_order", NvtxColor.DARK_GREEN,
+    "Computing sort order for data")
+
+  val GATHER_SORT: NvtxId = NvtxId("gather", NvtxColor.DARK_GREEN,
+    "Gathering sorted data based on indices")
+
+  val SPLIT_INPUT_BATCH: NvtxId = NvtxId("split input batch", NvtxColor.CYAN,
+    "Splitting input batch for sorting")
+
+  val SORT_NEXT_OUTPUT_BATCH: NvtxId = NvtxId("Sort next output batch", NvtxColor.CYAN,
+    "Fetching next sorted output batch")
+
+  // Join operations
+  val HASH_JOIN_GATHER_MAP: NvtxId = NvtxId("hash join gather map", NvtxColor.ORANGE,
+    "Gathering hash join results using gather map")
+
+  val FULL_HASH_JOIN_GATHER_MAP: NvtxId = NvtxId("full hash join gather map",
+    NvtxColor.ORANGE, "Gathering full hash join results")
+
+  val UPDATE_TRACKING_MASK: NvtxId = NvtxId("update tracking mask", NvtxColor.DARK_GREEN,
+    "Updating tracking mask for join operation")
+
+  val GET_FINAL_BATCH: NvtxId = NvtxId("get final batch", NvtxColor.ORANGE,
+    "Getting final batch from join operation")
+
+  val EXISTENCE_JOIN_SCATTER_MAP: NvtxId = NvtxId("existence join scatter map",
+    NvtxColor.ORANGE, "Creating scatter map for existence join")
+
+  val EXISTENCE_JOIN_BATCH: NvtxId = NvtxId("existence join batch", NvtxColor.ORANGE,
+    "Processing batch for existence join")
+
+  val BUILD_JOIN_TABLE: NvtxId = NvtxId("build join table", NvtxColor.GREEN,
+    "Building hash table for join operation")
+
+  // Window operations
+  val WINDOW: NvtxId = NvtxId("window", NvtxColor.CYAN,
+    "Computing window function results")
+
+  val RUNNING_WINDOW: NvtxId = NvtxId("RunningWindow", NvtxColor.CYAN,
+    "Computing running window aggregation")
+
+  val DOUBLE_BATCHED_WINDOW_PRE: NvtxId = NvtxId("DoubleBatchedWindow_PRE", NvtxColor.CYAN,
+    "Pre-processing for double-batched window operation")
+
+  val DOUBLE_BATCHED_WINDOW_POST: NvtxId = NvtxId("DoubleBatchedWindow_POST",
+    NvtxColor.BLUE, "Post-processing for double-batched window operation")
+
+  // I/O decode operations
+  val PARQUET_DECODE: NvtxId = NvtxId("Parquet decode", NvtxColor.DARK_GREEN,
+    "Decoding Parquet data to columnar format")
+
+  val ORC_DECODE: NvtxId = NvtxId("ORC decode", NvtxColor.DARK_GREEN,
+    "Decoding ORC data to columnar format")
+
+  val AVRO_DECODE: NvtxId = NvtxId("Avro decode", NvtxColor.DARK_GREEN,
+    "Decoding Avro data to columnar format")
+
+  val BUFFER_FILE_SPLIT: NvtxId = NvtxId("Buffer file split", NvtxColor.YELLOW,
+    "Buffering file split for reading")
+
+  // Limit and sample operations
+  val LIMIT_AND_OFFSET: NvtxId = NvtxId("limit and offset", NvtxColor.ORANGE,
+    "Applying limit and offset to data")
+
+  val READ_N_CONCAT: NvtxId = NvtxId("readNConcat", NvtxColor.CYAN,
+    "Reading and concatenating N batches")
+
+  val TOP_N: NvtxId = NvtxId("TOP N", NvtxColor.ORANGE,
+    "Computing top N rows")
+
+  val TOP_N_OFFSET: NvtxId = NvtxId("TOP N Offset", NvtxColor.ORANGE,
+    "Computing top N rows with offset")
+
+  val SAMPLE_EXEC: NvtxId = NvtxId("Sample Exec", NvtxColor.YELLOW,
+    "Sampling rows from data")
+
+  val FAST_SAMPLE_EXEC: NvtxId = NvtxId("Fast Sample Exec", NvtxColor.YELLOW,
+    "Fast sampling rows from data")
+
+  // Data conversion operations
+  val COLUMNAR_TO_ROW_BATCH: NvtxId = NvtxId("ColumnarToRow: batch", NvtxColor.RED,
+    "Converting columnar batch to row format")
+
+  val COLUMNAR_TO_ROW_FETCH: NvtxId = NvtxId("ColumnarToRow: fetch", NvtxColor.BLUE,
+    "Fetching data during columnar to row conversion")
+
+  // Broadcast operations
+  val BROADCAST_COLLECT: NvtxId = NvtxId("broadcast collect", NvtxColor.GREEN,
+    "Collecting data for broadcast")
+
+  val BROADCAST_BUILD: NvtxId = NvtxId("broadcast build", NvtxColor.DARK_GREEN,
+    "Building broadcast data structure")
+
+  val BROADCAST: NvtxId = NvtxId("broadcast", NvtxColor.CYAN,
+    "Broadcasting data to executors")
+
+  // Generate operations
+  val GPU_GENERATE_EXEC: NvtxId = NvtxId("GpuGenerateExec", NvtxColor.PURPLE,
+    "Executing generate operation on GPU")
+
+  val GPU_GENERATE_PROJECT_SPLIT: NvtxId = NvtxId("GpuGenerate project split",
+    NvtxColor.ORANGE, "Splitting projection in generate operation")
+
+  val GPU_GENERATE_ITERATOR: NvtxId = NvtxId("GpuGenerateIterator", NvtxColor.PURPLE,
+    "Iterating through generated data")
+
+  // Partition operations
+  val PARTITION_D2H: NvtxId = NvtxId("PartitionD2H", NvtxColor.CYAN,
+    "Copying partition data from device to host")
+
+  // Range operation
+  val GPU_RANGE: NvtxId = NvtxId("GpuRange", NvtxColor.DARK_GREEN,
+    "Generating range of values on GPU")
+
+  // Hybrid CPU/GPU operations
+  val WAIT_FOR_CPU: NvtxId = NvtxId("waitForCPU", NvtxColor.RED,
+    "Waiting for CPU batch in hybrid execution")
+
+  val GPU_ACQUIRE_C2C: NvtxId = NvtxId("gpuAcquireC2C", NvtxColor.GREEN,
+    "Acquiring GPU for coalesce-to-coalesce operation")
+
+  val PINNED_H2D: NvtxId = NvtxId("pinnedH2D", NvtxColor.DARK_GREEN,
+    "Copying from pinned host memory to device")
+
+  val PAGEABLE_H2D: NvtxId = NvtxId("PageableH2D", NvtxColor.GREEN,
+    "Copying from pageable host memory to device")
+
   def init(): Unit = {
     register(ACQUIRE_GPU)
     register(RELEASE_GPU)
@@ -383,6 +556,59 @@ object NvtxRegistry {
     register(BRING_BACK_TO_HOST)
     register(ROUND_ROBIN_PARTITION)
     register(ROUND_ROBIN_PARTITION_SLICE)
+    register(FILTER_BATCH)
+    register(PROJECT_EXEC)
+    register(PROJECT_AST)
+    register(COMPILE_ASTS)
+    register(COMPUTE_AGGREGATE)
+    register(FINALIZE_AGG)
+    register(POST_PROCESS_AGG)
+    register(CONCATENATE_BATCHES)
+    register(AGG_REPARTITION)
+    register(REPARTITION_AGG_ITERATOR_NEXT)
+    register(DYNAMIC_SORT_HEURISTIC)
+    register(SORT)
+    register(MERGE_SORT)
+    register(SORT_OP)
+    register(SORT_ORDER)
+    register(GATHER_SORT)
+    register(SPLIT_INPUT_BATCH)
+    register(SORT_NEXT_OUTPUT_BATCH)
+    register(HASH_JOIN_GATHER_MAP)
+    register(FULL_HASH_JOIN_GATHER_MAP)
+    register(UPDATE_TRACKING_MASK)
+    register(GET_FINAL_BATCH)
+    register(EXISTENCE_JOIN_SCATTER_MAP)
+    register(EXISTENCE_JOIN_BATCH)
+    register(BUILD_JOIN_TABLE)
+    register(WINDOW)
+    register(RUNNING_WINDOW)
+    register(DOUBLE_BATCHED_WINDOW_PRE)
+    register(DOUBLE_BATCHED_WINDOW_POST)
+    register(PARQUET_DECODE)
+    register(ORC_DECODE)
+    register(AVRO_DECODE)
+    register(BUFFER_FILE_SPLIT)
+    register(LIMIT_AND_OFFSET)
+    register(READ_N_CONCAT)
+    register(TOP_N)
+    register(TOP_N_OFFSET)
+    register(SAMPLE_EXEC)
+    register(FAST_SAMPLE_EXEC)
+    register(COLUMNAR_TO_ROW_BATCH)
+    register(COLUMNAR_TO_ROW_FETCH)
+    register(BROADCAST_COLLECT)
+    register(BROADCAST_BUILD)
+    register(BROADCAST)
+    register(GPU_GENERATE_EXEC)
+    register(GPU_GENERATE_PROJECT_SPLIT)
+    register(GPU_GENERATE_ITERATOR)
+    register(PARTITION_D2H)
+    register(GPU_RANGE)
+    register(WAIT_FOR_CPU)
+    register(GPU_ACQUIRE_C2C)
+    register(PINNED_H2D)
+    register(PAGEABLE_H2D)
   }
 }
 

@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{HostColumnVector, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetryNoSplit}
@@ -115,7 +115,7 @@ class AcceleratedColumnarToRowIterator(
     // but it is more efficient.
     numOutputRows += scb.numRows()
     if (scb.numRows() > 0) {
-      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_BATCH, opTime) {
         val it = RmmRapidsRetryIterator.withRetry(scb, splitSpillableInHalfByRows) { attempt =>
           withResource(attempt.getColumnarBatch()) { attemptCb =>
             withResource(rearrangeRows(attemptCb)) { table =>
@@ -172,7 +172,7 @@ class AcceleratedColumnarToRowIterator(
   }
 
   private def fetchNextBatch(): Option[SpillableColumnarBatch] = {
-    withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, streamTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_FETCH, streamTime) {
       if (batches.hasNext) {
         // Make it spillable once getting a columnar batch.
         val spillBatch = closeOnExcept(batches.next()) { cb =>
@@ -261,7 +261,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
         val sDevCb = SpillableColumnarBatch(devCb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         cb = withRetryNoSplit(sDevCb) { _ =>
           withResource(sDevCb.getColumnarBatch()) { devCb =>
-            withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_BATCH, opTime) {
               new ColumnarBatch(GpuColumnVector.extractColumns(devCb).safeMap(toHost),
                 devCb.numRows())
             }
@@ -284,7 +284,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   }
 
   private def fetchNextBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, streamTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_FETCH, streamTime) {
       while (batches.hasNext) {
         numInputBatches += 1
         val devCb = batches.next()

@@ -29,6 +29,7 @@ parquet parse filter footer|Parsing and filtering Parquet footer by range
 parquet filter blocks|Filtering Parquet row group blocks based on predicates
 probe right|Probing the right side of a join input iterator to get the data size for preparing the join
 hash partition slice|Slicing partitioned table into individual partitions
+Transport copy buffer|Copying buffer for Rapids shuffle transport
 hash partition|Partitioning data based on hash values
 fetch join stream|IO time on the stream side data for the following join
 cartesian product deserialize|Deserializing batch from cartesian product operation
@@ -36,7 +37,9 @@ shuffled join stream|GpuShuffledHashJoinExec op is preparing build batches for j
 Acquire GPU|Time waiting for GPU semaphore to be acquired
 Release GPU|Releasing the GPU semaphore
 sort lower boundaries|Computing lower boundaries for sort operation
+RapidsCachingReader.read|Reading shuffle data from cache or remote transport
 GpuCoalesceBatches: collect|GPU combining of small batches post-kernel processing
+Round robin partition|Partitioning data using round-robin strategy
 join asymmetric probe fetch|Asymmetric join probe side data fetch
 sort to unsafe row|Converting sorted data to unsafe row format
 cartesian product serialize|Serializing batch for cartesian product operation
@@ -44,11 +47,14 @@ broadcast join stream|time it takes to materialize a broadcast batch on the host
 gpuKudoSliceBuffers|slice kudo serialized buffers on host into partitions
 parquet buffer file split|Splitting Parquet file into buffer chunks for reading
 avro buffer file split|Splitting Avro file into buffer chunks for reading
+Round robin partition slice|Slicing data for round-robin partitioning
 parquet read filtered footer|Reading filtered Parquet footer with selected row groups
 agg pre-process|Pre-processing step for aggregation before calling cuDF aggregate, including casting and struct creation
 CommitShuffle|After all temporary shuffle writes are done, produce a single file (shuffle_[map_id]_0) in the commit phase
 parquet read footer|Reading and parsing complete Parquet footer
+Columnar batch serialize row only|Serializing row-only batch (no GPU data)
 reduction merge m2|Merging M2 values during variance/stddev reduction
+Bring back to host|Copying GPU data back to host memory
 ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
 generate estimate repetition|Estimating repetition count for generate operation
 random expr|Generating random values in expression evaluation
@@ -59,20 +65,26 @@ sort copy boundaries|Copying boundary data for sort operation
 orc buffer file split|Splitting ORC file into buffer chunks for reading
 parquet clip schema|Clipping Parquet schema to required columns
 AbstractGpuCoalesceIterator|Default range for a code path in the AbstractGpuCoalesceIterator for an op which is not explicitly documented in its own range
+Columnar batch serialize|Serializing columnar batch for shuffle or storage
 ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
+RapidsShuffleIterator.next|Fetching next batch from Rapids shuffle iterator
 ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
 json convert datetime|Converting JSON datetime types to Spark datetime types
+RapidsShuffleIterator.gotBatch|Processing batch received from Rapids shuffle
 gpuKudoCopyToHost|copy gpu kudo serialized outputs back to the host
 agg groupby|Group-by aggregation using cuDF groupBy operation
+RapidsShuffleIterator prep|Preparing shuffle iterator with cached and remote blocks
 shuffle fetch first batch|Fetching first batch in shuffle coalesce operation
 join first stream batch|Fetching and processing first batch from stream side of join
 row to columnar|Converting row-based data to columnar format
 hash join build|IO time on the build side data for the following join
 probe left|Probing the left side of a join input iterator to get the data size for preparing the join
 build batch: collect|Perform a join where the build side fits in a single GPU batch
+RapidsCachingWriter.close|Closing Rapids caching writer and finalizing shuffle output
 json convert table|Converting JSON table to desired schema type
 parquet get blocks with filter|Retrieving Parquet blocks after applying filters
 parquet read footer bytes|Reading raw footer bytes from Parquet file
 shuffle concat load batch|Concatenating and loading batch in shuffle operation
 BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
 RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing
+RapidsCachingReader read local|Reading shuffle blocks from local cache

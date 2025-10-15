@@ -20,7 +20,7 @@ import java.util.{Comparator, LinkedList, PriorityQueue}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
@@ -464,7 +464,7 @@ case class GpuOutOfCoreSortIterator(
    * merging.
    */
   private final def splitOneSortedBatch(scb: SpillableColumnarBatch): Unit = {
-    withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, opTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.SPLIT_INPUT_BATCH, opTime) {
       val ret = withRetryNoSplit(scb) { attempt =>
         onFirstPassSplit()
         splitAfterSort(attempt)
@@ -623,7 +623,7 @@ case class GpuOutOfCoreSortIterator(
           }
         }
       }
-      withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.SORT_NEXT_OUTPUT_BATCH, opTime) {
         val ret = mergeSortEnoughToOutput().getOrElse(concatOutput())
 
         outputBatches += 1

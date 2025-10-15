@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
@@ -657,8 +656,7 @@ class RowToColumnarIterator(
         Option(TaskContext.get())
             .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
-        val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
-            opTime)) { _ =>
+        val ret = NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
           RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
             builders.tryBuild(rowCount)
           }
