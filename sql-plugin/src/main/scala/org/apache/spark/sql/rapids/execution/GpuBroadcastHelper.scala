@@ -16,8 +16,8 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.{CloseableBufferedIterator, GpuColumnVector, GpuMetric, GpuSemaphore, NvtxIdWithMetrics, NvtxRegistry, RmmRapidsRetryIterator}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{SparkContext, TaskContext}

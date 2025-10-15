@@ -536,7 +536,7 @@ object NvtxRegistry {
     "Spilling join map")
 
   // File format read operations
-  val BUFFER_FILE_SPLIT_TEXT: NvtxId = NvtxId("Buffer file split", NvtxColor.YELLOW,
+  val BUFFER_FILE_SPLIT_TEXT: NvtxId = NvtxId("Buffer file split text", NvtxColor.YELLOW,
     "Buffering text file split")
 
   val ORC_READ_BATCHES: NvtxId = NvtxId("ORC readBatches", NvtxColor.GREEN,

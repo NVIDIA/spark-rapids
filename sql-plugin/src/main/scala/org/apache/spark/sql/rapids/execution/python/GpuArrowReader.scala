@@ -19,8 +19,8 @@ package org.apache.spark.sql.rapids.execution.python
 import java.io.DataInputStream
 
 import ai.rapids.cudf.{ArrowIPCOptions, HostBufferProvider, HostMemoryBuffer, StreamedTableReader, Table}
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.{GpuSemaphore, NvtxRegistry}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.internal.SQLConf
