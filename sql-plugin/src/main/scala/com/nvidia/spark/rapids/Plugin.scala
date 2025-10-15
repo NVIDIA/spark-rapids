@@ -27,7 +27,7 @@ import scala.collection.mutable
 import scala.sys.process._
 import scala.util.Try
 
-import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner, NvtxColor, NvtxRange}
 import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
@@ -515,7 +515,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
-  private val activeTaskNvtx = new ConcurrentHashMap[Thread, NvtxId]()
+  private val activeTaskNvtx = new ConcurrentHashMap[Thread, NvtxRange]()
 
   private var isAsyncProfilerEnabled = false
 
@@ -763,14 +763,17 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   private def startTaskNvtx(taskCtx: TaskContext): Unit = {
+    val stageId = taskCtx.stageId()
+    val taskAttemptId = taskCtx.taskAttemptId()
+    val attemptNumber = taskCtx.attemptNumber()
     activeTaskNvtx.put(Thread.currentThread(),
-      NvtxRegistry.TASK_RANGE.push())
+      new NvtxRange(s"Stage $stageId Task $taskAttemptId-$attemptNumber", NvtxColor.DARK_GREEN))
   }
 
   private def endTaskNvtx(): Unit = {
     val nvtx = activeTaskNvtx.remove(Thread.currentThread())
     if (nvtx != null) {
-      nvtx.pop()
+      nvtx.close()
     }
   }
 }
