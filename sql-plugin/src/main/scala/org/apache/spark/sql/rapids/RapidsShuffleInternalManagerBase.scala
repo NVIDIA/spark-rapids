@@ -366,6 +366,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val processingComplete = new AtomicBoolean(false)
     val writerCondition = new Object() // Condition variable to wake up writer thread
 
+    // Assign a slot number to each partition for consistent serialization
+    val partitionSlots = new ConcurrentHashMap[Int, Int]()
+
     // Create dedicated writer thread (not using queueWriteTask)
     val writerThreadFactory = new ThreadFactory {
       override def newThread(r: Runnable): Thread = {
@@ -521,9 +524,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         limiter.acquireOrBlock(recordSize)
         waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
 
-        // Submit compression task using queueWriteTask to
-        // ensure same partition tasks run serially
-        val slotNum = RapidsShuffleInternalManagerBase.getNextWriterSlot
+        // Get or assign a slot number for this partition to ensure
+        // all tasks for the same partition run serially in the same slot
+        val slotNum = partitionSlots.computeIfAbsent(reducePartitionId,
+          _ => RapidsShuffleInternalManagerBase.getNextWriterSlot)
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           try {
             withResource(cb) { _ =>
@@ -1116,8 +1120,8 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       if (fallbackIter != null) {
         fallbackIter.hasNext
       } else {
-        pendingIts.nonEmpty ||
-          fetcherIterator.hasNext || futures.nonEmpty || queued.size() > 0
+        pendingIts.nonEmpty || futures.nonEmpty || queued.size() > 0 ||
+          fetcherIterator.hasNext 
       }
     }
 
