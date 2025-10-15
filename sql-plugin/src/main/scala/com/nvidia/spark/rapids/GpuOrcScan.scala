@@ -1078,7 +1078,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
    */
   protected def readPartFile(ctx: OrcPartitionReaderContext, stripes: Seq[OrcOutputStripe]):
       (SpillableHostBuffer, Long) = {
-    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.ORC_BUFFER_FILE_SPLIT {
       if (stripes.isEmpty) {
         return (null, 0L)
       }

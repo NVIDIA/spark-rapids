@@ -19,26 +19,60 @@ See [nvtx_profiling.md](https://nvidia.github.io/spark-rapids/docs/dev/nvtx_prof
 
 Name | Description
 -----|-------------
-gpuKudoSerialize|Perform kudo serialization on the gpu
 getMapSizesByExecId|Call to internal Spark API for retrieving size and location of shuffle map output blocks
+agg reduce|Reduction aggregation for operations without grouping keys
+gpuKudoSerialize|Perform kudo serialization on the gpu
+join asymmetric fetch|Asymmetric join data fetch
+project tier|Executing tiered projection operation
+agg post-process|Post-processing step for aggregation, including casting and struct decomposition
+parquet parse filter footer|Parsing and filtering Parquet footer by range
+parquet filter blocks|Filtering Parquet row group blocks based on predicates
 probe right|Probing the right side of a join input iterator to get the data size for preparing the join
+hash partition slice|Slicing partitioned table into individual partitions
+hash partition|Partitioning data based on hash values
 fetch join stream|IO time on the stream side data for the following join
+cartesian product deserialize|Deserializing batch from cartesian product operation
 shuffled join stream|GpuShuffledHashJoinExec op is preparing build batches for join
 Acquire GPU|Time waiting for GPU semaphore to be acquired
 Release GPU|Releasing the GPU semaphore
+sort lower boundaries|Computing lower boundaries for sort operation
 GpuCoalesceBatches: collect|GPU combining of small batches post-kernel processing
-gpuKudoSliceBuffers|slice kudo serialized buffers on host into partitions
+join asymmetric probe fetch|Asymmetric join probe side data fetch
+sort to unsafe row|Converting sorted data to unsafe row format
+cartesian product serialize|Serializing batch for cartesian product operation
 broadcast join stream|time it takes to materialize a broadcast batch on the host
+gpuKudoSliceBuffers|slice kudo serialized buffers on host into partitions
+parquet buffer file split|Splitting Parquet file into buffer chunks for reading
+avro buffer file split|Splitting Avro file into buffer chunks for reading
+parquet read filtered footer|Reading filtered Parquet footer with selected row groups
+agg pre-process|Pre-processing step for aggregation before calling cuDF aggregate, including casting and struct creation
 CommitShuffle|After all temporary shuffle writes are done, produce a single file (shuffle_[map_id]_0) in the commit phase
+parquet read footer|Reading and parsing complete Parquet footer
+reduction merge m2|Merging M2 values during variance/stddev reduction
 ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
+generate estimate repetition|Estimating repetition count for generate operation
+random expr|Generating random values in expression evaluation
 queueFetched|MT shuffle manager is using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results
+generate get row byte count|Computing byte count for generated rows
 WaitingForWrites|Rapids Shuffle Manager (multi threaded) is waiting for any queued writes to finish before finalizing the map output writer
+sort copy boundaries|Copying boundary data for sort operation
+orc buffer file split|Splitting ORC file into buffer chunks for reading
+parquet clip schema|Clipping Parquet schema to required columns
 AbstractGpuCoalesceIterator|Default range for a code path in the AbstractGpuCoalesceIterator for an op which is not explicitly documented in its own range
 ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
 ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
+json convert datetime|Converting JSON datetime types to Spark datetime types
 gpuKudoCopyToHost|copy gpu kudo serialized outputs back to the host
+agg groupby|Group-by aggregation using cuDF groupBy operation
+shuffle fetch first batch|Fetching first batch in shuffle coalesce operation
+join first stream batch|Fetching and processing first batch from stream side of join
+row to columnar|Converting row-based data to columnar format
 hash join build|IO time on the build side data for the following join
 probe left|Probing the left side of a join input iterator to get the data size for preparing the join
 build batch: collect|Perform a join where the build side fits in a single GPU batch
+json convert table|Converting JSON table to desired schema type
+parquet get blocks with filter|Retrieving Parquet blocks after applying filters
+parquet read footer bytes|Reading raw footer bytes from Parquet file
+shuffle concat load batch|Concatenating and loading batch in shuffle operation
 BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
 RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing

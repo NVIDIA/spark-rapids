@@ -441,7 +441,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       blocks: Seq[BlockInfo],
       headerSize: Long,
       conf: Configuration): (SpillableHostBuffer, Long) = {
-    withResource(new NvtxRange("Avro buffer file split", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.AVRO_BUFFER_FILE_SPLIT {
       if (blocks.isEmpty) {
         // No need to check the header here since it can not be null when blocks is not empty.
         return (null, 0L)

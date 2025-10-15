@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.{mutable, BitSet}
 
-import ai.rapids.cudf.{ContiguousTable, HostMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{ContiguousTable, HostMemoryBuffer}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -969,7 +969,7 @@ object GpuShuffledAsymmetricHashJoinExec {
         iter: Iterator[T],
         queue: mutable.Queue[T],
         targetSize: Long): (Long, Long) = {
-      withResource(new NvtxRange("asymmetric join probe fetch", NvtxColor.YELLOW)) { _ =>
+      NvtxRegistry.JOIN_ASYMMETRIC_PROBE_FETCH {
         var totalRows: Long = 0
         var totalSize: Long = 0L
         while (totalRows <= Integer.MAX_VALUE && totalSize <= targetSize && iter.hasNext) {
@@ -998,7 +998,7 @@ object GpuShuffledAsymmetricHashJoinExec {
         iter: Iterator[ColumnarBatch],
         queue: mutable.Queue[SpillableColumnarBatch],
         targetSize: Long): (Long, Long) = {
-      withResource(new NvtxRange("asymmetric join fetch", NvtxColor.YELLOW)) { _ =>
+      NvtxRegistry.JOIN_ASYMMETRIC_FETCH {
         var totalRows: Long = 0
         var totalSize: Long = 0L
         while (totalRows <= Integer.MAX_VALUE && totalSize <= targetSize && iter.hasNext) {

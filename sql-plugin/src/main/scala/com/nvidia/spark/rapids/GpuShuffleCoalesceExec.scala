@@ -160,7 +160,7 @@ object GpuShuffleCoalesceUtils {
     }
     val maybeBufferedIter = if (prefetchFirstBatch) {
       val bufferedIter = new CloseableBufferedIterator(hostIter)
-      withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
+      NvtxRegistry.SHUFFLE_FETCH_FIRST_BATCH {
         // Force a coalesce of the first batch before we grab the GPU semaphore
         bufferedIter.headOption
       }
@@ -521,7 +521,7 @@ class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
     if (!hasNext) {
       throw new NoSuchElementException("No more columnar batches")
     }
-    withResource(new NvtxRange("Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.SHUFFLE_CONCAT_LOAD_BATCH {
       val hostCoalescedResult = GpuMetric.ns(readTimeMetric, opTimeMetric) {
         // It covers the time of i/o, deser and concat
         iter.next()

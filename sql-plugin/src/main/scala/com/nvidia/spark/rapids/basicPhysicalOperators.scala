@@ -905,7 +905,7 @@ case class GpuProjectAstExec(
           recurseCloseInputBatch: Boolean): SpillableColumnarBatch = boundExprs match {
         case Nil => sb
         case exprSet :: tail =>
-          val projectSb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+          val projectSb = NvtxRegistry.PROJECT_TIER {
             val projectResult = if (recurseCloseInputBatch) {
               GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprSet)
             } else {
@@ -944,7 +944,7 @@ case class GpuProjectAstExec(
         case Nil => cb
         case exprSet :: tail =>
           val projectCb = try {
-            withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+            NvtxRegistry.PROJECT_TIER {
               GpuProjectExec.project(cb, exprSet)
             }
           } finally {

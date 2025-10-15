@@ -576,7 +576,7 @@ private case class GpuParquetFileFilterHandler(
     }
     val footerLengthIndex = fileLen - FOOTER_LENGTH_SIZE - MAGIC.length
     withResource(inputFile.open()) { inputStream =>
-      withResource(new NvtxRange("ReadFooterBytes", NvtxColor.YELLOW)) { _ =>
+      NvtxRegistry.PARQUET_READ_FOOTER_BYTES {
         inputStream.seek(footerLengthIndex)
         val footerLength = readIntLittleEndian(inputStream)
         val magic = new Array[Byte](MAGIC.length)
@@ -631,7 +631,7 @@ private case class GpuParquetFileFilterHandler(
     val footerSchema = convertToFooterSchema(readDataSchema)
     val footerBuffer = getFooterBuffer(fileIO, filePath, conf, metrics)
     withResource(footerBuffer) { footerBuffer =>
-      withResource(new NvtxRange("Parse and filter footer by range", NvtxColor.RED)) { _ =>
+      NvtxRegistry.PARQUET_PARSE_FILTER_FOOTER {
         // In the future, if we know we're going to read the entire file,
         // i.e.: having file length from file stat == amount to read,
         // then sending -1 as length to the native footer parser allows it to
@@ -653,7 +653,7 @@ private case class GpuParquetFileFilterHandler(
       conf : Configuration,
       filePath: Path): ParquetMetadata = {
     //noinspection ScalaDeprecation
-    withResource(new NvtxRange("readFooter", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.PARQUET_READ_FOOTER {
       val filePathString = filePath.toString
       FileCache.get.getFooter(filePathString, conf).map { hmb =>
         withResource(hmb) { _ =>
@@ -700,7 +700,7 @@ private case class GpuParquetFileFilterHandler(
       conf: Configuration,
       filters: Array[Filter],
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
-    withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.PARQUET_FILTER_BLOCKS {
       val filePath = new Path(new URI(file.filePath.toString()))
       // Make sure we aren't trying to read encrypted files. For now, remove the related
       // parquet confs from the hadoop configuration and try to catch the resulting
@@ -729,7 +729,7 @@ private case class GpuParquetFileFilterHandler(
                 tableFooter.serializeThriftFile()
             }
             withResource(serialized) { serialized =>
-              withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
+              NvtxRegistry.PARQUET_READ_FILTERED_FOOTER {
                 val inputFile = new HMBInputFile(serialized)
 
                 // We already filtered the ranges so no need to do more here...
@@ -762,7 +762,7 @@ private case class GpuParquetFileFilterHandler(
       }
 
       val blocks = if (pushedFilters.isDefined) {
-        withResource(new NvtxRange("getBlocksWithFilter", NvtxColor.CYAN)) { _ =>
+        NvtxRegistry.PARQUET_GET_BLOCKS_WITH_FILTER {
           // Use the ParquetFileReader to perform dictionary-level filtering
           ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
           //noinspection ScalaDeprecation
@@ -776,7 +776,7 @@ private case class GpuParquetFileFilterHandler(
       }
 
       val (clipped, clippedSchema) =
-        withResource(new NvtxRange("clipSchema", NvtxColor.DARK_GREEN)) { _ =>
+        NvtxRegistry.PARQUET_CLIP_SCHEMA {
           val clippedSchema = ParquetSchemaUtils.clipParquetSchema(
             fileSchema, readDataSchema, isCaseSensitive, readUseFieldId)
           // Check if the read schema is compatible with the file schema.
@@ -1979,7 +1979,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
       filePath: Path): (SpillableHostBuffer, Seq[BlockMetaData]) = {
-    withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.PARQUET_BUFFER_FILE_SPLIT {
       // Track the actual read buffer size, since some columns or partitions may be pruned
       execMetrics.get("readBufferSize").foreach { metric =>
         blocks.foreach { block =>

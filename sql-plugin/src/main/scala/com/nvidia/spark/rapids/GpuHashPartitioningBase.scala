@@ -82,10 +82,10 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     //  We are doing this here because the cudf partition command is at this level
-    withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.HASH_PARTITION {
       val numRows = batch.numRows
       val (partitionIndexes, partitionColumns) = {
-        withResource(new NvtxRange("partition", NvtxColor.BLUE)) { _ =>
+        NvtxRegistry.HASH_PARTITION_SLICE {
           partitionInternalAndClose(batch)
         }
       }

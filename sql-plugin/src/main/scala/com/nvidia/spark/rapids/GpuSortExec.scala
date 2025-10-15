@@ -20,7 +20,7 @@ import java.util.{Comparator, LinkedList, PriorityQueue}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
@@ -335,13 +335,13 @@ case class GpuOutOfCoreSortIterator(
    */
   private def convertBoundaries(tab: Table): Array[UnsafeRow] = {
     import scala.collection.JavaConverters._
-    val cb = withResource(new NvtxRange("COPY BOUNDARIES", NvtxColor.PURPLE)) { _ =>
+    val cb = NvtxRegistry.SORT_COPY_BOUNDARIES {
       new ColumnarBatch(
         GpuColumnVector.extractColumns(tab, sorter.projectedBatchTypes).map(_.copyToHost()),
         tab.getRowCount.toInt)
     }
     withResource(cb) { cb =>
-      withResource(new NvtxRange("TO UNSAFE ROW", NvtxColor.RED)) { _ =>
+      NvtxRegistry.SORT_TO_UNSAFE_ROW {
         cb.rowIterator().asScala.map(unsafeProjection).map(_.copy().asInstanceOf[UnsafeRow]).toArray
       }
     }
@@ -401,7 +401,7 @@ case class GpuOutOfCoreSortIterator(
       }
 
       val lowerBoundaries =
-        withResource(new NvtxRange("lower boundaries", NvtxColor.ORANGE)) { _ =>
+        NvtxRegistry.SORT_LOWER_BOUNDARIES {
           withResource(ColumnVector.fromInts(lowerGatherIndexes: _*)) { gatherMap =>
             withResource(sortedTbl.gather(gatherMap)) { boundariesTab =>
               convertBoundaries(boundariesTab)

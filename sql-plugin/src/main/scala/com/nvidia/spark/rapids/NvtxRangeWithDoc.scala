@@ -174,6 +174,109 @@ object NvtxRegistry {
   val GPU_KUDO_WRITE_BUFFERS: NvtxId = NvtxId("gpuKudoWriteBuffers", NvtxColor.CYAN,
     "write sliced kudo serialized buffers to output blocks")
 
+  val AGG_PRE_PROCESS: NvtxId = NvtxId("agg pre-process", NvtxColor.DARK_GREEN,
+    "Pre-processing step for aggregation before calling cuDF aggregate, " +
+      "including casting and struct creation")
+
+  val AGG_REDUCE: NvtxId = NvtxId("agg reduce", NvtxColor.BLUE,
+    "Reduction aggregation for operations without grouping keys")
+
+  val AGG_GROUPBY: NvtxId = NvtxId("agg groupby", NvtxColor.BLUE,
+    "Group-by aggregation using cuDF groupBy operation")
+
+  val AGG_POST_PROCESS: NvtxId = NvtxId("agg post-process", NvtxColor.ORANGE,
+    "Post-processing step for aggregation, including casting and struct decomposition")
+
+  val HASH_PARTITION: NvtxId = NvtxId("hash partition", NvtxColor.PURPLE,
+    "Partitioning data based on hash values")
+
+  val HASH_PARTITION_SLICE: NvtxId = NvtxId("hash partition slice", NvtxColor.BLUE,
+    "Slicing partitioned table into individual partitions")
+
+  val SORT_COPY_BOUNDARIES: NvtxId = NvtxId("sort copy boundaries", NvtxColor.PURPLE,
+    "Copying boundary data for sort operation")
+
+  val SORT_TO_UNSAFE_ROW: NvtxId = NvtxId("sort to unsafe row", NvtxColor.RED,
+    "Converting sorted data to unsafe row format")
+
+  val SORT_LOWER_BOUNDARIES: NvtxId = NvtxId("sort lower boundaries", NvtxColor.ORANGE,
+    "Computing lower boundaries for sort operation")
+
+  val JOIN_FIRST_STREAM_BATCH: NvtxId = NvtxId("join first stream batch", NvtxColor.RED,
+    "Fetching and processing first batch from stream side of join")
+
+  val JOIN_ASYMMETRIC_PROBE_FETCH: NvtxId = NvtxId("join asymmetric probe fetch",
+    NvtxColor.YELLOW, "Asymmetric join probe side data fetch")
+
+  val JOIN_ASYMMETRIC_FETCH: NvtxId = NvtxId("join asymmetric fetch", NvtxColor.YELLOW,
+    "Asymmetric join data fetch")
+
+  val PARQUET_READ_FOOTER_BYTES: NvtxId = NvtxId("parquet read footer bytes",
+    NvtxColor.YELLOW, "Reading raw footer bytes from Parquet file")
+
+  val PARQUET_PARSE_FILTER_FOOTER: NvtxId = NvtxId("parquet parse filter footer",
+    NvtxColor.RED, "Parsing and filtering Parquet footer by range")
+
+  val PARQUET_READ_FOOTER: NvtxId = NvtxId("parquet read footer", NvtxColor.YELLOW,
+    "Reading and parsing complete Parquet footer")
+
+  val PARQUET_FILTER_BLOCKS: NvtxId = NvtxId("parquet filter blocks", NvtxColor.PURPLE,
+    "Filtering Parquet row group blocks based on predicates")
+
+  val PARQUET_READ_FILTERED_FOOTER: NvtxId = NvtxId("parquet read filtered footer",
+    NvtxColor.YELLOW, "Reading filtered Parquet footer with selected row groups")
+
+  val PARQUET_GET_BLOCKS_WITH_FILTER: NvtxId = NvtxId("parquet get blocks with filter",
+    NvtxColor.CYAN, "Retrieving Parquet blocks after applying filters")
+
+  val PARQUET_CLIP_SCHEMA: NvtxId = NvtxId("parquet clip schema", NvtxColor.DARK_GREEN,
+    "Clipping Parquet schema to required columns")
+
+  val PARQUET_BUFFER_FILE_SPLIT: NvtxId = NvtxId("parquet buffer file split",
+    NvtxColor.YELLOW, "Splitting Parquet file into buffer chunks for reading")
+
+  val ORC_BUFFER_FILE_SPLIT: NvtxId = NvtxId("orc buffer file split", NvtxColor.YELLOW,
+    "Splitting ORC file into buffer chunks for reading")
+
+  val AVRO_BUFFER_FILE_SPLIT: NvtxId = NvtxId("avro buffer file split", NvtxColor.YELLOW,
+    "Splitting Avro file into buffer chunks for reading")
+
+  val JSON_CONVERT_TABLE: NvtxId = NvtxId("json convert table", NvtxColor.RED,
+    "Converting JSON table to desired schema type")
+
+  val JSON_CONVERT_DATETIME: NvtxId = NvtxId("json convert datetime", NvtxColor.RED,
+    "Converting JSON datetime types to Spark datetime types")
+
+  val SHUFFLE_FETCH_FIRST_BATCH: NvtxId = NvtxId("shuffle fetch first batch",
+    NvtxColor.YELLOW, "Fetching first batch in shuffle coalesce operation")
+
+  val SHUFFLE_CONCAT_LOAD_BATCH: NvtxId = NvtxId("shuffle concat load batch",
+    NvtxColor.YELLOW, "Concatenating and loading batch in shuffle operation")
+
+  val CARTESIAN_PRODUCT_SERIALIZE: NvtxId = NvtxId("cartesian product serialize",
+    NvtxColor.PURPLE, "Serializing batch for cartesian product operation")
+
+  val CARTESIAN_PRODUCT_DESERIALIZE: NvtxId = NvtxId("cartesian product deserialize",
+    NvtxColor.PURPLE, "Deserializing batch from cartesian product operation")
+
+  val ROW_TO_COLUMNAR: NvtxId = NvtxId("row to columnar", NvtxColor.CYAN,
+    "Converting row-based data to columnar format")
+
+  val GENERATE_GET_ROW_BYTE_COUNT: NvtxId = NvtxId("generate get row byte count",
+    NvtxColor.GREEN, "Computing byte count for generated rows")
+
+  val GENERATE_ESTIMATE_REPETITION: NvtxId = NvtxId("generate estimate repetition",
+    NvtxColor.BLUE, "Estimating repetition count for generate operation")
+
+  val REDUCTION_MERGE_M2: NvtxId = NvtxId("reduction merge m2", NvtxColor.ORANGE,
+    "Merging M2 values during variance/stddev reduction")
+
+  val PROJECT_TIER: NvtxId = NvtxId("project tier", NvtxColor.ORANGE,
+    "Executing tiered projection operation")
+
+  val RANDOM_EXPR: NvtxId = NvtxId("random expr", NvtxColor.RED,
+    "Generating random values in expression evaluation")
+
   def init(): Unit = {
     register(ACQUIRE_GPU)
     register(RELEASE_GPU)
@@ -198,6 +301,40 @@ object NvtxRegistry {
     register(GPU_KUDO_SERIALIZE)
     register(GPU_KUDO_COPY_TO_HOST)
     register(GPU_KUDO_SLICE_BUFFERS)
+    register(AGG_PRE_PROCESS)
+    register(AGG_REDUCE)
+    register(AGG_GROUPBY)
+    register(AGG_POST_PROCESS)
+    register(HASH_PARTITION)
+    register(HASH_PARTITION_SLICE)
+    register(SORT_COPY_BOUNDARIES)
+    register(SORT_TO_UNSAFE_ROW)
+    register(SORT_LOWER_BOUNDARIES)
+    register(JOIN_FIRST_STREAM_BATCH)
+    register(JOIN_ASYMMETRIC_PROBE_FETCH)
+    register(JOIN_ASYMMETRIC_FETCH)
+    register(PARQUET_READ_FOOTER_BYTES)
+    register(PARQUET_PARSE_FILTER_FOOTER)
+    register(PARQUET_READ_FOOTER)
+    register(PARQUET_FILTER_BLOCKS)
+    register(PARQUET_READ_FILTERED_FOOTER)
+    register(PARQUET_GET_BLOCKS_WITH_FILTER)
+    register(PARQUET_CLIP_SCHEMA)
+    register(PARQUET_BUFFER_FILE_SPLIT)
+    register(ORC_BUFFER_FILE_SPLIT)
+    register(AVRO_BUFFER_FILE_SPLIT)
+    register(JSON_CONVERT_TABLE)
+    register(JSON_CONVERT_DATETIME)
+    register(SHUFFLE_FETCH_FIRST_BATCH)
+    register(SHUFFLE_CONCAT_LOAD_BATCH)
+    register(CARTESIAN_PRODUCT_SERIALIZE)
+    register(CARTESIAN_PRODUCT_DESERIALIZE)
+    register(ROW_TO_COLUMNAR)
+    register(GENERATE_GET_ROW_BYTE_COUNT)
+    register(GENERATE_ESTIMATE_REPETITION)
+    register(REDUCTION_MERGE_M2)
+    register(PROJECT_TIER)
+    register(RANDOM_EXPR)
   }
 }
 

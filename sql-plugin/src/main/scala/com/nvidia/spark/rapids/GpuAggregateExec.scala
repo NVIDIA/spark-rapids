@@ -21,7 +21,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatchesWithRetry}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -466,7 +466,7 @@ class AggHelper(
     val inputBatch = SpillableColumnarBatch(toAggregateBatch,
       SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
 
-    val projectedCb = withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
+    val projectedCb = NvtxRegistry.AGG_PRE_PROCESS {
       preStepBound.projectAndCloseWithRetrySingleBatch(inputBatch)
     }
     SpillableColumnarBatch(
@@ -539,7 +539,7 @@ class AggHelper(
    * @return
    */
   def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
-    withResource(new NvtxRange("reduce", NvtxColor.BLUE)) { _ =>
+    NvtxRegistry.AGG_REDUCE {
       val cvs = mutable.ArrayBuffer[GpuColumnVector]()
       cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
         val aggFn = cudfAgg.reductionAggregate
@@ -561,7 +561,7 @@ class AggHelper(
    * @return a Table that has been cuDF aggregated
    */
   def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
-    withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
+    NvtxRegistry.AGG_GROUPBY {
       withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
         val groupOptions = cudf.GroupByOptions.builder()
           .withIgnoreNullKeys(false)
@@ -597,10 +597,9 @@ class AggHelper(
   def postProcess(
       aggregatedSpillable: SpillableColumnarBatch,
       metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
-    val postProcessed =
-      withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
-        postStepBound.projectAndCloseWithRetrySingleBatch(aggregatedSpillable)
-      }
+    val postProcessed = NvtxRegistry.AGG_POST_PROCESS {
+      postStepBound.projectAndCloseWithRetrySingleBatch(aggregatedSpillable)
+    }
     SpillableColumnarBatch(
       postProcessed,
       SpillPriorities.ACTIVE_BATCHING_PRIORITY)

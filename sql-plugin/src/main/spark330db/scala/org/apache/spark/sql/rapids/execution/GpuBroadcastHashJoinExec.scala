@@ -140,7 +140,7 @@ case class GpuBroadcastHashJoinExec(
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
-      withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
+      NvtxRegistry.JOIN_FIRST_STREAM_BATCH {
         if (bufferedStreamIter.hasNext) {
           bufferedStreamIter.head
         } else {

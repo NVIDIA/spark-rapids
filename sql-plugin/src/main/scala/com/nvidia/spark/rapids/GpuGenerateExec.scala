@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.extractLit
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
@@ -352,7 +352,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
   }
 
   private def getRowByteCount(column: Seq[ColumnVector]): ColumnVector = {
-    withResource(new NvtxRange("getRowByteCount", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.GENERATE_GET_ROW_BYTE_COUNT {
       val bits = withResource(new Table(column: _*)) { tbl =>
         tbl.rowBitCount()
       }
@@ -404,7 +404,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
           math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
       GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
     } else {
-      withResource(new NvtxRange("EstimateRepetition", NvtxColor.BLUE)) { _ =>
+      NvtxRegistry.GENERATE_ESTIMATE_REPETITION {
         // get the # of repetitions per row of the input for this explode
         val perRowRepetition = getPerRowRepetition(explodingColumn, outer)
         val repeatingColumns = vectors.slice(0, generatorOffset)
