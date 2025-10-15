@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ast, GatherMap, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -502,7 +502,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       broadcastRelation: Broadcast[Any],
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): Int = {
-    withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.BUILD_JOIN_TABLE, buildTime) {
       buildDataSize += 0
       GpuBroadcastHelper.getBroadcastBatchNumRows(broadcastRelation)
     }
@@ -825,8 +825,7 @@ class ConditionalNestedLoopExistenceJoinIterator(
   use(condition)
 
   override def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
-    withResource(
-      new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.EXISTENCE_JOIN_SCATTER_MAP, joinTime) {
       withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>
         withResource(GpuColumnVector.from(spillableBuiltBatch.getBatch)) { rightTab =>
           leftTab.conditionalLeftSemiJoinGatherMap(rightTab, condition)

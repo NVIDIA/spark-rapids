@@ -2951,8 +2951,7 @@ object MakeParquetTableProducer extends Logging {
       val table = withResource(buffers) { _ =>
         try {
           RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-            withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
-              metrics(GPU_DECODE_TIME))) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.PARQUET_DECODE, metrics(GPU_DECODE_TIME)) {
               Table.readParquet(opts, buffers:_*)
             }
           }
@@ -3012,8 +3011,7 @@ case class ParquetTableReader(
   override def hasNext: Boolean = reader.hasNext
 
   override def next: Table = {
-    val table = withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
-      metrics(GPU_DECODE_TIME))) { _ =>
+    val table = NvtxIdWithMetrics(NvtxRegistry.PARQUET_DECODE, metrics(GPU_DECODE_TIME)) {
       try {
         reader.readChunk()
       } catch {

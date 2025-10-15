@@ -345,8 +345,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
 
     val table = try {
       RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-        withResource(new NvtxWithMetrics("Avro decode",
-          NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.AVRO_DECODE, metrics(GPU_DECODE_TIME)) {
           Table.readAvro(readOpts, hostBuf, 0, bufSize)
         }
       }

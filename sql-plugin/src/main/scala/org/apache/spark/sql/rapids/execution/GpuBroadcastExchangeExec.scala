@@ -395,8 +395,7 @@ abstract class GpuBroadcastExchangeExecBase(
           interruptOnCancel = true)
         val broadcastResult = {
           val collected =
-            withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-              collectTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.BROADCAST_COLLECT, collectTime) {
               val childRdd = child.executeColumnar()
 
               // collect batches from the executors
@@ -405,8 +404,7 @@ abstract class GpuBroadcastExchangeExecBase(
               })
               data.collect()
             }
-          withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
-            buildTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.BROADCAST_BUILD, buildTime) {
             val emptyRelation = if (collected.isEmpty) {
               SparkShimImpl.tryTransformIfEmptyRelation(mode)
             } else {
@@ -419,8 +417,7 @@ abstract class GpuBroadcastExchangeExecBase(
           }
         }
         val broadcasted =
-          withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
-              broadcastTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.BROADCAST, broadcastTime) {
             // Broadcast the relation
             sparkContext.broadcast(broadcastResult)
         }

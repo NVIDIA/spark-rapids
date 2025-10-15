@@ -2861,8 +2861,7 @@ object MakeOrcTableProducer extends Logging {
       val table = withResource(buffer) { _ =>
         try {
           RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-            withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-              metrics(GPU_DECODE_TIME))) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.ORC_DECODE, metrics(GPU_DECODE_TIME)) {
               Table.readORC(parseOpts, buffer, offset, bufferSize)
             }
           }
@@ -2919,8 +2918,7 @@ case class OrcTableReader(
   override def hasNext: Boolean = reader.hasNext
 
   override def next: Table = {
-    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-      metrics(GPU_DECODE_TIME))) { _ =>
+    val table = NvtxIdWithMetrics(NvtxRegistry.ORC_DECODE, metrics(GPU_DECODE_TIME)) {
       try {
         reader.readChunk()
       } catch {

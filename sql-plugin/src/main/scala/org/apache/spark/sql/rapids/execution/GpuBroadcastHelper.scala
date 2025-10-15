@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{CloseableBufferedIterator, GpuColumnVector, GpuMetric, GpuSemaphore, NvtxWithMetrics, RmmRapidsRetryIterator}
+import com.nvidia.spark.rapids.{CloseableBufferedIterator, GpuColumnVector, GpuMetric, GpuSemaphore, NvtxIdWithMetrics, NvtxRegistry, RmmRapidsRetryIterator}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
@@ -129,8 +129,7 @@ object GpuBroadcastHelper {
         }
       }
 
-      val batch = withResource(new NvtxWithMetrics(
-        "build join table", NvtxColor.GREEN, buildTime.toSeq: _*)) { _ =>
+      val batch = NvtxIdWithMetrics(NvtxRegistry.BUILD_JOIN_TABLE, buildTime.toSeq: _*) {
         GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
       }
       buildDataSize.foreach(_.add(GpuColumnVector.getTotalDeviceMemoryUsed(batch)))

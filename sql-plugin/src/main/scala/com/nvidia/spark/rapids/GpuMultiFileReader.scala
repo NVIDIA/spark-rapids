@@ -1108,8 +1108,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       blocks: Seq[(Path, DataBlockBase)],
       clippedSchema: SchemaBase): SpillableHostBuffer = {
 
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.BUFFER_FILE_SPLIT, metrics("bufferTime")) {
       // ugly but we want to keep the order
       val filesAndBlocks = LinkedHashMap[Path, ArrayBuffer[DataBlockBase]]()
       blocks.foreach { case (path, block) =>

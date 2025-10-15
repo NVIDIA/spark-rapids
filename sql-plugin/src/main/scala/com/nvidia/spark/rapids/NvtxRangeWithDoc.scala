@@ -419,6 +419,12 @@ object NvtxRegistry {
   val BUFFER_FILE_SPLIT: NvtxId = NvtxId("Buffer file split", NvtxColor.YELLOW,
     "Buffering file split for reading")
 
+  val WINDOW_EXEC: NvtxId = NvtxId("window", NvtxColor.CYAN,
+    "Executing window operation on batch")
+
+  val EXPAND_EXEC_PROJECTIONS: NvtxId = NvtxId("ExpandExec projections", NvtxColor.GREEN,
+    "Projecting expand operation on batch")
+
   // Limit and sample operations
   val LIMIT_AND_OFFSET: NvtxId = NvtxId("limit and offset", NvtxColor.ORANGE,
     "Applying limit and offset to data")
@@ -589,6 +595,8 @@ object NvtxRegistry {
     register(ORC_DECODE)
     register(AVRO_DECODE)
     register(BUFFER_FILE_SPLIT)
+    register(WINDOW_EXEC)
+    register(EXPAND_EXEC_PROJECTIONS)
     register(LIMIT_AND_OFFSET)
     register(READ_N_CONCAT)
     register(TOP_N)
