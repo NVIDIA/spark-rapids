@@ -475,6 +475,13 @@ object NvtxRegistry {
   val PARTITION_D2H: NvtxId = NvtxId("PartitionD2H", NvtxColor.CYAN,
     "Copying partition data from device to host")
 
+  // Spill operations
+  val DISK_SPILL: NvtxId = NvtxId("disk spill", NvtxColor.RED,
+    "Spilling data from host memory to disk")
+
+  val DEVICE_SPILL: NvtxId = NvtxId("device spill", NvtxColor.ORANGE,
+    "Spilling data from device memory to host")
+
   // Range operation
   val GPU_RANGE: NvtxId = NvtxId("GpuRange", NvtxColor.DARK_GREEN,
     "Generating range of values on GPU")
@@ -612,6 +619,8 @@ object NvtxRegistry {
     register(GPU_GENERATE_PROJECT_SPLIT)
     register(GPU_GENERATE_ITERATOR)
     register(PARTITION_D2H)
+    register(DISK_SPILL)
+    register(DEVICE_SPILL)
     register(GPU_RANGE)
     register(WAIT_FOR_CPU)
     register(GPU_ACQUIRE_C2C)
