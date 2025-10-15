@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
+import ai.rapids.cudf.{GatherMap, OutOfBoundsPolicy}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu, withRestoreOnRetry, withRetry}
@@ -53,13 +53,13 @@ trait TaskAutoCloseableResource extends AutoCloseable {
 
 /**
  * Base class for iterators producing the results of a join.
- * @param gatherNvtxName name to use for the NVTX range when producing the join gather maps
+ * @param gatherNvtxId NvtxId to use for the NVTX range when producing the join gather maps
  * @param targetSize configured target batch size in bytes
  * @param opTime metric to record op time in the iterator
  * @param joinTime metric to record GPU time spent in join
  */
 abstract class AbstractGpuJoinIterator(
-    gatherNvtxName: String,
+    gatherNvtxId: NvtxId,
     targetSize: Long,
     val opTime: GpuMetric,
     joinTime: GpuMetric)
@@ -135,7 +135,7 @@ abstract class AbstractGpuJoinIterator(
   }
 
   private def nextCbFromGatherer(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics(gatherNvtxName, NvtxColor.DARK_GREEN, joinTime)) { _ =>
+    NvtxIdWithMetrics(gatherNvtxId, joinTime) {
       val minTargetSize = Math.min(targetSize, 64L * 1024 * 1024)
       val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
       val ret = gathererStore.map { gather =>
@@ -170,7 +170,7 @@ abstract class AbstractGpuJoinIterator(
 
 /**
  * Base class for join iterators that split and spill batches to avoid GPU OOM errors.
- * @param gatherNvtxName name to use for the NVTX range when producing the join gather maps
+ * @param gatherNvtxId NvtxId to use for the NVTX range when producing the join gather maps
  * @param stream iterator to produce the batches for the streaming side input of the join
  * @param streamAttributes attributes corresponding to the streaming side input
  * @param builtBatch batch for the built side input of the join
@@ -179,7 +179,7 @@ abstract class AbstractGpuJoinIterator(
  * @param joinTime metric to record GPU time spent in join
  */
 abstract class SplittableJoinIterator(
-    gatherNvtxName: String,
+    gatherNvtxId: NvtxId,
     stream: Iterator[LazySpillableColumnarBatch],
     streamAttributes: Seq[Attribute],
     builtBatch: LazySpillableColumnarBatch,
@@ -187,7 +187,7 @@ abstract class SplittableJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
-      gatherNvtxName,
+      gatherNvtxId,
       targetSize,
       opTime = opTime,
       joinTime = joinTime) with Logging {

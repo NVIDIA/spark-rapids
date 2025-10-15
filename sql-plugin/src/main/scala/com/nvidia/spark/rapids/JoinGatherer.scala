@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -159,7 +159,7 @@ object JoinGatherer {
   }
 
   def getRowsInNextBatch(gatherer: JoinGatherer, targetSize: Long): Int = {
-    withResource(new NvtxRange("calc gather size", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.CALC_GATHER_SIZE {
       val rowsLeft = gatherer.numRowsLeft
       val rowEstimate: Long = gatherer.getFixedWidthBitSize match {
         case Some(fixedBitSize) =>
@@ -284,7 +284,7 @@ class LazySpillableColumnarBatchImpl(
 
   override def getBatch: ColumnarBatch = {
     if (cached.isEmpty) {
-      withResource(new NvtxRange("get batch " + name, NvtxColor.RED)) { _ =>
+      NvtxRegistry.GET_JOIN_BATCH {
         cached = spill.map(_.getColumnarBatch())
       }
     }
@@ -301,7 +301,7 @@ class LazySpillableColumnarBatchImpl(
 
   override def allowSpilling(): Unit = {
     if (spill.isEmpty && cached.isDefined) {
-      withResource(new NvtxRange("spill batch " + name, NvtxColor.RED)) { _ =>
+      NvtxRegistry.SPILL_JOIN_BATCH {
         // First time we need to allow for spilling
         try {
           spill = Some(SpillableColumnarBatch(cached.get,
@@ -375,7 +375,7 @@ class LazySpillableGatherMapImpl(
 
   private def getBuffer = {
     if (cached.isEmpty) {
-      withResource(new NvtxRange("get map " + name, NvtxColor.RED)) { _ =>
+      NvtxRegistry.GET_JOIN_MAP {
         cached = spill.map { sb =>
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
           RmmRapidsRetryIterator.withRetryNoSplit {
@@ -389,7 +389,7 @@ class LazySpillableGatherMapImpl(
 
   override def allowSpilling(): Unit = {
     if (spill.isEmpty && cached.isDefined) {
-      withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
+      NvtxRegistry.SPILL_JOIN_MAP {
         try {
           // First time we need to allow for spilling
           spill = Some(SpillableBuffer(cached.get,

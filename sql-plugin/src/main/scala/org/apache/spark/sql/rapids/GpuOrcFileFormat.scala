@@ -228,8 +228,8 @@ class GpuOrcWriter(
     orcStripeSizeRows: Option[Integer],
     useAsyncWrite: Boolean,
     fileIO: RapidsFileIO)
-  extends ColumnarOutputWriter(context, dataSchema, "ORC", true, statsTrackers, debugOutputPath,
-    holdGpuBetweenBatches, useAsyncWrite, fileIO) {
+  extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
+    statsTrackers, debugOutputPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils

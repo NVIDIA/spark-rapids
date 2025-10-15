@@ -20,8 +20,9 @@ import java.util
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, Rmm}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.NvtxRegistry
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.RmmSpark
 
@@ -173,7 +174,7 @@ class BufferReceiveState(
     // once we reach 0 here the transport will be allowed to reuse the bounce buffer
     // e.g. after the synchronized block, or after we sync with GPU in this function.
     toConsume -= 1
-    withResource(new NvtxRange("consumeWindow", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.CONSUME_WINDOW {
       advance()
       closeOnExcept(new ArrayBuffer[DeviceMemoryBuffer]()) { toClose =>
         val results = currentBlocks.flatMap { b =>

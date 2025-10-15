@@ -25,7 +25,7 @@ import scala.concurrent.ExecutionContext
 import scala.ref.WeakReference
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -86,7 +86,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   def batch: SpillableColumnarBatch = this.synchronized {
     maybeGpuBatch.getOrElse {
-      withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.BROADCAST_MANIFEST_BATCH {
         val spillable =
           if (data == null || data.getTableHeader.getNumColumns == 0) {
             // If `data` is null or there are no columns, this is a rows-only batch
@@ -134,7 +134,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
         new ColumnarBatch(hostColumns, numRows)
       }
     }.getOrElse {
-      withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.BROADCAST_MANIFEST_BATCH {
         if (data == null) {
           new ColumnarBatch(Array.empty, numRows)
         } else {
@@ -212,7 +212,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
   def doReadObject(in: ObjectInputStream): Unit = this.synchronized {
     // no-op if we already have `batchInternal` or `data` set
     if (batchInternal == null && data == null) {
-      withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.DESERIALIZE_BATCH {
         val (header, buffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(in)
         withResource(buffer) { _ =>
           dataTypes = if (header.getNumColumns > 0) {
@@ -274,7 +274,7 @@ class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
   @transient private var numRows = batch.numRows()
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    withResource(new NvtxRange("SerializeBatch", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.SERIALIZE_BROADCAST_BATCH {
       if (buffer != null) {
         throw new IllegalStateException("Cannot re-serialize a batch this way...")
       } else {
@@ -291,7 +291,7 @@ class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    withResource(new NvtxRange("HostDeserializeBatch", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.HOST_DESERIALIZE_BATCH {
       val (h, b) = SerializedHostTableUtils.readTableHeaderAndBuffer(in)
       // buffer will only be cleaned up on GC, so cannot warn about leaks
       b.noWarnLeakExpected()

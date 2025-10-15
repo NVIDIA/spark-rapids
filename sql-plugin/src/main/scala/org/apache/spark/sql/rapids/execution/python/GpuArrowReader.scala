@@ -18,9 +18,9 @@ package org.apache.spark.sql.rapids.execution.python
 
 import java.io.DataInputStream
 
-import ai.rapids.cudf.{ArrowIPCOptions, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
+import ai.rapids.cudf.{ArrowIPCOptions, HostBufferProvider, HostMemoryBuffer, StreamedTableReader, Table}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuSemaphore
+import com.nvidia.spark.rapids.{GpuSemaphore, NvtxRegistry}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.internal.SQLConf
@@ -90,7 +90,7 @@ trait GpuArrowOutput {
 
     final def readNext(): ColumnarBatch = {
       val table =
-        withResource(new NvtxRange("read python batch", NvtxColor.DARK_GREEN)) { _ =>
+        NvtxRegistry.READ_PYTHON_BATCH {
           // The GpuSemaphore is acquired in a callback
           tableReader.getNextIfAvailable(minReadTargetNumRows)
         }

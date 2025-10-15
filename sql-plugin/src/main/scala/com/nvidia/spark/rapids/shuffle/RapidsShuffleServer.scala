@@ -20,7 +20,7 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executor}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, MemoryBuffer}
 import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
@@ -228,7 +228,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   private def registerRequestHandler(messageType: MessageType.Value): Unit = {
     logDebug(s"Registering ${messageType} request callback")
     serverConnection.registerRequestHandler(messageType, tx => {
-      withResource(new NvtxRange("Handle Meta Request", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.HANDLE_META_REQUEST {
         messageType match {
           case MessageType.MetadataRequest =>
             asyncOrBlock(HandleMeta(tx))
@@ -254,7 +254,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   def doHandleMetadataRequest(tx: Transaction): Unit = {
     withResource(tx) { _ =>
-      withResource(new NvtxRange("doHandleMeta", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.DO_HANDLE_META {
         withResource(tx.releaseMessage()) { mtb =>
           if (tx.getStatus == TransactionStatus.Error) {
             logError("error getting metadata request: " + tx)

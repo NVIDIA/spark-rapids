@@ -18,8 +18,8 @@ package org.apache.spark.sql.rapids.execution.python
 
 import java.io.DataOutputStream
 
-import ai.rapids.cudf.{ArrowIPCWriterOptions, HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuSemaphore}
+import ai.rapids.cudf.{ArrowIPCWriterOptions, HostBufferConsumer, HostMemoryBuffer, Table, TableWriter}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuSemaphore, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
@@ -94,7 +94,7 @@ trait GpuArrowWriter extends AutoCloseable {
   }
 
   final def write(batch: ColumnarBatch): Unit = {
-    withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
+    NvtxRegistry.WRITE_PYTHON_BATCH {
       // The callback will handle closing table and releasing the semaphore
       tableWriter.write(GpuColumnVector.from(batch))
     }

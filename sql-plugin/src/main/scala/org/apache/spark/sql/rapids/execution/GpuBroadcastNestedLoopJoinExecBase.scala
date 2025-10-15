@@ -140,7 +140,7 @@ class CrossJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
-      "Cross join gather",
+      NvtxRegistry.JOIN_GATHER,
       targetSize,
       opTime,
       joinTime) {
@@ -205,7 +205,7 @@ class ConditionalNestedLoopJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends SplittableJoinIterator(
-      s"$joinType join gather",
+      NvtxRegistry.JOIN_GATHER,
       stream,
       streamAttributes,
       builtBatch,

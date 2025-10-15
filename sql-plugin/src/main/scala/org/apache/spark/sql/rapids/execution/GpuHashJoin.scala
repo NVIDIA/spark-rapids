@@ -327,7 +327,7 @@ abstract class BaseHashJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends SplittableJoinIterator(
-      s"hash $joinType gather",
+      NvtxRegistry.JOIN_GATHER,
       stream,
       streamAttributes,
       built,

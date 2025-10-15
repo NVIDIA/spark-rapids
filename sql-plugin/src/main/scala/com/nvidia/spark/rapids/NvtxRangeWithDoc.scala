@@ -446,6 +446,147 @@ object NvtxRegistry {
   val SLICE_INTERNAL_CPU: NvtxId = NvtxId("sliceInternalOnCpu", NvtxColor.CYAN,
     "Slicing partition data on CPU")
 
+  // Serialization and deserialization
+  val READ_HEADER: NvtxId = NvtxId("Read Header", NvtxColor.YELLOW,
+    "Reading serialized batch header")
+
+  val READ_BATCH: NvtxId = NvtxId("Read Batch", NvtxColor.YELLOW,
+    "Reading serialized batch data")
+
+  val SERIALIZE_BATCH: NvtxId = NvtxId("Serialize Batch", NvtxColor.YELLOW,
+    "Serializing columnar batch")
+
+  val SERIALIZE_ROW_ONLY_BATCH: NvtxId = NvtxId("Serialize Row Only Batch", NvtxColor.YELLOW,
+    "Serializing row-only batch")
+
+  // Broadcast operations
+  val BROADCAST_MANIFEST_BATCH: NvtxId = NvtxId("broadcast manifest batch", NvtxColor.PURPLE,
+    "Creating broadcast manifest batch")
+
+  val DESERIALIZE_BATCH: NvtxId = NvtxId("DeserializeBatch", NvtxColor.PURPLE,
+    "Deserializing broadcast batch")
+
+  val SERIALIZE_BROADCAST_BATCH: NvtxId = NvtxId("SerializeBatch", NvtxColor.PURPLE,
+    "Serializing broadcast batch")
+
+  val HOST_DESERIALIZE_BATCH: NvtxId = NvtxId("HostDeserializeBatch", NvtxColor.PURPLE,
+    "Deserializing batch on host")
+
+  val GET_BROADCAST_BATCH: NvtxId = NvtxId("getBroadcastBatch", NvtxColor.YELLOW,
+    "Getting broadcast batch")
+
+  val FIRST_STREAM_BATCH: NvtxId = NvtxId("first stream batch", NvtxColor.RED,
+    "Processing first stream batch")
+
+  // Compression operations
+  val BATCH_COMPRESS: NvtxId = NvtxId("batch compress", NvtxColor.ORANGE,
+    "Compressing batch data")
+
+  val COPY_COMPRESSED_BUFFERS: NvtxId = NvtxId("copy compressed buffers", NvtxColor.PURPLE,
+    "Copying compressed buffer data")
+
+  val BATCH_DECOMPRESS: NvtxId = NvtxId("batch decompress", NvtxColor.ORANGE,
+    "Decompressing batch data")
+
+  val ZSTD_POST_PROCESS: NvtxId = NvtxId("zstd post process", NvtxColor.YELLOW,
+    "Post-processing ZSTD compressed data")
+
+  val LZ4_POST_PROCESS: NvtxId = NvtxId("lz4 post process", NvtxColor.YELLOW,
+    "Post-processing LZ4 compressed data")
+
+  val ALLOC_OUTPUT_BUFS: NvtxId = NvtxId("alloc output bufs", NvtxColor.YELLOW,
+    "Allocating output buffers for compression")
+
+  // Shuffle client/server operations
+  val BATCH_RECEIVED: NvtxId = NvtxId("BATCH RECEIVED", NvtxColor.DARK_GREEN,
+    "Processing received shuffle batch")
+
+  val CLIENT_FETCH: NvtxId = NvtxId("Client.fetch", NvtxColor.PURPLE,
+    "Fetching data from shuffle server")
+
+  val CLIENT_HANDLE_META: NvtxId = NvtxId("Client.handleMeta", NvtxColor.CYAN,
+    "Handling metadata from shuffle server")
+
+  val BUFFER_CALLBACK: NvtxId = NvtxId("Buffer Callback", NvtxColor.RED,
+    "Processing buffer callback")
+
+  val HANDLE_META_REQUEST: NvtxId = NvtxId("Handle Meta Request", NvtxColor.PURPLE,
+    "Handling metadata request on shuffle server")
+
+  val DO_HANDLE_META: NvtxId = NvtxId("doHandleMeta", NvtxColor.PURPLE,
+    "Processing metadata handling")
+
+  val CONSUME_WINDOW: NvtxId = NvtxId("consumeWindow", NvtxColor.PURPLE,
+    "Consuming transfer window")
+
+  // Join operations
+  val CALC_GATHER_SIZE: NvtxId = NvtxId("calc gather size", NvtxColor.YELLOW,
+    "Calculating gather operation size")
+
+  val GET_JOIN_BATCH: NvtxId = NvtxId("get batch", NvtxColor.RED,
+    "Getting join batch")
+
+  val SPILL_JOIN_BATCH: NvtxId = NvtxId("spill batch", NvtxColor.RED,
+    "Spilling join batch")
+
+  val GET_JOIN_MAP: NvtxId = NvtxId("get map", NvtxColor.RED,
+    "Getting join map")
+
+  val SPILL_JOIN_MAP: NvtxId = NvtxId("spill map", NvtxColor.RED,
+    "Spilling join map")
+
+  // File format read operations
+  val BUFFER_FILE_SPLIT_TEXT: NvtxId = NvtxId("Buffer file split", NvtxColor.YELLOW,
+    "Buffering text file split")
+
+  val ORC_READ_BATCHES: NvtxId = NvtxId("ORC readBatches", NvtxColor.GREEN,
+    "Reading ORC batches")
+
+  val PARQUET_READ_BATCH: NvtxId = NvtxId("Parquet readBatch", NvtxColor.GREEN,
+    "Reading Parquet batch")
+
+  val AVRO_READ_BATCH: NvtxId = NvtxId("Avro readBatch", NvtxColor.GREEN,
+    "Reading Avro batch")
+
+  // Python/Arrow operations
+  val READ_PYTHON_BATCH: NvtxId = NvtxId("read python batch", NvtxColor.DARK_GREEN,
+    "Reading Python batch")
+
+  val WRITE_PYTHON_BATCH: NvtxId = NvtxId("write python batch", NvtxColor.DARK_GREEN,
+    "Writing Python batch")
+
+  // Z-order operations
+  val INTERLEAVE_BITS: NvtxId = NvtxId("interleaveBits", NvtxColor.PURPLE,
+    "Interleaving bits for Z-order")
+
+  val HILBERT_INDEX: NvtxId = NvtxId("HILBERT INDEX", NvtxColor.PURPLE,
+    "Computing Hilbert index")
+
+  val GPU_PARTITIONER: NvtxId = NvtxId("GpuPartitioner", NvtxColor.GREEN,
+    "GPU partitioner operation")
+
+  // Concatenation operations
+  val CONCAT_PENDING: NvtxId = NvtxId("concat pending", NvtxColor.CYAN,
+    "Concatenating pending batches")
+
+  // Decode operations
+  val HIVE_DECODE: NvtxId = NvtxId("HIVE decode", NvtxColor.DARK_GREEN,
+    "Decoding Hive table data")
+
+  val JSON_DECODE_SCAN: NvtxId = NvtxId("JSON decode", NvtxColor.DARK_GREEN,
+    "Decoding JSON data")
+
+  val CSV_DECODE: NvtxId = NvtxId("CSV decode", NvtxColor.DARK_GREEN,
+    "Decoding CSV data")
+
+  // Join operations
+  val JOIN_GATHER: NvtxId = NvtxId("Join gather", NvtxColor.DARK_GREEN,
+    "Gathering join results")
+
+  // Miscellaneous operations
+  val JSON_TO_STRUCTS: NvtxId = NvtxId("GpuJsonToStructs", NvtxColor.YELLOW,
+    "Converting JSON to structs")
+
   val PARTITION_FOR_JOIN: NvtxId = NvtxId("partition for join", NvtxColor.CYAN,
     "Hash partitioning data for join operation")
 
@@ -647,6 +788,49 @@ object NvtxRegistry {
     register(SHUFFLE_CONCAT_CPU)
     register(SLICE_INTERNAL_GPU)
     register(SLICE_INTERNAL_CPU)
+    register(BATCH_RECEIVED)
+    register(READ_HEADER)
+    register(READ_BATCH)
+    register(SERIALIZE_BATCH)
+    register(SERIALIZE_ROW_ONLY_BATCH)
+    register(BROADCAST_MANIFEST_BATCH)
+    register(DESERIALIZE_BATCH)
+    register(SERIALIZE_BROADCAST_BATCH)
+    register(HOST_DESERIALIZE_BATCH)
+    register(GET_BROADCAST_BATCH)
+    register(FIRST_STREAM_BATCH)
+    register(BATCH_COMPRESS)
+    register(COPY_COMPRESSED_BUFFERS)
+    register(BATCH_DECOMPRESS)
+    register(ZSTD_POST_PROCESS)
+    register(LZ4_POST_PROCESS)
+    register(ALLOC_OUTPUT_BUFS)
+    register(CLIENT_FETCH)
+    register(CLIENT_HANDLE_META)
+    register(BUFFER_CALLBACK)
+    register(HANDLE_META_REQUEST)
+    register(DO_HANDLE_META)
+    register(CONSUME_WINDOW)
+    register(CALC_GATHER_SIZE)
+    register(GET_JOIN_BATCH)
+    register(SPILL_JOIN_BATCH)
+    register(GET_JOIN_MAP)
+    register(SPILL_JOIN_MAP)
+    register(BUFFER_FILE_SPLIT_TEXT)
+    register(ORC_READ_BATCHES)
+    register(PARQUET_READ_BATCH)
+    register(AVRO_READ_BATCH)
+    register(READ_PYTHON_BATCH)
+    register(WRITE_PYTHON_BATCH)
+    register(INTERLEAVE_BITS)
+    register(HILBERT_INDEX)
+    register(GPU_PARTITIONER)
+    register(CONCAT_PENDING)
+    register(HIVE_DECODE)
+    register(JSON_DECODE_SCAN)
+    register(CSV_DECODE)
+    register(JOIN_GATHER)
+    register(JSON_TO_STRUCTS)
     register(PARTITION_FOR_JOIN)
     register(CALCULATE_PART)
     register(SUB_JOIN_PART)

@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids.zorder
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.ZOrder
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -54,7 +53,7 @@ case class GpuInterleaveBits(children: Seq[Expression])
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val ret = withResource(GpuProjectExec.project(batch, children)) { inputs =>
-      withResource(new NvtxRange("interleaveBits", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.INTERLEAVE_BITS {
         val bases = GpuColumnVector.extractBases(inputs)
         // Null values are replaced with 0 as a part of interleaveBits to match what delta does,
         // but null values should never show up in practice because this is fed by

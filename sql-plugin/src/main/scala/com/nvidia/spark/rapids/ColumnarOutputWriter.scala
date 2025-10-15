@@ -75,7 +75,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
  */
 abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
-    rangeName: String,
+    nvtxId: NvtxId,
     includeRetry: Boolean,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugDumpPath: Option[String],
@@ -93,7 +93,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   private lazy val debugDumpOutputStream: Option[OutputStream] = try {
     debugDumpPath.map { path =>
       val tc = TaskContext.get()
-      logWarning(s"DEBUG FILE OUTPUT $rangeName FOR " +
+      logWarning(s"DEBUG FILE OUTPUT ${nvtxId.name} FOR " +
         s"STAGE ${tc.stageId()} TASK ${tc.taskAttemptId()} is $path")
       val hadoopPath = new Path(path)
       val fs = hadoopPath.getFileSystem(conf)
@@ -241,7 +241,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   // protected for testing
   protected[this] def bufferBatchAndClose(batch: ColumnarBatch): Long = {
     val startTimestamp = System.nanoTime
-    NvtxRegistry.FILE_FORMAT_WRITE {
+    nvtxId {
       withResource(transformAndClose(batch)) { maybeTransformed =>
         encodeAndBufferToHost(maybeTransformed)
       }

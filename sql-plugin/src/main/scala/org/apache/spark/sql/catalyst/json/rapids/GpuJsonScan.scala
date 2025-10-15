@@ -23,7 +23,7 @@ import java.util.Locale
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, Schema, Table}
+import ai.rapids.cudf.{Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
@@ -317,8 +317,7 @@ object JsonPartitionReader {
     // to apply the read schema projection here
     try {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        withResource(new NvtxWithMetrics(formatName + " decode",
-          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.JSON_DECODE_SCAN, decodeTime) {
           try {
             Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize, dataBufferer.getNumLines)
           } catch {

@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
@@ -375,8 +375,7 @@ object CSVPartitionReader {
     val dataSize = dataBufferer.getLength
     try {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        withResource(new NvtxWithMetrics(formatName + " decode", NvtxColor.DARK_GREEN,
-          decodeTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.CSV_DECODE, decodeTime) {
           Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
         }
       }

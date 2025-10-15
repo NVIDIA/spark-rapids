@@ -20,7 +20,6 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.hashing.byteswap32
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -202,7 +201,7 @@ case class GpuRangePartitioner(
     val types = GpuColumnVector.extractTypes(batch)
     withRetryNoSplit(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
       val partedTable = withResource(sb.getColumnarBatch()) { cb =>
-        val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
+        val parts = NvtxRegistry.CALCULATE_PART {
           computePartitionIndexes(cb)
         }
         withResource(parts) { parts =>

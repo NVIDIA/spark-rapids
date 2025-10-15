@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
@@ -636,7 +636,7 @@ abstract class AbstractGpuCoalesceIterator(
           wasLastBatch
         }
 
-        withResource(new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.CONCAT_PENDING, concatTime) {
           goal match {
             case _: SplittableGoal if supportsRetryIterator =>
               coalesceBatchIterator = getCoalesceRetryIterator

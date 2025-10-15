@@ -39,9 +39,7 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection
 import scala.collection.mutable
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuSemaphore, NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleReceivedBufferCatalog}
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
 
@@ -252,7 +250,7 @@ class RapidsShuffleIterator(
                 false
               } else {
                 batchesInFlight = batchesInFlight - 1
-                withResource(new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)) { _ =>
+                NvtxRegistry.BATCH_RECEIVED {
                   if (markedAsDone) {
                     throw new IllegalStateException(
                       "This iterator was marked done, but a batched showed up after!!")
