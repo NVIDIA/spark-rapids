@@ -210,7 +210,6 @@ def test_delta_insert_overwrite_static_sql_liquid_clustering(spark_tmp_path,
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13110")
 def test_delta_insert_overwrite_dynamic_sql_liquid_clustering(spark_tmp_path,
                                                                       spark_tmp_table_factory):
     def write_func(spark, path):

@@ -431,7 +431,7 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
     "STATIC",
-    pytest.param("DYNAMIC", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9543 (DB), https://github.com/NVIDIA/spark-rapids/issues/13110 (OSS)"))
+    pytest.param("DYNAMIC", marks=pytest.mark.xfail(condition=is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9543"))
 ], ids=idfn)
 @pytest.mark.parametrize("clause", ["", "PARTITION (id)"], ids=idfn)
 def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_tmp_path, mode, clause):
@@ -454,7 +454,7 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
     "STATIC",
-    pytest.param("DYNAMIC", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9543 (DB), https://github.com/NVIDIA/spark-rapids/issues/13110 (OSS)"))
+    pytest.param("DYNAMIC", marks=pytest.mark.xfail(condition=is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9543"))
 ], ids=idfn)
 @pytest.mark.parametrize("clause", ["PARTITION (id, p = 2)", "PARTITION (p = 2, id)", "PARTITION (p = 2)"])
 def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, mode, clause):
