@@ -455,7 +455,7 @@ object NvtxRegistry {
   val SUB_JOIN_PART: NvtxId = NvtxId("Sub-join part", NvtxColor.CYAN,
     "Hash partitioning for sub-join operation")
 
-  val WINDOW_EXEC: NvtxId = NvtxId("window", NvtxColor.CYAN,
+  val WINDOW_EXEC: NvtxId = NvtxId("windowExec", NvtxColor.CYAN,
     "Executing window operation on batch")
 
   val EXPAND_EXEC_PROJECTIONS: NvtxId = NvtxId("ExpandExec projections", NvtxColor.GREEN,

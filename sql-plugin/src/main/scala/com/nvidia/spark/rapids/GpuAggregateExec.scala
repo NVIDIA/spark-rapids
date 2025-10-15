@@ -2088,7 +2088,8 @@ class DynamicGpuPartialAggregateIterator(
     // first thing we need to do is get a batch and make a choice.
     withRetryNoSplit(SpillableColumnarBatch(cbIter.next(),
         SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
-      NvtxIdWithMetrics(NvtxRegistry.DYNAMIC_SORT_HEURISTIC, metrics.opTime, metrics.heuristicTime) {
+      NvtxIdWithMetrics(NvtxRegistry.DYNAMIC_SORT_HEURISTIC,
+          metrics.opTime, metrics.heuristicTime) {
         withResource(sb.getColumnarBatch()) { cb =>
           val numRows = cb.numRows()
           val cardinality = estimateCardinality(cb)

@@ -181,7 +181,8 @@ class GpuBatchSubPartitioner(
       if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
         val types = GpuColumnVector.extractTypes(gpuBatch)
         // 1) Hash partition on the batch
-        val partedTable = hashPartitionAndClose(gpuBatch, realNumPartitions, NvtxRegistry.SUB_JOIN_PART)
+        val partedTable = hashPartitionAndClose(gpuBatch, realNumPartitions,
+            NvtxRegistry.SUB_JOIN_PART)
         val (spillBatch, partitions) = withResource(partedTable) { _ =>
           // Convert to SpillableColumnarBatch for the following retry.
           (SpillableColumnarBatch(GpuColumnVector.from(partedTable.getTable, types),
