@@ -190,35 +190,6 @@ object GpuSparkWrite {
         }
       }
     }
-
-    // Check if this is an overwrite operation and validate it
-    val isOverwrite = try {
-      val cpuBatchWrite = cpuWrite.asInstanceOf[SparkWrite].toBatch
-      cpuBatchWrite.getClass.getSimpleName == "OverwriteByFilter"
-    } catch {
-      case _: Exception => false
-    }
-
-    if (isOverwrite) {
-      // Extract overwrite expression to check if it's static overwrite
-      val overwriteExpr = try {
-        FieldUtils.readField(cpuWrite, "overwriteExpr", true)
-          .asInstanceOf[org.apache.iceberg.expressions.Expression]
-      } catch {
-        case _: Exception => null
-      }
-
-      // For now, we only support static overwrite (where overwriteExpr is null or AlwaysTrue)
-      // Dynamic overwrite with complex expressions is not yet supported
-      if (overwriteExpr != null) {
-        val exprString = overwriteExpr.toString
-        // Check if it's not a simple static overwrite (AlwaysTrue or similar)
-        if (!exprString.contains("true") || exprString.contains("ref(")) {
-          meta.willNotWorkOnGpu("Only static overwrite (full table/partition overwrite) is " +
-            "supported for Iceberg on GPU. Dynamic overwrite with filters is not yet supported.")
-        }
-      }
-    }
   }
 
 
