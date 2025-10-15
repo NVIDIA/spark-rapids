@@ -890,6 +890,7 @@
 
     <properties>
         <delta33x.version>3.3.0</delta33x.version>
+        <delta40x.version>4.0.0</delta40x.version>
         <!-- start dyn.shim properties -->
         <!--  TODO: Will remove 330db from the execluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
 	<dyn.shim.excluded.releases>330db</dyn.shim.excluded.releases>
