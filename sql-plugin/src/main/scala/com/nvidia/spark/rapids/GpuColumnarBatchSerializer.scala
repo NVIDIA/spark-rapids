@@ -236,18 +236,18 @@ private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]
           }
 
           dataSize += JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows)
-          val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
+          NvtxRegistry.COLUMNAR_BATCH_SERIALIZE.push()
           try {
             JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
           } finally {
-            range.close()
+            NvtxRegistry.COLUMNAR_BATCH_SERIALIZE.pop()
           }
         } else {
-          val range = new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)
+          NvtxRegistry.COLUMNAR_BATCH_SERIALIZE_ROW_ONLY.push()
           try {
             JCudfSerialization.writeRowsToStream(dOut, numRows)
           } finally {
-            range.close()
+            NvtxRegistry.COLUMNAR_BATCH_SERIALIZE_ROW_ONLY.pop()
           }
         }
       } finally {

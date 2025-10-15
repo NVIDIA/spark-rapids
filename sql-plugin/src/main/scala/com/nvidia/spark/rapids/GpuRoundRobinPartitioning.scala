@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.util.Random
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -81,20 +80,20 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     if (batch.numCols() <= 0) {
       return Array(batch).zipWithIndex
     }
-    val totalRange = new NvtxRange("Round Robin partition", NvtxColor.PURPLE)
+    NvtxRegistry.ROUND_ROBIN_PARTITION.push()
     try {
       val numRows = batch.numRows
       val (partitionIndexes, partitionColumns) = {
-        val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
+        NvtxRegistry.ROUND_ROBIN_PARTITION_SLICE.push()
         try {
           partitionInternalWithClose(batch)
         } finally {
-          partitionRange.close()
+          NvtxRegistry.ROUND_ROBIN_PARTITION_SLICE.pop()
         }
       }
       sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
     } finally {
-      totalRange.close()
+      NvtxRegistry.ROUND_ROBIN_PARTITION.pop()
     }
   }
 

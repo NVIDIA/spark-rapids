@@ -277,6 +277,42 @@ object NvtxRegistry {
   val RANDOM_EXPR: NvtxId = NvtxId("random expr", NvtxColor.RED,
     "Generating random values in expression evaluation")
 
+  val RAPIDS_CACHING_READER_READ: NvtxId = NvtxId("RapidsCachingReader.read",
+    NvtxColor.DARK_GREEN, "Reading shuffle data from cache or remote transport")
+
+  val RAPIDS_CACHING_READER_READ_LOCAL: NvtxId = NvtxId("RapidsCachingReader read local",
+    NvtxColor.GREEN, "Reading shuffle blocks from local cache")
+
+  val RAPIDS_SHUFFLE_ITERATOR_PREP: NvtxId = NvtxId("RapidsShuffleIterator prep",
+    NvtxColor.BLUE, "Preparing shuffle iterator with cached and remote blocks")
+
+  val RAPIDS_SHUFFLE_ITERATOR_NEXT: NvtxId = NvtxId("RapidsShuffleIterator.next",
+    NvtxColor.RED, "Fetching next batch from Rapids shuffle iterator")
+
+  val RAPIDS_SHUFFLE_ITERATOR_GOT_BATCH: NvtxId = NvtxId("RapidsShuffleIterator.gotBatch",
+    NvtxColor.PURPLE, "Processing batch received from Rapids shuffle")
+
+  val RAPIDS_CACHING_WRITER_CLOSE: NvtxId = NvtxId("RapidsCachingWriter.close",
+    NvtxColor.CYAN, "Closing Rapids caching writer and finalizing shuffle output")
+
+  val COLUMNAR_BATCH_SERIALIZE: NvtxId = NvtxId("Columnar batch serialize",
+    NvtxColor.YELLOW, "Serializing columnar batch for shuffle or storage")
+
+  val COLUMNAR_BATCH_SERIALIZE_ROW_ONLY: NvtxId = NvtxId("Columnar batch serialize row only",
+    NvtxColor.YELLOW, "Serializing row-only batch (no GPU data)")
+
+  val TRANSPORT_COPY_BUFFER: NvtxId = NvtxId("Transport copy buffer", NvtxColor.RED,
+    "Copying buffer for Rapids shuffle transport")
+
+  val BRING_BACK_TO_HOST: NvtxId = NvtxId("Bring back to host", NvtxColor.RED,
+    "Copying GPU data back to host memory")
+
+  val ROUND_ROBIN_PARTITION: NvtxId = NvtxId("Round robin partition", NvtxColor.PURPLE,
+    "Partitioning data using round-robin strategy")
+
+  val ROUND_ROBIN_PARTITION_SLICE: NvtxId = NvtxId("Round robin partition slice",
+    NvtxColor.BLUE, "Slicing data for round-robin partitioning")
+
   def init(): Unit = {
     register(ACQUIRE_GPU)
     register(RELEASE_GPU)
@@ -335,6 +371,18 @@ object NvtxRegistry {
     register(REDUCTION_MERGE_M2)
     register(PROJECT_TIER)
     register(RANDOM_EXPR)
+    register(RAPIDS_CACHING_READER_READ)
+    register(RAPIDS_CACHING_READER_READ_LOCAL)
+    register(RAPIDS_SHUFFLE_ITERATOR_PREP)
+    register(RAPIDS_SHUFFLE_ITERATOR_NEXT)
+    register(RAPIDS_SHUFFLE_ITERATOR_GOT_BATCH)
+    register(RAPIDS_CACHING_WRITER_CLOSE)
+    register(COLUMNAR_BATCH_SERIALIZE)
+    register(COLUMNAR_BATCH_SERIALIZE_ROW_ONLY)
+    register(TRANSPORT_COPY_BUFFER)
+    register(BRING_BACK_TO_HOST)
+    register(ROUND_ROBIN_PARTITION)
+    register(ROUND_ROBIN_PARTITION_SLICE)
   }
 }
 
