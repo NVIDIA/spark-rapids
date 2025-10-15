@@ -333,6 +333,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val maxPartitionSeen = new AtomicInteger(-1)
     val processingComplete = new AtomicBoolean(false)
 
+    // Assign a slot number to each partition for consistent serialization
+    val partitionSlots = new ConcurrentHashMap[Int, Int]()
+
     // Create dedicated writer thread (not using queueWriteTask)
     val writerThreadFactory = new ThreadFactory {
       override def newThread(r: Runnable): Thread = {
@@ -500,9 +503,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         limiter.acquireOrBlock(recordSize)
         waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
 
-        // Submit compression task using queueWriteTask to
-        // ensure same partition tasks run serially
-        val slotNum = RapidsShuffleInternalManagerBase.getNextWriterSlot
+        // Get or assign a slot number for this partition to ensure
+        // all tasks for the same partition run serially in the same slot
+        val slotNum = partitionSlots.computeIfAbsent(reducePartitionId,
+          _ => RapidsShuffleInternalManagerBase.getNextWriterSlot)
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           try {
             withResource(cb) { _ =>
