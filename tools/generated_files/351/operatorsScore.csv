@@ -28,6 +28,7 @@ AtomicCreateTableAsSelectExec,3.0
 AtomicReplaceTableAsSelectExec,3.0
 BatchScanExec,3.0
 OverwriteByExpressionExecV1,3.0
+OverwritePartitionsDynamicExec,3.0
 BroadcastExchangeExec,3.0
 ShuffleExchangeExec,4.2
 BroadcastHashJoinExec,5.1

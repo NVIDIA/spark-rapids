@@ -53,7 +53,24 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
   private[source] val format: FileFormat = FieldUtils.readField(cpu, "format", true)
     .asInstanceOf[FileFormat]
 
-  override def toBatch: BatchWrite = new GpuBatchAppend(this)
+  override def toBatch: BatchWrite = {
+    // Call the CPU version's toBatch to get the appropriate BatchWrite implementation
+    // Iceberg's SparkWrite returns different implementations based on write mode:
+    // - BatchAppend for append operations
+    // - DynamicOverwrite for dynamic partition overwrite
+    // Since these are private classes, we check the class name to determine which GPU version
+    // to use
+    val cpuBatch = cpu.toBatch
+    val cpuBatchClassName = cpuBatch.getClass.getSimpleName
+    
+    cpuBatchClassName match {
+      case "BatchAppend" => new GpuBatchAppend(this)
+      case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
+      case _ => 
+        throw new UnsupportedOperationException(
+          s"Unsupported Iceberg batch write type: $cpuBatchClassName")
+    }
+  }
 
   override def toStreaming: StreamingWrite = throw new UnsupportedOperationException(
     "GpuSparkWrite does not support streaming write")
