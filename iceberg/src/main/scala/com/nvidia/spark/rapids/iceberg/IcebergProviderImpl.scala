@@ -19,15 +19,17 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
+import org.apache.iceberg.spark.supportsCatalog
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, GpuAppendDataExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, GpuAppendDataExec}
+import org.apache.spark.sql.execution.datasources.v2.rapids.GpuAtomicCreateTableAsSelectExec
 
 class IcebergProviderImpl extends IcebergProvider {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -96,6 +98,41 @@ class IcebergProviderImpl extends IcebergProvider {
 
   override def isSupportedWrite(write: Class[_ <: Write]): Boolean = {
     GpuSparkWrite.supports(write)
+  }
+
+  override def isSupportedCatalog(catalogClass: Class[_]): Boolean = {
+    supportsCatalog(catalogClass)
+  }
+
+  override def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    if (!meta.conf.isIcebergEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG.key} to true")
+    }
+
+    if (!meta.conf.isIcebergWriteEnabled) {
+      meta.willNotWorkOnGpu("Iceberg output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG_WRITE.key} to true")
+    }
+
+    FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+
+    GpuSparkWrite.tagForGpuCtas(cpuExec, meta)
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    GpuAtomicCreateTableAsSelectExec(
+      cpuExec.catalog,
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.query,
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.ifNotExists)
   }
 
   override def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit = {
