@@ -66,7 +66,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     cpuBatchClassName match {
       case "BatchAppend" => new GpuBatchAppend(this)
       case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
-      case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatchWrite)
+      case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatch)
       case _ =>
         throw new UnsupportedOperationException(
           s"Unsupported Iceberg batch write type: $cpuBatchClassName")
