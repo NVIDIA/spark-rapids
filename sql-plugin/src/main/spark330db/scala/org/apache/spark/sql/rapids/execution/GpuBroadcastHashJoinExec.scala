@@ -176,7 +176,7 @@ case class GpuBroadcastHashJoinExec(
           buildRelation,
           localBuildSchema,
           localBuildOutput,
-          new CollectTimeIterator("executor broadcast join stream", it, streamTime),
+          new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime),
           allMetrics)
       // builtBatch will be closed in doJoin
       doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)

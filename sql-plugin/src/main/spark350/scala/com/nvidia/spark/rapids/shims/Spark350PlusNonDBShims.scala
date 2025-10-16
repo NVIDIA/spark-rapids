@@ -37,7 +37,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec}
 import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.{StringType, StructType}
@@ -163,7 +163,14 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r)),
-      exec[org.apache.spark.sql.execution.datasources.v2.OverwriteByExpressionExec](
+      exec[OverwritePartitionsDynamicExec](
+        "Overwrite partitions dynamically in a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new OverwritePartitionsDynamicExecMeta(p, conf, parent, r)),
+      exec[OverwriteByExpressionExec](
         "Overwrite data in a datasource V2 table",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
           TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
