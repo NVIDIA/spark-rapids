@@ -349,7 +349,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     
     // Track timing for metrics
     val writeStartTime = System.nanoTime()
-    val totalDataSize = new AtomicLong(0L)
+    // Track total written size (compressed size)
+    val totalCompressedSize = new AtomicLong(0L)
     var waitTimeOnLimiterNs: Long = 0L
 
     // Collect compressed buffers from parallel tasks
@@ -546,10 +547,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 serializer.writeValue(value.asInstanceOf[Any])
               }
 
-              // Track total data size
-              totalDataSize.addAndGet(recordSize)
+              // Track total written data size (compressed size)
+              val compressedSize = (buffer.getCount - originLength).toLong
+              totalCompressedSize.addAndGet(compressedSize)
               // return (original size, compressed size)
-              (recordSize, (buffer.getCount - originLength).toLong)
+              (recordSize, compressedSize)
             }
           } catch {
             case e: Exception => {
@@ -597,7 +599,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       // Subtract limiter wait time from write time for more accurate compression time measurement
       writeMetrics.incWriteTime(totalWriteTime - waitTimeOnLimiterNs)
       writeMetrics.incRecordsWritten(recordsWritten)
-      writeMetrics.incBytesWritten(totalDataSize.get())
+      writeMetrics.incBytesWritten(totalCompressedSize.get())
 
     } finally {
       // Shutdown writer thread pool gracefully
