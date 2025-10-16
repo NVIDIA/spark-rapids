@@ -403,7 +403,7 @@ object GpuShuffleExchangeExecBase {
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private var isFirstCheck = true
-          private var isSingleBatch = true
+          private var isSingleBatch = false
           private def partNextBatch(): Unit = {
             if (partitioned != null) {
               partitioned.map(_._1).safeClose()
