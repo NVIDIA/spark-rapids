@@ -73,14 +73,10 @@ def _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
     gpu_table = f"{base_name}_gpu"
     cpu_table = f"{base_name}_cpu"
 
-    # Create initial tables using CPU for both to ensure identical initial state
+    # Create initial tables (create_iceberg_table already uses CPU session internally)
     initial_df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-    with_cpu_session(lambda spark: create_iceberg_table(spark, gpu_table, initial_df_gen,
-                                                        table_prop, partition_col_sql),
-                     conf=conf)
-    with_cpu_session(lambda spark: create_iceberg_table(spark, cpu_table, initial_df_gen,
-                                                        table_prop, partition_col_sql),
-                     conf=conf)
+    create_iceberg_table(gpu_table, partition_col_sql, table_prop, initial_df_gen)
+    create_iceberg_table(cpu_table, partition_col_sql, table_prop, initial_df_gen)
 
     # Execute RTAS
     with_gpu_session(lambda spark: _execute_rtas(spark, gpu_table, spark_tmp_table_factory,
@@ -193,7 +189,7 @@ def test_rtas_unsupported_file_format_fallback(spark_tmp_table_factory,
         target = get_full_table_name(spark_tmp_table_factory)
         # Create initial table
         initial_df_gen = lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-        create_iceberg_table(spark, target, initial_df_gen, table_prop)
+        create_iceberg_table(target, None, table_prop, initial_df_gen)
         
         # Execute RTAS
         return _execute_rtas(spark,
@@ -229,7 +225,7 @@ def test_rtas_fallback_when_conf_disabled(spark_tmp_table_factory,
         target = get_full_table_name(spark_tmp_table_factory)
         # Create initial table
         initial_df_gen = lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-        create_iceberg_table(spark, target, initial_df_gen, table_prop)
+        create_iceberg_table(target, None, table_prop, initial_df_gen)
         
         # Execute RTAS
         return _execute_rtas(spark,
@@ -263,7 +259,7 @@ def test_rtas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory,
         target = get_full_table_name(spark_tmp_table_factory)
         # Create initial table
         initial_df_gen = lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list)))
-        create_iceberg_table(spark, target, initial_df_gen, table_prop)
+        create_iceberg_table(target, None, table_prop, initial_df_gen)
         
         # Execute RTAS
         return _execute_rtas(spark,
@@ -296,8 +292,7 @@ def test_rtas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
         target = get_full_table_name(spark_tmp_table_factory)
         # Create initial table
         initial_df_gen = lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list)))
-        create_iceberg_table(spark, target, initial_df_gen, table_prop, 
-                           partition_col_sql="bucket(16, _c2)")
+        create_iceberg_table(target, "bucket(16, _c2)", table_prop, initial_df_gen)
         
         # Execute RTAS
         return _execute_rtas(spark,
@@ -341,8 +336,7 @@ def test_rtas_partitioned_table_unsupported_partition_fallback(
         target = get_full_table_name(spark_tmp_table_factory)
         # Create initial table
         initial_df_gen = lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-        create_iceberg_table(spark, target, initial_df_gen, table_prop,
-                           partition_col_sql=partition_col_sql)
+        create_iceberg_table(target, partition_col_sql, table_prop, initial_df_gen)
         
         # Execute RTAS
         return _execute_rtas(spark,
@@ -380,7 +374,7 @@ def test_rtas_from_values(spark_tmp_table_factory,
         # Create initial table
         initial_df_gen = lambda sp: gen_df(sp, [("id", iceberg_gens_list[0]), ("name", iceberg_gens_list[1])])
         partition_col_sql = "bucket(8, id)" if partition_table else None
-        create_iceberg_table(spark, target_table, initial_df_gen, table_prop, partition_col_sql)
+        create_iceberg_table(target_table, partition_col_sql, table_prop, initial_df_gen)
         
         # Execute RTAS
         partition_clause = "" if not partition_table else "PARTITIONED BY (bucket(8, id)) "
