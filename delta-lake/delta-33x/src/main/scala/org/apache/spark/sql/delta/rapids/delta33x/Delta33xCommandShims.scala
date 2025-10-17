@@ -26,10 +26,10 @@ import org.apache.spark.sql.delta.rapids.DeltaCommandShims
  * Uses the original Spark 3.x APIs.
  */
 trait Delta33xCommandShims extends DeltaCommandShims {
-  override type RunSparkSession = SparkSession
+  override type ShimSparkSession = SparkSession
   override type OperationSparkSession = SparkSession
 
-  override def toOperationSparkSession(spark: RunSparkSession): OperationSparkSession = spark
+  override def toOperationSparkSession(spark: ShimSparkSession): OperationSparkSession = spark
 
   override def getActiveOperationSparkSession: OperationSparkSession = SparkSession.active
 
@@ -41,7 +41,7 @@ trait Delta33xCommandShims extends DeltaCommandShims {
 
   override def exprToColumn(expr: Expression): Column = new Column(expr)
 
-  override def recacheByPlan(spark: RunSparkSession, plan: LogicalPlan): Unit = {
+  override def recacheByPlan(spark: ShimSparkSession, plan: LogicalPlan): Unit = {
     spark.sharedState.cacheManager.recacheByPlan(spark, plan)
   }
 

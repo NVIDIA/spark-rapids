@@ -22,27 +22,47 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 
 /**
  * Trait to abstract version-specific Spark API differences between Delta 3.3.x and 4.0.x.
- * Mainly handles SparkSession type changes and Column/DataFrame creation APIs introduced
- * in Spark 4.0.
+ * 
+ * Key API differences handled:
+ * 1. SparkSession types: Spark 4.0 split SparkSession to support both classic and connect
+ *    execution modes. It introduced:
+ *    - org.apache.spark.sql.SparkSession (SqlSparkSession): unified API interface
+ *    - org.apache.spark.sql.classic.SparkSession (ClassicSparkSession): classic execution mode
+ *    - org.apache.spark.sql.connect.SparkSession: Spark Connect remote execution
+ *    Spark 3.x uses a single SparkSession type for all purposes.
+ * 2. DataFrame creation: Spark 3.x uses Dataset.ofRows(), Spark 4.0 uses
+ *    TrampolineConnectShims.createDataFrame().
+ * 3. Column creation: Spark 3.x uses new Column(expr), Spark 4.0 uses DFUDFShims.exprToColumn().
  */
 trait DeltaCommandShims {
   
   /**
-   * Type alias for the version-specific SparkSession type used in run() methods.
-   * Delta 3.3.x uses SparkSession, Delta 4.0.x uses SqlSparkSession.
+   * Type alias for the version-specific SparkSession type used in the shimming layer.
+   * This type is used when:
+   * 1. Casting the SparkSession parameter inside run() method body
+   * 2. As parameter type for shim methods (toOperationSparkSession, recacheByPlan)
+   * 
    */
-  type RunSparkSession <: SparkSession
+  type ShimSparkSession <: SparkSession
   
   /**
-   * Type alias for the version-specific SparkSession type used in operations.
-   * Delta 3.3.x uses SparkSession, Delta 4.0.x uses ClassicSparkSession.
+   * Type alias for the version-specific SparkSession type used for internal operations.
+   * This is the SparkSession type used within command execution for operations like:
+   * - Creating DataFrames from LogicalPlans (via createDataFrame method)
+   * - Utility operations (splitMetadataAndDataPredicates, createSetTransaction)
+   * 
+   * Version mapping:
+   * - Delta 3.3.x (Spark 3.x): org.apache.spark.sql.SparkSession
+   * - Delta 4.0.x (Spark 4.0): org.apache.spark.sql.classic.SparkSession (ClassicSparkSession)
    */
   type OperationSparkSession <: SparkSession
 
   /**
-   * Convert RunSparkSession to OperationSparkSession.
+   * Convert ShimSparkSession to OperationSparkSession.
+   * In Spark 4.0, this converts SqlSparkSession to ClassicSparkSession.
+   * In Spark 3.x, Both types are SparkSession.
    */
-  def toOperationSparkSession(spark: RunSparkSession): OperationSparkSession
+  def toOperationSparkSession(spark: ShimSparkSession): OperationSparkSession
 
   /**
    * Get the active OperationSparkSession.
@@ -50,7 +70,9 @@ trait DeltaCommandShims {
   def getActiveOperationSparkSession: OperationSparkSession
 
   /**
-   * Create a DataFrame from a LogicalPlan (version-specific API).
+   * Create a DataFrame from a LogicalPlan using version-specific API.
+   * - Spark 3.x: Dataset.ofRows(spark, logicalPlan)
+   * - Spark 4.0: TrampolineConnectShims.createDataFrame(spark, logicalPlan)
    */
   def createDataFrame(spark: OperationSparkSession, logicalPlan: LogicalPlan): DataFrame
 
@@ -62,5 +84,5 @@ trait DeltaCommandShims {
   /**
    * Recache by plan with the correct SparkSession type.
    */
-  def recacheByPlan(spark: RunSparkSession, plan: LogicalPlan): Unit
+  def recacheByPlan(spark: ShimSparkSession, plan: LogicalPlan): Unit
 }

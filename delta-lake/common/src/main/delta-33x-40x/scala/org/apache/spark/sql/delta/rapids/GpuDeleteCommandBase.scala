@@ -75,12 +75,12 @@ abstract class GpuDeleteCommandBase(
     recordDeltaOperation(gpuDeltaLog.deltaLog, "delta.dml.delete") {
       gpuDeltaLog.withNewTransaction(catalogTable) { txn =>
         DeltaLog.assertRemovable(txn.snapshot)
-        if (hasBeenExecuted(txn, sparkSession.asInstanceOf[RunSparkSession])) {
+        if (hasBeenExecuted(txn, sparkSession.asInstanceOf[ShimSparkSession])) {
           sendDriverMetrics(sparkSession, metrics)
           return Seq.empty
         }
 
-        val opSpark = toOperationSparkSession(sparkSession.asInstanceOf[RunSparkSession])
+        val opSpark = toOperationSparkSession(sparkSession.asInstanceOf[ShimSparkSession])
         val (deleteActions, deleteMetrics) = performDelete(opSpark, deltaLog, txn)
         val commitVersion = txn.commitIfNeeded(
           actions = deleteActions,
@@ -94,7 +94,7 @@ abstract class GpuDeleteCommandBase(
       }
       // Re-cache all cached plans(including this relation itself, if it's cached) that refer to
       // this data source relation.
-      recacheByPlan(sparkSession.asInstanceOf[RunSparkSession], target)
+      recacheByPlan(sparkSession.asInstanceOf[ShimSparkSession], target)
     }
 
     // Adjust for deletes at partition boundaries. Deletes at partition boundaries is a metadata
