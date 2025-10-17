@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwritePartitionsDynamicExecMeta, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.{GpuSparkBatchQueryScan, GpuSparkWrite}
 import org.apache.iceberg.spark.supportsCatalog
@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, GpuAppendDataExec, GpuOverwritePartitionsDynamicExec, OverwritePartitionsDynamicExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.GpuAtomicCreateTableAsSelectExec
 
 class IcebergProviderImpl extends IcebergProvider {
@@ -186,6 +186,35 @@ class IcebergProviderImpl extends IcebergProvider {
       child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
     }
     GpuOverwritePartitionsDynamicExec(
+      child,
+      cpuExec.refreshCache,
+      GpuSparkWrite.convert(cpuExec.write))
+  }
+
+  override def tagForGpu(cpuExec: OverwriteByExpressionExec,
+                         meta: OverwriteByExpressionExecMeta): Unit = {
+    if (!meta.conf.isIcebergEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG} to true")
+    }
+
+    if (!meta.conf.isIcebergWriteEnabled) {
+      meta.willNotWorkOnGpu("Iceberg output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG_WRITE} to true")
+    }
+
+    FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+
+    GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+  }
+
+  override def convertToGpu(cpuExec: OverwriteByExpressionExec,
+                            meta: OverwriteByExpressionExecMeta): GpuExec = {
+    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
+    if (!child.supportsColumnar) {
+      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
+    }
+    GpuOverwriteByExpressionExec(
       child,
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
