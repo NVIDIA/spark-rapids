@@ -1,0 +1,66 @@
+/*
+ * Copyright (c) 2025, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.spark.sql.delta.rapids
+
+import org.apache.spark.sql.{Column, DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+
+/**
+ * Trait to abstract version-specific Spark API differences between Delta 3.3.x and 4.0.x.
+ * Mainly handles SparkSession type changes and Column/DataFrame creation APIs introduced
+ * in Spark 4.0.
+ */
+trait DeltaCommandShims {
+  
+  /**
+   * Type alias for the version-specific SparkSession type used in run() methods.
+   * Delta 3.3.x uses SparkSession, Delta 4.0.x uses SqlSparkSession.
+   */
+  type RunSparkSession <: SparkSession
+  
+  /**
+   * Type alias for the version-specific SparkSession type used in operations.
+   * Delta 3.3.x uses SparkSession, Delta 4.0.x uses ClassicSparkSession.
+   */
+  type OperationSparkSession <: SparkSession
+
+  /**
+   * Convert RunSparkSession to OperationSparkSession.
+   */
+  def toOperationSparkSession(spark: RunSparkSession): OperationSparkSession
+
+  /**
+   * Get the active OperationSparkSession.
+   */
+  def getActiveOperationSparkSession: OperationSparkSession
+
+  /**
+   * Create a DataFrame from a LogicalPlan (version-specific API).
+   */
+  def createDataFrame(spark: OperationSparkSession, logicalPlan: LogicalPlan): DataFrame
+
+  /**
+   * Convert an Expression to a Column (version-specific API).
+   */
+  def exprToColumn(expr: Expression): Column
+
+  /**
+   * Recache by plan with the correct SparkSession type.
+   */
+  def recacheByPlan(spark: RunSparkSession, plan: LogicalPlan): Unit
+}
