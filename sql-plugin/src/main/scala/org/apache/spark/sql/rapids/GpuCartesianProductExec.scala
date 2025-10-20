@@ -17,13 +17,16 @@
 package org.apache.spark.sql.rapids
 
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
+
 import scala.collection.mutable
+
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
+
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

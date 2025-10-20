@@ -1279,7 +1279,7 @@ trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
 
   override def close(): Unit = synchronized {
     if (handles.size() > 0) {
-      logWarning(s"We have ${handles.size} handles still in the store, which we will close. ${handles.toArray().mkString(",")}")
+      logWarning(s"We have ${handles.size} handles still in the store, which we will close.")
     }
     handles.forEach(handle => {
       handle.close()

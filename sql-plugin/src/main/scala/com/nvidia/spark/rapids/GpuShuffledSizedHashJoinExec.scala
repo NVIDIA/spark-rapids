@@ -324,27 +324,30 @@ object GpuShuffledSizedHashJoinExec {
     info.joinType match {
       case FullOuter =>
         new HashOuterJoinIterator(FullOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, info.exprs.boundCondition,
+          info.exprs.numFirstConditionTableColumns, gpuBatchSizeBytes, info.buildSide,
+          info.exprs.compareNullsEqual, opTime, joinTime)
       case LeftOuter if info.buildSide == GpuBuildLeft =>
         new HashOuterJoinIterator(LeftOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, info.exprs.boundCondition,
+          info.exprs.numFirstConditionTableColumns, gpuBatchSizeBytes, info.buildSide,
+          info.exprs.compareNullsEqual, opTime, joinTime)
       case RightOuter if info.buildSide == GpuBuildRight =>
         new HashOuterJoinIterator(RightOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, info.exprs.boundCondition,
+          info.exprs.numFirstConditionTableColumns, gpuBatchSizeBytes, info.buildSide,
+          info.exprs.compareNullsEqual, opTime, joinTime)
       case _ if info.exprs.boundCondition.isDefined =>
         // ConditionalHashJoinIterator will close the compiled condition
         val compiledCondition = info.exprs.boundCondition.get.convertToAst(
           info.exprs.numFirstConditionTableColumns).compile()
         new ConditionalHashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, spillableStreamBatch, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          compiledCondition, gpuBatchSizeBytes, info.joinType, info.buildSide,
-          info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, compiledCondition, gpuBatchSizeBytes, info.joinType,
+          info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
       case _ =>
         new HashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys, info.buildStats,
           spillableStreamBatch, info.exprs.boundStreamKeys, info.exprs.streamOutput,

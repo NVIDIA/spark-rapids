@@ -19,6 +19,7 @@ import ai.rapids.cudf.{ColumnVector, GatherMap, NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, NvtxWithMetrics, SpillableColumnarBatch, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
