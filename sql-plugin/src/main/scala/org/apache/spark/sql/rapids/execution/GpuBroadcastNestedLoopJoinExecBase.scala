@@ -367,7 +367,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
       override def next(): ColumnarBatch = {
         withResource(stream.next()) { streamSpillable =>
           withResource(streamSpillable.getColumnarBatch()) { streamBatch =>
-            val existsCol: ColumnVector = if (builtBatch.numRows == 0) {
+            val existsCol: ColumnVector = if (builtBatch.numRows() == 0) {
               withResource(Scalar.fromBool(false)) { falseScalar =>
                 GpuColumnVector.from(
                   cudf.ColumnVector.fromScalar(falseScalar, streamSpillable.numRows()),

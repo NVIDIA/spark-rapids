@@ -500,8 +500,7 @@ class HashJoinIterator(
       // hack to work around unique_join not handling empty tables
       if (joinType.isInstanceOf[InnerLike] &&
         (leftKeys.getRowCount == 0 || rightKeys.getRowCount == 0)) {
-        leftData.close()
-        rightData.close()
+        Seq(leftData, rightData).safeClose()
         None
       } else {
         val maps = joinType match {

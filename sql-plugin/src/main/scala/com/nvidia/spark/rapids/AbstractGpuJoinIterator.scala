@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -222,10 +222,10 @@ abstract class SplittableJoinIterator(
         // that are made up of ints, so compute how many rows on the stream side will produce the
         // desired gather maps size.
         val maxJoinRows = Math.max(1, targetSize / (2 * Integer.BYTES))
-        if (numJoinRows > maxJoinRows && scb.numRows > 1) {
+        if (numJoinRows > maxJoinRows && scb.numRows() > 1) {
           // Need to split the batch to reduce the gather maps size. This takes a simplistic
           // approach of assuming the data is uniformly distributed in the stream table.
-          val numSplits = Math.min(scb.numRows,
+          val numSplits = Math.min(scb.numRows(),
             Math.ceil(numJoinRows.toDouble / maxJoinRows).toInt)
           withResource(scb) { _ =>
             splitAndSave(scb, numSplits)
