@@ -28,6 +28,7 @@ package com.nvidia.spark.rapids.iceberg.data
 import scala.collection.JavaConverters._
 import scala.language.reflectiveCalls
 
+import ai.rapids.cudf.{DType, HostColumnVector, HostColumnVectorCore}
 import com.nvidia.spark.rapids.{GpuColumnVector, NoopMetric, RapidsConf, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
