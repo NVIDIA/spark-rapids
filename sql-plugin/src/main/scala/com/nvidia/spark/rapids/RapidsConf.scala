@@ -2191,8 +2191,17 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     val CPU, GPU = Value
   }
 
-  val SHUFFLE_KUDO_MODE = conf("spark.rapids.shuffle.kudo.serializer.mode")
+  val SHUFFLE_KUDO_WRITE_MODE = conf("spark.rapids.shuffle.kudo.serializer.write.mode")
     .doc("Kudo serializer mode. " +
+      "\"CPU\": serialize shuffle outputs on the cpu. " +
+      "\"GPU\": serialize shuffle outputs on the gpu. ")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createWithDefault(ShuffleKudoMode.CPU.toString)
+
+  val SHUFFLE_KUDO_READ_MODE = conf("spark.rapids.shuffle.kudo.serializer.read.mode")
+    .doc("Kudo serializer read mode." +
       "\"CPU\": serialize shuffle outputs on the cpu. " +
       "\"GPU\": serialize shuffle outputs on the gpu. ")
     .internal()
@@ -3479,7 +3488,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
-  lazy val shuffleKudoMode: String = get(SHUFFLE_KUDO_MODE)
+  lazy val shuffleKudoMode: ShuffleKudoMode.Value =
+    ShuffleKudoMode.withName(get(SHUFFLE_KUDO_WRITE_MODE))
+
+  lazy val shuffleKudoReadMode: ShuffleKudoMode.Value =
+    ShuffleKudoMode.withName(get(SHUFFLE_KUDO_READ_MODE))
 
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
@@ -3540,7 +3553,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
 
   def shuffleKudoGpuSerializerEnabled: Boolean = shuffleKudoSerializerEnabled &&
-      ShuffleKudoMode.withName(shuffleKudoMode) == ShuffleKudoMode.GPU
+      shuffleKudoMode == ShuffleKudoMode.GPU
+
+  def shuffleKudoGpuSerializerReadEnabled: Boolean = shuffleKudoSerializerEnabled &&
+    shuffleKudoReadMode == ShuffleKudoMode.GPU
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 

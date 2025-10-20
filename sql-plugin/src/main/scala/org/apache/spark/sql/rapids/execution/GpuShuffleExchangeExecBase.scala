@@ -173,7 +173,7 @@ abstract class GpuShuffleExchangeExecBase(
   import GpuMetric._
 
   private lazy val kudoMode = RapidsConf.ShuffleKudoMode.withName(
-    RapidsConf.SHUFFLE_KUDO_MODE.get(child.conf))
+    RapidsConf.SHUFFLE_KUDO_WRITE_MODE.get(child.conf))
   private lazy val useKudo = RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf)
   private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
     .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
