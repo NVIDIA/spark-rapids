@@ -171,11 +171,13 @@ trait SpillableGatherMap extends AutoCloseable {
 }
 
 object SpillableGatherMap {
-  def apply(map: GatherMap, name: String): SpillableGatherMap =
+  def apply(map: GatherMap, name: String): SpillableGatherMap = {
+    val rowCount = map.getRowCount()
     new SpillableGatherMapImpl(
       SpillableBuffer(map.releaseBuffer(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
-      map.getRowCount(),
+      rowCount,
       name)
+  }
 
   def leftCross(leftCount: Int, rightCount: Int): SpillableGatherMap =
     new LeftCrossGatherMap(leftCount, rightCount)
