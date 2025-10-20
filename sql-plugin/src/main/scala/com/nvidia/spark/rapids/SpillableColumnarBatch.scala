@@ -35,6 +35,11 @@ trait SpillableColumnarBatch extends AutoCloseable with SizeProvider {
   def numRows(): Int
 
   /**
+   * The number of cols in this batch.
+   */
+  def numCols(): Int = dataTypes.length
+
+  /**
    * Set a new spill priority.
    */
   def setSpillPriority(priority: Long): Unit
@@ -128,6 +133,7 @@ class SpillableColumnarBatchImpl (
     refCount += 1
     this
   }
+
 
   /**
    * Remove the `ColumnarBatch` from the cache.
@@ -349,7 +355,8 @@ object SpillableColumnarBatch {
    * @param priority      the initial spill priority of this batch
    */
   def apply(batch: ColumnarBatch,
-      priority: Long): SpillableColumnarBatch = {
+            priority: Option[Long],
+            description: Option[String] = None): SpillableColumnarBatch = {
     Cuda.DEFAULT_STREAM.sync()
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
@@ -376,6 +383,14 @@ object SpillableColumnarBatch {
     }
   }
 
+  def apply(batch: ColumnarBatch, description: String): SpillableColumnarBatch = {
+    apply(batch, Some(SpillPriorities.ACTIVE_BATCHING_PRIORITY), Some(description))
+  }
+
+  def apply(batch: ColumnarBatch, priority: Long): SpillableColumnarBatch = {
+    apply(batch, Some(priority), None)
+  }
+
   /**
    * Create a new SpillableColumnarBatch
    * @note This takes over ownership of `ct`, and `ct` should not be used after this.
@@ -386,13 +401,29 @@ object SpillableColumnarBatch {
   def apply(
       ct: ContiguousTable,
       sparkTypes: Array[DataType],
-      priority: Long): SpillableColumnarBatch = {
+      priority: Option[Long],
+      description: Option[String]): SpillableColumnarBatch = {
     Cuda.DEFAULT_STREAM.sync()
     new SpillableColumnarBatchFromBufferImpl(
       SpillableColumnarBatchFromBufferHandle(ct, sparkTypes),
       ct.getRowCount.toInt,
       sparkTypes)
   }
+
+  def apply(
+      batch: ContiguousTable,
+      sparkTypes: Array[DataType],
+      description: String): SpillableColumnarBatch = {
+    apply(batch, sparkTypes, Some(SpillPriorities.ACTIVE_BATCHING_PRIORITY), Some(description))
+  }
+
+  def apply(
+      batch: ContiguousTable,
+      sparkTypes: Array[DataType],
+      priority: Long): SpillableColumnarBatch = {
+    apply(batch, sparkTypes, Some(priority), None)
+  }
+
 }
 
 object SpillableHostColumnarBatch {

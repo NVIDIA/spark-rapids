@@ -316,38 +316,41 @@ object GpuShuffledSizedHashJoinExec {
 
   def createJoinIterator(
       info: JoinInfo,
-      spillableBuiltBatch: LazySpillableColumnarBatch,
-      lazyStream: Iterator[LazySpillableColumnarBatch],
+      spillableBuiltBatch: SpillableColumnarBatch,
+      spillableStreamBatch: Iterator[SpillableColumnarBatch],
       gpuBatchSizeBytes: Long,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
     info.joinType match {
       case FullOuter =>
         new HashOuterJoinIterator(FullOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, info.exprs.boundCondition,
+          info.exprs.numFirstConditionTableColumns, gpuBatchSizeBytes, info.buildSide,
+          info.exprs.compareNullsEqual, opTime, joinTime)
       case LeftOuter if info.buildSide == GpuBuildLeft =>
         new HashOuterJoinIterator(LeftOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, info.exprs.boundCondition,
+          info.exprs.numFirstConditionTableColumns, gpuBatchSizeBytes, info.buildSide,
+          info.exprs.compareNullsEqual, opTime, joinTime)
       case RightOuter if info.buildSide == GpuBuildRight =>
         new HashOuterJoinIterator(RightOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, None, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, info.exprs.boundCondition,
+          info.exprs.numFirstConditionTableColumns, gpuBatchSizeBytes, info.buildSide,
+          info.exprs.compareNullsEqual, opTime, joinTime)
       case _ if info.exprs.boundCondition.isDefined =>
         // ConditionalHashJoinIterator will close the compiled condition
         val compiledCondition = info.exprs.boundCondition.get.convertToAst(
           info.exprs.numFirstConditionTableColumns).compile()
         new ConditionalHashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys,
-          info.buildStats, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          compiledCondition, gpuBatchSizeBytes, info.joinType, info.buildSide,
-          info.exprs.compareNullsEqual, opTime, joinTime)
+          info.buildStats, spillableStreamBatch, info.exprs.boundStreamKeys,
+          info.exprs.streamOutput, compiledCondition, gpuBatchSizeBytes, info.joinType,
+          info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
       case _ =>
         new HashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys, info.buildStats,
-          lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
+          spillableStreamBatch, info.exprs.boundStreamKeys, info.exprs.streamOutput,
           gpuBatchSizeBytes, info.joinType, info.buildSide, info.exprs.compareNullsEqual,
           opTime, joinTime)
     }
@@ -470,13 +473,11 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       gpuBatchSizeBytes: Long,
       metricsMap: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
     val opTime = metricsMap(OP_TIME_LEGACY)
-    val lazyStream = new Iterator[LazySpillableColumnarBatch]() {
+    val spillableStreamBatch = new Iterator[SpillableColumnarBatch]() {
       override def hasNext: Boolean = info.streamIter.hasNext
 
-      override def next(): LazySpillableColumnarBatch = {
-        withResource(info.streamIter.next()) { batch =>
-          LazySpillableColumnarBatch(batch, "stream_batch")
-        }
+      override def next(): SpillableColumnarBatch = {
+        SpillableColumnarBatch(info.streamIter.next(), "stream_batch")
       }
     }
     val buildIter = new GpuCoalesceIterator(
@@ -496,11 +497,9 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     } else {
       GpuColumnVector.emptyBatchFromTypes(info.exprs.buildTypes)
     }
-    val spillableBuiltBatch = withResource(batch) { batch =>
-      assert(!buildIter.hasNext, "build side should have a single batch")
-      LazySpillableColumnarBatch(batch, "built")
-    }
-    createJoinIterator(info, spillableBuiltBatch, lazyStream, gpuBatchSizeBytes, opTime,
+    assert(!buildIter.hasNext, "build side should have a single batch")
+    val spillableBuiltBatch = SpillableColumnarBatch(batch, "built")
+    createJoinIterator(info, spillableBuiltBatch, spillableStreamBatch, gpuBatchSizeBytes, opTime,
       metricsMap(JOIN_TIME))
   }
 
@@ -1422,7 +1421,7 @@ class BuildSidePartitioner(
   }
 
   private val (emptyPartitions, joinGroups) = findEmptyAndJoinGroups()
-  private val partitionBatches = new Array[LazySpillableColumnarBatch](joinGroups.length)
+  private val partitionBatches = new Array[SpillableColumnarBatch](joinGroups.length)
   private val concatTime = metrics(CONCAT_TIME)
 
   /** Returns a BitSet where a set bit corresponds to an empty partition at that index. */
@@ -1444,7 +1443,7 @@ class BuildSidePartitioner(
    * @param partitionGroupIndex the index of the join group for which to produce the batch
    * @return the batch of data for the join group
    */
-  def getBuildBatch(partitionGroupIndex: Int): LazySpillableColumnarBatch = {
+  def getBuildBatch(partitionGroupIndex: Int): SpillableColumnarBatch = {
     var batch = partitionBatches(partitionGroupIndex)
     if (batch == null) {
       val spillBatchesBuffer = new mutable.ArrayBuffer[SpillableColumnarBatch]()
@@ -1462,12 +1461,10 @@ class BuildSidePartitioner(
           }
         }
       }
-      withResource(concatBatch) { _ =>
-        batch = LazySpillableColumnarBatch(concatBatch, "build subtable")
-        partitionBatches(partitionGroupIndex) = batch
-      }
+      batch = SpillableColumnarBatch(concatBatch, "build subtable")
+      partitionBatches(partitionGroupIndex) = batch
     }
-    LazySpillableColumnarBatch.spillOnly(batch)
+    batch
   }
 
   override def close(): Unit = {
@@ -1560,7 +1557,7 @@ class StreamSidePartitioner(
   }
 
   def releasePartitions(partIndices: BitSet): Array[SpillableColumnarBatch] = {
-    partIndices.iterator.flatMap(i => partitions(i).releaseBatches().toSeq).toArray
+    partIndices.toArray.flatMap(i => partitions(i).releaseBatches())
   }
 
   override def close(): Unit = {
@@ -1729,35 +1726,38 @@ class BigSizedJoinIterator(
     val builtBatch = buildPartitioner.getBuildBatch(currentJoinGroupIndex)
     val group = joinGroups(currentJoinGroupIndex)
     val streamBatches = streamPartitioner.releasePartitions(group)
-    val lazyStream = new Iterator[LazySpillableColumnarBatch] {
+    val safeStreamIterator = new Iterator[SpillableColumnarBatch] {
       onTaskCompletion(streamBatches.safeClose())
 
       private var i = 0
 
       override def hasNext: Boolean = i < streamBatches.length
 
-      override def next(): LazySpillableColumnarBatch = {
-        withResource(streamBatches(i)) { spillBatch =>
-          streamBatches(i) = null
-          i += 1
-          withResource(spillBatch.getColumnarBatch()) { batch =>
-            LazySpillableColumnarBatch(batch, "stream_batch")
-          }
-        }
+      override def next(): SpillableColumnarBatch = {
+        val spillBatch = streamBatches(i)
+        streamBatches(i) = null
+        i += 1
+        spillBatch
       }
     }
+
     if (needTracker) {
       // Build an iterator to perform the stream-side of the outer join for the join group,
       // tracking which rows are referenced so far. The iterator will own the tracker of build side
       // rows referenced until we release it after the iterator has produced all of the batches.
       val buildRowTracker = buildSideRowTrackers(currentJoinGroupIndex)
       buildSideRowTrackers(currentJoinGroupIndex) = None
+      // we increase this here because HashJoinStreamSideIterator closes it when done
+      builtBatch.incRefCount()
       new HashJoinStreamSideIterator(info.joinType,
         builtBatch, info.exprs.boundBuildKeys, info.buildStats, buildRowTracker,
-        lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput, compiledCondition,
+        safeStreamIterator, info.exprs.boundStreamKeys, info.exprs.streamOutput, compiledCondition,
         gpuBatchSizeBytes, info.buildSide, info.exprs.compareNullsEqual, opTime, joinTime)
     } else {
-      GpuShuffledSizedHashJoinExec.createJoinIterator(info, builtBatch, lazyStream,
+      // we increase this here because BigSizedJoinIterator will want to reuse the build side
+      // and manages its lifecycle, but the iterator below wants to close the batch
+      builtBatch.incRefCount()
+      GpuShuffledSizedHashJoinExec.createJoinIterator(info, builtBatch, safeStreamIterator,
         gpuBatchSizeBytes, opTime, joinTime)
     }
   }

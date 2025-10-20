@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.iceberg.data
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, LazySpillableColumnarBatch}
+import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
 import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
@@ -379,7 +379,7 @@ object GpuDeleteFilter2 {
 }
 
 private case class DeleteFilterContext(
-    buildBatch: LazySpillableColumnarBatch,
+    buildBatch: SpillableColumnarBatch,
     buildKeys: Seq[GpuExpression],
     probeKeys: Seq[GpuExpression],
     numFirstConditionColumns: Int,
@@ -387,9 +387,7 @@ private case class DeleteFilterContext(
     joinTime: GpuMetric) {
   def filter(input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
     val probeSide = input.map { cb =>
-      withResource(cb) {
-        LazySpillableColumnarBatch(_, "Deletes probe")
-      }
+      SpillableColumnarBatch(cb, "Deletes probe")
     }
 
     new HashedExistenceJoinIterator(buildBatch,

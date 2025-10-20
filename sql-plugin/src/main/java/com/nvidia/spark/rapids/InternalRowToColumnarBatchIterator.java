@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -143,6 +143,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     long dataLength = calcDataLengthEstimate(numRowsEstimate);
     long offsetLength = calcOffsetLengthEstimate(numRowsEstimate);
     int used[];
+
     try (SpillableHostBuffer spillableBuffer = sBufAndNumRows._1;
     ) {
       HostMemoryBuffer[] hBufs =
