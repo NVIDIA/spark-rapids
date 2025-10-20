@@ -387,7 +387,7 @@ private case class DeleteFilterContext(
     joinTime: GpuMetric) {
   def filter(input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
     val probeSide = input.map { cb =>
-      SpillableColumnarBatch(_, "Deletes probe")
+      SpillableColumnarBatch(cb, "Deletes probe")
     }
 
     new HashedExistenceJoinIterator(buildBatch,
