@@ -19,7 +19,7 @@ import ai.rapids.cudf.{ColumnView, DType, GatherMap, NullEquality, NvtxColor, Ou
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuOOM
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
