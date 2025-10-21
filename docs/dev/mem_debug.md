@@ -44,9 +44,9 @@ an address, which is the address of the C++ `cudf::column` that actually holds t
 the C++ level. We generally don't reach into the memory held by a `cudf::column` directly, but
 this allows us to track it.
 
-Sadly there are some resources that we currently don't track. The biggest one is `Scalar` values,
-followed closely by `Table`. `Table` does not directly allocate any device memory, but it references
-one or more C++ class instances off heap.
+Sadly there are some resources that we currently don't track. The biggest one is `Table`. `Table`
+does not directly allocate any device memory, but it references one or more C++ class instances
+off heap.
 
 ### Debugging Leaks
 
