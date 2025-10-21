@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+// No longer need NvtxColor, NvtxRange imports
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
@@ -470,7 +470,7 @@ object GpuShuffledHashJoinExec extends Logging {
     // then we bring the build batch to the GPU and return.
     withResource(hostConcatResult) { _ =>
       closeOnExcept(new CloseableBufferedIterator(streamIter)) { bufStreamIter =>
-        withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
+        NvtxRegistry.JOIN_FIRST_STREAM_BATCH {
           if (bufStreamIter.hasNext) {
             bufStreamIter.head
           } else {

@@ -172,7 +172,7 @@ def test_delta_materialize_merge(spark_tmp_path, spark_tmp_table_factory):
         cpu_path = data_path + "/CPU"
         gpu_path = data_path + "/GPU"
         # compare resulting dataframe from the merge operation (some older Spark versions return empty here)
-        assert_collect(do_merge, read_delta_path, data_path, materialize_conf)
+        assert_collect(do_merge, data_path, materialize_conf)
         # compare merged table data results, read both via CPU to make sure GPU write can be read by CPU
         cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).rdd.isCheckpointed(), conf=materialize_conf)
         gpu_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).rdd.isCheckpointed(), conf=materialize_conf)
@@ -193,20 +193,22 @@ def test_delta_materialize_merge(spark_tmp_path, spark_tmp_table_factory):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("table_ranges", [(range(10), range(20)),  # partial delete of target
-                                          (range(5), range(5)),  # full delete of target
-                                          (range(10), range(20, 30))  # no-op delete
-                                          ], ids=idfn)
+@pytest.mark.parametrize("table_ranges_expect_write", [
+    ((range(10), range(20)), True),  # partial delete of target
+    ((range(5), range(5)), True),  # full delete of target
+    ((range(10), range(20, 30)), False)  # no-op delete. gpu write is not expected
+], ids=idfn)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"], ["b"], ["a", "b"]], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
 @pytest.mark.parametrize("enable_deletion_vector", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
-def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
+def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, table_ranges_expect_write,
                                        use_cdf, partition_columns, num_slices, enable_deletion_vector):
+    table_ranges, expect_write = table_ranges_expect_write
     do_test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
                                           use_cdf, enable_deletion_vector, partition_columns, num_slices,
-                                          num_slices == 1, delta_merge_enabled_conf)
+                                          num_slices == 1, delta_merge_enabled_conf, expect_write=expect_write)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -259,7 +261,8 @@ def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spa
     do_test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path,
                                                                 spark_tmp_table_factory, use_cdf, enable_deletion_vector,
                                                                 num_slices, num_slices == 1,
-                                                                delta_merge_enabled_conf)
+                                                                delta_merge_enabled_conf,
+                                                                expect_write=False)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

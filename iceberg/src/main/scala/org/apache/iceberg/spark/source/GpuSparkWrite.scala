@@ -62,11 +62,12 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     // to use
     val cpuBatch = cpu.toBatch
     val cpuBatchClassName = cpuBatch.getClass.getSimpleName
-    
+
     cpuBatchClassName match {
       case "BatchAppend" => new GpuBatchAppend(this)
       case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
-      case _ => 
+      case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatch)
+      case _ =>
         throw new UnsupportedOperationException(
           s"Unsupported Iceberg batch write type: $cpuBatchClassName")
     }

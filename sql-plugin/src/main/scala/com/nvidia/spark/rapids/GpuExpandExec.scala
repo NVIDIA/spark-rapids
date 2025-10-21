@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.util.Random
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -224,8 +222,7 @@ class GpuExpandIterator(
       sb = Some(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
     }
 
-    val projectedBatch = withResource(new NvtxWithMetrics(
-      "ExpandExec projections", NvtxColor.GREEN, opTime)) { _ =>
+    val projectedBatch = NvtxIdWithMetrics(NvtxRegistry.EXPAND_EXEC_PROJECTIONS, opTime) {
       boundProjections(projectionIndex).projectWithRetrySingleBatch(sb.get)
     }
 

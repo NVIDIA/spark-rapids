@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
@@ -375,8 +375,7 @@ object CSVPartitionReader {
     val dataSize = dataBufferer.getLength
     try {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        withResource(new NvtxWithMetrics(formatName + " decode", NvtxColor.DARK_GREEN,
-          decodeTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.CSV_DECODE, decodeTime) {
           Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
         }
       }

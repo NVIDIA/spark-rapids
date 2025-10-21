@@ -22,9 +22,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -140,7 +139,7 @@ case class GpuBroadcastHashJoinExec(
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
-      withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
+      NvtxRegistry.JOIN_FIRST_STREAM_BATCH {
         if (bufferedStreamIter.hasNext) {
           bufferedStreamIter.head
         } else {

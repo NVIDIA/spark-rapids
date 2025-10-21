@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import scala.concurrent.ExecutionContext
 import scala.ref.WeakReference
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -86,7 +86,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   def batch: SpillableColumnarBatch = this.synchronized {
     maybeGpuBatch.getOrElse {
-      withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.BROADCAST_MANIFEST_BATCH {
         val spillable =
           if (data == null || data.getTableHeader.getNumColumns == 0) {
             // If `data` is null or there are no columns, this is a rows-only batch
@@ -134,7 +134,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
         new ColumnarBatch(hostColumns, numRows)
       }
     }.getOrElse {
-      withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.BROADCAST_MANIFEST_BATCH {
         if (data == null) {
           new ColumnarBatch(Array.empty, numRows)
         } else {
@@ -212,7 +212,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
   def doReadObject(in: ObjectInputStream): Unit = this.synchronized {
     // no-op if we already have `batchInternal` or `data` set
     if (batchInternal == null && data == null) {
-      withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
+      NvtxRegistry.DESERIALIZE_BATCH {
         val (header, buffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(in)
         withResource(buffer) { _ =>
           dataTypes = if (header.getNumColumns > 0) {
@@ -274,7 +274,7 @@ class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
   @transient private var numRows = batch.numRows()
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    withResource(new NvtxRange("SerializeBatch", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.SERIALIZE_BROADCAST_BATCH {
       if (buffer != null) {
         throw new IllegalStateException("Cannot re-serialize a batch this way...")
       } else {
@@ -291,7 +291,7 @@ class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    withResource(new NvtxRange("HostDeserializeBatch", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.HOST_DESERIALIZE_BATCH {
       val (h, b) = SerializedHostTableUtils.readTableHeaderAndBuffer(in)
       // buffer will only be cleaned up on GC, so cannot warn about leaks
       b.noWarnLeakExpected()
@@ -395,8 +395,7 @@ abstract class GpuBroadcastExchangeExecBase(
           interruptOnCancel = true)
         val broadcastResult = {
           val collected =
-            withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-              collectTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.BROADCAST_COLLECT, collectTime) {
               val childRdd = child.executeColumnar()
 
               // collect batches from the executors
@@ -405,8 +404,7 @@ abstract class GpuBroadcastExchangeExecBase(
               })
               data.collect()
             }
-          withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
-            buildTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.BROADCAST_BUILD, buildTime) {
             val emptyRelation = if (collected.isEmpty) {
               SparkShimImpl.tryTransformIfEmptyRelation(mode)
             } else {
@@ -419,8 +417,7 @@ abstract class GpuBroadcastExchangeExecBase(
           }
         }
         val broadcasted =
-          withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
-              broadcastTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.BROADCAST, broadcastTime) {
             // Broadcast the relation
             sparkContext.broadcast(broadcastResult)
         }

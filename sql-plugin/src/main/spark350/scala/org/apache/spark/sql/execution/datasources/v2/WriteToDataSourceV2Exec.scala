@@ -204,6 +204,36 @@ case class GpuOverwritePartitionsDynamicExec(
 }
 
 /**
+ * Physical plan node for overwrite into a v2 table.
+ *
+ * Overwrites data in a table matched by filters. Rows matching all of the filters will be
+ * deleted and rows in the output data set are appended.
+ */
+case class GpuOverwriteByExpressionExec(
+                                         inner: SparkPlan,
+                                         refreshCache: () => Unit,
+                                         write: GpuWrite) extends GpuV2ExistingTableWriteExec {
+
+  override def supportsColumnar: Boolean = false
+
+  override def query: SparkPlan = {
+    inner match {
+      case c2r: GpuColumnarToRowExec => c2r.child
+      case _ => inner
+    }
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(
+      "GpuOverwriteByExpressionExec does not support columnar execution")
+  }
+
+  override protected def withNewChildInternal(newChild: SparkPlan): GpuOverwriteByExpressionExec = {
+    copy(inner = newChild)
+  }
+}
+
+/**
  * This class is derived from [[org.apache.spark.sql.execution.datasources.v2.WritingSparkTask]].
  */
 trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with Serializable {

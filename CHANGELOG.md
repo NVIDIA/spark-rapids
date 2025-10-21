@@ -1,5 +1,5 @@
 # Change log
-Generated on 2025-10-13
+Generated on 2025-10-21
 
 ## Release 25.10
 
@@ -38,6 +38,7 @@ Generated on 2025-10-13
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#13628](https://github.com/NVIDIA/spark-rapids/issues/13628)|[BUG] spark.rapids.memory.host.offHeapLimit doesn't play well with spark.memory.offHeap.size in Databricks|
 |[#13578](https://github.com/NVIDIA/spark-rapids/issues/13578)|[BUG] Query failure in InMemoryTableScan with AQE enabled for aggregation|
 |[#13554](https://github.com/NVIDIA/spark-rapids/issues/13554)|[BUG] iceberg-rest-catalog CI failed: Missing "org.apache.iceberg.rest.RESTCatalog"|
 |[#13312](https://github.com/NVIDIA/spark-rapids/issues/13312)|[BUG] zip_with test failures|
@@ -85,6 +86,8 @@ Generated on 2025-10-13
 ### PRs
 |||
 |:---|:---|
+|[#13627](https://github.com/NVIDIA/spark-rapids/pull/13627)|disable offHeapLimit by default|
+|[#13588](https://github.com/NVIDIA/spark-rapids/pull/13588)|Update changelog for the v25.10 release [skip ci]|
 |[#13593](https://github.com/NVIDIA/spark-rapids/pull/13593)|[DOC] update the download doc for 2510 release [skip ci]|
 |[#13587](https://github.com/NVIDIA/spark-rapids/pull/13587)|Update dependency version JNI, private, hybrid to 25.10.0|
 |[#13581](https://github.com/NVIDIA/spark-rapids/pull/13581)|Avoid host-vector access under TableCache by replacing CPU ColumnarToRow with GPU variant|

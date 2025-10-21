@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ trait ExecutionPlanCaptureCallbackBase {
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit
   def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit
   def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean
+  def contains(gpuPlan: SparkPlan, className: String): Boolean
 }
 
 object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
@@ -109,6 +110,9 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
 
   override def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean =
     impl.didFallBack(plan, fallbackCpuClass)
+
+  override def contains(gpuPlan: SparkPlan, className: String): Boolean =
+    impl.contains(gpuPlan, className)
 }
 
 /**
