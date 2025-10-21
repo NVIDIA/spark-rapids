@@ -21,7 +21,7 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.JCudfSerialization
-import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NvtxRegistry}
+import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NvtxRegistry, RapidsConf}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -120,6 +120,7 @@ class GpuCartesianRDD(
     numFirstTableColumns: Int,
     streamAttributes: Seq[Attribute],
     targetSize: Long,
+    sizeEstimateThreshold: Double,
     opTime: GpuMetric,
     joinTime: GpuMetric,
     numOutputRows: GpuMetric,
@@ -188,7 +189,7 @@ class GpuCartesianRDD(
 
       GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
         Cross, GpuBuildLeft, numFirstTableColumns, batch, streamIterator, streamAttributes,
-        targetSize, boundCondition,
+        targetSize, sizeEstimateThreshold, boundCondition,
         numOutputRows = numOutputRows,
         numOutputBatches = numOutputBatches,
         opTime = opTime,
@@ -270,12 +271,14 @@ case class GpuCartesianProductExec(
         numOutputBatches)
     } else {
       val numFirstTableColumns = left.output.size
+      val sizeEstimateThreshold = RapidsConf.JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
 
       new GpuCartesianRDD(sparkContext,
         boundCondition,
         numFirstTableColumns,
         right.output,
         targetSizeBytes,
+        sizeEstimateThreshold,
         opTime,
         joinTime,
         numOutputRows,

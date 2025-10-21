@@ -236,6 +236,7 @@ case class GpuShuffledHashJoinExec(
           GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
 
     val realTarget = realTargetBatchSize()
+    val joinOptions = RapidsConf.getJoinOptions(conf, realTarget)
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
@@ -250,7 +251,7 @@ case class GpuShuffledHashJoinExec(
               buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(singleBatch)
             }
             // doJoin will close singleBatch
-            doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
+            doJoin(singleBatch, maybeBufferedStreamIter, joinOptions,
               numOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
@@ -260,7 +261,7 @@ case class GpuShuffledHashJoinExec(
               }
               cb
             }
-            doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
+            doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, joinOptions,
               numPartitions, numOutputRows, numOutputBatches, opTime, joinTime)
         }
       }
