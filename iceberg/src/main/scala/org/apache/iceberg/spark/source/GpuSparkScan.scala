@@ -16,16 +16,20 @@
 
 package org.apache.iceberg.spark.source
 
+import scala.collection.JavaConverters._
+import scala.util.Try
+
 import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
-import org.apache.iceberg.ScanTaskGroup
+import org.apache.iceberg.{BaseMetadataTable, ScanTaskGroup}
 import org.apache.iceberg.spark.{GpuSparkReadConf, SparkReadConf}
 import org.apache.iceberg.types.Types
 
 import org.apache.spark.sql.connector.metric.{CustomMetric, CustomTaskMetric}
-import org.apache.spark.sql.connector.read.{Batch, Statistics, SupportsReportStatistics}
+import org.apache.spark.sql.connector.read.{Batch, Scan, Statistics, SupportsReportStatistics}
 import org.apache.spark.sql.connector.read.streaming.MicroBatchStream
 import org.apache.spark.sql.types.StructType
+
 
 abstract class GpuSparkScan(val cpuScan: SparkScan,
     val rapidsConf: RapidsConf,
@@ -59,4 +63,34 @@ abstract class GpuSparkScan(val cpuScan: SparkScan,
   protected def groupingKeyType(): Types.StructType
 
   protected def taskGroups(): Seq[_ <: ScanTaskGroup[_]]
+
+  def hasNestedType: Boolean = {
+    cpuScan.expectedSchema()
+      .asStruct()
+      .fields()
+      .asScala
+      .exists { field => field.`type`().isNestedType }
+  }
+}
+
+
+object GpuSparkScan {
+  def isMetadataScan(scan: Scan): Boolean = {
+    scan.asInstanceOf[SparkScan].table().isInstanceOf[BaseMetadataTable]
+  }
+
+  def tryConvert(cpuScan: Scan, rapidsConf: RapidsConf): Try[GpuSparkScan] = {
+    Try {
+      cpuScan match {
+        case icebergScan: SparkBatchQueryScan =>
+          new GpuSparkBatchQueryScan(icebergScan, rapidsConf, false)
+        case s: SparkCopyOnWriteScan =>
+          new GpuSparkCopyOnWriteScan(s, rapidsConf, false)
+        case _ =>
+          throw new IllegalArgumentException(
+            s"Currently iceberg support only supports batch query scan, " +
+              s"but got ${cpuScan.getClass.getName}")
+      }
+    }
+  }
 }
