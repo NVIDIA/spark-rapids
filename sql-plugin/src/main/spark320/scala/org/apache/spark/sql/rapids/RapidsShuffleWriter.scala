@@ -51,7 +51,6 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleServer, RapidsShuffleTransport}
 
@@ -131,7 +130,7 @@ abstract class RapidsCachingWriterBase[K, V](
   }
 
   override def stop(success: Boolean): Option[MapStatus] = {
-    val nvtxRange = new NvtxRange("RapidsCachingWriter.close", NvtxColor.CYAN)
+    NvtxRegistry.RAPIDS_CACHING_WRITER_CLOSE.push()
     try {
       if (!success) {
         cleanStorage()
@@ -155,7 +154,7 @@ abstract class RapidsCachingWriterBase[K, V](
         Some(MapStatus(shuffleServerId, sizes, mapId))
       }
     } finally {
-      nvtxRange.close()
+      NvtxRegistry.RAPIDS_CACHING_WRITER_CLOSE.pop()
     }
   }
 

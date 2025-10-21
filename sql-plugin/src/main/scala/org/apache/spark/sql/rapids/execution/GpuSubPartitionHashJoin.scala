@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioner, GpuMetric, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioner, GpuMetric, NvtxRegistry, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -181,7 +181,8 @@ class GpuBatchSubPartitioner(
       if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
         val types = GpuColumnVector.extractTypes(gpuBatch)
         // 1) Hash partition on the batch
-        val partedTable = hashPartitionAndClose(gpuBatch, realNumPartitions, "Sub-join part")
+        val partedTable = hashPartitionAndClose(gpuBatch, realNumPartitions,
+            NvtxRegistry.SUB_JOIN_PART)
         val (spillBatch, partitions) = withResource(partedTable) { _ =>
           // Convert to SpillableColumnarBatch for the following retry.
           (SpillableColumnarBatch(GpuColumnVector.from(partedTable.getTable, types),

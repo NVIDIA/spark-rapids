@@ -22,7 +22,7 @@ import java.util.concurrent.{Future, TimeUnit}
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.JCudfSerialization
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
@@ -160,7 +160,7 @@ object GpuShuffleCoalesceUtils {
     }
     val maybeBufferedIter = if (prefetchFirstBatch) {
       val bufferedIter = new CloseableBufferedIterator(hostIter)
-      withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
+      NvtxRegistry.SHUFFLE_FETCH_FIRST_BATCH {
         // Force a coalesce of the first batch before we grab the GPU semaphore
         bufferedIter.headOption
       }
@@ -324,10 +324,6 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     onTaskCompletion(tc)(close())
   }
 
-  // Don't try to call TaskContext.get().taskAttemptId() in the backend thread
-  private val taskAttemptID = Option(TaskContext.get()).
-    map(_.taskAttemptId().toString).getOrElse("unknown")
-
   private var bufferingFuture: Option[Future[_]] = None
 
   protected val tableOperator: SerializedTableOperator[T]
@@ -374,8 +370,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       }
       bufferingFuture = Option(executor.get.submit(
         () => {
-          val nvRangeName = s"Task ${taskAttemptID}-Async Buffer Next (Backend)"
-          withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+          NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
             bufferNextBatch()
           }
         },
@@ -429,21 +424,18 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
       throw new NoSuchElementException("No more host batches to concatenate")
     }
     bufferingFuture.map(f => {
-      val nvRangeName = s"Task ${taskAttemptID} - Async Buffer Next (Frontend)"
-      withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+      NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
         f.get()
       }
     }).getOrElse({
-      val nvRangeName = s"Task ${taskAttemptID} - Sync Buffer Next (Frontend)"
-      withResource(new NvtxRange(nvRangeName, NvtxColor.ORANGE)) { _ =>
+      NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
         bufferNextBatch()
       }
     }
     )
     bufferingFuture = None
 
-    val nvRangeName = s"Task ${taskAttemptID} - Concat in CPU"
-    withResource(new NvtxRange(nvRangeName, NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.SHUFFLE_CONCAT_CPU {
       concatenateTablesInHost()
     }
   }
@@ -521,7 +513,7 @@ class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
     if (!hasNext) {
       throw new NoSuchElementException("No more columnar batches")
     }
-    withResource(new NvtxRange("Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.SHUFFLE_CONCAT_LOAD_BATCH {
       val hostCoalescedResult = GpuMetric.ns(readTimeMetric, opTimeMetric) {
         // It covers the time of i/o, deser and concat
         iter.next()
