@@ -265,8 +265,8 @@ def _assert_gpu_and_cpu_writes_are_equal(
     gpu_path = base_path + '/GPU'
 
     # Check if current test has delta_lake marker
-    from conftest import current_test_has_delta_marker
-    if current_test_has_delta_marker():
+    from conftest import current_test_has_delta_marker, current_test_allows_non_gpu_delta_write
+    if current_test_has_delta_marker() and not current_test_allows_non_gpu_delta_write():
         print("Delta Lake test detected - applying Delta write validation")
         from delta_lake_utils import assert_rapids_delta_write
         assert_rapids_delta_write(lambda spark: write_func(spark, gpu_path), conf=conf)
