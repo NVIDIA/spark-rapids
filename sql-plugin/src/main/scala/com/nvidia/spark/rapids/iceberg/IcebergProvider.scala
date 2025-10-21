@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, GpuExec, GpuExpression, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, StaticInvokeMeta, VersionUtils}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuExpression, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, StaticInvokeMeta, VersionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec}
 
 /** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
 trait IcebergProvider {
@@ -39,6 +39,11 @@ trait IcebergProvider {
                 meta: AtomicCreateTableAsSelectExecMeta): Unit
   def convertToGpu(cpuExec: AtomicCreateTableAsSelectExec,
                    meta: AtomicCreateTableAsSelectExecMeta): GpuExec
+
+  def tagForGpu(cpuExec: AtomicReplaceTableAsSelectExec,
+                meta: AtomicReplaceTableAsSelectExecMeta): Unit
+  def convertToGpu(cpuExec: AtomicReplaceTableAsSelectExec,
+                   meta: AtomicReplaceTableAsSelectExecMeta): GpuExec
 
   def tagForGpu(cpuExec: OverwritePartitionsDynamicExec,
                 meta: OverwritePartitionsDynamicExecMeta): Unit

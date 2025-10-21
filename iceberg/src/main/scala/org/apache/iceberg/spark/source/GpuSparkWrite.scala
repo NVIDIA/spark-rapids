@@ -40,7 +40,7 @@ import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, Write, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -232,6 +232,35 @@ object GpuSparkWrite {
    */
   def tagForGpuCtas(
       cpuExec: AtomicCreateTableAsSelectExec,
+      meta: SparkPlanMeta[_]): Unit = {
+    val properties: Map[String, String] = Spark3Util
+      .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
+      .asScala.toMap
+    val fileFormatStr = properties.getOrElse(TableProperties.DEFAULT_FILE_FORMAT,
+      TableProperties.DEFAULT_FILE_FORMAT_DEFAULT)
+
+    val fileFormat = FileFormat.fromString(fileFormatStr)
+
+    // Convert Spark schema to Iceberg schema
+    val querySchema = cpuExec.query.schema
+    val icebergSchema = SparkSchemaUtil.convert(querySchema)
+
+    // Convert Spark connector transforms to Iceberg PartitionSpec
+    val partitionSpec = Spark3Util.toPartitionSpec(icebergSchema, cpuExec.partitioning.toArray)
+
+    // Reuse tagForGpuWrite for validation
+    tagForGpuWrite(fileFormat, partitionSpec, querySchema, icebergSchema, meta)
+  }
+
+  /**
+   * Tag for GPU support for Iceberg RTAS operations.
+   * This method checks file format and partitioning support for REPLACE TABLE AS SELECT.
+   *
+   * @param cpuExec The CPU AtomicReplaceTableAsSelectExec
+   * @param meta The metadata for tagging
+   */
+  def tagForGpuRtas(
+      cpuExec: AtomicReplaceTableAsSelectExec,
       meta: SparkPlanMeta[_]): Unit = {
     val properties: Map[String, String] = Spark3Util
       .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
