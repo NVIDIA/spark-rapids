@@ -110,6 +110,7 @@ class GpuShuffledHashJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          conf.isSMJOptimiztionAllowed,
           conf.sizedJoinPartitionAmplification,
           readOpt,
           isSkewJoin = false)(
@@ -126,6 +127,7 @@ class GpuShuffledHashJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          conf.isSMJOptimiztionAllowed,
           conf.sizedJoinPartitionAmplification,
           readOpt,
           isSkewJoin = false)(
@@ -205,6 +207,9 @@ case class GpuShuffledHashJoinExec(
     Math.max(configValue, 10 * 1024)
   }
 
+  private def isSMJOptAllowed(): Boolean =
+    RapidsConf.ALLOW_SORT_MERGE_JOIN_OPTIMIZATION.get(conf)
+
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = {
     val batchedBuildGoal = TargetSize(realTargetBatchSize())
     (joinType, buildSide) match {
@@ -236,6 +241,7 @@ case class GpuShuffledHashJoinExec(
           GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
 
     val realTarget = realTargetBatchSize()
+    val localIsSMJOptAllowed = isSMJOptAllowed()
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
@@ -250,7 +256,7 @@ case class GpuShuffledHashJoinExec(
               buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(singleBatch)
             }
             // doJoin will close singleBatch
-            doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
+            doJoin(singleBatch, maybeBufferedStreamIter, realTarget, localIsSMJOptAllowed,
               numOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
@@ -261,7 +267,8 @@ case class GpuShuffledHashJoinExec(
               cb
             }
             doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
-              numPartitions, numOutputRows, numOutputBatches, opTime, joinTime)
+              localIsSMJOptAllowed, numPartitions, numOutputRows, numOutputBatches,
+              opTime, joinTime)
         }
       }
     }

@@ -689,6 +689,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val ALLOW_SORT_MERGE_JOIN_OPTIMIZATION =
+    conf("spark.rapids.sql.allowSortMergeJoinInternally")
+      .doc("Internally RAPIDS can use a hash based join or a sort based join. " +
+        "When this is true the sort join can be used. When this is false only the " +
+        "hash based join will be used.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE =
     conf("spark.rapids.sql.shuffledHashJoin.optimizeShuffle")
       .doc("Enable or disable an optimization where shuffled build side batches are kept " +
@@ -3035,6 +3044,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
 
   lazy val bucketJoinIoPrefetch: Boolean = get(BUCKET_JOIN_IO_PREFETCH)
+
+  lazy val isSMJOptimiztionAllowed:Boolean = get(ALLOW_SORT_MERGE_JOIN_OPTIMIZATION)
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
 

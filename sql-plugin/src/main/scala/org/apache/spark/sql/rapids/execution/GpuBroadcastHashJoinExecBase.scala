@@ -141,6 +141,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val localIsSMJOptAllowed = RapidsConf.ALLOW_SORT_MERGE_JOIN_OPTIMIZATION.get(conf)
 
     val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
 
@@ -153,7 +154,8 @@ abstract class GpuBroadcastHashJoinExecBase(
           buildSchema,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
       // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+      doJoin(builtBatch, streamIter, targetSize, localIsSMJOptAllowed, numOutputRows,
+        numOutputBatches, opTime, joinTime)
     }
   }
 

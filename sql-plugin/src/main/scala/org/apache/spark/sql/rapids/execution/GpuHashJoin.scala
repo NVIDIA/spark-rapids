@@ -15,13 +15,13 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{ColumnView, DType, GatherMap, NullEquality, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.jni.GpuOOM
+import com.nvidia.spark.rapids.jni.{GpuOOM, MixedSortMergeJoin, SortMergeJoin}
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
@@ -294,22 +294,61 @@ object GpuHashJoin {
  * Class to hold statistics on the build-side batch of a hash join.
  * @param streamMagnificationFactor estimated magnification of a stream batch during join
  * @param isDistinct true if all build-side join keys are distinct
+ * @param sortNeeded true if a sort merge join would be better than a hash based join.
  */
-case class JoinBuildSideStats(streamMagnificationFactor: Double, isDistinct: Boolean)
+case class JoinBuildSideStats(streamMagnificationFactor: Double, isDistinct: Boolean,
+                              sortNeeded: Boolean)
 
 object JoinBuildSideStats {
-  def fromBatch(batch: ColumnarBatch, boundBuildKeys: Seq[GpuExpression]): JoinBuildSideStats = {
+  def isSortMergeJoinSupported(boundBuildKeys: Seq[GpuExpression]): Boolean = {
+    // We cannot support sort merge join in all cases
+    // https://github.com/rapidsai/cudf/issues/20317
+    boundBuildKeys.forall { expr =>
+      expr.dataType match {
+        // Just being extra careful for now and not going to support any nested types
+        case _: StructType | _: ArrayType | _: MapType => false
+        case _ => true
+      }
+    }
+  }
+
+  def fromBatch(batch: ColumnarBatch, isSMLOptAllowed: Boolean,
+                boundBuildKeys: Seq[GpuExpression]): JoinBuildSideStats = {
     // This is okay because the build keys must be deterministic
     withResource(GpuProjectExec.project(batch, boundBuildKeys)) { buildKeys =>
       // Based off of the keys on the build side guess at how many output rows there
       // will be for each input row on the stream side. This does not take into account
       // the join type, data skew or even if the keys actually match.
-      val builtCount = withResource(GpuColumnVector.from(buildKeys)) { keysTable =>
-        keysTable.distinctCount(NullEquality.EQUAL)
+      withResource(GpuColumnVector.from(buildKeys)) { keysTable =>
+        if (isSMLOptAllowed && isSortMergeJoinSupported(boundBuildKeys)) {
+          val indices = 0 until keysTable.getNumberOfColumns
+          val counts = withResource(keysTable.groupBy(indices: _*).aggregate(
+            GroupByAggregation.count(NullPolicy.INCLUDE).onColumn(0))) { everything =>
+            everything.getColumn(everything.getNumberOfColumns() - 1).incRefCount()
+          }
+          withResource(counts) { _ =>
+            val builtCount = counts.getRowCount
+            val maxSize = withResource(counts.max()) { maxCount =>
+              if (maxCount.isValid) {
+                maxCount.getInt
+              } else {
+                0
+              }
+            }
+            val isDistinct = builtCount == buildKeys.numRows()
+            // TODO I need to test this heuristic.
+            val sortNeeded = maxSize > 10
+            val magnificationFactor = buildKeys.numRows().toDouble / builtCount
+            JoinBuildSideStats(magnificationFactor, isDistinct, sortNeeded)
+          }
+        } else {
+          val builtCount = keysTable.distinctCount(NullEquality.EQUAL)
+          val isDistinct = builtCount == buildKeys.numRows()
+          val
+          magnificationFactor = buildKeys.numRows().toDouble / builtCount
+          JoinBuildSideStats(magnificationFactor, isDistinct, sortNeeded = false)
+        }
       }
-      val isDistinct = builtCount == buildKeys.numRows()
-      val magnificationFactor = buildKeys.numRows().toDouble / builtCount
-      JoinBuildSideStats(magnificationFactor, isDistinct)
     }
   }
 }
@@ -322,6 +361,7 @@ abstract class BaseHashJoinIterator(
     boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
     targetSize: Long,
+    isSMJOptAllowed: Boolean,
     joinType: JoinType,
     buildSide: GpuBuildSide,
     opTime: GpuMetric,
@@ -341,12 +381,13 @@ abstract class BaseHashJoinIterator(
         built.checkpoint()
         withRetryNoSplit {
           withRestoreOnRetry(built) {
-            JoinBuildSideStats.fromBatch(built.getBatch, boundBuiltKeys)
+            JoinBuildSideStats.fromBatch(built.getBatch, isSMJOptAllowed, boundBuiltKeys)
           }
         }
       case _ =>
         // existence joins don't change size
-        JoinBuildSideStats(1.0, isDistinct = false)
+        // TODO not sure if sort is needed or not???
+        JoinBuildSideStats(1.0, isDistinct = false, sortNeeded = false)
     }
   }
 
@@ -480,6 +521,7 @@ class HashJoinIterator(
     val boundStreamKeys: Seq[GpuExpression],
     val streamAttributes: Seq[Attribute],
     val targetSize: Long,
+    val isSMJOptAllowed: Boolean,
     val joinType: JoinType,
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
@@ -493,6 +535,7 @@ class HashJoinIterator(
       boundStreamKeys,
       streamAttributes,
       targetSize,
+      isSMJOptAllowed,
       joinType,
       buildSide,
       opTime = opTime,
@@ -511,9 +554,13 @@ class HashJoinIterator(
         val maps = joinType match {
           case LeftOuter if buildStats.isDistinct =>
             Array(leftKeys.leftDistinctJoinGatherMap(rightKeys, compareNullsEqual))
+          case LeftOuter if buildStats.sortNeeded =>
+            SortMergeJoin.leftJoin(leftKeys, rightKeys, false, false, compareNullsEqual)
           case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
           case RightOuter if buildStats.isDistinct =>
             Array(rightKeys.leftDistinctJoinGatherMap(leftKeys, compareNullsEqual))
+          case RightOuter if buildStats.sortNeeded =>
+            SortMergeJoin.leftJoin(rightKeys, leftKeys, false, false, compareNullsEqual).reverse
           case RightOuter =>
             // Reverse the output of the join, because we expect the right gather map to
             // always be on the right
@@ -524,8 +571,14 @@ class HashJoinIterator(
             } else {
               rightKeys.innerDistinctJoinGatherMaps(leftKeys, compareNullsEqual).reverse
             }
+          ///case _: InnerLike if buildStats.sortNeeded =>
+            // TODO not done yet...
           case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
+          case LeftSemi if buildStats.sortNeeded =>
+            Array(SortMergeJoin.leftSemiJoin(leftKeys, rightKeys, false, false, compareNullsEqual))
           case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
+          case LeftAnti if buildStats.sortNeeded =>
+            Array(SortMergeJoin.leftAntiJoin(leftKeys, rightKeys, false, false, compareNullsEqual))
           case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
           case _ =>
             throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
@@ -550,6 +603,7 @@ class ConditionalHashJoinIterator(
     streamAttributes: Seq[Attribute],
     compiledCondition: CompiledExpression,
     targetSize: Long,
+    allowSorted: Boolean,
     joinType: JoinType,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
@@ -563,6 +617,7 @@ class ConditionalHashJoinIterator(
       boundStreamKeys,
       streamAttributes,
       targetSize,
+      allowSorted,
       joinType,
       buildSide,
       opTime = opTime,
@@ -577,9 +632,15 @@ class ConditionalHashJoinIterator(
       withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
         withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
           val maps = joinType match {
+            case _: InnerLike if buildStats.sortNeeded && buildSide == GpuBuildRight =>
+              MixedSortMergeJoin.innerJoin(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, false, false, compareNullsEqual)
             case _: InnerLike if buildSide == GpuBuildRight =>
               Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality)
+            case _: InnerLike if buildStats.sortNeeded && buildSide == GpuBuildLeft =>
+              MixedSortMergeJoin.innerJoin(rightKeys, leftKeys, rightTable, leftTable,
+                compiledCondition, false, false, compareNullsEqual).reverse
             case _: InnerLike if buildSide == GpuBuildLeft =>
               // Even though it's an inner join, we need to switch the join order since the
               // condition has been compiled to expect the build side on the left and the stream
@@ -588,17 +649,31 @@ class ConditionalHashJoinIterator(
               // always be on the right.
               Table.mixedInnerJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
                 compiledCondition, nullEquality).reverse
+            case LeftOuter if buildStats.sortNeeded =>
+              MixedSortMergeJoin.leftJoin(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, false, false, compareNullsEqual)
             case LeftOuter =>
               Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality)
+            case RightOuter if buildStats.sortNeeded =>
+              // Reverse the output of the join, because we expect the right gather map to
+              // always be on the right
+              MixedSortMergeJoin.leftJoin(rightKeys, leftKeys, rightTable, leftTable,
+                compiledCondition, false, false, compareNullsEqual).reverse
             case RightOuter =>
               // Reverse the output of the join, because we expect the right gather map to
               // always be on the right
               Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
                 compiledCondition, nullEquality).reverse
+            case LeftSemi if buildStats.sortNeeded =>
+              Array(MixedSortMergeJoin.leftSemiJoin(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, false, false, compareNullsEqual))
             case LeftSemi =>
               Array(Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality))
+            case LeftAnti if buildStats.sortNeeded =>
+              Array(MixedSortMergeJoin.leftAntiJoin(leftKeys, rightKeys, leftTable, rightTable,
+                compiledCondition, false, false, compareNullsEqual))
             case LeftAnti =>
               Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality))
@@ -655,6 +730,7 @@ class HashJoinStreamSideIterator(
     streamAttributes: Seq[Attribute],
     compiledCondition: Option[CompiledExpression],
     targetSize: Long,
+    allowSorted: Boolean,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     opTime: GpuMetric,
@@ -667,6 +743,7 @@ class HashJoinStreamSideIterator(
       boundStreamKeys,
       streamAttributes,
       targetSize,
+      allowSorted,
       joinType,
       buildSide,
       opTime = opTime,
@@ -895,6 +972,7 @@ class HashOuterJoinIterator(
     boundCondition: Option[GpuExpression],
     numFirstConditionTableColumns: Int,
     targetSize: Long,
+    allowSorted: Boolean,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     opTime: GpuMetric,
@@ -906,7 +984,7 @@ class HashOuterJoinIterator(
 
   private val streamJoinIter = new HashJoinStreamSideIterator(joinType, built, boundBuiltKeys,
     buildStats, buildSideTrackerInit, stream, boundStreamKeys, streamAttributes, compiledCondition,
-    targetSize, buildSide, compareNullsEqual, opTime, joinTime)
+    targetSize, allowSorted, buildSide, compareNullsEqual, opTime, joinTime)
 
   private var finalBatch: Option[ColumnarBatch] = None
 
@@ -1173,6 +1251,7 @@ trait GpuHashJoin extends GpuJoinExec {
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
       targetSize: Long,
+      isSMJOptAllowed: Boolean,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
@@ -1216,7 +1295,7 @@ trait GpuHashJoin extends GpuJoinExec {
       case FullOuter =>
         new HashOuterJoinIterator(joinType, spillableBuiltBatch, boundBuildKeys, None, None,
           lazyStream, boundStreamKeys, streamedPlan.output,
-          boundCondition, numFirstConditionTableColumns, targetSize, buildSide,
+          boundCondition, numFirstConditionTableColumns, targetSize, isSMJOptAllowed, buildSide,
           compareNullsEqual, opTime, joinTime)
       case _ =>
         if (boundCondition.isDefined) {
@@ -1225,11 +1304,11 @@ trait GpuHashJoin extends GpuJoinExec {
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
           new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, None,
             lazyStream, boundStreamKeys, streamedPlan.output, compiledCondition,
-            targetSize, joinType, buildSide, compareNullsEqual, opTime, joinTime)
+            targetSize, isSMJOptAllowed, joinType, buildSide, compareNullsEqual, opTime, joinTime)
         } else {
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, None,
-            lazyStream, boundStreamKeys, streamedPlan.output, targetSize, joinType, buildSide,
-            compareNullsEqual, opTime, joinTime)
+            lazyStream, boundStreamKeys, streamedPlan.output, targetSize, isSMJOptAllowed,
+            joinType, buildSide, compareNullsEqual, opTime, joinTime)
         }
     }
 
