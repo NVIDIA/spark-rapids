@@ -341,6 +341,7 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory):
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13649")
 def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory):
     """Test DELETE falls back when Iceberg is completely disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
@@ -357,8 +358,7 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory):
     
     # Read function to verify results
     def read_func(spark, table_name):
-        # A simple workaround for https://github.com/NVIDIA/spark-rapids/issues/13649
-        return spark.sql(f"SELECT 1")
+        return spark.sql(f"SELECT * from {table_name}")
     
     assert_gpu_fallback_write_sql(
         write_func,
