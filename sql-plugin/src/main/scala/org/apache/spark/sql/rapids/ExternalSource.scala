@@ -157,7 +157,7 @@ trait ExternalSourceBase extends Logging {
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.tagForGpu(cpuExec, meta)
     } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
-      icebergProvider.tagForGpu(cpuExec, meta)
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"catalog $catalogClass is not supported")
     }
@@ -170,7 +170,7 @@ trait ExternalSourceBase extends Logging {
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
     } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
-      icebergProvider.convertToGpu(cpuExec, meta)
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
@@ -183,7 +183,7 @@ trait ExternalSourceBase extends Logging {
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.tagForGpu(cpuExec, meta)
     } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
-      icebergProvider.tagForGpu(cpuExec, meta)
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"catalog $catalogClass is not supported")
     }
@@ -196,7 +196,7 @@ trait ExternalSourceBase extends Logging {
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
     } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
-      icebergProvider.convertToGpu(cpuExec, meta)
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
@@ -252,7 +252,7 @@ trait ExternalSourceBase extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.tagForGpu(cpuExec, meta)
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"Append data $writeClass is not supported")
     }
@@ -264,7 +264,7 @@ trait ExternalSourceBase extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.convertToGpu(cpuExec, meta)
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
@@ -276,7 +276,7 @@ trait ExternalSourceBase extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.tagForGpu(cpuExec, meta)
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"Overwrite partitions dynamic $writeClass is not supported")
     }
@@ -288,7 +288,7 @@ trait ExternalSourceBase extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.convertToGpu(cpuExec, meta)
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
@@ -300,7 +300,7 @@ trait ExternalSourceBase extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.tagForGpu(cpuExec, meta)
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"Overwrite data $writeClass is not supported")
     }
@@ -312,7 +312,7 @@ trait ExternalSourceBase extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.convertToGpu(cpuExec, meta)
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }

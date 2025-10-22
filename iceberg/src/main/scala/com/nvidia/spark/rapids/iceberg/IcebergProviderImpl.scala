@@ -100,7 +100,7 @@ class IcebergProviderImpl extends IcebergProvider {
     supportsCatalog(catalogClass)
   }
 
-  override def tagForGpu(
+  private def tagForGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): Unit = {
     if (!meta.conf.isIcebergEnabled) {
@@ -118,7 +118,7 @@ class IcebergProviderImpl extends IcebergProvider {
     GpuSparkWrite.tagForGpuCtas(cpuExec, meta)
   }
 
-  override def convertToGpu(
+  private def convertToGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
     GpuAtomicCreateTableAsSelectExec(
@@ -131,7 +131,7 @@ class IcebergProviderImpl extends IcebergProvider {
       cpuExec.ifNotExists)
   }
 
-  override def tagForGpu(
+  private def tagForGpu(
       cpuExec: AtomicReplaceTableAsSelectExec,
       meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
     if (!meta.conf.isIcebergEnabled) {
@@ -149,7 +149,7 @@ class IcebergProviderImpl extends IcebergProvider {
     GpuSparkWrite.tagForGpuRtas(cpuExec, meta)
   }
 
-  override def convertToGpu(
+  private def convertToGpu(
       cpuExec: AtomicReplaceTableAsSelectExec,
       meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
     GpuAtomicReplaceTableAsSelectExec(
@@ -163,7 +163,7 @@ class IcebergProviderImpl extends IcebergProvider {
       cpuExec.invalidateCache)
   }
 
-  override def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit = {
+  private def tagForGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): Unit = {
     if (!meta.conf.isIcebergEnabled) {
       meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_ICEBERG} to true")
@@ -179,7 +179,7 @@ class IcebergProviderImpl extends IcebergProvider {
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
   }
 
-  override def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
+  private def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
     var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
     if (!child.supportsColumnar) {
       child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
@@ -190,7 +190,7 @@ class IcebergProviderImpl extends IcebergProvider {
       GpuSparkWrite.convert(cpuExec.write))
   }
 
-  override def tagForGpu(cpuExec: OverwritePartitionsDynamicExec,
+  private def tagForGpu(cpuExec: OverwritePartitionsDynamicExec,
                          meta: OverwritePartitionsDynamicExecMeta): Unit = {
     if (!meta.conf.isIcebergEnabled) {
       meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
@@ -207,7 +207,7 @@ class IcebergProviderImpl extends IcebergProvider {
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
   }
 
-  override def convertToGpu(cpuExec: OverwritePartitionsDynamicExec,
+  private def convertToGpu(cpuExec: OverwritePartitionsDynamicExec,
                             meta: OverwritePartitionsDynamicExecMeta): GpuExec = {
     var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
     if (!child.supportsColumnar) {
@@ -219,7 +219,7 @@ class IcebergProviderImpl extends IcebergProvider {
       GpuSparkWrite.convert(cpuExec.write))
   }
 
-  override def tagForGpu(cpuExec: OverwriteByExpressionExec,
+  private def tagForGpu(cpuExec: OverwriteByExpressionExec,
                          meta: OverwriteByExpressionExecMeta): Unit = {
     if (!meta.conf.isIcebergEnabled) {
       meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
@@ -236,7 +236,7 @@ class IcebergProviderImpl extends IcebergProvider {
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
   }
 
-  override def convertToGpu(cpuExec: OverwriteByExpressionExec,
+  private def convertToGpu(cpuExec: OverwriteByExpressionExec,
                             meta: OverwriteByExpressionExecMeta): GpuExec = {
     var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
     if (!child.supportsColumnar) {
@@ -252,6 +252,16 @@ class IcebergProviderImpl extends IcebergProvider {
     cpuExec match {
       case replaceData: ReplaceDataExec =>
         tagForGpu(replaceData, meta.asInstanceOf[ReplaceDataExecMeta])
+      case appendData: AppendDataExec =>
+        tagForGpu(appendData, meta.asInstanceOf[AppendDataExecMeta])
+      case createTable: AtomicCreateTableAsSelectExec =>
+        tagForGpu(createTable, meta.asInstanceOf[AtomicCreateTableAsSelectExecMeta])
+      case replaceTable: AtomicReplaceTableAsSelectExec =>
+        tagForGpu(replaceTable, meta.asInstanceOf[AtomicReplaceTableAsSelectExecMeta])
+      case overwritePartitions: OverwritePartitionsDynamicExec =>
+        tagForGpu(overwritePartitions, meta.asInstanceOf[OverwritePartitionsDynamicExecMeta])
+      case overwriteByExpr: OverwriteByExpressionExec =>
+        tagForGpu(overwriteByExpr, meta.asInstanceOf[OverwriteByExpressionExecMeta])
       case _ =>
         meta.willNotWorkOnGpu(s"IcebergProviderImpl does not support ${cpuExec.getClass.getName}")
     }
@@ -261,6 +271,16 @@ class IcebergProviderImpl extends IcebergProvider {
     cpuExec match {
       case replaceData: ReplaceDataExec =>
         convertToGpu(replaceData, meta.asInstanceOf[ReplaceDataExecMeta])
+      case appendData: AppendDataExec =>
+        convertToGpu(appendData, meta.asInstanceOf[AppendDataExecMeta])
+      case createTable: AtomicCreateTableAsSelectExec =>
+        convertToGpu(createTable, meta.asInstanceOf[AtomicCreateTableAsSelectExecMeta])
+      case replaceTable: AtomicReplaceTableAsSelectExec =>
+        convertToGpu(replaceTable, meta.asInstanceOf[AtomicReplaceTableAsSelectExecMeta])
+      case overwritePartitions: OverwritePartitionsDynamicExec =>
+        convertToGpu(overwritePartitions, meta.asInstanceOf[OverwritePartitionsDynamicExecMeta])
+      case overwriteByExpr: OverwriteByExpressionExec =>
+        convertToGpu(overwriteByExpr, meta.asInstanceOf[OverwriteByExpressionExecMeta])
       case _ =>
         throw new IllegalStateException(
           s"IcebergProviderImpl does not support ${cpuExec.getClass.getName}")
