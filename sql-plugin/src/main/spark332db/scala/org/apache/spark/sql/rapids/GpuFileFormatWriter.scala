@@ -39,6 +39,7 @@ import java.util.{Date, UUID}
 
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.shims.{BucketingUtilsShim, RapidsFileSourceMetaUtils}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -347,9 +348,9 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       session.sparkContext.runJob(
         rdd,
         (context: TaskContext, iter: Iterator[WriterCommitMessage]) => {
-          assert(iter.hasNext)
+          assertInTests(iter.hasNext)
           val commitMessage = iter.next()
-          assert(!iter.hasNext)
+          assertInTests(!iter.hasNext)
           commitMessage
         },
         rdd.partitions.indices,
@@ -473,7 +474,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
   : Unit = {
 
     val numStatsTrackers = statsTrackers.length
-    assert(statsPerTask.forall(_.length == numStatsTrackers),
+    assertInTests(statsPerTask.forall(_.length == numStatsTrackers),
       s"""Every WriteTask should have produced one `WriteTaskStats` object for every tracker.
          |There are $numStatsTrackers statsTrackers, but some task returned
          |${statsPerTask.find(_.length != numStatsTrackers).get.length} results instead.

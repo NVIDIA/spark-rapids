@@ -21,7 +21,6 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatchesWithRetry}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -231,8 +230,7 @@ object AggregateUtils extends Logging {
         return
       }
 
-      withResource(new NvtxWithMetrics("agg repartition",
-        NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.AGG_REPARTITION, metrics.repartitionTime) {
 
         withResource(new GpuBatchSubPartitioner(
           Iterator(withRetryNoSplit(batch)(_.getColumnarBatch())),
@@ -555,7 +553,7 @@ class AggHelper(
     val inputBatch = SpillableColumnarBatch(toAggregateBatch,
       SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
 
-    val projectedCb = withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
+    val projectedCb = NvtxRegistry.AGG_PRE_PROCESS {
       preStepBound.projectAndCloseWithRetrySingleBatch(inputBatch)
     }
 
@@ -600,8 +598,7 @@ class AggHelper(
     val numAggs = metrics.numAggOps
     preProcessed.flatMap { case (sb, argLens) =>
       withRetry(sb, splitSpillableInHalfByRows) { preProcessedAttempt =>
-        withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
-          opTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.COMPUTE_AGGREGATE, computeAggTime, opTime) {
           withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
             val (retCb, outLens) = aggregate(cb, argLens, numAggs)
             (SpillableColumnarBatch(retCb, SpillPriorities.ACTIVE_BATCHING_PRIORITY), outLens)
@@ -653,7 +650,7 @@ class AggHelper(
       preProcessed: ColumnarBatch,
       advArgLens: Seq[Int]): (ColumnarBatch, Seq[Int]) = {
     val reduceRowNum = 1
-    withResource(new NvtxRange("reduce", NvtxColor.BLUE)) { _ =>
+    NvtxRegistry.AGG_REDUCE {
       closeOnExcept(new mutable.ArrayBuffer[GpuColumnVector]()) { cvs =>
         val cols = GpuColumnVector.extractColumns(preProcessed)
         cudfAggregates.zip(aggOrdinals).foreach { case (cudfAgg, ix) =>
@@ -689,7 +686,7 @@ class AggHelper(
    */
   def performGroupByAggregation(preProcessed: ColumnarBatch,
       advArgLens: Seq[Int]): (ColumnarBatch, Seq[Int]) = {
-    withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
+    NvtxRegistry.AGG_GROUPBY {
       withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
         val groupOptions = cudf.GroupByOptions.builder()
           .withIgnoreNullKeys(false)
@@ -830,22 +827,20 @@ class AggHelper(
       metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
-    val postProcessed =
-      withResource(new NvtxWithMetrics("post-process", NvtxColor.ORANGE, computeAggTime,
-          opTime)) { _ =>
-        val advCols = postProcessForAdvancedAggs(aggregatedSpillable, advArgLens)
-        val proCb = closeOnExcept(advCols.flatten) { _ =>
-          val noArgsScb = withResource(aggregatedSpillable) { scb =>
-            withResource(scb.getColumnarBatch()) { cb =>
-              SpillableColumnarBatch(
-                GpuColumnVector.sliceColumns(cb, 0, advAggStart),
-                SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-            }
+    val postProcessed = NvtxRegistry.AGG_POST_PROCESS {
+      val advCols = postProcessForAdvancedAggs(aggregatedSpillable, advArgLens)
+      val proCb = closeOnExcept(advCols.flatten) { _ =>
+        val noArgsScb = withResource(aggregatedSpillable) { scb =>
+          withResource(scb.getColumnarBatch()) { cb =>
+            SpillableColumnarBatch(
+              GpuColumnVector.sliceColumns(cb, 0, advAggStart),
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           }
-          postStepBound.projectAndCloseWithRetrySingleBatch(noArgsScb)
         }
-        mergeWithOriginalOrderAndClose(proCb, advCols)
+        postStepBound.projectAndCloseWithRetrySingleBatch(noArgsScb)
       }
+      mergeWithOriginalOrderAndClose(proCb, advCols)
+    }
     SpillableColumnarBatch(
       postProcessed,
       SpillPriorities.ACTIVE_BATCHING_PRIORITY)
@@ -857,8 +852,7 @@ class AggHelper(
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     input.map { case (aggregated, advArgLens) =>
-      withResource(new NvtxWithMetrics("post-process", NvtxColor.ORANGE, computeAggTime,
-          opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.POST_PROCESS_AGG, computeAggTime, opTime) {
         val advCols = postProcessForAdvancedAggs(aggregated, advArgLens)
         val proCb = closeOnExcept(advCols.flatten) { _ =>
           val noArgsScb = withResource(aggregated) { scb =>
@@ -909,8 +903,7 @@ object GpuAggregateIterator extends Logging {
       helper: AggHelper): SpillableColumnarBatch = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
-    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
-      opTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.COMPUTE_AGGREGATE, computeAggTime, opTime) {
       // 1) a pre-processing step required before we go into the cuDF aggregate,
       // in some cases casting and in others creating a struct (MERGE_M2 for instance,
       // requires a struct)
@@ -959,9 +952,7 @@ object GpuAggregateIterator extends Logging {
       withRetryNoSplit(toConcat) { attempt =>
         val concatTime = metrics.concatTime
         val opTime = metrics.opTime
-        withResource(
-          new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime,
-            opTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.CONCATENATE_BATCHES, concatTime, opTime) {
           val batchesToConcat = attempt.safeMap(_.getColumnarBatch())
           withResource(batchesToConcat) { _ =>
             val numCols = batchesToConcat.head.numCols()
@@ -1105,8 +1096,7 @@ object GpuAggFinalPassIterator {
     val aggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     cbIter.map { batch =>
-      withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
-        opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.FINALIZE_AGG, aggTime, opTime) {
         val finalBatch = boundExpressions.boundFinalProjections.map { case (exprs, advFns) =>
           val cb = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
             SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY), exprs)
@@ -1125,8 +1115,7 @@ object GpuAggFinalPassIterator {
     val aggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     sbIter.map { sb =>
-      withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
-        opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.FINALIZE_AGG, aggTime, opTime) {
         val finalBatch = boundExpressions.boundFinalProjections.map { case (exprs, advFns) =>
           SpillableColumnarBatch(
             processAdvancedAggsAndClose(
@@ -1393,8 +1382,7 @@ class GpuMergeAggregateIterator(
     override def hasNext: Boolean = batchesByBucket.nonEmpty
 
     override def next(): SpillableColumnarBatch = {
-      withResource(new NvtxWithMetrics("RepartitionAggregateIterator.next",
-        NvtxColor.BLUE, opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.REPARTITION_AGG_ITERATOR_NEXT, opTime) {
 
         if (batchesByBucket.last.size() == 1) {
           batchesByBucket.remove(batchesByBucket.size - 1).removeLast()
@@ -2423,8 +2411,8 @@ class DynamicGpuPartialAggregateIterator(
     // first thing we need to do is get a batch and make a choice.
     withRetryNoSplit(SpillableColumnarBatch(cbIter.next(),
         SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
-      withResource(new NvtxWithMetrics("dynamic sort heuristic", NvtxColor.BLUE,
-          metrics.opTime, metrics.heuristicTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.DYNAMIC_SORT_HEURISTIC,
+          metrics.opTime, metrics.heuristicTime) {
         withResource(sb.getColumnarBatch()) { cb =>
           val numRows = cb.numRows()
           val cardinality = estimateCardinality(cb)

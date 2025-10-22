@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.window
 
-import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -125,7 +124,7 @@ class GpuWindowIterator(
     }
     withRetryNoSplit(cbSpillable) { _ =>
       withResource(cbSpillable.getColumnarBatch()) { cb =>
-        withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.WINDOW_EXEC, opTime) {
           val ret = withResource(computeBasicWindow(cb)) { cols =>
             convertToBatch(outputTypes, cols)
           }
