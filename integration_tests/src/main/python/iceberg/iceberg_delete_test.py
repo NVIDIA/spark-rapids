@@ -109,7 +109,7 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory):
     """Test DELETE on unpartitioned table with fixed seed"""
     do_delete_test(
         spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 > 50")
+        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 = 50")
     )
 
 @iceberg
@@ -119,7 +119,7 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory):
     """Test DELETE on bucket-partitioned table with fixed seed"""
     do_delete_test(
         spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 > 50"),
+        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 = 50"),
         partition_col_sql="bucket(16, _c2)"
     )
 
@@ -158,7 +158,7 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory):
     create_iceberg_table_with_data(table_name)
     
     def do_delete(spark):
-        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
+        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 = 50")
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -206,7 +206,7 @@ def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table
     with_cpu_session(insert_data)
     
     def do_delete(spark):
-        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
+        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 = 50")
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -244,7 +244,7 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
     with_cpu_session(insert_data)
     
     def do_delete(spark):
-        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
+        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 = 50")
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -305,7 +305,7 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory):
     create_iceberg_table_with_data(table_name)
     
     def do_delete(spark):
-        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
+        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 = 50")
     
     assert_gpu_fallback_collect(
         do_delete,
