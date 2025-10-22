@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_base_table_cols, iceberg_gens_list)
+                     iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list)
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_spark_35x, with_cpu_session, with_gpu_session
 
@@ -287,16 +287,13 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory):
-    """Test DELETE falls back with nested types (arrays, structs) - currently unsupported"""
+    """Test DELETE falls back with nested types (arrays, structs, maps) - currently unsupported"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
-    # Use table with nested types (arrays and structs)
+    # Use table with all iceberg types including nested types (arrays, structs, maps)
     def data_gen(spark):
-        return spark.createDataFrame([
-            (1, [1, 2, 3], {'field1': 'a', 'field2': 10}),
-            (2, [4, 5, 6], {'field1': 'b', 'field2': 20}),
-            (3, [7, 8, 9], {'field1': 'c', 'field2': 30})
-        ], ['id', 'arr_col', 'struct_col'])
+        cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
+        return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
     
     # Phase 1: Initialize tables with data (separate for CPU and GPU)
     def init_table(table_name):
@@ -322,12 +319,13 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory):
     init_table(gpu_table_name)
     
     # Phase 2: DELETE operation (to be tested with fallback)
+    # Use _c2 (IntegerGen) for DELETE condition as it's a simple type
     def write_func(spark, table_name):
-        spark.sql(f"DELETE FROM {table_name} WHERE id > 1")
+        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
     
     # Read function to verify results
     def read_func(spark, table_name):
-        return spark.sql(f"SELECT 1")
+        return spark.sql(f"SELECT * FROM {table_name}")
     
     assert_gpu_fallback_write_sql(
         write_func,
