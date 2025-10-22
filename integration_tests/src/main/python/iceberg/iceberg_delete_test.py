@@ -136,7 +136,7 @@ def test_iceberg_delete_fallback_read_disabled(spark_tmp_table_factory):
     create_iceberg_table_with_data(table_name)
     
     def do_delete(spark):
-        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
+        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 = 50")
     
     assert_gpu_fallback_collect(
         do_delete,
