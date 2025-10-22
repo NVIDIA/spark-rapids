@@ -17,9 +17,9 @@
 package com.nvidia.spark.rapids.iceberg
 
 import scala.reflect.ClassTag
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ReadFileOp, ReplaceDataExecMeta, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ReplaceDataExecMeta, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.{GpuSparkScan, GpuSparkWrite}
 import org.apache.iceberg.spark.supportsCatalog
@@ -34,7 +34,10 @@ import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTabl
 
 class IcebergProviderImpl extends IcebergProvider {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
-    val cpuIcebergScanClass = ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)
+    val cpuBatchQueryScanClass = ShimReflectionUtils.loadClass(
+      IcebergProvider.cpuBatchQueryScanClassName)
+    val cpuCopyOnWriteScanClass = ShimReflectionUtils.loadClass(
+      IcebergProvider.cpuCopyOnWriteScanClassName)
 
     Seq(
       new ScanRule[Scan](
@@ -44,40 +47,29 @@ class IcebergProviderImpl extends IcebergProvider {
           override def supportsRuntimeFilters: Boolean = true
 
           override def tagSelfForGpu(): Unit = {
-            if (!this.conf.isIcebergEnabled) {
-              willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
-                  s"${RapidsConf.ENABLE_ICEBERG} to true")
-            }
-
-            if (!this.conf.isIcebergReadEnabled) {
-              willNotWorkOnGpu("Iceberg input has been disabled. To enable set " +
-                  s"${RapidsConf.ENABLE_ICEBERG_READ} to true")
-            }
-
-            FileFormatChecks.tag(this, a.readSchema(), IcebergFormatType, ReadFileOp)
-
-            Try {
-              GpuSparkScan.isMetadataScan(a)
-            } match {
-              case Success(true) => willNotWorkOnGpu("scan is a metadata scan")
-              case Failure(e) => willNotWorkOnGpu(s"error examining CPU Iceberg scan: $e")
-              case _ =>
-            }
-
-            convertedScan match {
-              case Success(s) =>
-                if (s.hasNestedType) {
-                  willNotWorkOnGpu("Iceberg current doesn't support nested types")
-                }
-              case Failure(e) => willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
-            }
+            GpuSparkScan.tagForGpu(this, convertedScan)
           }
 
           override def convertToGpu(): GpuScan = convertedScan.get
         },
-        "Iceberg scan",
-        ClassTag(cpuIcebergScanClass)
-      )
+        "Iceberg batch query scan",
+        ClassTag(cpuBatchQueryScanClass)
+      ),
+      new ScanRule[Scan](
+        (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
+          private lazy val convertedScan: Try[GpuSparkScan] = GpuSparkScan.tryConvert(a, this.conf)
+
+          override def supportsRuntimeFilters: Boolean = true
+
+          override def tagSelfForGpu(): Unit = {
+            GpuSparkScan.tagForGpu(this, convertedScan)
+          }
+
+          override def convertToGpu(): GpuScan = convertedScan.get
+        },
+        "Iceberg copy on write scan",
+        ClassTag(cpuCopyOnWriteScanClass)
+      ),
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
   }
 

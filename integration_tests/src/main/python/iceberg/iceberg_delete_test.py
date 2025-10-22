@@ -91,6 +91,7 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
+
 @iceberg
 @ignore_order(local=True)
 def test_iceberg_delete_simple(spark_tmp_table_factory):

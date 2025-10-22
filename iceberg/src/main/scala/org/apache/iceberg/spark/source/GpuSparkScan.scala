@@ -17,9 +17,9 @@
 package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
+import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta}
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
 import org.apache.iceberg.{BaseMetadataTable, ScanTaskGroup}
 import org.apache.iceberg.spark.{GpuSparkReadConf, SparkReadConf}
@@ -91,6 +91,36 @@ object GpuSparkScan {
             s"Currently iceberg support only supports batch query scan, " +
               s"but got ${cpuScan.getClass.getName}")
       }
+    }
+  }
+
+  def tagForGpu(meta: ScanMeta[Scan], gpuScan: Try[GpuSparkScan]): Unit = {
+    if (!meta.conf.isIcebergEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG} to true")
+    }
+
+    if (!meta.conf.isIcebergReadEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG_READ} to true")
+    }
+
+    FileFormatChecks.tag(meta, meta.wrapped.readSchema(), IcebergFormatType, ReadFileOp)
+
+    Try {
+      GpuSparkScan.isMetadataScan(meta.wrapped)
+    } match {
+      case Success(true) => meta.willNotWorkOnGpu("scan is a metadata scan")
+      case Failure(e) => meta.willNotWorkOnGpu(s"error examining CPU Iceberg scan: $e")
+      case _ =>
+    }
+
+    gpuScan match {
+      case Success(s) =>
+        if (s.hasNestedType) {
+          meta.willNotWorkOnGpu("Iceberg current doesn't support nested types")
+        }
+      case Failure(e) => meta.willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
     }
   }
 }

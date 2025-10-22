@@ -60,7 +60,8 @@ trait IcebergProvider {
 object IcebergProvider {
   def apply(): IcebergProvider = ShimLoaderTemp.newIcebergProvider()
 
-  val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkPartitioningAwareScan"
+  val cpuBatchQueryScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
+  val cpuCopyOnWriteScanClassName: String = "org.apache.iceberg.spark.source.SparkCopyOnWriteScan"
 
   def isSupportedSparkVersion(): Boolean = {
     ShimLoader.getShimVersion match {

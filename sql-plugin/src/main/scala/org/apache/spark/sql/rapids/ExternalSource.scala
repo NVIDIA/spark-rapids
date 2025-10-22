@@ -60,8 +60,8 @@ object ExternalSource extends Logging {
 
   private lazy val hasIcebergJar = {
     IcebergProvider.isSupportedSparkVersion() &&
-      Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
-        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
+      Utils.classIsLoadable(IcebergProvider.cpuBatchQueryScanClassName) &&
+        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuBatchQueryScanClassName)).isSuccess
   }
 
   private lazy val icebergProvider = IcebergProvider()
