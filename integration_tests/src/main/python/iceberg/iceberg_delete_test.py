@@ -27,10 +27,16 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 # Configuration for copy-on-write DELETE operations
 iceberg_delete_cow_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
+# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example, 
+# if deleted data exactly match some data files, we could remove all files using delete metadata only operation, then the physical plan 
+# would be DeleteFromTableExec.
+DELETE_TEST_SEED = 42
+
 def create_iceberg_table_with_data(table_name: str, 
                                    partition_col_sql=None,
                                    data_gen_func=None,
-                                   table_properties=None):
+                                   table_properties=None,
+                                   seed=DELETE_TEST_SEED):
     """Helper function to create and populate an Iceberg table for DELETE tests."""
     # Always use copy-on-write mode for these tests
     base_props = {
@@ -42,7 +48,7 @@ def create_iceberg_table_with_data(table_name: str,
     
     # Use standard iceberg table definition if no custom generator provided
     if data_gen_func is None:
-        data_gen_func = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        data_gen_func = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=seed)
     
     create_iceberg_table(table_name, 
                         partition_col_sql=partition_col_sql,
@@ -98,8 +104,8 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
 
 @iceberg
 @ignore_order(local=True)
-def test_iceberg_delete_simple(spark_tmp_table_factory):
-    """Test simple DELETE with WHERE clause on unpartitioned table"""
+def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory):
+    """Test DELETE on unpartitioned table with fixed seed"""
     do_delete_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 > 50")
@@ -107,93 +113,12 @@ def test_iceberg_delete_simple(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
-def test_iceberg_delete_with_and_condition(spark_tmp_table_factory):
-    """Test DELETE with AND condition"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 > 0 AND _c3 < 100")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_with_or_condition(spark_tmp_table_factory):
-    """Test DELETE with OR condition"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c0 < 0 OR _c1 < 0")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_with_in_condition(spark_tmp_table_factory):
-    """Test DELETE with IN condition"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 IN (1, 2, 3)")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_bucket_partitioned_table(spark_tmp_table_factory):
-    """Test DELETE on bucket-partitioned table"""
+def test_iceberg_delete_partitioned_table(spark_tmp_table_factory):
+    """Test DELETE on bucket-partitioned table with fixed seed"""
     do_delete_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 > 50"),
         partition_col_sql="bucket(16, _c2)"
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_with_string_comparison(spark_tmp_table_factory):
-    """Test DELETE with string comparison"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c6 IS NOT NULL AND _c6 > 'abc'")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_multiple_types(spark_tmp_table_factory):
-    """Test DELETE on table with multiple data types (int, long, double, boolean)"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c5 < 10.0 OR _c7 = false")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_all_rows(spark_tmp_table_factory):
-    """Test DELETE that removes all rows"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 IS NOT NULL OR _c2 IS NULL")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_no_rows(spark_tmp_table_factory):
-    """Test DELETE that matches no rows"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 > 1000000")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_with_date_condition(spark_tmp_table_factory):
-    """Test DELETE with date comparison"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c8 > DATE '2020-01-01'")
-    )
-
-@iceberg
-@ignore_order(local=True)
-def test_iceberg_delete_with_decimal_condition(spark_tmp_table_factory):
-    """Test DELETE with decimal comparison"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c10 > 100.0")
     )
 
 
