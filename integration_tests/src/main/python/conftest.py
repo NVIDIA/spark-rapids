@@ -318,19 +318,18 @@ def pytest_runtest_setup(item):
 
     global _current_test_has_delta_marker
     _current_test_has_delta_marker = item.get_closest_marker('delta_lake') is not None
+    global _current_test_allow_non_gpu_delta_write
+    _current_test_allow_non_gpu_delta_write = False
     if _current_test_has_delta_marker:
-        global _current_test_allow_non_gpu_delta_write
         allow_non_gpu_delta_write_marker = item.get_closest_marker('allow_non_gpu_delta_write_if')
         if allow_non_gpu_delta_write_marker:
             cond = allow_non_gpu_delta_write_marker.args[0]
             if not isinstance(cond, bool):
-                raise ValueError("The first parameter of 'allow_non_gpu_delta_write_if' must be a Boolean.")
+                raise TypeError("The first parameter of 'allow_non_gpu_delta_write_if' must be a Boolean.")
             _current_test_allow_non_gpu_delta_write = cond
             if _current_test_allow_non_gpu_delta_write:
                 reason = allow_non_gpu_delta_write_marker.kwargs.get('reason', 'no reason provided')
                 warnings.warn(f'Delta Lake tests allowing non-GPU delta write operations: {reason}')
-        else:
-            _current_test_allow_non_gpu_delta_write = False
 
     if _current_test_has_delta_marker:
         if not item.config.getoption('delta_lake'):
