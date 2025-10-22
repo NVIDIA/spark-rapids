@@ -825,8 +825,6 @@ class AggHelper(
       aggregatedSpillable: SpillableColumnarBatch,
       advArgLens: Seq[Int],
       metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
-    val computeAggTime = metrics.computeAggTime
-    val opTime = metrics.opTime
     val postProcessed = NvtxRegistry.AGG_POST_PROCESS {
       val advCols = postProcessForAdvancedAggs(aggregatedSpillable, advArgLens)
       val proCb = closeOnExcept(advCols.flatten) { _ =>
