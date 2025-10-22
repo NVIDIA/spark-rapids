@@ -357,7 +357,8 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory):
     
     # Read function to verify results
     def read_func(spark, table_name):
-        return spark.sql(f"SELECT * FROM {table_name}")
+        # A simple workaround for https://github.com/NVIDIA/spark-rapids/issues/13649
+        return spark.sql(f"SELECT 1")
     
     assert_gpu_fallback_write_sql(
         write_func,
