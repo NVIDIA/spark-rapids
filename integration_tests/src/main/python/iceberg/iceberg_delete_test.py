@@ -79,12 +79,16 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
                                    data_gen_func, table_properties)
     
     # Execute DELETE on GPU
-    with_gpu_session(lambda spark: delete_sql_func(spark, gpu_table_name),
-                    conf=iceberg_delete_cow_enabled_conf)
+    def do_gpu_delete(spark):
+        delete_sql_func(spark, gpu_table_name)
+        
+    with_gpu_session(do_gpu_delete, conf=iceberg_delete_cow_enabled_conf)
     
     # Execute DELETE on CPU
-    with_cpu_session(lambda spark: delete_sql_func(spark, cpu_table_name),
-                    conf=iceberg_delete_cow_enabled_conf)
+    def do_cpu_delete(spark):
+        delete_sql_func(spark, cpu_table_name)
+        
+    with_cpu_session(do_cpu_delete, conf=iceberg_delete_cow_enabled_conf)
     
     # Compare results
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
@@ -205,7 +209,7 @@ def test_iceberg_delete_fallback_read_disabled(spark_tmp_table_factory):
     
     def do_delete(spark):
         spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
-        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2")
+        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2").collect()
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -227,7 +231,7 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory):
     
     def do_delete(spark):
         spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
-        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2")
+        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2").collect()
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -275,7 +279,7 @@ def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table
     
     def do_delete(spark):
         spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
-        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2")
+        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2").collect()
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -313,7 +317,7 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
     
     def do_delete(spark):
         spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
-        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2")
+        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2").collect()
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -354,7 +358,7 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory):
     
     def do_delete(spark):
         spark.sql(f"DELETE FROM {table_name} WHERE id > 1")
-        return spark.sql(f"SELECT * FROM {table_name} ORDER BY id")
+        return spark.sql(f"SELECT * FROM {table_name} ORDER BY id").collect()
     
     assert_gpu_fallback_collect(
         do_delete,
@@ -374,7 +378,7 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory):
     
     def do_delete(spark):
         spark.sql(f"DELETE FROM {table_name} WHERE _c2 > 50")
-        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2")
+        return spark.sql(f"SELECT * FROM {table_name} ORDER BY _c2").collect()
     
     assert_gpu_fallback_collect(
         do_delete,
