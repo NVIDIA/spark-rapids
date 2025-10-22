@@ -31,12 +31,12 @@ iceberg_delete_cow_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {}
 # if deleted data exactly match some data files, we could remove all files using delete metadata only operation, then the physical plan 
 # would be DeleteFromTableExec.
 DELETE_TEST_SEED = 42
+DELETE_TEST_SEED_OVERRIDE_REASON = "Ensure reproducible test data for DELETE operations"
 
 def create_iceberg_table_with_data(table_name: str, 
                                    partition_col_sql=None,
                                    data_gen_func=None,
-                                   table_properties=None,
-                                   seed=DELETE_TEST_SEED):
+                                   table_properties=None):
     """Helper function to create and populate an Iceberg table for DELETE tests."""
     # Always use copy-on-write mode for these tests
     base_props = {
@@ -48,7 +48,7 @@ def create_iceberg_table_with_data(table_name: str,
     
     # Use standard iceberg table definition if no custom generator provided
     if data_gen_func is None:
-        data_gen_func = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=seed)
+        data_gen_func = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
     
     create_iceberg_table(table_name, 
                         partition_col_sql=partition_col_sql,
@@ -104,6 +104,7 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
 
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory):
     """Test DELETE on unpartitioned table with fixed seed"""
     do_delete_test(
@@ -113,6 +114,7 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 def test_iceberg_delete_partitioned_table(spark_tmp_table_factory):
     """Test DELETE on bucket-partitioned table with fixed seed"""
     do_delete_test(
@@ -125,6 +127,7 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory):
 @allow_non_gpu("BatchScanExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 def test_iceberg_delete_fallback_read_disabled(spark_tmp_table_factory):
     """Test DELETE falls back when Iceberg read is disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
@@ -146,6 +149,7 @@ def test_iceberg_delete_fallback_read_disabled(spark_tmp_table_factory):
 @allow_non_gpu("ReplaceDataExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory):
     """Test DELETE falls back when Iceberg write is disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
@@ -167,6 +171,7 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory):
 @allow_non_gpu("ReplaceDataExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("truncate(5, _c6)", id="truncate"),
@@ -212,6 +217,7 @@ def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table
 @allow_non_gpu("ReplaceDataExec", "BatchScanExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory, file_format):
     """Test DELETE falls back with unsupported file formats (ORC, Avro)"""
@@ -249,6 +255,7 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
 @allow_non_gpu("ReplaceDataExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory):
     """Test DELETE falls back with nested types (arrays, structs) - currently unsupported"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
@@ -289,6 +296,7 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory):
 @allow_non_gpu("ReplaceDataExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory):
     """Test DELETE falls back when Iceberg is completely disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
