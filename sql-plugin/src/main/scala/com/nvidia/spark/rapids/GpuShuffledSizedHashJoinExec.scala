@@ -453,7 +453,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
         }
       } else {
         localMetrics(BIG_JOIN_COUNT) += 1
-        doBigBuildJoin(joinInfo, localGpuBatchSizeBytes,localIsSMJOptAllowed,
+        doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, localIsSMJOptAllowed,
           partitionNumAmplification, localMetrics)
       }
       val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)

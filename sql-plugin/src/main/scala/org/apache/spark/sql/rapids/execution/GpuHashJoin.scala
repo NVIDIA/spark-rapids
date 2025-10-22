@@ -336,8 +336,7 @@ object JoinBuildSideStats {
               }
             }
             val isDistinct = builtCount == buildKeys.numRows()
-            // TODO I need to test this heuristic.
-            val sortNeeded = maxSize > 10
+            val sortNeeded = maxSize >= 10000
             val magnificationFactor = buildKeys.numRows().toDouble / builtCount
             JoinBuildSideStats(magnificationFactor, isDistinct, sortNeeded)
           }
@@ -571,8 +570,8 @@ class HashJoinIterator(
             } else {
               rightKeys.innerDistinctJoinGatherMaps(leftKeys, compareNullsEqual).reverse
             }
-          ///case _: InnerLike if buildStats.sortNeeded =>
-            // TODO not done yet...
+          case _: InnerLike if buildStats.sortNeeded =>
+            SortMergeJoin.innerJoin(leftKeys, rightKeys, false, false, compareNullsEqual)
           case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
           case LeftSemi if buildStats.sortNeeded =>
             Array(SortMergeJoin.leftSemiJoin(leftKeys, rightKeys, false, false, compareNullsEqual))

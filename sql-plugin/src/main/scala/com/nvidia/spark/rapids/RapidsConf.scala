@@ -3045,7 +3045,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val bucketJoinIoPrefetch: Boolean = get(BUCKET_JOIN_IO_PREFETCH)
 
-  lazy val isSMJOptimiztionAllowed:Boolean = get(ALLOW_SORT_MERGE_JOIN_OPTIMIZATION)
+  lazy val isOptimizationAllowed:Boolean = get(ALLOW_SORT_MERGE_JOIN_OPTIMIZATION)
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
 
