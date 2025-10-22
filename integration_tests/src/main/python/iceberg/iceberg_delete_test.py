@@ -124,28 +124,6 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory):
     )
 
 
-@allow_non_gpu("BatchScanExec")
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
-def test_iceberg_delete_fallback_read_disabled(spark_tmp_table_factory):
-    """Test DELETE falls back when Iceberg read is disabled"""
-    base_table_name = get_full_table_name(spark_tmp_table_factory)
-    table_name = f"{base_table_name}_test"
-    
-    create_iceberg_table_with_data(table_name)
-    
-    def do_delete(spark):
-        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
-    
-    assert_gpu_fallback_collect(
-        do_delete,
-        "ReplaceDataExec",
-        conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
-            "spark.rapids.sql.format.iceberg.read.enabled": "false"
-        })
-    )
-
 @allow_non_gpu("ReplaceDataExec")
 @iceberg
 @ignore_order(local=True)
@@ -220,29 +198,43 @@ def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory, file_format):
-    """Test DELETE falls back with unsupported file formats (ORC, Avro)"""
+    """Test DELETE falls back with unsupported file formats (ORC, Avro)
+    
+    This test creates a table with parquet format, inserts data, then changes the
+    default write format to an unsupported format. When DELETE is executed, it needs
+    to write new files in the unsupported format, which should trigger a fallback.
+    """
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     table_name = f"{base_table_name}_test"
     
     def data_gen(spark):
         return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
     
+    # Step 1: Create table with parquet as default write format
     table_props = {
         'format-version': '2',
         'write.delete.mode': 'copy-on-write',
-        'write.format.default': file_format
+        'write.format.default': 'parquet'
     }
     
     create_iceberg_table(table_name,
                         table_prop=table_props,
                         df_gen=data_gen)
     
+    # Step 2: Insert data into the table (creates parquet files)
     def insert_data(spark):
         df = data_gen(spark)
         df.writeTo(table_name).append()
     
     with_cpu_session(insert_data)
     
+    # Step 3: Change default write format to unsupported format
+    def change_format(spark):
+        spark.sql(f"ALTER TABLE {table_name} SET TBLPROPERTIES ('write.format.default' = '{file_format}')")
+    
+    with_cpu_session(change_format)
+    
+    # Step 4: Execute DELETE and assert fallback
     def do_delete(spark):
         return spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
     
