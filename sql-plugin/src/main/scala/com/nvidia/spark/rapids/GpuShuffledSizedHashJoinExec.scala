@@ -21,6 +21,7 @@ import scala.collection.{mutable, BitSet}
 import ai.rapids.cudf.{ContiguousTable, HostMemoryBuffer}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuShuffledSizedHashJoinExec.JoinInfo
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -507,7 +508,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       GpuColumnVector.emptyBatchFromTypes(info.exprs.buildTypes)
     }
     val spillableBuiltBatch = withResource(batch) { batch =>
-      assert(!buildIter.hasNext, "build side should have a single batch")
+      assertInTests(!buildIter.hasNext, "build side should have a single batch")
       LazySpillableColumnarBatch(batch, "built")
     }
     createJoinIterator(info, spillableBuiltBatch, lazyStream, gpuBatchSizeBytes, isSMLOptAllowed,
@@ -926,7 +927,7 @@ object GpuShuffledAsymmetricHashJoinExec {
             val (streamRows, streamSize) =
               fetchTargetSize(streamIter, streamQueue, gpuBatchSizeBytes)
             if (streamRows <= Int.MaxValue && streamSize <= gpuBatchSizeBytes) {
-              assert(!streamIter.hasNext, "stream side not exhausted")
+              assertInTests(!streamIter.hasNext, "stream side not exhausted")
               // cannot filter out the nulls on the stream-side since they need to be
               // preserved in the outer join
               val streamBatchIter = new GpuCoalesceIterator(
@@ -944,7 +945,7 @@ object GpuShuffledAsymmetricHashJoinExec {
               if (streamBatchIter.hasNext) {
                 val streamBatch = streamBatchIter.next()
                 val singleStreamIter = new SingleGpuColumnarBatchIterator(streamBatch)
-                assert(!streamBatchIter.hasNext, "stream side not exhausted")
+                assertInTests(!streamBatchIter.hasNext, "stream side not exhausted")
                 val streamStats = JoinBuildSideStats.fromBatch(streamBatch, allowSorted,
                   exprs.boundStreamKeys)
                 if (buildStats.streamMagnificationFactor <
@@ -1578,7 +1579,7 @@ class StreamSidePartitioner(
   def hasInputBatches: Boolean = iter.hasNext
 
   def partitionNextBatch(): Unit = {
-    assert(partitions.forall(_.getTotalSize == 0), "leftover partitions from previous batch")
+    assertInTests(partitions.forall(_.getTotalSize == 0), "leftover partitions from previous batch")
     partitionBatch(iter.next)
   }
 

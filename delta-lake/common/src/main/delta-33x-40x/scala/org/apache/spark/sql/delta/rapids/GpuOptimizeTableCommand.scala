@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids.delta33x
+package org.apache.spark.sql.delta.rapids
 
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
