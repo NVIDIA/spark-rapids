@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
+from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect, assert_gpu_fallback_write_sql
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list)
@@ -205,42 +205,56 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
     to write new files in the unsupported format, which should trigger a fallback.
     """
     base_table_name = get_full_table_name(spark_tmp_table_factory)
-    table_name = f"{base_table_name}_test"
     
     def data_gen(spark):
         return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
     
-    # Step 1: Create table with parquet as default write format
-    table_props = {
-        'format-version': '2',
-        'write.delete.mode': 'copy-on-write',
-        'write.format.default': 'parquet'
-    }
+    # Phase 1: Initialize tables with data (separate for CPU and GPU)
+    def init_table(table_name):
+        # Step 1: Create table with parquet as default write format
+        table_props = {
+            'format-version': '2',
+            'write.delete.mode': 'copy-on-write',
+            'write.format.default': 'parquet'
+        }
+        
+        create_iceberg_table(table_name,
+                            table_prop=table_props,
+                            df_gen=data_gen)
+        
+        # Step 2: Insert data into the table (creates parquet files)
+        def insert_data(spark):
+            df = data_gen(spark)
+            df.writeTo(table_name).append()
+        
+        with_cpu_session(insert_data)
+        
+        # Step 3: Change default write format to unsupported format
+        def change_format(spark):
+            spark.sql(f"ALTER TABLE {table_name} SET TBLPROPERTIES ('write.format.default' = '{file_format}')")
+        
+        with_cpu_session(change_format)
     
-    create_iceberg_table(table_name,
-                        table_prop=table_props,
-                        df_gen=data_gen)
+    # Initialize both CPU and GPU tables
+    cpu_table_name = f'{base_table_name}_cpu'
+    gpu_table_name = f'{base_table_name}_gpu'
+    init_table(cpu_table_name)
+    init_table(gpu_table_name)
     
-    # Step 2: Insert data into the table (creates parquet files)
-    def insert_data(spark):
-        df = data_gen(spark)
-        df.writeTo(table_name).append()
+    # Phase 2: DELETE operation (to be tested with fallback)
+    def write_func(spark, table_name):
+        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
     
-    with_cpu_session(insert_data)
+    # Read function to verify results
+    def read_func(spark, table_name):
+        # We should select 1 here to avoid throwing exception for unsupported file format
+        return spark.sql(f"SELECT 1")
     
-    # Step 3: Change default write format to unsupported format
-    def change_format(spark):
-        spark.sql(f"ALTER TABLE {table_name} SET TBLPROPERTIES ('write.format.default' = '{file_format}')")
-    
-    with_cpu_session(change_format)
-    
-    # Step 4: Execute DELETE and assert fallback
-    def do_delete(spark):
-        return spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
-    
-    assert_gpu_fallback_collect(
-        do_delete,
-        "ReplaceDataExec",
+    assert_gpu_fallback_write_sql(
+        write_func,
+        read_func,
+        base_table_name,
+        ["ReplaceDataExec"],
         conf=iceberg_delete_cow_enabled_conf
     )
 
