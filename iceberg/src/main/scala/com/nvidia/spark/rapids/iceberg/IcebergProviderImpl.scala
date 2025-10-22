@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.Try
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ReplaceDataExecMeta, ScanMeta, ScanRule, ShimReflectionUtils, StaticInvokeMeta, TargetSize, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
+import com.nvidia.spark.rapids.shims.ReplaceDataExecMeta
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.{GpuSparkScan, GpuSparkWrite}
 import org.apache.iceberg.spark.supportsCatalog
@@ -247,7 +248,26 @@ class IcebergProviderImpl extends IcebergProvider {
       GpuSparkWrite.convert(cpuExec.write))
   }
 
-  override def tagForGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): Unit = {
+  def tagForGpuPlan[P <: SparkPlan, M <: SparkPlanMeta[P]](cpuExec: P, meta: M): Unit = {
+    cpuExec match {
+      case replaceData: ReplaceDataExec =>
+        tagForGpu(replaceData, meta.asInstanceOf[ReplaceDataExecMeta])
+      case _ =>
+        meta.willNotWorkOnGpu(s"IcebergProviderImpl does not support ${cpuExec.getClass.getName}")
+    }
+  }
+
+  def convertToGpuPlan[P <: SparkPlan, M <: SparkPlanMeta[P]](cpuExec: P, meta: M): GpuExec = {
+    cpuExec match {
+      case replaceData: ReplaceDataExec =>
+        convertToGpu(replaceData, meta.asInstanceOf[ReplaceDataExecMeta])
+      case _ =>
+        throw new IllegalStateException(
+          s"IcebergProviderImpl does not support ${cpuExec.getClass.getName}")
+    }
+  }
+
+  private def tagForGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): Unit = {
     if (!meta.conf.isIcebergEnabled) {
       meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_ICEBERG} to true")
@@ -263,7 +283,7 @@ class IcebergProviderImpl extends IcebergProvider {
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
   }
 
-  override def convertToGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): GpuExec = {
+  private def convertToGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): GpuExec = {
     var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
     if (!child.supportsColumnar) {
       child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))

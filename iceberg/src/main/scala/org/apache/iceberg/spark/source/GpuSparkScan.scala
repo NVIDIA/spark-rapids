@@ -88,7 +88,7 @@ object GpuSparkScan {
           new GpuSparkCopyOnWriteScan(s, rapidsConf, false)
         case _ =>
           throw new IllegalArgumentException(
-            s"Currently iceberg support only supports batch query scan, " +
+            s"Currently iceberg support only supports batch query scan and copy-on-write scan, " +
               s"but got ${cpuScan.getClass.getName}")
       }
     }

@@ -16,12 +16,13 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuExpression, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, ReplaceDataExecMeta, ScanRule, ShimLoader, ShimLoaderTemp, SparkShimVersion, StaticInvokeMeta, VersionUtils}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuExpression, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, ScanRule, ShimLoader, ShimLoaderTemp, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec}
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec}
 
 /** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
 trait IcebergProvider {
@@ -53,8 +54,8 @@ trait IcebergProvider {
   def tagForGpu(cpuExec: OverwriteByExpressionExec, meta: OverwriteByExpressionExecMeta): Unit
   def convertToGpu(cpuExec: OverwriteByExpressionExec, meta: OverwriteByExpressionExecMeta): GpuExec
 
-  def tagForGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): Unit
-  def convertToGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): GpuExec
+  def tagForGpuPlan[P <: SparkPlan, M <: SparkPlanMeta[P]](cpuExec: P, meta: M): Unit
+  def convertToGpuPlan[P <: SparkPlan, M <: SparkPlanMeta[P]](cpuExec: P, meta: M): GpuExec
 }
 
 object IcebergProvider {

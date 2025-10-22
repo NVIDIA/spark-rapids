@@ -31,7 +31,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExec, OverwriteByExpressionExecV1, OverwritePartitionsDynamicExec, ReplaceDataExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExec, OverwriteByExpressionExecV1, OverwritePartitionsDynamicExec}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -40,7 +40,7 @@ import org.apache.spark.util.Utils
  * spark-avro classes because `class not found` exception may throw if spark-avro does not
  * exist at runtime. Details see: https://github.com/NVIDIA/spark-rapids/issues/5648
  */
-object ExternalSource extends Logging {
+trait ExternalSourceBase extends Logging {
   val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
   lazy val hasSparkAvroJar = {
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
@@ -58,13 +58,13 @@ object ExternalSource extends Logging {
 
   lazy val avroProvider = ShimLoaderTemp.newAvroProvider()
 
-  private lazy val hasIcebergJar = {
+  lazy val hasIcebergJar = {
     IcebergProvider.isSupportedSparkVersion() &&
       Utils.classIsLoadable(IcebergProvider.cpuBatchQueryScanClassName) &&
         Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuBatchQueryScanClassName)).isSuccess
   }
 
-  private lazy val icebergProvider = IcebergProvider()
+  protected lazy val icebergProvider = IcebergProvider()
 
   private lazy val deltaProvider = DeltaProvider()
 
@@ -318,29 +318,6 @@ object ExternalSource extends Logging {
     }
   }
 
-  def tagForGpu(
-    cpuExec: ReplaceDataExec,
-    meta: ReplaceDataExecMeta): Unit = {
-    val writeClass = cpuExec.write.getClass
-
-    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.tagForGpu(cpuExec, meta)
-    } else {
-      meta.willNotWorkOnGpu(s"Replace data $writeClass is not supported")
-    }
-  }
-
-  def convertToGpu(
-    cpuExec: ReplaceDataExec,
-    meta: ReplaceDataExecMeta): GpuExec = {
-    val writeClass = cpuExec.write.getClass
-
-    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.convertToGpu(cpuExec, meta)
-    } else {
-      throw new IllegalStateException("No GPU conversion")
-    }
-  }
 
   def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
     if (hasIcebergJar) {
@@ -357,4 +334,7 @@ object ExternalSource extends Logging {
       throw new IllegalStateException("StaticInvoke is not supported")
     }
   }
+}
+
+object ExternalSource extends ExternalSourceBase {
 }
