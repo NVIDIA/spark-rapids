@@ -25,9 +25,7 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
-import com.nvidia.spark.rapids.RapidsHostColumnBuilder
-import com.nvidia.spark.rapids.TypeSig
+import com.nvidia.spark.rapids.{RapidsHostColumnBuilder, TypeConverter, TypeSig}
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnVector

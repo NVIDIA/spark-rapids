@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
 
   private val ref = GpuBoundReference(0, IntegerType, nullable = false)(ExprId(0), "a")
   private val attrs = AttributeReference(ref.name, ref.dataType, ref.nullable)()
-  private val gpuSorter = new GpuSorter(Seq(SortOrder(ref, Ascending)), Array(attrs))
+  private val gpuSorter = new GpuSorter(Seq(SortOrder(ref, Ascending)), Array(attrs), None)
   private val NUM_ROWS = 100
 
   private def buildBatch(ints: Seq[Int]): ColumnarBatch = {

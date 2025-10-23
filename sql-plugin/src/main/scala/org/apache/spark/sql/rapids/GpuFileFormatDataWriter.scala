@@ -383,7 +383,9 @@ class GpuDynamicPartitionDataSingleWriter(
 
   /** Extracts the partition values out of an input batch. */
   private lazy val getPartitionColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
-    val expressions = GpuBindReferences.bindGpuReferences(
+    // Using Internal method: this is a simple column projection in data writer context
+    // where metrics are not available (runs on executors after serialization).
+    val expressions = GpuBindReferences.bindGpuReferencesInternal(
       description.partitionColumns,
       description.allColumns)
     cb => {
@@ -392,7 +394,9 @@ class GpuDynamicPartitionDataSingleWriter(
   }
 
   private lazy val getBucketIdColumnAsBatch: ColumnarBatch => ColumnarBatch = {
-    val expressions = GpuBindReferences.bindGpuReferences(
+    // Using Internal method: this is a simple projection in data writer context
+    // where metrics are not available (runs on executors after serialization).
+    val expressions = GpuBindReferences.bindGpuReferencesInternal(
       Seq(description.bucketSpec.get.bucketIdExpression),
       description.allColumns)
     cb => {
@@ -423,7 +427,9 @@ class GpuDynamicPartitionDataSingleWriter(
 
   /** Extracts the output values of an input batch. */
   protected lazy val getDataColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
-    val expressions = GpuBindReferences.bindGpuReferences(
+    // Using Internal method: this is a simple column projection in data writer context
+    // where metrics are not available (runs on executors after serialization).
+    val expressions = GpuBindReferences.bindGpuReferencesInternal(
       description.dataColumns,
       description.allColumns)
     cb => {
@@ -782,7 +788,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
         }.getOrElse((NoopMetric, NoopMetric))
 
       val sortIter = GpuOutOfCoreSortIterator(pendingCbsIter ++ iterator,
-        new GpuSorter(spec.sortOrder, spec.output), GpuSortExec.targetSize(spec.batchSize),
+        new GpuSorter(spec.sortOrder, spec.output, None), GpuSortExec.targetSize(spec.batchSize),
         sortOpTime, sortMetric, NoopMetric, NoopMetric)
       while (sortIter.hasNext) {
         // write with sort-based sequential writer

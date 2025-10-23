@@ -493,14 +493,17 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     // UDF contains multiple columns.
     val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
+    val localMetrics = allMetrics
 
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
 
-      val boundDataRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs, childOutput)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs,
+        childOutput, localMetrics)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec,
+        childOutput, localMetrics)
       val batchProducer = new BatchProducer(
         new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
       val pyInputIterator = batchProducer.asIterator.map { batch =>

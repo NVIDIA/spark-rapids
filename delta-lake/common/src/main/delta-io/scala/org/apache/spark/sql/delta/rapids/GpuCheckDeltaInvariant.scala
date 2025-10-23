@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * This file was derived from CheckDeltaInvariant.scala in the
  * Delta Lake project at https://github.com/delta-io/delta.
@@ -54,9 +54,10 @@ case class GpuCheckDeltaInvariant(
   override def foldable: Boolean = false
   override def nullable: Boolean = true
 
-  def withBoundReferences(input: AttributeSeq): GpuCheckDeltaInvariant = {
+  def withBoundReferences(input: AttributeSeq, 
+    metrics: Map[String, GpuMetric]): GpuCheckDeltaInvariant = {
     GpuCheckDeltaInvariant(
-      GpuBindReferences.bindReference(child, input),
+      GpuBindReferences.bindReference(child, input, metrics),
       columnExtractors.map {
         case (column, extractor) => column -> BindReferences.bindReference(extractor, input)
       },

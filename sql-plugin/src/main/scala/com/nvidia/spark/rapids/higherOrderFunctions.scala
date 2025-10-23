@@ -174,7 +174,7 @@ trait GpuSimpleHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
     // knows how to create the `references` part of the batch that is passed down.
 
     val boundIntermediate = references.map {
-      case (_, att) => GpuBindReferences.bindGpuReference(att, input)
+      case (_, att) => GpuBindReferences.bindGpuReferenceInternal(att, input)
     }
 
     // Now get the full set of attributes that we will pass to `lambdaFunction` so any nested
@@ -656,7 +656,7 @@ trait GpuTwoArgumentHigherOrderFunction extends GpuHigherOrderFunction with GpuB
     // knows how to create the `references` part of the batch that is passed down.
 
     val boundIntermediate = references.map {
-      case (_, att) => GpuBindReferences.bindGpuReference(att, input)
+      case (_, att) => GpuBindReferences.bindGpuReferenceInternal(att, input)
     }
 
     // Now get the full set of attributes that we will pass to `lambdaFunction` so any nested
