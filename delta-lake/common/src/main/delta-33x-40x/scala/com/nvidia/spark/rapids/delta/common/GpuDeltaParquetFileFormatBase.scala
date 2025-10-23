@@ -48,7 +48,7 @@ import org.apache.spark.sql.types.{LongType, MetadataBuilder, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-class GpuDeltaParquetFileFormatCommon(
+class GpuDeltaParquetFileFormatBase(
     protocol: Protocol,
     metadata: Metadata,
     nullableRowTrackingFields: Boolean = false,
@@ -326,7 +326,7 @@ class DeltaMultiFileParquetPartitionReader(
   private val filesMap = files.map(f => f.filePath.toString() -> f).toMap
   private var file: PartitionedFile = null
   private var rowIndex: Long = 0L
-  private var rowIndexFilterOpt: Option[RapidsRowIndexFilterBase] = None
+  private var rowIndexFilterOpt: Option[RapidsRowIndexFilter] = None
 
   override def next(): Boolean = {
     reader.next()
@@ -371,7 +371,7 @@ object RapidsDeletionVectorUtils {
     batch: ColumnarBatch,
     rowIndex: Long,
     isRowDeletedColumnOpt: Option[ColumnMetadata],
-    rowIndexFilterOpt: Option[RapidsRowIndexFilterBase],
+    rowIndexFilterOpt: Option[RapidsRowIndexFilter],
     rowIndexColumnOpt: Option[ColumnMetadata],
     metrics: Map[String, GpuMetric]): ColumnarBatch = replaceBatch(rowIndex,
       batch,
@@ -440,7 +440,7 @@ object RapidsDeletionVectorUtils {
   def getRowIndexFilter(partitionedFile: PartitionedFile,
     isRowDeletedColumnOpt: Option[ColumnMetadata],
     serializableHadoopConf: SerializableConfiguration,
-    tablePath: Option[String]): Option[RapidsRowIndexFilterBase] = {
+    tablePath: Option[String]): Option[RapidsRowIndexFilter] = {
     isRowDeletedColumnOpt.map { _ =>
       val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED)
@@ -454,8 +454,8 @@ object RapidsDeletionVectorUtils {
         val dvStore = new HadoopFileSystemDVStore(serializableHadoopConf.value)
         val bitmap = StoredBitmap.create(dvDesc, new Path(tp)).load(dvStore)
         filterTypeOpt.get match {
-          case RowIndexFilterType.IF_CONTAINED => new DropMarkedRowsFilterBase(bitmap)
-          case RowIndexFilterType.IF_NOT_CONTAINED => new KeepMarkedRowsFilterBase(bitmap)
+          case RowIndexFilterType.IF_CONTAINED => new RapidsDropMarkedRowsFilter(bitmap)
+          case RowIndexFilterType.IF_NOT_CONTAINED => new RapidsKeepMarkedRowsFilter(bitmap)
           case unexpectedFilterType => throw new IllegalStateException(
             s"Unexpected row index filter type: ${unexpectedFilterType}")
         }
@@ -464,7 +464,7 @@ object RapidsDeletionVectorUtils {
           s"Both ${FILE_ROW_INDEX_FILTER_ID_ENCODED} and ${FILE_ROW_INDEX_FILTER_TYPE} " +
             "should either both have values or no values at all.")
       } else {
-        new KeepAllRowsFilterBase
+        RapidsKeepAllRowsFilter
       }
     }
   }
@@ -474,7 +474,7 @@ object RapidsDeletionVectorUtils {
     size: Int,
     rowIndexColumnOpt: Option[ColumnMetadata],
     isRowDeletedColumnOpt: Option[ColumnMetadata],
-    rowIndexFilterOpt: Option[RapidsRowIndexFilterBase],
+    rowIndexFilterOpt: Option[RapidsRowIndexFilter],
     metrics: Map[String, GpuMetric]): ColumnarBatch = {
 
     var startTime = System.nanoTime()

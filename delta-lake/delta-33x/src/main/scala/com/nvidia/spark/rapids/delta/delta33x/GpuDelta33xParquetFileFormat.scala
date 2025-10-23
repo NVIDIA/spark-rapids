@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
-import com.nvidia.spark.rapids.delta.common.GpuDeltaParquetFileFormatCommon
+import com.nvidia.spark.rapids.delta.common.GpuDeltaParquetFileFormatBase
 
 import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
 
@@ -27,7 +27,7 @@ case class GpuDelta33xParquetFileFormat(
     optimizationsEnabled: Boolean = true,
     tablePath: Option[String] = None,
     isCDCRead: Boolean = false
-  ) extends GpuDeltaParquetFileFormatCommon(
+  ) extends GpuDeltaParquetFileFormatBase(
     protocol,
     metadata,
     nullableRowTrackingFields,

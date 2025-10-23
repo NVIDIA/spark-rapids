@@ -27,11 +27,15 @@ import org.apache.spark.sql.delta.deletionvectors.{RoaringBitmapArray, StoredBit
 import org.apache.spark.sql.delta.storage.dv.HadoopFileSystemDVStore
 import org.apache.spark.sql.types.{ByteType, LongType}
 
-trait RapidsRowIndexFilterBase {
+trait RapidsRowIndexFilter {
   def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector
 }
 
-class KeepMarkedRowsFilterBase(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilterBase {
+/**
+ * This creates a Rapids filter to create a skip_row column that will keep all the rows marked
+ * in the bitmap. It's the inverse of RapidsDropMarkedRowsFilter
+ */
+final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
   override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
     val markedRowIndices = bitmap.toArray
     val containsMarkedRows =
@@ -48,7 +52,11 @@ class KeepMarkedRowsFilterBase(bitmap: RoaringBitmapArray) extends RapidsRowInde
   }
 }
 
-class DropMarkedRowsFilterBase(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilterBase {
+/**
+ * This creates a Rapids filter to create a skip_row column that will drop all the rows marked
+ * in the bitmap.
+ */
+final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
   override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
     val markedRowIndices = bitmap.toArray
     val containsMarkedRows =
@@ -62,7 +70,7 @@ class DropMarkedRowsFilterBase(bitmap: RoaringBitmapArray) extends RapidsRowInde
   }
 }
 
-class DropAllRowsFilterBase extends RapidsRowIndexFilterBase {
+object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
   override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
     withResource(Scalar.fromByte(1.toByte)) { one =>
       GpuColumnVector.from(one, rowIndexCol.getRowCount.toInt, ByteType)
@@ -70,7 +78,7 @@ class DropAllRowsFilterBase extends RapidsRowIndexFilterBase {
   }
 }
 
-class KeepAllRowsFilterBase extends RapidsRowIndexFilterBase {
+object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
   override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
     withResource(Scalar.fromByte(0.toByte)) { zero =>
       GpuColumnVector.from(zero, rowIndexCol.getRowCount.toInt, ByteType)
@@ -78,14 +86,36 @@ class KeepAllRowsFilterBase extends RapidsRowIndexFilterBase {
   }
 }
 
-trait RowIndexMarkingFiltersBuilderBase {
-  def getFilterForEmptyDeletionVector(): RapidsRowIndexFilterBase
-  def getFilterForNonEmptyDeletionVector(bitmap: RoaringBitmapArray): RapidsRowIndexFilterBase
+/**
+ * The object class used to create the keep marked rows filter
+ */
+object RapidsKeepMarkedRowsFilter extends RapidsRowIndexMarkingFiltersBuilder {
+
+  override def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter = RapidsDropAllRowsFilter
+
+  override def getFilterForNonEmptyDeletionVector(
+      bitmap: RoaringBitmapArray): RapidsRowIndexFilter = new RapidsKeepMarkedRowsFilter(bitmap)
+}
+
+/**
+ * The object class used to create the drop marked rows filter
+ */
+object RapidsDropMarkedRowsFilter extends RapidsRowIndexMarkingFiltersBuilder {
+
+  override def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter = RapidsKeepAllRowsFilter
+
+  override def getFilterForNonEmptyDeletionVector(
+      bitmap: RoaringBitmapArray): RapidsRowIndexFilter = new RapidsDropMarkedRowsFilter(bitmap)
+}
+
+trait RapidsRowIndexMarkingFiltersBuilder {
+  def getFilterForEmptyDeletionVector(): RapidsRowIndexFilter
+  def getFilterForNonEmptyDeletionVector(bitmap: RoaringBitmapArray): RapidsRowIndexFilter
 
   def createInstance(
       deletionVector: DeletionVectorDescriptor,
       hadoopConf: Configuration,
-      tablePath: Option[Path]): RapidsRowIndexFilterBase = {
+      tablePath: Option[Path]): RapidsRowIndexFilter = {
     if (deletionVector.cardinality == 0) {
       getFilterForEmptyDeletionVector()
     } else {
@@ -97,3 +127,4 @@ trait RowIndexMarkingFiltersBuilderBase {
     }
   }
 }
+
