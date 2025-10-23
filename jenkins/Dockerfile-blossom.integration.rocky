@@ -47,6 +47,7 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
 ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
 ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS="yes"
 RUN conda init && conda install -n base -c conda-forge mamba
+ENV MAMBA_EXTRACT_THREADS=1
 
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
