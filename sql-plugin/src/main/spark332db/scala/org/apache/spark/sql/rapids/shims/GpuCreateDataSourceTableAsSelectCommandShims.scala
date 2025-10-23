@@ -37,7 +37,6 @@ package org.apache.spark.sql.rapids.shims
 
 import java.net.URI
 
-import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.GpuDataWritingCommand
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
@@ -57,12 +56,12 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     outputColumnNames: Seq[String],
     origProvider: Class[_])
   extends LeafRunnableCommand {
-  assertInTests(query.resolved)
+  assert(query.resolved)
   override def innerChildren: Seq[LogicalPlan] = query :: Nil
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
-    assertInTests(table.tableType != CatalogTableType.VIEW)
-    assertInTests(table.provider.isDefined)
+    assert(table.tableType != CatalogTableType.VIEW)
+    assert(table.provider.isDefined)
 
     val sessionState = sparkSession.sessionState
     val db = table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase)

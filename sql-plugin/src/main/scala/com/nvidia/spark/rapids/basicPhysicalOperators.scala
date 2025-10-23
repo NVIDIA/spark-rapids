@@ -23,7 +23,6 @@ import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.DataTypeUtils.hasOffset
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.PreProjectSplitIterator.KEY_NUM_PRE_SPLIT
@@ -1403,14 +1402,14 @@ private[rapids] class GpuRangeIterator(
           }
         }
       }
-      assertInTests(iter.hasNext)
+      assert(iter.hasNext)
       closeOnExcept(iter.next()) { batch =>
         // This "iter" returned from the "withRetry" block above has only one batch,
         // because the split function "reduceRowsNumberByHalf" returns a Seq with a single
         // element inside.
         // By doing this, we can pull out this single batch directly without maintaining
         // this extra `iter` for the next loop.
-        assertInTests(iter.isEmpty)
+        assert(iter.isEmpty)
         val endInclusive = start + ((batch.numRows() - 1) * step)
         currentPosition = endInclusive + step
         if (currentPosition < endInclusive ^ step < 0) {
