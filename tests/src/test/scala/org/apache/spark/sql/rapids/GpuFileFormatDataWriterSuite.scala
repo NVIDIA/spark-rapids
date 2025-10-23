@@ -16,7 +16,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, TableWriter}
-import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, RapidsConf, ScalableTaskCompletion}
+import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, NvtxId, NvtxRegistry, RapidsConf, ScalableTaskCompletion}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM}
 import com.nvidia.spark.rapids.spill.SpillFramework
@@ -53,15 +53,18 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
   class NoTransformColumnarOutputWriter(
       context: TaskAttemptContext,
       dataSchema: StructType,
-      rangeName: String,
+      nvtxId: NvtxId,
       includeRetry: Boolean)
         extends ColumnarOutputWriter(
           context,
           dataSchema,
-          rangeName,
+          nvtxId,
           includeRetry,
           mockJobDescription.statsTrackers.map(_.newTaskInstance()),
-          None) {
+          None,
+          false,
+          false,
+          mockJobDescription.fileIO) {
 
     // this writer (for tests) doesn't do anything and passes through the
     // batch passed to it when asked to transform, which is done to
@@ -93,9 +96,9 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     mockOutputWriter = spy(new NoTransformColumnarOutputWriter(
       mockTaskAttemptContext,
       types,
-      "",
+      NvtxRegistry.FILE_FORMAT_WRITE,
       includeRetry))
-    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any(), any()))
+    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any(), any(), any()))
         .thenAnswer(_ => mockOutputWriter)
   }
 

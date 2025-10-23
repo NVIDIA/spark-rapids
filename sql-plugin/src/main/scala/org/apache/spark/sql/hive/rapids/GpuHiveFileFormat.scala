@@ -24,6 +24,7 @@ import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims.BucketingUtilsShim
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
@@ -217,9 +218,10 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
           dataSchema: StructType,
           context: TaskAttemptContext,
           statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-          debugOutputPath: Option[String]): ColumnarOutputWriter = {
+          debugOutputPath: Option[String],
+          fileIO: RapidsFileIO): ColumnarOutputWriter = {
         new GpuHiveParquetWriter(path, dataSchema, context, compressionType, statsTrackers,
-          debugOutputPath)
+          debugOutputPath, fileIO)
       }
     }
   }
@@ -228,9 +230,10 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
 class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
     context: TaskAttemptContext, compType: CompressionType,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-    debugOutputPath: Option[String])
-  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true, statsTrackers,
-    debugOutputPath) {
+    debugOutputPath: Option[String],
+    fileIO: RapidsFileIO)
+  extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
+    statsTrackers, debugOutputPath, false, false, fileIO) {
 
   override protected val tableWriter: CudfTableWriter = {
     val optionsBuilder = SchemaUtils
@@ -260,8 +263,9 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging with Seriali
                                dataSchema: StructType,
                                context: TaskAttemptContext,
           statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-                               debugOutputPath: Option[String]): ColumnarOutputWriter = {
-        new GpuHiveTextWriter(path, dataSchema, context, statsTrackers, debugOutputPath)
+                               debugOutputPath: Option[String],
+        fileIO: RapidsFileIO): ColumnarOutputWriter = {
+        new GpuHiveTextWriter(path, dataSchema, context, statsTrackers, debugOutputPath, fileIO)
       }
     }
   }
@@ -271,9 +275,10 @@ class GpuHiveTextWriter(override val path: String,
                         dataSchema: StructType,
                         context: TaskAttemptContext,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
-                        debugOutputPath: Option[String])
-  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false, statsTrackers,
-    debugOutputPath) {
+                        debugOutputPath: Option[String],
+    fileIO: RapidsFileIO)
+  extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, false,
+    statsTrackers, debugOutputPath, false, false, fileIO) {
 
   /**
    * This reformats columns, to iron out inconsistencies between

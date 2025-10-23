@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.Locale
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.JSONUtils
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
@@ -48,7 +47,7 @@ case class GpuJsonToStructs(
   private lazy val cudfOptions = GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    withResource(new NvtxRange("GpuJsonToStructs", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.JSON_TO_STRUCTS {
       schema match {
         case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase, cudfOptions)
         case struct: StructType =>

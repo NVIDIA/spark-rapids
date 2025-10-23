@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{NvtxColor, Table}
+import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -75,7 +75,7 @@ class GpuBaseLimitIterator(
     }
 
     // Here 0 <= remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
-    withResource(new NvtxWithMetrics("limit and offset", NvtxColor.ORANGE, opTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.LIMIT_AND_OFFSET, opTime) {
       var result: ColumnarBatch = null
       // limit < 0 (limit == -1) denotes there is no limitation, so when
       // (remainingOffset == 0 && (remainingLimit >= batch.numRows() || limit < 0)) is true,
@@ -203,7 +203,7 @@ object GpuTopN {
   private[this] def concatAndClose(a: ColumnarBatch,
       b: ColumnarBatch,
       concatTime: GpuMetric): ColumnarBatch = {
-    withResource(new NvtxWithMetrics("readNConcat", NvtxColor.CYAN, concatTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.READ_N_CONCAT, concatTime) {
       val dataTypes = GpuColumnVector.extractTypes(b)
       val aTable = withResource(a) { a =>
         GpuColumnVector.from(a)
@@ -289,7 +289,7 @@ object GpuTopN {
             SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           }
           withRetry(inputScb, splitSpillableInHalfByRows) { attempt =>
-            withResource(new NvtxWithMetrics("TOP N", NvtxColor.ORANGE, opTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.TOP_N, opTime) {
               val inputCb = attempt.getColumnarBatch()
               if (pending.isEmpty) {
                 sortAndTakeNClose(limit, sorter, inputCb, sortTime)
@@ -324,7 +324,7 @@ object GpuTopN {
         pending = None
         val ret = if (offset > 0) {
           val retCb = RmmRapidsRetryIterator.withRetryNoSplit(tempScb) { _ =>
-            withResource(new NvtxWithMetrics("TOP N Offset", NvtxColor.ORANGE, opTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.TOP_N_OFFSET, opTime) {
               withResource(tempScb.getColumnarBatch()) { tempCb =>
                 applyOffset(tempCb, offset)
               }

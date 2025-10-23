@@ -355,7 +355,7 @@ object RapidsConf extends Logging {
       // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
       .internal()
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
       .doc("The maximum amount of off heap memory that the plugin will use. " +
@@ -2776,9 +2776,11 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     oomInjectionFilter = OomInjectionType.CPU_OR_GPU,
     withSplit = false)
 
-  // a java property to tell whether we need to check for oom injection configs in SQLConf
-  // only if we are running tests. This is set to true in
-  // integration_tests/run_pyspark_from_build.sh
+  // A java property that is set to true when we are running in tests.
+  // We will use this property to check for oom injection configs in SQLConf, and to turn on
+  // the rapids-specific assertInTests function, only if we are running tests. 
+  // This is set to true in integration_tests/run_pyspark_from_build.sh, and in the 
+  // pom for both scalatest and javatest.
   lazy val runningTests = {
     val res = System.getProperty("com.nvidia.spark.rapids.runningTests", "false")
       .toLowerCase.toBoolean

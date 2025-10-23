@@ -765,11 +765,11 @@
                 <spark.version>${spark400.version}</spark.version>
                 <spark.test.version>${spark400.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-40x</module>
             </modules>
         </profile>
         <profile>
@@ -890,6 +890,7 @@
 
     <properties>
         <delta33x.version>3.3.0</delta33x.version>
+        <delta40x.version>4.0.0</delta40x.version>
         <!-- start dyn.shim properties -->
         <!--  TODO: Will remove 330db from the execluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
 	<dyn.shim.excluded.releases>330db</dyn.shim.excluded.releases>
@@ -1410,6 +1411,11 @@ This will force full Scala code rebuild in downstream modules.
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>2.12.4</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <com.nvidia.spark.rapids.runningTests>true</com.nvidia.spark.rapids.runningTests>
+                        </systemPropertyVariables>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -1525,6 +1531,7 @@ This will force full Scala code rebuild in downstream modules.
                         <argLine>${argLine} -ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
+                            <com.nvidia.spark.rapids.runningTests>true</com.nvidia.spark.rapids.runningTests>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
                             <ai.rapids.refcount.debug>true</ai.rapids.refcount.debug>
                             <java.awt.headless>true</java.awt.headless>

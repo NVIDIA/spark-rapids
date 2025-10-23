@@ -1084,7 +1084,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
    */
   protected def readPartFile(ctx: OrcPartitionReaderContext, stripes: Seq[OrcOutputStripe]):
       (SpillableHostBuffer, Long) = {
-    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.ORC_BUFFER_FILE_SPLIT {
       if (stripes.isEmpty) {
         return (null, 0L)
       }
@@ -1224,7 +1224,7 @@ class GpuOrcPartitionReader(
   }
 
   private def readBatches(): Iterator[ColumnarBatch] = {
-    withResource(new NvtxRange("ORC readBatches", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.ORC_READ_BATCHES {
       val currentStripes = populateCurrentBlockChunk(ctx.blockIterator, maxReadBatchSizeRows,
         maxReadBatchSizeBytes)
       if (ctx.updatedReadSchema.isEmpty) {
@@ -2867,8 +2867,7 @@ object MakeOrcTableProducer extends Logging {
       val table = withResource(buffer) { _ =>
         try {
           RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-            withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-              metrics(GPU_DECODE_TIME))) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.ORC_DECODE, metrics(GPU_DECODE_TIME)) {
               Table.readORC(parseOpts, buffer, offset, bufferSize)
             }
           }
@@ -2925,8 +2924,7 @@ case class OrcTableReader(
   override def hasNext: Boolean = reader.hasNext
 
   override def next: Table = {
-    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-      metrics(GPU_DECODE_TIME))) { _ =>
+    val table = NvtxIdWithMetrics(NvtxRegistry.ORC_DECODE, metrics(GPU_DECODE_TIME)) {
       try {
         reader.readChunk()
       } catch {

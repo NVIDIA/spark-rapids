@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.NvtxRegistry
 
 import org.apache.spark.{MapOutputTracker, SparkEnv, TaskContext}
 import org.apache.spark.serializer.SerializerManager
@@ -59,7 +58,7 @@ class RapidsShuffleThreadedReader[K, C] (
       numReaderThreads = numReaderThreads) {
 
   override protected def getMapSizes: GetMapSizesResult = {
-    withResource(new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)) { _ =>
+    NvtxRegistry.GET_MAP_SIZES_BY_EXEC_ID {
       if (handle.dependency.shuffleMergeEnabled) {
         val res = mapOutputTracker.getPushBasedShuffleMapSizesByExecutorId(
           handle.shuffleId, startMapIndex, endMapIndex, startPartition, endPartition)

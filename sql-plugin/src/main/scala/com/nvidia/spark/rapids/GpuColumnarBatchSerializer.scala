@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode
@@ -103,7 +103,7 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
       None
     } else {
       if (nextHeader.isEmpty) {
-        withResource(new NvtxRange("Read Header", NvtxColor.YELLOW)) { _ =>
+        NvtxRegistry.READ_HEADER {
           val header = new SerializedTableHeader(dIn)
           if (header.wasInitialized) {
             nextHeader = Some(header)
@@ -119,7 +119,7 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   }
 
   private def readNextBatch(): ColumnarBatch = deserTime.ns {
-    withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.READ_BATCH {
       val header = nextHeader.get
       nextHeader = None
       if (header.getNumColumns > 0) {
@@ -236,18 +236,12 @@ private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]
           }
 
           dataSize += JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows)
-          val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
-          try {
+          NvtxRegistry.COLUMNAR_BATCH_SERIALIZE {
             JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)
-          } finally {
-            range.close()
           }
         } else {
-          val range = new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)
-          try {
+          NvtxRegistry.COLUMNAR_BATCH_SERIALIZE_ROW_ONLY {
             JCudfSerialization.writeRowsToStream(dOut, numRows)
-          } finally {
-            range.close()
           }
         }
       } finally {
@@ -440,7 +434,7 @@ private class KudoSerializerInstance(
             Cuda.DEFAULT_STREAM.sync()
           }
 
-          withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
+          NvtxRegistry.SERIALIZE_BATCH {
             val writeInput = WriteInput.builder
               .setColumns(columns)
               .setOutputStream(out)
@@ -459,7 +453,7 @@ private class KudoSerializerInstance(
             }
           }
         } else {
-          withResource(new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)) { _ =>
+          NvtxRegistry.SERIALIZE_ROW_ONLY_BATCH {
             dataSize += KudoSerializer.writeRowCountToStream(out, numRows)
           }
         }
@@ -732,7 +726,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
       None
     } else {
       if (nextHeader.isEmpty) {
-        withResource(new NvtxRange("Read Header", NvtxColor.YELLOW)) { _ =>
+        NvtxRegistry.READ_HEADER {
           val header = Option(KudoTableHeader.readFrom(dIn).orElse(null))
           if (header.isDefined) {
             nextHeader = header
@@ -758,7 +752,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   }
 
   private def readNextBatch(): ColumnarBatch = deserTime.ns {
-    withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.READ_BATCH {
       val header = nextHeader.get
       nextHeader = None
       if (header.getNumColumns > 0) {

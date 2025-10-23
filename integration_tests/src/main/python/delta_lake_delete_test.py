@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from delta_lake_utils import *
 from marks import *
@@ -42,18 +42,22 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
                                     enable_deletion_vectors,
                                     partition_columns=None,
                                     conf=delta_delete_enabled_conf,
-                                    skip_sql_result_check=False):
+                                    skip_sql_result_check=False, expect_write=True):
     def read_data(spark, path):
         read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
         df = read_func(spark, path)
         return df.sort(df.columns)
+
     def checker(data_path, do_delete):
         cpu_path = data_path + "/CPU"
         gpu_path = data_path + "/GPU"
         if not skip_sql_result_check:
             # compare resulting dataframe from the delete operation (some older Spark versions return empty here)
             cpu_result = with_cpu_session(lambda spark: do_delete(spark, cpu_path).collect(), conf=conf)
-            gpu_result = with_gpu_session(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
+            if expect_write:
+                gpu_result = assert_rapids_delta_write(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
+            else:
+                gpu_result = with_gpu_session(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
             assert_equal(cpu_result, gpu_result)
         # compare table data results, read both via CPU to make sure GPU write can be read by CPU
         cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).collect(), conf=conf)
@@ -296,7 +300,7 @@ def test_delta_delete_entire_table(spark_tmp_path, use_cdf, partition_columns, e
     skip_sql_result = is_databricks_runtime()
     assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, generate_dest_data,
                                     delete_sql, enable_deletion_vectors, partition_columns,
-                                    skip_sql_result_check=skip_sql_result)
+                                    skip_sql_result_check=skip_sql_result, expect_write=False)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -318,7 +322,7 @@ def test_delta_delete_partitions(spark_tmp_path, use_cdf, partition_columns, ena
     skip_sql_result = is_databricks_runtime()
     assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, generate_dest_data,
                                     delete_sql, enable_deletion_vectors, partition_columns,
-                                    skip_sql_result_check=skip_sql_result)
+                                    skip_sql_result_check=skip_sql_result, expect_write=False)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

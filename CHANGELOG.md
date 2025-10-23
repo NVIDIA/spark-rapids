@@ -1,5 +1,191 @@
 # Change log
-Generated on 2025-08-11
+Generated on 2025-10-21
+
+## Release 25.10
+
+### Features
+|||
+|:---|:---|
+|[#12821](https://github.com/NVIDIA/spark-rapids/issues/12821)|[FEA] Zero Conf - set spark.rapids.memory.gpu.allocSize based on memory type|
+|[#13503](https://github.com/NVIDIA/spark-rapids/issues/13503)|[FEA] Add integration test case to verify that falling back to cpu when insert into partitioned iceberg table with unsupported partition.|
+|[#13400](https://github.com/NVIDIA/spark-rapids/issues/13400)|[FEA] Add gpu iceberg rolling file writer|
+|[#13380](https://github.com/NVIDIA/spark-rapids/issues/13380)|[FEA] Add iceberg append data integration tests.|
+|[#12575](https://github.com/NVIDIA/spark-rapids/issues/12575)|[FEA][DV]  Support Parquet+DV Scan using PERFILE GpuParquetReader|
+|[#13418](https://github.com/NVIDIA/spark-rapids/issues/13418)|[FEA] Support Spark 4.0.1|
+|[#13378](https://github.com/NVIDIA/spark-rapids/issues/13378)|[FEA] Add support for iceberg data writer factory.|
+|[#13440](https://github.com/NVIDIA/spark-rapids/issues/13440)|[FEA] Use `RapidsFileIO` interface from `spark-rapids-jni`|
+|[#13376](https://github.com/NVIDIA/spark-rapids/issues/13376)|[FEA] Add support for iceberg spark write|
+|[#13394](https://github.com/NVIDIA/spark-rapids/issues/13394)|[FEA] Accelerate optimizing clustered tables|
+|[#13377](https://github.com/NVIDIA/spark-rapids/issues/13377)|[FEA] Add support for iceberg partitioner|
+|[#12553](https://github.com/NVIDIA/spark-rapids/issues/12553)|[FEA][Liquid] Accelerate writes to Clustered Tables|
+|[#12882](https://github.com/NVIDIA/spark-rapids/issues/12882)|[FEA] It would be nice if we support Asia/Shanghai timezone for orc file scan|
+|[#13379](https://github.com/NVIDIA/spark-rapids/issues/13379)|[FEA] Add support for iceberg parquet file writer.|
+|[#13403](https://github.com/NVIDIA/spark-rapids/issues/13403)|[FEA] Add DV read support without support for combining files|
+|[#12982](https://github.com/NVIDIA/spark-rapids/issues/12982)|[FEA] Support uuid|
+|[#12552](https://github.com/NVIDIA/spark-rapids/issues/12552)|[FEA] [Liquid] Accelerate reads from Clustered Tables|
+|[#13301](https://github.com/NVIDIA/spark-rapids/issues/13301)|[FEA] Setup integration tests against rest catalog for iceberg.|
+|[#11193](https://github.com/NVIDIA/spark-rapids/issues/11193)|[FEA] Support "Fail on error" for `parse_url`|
+|[#13012](https://github.com/NVIDIA/spark-rapids/issues/13012)|[FEA] Optimize command support for Delta IO|
+|[#7008](https://github.com/NVIDIA/spark-rapids/issues/7008)|[FEA] Validate ORC deflate (zlib) compression|
+
+### Performance
+|||
+|:---|:---|
+|[#13311](https://github.com/NVIDIA/spark-rapids/issues/13311)|[FEA] Explore alternative way to calculate M2 for stddev* and variance*|
+|[#13321](https://github.com/NVIDIA/spark-rapids/issues/13321)|Run NDS-H (TPC-H) SF100 locally on Delta 3.3.x|
+|[#12471](https://github.com/NVIDIA/spark-rapids/issues/12471)|[FEA] Zero Config - Figure out a good default for CPU memory limits|
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#13628](https://github.com/NVIDIA/spark-rapids/issues/13628)|[BUG] spark.rapids.memory.host.offHeapLimit doesn't play well with spark.memory.offHeap.size in Databricks|
+|[#13578](https://github.com/NVIDIA/spark-rapids/issues/13578)|[BUG] Query failure in InMemoryTableScan with AQE enabled for aggregation|
+|[#13554](https://github.com/NVIDIA/spark-rapids/issues/13554)|[BUG] iceberg-rest-catalog CI failed: Missing "org.apache.iceberg.rest.RESTCatalog"|
+|[#13312](https://github.com/NVIDIA/spark-rapids/issues/13312)|[BUG] zip_with test failures|
+|[#13513](https://github.com/NVIDIA/spark-rapids/issues/13513)|[BUG] Data mismatch when running a query with a filter against Delta table with DV|
+|[#13562](https://github.com/NVIDIA/spark-rapids/issues/13562)|[BUG] cuda13 spark-rapids fails executors when profiler is enabled|
+|[#12796](https://github.com/NVIDIA/spark-rapids/issues/12796)|[BUG] Delta CDF tests potentially use an incorrect read option|
+|[#13519](https://github.com/NVIDIA/spark-rapids/issues/13519)|[BUG] NDS run failed java.lang.NoClassDefFoundError: org/apache/spark/sql/delta/DeltaParquetFileFormat|
+|[#13553](https://github.com/NVIDIA/spark-rapids/issues/13553)|[BUG] iceberg_append_test failures due to IllegalArgumentException in pre_release|
+|[#13542](https://github.com/NVIDIA/spark-rapids/issues/13542)|[BUG] new op time collection has huge overhead when op fallback happens|
+|[#13535](https://github.com/NVIDIA/spark-rapids/issues/13535)|[BUG] iceberg_append_test failed Part of the plan is not columnar class org.apache.spark.sql.execution.SortExec|
+|[#13531](https://github.com/NVIDIA/spark-rapids/issues/13531)|[BUG] IncrementMetric expression causes ColumnarToRow fallback|
+|[#13514](https://github.com/NVIDIA/spark-rapids/issues/13514)|[BUG] MetricsEventLogValidationSuite failed: operator time metrics are less|
+|[#13505](https://github.com/NVIDIA/spark-rapids/issues/13505)|[BUG] iceberg_append_test case failed: BasicColumnarWriteJobStatsTracker has no safety check for Active SparkContext|
+|[#13445](https://github.com/NVIDIA/spark-rapids/issues/13445)|[BUG] com.nvidia.spark.rapids.jni.CpuRetryOOM: CPU OutOfMemory in performance test|
+|[#13449](https://github.com/NVIDIA/spark-rapids/issues/13449)|[BUG] Device memory allocation failure when running the delete command for Delta tables with deletion vector enabled|
+|[#13358](https://github.com/NVIDIA/spark-rapids/issues/13358)|[BUG] Failed to run IT on dataproc serverless with spark.executor.memoryOverhead|
+|[#13477](https://github.com/NVIDIA/spark-rapids/issues/13477)|[BUG] MetricsEventLogValidationSuite failed Total operator time exceed total executor run time intermittently|
+|[#13465](https://github.com/NVIDIA/spark-rapids/issues/13465)|[BUG] MetricsEventLogValidationSuite failed in spark400|
+|[#13458](https://github.com/NVIDIA/spark-rapids/issues/13458)|[BUG] [TEST] Optimization for unit test: Reduce TimeZonePerfSuite test time|
+|[#13457](https://github.com/NVIDIA/spark-rapids/issues/13457)|[BUG] delta_lake_liquid_clustering_test.test_delta_rtas_sql_liquid_clustering failed Part of the plan is not columnar class|
+|[#12883](https://github.com/NVIDIA/spark-rapids/issues/12883)|[BUG] HostAllocSuite failed split should not happen immediately after fallback on memory contention failed|
+|[#13455](https://github.com/NVIDIA/spark-rapids/issues/13455)|[BUG] CI integration test images fails build: Secondary flag is not valid for non-boolean flag|
+|[#13443](https://github.com/NVIDIA/spark-rapids/issues/13443)|[BUG] CI failed: could not initialize class com.databricks.sql.transaction.tahoe.DeltaValidation$|
+|[#13360](https://github.com/NVIDIA/spark-rapids/issues/13360)|[BUG] Column Support mismatch error with collect_list + JOIN when AQE is enabled|
+|[#13396](https://github.com/NVIDIA/spark-rapids/issues/13396)|[BUG] markdown link check failed dead link loan-performance-data.html|
+|[#13416](https://github.com/NVIDIA/spark-rapids/issues/13416)|[BUG] All IT join test and NDS test failed due to cudaErrorIllegalAddress an illegal memory access was encountered|
+|[#13198](https://github.com/NVIDIA/spark-rapids/issues/13198)|[BUG] all tasks are bigger than the total memory limit FAILED|
+|[#13370](https://github.com/NVIDIA/spark-rapids/issues/13370)|[BUG] liquid clustering should be triggered after enabled for testing|
+|[#13361](https://github.com/NVIDIA/spark-rapids/issues/13361)|[BUG] Array index out of bounds when running iceberg query|
+|[#10988](https://github.com/NVIDIA/spark-rapids/issues/10988)|[AUDIT][SPARK-48019] Fix incorrect behavior in ColumnVector/ColumnarArray with dictionary and nulls|
+|[#13224](https://github.com/NVIDIA/spark-rapids/issues/13224)|[BUG] slightly deep expression planning/processing is slow|
+|[#11921](https://github.com/NVIDIA/spark-rapids/issues/11921)|[BUG][AUDIT][SPARK-50258][SQL] Fix output column order changed issue after AQE optimization|
+|[#13348](https://github.com/NVIDIA/spark-rapids/issues/13348)|[BUG] init_cudf_udf.sh failed: Script exit status is non-zero for databricks runtime since 25.10|
+|[#13353](https://github.com/NVIDIA/spark-rapids/issues/13353)|[BUG] Regression with RapidsFileIO change|
+|[#13326](https://github.com/NVIDIA/spark-rapids/issues/13326)|[BUG] hive_write_test.py::test_optimized_hive_ctas_configs_orc failure|
+|[#13342](https://github.com/NVIDIA/spark-rapids/issues/13342)|[BUG] Build failure due to deprecation of some methods in ParseURI class from spark-rapids-jni|
+|[#13337](https://github.com/NVIDIA/spark-rapids/issues/13337)|[BUG] `ParseURI` method deprecations causing pre-merge CI jobs failures|
+|[#11106](https://github.com/NVIDIA/spark-rapids/issues/11106)|[BUG] Revisit integration tests with @disable_ansi_mode label|
+|[#13319](https://github.com/NVIDIA/spark-rapids/issues/13319)|[BUG] some nvtx ranges pop out of order or have the wrong lifecycle|
+|[#13138](https://github.com/NVIDIA/spark-rapids/issues/13138)|[FEA] Use iceberg FileIO to access parquet files.|
+|[#13331](https://github.com/NVIDIA/spark-rapids/issues/13331)|[BUG] test_delta_optimize_fallback_on_clustered_table failed does not support truncate in batch mode|
+|[#13270](https://github.com/NVIDIA/spark-rapids/issues/13270)|[BUG] Iceberg integration failed under spark connect|
+|[#13145](https://github.com/NVIDIA/spark-rapids/issues/13145)|[BUG] NDS queries fail with sufficiently low offHeap limits in kudo deserializer|
+
+### PRs
+|||
+|:---|:---|
+|[#13627](https://github.com/NVIDIA/spark-rapids/pull/13627)|disable offHeapLimit by default|
+|[#13588](https://github.com/NVIDIA/spark-rapids/pull/13588)|Update changelog for the v25.10 release [skip ci]|
+|[#13593](https://github.com/NVIDIA/spark-rapids/pull/13593)|[DOC] update the download doc for 2510 release [skip ci]|
+|[#13587](https://github.com/NVIDIA/spark-rapids/pull/13587)|Update dependency version JNI, private, hybrid to 25.10.0|
+|[#13581](https://github.com/NVIDIA/spark-rapids/pull/13581)|Avoid host-vector access under TableCache by replacing CPU ColumnarToRow with GPU variant|
+|[#13580](https://github.com/NVIDIA/spark-rapids/pull/13580)|Remove nested quotes and double quotes [skip ci]|
+|[#13569](https://github.com/NVIDIA/spark-rapids/pull/13569)|Disable predicate pushdown filters in MULTITHREADED Delta Scan when reading Deletion Vectors|
+|[#13563](https://github.com/NVIDIA/spark-rapids/pull/13563)|Fallback gracefully if libprofiler cannot be loaded|
+|[#13532](https://github.com/NVIDIA/spark-rapids/pull/13532)|Fix read option name for change data feed for Delta|
+|[#13545](https://github.com/NVIDIA/spark-rapids/pull/13545)|Add iceberg tests of insert into with values|
+|[#13558](https://github.com/NVIDIA/spark-rapids/pull/13558)|Avoid throwing ClassNotFoundExceptions when checking isSupportedFormat with Delta Lake versions < 2.0.1|
+|[#13541](https://github.com/NVIDIA/spark-rapids/pull/13541)|fix overhead of new op time collection upon c2r|
+|[#13539](https://github.com/NVIDIA/spark-rapids/pull/13539)|Add env header for iceberg test variable [skip ci]|
+|[#13537](https://github.com/NVIDIA/spark-rapids/pull/13537)|Fix iceberg integration test test_insert_into_partitioned_table_unsupported_partition_fallback [skip ci]|
+|[#13335](https://github.com/NVIDIA/spark-rapids/pull/13335)|Add a GpuOverride for IncrementMetric |
+|[#12967](https://github.com/NVIDIA/spark-rapids/pull/12967)|limit gpu alloc on integrated cards|
+|[#13497](https://github.com/NVIDIA/spark-rapids/pull/13497)|Switch rounding calls to using new API|
+|[#13515](https://github.com/NVIDIA/spark-rapids/pull/13515)|Fallback to cpu when inserting into partitioned iceberg table with unsupported partition.|
+|[#13517](https://github.com/NVIDIA/spark-rapids/pull/13517)|more relaxed margin for MetricsEventLogValidationSuite|
+|[#13516](https://github.com/NVIDIA/spark-rapids/pull/13516)|Fix wrong usage of GpuWriteJobStatsTracker in iceberg write|
+|[#13499](https://github.com/NVIDIA/spark-rapids/pull/13499)|Refine column size estimation based on previous batch for Host2Gpu|
+|[#13491](https://github.com/NVIDIA/spark-rapids/pull/13491)|Add Deletion Vector Read Support to Multithreaded Parquet Reader|
+|[#13476](https://github.com/NVIDIA/spark-rapids/pull/13476)|Add GpuRollingFileWriter for iceberg.|
+|[#13490](https://github.com/NVIDIA/spark-rapids/pull/13490)|Fix a Memory leak introduced as part of adding Deletion Vector support |
+|[#13460](https://github.com/NVIDIA/spark-rapids/pull/13460)|Add support for Iceberg insert integration tests.|
+|[#13492](https://github.com/NVIDIA/spark-rapids/pull/13492)|Update archive.apache usage in dockerfile [skip ci]|
+|[#13439](https://github.com/NVIDIA/spark-rapids/pull/13439)|Add Partial support for Deletion Vector for PERFILE Reader Type|
+|[#13481](https://github.com/NVIDIA/spark-rapids/pull/13481)|allow some margin for maxExpectedOperatorTime|
+|[#13474](https://github.com/NVIDIA/spark-rapids/pull/13474)|Revert "insert coalesce after join" [skip ci]|
+|[#13480](https://github.com/NVIDIA/spark-rapids/pull/13480)|avoid using Noop as default excludeMetric|
+|[#13466](https://github.com/NVIDIA/spark-rapids/pull/13466)|fix evenlog by default zstd compression in spark 400|
+|[#13459](https://github.com/NVIDIA/spark-rapids/pull/13459)|Optimization for unit test: Reduce TimeZonePerfSuite test time|
+|[#13429](https://github.com/NVIDIA/spark-rapids/pull/13429)|refactor optime collection for correctness|
+|[#13461](https://github.com/NVIDIA/spark-rapids/pull/13461)|Add a missing allow-non-gpu tag for CreateTableExec for test_delta_rtas_sql_liquid_clustering|
+|[#13447](https://github.com/NVIDIA/spark-rapids/pull/13447)|Add Spark 4.0.1 shim|
+|[#13444](https://github.com/NVIDIA/spark-rapids/pull/13444)|insert coalesce after join because join can cause row reductions|
+|[#13456](https://github.com/NVIDIA/spark-rapids/pull/13456)|Remove legacy spacy pkg [skip ci]|
+|[#13434](https://github.com/NVIDIA/spark-rapids/pull/13434)|Support InMemoryTableScan with AQE for Spark 3.5.2+|
+|[#13369](https://github.com/NVIDIA/spark-rapids/pull/13369)|[DOC] Update memory debugging docs with scalar support [skip ci]|
+|[#13441](https://github.com/NVIDIA/spark-rapids/pull/13441)|Substitue RapidsFileIO interface from spark-rapids-jni for RapidsFileIO in spark-rapids|
+|[#13446](https://github.com/NVIDIA/spark-rapids/pull/13446)|Add support for iceberg GpuSparkWrite|
+|[#13414](https://github.com/NVIDIA/spark-rapids/pull/13414)|Add support for the Delta optimize table command for clustered tables|
+|[#13415](https://github.com/NVIDIA/spark-rapids/pull/13415)|Add gpu iceberg partitioner|
+|[#13438](https://github.com/NVIDIA/spark-rapids/pull/13438)|Add rule to override StaticInvoke for iceberg|
+|[#13417](https://github.com/NVIDIA/spark-rapids/pull/13417)|Add write support for Delta clustered tables|
+|[#13367](https://github.com/NVIDIA/spark-rapids/pull/13367)|Allows AQE to fall back to the CPU for non-reused broadcast|
+|[#13246](https://github.com/NVIDIA/spark-rapids/pull/13246)|Fix docstring typo in collect_data_or_exception [skip ci]|
+|[#13052](https://github.com/NVIDIA/spark-rapids/pull/13052)|Orc supports non-UTC timezone when reader/writer timezones are the same|
+|[#13409](https://github.com/NVIDIA/spark-rapids/pull/13409)|[DOC] update the download doc to add download plugin from maven [skip ci]|
+|[#13407](https://github.com/NVIDIA/spark-rapids/pull/13407)|Add iceberg gpu parquet file appender and file writer factory|
+|[#13366](https://github.com/NVIDIA/spark-rapids/pull/13366)|Fix the flaky test in `TrafficControllerSuite`|
+|[#13359](https://github.com/NVIDIA/spark-rapids/pull/13359)|limit concurrent gpu task by a config|
+|[#13392](https://github.com/NVIDIA/spark-rapids/pull/13392)|Add GpuAppendDataExec as prerequisite to support iceberg append|
+|[#13364](https://github.com/NVIDIA/spark-rapids/pull/13364)|fix wrong timing to sleep(yield) in HostAllocSuite|
+|[#13397](https://github.com/NVIDIA/spark-rapids/pull/13397)|Add support for iceberg bucket expression of int and long types.|
+|[#12960](https://github.com/NVIDIA/spark-rapids/pull/12960)|Use async profiler to create per stage flame graph|
+|[#13373](https://github.com/NVIDIA/spark-rapids/pull/13373)|Add an executor cache class|
+|[#13371](https://github.com/NVIDIA/spark-rapids/pull/13371)|Optimize table to trigger liquid clustering before test|
+|[#13372](https://github.com/NVIDIA/spark-rapids/pull/13372)|Fix index out of bound bug in iceberg parquet reader.|
+|[#13289](https://github.com/NVIDIA/spark-rapids/pull/13289)|Filter out timezones not supported by Python|
+|[#13308](https://github.com/NVIDIA/spark-rapids/pull/13308)|Add UUID function support|
+|[#13225](https://github.com/NVIDIA/spark-rapids/pull/13225)|Fix performance issue with nested add|
+|[#13318](https://github.com/NVIDIA/spark-rapids/pull/13318)|Add a missing numbers import in PySpark RAPIDS daemons|
+|[#13329](https://github.com/NVIDIA/spark-rapids/pull/13329)|Add rest catalog integration tests for iceberg|
+|[#13327](https://github.com/NVIDIA/spark-rapids/pull/13327)|Add read tests for the delta clustered table|
+|[#13349](https://github.com/NVIDIA/spark-rapids/pull/13349)|Make the iceberg bug easier to produce.|
+|[#13356](https://github.com/NVIDIA/spark-rapids/pull/13356)|CUDF Conda package has dropped cuda11 python packages from 25.10 [skip ci]|
+|[#13354](https://github.com/NVIDIA/spark-rapids/pull/13354)|This fixes a big regression due to serialization of the hadoop configuration|
+|[#13352](https://github.com/NVIDIA/spark-rapids/pull/13352)|Add ANSI mode support for parse_url function|
+|[#13328](https://github.com/NVIDIA/spark-rapids/pull/13328)|Fix test_optimized_hive_ctas_configs_orc for non_utc timezones|
+|[#13346](https://github.com/NVIDIA/spark-rapids/pull/13346)|Merge branch-25.08 to branch-25.10 [skip ci]|
+|[#13338](https://github.com/NVIDIA/spark-rapids/pull/13338)|Suppress deprecation warnings for `ParseURI`|
+|[#13317](https://github.com/NVIDIA/spark-rapids/pull/13317)|nvtx fixes in shuffle manager|
+|[#13177](https://github.com/NVIDIA/spark-rapids/pull/13177)|enable more logging for BUFN_PLUS related issues|
+|[#13252](https://github.com/NVIDIA/spark-rapids/pull/13252)|Add Rapids file io layer.|
+|[#13333](https://github.com/NVIDIA/spark-rapids/pull/13333)|Fix test_delta_optimize_fallback_on_clustered_table test failure with Spark 3.5.6|
+|[#13250](https://github.com/NVIDIA/spark-rapids/pull/13250)|add nvtx, fix row count, add data size metric|
+|[#13299](https://github.com/NVIDIA/spark-rapids/pull/13299)|LORE: Add support to dump parquet with exact column names|
+|[#13330](https://github.com/NVIDIA/spark-rapids/pull/13330)|Enable shellcheck: Fix nits [skip ci]|
+|[#13323](https://github.com/NVIDIA/spark-rapids/pull/13323)|Update stringrepr for collation for StringGen|
+|[#13309](https://github.com/NVIDIA/spark-rapids/pull/13309)|Enable shellcheck|
+|[#13313](https://github.com/NVIDIA/spark-rapids/pull/13313)|Add support for optimize table command for Detla IO 3.3|
+|[#13320](https://github.com/NVIDIA/spark-rapids/pull/13320)|Fix the checklists in the PR template to reduce confusion [skip test]|
+|[#13316](https://github.com/NVIDIA/spark-rapids/pull/13316)|Fixed bug with arithmetic overflow on some map_zip_with tests|
+|[#13322](https://github.com/NVIDIA/spark-rapids/pull/13322)|Fix testing.md to use fixed relative paths [skip ci]|
+|[#13053](https://github.com/NVIDIA/spark-rapids/pull/13053)|Allowlist zlib for Orc writes|
+|[#13220](https://github.com/NVIDIA/spark-rapids/pull/13220)|Add test cases for Collate, CharType and VarcharType|
+|[#13295](https://github.com/NVIDIA/spark-rapids/pull/13295)|Avoid thread safety issues on input iterator in AsymmetricJoinSizer|
+|[#13087](https://github.com/NVIDIA/spark-rapids/pull/13087)|Add Support for map_zip_with|
+|[#13303](https://github.com/NVIDIA/spark-rapids/pull/13303)|wrap shuffle read's underlying input stream with timing logic|
+|[#13288](https://github.com/NVIDIA/spark-rapids/pull/13288)|Replace 'get' with `getOrElse` to avoid None.get exception in GpuBatchScanExec|
+|[#13287](https://github.com/NVIDIA/spark-rapids/pull/13287)|Revert "enable shellcheck" [skip ci]|
+|[#13273](https://github.com/NVIDIA/spark-rapids/pull/13273)|enable offheap limits by default|
+|[#13277](https://github.com/NVIDIA/spark-rapids/pull/13277)|Fix auto merge conflict 13276 [skip ci]|
+|[#13122](https://github.com/NVIDIA/spark-rapids/pull/13122)|enable shellcheck|
+|[#13262](https://github.com/NVIDIA/spark-rapids/pull/13262)|Run test_decimal_precision_over_max for all Spark versions|
+|[#13255](https://github.com/NVIDIA/spark-rapids/pull/13255)|concat metrics should not contain iter.hasNext|
+|[#13241](https://github.com/NVIDIA/spark-rapids/pull/13241)|Fix ThrottlingExecutor not closed bug for PR 12674|
+|[#12674](https://github.com/NVIDIA/spark-rapids/pull/12674)|async threads for shuffle read|
+|[#13229](https://github.com/NVIDIA/spark-rapids/pull/13229)|Update dependency version JNI, private, hybrid to 25.10.0-SNAPSHOT|
 
 ## Release 25.08
 
@@ -29,6 +215,8 @@ Generated on 2025-08-11
 ### Performance
 |||
 |:---|:---|
+|[#12903](https://github.com/NVIDIA/spark-rapids/issues/12903)|[FEA] Run NDS benchmark for Spark-4.0|
+|[#12626](https://github.com/NVIDIA/spark-rapids/issues/12626)|[TASK] Run NDS benchmarks once basic Delta 3.3.0 Read is supported|
 |[#10571](https://github.com/NVIDIA/spark-rapids/issues/10571)|[AUDIT] [SPARK-46366] Implement `Between` expression GpuOverrides|
 |[#13007](https://github.com/NVIDIA/spark-rapids/issues/13007)|[FEA] Look into better performance for ANSI mode SUM reduction/group by aggregation|
 |[#13035](https://github.com/NVIDIA/spark-rapids/issues/13035)|[FEA] Add Debug Metrics measuring the actual parallelism of multithreaded reader|
@@ -37,6 +225,9 @@ Generated on 2025-08-11
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#13112](https://github.com/NVIDIA/spark-rapids/issues/13112)|[BUG] GpuRegExpextract exception num_blocks must be > 0|
+|[#13242](https://github.com/NVIDIA/spark-rapids/issues/13242)|[BUG] Integration test Intermittently failed Method GpuShuffleExchangeExec.ensReqDPMetricTag is abstract in DB 14.3 runtime|
+|[#13131](https://github.com/NVIDIA/spark-rapids/issues/13131)|[BUG] Find a way to disable false ERROR messages for pinned memory|
 |[#13279](https://github.com/NVIDIA/spark-rapids/issues/13279)|[BUG] Integration test failures with Delta|
 |[#13265](https://github.com/NVIDIA/spark-rapids/issues/13265)|[BUG] test failed Expected error IllegalArgumentException/ArrayIndexOutOfBoundsException|
 |[#13254](https://github.com/NVIDIA/spark-rapids/issues/13254)|[BUG] delta_lake_time_travel_test.py::test_time_travel_on_non_existing_table failed Expected error 'AnalysisException' did not appear|
@@ -128,6 +319,8 @@ Generated on 2025-08-11
 ### PRs
 |||
 |:---|:---|
+|[#13344](https://github.com/NVIDIA/spark-rapids/pull/13344)|[DOC] update the wrong links in download doc [skip ci]|
+|[#13292](https://github.com/NVIDIA/spark-rapids/pull/13292)|Update changelog for the v25.08 release [skip ci]|
 |[#13286](https://github.com/NVIDIA/spark-rapids/pull/13286)|Temporarily disable timezone America/Coyhaique to unblock branch-25.08 release|
 |[#13282](https://github.com/NVIDIA/spark-rapids/pull/13282)|Update changelog for the v25.08 release [skip ci]|
 |[#13280](https://github.com/NVIDIA/spark-rapids/pull/13280)|Fix fallback test params for Delta MergeCommand, UpdateCommand, and DeleteCommand|
@@ -283,236 +476,11 @@ Generated on 2025-08-11
 |[#12890](https://github.com/NVIDIA/spark-rapids/pull/12890)|Add a new metric to indicate the IO time in GPU write.|
 |[#12875](https://github.com/NVIDIA/spark-rapids/pull/12875)|Support spark400 shim's integration tests|
 |[#12831](https://github.com/NVIDIA/spark-rapids/pull/12831)|Support eager I/O prefetch for scan as two-sides of bucket ShuffleSizedHashJoin|
-|[#12848](https://github.com/NVIDIA/spark-rapids/pull/12848)|Fix timezone bug: unsupported timezones for current JVM|
 |[#12854](https://github.com/NVIDIA/spark-rapids/pull/12854)|Drop the new time based metric in commitInfo while comparing Delta Logs|
 |[#12847](https://github.com/NVIDIA/spark-rapids/pull/12847)|Update spark400 to released version|
 |[#12777](https://github.com/NVIDIA/spark-rapids/pull/12777)|Fix auto merge conflict 12774 [skip ci]|
 |[#12761](https://github.com/NVIDIA/spark-rapids/pull/12761)|Use cuda12 as default, drop cuda11 support|
 |[#12721](https://github.com/NVIDIA/spark-rapids/pull/12721)|Fix auto merge conflict 12710 [skip ci]|
-
-## Release 25.06
-
-### Features
-|||
-|:---|:---|
-|[#12754](https://github.com/NVIDIA/spark-rapids/issues/12754)|[FEA] Introduce gpu delete filter test suite.|
-|[#12210](https://github.com/NVIDIA/spark-rapids/issues/12210)|[FEA] Support merge on read of iceberg table.|
-|[#12779](https://github.com/NVIDIA/spark-rapids/issues/12779)|[FEA] Support Spark 3.5.6|
-|[#12757](https://github.com/NVIDIA/spark-rapids/issues/12757)|[FEA] Accelerated Delta Scan without deletionvector support|
-|[#12740](https://github.com/NVIDIA/spark-rapids/issues/12740)|[FEA] Introduce gpu delete filter for iceberg merge on read scan.|
-|[#12755](https://github.com/NVIDIA/spark-rapids/issues/12755)|[FEA] Add iceberg merge on read integration tests.|
-|[#12790](https://github.com/NVIDIA/spark-rapids/issues/12790)|[FEA] Support `unix_timestamp` for `America/Los_Angeles` timezone|
-|[#12209](https://github.com/NVIDIA/spark-rapids/issues/12209)|[FEA] Supports reading iceberg table without deletions|
-|[#9077](https://github.com/NVIDIA/spark-rapids/issues/9077)|[FEA] Support bit_or|
-|[#12571](https://github.com/NVIDIA/spark-rapids/issues/12571)|[FEA] bit_count|
-|[#12623](https://github.com/NVIDIA/spark-rapids/issues/12623)|[FEA] Add a minimum delta-33x module that compiles common code|
-|[#10221](https://github.com/NVIDIA/spark-rapids/issues/10221)|[FEA] [follow-up] Parse just time to timestamp|
-|[#12024](https://github.com/NVIDIA/spark-rapids/issues/12024)|[FEA] Support from_utc_timestamp for PST/EST/CST|
-|[#11639](https://github.com/NVIDIA/spark-rapids/issues/11639)|[FEA] Support to_utc_timestamp for US/Central timezone|
-|[#12537](https://github.com/NVIDIA/spark-rapids/issues/12537)|[FEA] Do we need a timezone for Date to String and String to Date|
-|[#12519](https://github.com/NVIDIA/spark-rapids/issues/12519)|[FEA] CICD Ubuntu dockerfiles to support 24.04 LTS|
-|[#6840](https://github.com/NVIDIA/spark-rapids/issues/6840)|[FEA] Support timestamp transitions to and from UTC for repeating rules (daylight savings time zones)|
-|[#7035](https://github.com/NVIDIA/spark-rapids/issues/7035)|[FEA]Support function sha1|
-|[#8511](https://github.com/NVIDIA/spark-rapids/issues/8511)|[FEA] Support conv function|
-|[#12368](https://github.com/NVIDIA/spark-rapids/issues/12368)|[FEA] HybridScan: Add a specific SQL Hint to enable HYBRID_SCAN on certain tables|
-|[#5221](https://github.com/NVIDIA/spark-rapids/issues/5221)|[FEA] Support function array_distinct|
-
-### Performance
-|||
-|:---|:---|
-|[#12472](https://github.com/NVIDIA/spark-rapids/issues/12472)|[FEA] Zero Config - Centralized Priority Assignment|
-|[#12557](https://github.com/NVIDIA/spark-rapids/issues/12557)|[FEA] by default enable skip agg when the inputs of agg cannot reduce|
-|[#12457](https://github.com/NVIDIA/spark-rapids/issues/12457)|[FEA] Add a specific physical rule for LocalAggregate|
-
-### Bugs Fixed
-|||
-|:---|:---|
-|[#12527](https://github.com/NVIDIA/spark-rapids/issues/12527)|[BUG][metric] Enhance the metric for GPU write|
-|[#12666](https://github.com/NVIDIA/spark-rapids/issues/12666)|[BUG] Kudo serialization error on limit test|
-|[#12619](https://github.com/NVIDIA/spark-rapids/issues/12619)|[BUG] delta_lake_test.py::test_delta_read integration test failure|
-|[#12839](https://github.com/NVIDIA/spark-rapids/issues/12839)|XFAIL the failing tests and assert fallback in delta_lake_test.py|
-|[#12855](https://github.com/NVIDIA/spark-rapids/issues/12855)|[BUG] delta_lake_test.py::test_delta_read_column_mapping fails with delta 3.3.0|
-|[#12845](https://github.com/NVIDIA/spark-rapids/issues/12845)|[BUG] [test] Specify timezones in pytest according to JVM version|
-|[#12852](https://github.com/NVIDIA/spark-rapids/issues/12852)|Remove Delta-3.3.0 support from the plugin for release 25.06|
-|[#12856](https://github.com/NVIDIA/spark-rapids/issues/12856)|[BUG] 400+ iceberg test cases failed DATAGEN_SEED=1748978166, INJECT_OOM with spark356|
-|[#12816](https://github.com/NVIDIA/spark-rapids/issues/12816)|[BUG] Iceberg nightly test failed code5 with spark355 "No tests collected"|
-|[#11235](https://github.com/NVIDIA/spark-rapids/issues/11235)|[BUG] 229 Unit tests failed in Spark 400 against cuda 11 and scala 2.13|
-|[#11556](https://github.com/NVIDIA/spark-rapids/issues/11556)|[BUG] [Spark 4] Exceptions from casting to `DATE`/`TIMESTAMP` do not match the Spark's exceptions, with ANSI enabled|
-|[#12808](https://github.com/NVIDIA/spark-rapids/issues/12808)|[BUG] Integration test fails with undefined use_cdf|
-|[#12742](https://github.com/NVIDIA/spark-rapids/issues/12742)|[BUG]  `hybrid_parquet_test.py` test fails on Spark 3.3|
-|[#12015](https://github.com/NVIDIA/spark-rapids/issues/12015)|[BUG] Spark-4.0: Tests failures in WindowFunctionSuite|
-|[#12022](https://github.com/NVIDIA/spark-rapids/issues/12022)|[BUG] Spark-4.0: Tests failures in HashAggregatesSuite|
-|[#12013](https://github.com/NVIDIA/spark-rapids/issues/12013)|[BUG] Spark-4.0: Test failure in JoinsSuite|
-|[#12009](https://github.com/NVIDIA/spark-rapids/issues/12009)|[BUG] Spark-4.0: Tests failures in CostBasedOptimizerSuite|
-|[#12006](https://github.com/NVIDIA/spark-rapids/issues/12006)|[BUG] Spark-4.0: Tests failures in AdaptiveQueryExecSuite|
-|[#12794](https://github.com/NVIDIA/spark-rapids/issues/12794)|[BUG] Iceberg 3.5.2 failed|
-|[#12802](https://github.com/NVIDIA/spark-rapids/issues/12802)|[BUG] iceberg integration tests failed on python 3.8.|
-|[#12778](https://github.com/NVIDIA/spark-rapids/issues/12778)|[BUG] getjsonobj generate different output as cpu|
-|[#12012](https://github.com/NVIDIA/spark-rapids/issues/12012)|[BUG] Spark-4.0: Tests failures in ParquetWriterSuite|
-|[#12758](https://github.com/NVIDIA/spark-rapids/issues/12758)|[BUG] dataframe write option for optimizeWrite for delta is ignored on databricks|
-|[#12770](https://github.com/NVIDIA/spark-rapids/issues/12770)|[BUG] scala2.13 iceberg nightly test failed ClassNotFoundException: com.nvidia.spark.rapids.iceberg.IcebergProviderImpl|
-|[#12004](https://github.com/NVIDIA/spark-rapids/issues/12004)|[BUG] Spark-4.0: Tests failures in StringOperatorsSuite|
-|[#12014](https://github.com/NVIDIA/spark-rapids/issues/12014)|[BUG] Spark-4.0: Tests failures in TimeOperatorsSuite|
-|[#12723](https://github.com/NVIDIA/spark-rapids/issues/12723)|[BUG] spark.rapids.sql.mode=explainOnly fails without GPU present|
-|[#12608](https://github.com/NVIDIA/spark-rapids/issues/12608)|[BUG] Unhandled exceptions in Python worker|
-|[#12711](https://github.com/NVIDIA/spark-rapids/issues/12711)|[BUG] Bad StringGen In test_formats_for_legacy_mode_other_formats_tz_rules|
-|[#12703](https://github.com/NVIDIA/spark-rapids/issues/12703)|[BUG] Spilling state not cleaned properly when a task is killed by spark speculation|
-|[#12682](https://github.com/NVIDIA/spark-rapids/issues/12682)|[BUG] Multiple Delta Lake tests failing|
-|[#12677](https://github.com/NVIDIA/spark-rapids/issues/12677)|[BUG] `iceberg-common` produced scala classes can't be interpreted by scala compiler.|
-|[#12702](https://github.com/NVIDIA/spark-rapids/issues/12702)|[BUG]  key not found: maxWritersNumber in databricks runtimes|
-|[#12659](https://github.com/NVIDIA/spark-rapids/issues/12659)|[BUG] spark350 build failed GpuMultiFileBatchReader.java: error: not found: type ParquetFileInfo*|
-|[#12003](https://github.com/NVIDIA/spark-rapids/issues/12003)|[BUG] Spark-4.0: Tests failures in ParseDateTimeSuite|
-|[#12637](https://github.com/NVIDIA/spark-rapids/issues/12637)|[BUG] date_time_test.py failed to import zoneinfo for python 3.8 (databricks 11 and 12 runtimes)|
-|[#12529](https://github.com/NVIDIA/spark-rapids/issues/12529)|[BUG][metric] build time total should exclude parent operator time.|
-|[#12633](https://github.com/NVIDIA/spark-rapids/issues/12633)|[BUG] Integration Tests Fail For Months_Between|
-|[#12625](https://github.com/NVIDIA/spark-rapids/issues/12625)|[BUG] UnsupportedOperationException When Reading Boolean Fields From Bigquery|
-|[#12016](https://github.com/NVIDIA/spark-rapids/issues/12016)|[BUG] Spark-4.0: Tests failures in GpuLoreSuite|
-|[#12017](https://github.com/NVIDIA/spark-rapids/issues/12017)|[BUG]Spark-4.0: Tests failures in ExpandExecSuite|
-|[#12018](https://github.com/NVIDIA/spark-rapids/issues/12018)|[BUG] Spark-4.0: Tests failures in OrcScanSuite|
-|[#12008](https://github.com/NVIDIA/spark-rapids/issues/12008)|[BUG] Spark-4.0: Test failure in  HashSortOptimizeSuite|
-|[#12010](https://github.com/NVIDIA/spark-rapids/issues/12010)|[BUG] Spark-4.0: Test failure in GpuBringBackToHostSuite|
-|[#12011](https://github.com/NVIDIA/spark-rapids/issues/12011)|[BUG] Spark-4.0: Test failure in ParquetFilterSuite|
-|[#12002](https://github.com/NVIDIA/spark-rapids/issues/12002)|[BUG] Spark-4.0: Tests failures in OrcFilterSuite|
-|[#12005](https://github.com/NVIDIA/spark-rapids/issues/12005)|[BUG] Spark-4.0: Tests failures in UnaryOperatorsSuite|
-|[#12007](https://github.com/NVIDIA/spark-rapids/issues/12007)|[BUG] Spark-4.0: Test failure in DecimalBinaryOpSuite|
-|[#12586](https://github.com/NVIDIA/spark-rapids/issues/12586)|[BUG] Integration tests  AssertionError: CPU and GPU list have different lengths at [] CPU: xxx GPU: xxx-1|
-|[#12539](https://github.com/NVIDIA/spark-rapids/issues/12539)|[BUG] Unable to display rows from a Delta Table on Databricks 13.3 with Deletion Vectors enabled|
-|[#12611](https://github.com/NVIDIA/spark-rapids/issues/12611)|[BUG] spark400 build failed: GpuAtomicCreateTableAsSelectExec.scala:77: not enough arguments for method writeToTable|
-|[#12587](https://github.com/NVIDIA/spark-rapids/issues/12587)|[BUG] Installing pip on Databricks 11.3/12.2 failed due to `get-pip.py` is archived for python 3.8 an below|
-|[#12583](https://github.com/NVIDIA/spark-rapids/issues/12583)|[BUG] test_std_variance and test_std_variance_nulls failed Input to `group_merge_m2` has invalid children type.|
-|[#12468](https://github.com/NVIDIA/spark-rapids/issues/12468)|[BUG]GpuStddevPop produces different values than Spark when a group number is larger than Int.MaxValue|
-|[#12566](https://github.com/NVIDIA/spark-rapids/issues/12566)|[BUG] Python UDF test failure|
-|[#9784](https://github.com/NVIDIA/spark-rapids/issues/9784)|[BUG] test_conv_dec_to_from_hex for different datagen_seeds|
-|[#12528](https://github.com/NVIDIA/spark-rapids/issues/12528)|[BUG][metric] time in heuristic (excl. SemWait)|
-|[#12538](https://github.com/NVIDIA/spark-rapids/issues/12538)|[BUG] rapids_scala213_nightly-dev-github build failure spark400 |
-|[#12532](https://github.com/NVIDIA/spark-rapids/issues/12532)|[BUG] missing companion metrics for Gpu Scan scan time|
-|[#11326](https://github.com/NVIDIA/spark-rapids/issues/11326)|[BUG] Dynamic partitions metric for insert into hive appears to be off|
-|[#12523](https://github.com/NVIDIA/spark-rapids/issues/12523)|[BUG] shuffle example dockerfile build fails rdma-core compilation with ubuntu22|
-|[#12454](https://github.com/NVIDIA/spark-rapids/issues/12454)|[BUG] Crashing pyspark pytests lead to misreported errors|
-|[#12453](https://github.com/NVIDIA/spark-rapids/issues/12453)|[BUG] loading LZ4 Parquet files SIGSEGs|
-|[#12412](https://github.com/NVIDIA/spark-rapids/issues/12412)|[BUG] fastparquet_compatibility_test failed TypeError: 'type' object is not subscriptable with python3.8|
-|[#12369](https://github.com/NVIDIA/spark-rapids/issues/12369)|[BUG] Kudo raised IllegalArgumentException when using with celeborn|
-
-### PRs
-|||
-|:---|:---|
-|[#12846](https://github.com/NVIDIA/spark-rapids/pull/12846)|[DOC] update the download doc for 2506 release [skip ci]|
-|[#12861](https://github.com/NVIDIA/spark-rapids/pull/12861)|Update changelog for the v25.06.0 release [skip ci]|
-|[#12909](https://github.com/NVIDIA/spark-rapids/pull/12909)|Update dependency version JNI, hybrid to 25.06.0; private to 25.06.1|
-|[#12905](https://github.com/NVIDIA/spark-rapids/pull/12905)|xfail iceberg test_iceberg_v2_mixed_deletes [skip ci]|
-|[#12894](https://github.com/NVIDIA/spark-rapids/pull/12894)|Disable multi thread reader with deletions in iceberg|
-|[#12896](https://github.com/NVIDIA/spark-rapids/pull/12896)|Fix mem_debug rmm deadlink [skip ci]|
-|[#12842](https://github.com/NVIDIA/spark-rapids/pull/12842)|Add the NV license to relevant py files[skip ci]|
-|[#12868](https://github.com/NVIDIA/spark-rapids/pull/12868)|Fix double column mapping in delta 3.3 parquet reader|
-|[#12862](https://github.com/NVIDIA/spark-rapids/pull/12862)|Fix a potential issue that could cause a NPE when dumping kudo tables|
-|[#12851](https://github.com/NVIDIA/spark-rapids/pull/12851)|fix shebang in prioritize-commits.sh|
-|[#12853](https://github.com/NVIDIA/spark-rapids/pull/12853)|Remove Delta Lake 3.3.0 support from the plugin for Spark 3.5.3, 3.5.4 and 3.5.5|
-|[#12864](https://github.com/NVIDIA/spark-rapids/pull/12864)|[HybridScan] hotfix: mark the async thread preloading the HybridScan as pool thread|
-|[#12859](https://github.com/NVIDIA/spark-rapids/pull/12859)|Fix iceberg npe during read.|
-|[#12849](https://github.com/NVIDIA/spark-rapids/pull/12849)|Fix iceberg test missing problem|
-|[#12825](https://github.com/NVIDIA/spark-rapids/pull/12825)|[Doc] Update doc description for castStringToTimestamp config|
-|[#12813](https://github.com/NVIDIA/spark-rapids/pull/12813)|Spark-4.0: Skip scala tests when ansi mode is enabled|
-|[#12792](https://github.com/NVIDIA/spark-rapids/pull/12792)|Added support for Spark 3.5.6|
-|[#12598](https://github.com/NVIDIA/spark-rapids/pull/12598)|Fully support casting string with timezone to timestamp|
-|[#12812](https://github.com/NVIDIA/spark-rapids/pull/12812)|Replace stale use_cdf parameter reference in test_delta_scan_read pytest|
-|[#12817](https://github.com/NVIDIA/spark-rapids/pull/12817)|Fix the dead links issue for Pandas UDFs doc[skip ci]|
-|[#12809](https://github.com/NVIDIA/spark-rapids/pull/12809)|Temporarily disable test case test_delta_scan_read|
-|[#12810](https://github.com/NVIDIA/spark-rapids/pull/12810)|Fix ca cerificate shuffle [skip ci]|
-|[#12783](https://github.com/NVIDIA/spark-rapids/pull/12783)|Spark-4.0: Skip ScalaTests when ANSI mode is enabled until implemented|
-|[#12767](https://github.com/NVIDIA/spark-rapids/pull/12767)|Add support for DeltaScan without DV for Delta Lake 3.3.0|
-|[#12795](https://github.com/NVIDIA/spark-rapids/pull/12795)|Fix spark 3.5.2 for iceberg|
-|[#12744](https://github.com/NVIDIA/spark-rapids/pull/12744)|Add gpu delete filter for merge on read scan.|
-|[#12798](https://github.com/NVIDIA/spark-rapids/pull/12798)|Update dockerfile to use HTTPS service for ubuntu repos [skip ci]|
-|[#12759](https://github.com/NVIDIA/spark-rapids/pull/12759)|Fix dataframe writer option for delta optimizeWrite on Databricks|
-|[#12766](https://github.com/NVIDIA/spark-rapids/pull/12766)|Use task priority for spill priority|
-|[#12756](https://github.com/NVIDIA/spark-rapids/pull/12756)|GPUSemaphore now uses unified priority|
-|[#12765](https://github.com/NVIDIA/spark-rapids/pull/12765)|Fix spill metrics for disk|
-|[#12776](https://github.com/NVIDIA/spark-rapids/pull/12776)|Enable pr desc check [skip ci]|
-|[#12760](https://github.com/NVIDIA/spark-rapids/pull/12760)|Accelerate premerge CI with non-PVC workspace|
-|[#12771](https://github.com/NVIDIA/spark-rapids/pull/12771)|Fix iceberg 2.13 build|
-|[#12684](https://github.com/NVIDIA/spark-rapids/pull/12684)|Spark-4.0: Fix/Skip non-ansi unit test failures|
-|[#12732](https://github.com/NVIDIA/spark-rapids/pull/12732)|Enable iceberg reader without deletions.|
-|[#12701](https://github.com/NVIDIA/spark-rapids/pull/12701)|migrate RapidsShuffleInternalManagerBase NvtxRanges to NvtxRangeWithDoc|
-|[#12746](https://github.com/NVIDIA/spark-rapids/pull/12746)|Enable the companion metric in the static "ns" method|
-|[#12724](https://github.com/NVIDIA/spark-rapids/pull/12724)|Fix explainMode to work when GPU isn't present|
-|[#12688](https://github.com/NVIDIA/spark-rapids/pull/12688)|Propagate errors to JVM while initializing GPU memory in python worker|
-|[#12606](https://github.com/NVIDIA/spark-rapids/pull/12606)|Support `bit_count` SQL function|
-|[#12745](https://github.com/NVIDIA/spark-rapids/pull/12745)|Disable ArrayIntersect in hybrid scan filter pushdown|
-|[#12725](https://github.com/NVIDIA/spark-rapids/pull/12725)|Unified priority task life-cycle|
-|[#12739](https://github.com/NVIDIA/spark-rapids/pull/12739)|Output more information of the current GPU before an executor exits due to fatal cuda exceptions|
-|[#12716](https://github.com/NVIDIA/spark-rapids/pull/12716)|Add Delta 3.3.0 module to Maven|
-|[#12726](https://github.com/NVIDIA/spark-rapids/pull/12726)|Gpu iceberg multithread and coeleacing reader.|
-|[#12731](https://github.com/NVIDIA/spark-rapids/pull/12731)|Update SHIM_M2DIR for all shims build if DEV_MODE is enabled [skip ci]|
-|[#12722](https://github.com/NVIDIA/spark-rapids/pull/12722)|Add a new debug-level metric for MultiFileCloudPartitionReader: bufferTime with semaphore|
-|[#12672](https://github.com/NVIDIA/spark-rapids/pull/12672)|Introduce iceberg parquet reader interface and perfile reader|
-|[#12607](https://github.com/NVIDIA/spark-rapids/pull/12607)|Support bitwise aggregate functions (`bit_and`, `bit_or` and `bit_xor`) in groupby and reduction|
-|[#12693](https://github.com/NVIDIA/spark-rapids/pull/12693)|Disable Databricks 11.3 shim build|
-|[#12712](https://github.com/NVIDIA/spark-rapids/pull/12712)|Fix test_formats_for_legacy_mode_other_formats_tz_rules Test|
-|[#12705](https://github.com/NVIDIA/spark-rapids/pull/12705)|fix spill framework bug causing gpu oom|
-|[#12622](https://github.com/NVIDIA/spark-rapids/pull/12622)|Fix the failing delta log query test test_delta_read_with_deletion_vectors_enabled|
-|[#12695](https://github.com/NVIDIA/spark-rapids/pull/12695)|Add parquet converter layer for shading.|
-|[#12699](https://github.com/NVIDIA/spark-rapids/pull/12699)|Disable accelerated columnar to row to avoid data corruption|
-|[#12704](https://github.com/NVIDIA/spark-rapids/pull/12704)|Update 'maxNumWriters' metric only when it exists|
-|[#12681](https://github.com/NVIDIA/spark-rapids/pull/12681)|AsyncOutputStream should copy the buffer before scheduling write task|
-|[#12374](https://github.com/NVIDIA/spark-rapids/pull/12374)|Use metrics about memory usage to adjust the number of concurrent tasks|
-|[#12656](https://github.com/NVIDIA/spark-rapids/pull/12656)|Add a metric to represent the max number of open writers|
-|[#12658](https://github.com/NVIDIA/spark-rapids/pull/12658)|Add gpu spark scan related classes for iceberg.|
-|[#12687](https://github.com/NVIDIA/spark-rapids/pull/12687)|Revert "Add Delta 3.3.0 module to Maven  (#12624)"|
-|[#12590](https://github.com/NVIDIA/spark-rapids/pull/12590)|Introduce GpuParquetReaderPostProcessor|
-|[#12647](https://github.com/NVIDIA/spark-rapids/pull/12647)|refine bookkeeping logs to ease OOM related troubleshooting|
-|[#12667](https://github.com/NVIDIA/spark-rapids/pull/12667)|Allow 0 for some footer fields [Databricks]|
-|[#12613](https://github.com/NVIDIA/spark-rapids/pull/12613)|Supports ToPrettyString for date type in non-UTC timezone|
-|[#12670](https://github.com/NVIDIA/spark-rapids/pull/12670)|Add deepwiki badge [skip ci]|
-|[#12661](https://github.com/NVIDIA/spark-rapids/pull/12661)|Skip generating scaladoc for iceberg module [skip ci]|
-|[#12624](https://github.com/NVIDIA/spark-rapids/pull/12624)|Add Delta 3.3.0 module to Maven|
-|[#12636](https://github.com/NVIDIA/spark-rapids/pull/12636)|[Spark-4.0] ParseDateDateTimeSuite- Skip some of the unit tests when ansi is enabled|
-|[#12594](https://github.com/NVIDIA/spark-rapids/pull/12594)|Move `SparkSchemaConverter` to top class|
-|[#12602](https://github.com/NVIDIA/spark-rapids/pull/12602)|Update UCX default ver to 1.18.1 to support ubuntu24.04|
-|[#12643](https://github.com/NVIDIA/spark-rapids/pull/12643)|Remove copied classes from iceberg library|
-|[#12651](https://github.com/NVIDIA/spark-rapids/pull/12651)|xfail delta_lake_test.py::test_delta_read |
-|[#12641](https://github.com/NVIDIA/spark-rapids/pull/12641)|Remove Usage of ZoneInfo|
-|[#12558](https://github.com/NVIDIA/spark-rapids/pull/12558)|by default enable skip agg|
-|[#12634](https://github.com/NVIDIA/spark-rapids/pull/12634)|Allow NonGPU for MonthsBetween Tests|
-|[#12618](https://github.com/NVIDIA/spark-rapids/pull/12618)|Restrict the pyarrow version to 19.0.1 in requirements.txt|
-|[#12627](https://github.com/NVIDIA/spark-rapids/pull/12627)|Always use boolean columnar to columnar conversion|
-|[#12502](https://github.com/NVIDIA/spark-rapids/pull/12502)|Add Support For Timezone Rules|
-|[#12592](https://github.com/NVIDIA/spark-rapids/pull/12592)|Add trampoline access to utility classes from iceberg-spark-runtime|
-|[#12582](https://github.com/NVIDIA/spark-rapids/pull/12582)|Add iceberg-common module|
-|[#12433](https://github.com/NVIDIA/spark-rapids/pull/12433)|Run unit tests with both ANSI modes enabled and disabled containing HashAggregates for Spark 4.0|
-|[#12572](https://github.com/NVIDIA/spark-rapids/pull/12572)|Add sha1|
-|[#12554](https://github.com/NVIDIA/spark-rapids/pull/12554)|Fallback Delta scan if deletion vectors are being read in Databricks 13.3|
-|[#12616](https://github.com/NVIDIA/spark-rapids/pull/12616)|Fix Spark-4.0 build error - Add overwrite argument to writeToTable [skip ci]|
-|[#12601](https://github.com/NVIDIA/spark-rapids/pull/12601)|Add DEV_MODE in nightly build script for dev build job [skip ci]|
-|[#12588](https://github.com/NVIDIA/spark-rapids/pull/12588)|Fix the Python pip installation failure using 'get-pip.py'|
-|[#12569](https://github.com/NVIDIA/spark-rapids/pull/12569)|Fix overflow for `stddev` and `variance` SQL functions|
-|[#12394](https://github.com/NVIDIA/spark-rapids/pull/12394)|Add a way to override the PLUGIN_JARS|
-|[#12414](https://github.com/NVIDIA/spark-rapids/pull/12414)|HybridScan: Fix supported expressions list in filter pushdown|
-|[#12568](https://github.com/NVIDIA/spark-rapids/pull/12568)|A quick fix for the rmm import issue|
-|[#12565](https://github.com/NVIDIA/spark-rapids/pull/12565)|fix broken nvtx_ranges link [skip ci]|
-|[#12548](https://github.com/NVIDIA/spark-rapids/pull/12548)|Move parquet classes to parquet namespace|
-|[#12559](https://github.com/NVIDIA/spark-rapids/pull/12559)|Update Databricks CICD default Ubuntu Docker image to 22.04|
-|[#12437](https://github.com/NVIDIA/spark-rapids/pull/12437)|Fully support Conv expression|
-|[#12541](https://github.com/NVIDIA/spark-rapids/pull/12541)|Exclude parent op time in Hash Aggregate heuristic time|
-|[#12540](https://github.com/NVIDIA/spark-rapids/pull/12540)|HybridScan SQL HINT: adapt the spec change of LogicalRelation in spark400 [dataBricks]|
-|[#12534](https://github.com/NVIDIA/spark-rapids/pull/12534)|companion metrics for all timing metrics|
-|[#12496](https://github.com/NVIDIA/spark-rapids/pull/12496)|Align the semantics of the `dynamic partitions` metric for GPU write with Spark|
-|[#12458](https://github.com/NVIDIA/spark-rapids/pull/12458)|Add a physical rule to fold two-stages LocalAggregate|
-|[#12035](https://github.com/NVIDIA/spark-rapids/pull/12035)|Add class for documented Nvtx Ranges|
-|[#12531](https://github.com/NVIDIA/spark-rapids/pull/12531)|Remove inactive user from github workflow[skip ci]|
-|[#12525](https://github.com/NVIDIA/spark-rapids/pull/12525)|Explicitly disable LTO in shuffle example dockerfiles [skip ci]|
-|[#12370](https://github.com/NVIDIA/spark-rapids/pull/12370)|HybridScan: Add a specific SQL Hint|
-|[#12455](https://github.com/NVIDIA/spark-rapids/pull/12455)|Crash pytest worker if the Pyspark child JVM is unusable|
-|[#12517](https://github.com/NVIDIA/spark-rapids/pull/12517)|Add TaskMetrics about the watermark of PinnedMemory and PageableMemory |
-|[#12513](https://github.com/NVIDIA/spark-rapids/pull/12513)|Update CICD defaults to ubuntu 22.04|
-|[#12512](https://github.com/NVIDIA/spark-rapids/pull/12512)|Fix auto merge conflict 12511 [skip ci]|
-|[#12467](https://github.com/NVIDIA/spark-rapids/pull/12467)|LoRE: support dump data from shuffle related nodes|
-|[#12306](https://github.com/NVIDIA/spark-rapids/pull/12306)|Accelerate ArrayDistinct|
-|[#12463](https://github.com/NVIDIA/spark-rapids/pull/12463)|Fix the flaky ThrottlingExecutor task metrics test|
-|[#12416](https://github.com/NVIDIA/spark-rapids/pull/12416)|Enable kudo by default.|
-|[#12482](https://github.com/NVIDIA/spark-rapids/pull/12482)|Remove Lz4 xfail tests|
-|[#12483](https://github.com/NVIDIA/spark-rapids/pull/12483)|Xfail json_matrix_test for Databricks 14.3|
-|[#12459](https://github.com/NVIDIA/spark-rapids/pull/12459)|Unblock CI due to #12452 and #12453|
-|[#12373](https://github.com/NVIDIA/spark-rapids/pull/12373)|Update dependency version JNI, private, hybrid to 25.06.0-SNAPSHOT|
 
 ## Older Releases
 Changelog of older releases can be found at [docs/archives](/docs/archives)

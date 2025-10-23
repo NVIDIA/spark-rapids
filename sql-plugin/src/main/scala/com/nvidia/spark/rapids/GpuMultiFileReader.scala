@@ -27,7 +27,7 @@ import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.collection.mutable
 import scala.language.implicitConversions
 
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -828,7 +828,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   }
 
   override def next(): Boolean = {
-    withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.FILE_FORMAT_READ_BATCH {
       // submit async tasks if it is not done
       initAndStartReaders()
 
@@ -1254,7 +1254,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   def startNewBufferRetry: Unit = ()
 
   private def readBatch(): Iterator[ColumnarBatch] = {
-    withResource(new NvtxRange(s"$getFileFormatShortName readBatch", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val currentChunkMeta = populateCurrentBlockChunk()
       val batchIter = if (currentChunkMeta.clippedSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
@@ -1311,8 +1311,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       blocks: Seq[(Path, DataBlockBase)],
       clippedSchema: SchemaBase): SpillableHostBuffer = {
 
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.BUFFER_FILE_SPLIT, metrics("bufferTime")) {
       // ugly but we want to keep the order
       val filesAndBlocks = LinkedHashMap[Path, ArrayBuffer[DataBlockBase]]()
       blocks.foreach { case (path, block) =>

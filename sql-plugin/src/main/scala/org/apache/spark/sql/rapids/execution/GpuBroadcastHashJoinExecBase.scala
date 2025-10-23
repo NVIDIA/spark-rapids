@@ -151,7 +151,7 @@ abstract class GpuBroadcastHashJoinExecBase(
         GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
           broadcastRelation,
           buildSchema,
-          new CollectTimeIterator("broadcast join stream", it, streamTime))
+          new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
       // builtBatch will be closed in doJoin
       doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
     }

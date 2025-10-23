@@ -24,7 +24,7 @@ import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 
-import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{AvroOptions => CudfAvroOptions,HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, SCAN_TIME, WRITE_BUFFER_TIME}
@@ -348,8 +348,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
 
     val table = try {
       RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-        withResource(new NvtxWithMetrics("Avro decode",
-          NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.AVRO_DECODE, metrics(GPU_DECODE_TIME)) {
           Table.readAvro(readOpts, hostBuf, 0, bufSize)
         }
       }
@@ -444,7 +443,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       blocks: Seq[BlockInfo],
       headerSize: Long,
       conf: Configuration): (SpillableHostBuffer, Long) = {
-    withResource(new NvtxRange("Avro buffer file split", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.AVRO_BUFFER_FILE_SPLIT {
       if (blocks.isEmpty) {
         // No need to check the header here since it can not be null when blocks is not empty.
         return (null, 0L)
@@ -594,7 +593,7 @@ class GpuAvroPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxRange("Avro readBatch", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.AVRO_READ_BATCH {
       val currentChunkedBlocks = populateCurrentBlockChunk(blockIterator,
         maxReadBatchSizeRows, maxReadBatchSizeBytes)
       if (readDataSchema.isEmpty) {
