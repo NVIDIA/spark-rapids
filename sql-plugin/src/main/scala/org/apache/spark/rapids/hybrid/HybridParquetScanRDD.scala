@@ -45,13 +45,6 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
     val coalesceConverter = new CoalesceConvertIterator(
       hybridScanIter, coalesceGoal.targetSizeBytes.toInt, schema, metrics)
 
-    def metricValue(name: String): Option[Long] =
-      metrics.get(name).map(_.value)
-
-    val pinnedStart = metricValue("PinnedH2DSize").getOrElse(0L)
-    val pageableStart = metricValue("PageableH2DSize").getOrElse(0L)
-    val c2cStart = metricValue("C2COutputSize").getOrElse(0L)
-
     val hostProducer: RapidsHostBatchProducer = if (preloadedCapacity > 0) {
       // prefetches the result of ParquetScan via an asynchronous producer
       require(metrics.contains("preloadWaitTime"),
@@ -78,24 +71,11 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
 
     context.addTaskCompletionListener[Unit] { _ =>
       val inputMetrics = context.taskMetrics().inputMetrics
-      def metricDelta(name: String, start: Long): Long =
-        metrics.get(name).map(metric => math.max(0L, metric.value - start)).getOrElse(0L)
+      val pinnedBytes = metrics.get("PinnedH2DSize").map(_.value).getOrElse(0L)
+      val pageableBytes = metrics.get("PageableH2DSize").map(_.value).getOrElse(0L)
 
-      val pinnedDelta = metricDelta("PinnedH2DSize", pinnedStart)
-      val pageableDelta = metricDelta("PageableH2DSize", pageableStart)
-      val c2cDelta = metricDelta("C2COutputSize", c2cStart)
-
-      val bytesFromHybrid = (pinnedDelta + pageableDelta) match {
-        case bytes if bytes > 0L => bytes
-        case _ => c2cDelta
-      }
-
-      inputMetrics.setBytesRead(bytesFromHybrid)
+      inputMetrics.setBytesRead(pinnedBytes + pageableBytes)
       inputMetrics.incRecordsRead(math.max(0L, totalRows))
-
-      require(bytesFromHybrid >= 0L,
-        s"HybridParquetScanRDD expected hybrid metrics but received negative value: " +
-          s"pinned=$pinnedDelta pageable=$pageableDelta c2c=$c2cDelta")
     }
 
     val iterWithTracking = trackingIter.asInstanceOf[Iterator[InternalRow]]
