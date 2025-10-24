@@ -18,39 +18,27 @@ package org.apache.iceberg.spark.source
 
 import java.util.Objects
 
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
-import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
-import org.apache.iceberg.PartitionScanTask
-import org.apache.iceberg.expressions.Expression
+import org.apache.iceberg.FileScanTask
 
 import org.apache.spark.sql.connector.expressions.NamedReference
-import org.apache.spark.sql.connector.expressions.filter.Predicate
-import org.apache.spark.sql.connector.read.{Statistics, SupportsRuntimeV2Filtering}
+import org.apache.spark.sql.connector.read.{Statistics, SupportsRuntimeFiltering}
+import org.apache.spark.sql.sources.Filter
 
-class GpuSparkBatchQueryScan(
-    override val cpuScan: SparkBatchQueryScan,
+class GpuSparkCopyOnWriteScan(
+    override val cpuScan: SparkCopyOnWriteScan,
     override val rapidsConf: RapidsConf,
     override val queryUsesInputFile: Boolean) extends
-  GpuSparkPartitioningAwareScan[PartitionScanTask](cpuScan, rapidsConf, queryUsesInputFile)
-  with SupportsRuntimeV2Filtering {
-
-  private val runtimeFilterExpressions: List[Expression] = FieldUtils.readField(
-      cpuScan, "runtimeFilterExpressions", true)
-    .asInstanceOf[java.util.List[Expression]]
-    .asScala
-    .toList
+  GpuSparkPartitioningAwareScan[FileScanTask](cpuScan, rapidsConf, queryUsesInputFile)
+  with SupportsRuntimeFiltering {
 
   override def filterAttributes(): Array[NamedReference] = cpuScan.filterAttributes()
-
-  override def filter(predicates: Array[Predicate]): Unit = cpuScan.filter(predicates)
 
   override def estimateStatistics(): Statistics = cpuScan.estimateStatistics()
 
   override def equals(obj: Any): Boolean = {
     obj match {
-      case that: GpuSparkBatchQueryScan =>
+      case that: GpuSparkCopyOnWriteScan =>
         this.cpuScan == that.cpuScan &&
           this.queryUsesInputFile == that.queryUsesInputFile
       case _ => false
@@ -62,17 +50,18 @@ class GpuSparkBatchQueryScan(
   }
 
   override def toString: String = {
-    s"GpuSparkBatchQueryScan(table=${cpuScan.table()}, )" +
+    s"GpuSparkCopyOnWriteScan(table=${cpuScan.table()}, " +
       s"branch=${cpuScan.branch()}, " +
       s"type=${cpuScan.expectedSchema().asStruct()}, " +
       s"filters=${cpuScan.filterExpressions()}, " +
-      s"runtimeFilters=$runtimeFilterExpressions, " +
       s"caseSensitive=${cpuScan.caseSensitive()}, " +
-      s"queryUseInputFile=$queryUsesInputFile"
+      s"queryUseInputFile=$queryUsesInputFile)"
   }
 
   /** Create a version of this scan with input file name support */
   override def withInputFile(): GpuScan = {
-    new GpuSparkBatchQueryScan(cpuScan, rapidsConf, true)
+    new GpuSparkCopyOnWriteScan(cpuScan, rapidsConf, true)
   }
+
+  override def filter(filters: Array[Filter]): Unit = cpuScan.filter(filters)
 }
