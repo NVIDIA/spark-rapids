@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@ class HashAggregateRetrySuite
 
     // attempt a cuDF reduction
     GpuAggregateIterator.aggregate(
-      aggHelper, input, mockMetrics)
+      aggHelper, input, Seq.empty, mockMetrics)._1
   }
 
   def makeGroupByAggHelper(forceMerge: Boolean): AggHelper = {
@@ -111,7 +111,8 @@ class HashAggregateRetrySuite
     GpuAggregateIterator.aggregate(
       makeGroupByAggHelper(forceMerge = false),
       input,
-      mockMetrics)
+      Seq.empty,
+      mockMetrics)._1
   }
 
   test("computeAndAggregate reduction with retry") {
