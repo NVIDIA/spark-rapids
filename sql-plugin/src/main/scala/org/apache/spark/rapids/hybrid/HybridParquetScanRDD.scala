@@ -78,9 +78,7 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
       inputMetrics.incRecordsRead(math.max(0L, totalRows))
     }
 
-    val iterWithTracking = trackingIter.asInstanceOf[Iterator[InternalRow]]
-
     // TODO: SPARK-25083 remove the type erasure hack in data source scan
-    new InterruptibleIterator(context, iterWithTracking)
+    new InterruptibleIterator(context, trackingIter.asInstanceOf[Iterator[InternalRow]])
   }
 }
