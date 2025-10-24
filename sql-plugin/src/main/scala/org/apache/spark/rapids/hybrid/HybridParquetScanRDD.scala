@@ -30,8 +30,8 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
                            outputSchema: StructType,
                            coalesceGoal: CoalesceSizeGoal,
                            preloadedCapacity: Int,
-                         metrics: Map[String, GpuMetric],
-                       ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) {
+                           metrics: Map[String, GpuMetric],
+                         ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) {
 
   override protected def getPartitions: Array[Partition] = scanRDD.partitions
 
@@ -45,9 +45,6 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
     val coalesceConverter = new CoalesceConvertIterator(
       hybridScanIter, coalesceGoal.targetSizeBytes.toInt, schema, metrics)
 
-    val inputMetrics = context.taskMetrics().inputMetrics
-    val startBytesRead = inputMetrics.bytesRead
-    val startRecordsRead = inputMetrics.recordsRead
     def metricValue(name: String): Option[Long] =
       metrics.get(name).map(_.value)
 
@@ -80,6 +77,7 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
     }
 
     context.addTaskCompletionListener[Unit] { _ =>
+      val inputMetrics = context.taskMetrics().inputMetrics
       def metricDelta(name: String, start: Long): Long =
         metrics.get(name).map(metric => math.max(0L, metric.value - start)).getOrElse(0L)
 
@@ -92,15 +90,8 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
         case _ => c2cDelta
       }
 
-      val desiredBytes = startBytesRead + bytesFromHybrid
-      inputMetrics.setBytesRead(desiredBytes)
-
-      val desiredRecords = startRecordsRead + math.max(0L, totalRows)
-      val currentRecords = inputMetrics.recordsRead
-      val recordDelta = desiredRecords - currentRecords
-      if (recordDelta != 0L) {
-        inputMetrics.incRecordsRead(recordDelta)
-      }
+      inputMetrics.setBytesRead(bytesFromHybrid)
+      inputMetrics.incRecordsRead(math.max(0L, totalRows))
 
       require(bytesFromHybrid >= 0L,
         s"HybridParquetScanRDD expected hybrid metrics but received negative value: " +
