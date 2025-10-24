@@ -43,8 +43,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.NvtxRegistry
 
 import org.apache.spark.{MapOutputTracker, SparkEnv, TaskContext}
 import org.apache.spark.serializer.SerializerManager
@@ -78,7 +77,7 @@ class RapidsShuffleThreadedReader[K, C] (
       numReaderThreads = numReaderThreads) {
 
   override protected def getMapSizes: GetMapSizesResult = {
-    withResource(new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)) { _ =>
+    NvtxRegistry.GET_MAP_SIZES_BY_EXEC_ID {
       if (handle.dependency.isShuffleMergeFinalizedMarked) {
         val res = mapOutputTracker.getPushBasedShuffleMapSizesByExecutorId(
           handle.shuffleId, startMapIndex, endMapIndex, startPartition, endPartition)

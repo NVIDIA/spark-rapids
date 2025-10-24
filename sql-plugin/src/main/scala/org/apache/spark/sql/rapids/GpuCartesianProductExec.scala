@@ -20,8 +20,8 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
+import ai.rapids.cudf.JCudfSerialization
+import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -51,7 +51,7 @@ class GpuSerializableBatch(batch: ColumnarBatch)
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    withResource(new NvtxRange("SerializeBatch", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.CARTESIAN_PRODUCT_SERIALIZE {
       if (internalBatch == null) {
         throw new IllegalStateException("Cannot re-serialize a batch this way...")
       } else {
@@ -75,7 +75,7 @@ class GpuSerializableBatch(batch: ColumnarBatch)
     // There is no good way to tie this object deserialization to a specific metric, and I am not
     // sure it is worth trying.
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
-    withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.CARTESIAN_PRODUCT_DESERIALIZE {
       val schemaArray = in.readObject().asInstanceOf[Array[DataType]]
       withResource(JCudfSerialization.readTableFrom(in)) { tableInfo =>
         val tmp = tableInfo.getTable

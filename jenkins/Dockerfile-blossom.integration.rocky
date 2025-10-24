@@ -46,15 +46,15 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     rm -f ~/miniconda.sh
 ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
 ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS="yes"
-RUN conda init && conda install -n base -c conda-forge mamba
+RUN conda init
 
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
-    mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
+    conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
         cudf=${CUDF_VER} python=3.10 cuda-version=${CUDA_VER} && \
-    mamba install -y -c anaconda pytest requests && \
-    mamba install -y -c conda-forge sre_yield && \
-    mamba clean -ay
+    conda install -y -c anaconda pytest requests && \
+    conda install -y -c conda-forge sre_yield && \
+    conda clean -ay
 # install pytest plugins for xdist parallel run
 RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0
 

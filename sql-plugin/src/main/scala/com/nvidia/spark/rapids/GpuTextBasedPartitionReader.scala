@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
@@ -385,7 +385,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   private def readPartFile(): (BUFF, Long) = {
-    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.BUFFER_FILE_SPLIT_TEXT {
       isFirstChunkForIterator = false
       val separator = lineSeparatorInRead.getOrElse(Array('\n'.toByte))
       var succeeded = false
@@ -414,7 +414,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val isFirstChunk = partFile.start == 0 && isFirstChunkForIterator
       val table = readToTable(isFirstChunk)
       try {
