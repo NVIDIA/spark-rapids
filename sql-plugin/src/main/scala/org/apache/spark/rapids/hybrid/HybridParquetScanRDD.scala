@@ -18,7 +18,6 @@ package org.apache.spark.rapids.hybrid
 
 import com.nvidia.spark.rapids.{CoalesceSizeGoal, GpuMetric}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.{InterruptibleIterator, Partition, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -32,7 +31,7 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
                            coalesceGoal: CoalesceSizeGoal,
                            preloadedCapacity: Int,
                          metrics: Map[String, GpuMetric],
-                       ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) with Logging {
+                       ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) {
 
   override protected def getPartitions: Array[Partition] = scanRDD.partitions
 
@@ -49,9 +48,6 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
     val inputMetrics = context.taskMetrics().inputMetrics
     val startBytesRead = inputMetrics.bytesRead
     val startRecordsRead = inputMetrics.recordsRead
-    val taskAttemptId = context.taskAttemptId()
-    val partitionIndex = split.index
-
     def metricValue(name: String): Option[Long] =
       metrics.get(name).map(_.value)
 
@@ -72,11 +68,6 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
       new SyncHostBatchProducer(coalesceConverter)
     }
 
-    logInfo(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
-      s"starting hybrid scan hostProducer=${hostProducer.getClass.getSimpleName} " +
-      s"startBytes=$startBytesRead startRecords=$startRecordsRead " +
-      s"preloadedCapacity=$preloadedCapacity")
-
     val deviceIter = CoalesceConvertIterator.hostToDevice(hostProducer, outputAttr, metrics)
     var totalRows = 0L
     val trackingIter = new Iterator[ColumnarBatch] {
@@ -96,21 +87,9 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
       val pageableDelta = metricDelta("PageableH2DSize", pageableStart)
       val c2cDelta = metricDelta("C2COutputSize", c2cStart)
 
-      val metricsCandidates = Seq(pinnedDelta + pageableDelta, c2cDelta).filter(_ > 0L)
-      val sparkDelta = math.max(0L, inputMetrics.bytesRead - startBytesRead)
-
-      val (bytesFromHybrid, reason) = metricsCandidates.headOption match {
-        case Some(bytes) =>
-          val source = if (pinnedDelta + pageableDelta > 0L) "pinned+pageable" else "c2c"
-          logInfo(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
-            s"using hybrid metrics ($source) for input size: " +
-            s"pinned=$pinnedDelta pageable=$pageableDelta c2c=$c2cDelta")
-          (bytes, s"hybrid-metrics($source)")
-        case None =>
-          logWarning(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
-            s"falling back to Spark delta for input size; hybrid metrics missing or zero " +
-            s"(pinned=$pinnedDelta pageable=$pageableDelta c2c=$c2cDelta) sparkDelta=$sparkDelta")
-          (sparkDelta, "spark-delta")
+      val bytesFromHybrid = (pinnedDelta + pageableDelta) match {
+        case bytes if bytes > 0L => bytes
+        case _ => c2cDelta
       }
 
       val desiredBytes = startBytesRead + bytesFromHybrid
@@ -123,9 +102,9 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
         inputMetrics.incRecordsRead(recordDelta)
       }
 
-      logInfo(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
-        s"completed: rows=$totalRows bytesSource=$reason bytesDelta=$bytesFromHybrid " +
-        s"finalBytes=$desiredBytes finalRecords=$desiredRecords")
+      require(bytesFromHybrid >= 0L,
+        s"HybridParquetScanRDD expected hybrid metrics but received negative value: " +
+          s"pinned=$pinnedDelta pageable=$pageableDelta c2c=$c2cDelta")
     }
 
     val iterWithTracking = trackingIter.asInstanceOf[Iterator[InternalRow]]
