@@ -41,10 +41,11 @@ following UDF types:
   or
   [Generic](https://github.com/apache/hive/blob/cb213d88304034393d68cc31a95be24f5aac62b6/ql/src/java/org/apache/hadoop/hive/ql/udf/generic/GenericUDF.java)
   Hive UDFs
+- Scala User-Defined Aggregate Functions ([UserDefinedAggregateFunction](https://github.com/apache/spark/blob/2a5d03a00a0301b1bdc9af347365d94da15825a9/sql/api/src/main/scala/org/apache/spark/sql/expressions/udaf.scala#L38))
+- [Aggregator](https://github.com/apache/spark/blob/2a5d03a00a0301b1bdc9af347365d94da15825a9/sql/api/src/main/scala/org/apache/spark/sql/expressions/Aggregator.scala)
+- Hive Aggregate Function ([AbstractGenericUDAFResolver](https://github.com/apache/hive/blob/cb213d88304034393d68cc31a95be24f5aac62b6/ql/src/java/org/apache/hadoop/hive/ql/udf/generic/AbstractGenericUDAFResolver.java))
 
 Other forms of Spark UDFs are not supported, such as:
-- Scala or Java User-Defined Aggregate Functions
-- Hive Aggregate Function (UDAF)
 - Hive Tabular Function (UDTF)
 - Lambda Functions
 
@@ -141,12 +142,108 @@ type `DECIMAL64(scale=-2)`.
 <!-- Note: should update the branch name to tag when releasing-->
 Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/UDF-Examples/RAPIDS-accelerated-UDFs) project.
 
+## RAPIDS Accelerated User-Defined Aggregate Functions (UDAFs)
+The RAPIDS also supports an accelerated version of UDAFs via the `RapidsUDAF` interface.
+Users can choose to implement its APIs as below to get the GPU acceleration.
+
+- ```java
+  DataType[] aggBufferTypes();
+  ```
+  Specify the schema of the intermediate results (aka aggregation buffers) for this aggregation.
+
+- ```java
+  Scalar[] getDefaultValue();
+  ```
+  Provide default values for this aggregation as an array of cuDF Scalar. This is used when a
+  reduction has no rows to aggregate. And the values should follow the schema returned from
+  `aggBufferTypes()`.
+
+- ```java
+  default ColumnVector[] preProcess(int numRows, ColumnVector[] args);
+  ```
+  Transform the cuDF `ColumnVector`s of input values. By default, it returns the input as-is.
+
+- ```java
+  RapidsUDAFGroupByAggregation updateAggregation();
+  ```
+  Build a `RapidsUDAFGroupByAggregation` to perform initial aggregates on the transformed
+  `ColumnVector`s returned from the `preProcess` method.
+
+- ```java
+  RapidsUDAFGroupByAggregation mergeAggregation();
+  ```
+  Build a `RapidsUDAFGroupByAggregation` to merge multiple sets of intermediate results
+  produced by the RAPIDS aggregation returned from `updateAggregation()`.
+
+- ```java
+  ColumnVector postProcess(int numRows, ColumnVector[] args, DataType outType);
+  ```
+  Transform the merged intermediate results processed by `mergeAggregation()`
+  to produce the final result.
+
+`RapidsUDAFGroupByAggregation` is a base interface for RAPIDS aggregation implementations.
+And it provides the contract for different aggregation strategies. So far it has only one
+child class named `RapidsSimpleGroupByAggregation`.
+Users should extend from this child class to cover both of the reduction and aggregation
+cases.
+
+`RapidsSimpleGroupByAggregation` defines the following 4 APIs.
+
+  - ```java
+    default ColumnVector[] preStep(int numRows, ColumnVector[] args);
+    ```
+    Transform the cuDF `ColumnVector`s of intermediate results. This is only used by the
+    `RapidsUDAFGroupByAggregation` returned from the `mergeAggregation()`.
+    By default, it returns the input as-is.
+
+  - ```java
+    Scalar[] reduce(int numRows, ColumnVector[] preStepData);
+    ```
+    Perform reductions on the transformed `ColumnVector`s from either the `preProcess`
+    method for the `updateAggregation()`, or the `preStep` method for the `mergeAggregation()`.
+
+  - ```java
+    GroupByAggregationOnColumn[] aggregate(int[] inputIndices);
+    ```
+    Specify cuDF group-by aggregates on the transformed `ColumnVector`s (provided as column
+    indices here) from either the `preProcess` method for the `updateAggregation()`, or the
+    `preStep` method for the `mergeAggregation()`.
+
+  - ```java
+    default ColumnVector[] postStep(ColumnVector[] aggregatedData);
+    ```
+    Transform the cuDF `ColumnVector`s produced by the previous `reduce` or `aggregate` operation.
+    The output should follow the schema of the intermediate results of this aggregation.
+    By default, it returns the input as-is.
+
+Here is the APIs summary of both CPU and GPU UDAF interfaces.
+`UserDefinedAggregateFunction`(deprecated) and `Aggregator` are from Spark, while
+`GenericUDAFEvaluator` is from Hive.
+APIs in the same table row play a similar role during an aggregation.
+
+| RapidsUDAF                          | UserDefinedAggregateFunction | Aggregator      | GenericUDAFEvaluator            |
+|:------------------------------------|:-----------------------------|:----------------|:--------------------------------|
+| `getDefaultValue`                   | `initialize`                 | `zero`          | `getNewAggregationBuffer`       |
+| `preProcess`<br>`updateAggregation` | `update`                     | `reduce`        | `iterate`<br>`terminatePartial` |
+| `mergeAggregation`                  | `merge`                      | `merge`         | `merge`                         |
+| `postProcess`                       | `evaluate`                   | `finish`        | `terminate`                     |
+| `aggBufferTypes`                    | `bufferSchema`               | `bufferEncoder` | `init` (partial mode)           |
+| (get from the CPU operator)         | `dataType`                   | `outputEncoder` | `init` (final mode)             |
+|                                     | `inputSchema`                |                 |                                 |
+
+## RAPIDS Accelerated UDAF Examples
+Source code for examples of RAPIDS UDAFs can be found in the following 3 relevant test suites.
+
+- [ScalaUDAFSuite](../../tests/src/test/scala/com/nvidia/spark/rapids/ScalaUDAFSuite.scala)
+- [ScalaAggregatorSuite](../../tests/src/test/scala/com/nvidia/spark/rapids/ScalaAggregatorSuite.scala)
+- [IntLongAverageHiveUDAF](../../integration_tests/src/main/java/com/nvidia/spark/rapids/tests/udf/hive/IntLongAverageHiveUDAF.java)
+
 ## GPU Support for Pandas UDF
 
 ---
 **NOTE**
 
-The GPU support for Pandas UDF is an experimental feature, and may change at any point it time.
+The GPU support for Pandas UDF is an experimental feature, and may change at any point in time.
 
 ---
 
