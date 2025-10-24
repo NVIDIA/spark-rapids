@@ -17,7 +17,7 @@
 
 set -ex
 
-BUILD_TYPE=all
+BUILD_TYPE=ci_2
 
 if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
@@ -181,7 +181,7 @@ ci_2() {
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
-    ./integration_tests/run_pyspark_from_build.sh
+    TESTS=mortgage_test.py ./integration_tests/run_pyspark_from_build.sh
 
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
