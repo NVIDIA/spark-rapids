@@ -18,6 +18,7 @@ package org.apache.spark.rapids.hybrid
 
 import com.nvidia.spark.rapids.{CoalesceSizeGoal, GpuMetric}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.{InterruptibleIterator, Partition, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -30,8 +31,8 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
                            outputSchema: StructType,
                            coalesceGoal: CoalesceSizeGoal,
                            preloadedCapacity: Int,
-                           metrics: Map[String, GpuMetric],
-                         ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) {
+                         metrics: Map[String, GpuMetric],
+                       ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) with Logging {
 
   override protected def getPartitions: Array[Partition] = scanRDD.partitions
 
@@ -44,6 +45,19 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
     })
     val coalesceConverter = new CoalesceConvertIterator(
       hybridScanIter, coalesceGoal.targetSizeBytes.toInt, schema, metrics)
+
+    val inputMetrics = context.taskMetrics().inputMetrics
+    val startBytesRead = inputMetrics.bytesRead
+    val startRecordsRead = inputMetrics.recordsRead
+    val taskAttemptId = context.taskAttemptId()
+    val partitionIndex = split.index
+
+    def metricValue(name: String): Option[Long] =
+      metrics.get(name).map(_.value)
+
+    val pinnedStart = metricValue("PinnedH2DSize").getOrElse(0L)
+    val pageableStart = metricValue("PageableH2DSize").getOrElse(0L)
+    val c2cStart = metricValue("C2COutputSize").getOrElse(0L)
 
     val hostProducer: RapidsHostBatchProducer = if (preloadedCapacity > 0) {
       // prefetches the result of ParquetScan via an asynchronous producer
@@ -58,9 +72,65 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
       new SyncHostBatchProducer(coalesceConverter)
     }
 
+    logInfo(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
+      s"starting hybrid scan hostProducer=${hostProducer.getClass.getSimpleName} " +
+      s"startBytes=$startBytesRead startRecords=$startRecordsRead " +
+      s"preloadedCapacity=$preloadedCapacity")
+
     val deviceIter = CoalesceConvertIterator.hostToDevice(hostProducer, outputAttr, metrics)
+    var totalRows = 0L
+    val trackingIter = new Iterator[ColumnarBatch] {
+      override def hasNext: Boolean = deviceIter.hasNext
+      override def next(): ColumnarBatch = {
+        val batch = deviceIter.next()
+        totalRows += batch.numRows()
+        batch
+      }
+    }
+
+    context.addTaskCompletionListener[Unit] { _ =>
+      def metricDelta(name: String, start: Long): Long =
+        metrics.get(name).map(metric => math.max(0L, metric.value - start)).getOrElse(0L)
+
+      val pinnedDelta = metricDelta("PinnedH2DSize", pinnedStart)
+      val pageableDelta = metricDelta("PageableH2DSize", pageableStart)
+      val c2cDelta = metricDelta("C2COutputSize", c2cStart)
+
+      val metricsCandidates = Seq(pinnedDelta + pageableDelta, c2cDelta).filter(_ > 0L)
+      val sparkDelta = math.max(0L, inputMetrics.bytesRead - startBytesRead)
+
+      val (bytesFromHybrid, reason) = metricsCandidates.headOption match {
+        case Some(bytes) =>
+          val source = if (pinnedDelta + pageableDelta > 0L) "pinned+pageable" else "c2c"
+          logInfo(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
+            s"using hybrid metrics ($source) for input size: " +
+            s"pinned=$pinnedDelta pageable=$pageableDelta c2c=$c2cDelta")
+          (bytes, s"hybrid-metrics($source)")
+        case None =>
+          logWarning(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
+            s"falling back to Spark delta for input size; hybrid metrics missing or zero " +
+            s"(pinned=$pinnedDelta pageable=$pageableDelta c2c=$c2cDelta) sparkDelta=$sparkDelta")
+          (sparkDelta, "spark-delta")
+      }
+
+      val desiredBytes = startBytesRead + bytesFromHybrid
+      inputMetrics.setBytesRead(desiredBytes)
+
+      val desiredRecords = startRecordsRead + math.max(0L, totalRows)
+      val currentRecords = inputMetrics.recordsRead
+      val recordDelta = desiredRecords - currentRecords
+      if (recordDelta != 0L) {
+        inputMetrics.incRecordsRead(recordDelta)
+      }
+
+      logInfo(s"HybridParquetScanRDD task=$taskAttemptId partition=$partitionIndex " +
+        s"completed: rows=$totalRows bytesSource=$reason bytesDelta=$bytesFromHybrid " +
+        s"finalBytes=$desiredBytes finalRecords=$desiredRecords")
+    }
+
+    val iterWithTracking = trackingIter.asInstanceOf[Iterator[InternalRow]]
 
     // TODO: SPARK-25083 remove the type erasure hack in data source scan
-    new InterruptibleIterator(context, deviceIter.asInstanceOf[Iterator[InternalRow]])
+    new InterruptibleIterator(context, iterWithTracking)
   }
 }
