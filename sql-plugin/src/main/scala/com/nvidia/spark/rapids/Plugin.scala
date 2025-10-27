@@ -38,7 +38,7 @@ import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
-import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
+import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, SparkEnv, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.hybrid.HybridExecutionUtils
@@ -443,8 +443,27 @@ object RapidsPluginUtils extends Logging {
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
+  private var conf: RapidsConf = null
   private lazy val extraDriverPlugins =
     RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
+
+  private def ensureShuffleHeartbeatManager(): Unit = {
+    if (rapidsShuffleHeartbeatManager == null) {
+      // Try to initialize heartbeat manager if conditions are met
+      if (conf != null &&
+          GpuShuffleEnv.isRapidsShuffleAvailable(conf) &&
+          GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
+        rapidsShuffleHeartbeatManager =
+          new RapidsShuffleHeartbeatManager(
+            conf.shuffleTransportEarlyStartHeartbeatInterval,
+            conf.shuffleTransportEarlyStartHeartbeatTimeout)
+        logInfo("Initialized shuffle heartbeat manager on-demand")
+      } else {
+        throw new IllegalStateException(
+          s"Shuffle heartbeat manager not configured and conditions not met for initialization.")
+      }
+    }
+  }
 
   override def receive(msg: Any): AnyRef = {
     msg match {
@@ -452,16 +471,10 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
         // handleMsg should not block current thread
         FileCacheLocalityManager.get.handleMsg(m)
       case RapidsExecutorStartupMsg(id) =>
-        if (rapidsShuffleHeartbeatManager == null) {
-          throw new IllegalStateException(
-            s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
-        }
+        ensureShuffleHeartbeatManager()
         rapidsShuffleHeartbeatManager.registerExecutor(id)
       case RapidsExecutorHeartbeatMsg(id) =>
-        if (rapidsShuffleHeartbeatManager == null) {
-          throw new IllegalStateException(
-            s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
-        }
+        ensureShuffleHeartbeatManager()
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
       case m: GpuCoreDumpMsg => GpuCoreDumpHandler.handleMsg(m)
       case m: ProfileMsg => ProfilerOnDriver.handleMsg(m)
@@ -473,14 +486,17 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
-    val conf = new RapidsConf(sparkConf)
+    conf = new RapidsConf(sparkConf)
     RapidsPluginUtils.detectMultipleJars(conf)
     RapidsPluginUtils.logPluginMode(conf)
     GpuCoreDumpHandler.driverInit(sc, conf)
     ProfilerOnDriver.init(sc, conf)
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
-      GpuShuffleEnv.initShuffleManager()
+      val sparkEnv = SparkEnv.get
+      if (sparkEnv != null && sparkEnv.shuffleManager != null) {
+        GpuShuffleEnv.initShuffleManager()
+      }
       if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
         rapidsShuffleHeartbeatManager =
           new RapidsShuffleHeartbeatManager(
@@ -581,7 +597,10 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf,
           numCores)
         if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
-          GpuShuffleEnv.initShuffleManager()
+          val sparkEnv = SparkEnv.get
+          if (sparkEnv != null && sparkEnv.shuffleManager != null) {
+            GpuShuffleEnv.initShuffleManager()
+          }
           if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
             logInfo("Initializing shuffle manager heartbeats")
             rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
