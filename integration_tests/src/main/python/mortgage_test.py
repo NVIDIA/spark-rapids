@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limi
 @limit
 @ignore_order
 @allow_non_gpu(any=True)
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13652")
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))

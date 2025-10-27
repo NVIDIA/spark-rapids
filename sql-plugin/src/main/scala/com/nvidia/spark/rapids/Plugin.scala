@@ -543,13 +543,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         AsyncProfilerOnExecutor.init(pluginContext, conf)
       }
 
-      // Checks if the current GPU architecture is supported by the
-      // spark-rapids-jni and cuDF libraries.
-      // Note: We allow this check to be skipped for off-chance cases.
-      if (!conf.skipGpuArchCheck && conf.isSqlExecuteOnGPU) {
-        RapidsPluginUtils.validateGpuArchitecture()
-      }
-
       // Fail if there are multiple plugin jars in the classpath.
       RapidsPluginUtils.detectMultipleJars(conf)
 
@@ -595,6 +588,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
           }
         }
+      }
+
+      // Checks if the current GPU architecture is supported by the
+      // spark-rapids-jni and cuDF libraries.
+      // Note: We allow this check to be skipped for off-chance cases.
+      if (!conf.skipGpuArchCheck && conf.isSqlExecuteOnGPU) {
+        RapidsPluginUtils.validateGpuArchitecture()
       }
 
       logDebug("Loading extra executor plugins: " +
