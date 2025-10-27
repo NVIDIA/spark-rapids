@@ -446,6 +446,48 @@ def assert_gpu_fallback_write(write_func,
         jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.endCapture()
 
 
+def assert_gpu_fallback_write_sql(write_func,
+                                  read_func,
+                              base_table_name,
+                              cpu_fallback_class_name_list,
+                              conf={}):
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    cpu_table_name = f'{base_table_name}_cpu'
+    with_cpu_session(lambda spark : write_func(spark, cpu_table_name), conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    jvm = spark_jvm()
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.startCapture()
+    gpu_start = time.time()
+    gpu_table_name = f'{base_table_name}_gpu'
+    try:
+        with_gpu_session(lambda spark : write_func(spark, gpu_table_name), conf=conf)
+        gpu_end = time.time()
+        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name_list, 10000)
+        print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+            gpu_end - gpu_start, cpu_end - cpu_start))
+
+        (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
+            lambda spark: read_func(spark, cpu_table_name), 'COLLECT')
+        (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
+            lambda spark: read_func(spark, gpu_table_name), 'COLLECT')
+
+        from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
+        from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
+        if should_sort_locally():
+            _sort_locally(from_cpu, from_gpu)
+
+        assert_equal(from_cpu, from_gpu)
+    finally:
+        # Ensure `shouldCapture` state is restored. This may happen when GpuPlan is failed to be executed,
+        # then `shouldCapture` state is failed to restore in `assertCapturedAndGpuFellBack` method.
+        # This mostly happen within a xfail case where error may be ignored.
+        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.endCapture()
+
+
 def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
         exist_classes='',
         non_exist_classes='',

@@ -234,6 +234,36 @@ case class GpuOverwriteByExpressionExec(
 }
 
 /**
+ * Physical plan node for replacing data in a v2 table.
+ *
+ * Used by copy-on-write operations like DELETE to replace rows in the table.
+ * Rows are read, filtered, and rewritten.
+ */
+case class GpuReplaceDataExec(
+                               inner: SparkPlan,
+                               refreshCache: () => Unit,
+                               write: GpuWrite) extends GpuV2ExistingTableWriteExec {
+
+  override def supportsColumnar: Boolean = false
+
+  override def query: SparkPlan = {
+    inner match {
+      case c2r: GpuColumnarToRowExec => c2r.child
+      case _ => inner
+    }
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(
+      "GpuReplaceDataExec does not support columnar execution")
+  }
+
+  override protected def withNewChildInternal(newChild: SparkPlan): GpuReplaceDataExec = {
+    copy(inner = newChild)
+  }
+}
+
+/**
  * This class is derived from [[org.apache.spark.sql.execution.datasources.v2.WritingSparkTask]].
  */
 trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with Serializable {
