@@ -275,7 +275,7 @@ def pytest_runtest_setup(item):
         condition = non_gpu_conditional.args[0]
         _non_gpu_allowed_conditional = non_gpu_conditional.args[1]
         if not isinstance(condition, bool):
-            raise ValueError("The first parameter of 'allow_non_gpu_conditional' must be a Boolean.")
+            raise TypeError("The first parameter of 'allow_non_gpu_conditional' must be a Boolean.")
         if condition:
             if non_gpu_conditional.kwargs and non_gpu_conditional.kwargs['any']:
                 _allow_any_non_gpu_conditional = True
@@ -323,6 +323,9 @@ def pytest_runtest_setup(item):
     if _current_test_has_delta_marker:
         allow_non_gpu_delta_write_marker = item.get_closest_marker('allow_non_gpu_delta_write_if')
         if allow_non_gpu_delta_write_marker:
+            # check argument length
+            if len(allow_non_gpu_delta_write_marker.args) < 1:
+                raise RuntimeError("The 'allow_non_gpu_delta_write_if' marker requires at least one argument.")
             cond = allow_non_gpu_delta_write_marker.args[0]
             if not isinstance(cond, bool):
                 raise TypeError("The first parameter of 'allow_non_gpu_delta_write_if' must be a Boolean.")

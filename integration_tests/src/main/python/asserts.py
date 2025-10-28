@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat, should_sort_on_spark, should_sort_locally, array_columns_to_sort_locally, get_float_check, get_limit, spark_jvm
+from conftest import (is_incompat, should_sort_on_spark, should_sort_locally, array_columns_to_sort_locally, get_float_check,
+                      get_limit, spark_jvm, current_test_has_delta_marker, current_test_allows_non_gpu_delta_write)
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import math
@@ -265,7 +266,6 @@ def _assert_gpu_and_cpu_writes_are_equal(
     gpu_path = base_path + '/GPU'
 
     # Check if current test has delta_lake marker
-    from conftest import current_test_has_delta_marker, current_test_allows_non_gpu_delta_write
     if current_test_has_delta_marker() and not current_test_allows_non_gpu_delta_write():
         print("Delta Lake test detected - applying Delta write validation")
         from delta_lake_utils import assert_rapids_delta_write
@@ -324,9 +324,8 @@ def assert_gpu_and_cpu_save_as_table_are_equal_collect(table_name_factory, write
     gpu_start = time.time()
     gpu_table = table_name_factory.get() + '_gpu'
     # Check if current test has delta_lake marker
-    from conftest import current_test_has_delta_marker
-    if current_test_has_delta_marker():
-        print("✓ Delta Lake test detected - applying Delta write validation")
+    if current_test_has_delta_marker() and not current_test_allows_non_gpu_delta_write():
+        print("Delta Lake test detected - applying Delta write validation")
         from delta_lake_utils import assert_rapids_delta_write
         assert_rapids_delta_write(lambda spark : write_func(spark, gpu_table), conf=conf)
     else:
