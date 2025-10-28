@@ -69,6 +69,8 @@ class KudoGpuSerializerRetrySuite extends RmmSparkRetrySuiteBase {
               assert(cb.numRows() >= 0)
             }
           }
+          val retryCount = RmmSpark.getAndResetNumRetryThrow(/*taskId*/ 1)
+          assert(retryCount > 0, s"expected at least one retry but saw $retryCount")
         } finally {
           if (results != null) {
             results.foreach { case (cb, _) =>
