@@ -321,18 +321,17 @@ case class GpuWriteIntoDelta(
       registerReplaceWhereMetrics(sparkSession, txn, newFiles, deletedFiles)
     }
 
-    val fileActions: Seq[Action] = if (rearrangeOnly) {
+    val fileActions = if (rearrangeOnly) {
       val changeFiles = newFiles.collect { case c: AddCDCFile => c }
       if (changeFiles.nonEmpty) {
         throw DeltaErrors.unexpectedChangeFilesFound(changeFiles.mkString("\n"))
       }
-      val updatedAdds: Seq[Action] = addFiles.map(a => a.copy(dataChange = !rearrangeOnly): AddFile)
-      val updatedDeletes: Seq[Action] = deletedFiles.map {
-        case a: AddFile => a.copy(dataChange = !rearrangeOnly): AddFile
-        case r: RemoveFile => r.copy(dataChange = !rearrangeOnly): RemoveFile
-        case other => throw DeltaErrors.illegalFilesFound(other.toString)
-      }
-      updatedAdds ++ updatedDeletes
+      addFiles.map(_.copy(dataChange = !rearrangeOnly)) ++
+        deletedFiles.map {
+          case add: AddFile => add.copy(dataChange = !rearrangeOnly)
+          case remove: RemoveFile => remove.copy(dataChange = !rearrangeOnly)
+          case other => throw DeltaErrors.illegalFilesFound(other.toString)
+        }
     } else {
       newFiles ++ deletedFiles
     }
@@ -340,13 +339,6 @@ case class GpuWriteIntoDelta(
       newDomainMetadata ++
         createSetTransaction(sparkSession, deltaLog, Some(cpuWrite.options)).toSeq ++
         fileActions
-
-    // Register numRemovedFiles metric (even when 0) so WRITE operationMetrics match CPU
-    val removedFilesCount = fileActions.count(_.isInstanceOf[RemoveFile])
-    val m: SQLMetric = SQLMetrics.createMetric(
-      sparkSession.sparkContext, "number of files removed.")
-    m.set(removedFilesCount)
-    txn.registerSQLMetrics(sparkSession, Map("numRemovedFiles" -> m))
     TaggedCommitData(allActions)
   }
 
