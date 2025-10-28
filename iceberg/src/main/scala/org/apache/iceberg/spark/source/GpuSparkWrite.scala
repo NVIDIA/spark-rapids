@@ -58,6 +58,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     // Iceberg's SparkWrite returns different implementations based on write mode:
     // - BatchAppend for append operations
     // - DynamicOverwrite for dynamic partition overwrite
+    // - BatchRewrite for copy-on-write operations (DELETE)
     // Since these are private classes, we check the class name to determine which GPU version
     // to use
     val cpuBatch = cpu.toBatch
@@ -67,6 +68,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       case "BatchAppend" => new GpuBatchAppend(this)
       case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
       case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatch)
+      case "CopyOnWriteOperation" => new GpuCopyOnWriteOperation(this, cpuBatch)
       case _ =>
         throw new UnsupportedOperationException(
           s"Unsupported Iceberg batch write type: $cpuBatchClassName")
