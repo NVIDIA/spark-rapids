@@ -80,8 +80,7 @@ abstract class GpuOptimisticTransactionBase(
       // Alias for 4.0 commit-time transformMetrics
       metrics + ("operationNumSourceRows" -> metrics("numSourceRows")) +
         // Present for materialization timing even if unused here
-        ("materializeSourceTimeMs" -> org.apache.spark.sql.execution.metric.SQLMetrics.createMetric(
-          spark.sparkContext, "time taken to materialize merge source"))
+        ("materializeSourceTimeMs" -> SQLMetrics.createMetric(
     } else metrics
     super.registerSQLMetrics(spark, extended)
   }
