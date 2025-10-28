@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -370,7 +371,7 @@ case class GpuArrowEvalPythonExec(
         ((ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), udf.resultId.id), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
+        assertInTests(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
         ((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id), udf.children)
     }
   }

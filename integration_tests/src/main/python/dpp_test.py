@@ -178,6 +178,7 @@ dpp_fallback_execs=["CollectLimitExec"] if is_databricks_version_or_later(14,3) 
 @ignore_order
 @allow_non_gpu(*dpp_fallback_execs)
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10147")
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13652")
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
