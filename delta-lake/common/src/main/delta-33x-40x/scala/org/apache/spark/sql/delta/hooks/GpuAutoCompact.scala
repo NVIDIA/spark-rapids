@@ -37,16 +37,6 @@ import org.apache.spark.sql.delta.stats.AutoCompactPartitionStats
 
 trait GpuAutoCompactBase extends AutoCompactBase {
 
-  override def run(
-      spark: SparkSession,
-      txn: OptimisticTransactionImpl,
-      committedVersion: Long,
-      postCommitSnapshot: Snapshot,
-      actions: Seq[Action]): Unit = {
-    run(spark, txn.asInstanceOf[GpuOptimisticTransactionBase],
-      committedVersion, postCommitSnapshot, actions)
-  }
-
   /**
    * Run the Auto Compact hook with the GPU optimistic transaction.
    */
@@ -165,27 +155,5 @@ trait GpuAutoCompactBase extends AutoCompactBase {
       recordDeltaEvent(deltaLog, s"$opType.execute.metrics", data = metrics.head)
       metrics
     }
-  }
-}
-
-case object GpuAutoCompact extends GpuAutoCompactBase {
-
-  override def run(
-      spark: SparkSession,
-      txn: GpuOptimisticTransactionBase,
-      committedVersion: Long,
-      postCommitSnapshot: Snapshot,
-      actions: Seq[Action]): Unit = {
-    val conf = spark.sessionState.conf
-    val autoCompactTypeOpt = getAutoCompactType(conf, postCommitSnapshot.metadata)
-    // Skip Auto Compact if current transaction is not qualified or the table is not qualified
-    // based on the value of autoCompactTypeOpt.
-    if (shouldSkipAutoCompact(autoCompactTypeOpt, spark, txn)) return
-    compactIfNecessary(
-      spark,
-      txn,
-      postCommitSnapshot,
-      OP_TYPE,
-      maxDeletedRowsRatio = None)
   }
 }
