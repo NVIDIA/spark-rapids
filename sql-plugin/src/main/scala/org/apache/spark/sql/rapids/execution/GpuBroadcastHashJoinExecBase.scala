@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.rdd.RDD
@@ -100,7 +101,8 @@ abstract class GpuBroadcastHashJoinExecBase(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
+    right: SparkPlan,
+    isNullAwareAntiJoin: Boolean) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
@@ -146,14 +148,40 @@ abstract class GpuBroadcastHashJoinExecBase(
 
     val rdd = streamedPlan.executeColumnar()
     val buildSchema = buildPlan.schema
+    val localIsNullAwareAntiJoin = isNullAwareAntiJoin
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
         GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
           broadcastRelation,
           buildSchema,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
-      // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+      if (localIsNullAwareAntiJoin) {
+        // This is to support the null-aware anti join for the LeftAnti join with
+        // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".
+        // Spark already executes all the check for the requirements, e.g. join type,
+        // build side, keys length == 1. So no need to do it here again.
+        // This will cover mainly 3 cases as below, similar as what Spark does.
+        if (builtBatch.numRows() == 0) {
+          // Build side is empty, return the stream iterator directly.
+          withResource(builtBatch)(_ => streamIter)
+        } else if (builtBatch.column(0).hasNull) {
+          // Spark will return an empty iterator if any nulls in the right table
+          withResource(builtBatch)(_ => Iterator.empty)
+        } else {
+          // Nulls will be filtered out
+          val nullFilteredStreamIter = streamIter.map { cb =>
+            GpuHashJoin.filterNullsWithRetryAndClose(
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+              boundStreamKeys)
+          }
+          doJoin(builtBatch, nullFilteredStreamIter, targetSize, numOutputRows,
+            numOutputBatches, opTime, joinTime)
+        }
+      } else {
+        // builtBatch will be closed in doJoin
+        doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime,
+          joinTime)
+      }
     }
   }
 

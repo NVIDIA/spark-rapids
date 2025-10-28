@@ -23,7 +23,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -66,6 +66,7 @@ class GpuBroadcastHashJoinMeta(
       joinCondition,
       left,
       right,
+      join.isNullAwareAntiJoin,
       join.isExecutorBroadcast)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
@@ -80,10 +81,11 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan, 
+    right: SparkPlan,
+    isNullAwareAntiJoin: Boolean,
     executorBroadcast: Boolean)
       extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
+      leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -169,6 +171,7 @@ case class GpuBroadcastHashJoinExec(
     val rdd = streamedPlan.executeColumnar()
     val localBuildSchema = buildPlan.schema
     val localBuildOutput = buildPlan.output
+    val localIsNullAwareAntiJoin = isNullAwareAntiJoin
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
         getExecutorBuiltBatchAndStreamIter(
@@ -177,8 +180,33 @@ case class GpuBroadcastHashJoinExec(
           localBuildOutput,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime),
           allMetrics)
-      // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+      if (localIsNullAwareAntiJoin) {
+        // This is to support the null-aware anti join for the LeftAnti join with
+        // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".
+        // Spark already executes all the check for the requirements, e.g. join type,
+        // build side, keys length == 1. So no need to do it here again.
+        // This will cover mainly 3 cases as below, similar as what Spark does.
+        if (builtBatch.numRows() == 0) {
+          // Build side is empty, return the stream iterator directly.
+          withResource(builtBatch)(_ => streamIter)
+        } else if (builtBatch.column(0).hasNull) {
+          // Spark will return an empty iterator if any nulls in the right table
+          withResource(builtBatch)(_ => Iterator.empty)
+        } else {
+          // Nulls will be filtered out
+          val nullFilteredStreamIter = streamIter.map { cb =>
+            GpuHashJoin.filterNullsWithRetryAndClose(
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+              boundStreamKeys)
+          }
+          doJoin(builtBatch, nullFilteredStreamIter, targetSize, numOutputRows,
+            numOutputBatches, opTime, joinTime)
+        }
+      } else {
+        // builtBatch will be closed in doJoin
+        doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime,
+          joinTime)
+      }
     }
   }
 
