@@ -17,7 +17,6 @@
 package org.apache.spark.sql.delta.rapids
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, RapidsConf, TargetSize}
 import com.nvidia.spark.rapids.delta.DeltaWriteUtils
 
 import org.apache.spark.sql.SparkSession

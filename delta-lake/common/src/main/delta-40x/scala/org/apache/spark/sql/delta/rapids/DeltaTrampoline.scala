@@ -38,7 +38,7 @@ object DeltaTrampoline {
     var bucketSpec = Option.empty[BucketSpec]
     var clusterBySpec = Option.empty[ClusterBySpec]
 
-    partitions.map {
+    partitions.foreach {
       case IdentityTransform(FieldReference(Seq(col))) =>
         identityCols += col
 
