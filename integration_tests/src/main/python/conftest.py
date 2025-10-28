@@ -57,6 +57,8 @@ _allow_any_non_gpu = False
 _non_gpu_allowed = []
 _per_test_ansi_mode_enabled = None
 _current_test_has_delta_marker = False
+_current_test_allow_non_gpu_delta_write = False
+
 
 def is_allowing_any_non_gpu():
     return _allow_any_non_gpu
@@ -72,6 +74,11 @@ def is_per_test_ansi_mode_enabled():
 def current_test_has_delta_marker():
     """Check if the current test has the @delta_lake marker."""
     return _current_test_has_delta_marker
+
+
+def current_test_allows_non_gpu_delta_write():
+    """Check if the current test allows non-GPU delta write operations."""
+    return _current_test_allow_non_gpu_delta_write
 
 
 def get_validate_execs_in_gpu_plan():
@@ -268,7 +275,7 @@ def pytest_runtest_setup(item):
         condition = non_gpu_conditional.args[0]
         _non_gpu_allowed_conditional = non_gpu_conditional.args[1]
         if not isinstance(condition, bool):
-            raise ValueError("The first parameter of 'allow_non_gpu_conditional' must be a Boolean.")
+            raise TypeError("The first parameter of 'allow_non_gpu_conditional' must be a Boolean.")
         if condition:
             if non_gpu_conditional.kwargs and non_gpu_conditional.kwargs['any']:
                 _allow_any_non_gpu_conditional = True
@@ -311,6 +318,21 @@ def pytest_runtest_setup(item):
 
     global _current_test_has_delta_marker
     _current_test_has_delta_marker = item.get_closest_marker('delta_lake') is not None
+    global _current_test_allow_non_gpu_delta_write
+    _current_test_allow_non_gpu_delta_write = False
+    if _current_test_has_delta_marker:
+        allow_non_gpu_delta_write_marker = item.get_closest_marker('allow_non_gpu_delta_write_if')
+        if allow_non_gpu_delta_write_marker:
+            # check argument length
+            if len(allow_non_gpu_delta_write_marker.args) < 1:
+                raise RuntimeError("The 'allow_non_gpu_delta_write_if' marker requires at least one argument.")
+            cond = allow_non_gpu_delta_write_marker.args[0]
+            if not isinstance(cond, bool):
+                raise TypeError("The first parameter of 'allow_non_gpu_delta_write_if' must be a Boolean.")
+            _current_test_allow_non_gpu_delta_write = cond
+            if _current_test_allow_non_gpu_delta_write:
+                reason = allow_non_gpu_delta_write_marker.kwargs.get('reason', 'no reason provided')
+                warnings.warn(f'Delta Lake tests allowing non-GPU delta write operations: {reason}')
 
     if _current_test_has_delta_marker:
         if not item.config.getoption('delta_lake'):

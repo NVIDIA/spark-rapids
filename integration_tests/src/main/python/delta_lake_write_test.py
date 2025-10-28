@@ -427,6 +427,7 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@allow_non_gpu_delta_write_if(is_before_spark_353(), reason="Dynamic partition overwrites are not supported before Spark 3.5.3")
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
@@ -450,6 +451,7 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@allow_non_gpu_delta_write_if(is_before_spark_353(), reason="Dynamic partition overwrites are not supported before Spark 3.5.3")
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
