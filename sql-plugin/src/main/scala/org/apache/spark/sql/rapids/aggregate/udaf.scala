@@ -282,7 +282,9 @@ object AdvAggTypeUtils {
     val dt = structCol.dataType().asInstanceOf[StructType]
     val baseCol = structCol.getBase
     (0 until baseCol.getNumChildren).safeMap { i =>
-      GpuColumnVector.from(baseCol.getChildColumnView(i).copyToColumnVector(), dt(i).dataType)
+      withResource(baseCol.getChildColumnView(i)) { childView =>
+        GpuColumnVector.from(childView.copyToColumnVector(), dt(i).dataType)
+      }
     }.toArray
   }
 
