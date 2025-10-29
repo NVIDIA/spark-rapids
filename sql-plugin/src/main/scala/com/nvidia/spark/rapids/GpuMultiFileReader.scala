@@ -1064,7 +1064,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
 
-  private case class CurrentChunkMeta(
+  protected case class CurrentChunkMeta(
     clippedSchema: SchemaBase,
     readSchema: StructType,
     currentChunk: Seq[(Path, DataBlockBase)],
@@ -1253,7 +1253,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    */
   def startNewBufferRetry: Unit = ()
 
-  private def readBatch(): Iterator[ColumnarBatch] = {
+  protected def readBatch(): Iterator[ColumnarBatch] = {
     NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val currentChunkMeta = populateCurrentBlockChunk()
       val batchIter = if (currentChunkMeta.clippedSchema.isEmpty) {
@@ -1291,12 +1291,21 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           }
         }
       }
-      new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
-        currentChunkMeta.rowsPerPartition, partitionSchema,
-        maxGpuColumnSizeBytes).map { withParts =>
-        withResource(withParts) { _ =>
-          finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
-        }
+      wrapIterator(batchIter, currentChunkMeta, partitionSchema, maxGpuColumnSizeBytes)
+    }
+  }
+
+  protected def wrapIterator(
+     batchIter: Iterator[ColumnarBatch],
+     currentChunkMeta: CurrentChunkMeta,
+     partitionSchema: StructType,
+     maxGpuColumnSizeBytes: Long
+     ): Iterator[ColumnarBatch] = {
+    new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
+      currentChunkMeta.rowsPerPartition, partitionSchema,
+      maxGpuColumnSizeBytes).map { withParts =>
+      withResource(withParts) { _ =>
+        finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
       }
     }
   }

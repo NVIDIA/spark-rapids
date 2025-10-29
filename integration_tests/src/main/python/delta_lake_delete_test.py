@@ -17,9 +17,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from delta_lake_utils import *
+import glob
 from marks import *
 import os
-import glob
+from parquet_test import coalesce_parquet_file_reader_multithread_filter_conf, coalesce_parquet_file_reader_multithread_filter_chunked_conf, \
+    coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf, rebase_write_corrected_conf
 import pyarrow.parquet as pq
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
     with_cpu_session, with_gpu_session, is_before_spark_353, is_spark_353_or_later
@@ -375,3 +377,32 @@ def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns, 
     assert_gpu_and_cpu_writes_are_equal_collect(do_delete, read_func, data_path,
                                                 conf=delta_delete_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, int_gen, long_gen]], ids=idfn)
+@pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf,
+                                          coalesce_parquet_file_reader_multithread_filter_chunked_conf,
+                                          coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf])
+@pytest.mark.parametrize('batch_size_bytes', [100, 1000])
+@pytest.mark.parametrize('row_indices_to_delete', [[1,2,3,4,5], [609, 231, 360, 1340, 1364]])
+@allow_non_gpu(*delta_meta_allow)
+def test_deletion_vectors_coalescing_multiple_files(spark_tmp_path, parquet_gens, reader_confs, batch_size_bytes, row_indices_to_delete):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    # We are generating the Delta table from parquet because we want to control the number of files
+    # we generate i.e. in this case we are generating 30 files (num_slices)
+    def setup_delta_table(spark):
+        df = append_row_index_col_to_df(gen_df(spark, gen_list, num_slices=30))
+        df.write.parquet(data_path)
+        spark.sql(f"convert to delta parquet.`{data_path}`")
+        spark.sql(f"alter table delta.`{data_path}` set TBLPROPERTIES('delta.enableDeletionVectors'=true)")
+        for num in row_indices_to_delete:
+            spark.sql(f"delete from delta.`{data_path}` where row_index = {num}")
+
+    with_cpu_session(
+            # high number of slices so that a single task reads more than 1 file
+            setup_delta_table)
+    all_confs = copy_and_update(reader_confs, {
+        'spark.rapids.sql.batchSizeBytes': batch_size_bytes,
+        'spark.databricks.delta.deletionVectors.useMetadataRowIndex': False})
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(f"select * from delta.`{data_path}` order by row_index"),
+                                         conf=all_confs)
