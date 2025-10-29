@@ -112,6 +112,7 @@ def do_merge_test(
 
 @iceberg
 @ignore_order(local=True)
+@allow_non_gpu("Keep", "Discard", "Split")
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize('partition_col_sql', [None, "bucket(16, _c2)"])
 @pytest.mark.parametrize('merge_sql', [
