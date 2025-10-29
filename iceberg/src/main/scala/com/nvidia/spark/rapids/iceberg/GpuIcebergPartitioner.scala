@@ -98,9 +98,8 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   /**
    * Make the value column indices in the keys and values table.
    */
-  private def makeValueIndices(spillableInput: SpillableColumnarBatch): Array[Int] = {
-    val numInputCols = spillableInput.getColumnarBatch().numCols()
-    (keyColNum until (keyColNum + numInputCols)).toArray
+  private def makeValueIndices(inputColNum: Int): Array[Int] = {
+    (keyColNum until (keyColNum + inputColNum)).toArray
   }
 
   /**
@@ -113,13 +112,13 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     if (input.numRows() == 0) {
       return Seq.empty
     }
+    val valueColumnIndices = makeValueIndices(input.numCols())
 
     val spillableInput = closeOnExcept(input) { _ =>
       SpillableColumnarBatch(input, ACTIVE_ON_DECK_PRIORITY)
     }
 
     withRetryNoSplit(spillableInput) { scb =>
-      val valueColumnIndices = makeValueIndices(scb)
       val keysValuesTable = makeKeysValuesTable(scb)
       withResource(keysValuesTable) { _ =>
         // split the keysValuesTable by the key columns
