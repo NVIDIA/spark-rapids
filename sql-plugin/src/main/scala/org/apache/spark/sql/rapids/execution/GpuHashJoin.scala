@@ -110,7 +110,9 @@ object GpuHashJoin {
           SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
         boundKeys)
     }
-    withResource(keysCb)(_.column(0).hasNull)
+    withResource(keysCb) { _ =>
+      (0 until keysCb.numCols()).exists(keysCb.column(_).hasNull)
+    }
   }
 
   // For the join on struct, it's equal for nulls in child columns of struct column, it's not
