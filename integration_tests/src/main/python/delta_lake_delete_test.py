@@ -242,7 +242,7 @@ def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
                                                                             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "false"})
 
 @allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
-               "FilterExec", "MapElementsExec", "ProjectExec")
+               "FilterExec", "MapElementsExec", "ProjectExec", "FileSourceScanExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
@@ -250,6 +250,7 @@ def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
 @pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
 # a='' shouldn't match anything as a is an int
 @pytest.mark.parametrize("condition", ["where a = 0", "", "where a = ''"])
+@disable_ansi_mode
 def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):

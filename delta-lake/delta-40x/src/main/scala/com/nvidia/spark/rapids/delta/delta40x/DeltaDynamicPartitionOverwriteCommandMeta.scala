@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.delta33x
+package com.nvidia.spark.rapids.delta.delta40x
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.delta.common.DeltaDynamicPartitionOverwriteCommandMetaBase
 
 import org.apache.spark.sql.delta.DeltaDynamicPartitionOverwriteCommand
-import org.apache.spark.sql.delta.rapids.delta33x.Delta33xCommandShims
+import org.apache.spark.sql.delta.rapids.delta40x.Delta40xCommandShims
 
 class DeltaDynamicPartitionOverwriteCommandMeta(
     overwriteCommand: DeltaDynamicPartitionOverwriteCommand,
@@ -28,5 +28,5 @@ class DeltaDynamicPartitionOverwriteCommandMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends DeltaDynamicPartitionOverwriteCommandMetaBase(
-    overwriteCommand, conf, parent, rule, Delta33xCommandShims)
+    overwriteCommand, conf, parent, rule, Delta40xCommandShims)
 

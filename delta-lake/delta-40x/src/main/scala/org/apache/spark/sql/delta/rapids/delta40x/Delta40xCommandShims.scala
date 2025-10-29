@@ -70,3 +70,5 @@ trait Delta40xCommandShims extends DeltaCommandShims {
     expr.transform { case rr: RuntimeReplaceable => rr.replacement }
   }
 }
+
+object Delta40xCommandShims extends Delta40xCommandShims
