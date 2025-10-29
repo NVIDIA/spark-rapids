@@ -16,7 +16,7 @@ from conftest import skip_unless_precommit_tests
 
 
 def drop_udf(spark, udf_name):
-    spark.sql("DROP TEMPORARY FUNCTION IF EXISTS {}".format(udf_name))
+    spark.sql(f"DROP TEMPORARY FUNCTION IF EXISTS `{udf_name}`")
 
 
 def skip_if_no_hive(spark):
