@@ -52,8 +52,19 @@ import org.apache.spark.sql.execution.metric.SQLMetrics.createMetric
 import org.apache.spark.sql.types.StructType
 
 /**
- * Base class for GPU version of CreateDeltaTableCommand with common logic.
- * Version-specific differences are abstracted into protected methods.
+ * Single entry point for all write or declaration operations for Delta tables accessed through
+ * the table name. Version-specific differences are abstracted into protected methods.
+ *
+ * @param table The table identifier for the Delta table
+ * @param existingTableOpt The existing table for the same identifier if exists
+ * @param mode The save mode when writing data. Relevant when the query is empty or set to Ignore
+ *             with `CREATE TABLE IF NOT EXISTS`.
+ * @param query The query to commit into the Delta table if it exist. This can come from
+ *                - CTAS
+ *                - saveAsTable
+ * @param protocol This is used to create a table with specific protocol version
+ * @param createTableFunc If specified, call this function to create the table, instead of
+ *                        Spark `SessionCatalog#createTable` which is backed by Hive Metastore.
  */
 abstract class GpuCreateDeltaTableCommandBase(
     table: CatalogTable,
