@@ -106,25 +106,34 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     }
 
     withRetryNoSplit(spillableInput) { scb =>
-      withResource(makeKeysAndInputTable(scb)) { keysAndInputTable =>
-        // split the input table by the key columns
-        val splitRet = keysAndInputTable.groupBy(keyColIndices: _*)
+      // make table: [key columns, input columns]
+      val keysAndInputTable = makeKeysAndInputTable(scb)
+
+      // split the input columns by the key columns,
+      // note: the result does not contain the key columns
+      val splitRet = withResource(keysAndInputTable) { _ =>
+        keysAndInputTable.groupBy(keyColIndices: _*)
           .contiguousSplitGroupsAndGenUniqKeys(inputColumnIndices)
-        withResource(splitRet) { _ =>
-          // generate the partition keys on the host side
-          val partitionKeys = toPartitionKeys(spec.partitionType(),
-            partitionSparkType,
-            splitRet.getUniqKeyTable)
+      }
 
-          // get the partitions
-          val partitions = splitRet.getGroups
+      // generate results
+      withResource(splitRet) { _ =>
+        // generate the partition keys on the host side
+        val partitionKeys = toPartitionKeys(spec.partitionType(),
+          partitionSparkType,
+          splitRet.getUniqKeyTable)
 
-          // combine the partition keys and partitioned tables
-          partitionKeys.zip(partitions).map { case (partKey, partition) =>
-            ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
-              .ACTIVE_BATCHING_PRIORITY), partKey)
-          }.toSeq
-        }
+        // release unique table to save GPU memory
+        splitRet.closeUniqKeyTable()
+
+        // get the partitions
+        val partitions = splitRet.getGroups
+
+        // combine the partition keys and partitioned tables
+        partitionKeys.zip(partitions).map { case (partKey, partition) =>
+          ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
+            .ACTIVE_BATCHING_PRIORITY), partKey)
+        }.toSeq
       }
     }
   }
