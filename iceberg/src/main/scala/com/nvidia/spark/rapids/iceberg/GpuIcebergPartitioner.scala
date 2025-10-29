@@ -57,40 +57,27 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   private val keyColIndices: Array[Int] = (0 until keyColNum).toArray
 
   /**
-   * Compute keys table from the input.
+   * Make a new table by combining the keys columns and the input columns:
+   * [key columns, input columns]
    */
-  private def computeKeysTable(spillableInput: SpillableColumnarBatch): Table = {
-    val keyCols = withResource(spillableInput.getColumnarBatch()) { inputBatch =>
-      partitionExprs.safeMap(_.columnarEval(inputBatch))
-    }
-    withResource(keyCols) { _ =>
-      val arr = new Array[CudfColumnVector](partitionExprs.size)
-      for (i <- partitionExprs.indices) {
-        arr(i) = keyCols(i).getBase
-      }
-      new Table(arr:_*)
-    }
-  }
+  private def makeKeysAndInputTable(spillableInput: SpillableColumnarBatch): Table = {
+    withResource(spillableInput.getColumnarBatch()) { inputBatch =>
+      // compute keys columns
+      val keyCols = partitionExprs.safeMap(_.columnarEval(inputBatch))
 
-  /**
-   * Make a new table by combining the keys table and the input table.
-   */
-  private def makeKeysValuesTable(spillableInput: SpillableColumnarBatch): Table = {
-    val keysTable = computeKeysTable(spillableInput)
-    withResource(keysTable) { _ =>
-      val inputTable = withResource(spillableInput.getColumnarBatch()) { inputBatch =>
-        GpuColumnVector.from(inputBatch)
-      }
-      withResource(inputTable) { _ =>
-        val numCols = keysTable.getNumberOfColumns + inputTable.getNumberOfColumns
-        val cols = new Array[CudfColumnVector](numCols)
-        for (i <- 0 until keysTable.getNumberOfColumns) {
-          cols(i) = keysTable.getColumn(i)
+      // combine keys columns and input columns into a new table
+      withResource(keyCols) { _ =>
+        withResource(GpuColumnVector.from(inputBatch)) { inputTable =>
+          val numCols = keyCols.size + inputTable.getNumberOfColumns
+          val cols = new Array[CudfColumnVector](numCols)
+          for (i <- 0 until keysTable.getNumberOfColumns) {
+            cols(i) = keyCols(i).getBase
+          }
+          for (i <- 0 until inputTable.getNumberOfColumns) {
+            cols(i + keyCols.size) = inputTable.getColumn(i)
+          }
+          new Table(cols:_*)
         }
-        for (i <- 0 until inputTable.getNumberOfColumns) {
-          cols(i + keysTable.getNumberOfColumns) = inputTable.getColumn(i)
-        }
-        new Table(cols:_*)
       }
     }
   }
@@ -119,10 +106,9 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     }
 
     withRetryNoSplit(spillableInput) { scb =>
-      val keysValuesTable = makeKeysValuesTable(scb)
-      withResource(keysValuesTable) { _ =>
-        // split the keysValuesTable by the key columns
-        val splitRet = keysValuesTable.groupBy(keyColIndices: _*)
+      withResource(makeKeysAndInputTable(scb)) { keysAndInputTable =>
+        // split the input table by the key columns
+        val splitRet = keysAndInputTable.groupBy(keyColIndices: _*)
           .contiguousSplitGroupsAndGenUniqKeys(valueColumnIndices)
         withResource(splitRet) { _ =>
           // generate the partition keys
