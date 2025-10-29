@@ -29,6 +29,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnView, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
@@ -36,6 +37,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
@@ -244,11 +246,21 @@ class GpuMergeBatchIterator(
               processInstructionSet(inputDataTypes, outputs, batch, mask, matchedInstructionExecs)
             }
 
-            processInstructionSet(inputDataTypes, outputs, batch, sourcePresent.getBase,
-              notMatchedInstructionExecs)
+            val sourceNotMatchedMask = withResource(targetPresent.getBase.not()) { noTargetMask =>
+              sourcePresent.getBase.and(noTargetMask)
+            }
+            withResource(sourceNotMatchedMask) { mask =>
+              processInstructionSet(inputDataTypes, outputs, batch, mask,
+                notMatchedInstructionExecs)
+            }
 
-            processInstructionSet(inputDataTypes, outputs, batch, targetPresent.getBase,
-              notMatchedBySourceInstructionExecs)
+            val targetNotMatchedMask = withResource(sourcePresent.getBase.not()) { noSourceMask =>
+              targetPresent.getBase.and(noSourceMask)
+            }
+            withResource(targetNotMatchedMask) { mask =>
+              processInstructionSet(inputDataTypes, outputs, batch, mask,
+                notMatchedBySourceInstructionExecs)
+            }
           }
         }
       }
