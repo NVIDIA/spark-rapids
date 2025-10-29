@@ -29,6 +29,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnView, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
@@ -36,6 +37,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
@@ -263,14 +265,15 @@ class GpuMergeBatchIterator(
 
     if (instructionExecs.isEmpty) return
 
-    withResource(GpuColumnVector.filter(batch, dataTypes, mask)) { filteredBatch =>
-      // For each instruction, check if any rows match and apply outputs
-      for (instructionExec <- instructionExecs) {
-        withResource(instructionExec.evaluateCondition(batch)) { cond =>
-          val thisFilteredBatch = GpuColumnVector.filter(filteredBatch, dataTypes, cond.getBase)
-          withResource(thisFilteredBatch) { _ =>
-            outputs ++= instructionExec.applyOutputs(thisFilteredBatch)
-          }
+    // For each instruction, check if any rows match and apply outputs
+    for (instructionExec <- instructionExecs) {
+      val condMask = withResource(instructionExec.evaluateCondition(batch)) { cond =>
+        cond.getBase.and(mask)
+      }
+      withResource(condMask) { _ =>
+        val thisFilteredBatch = GpuColumnVector.filter(batch, dataTypes, condMask)
+        withResource(thisFilteredBatch) { _ =>
+          outputs ++= instructionExec.applyOutputs(thisFilteredBatch)
         }
       }
     }
