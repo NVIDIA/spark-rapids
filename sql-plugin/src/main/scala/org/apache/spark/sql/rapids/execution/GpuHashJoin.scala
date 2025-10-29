@@ -102,6 +102,16 @@ object JoinTypeChecks {
 }
 
 object GpuHashJoin {
+  // Designed for the null-aware anti-join in GpuBroadcastHashJoin.
+  def anyNullInKey(cb: ColumnarBatch, boundKeys: Seq[GpuExpression]): Boolean = {
+    val keysCb = closeOnExcept(cb) { _ =>
+      GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+        SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+        boundKeys)
+    }
+    withResource(keysCb)(_.column(0).hasNull)
+  }
 
   // For the join on struct, it's equal for nulls in child columns of struct column, it's not
   // equal for the root struct when meets both nulls.
