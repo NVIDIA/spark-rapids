@@ -197,13 +197,12 @@ class GpuMergeBatchIterator(
   override def hasNext: Boolean = inputIter.hasNext
 
   override def next(): ColumnarBatch = {
-      withResource(inputIter.next()) { batch =>
-        withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
-        val result = processBatch(batch)
-        numOutputBatches += 1
-        numOutputRows += result.numRows()
-        result
-      }
+    val batch = inputIter.next()
+    withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
+      val result = processBatch(batch)
+      numOutputBatches += 1
+      numOutputRows += result.numRows()
+      result
     }
   }
 
