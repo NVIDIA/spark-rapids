@@ -132,7 +132,7 @@ class GpuMergeRowsExecMeta(
     val gpuChild = childPlans.head.convertIfNeeded()
 
     // Convert presence expressions
-    val gpuIsSourceRowPresent = childExprs.head.convertToGpu()
+    val gpuIsSourceRowPresent = childExprs(0).convertToGpu()
     val gpuIsTargetRowPresent = childExprs(1).convertToGpu()
 
     var prevExprCnt = 2
@@ -150,8 +150,8 @@ class GpuMergeRowsExecMeta(
       .map(_.convertToGpu().asInstanceOf[Instruction])
     
     GpuMergeRowsExec(
-      gpuIsSourceRowPresent,
       gpuIsTargetRowPresent,
+      gpuIsSourceRowPresent,
       gpuMatchedInstructions,
       gpuNotMatchedInstructions,
       gpuNotMatchedBySourceInstructions,

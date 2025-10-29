@@ -64,8 +64,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param child Child plan providing joined data
  */
 case class GpuMergeRowsExec(
-    isSourceRowPresent: Expression,
     isTargetRowPresent: Expression,
+    isSourceRowPresent: Expression,
     matchedInstructions: Seq[Instruction],
     notMatchedInstructions: Seq[Instruction],
     notMatchedBySourceInstructions: Seq[Instruction],
@@ -90,8 +90,8 @@ case class GpuMergeRowsExec(
 
     val dataTypes = GpuColumnVector.extractTypes(child.schema)
 
-    val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent, child.output)
     val boundTargetRowPresent = GpuBindReferences.bindGpuReference(isTargetRowPresent, child.output)
+    val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent, child.output)
     val boundMatchedInsts = matchedInstructions.map(GpuInstructionExec.bind(_, child.output))
     val boundNotMatchedInsts = notMatchedInstructions.map(GpuInstructionExec.bind(_, child.output))
     val boundMatchedBySourceInsts = notMatchedBySourceInstructions
@@ -102,8 +102,8 @@ case class GpuMergeRowsExec(
       new GpuMergeBatchIterator(
         dataTypes,
         iter,
-        boundSourceRowPresent,
         boundTargetRowPresent,
+        boundSourceRowPresent,
         boundMatchedInsts,
         boundNotMatchedInsts,
         boundMatchedBySourceInsts,
@@ -187,8 +187,8 @@ object GpuInstructionExec {
 class GpuMergeBatchIterator(
     inputDataTypes: Array[DataType],
     inputIter: Iterator[ColumnarBatch],
-    isSourceRowPresent: GpuExpression,
     isTargetRowPresent: GpuExpression,
+    isSourceRowPresent: GpuExpression,
     matchedInstructionExecs: Seq[GpuInstructionExec],
     notMatchedInstructionExecs: Seq[GpuInstructionExec],
     notMatchedBySourceInstructionExecs: Seq[GpuInstructionExec],
@@ -230,10 +230,10 @@ class GpuMergeBatchIterator(
               processInstructionSet(inputDataTypes, outputs, batch, mask, matchedInstructionExecs)
             }
 
-            processInstructionSet(inputDataTypes, outputs, batch, targetPresent.getBase,
+            processInstructionSet(inputDataTypes, outputs, batch, sourcePresent.getBase,
               notMatchedInstructionExecs)
 
-            processInstructionSet(inputDataTypes, outputs, batch, sourcePresent.getBase,
+            processInstructionSet(inputDataTypes, outputs, batch, targetPresent.getBase,
               notMatchedBySourceInstructionExecs)
           }
         }
