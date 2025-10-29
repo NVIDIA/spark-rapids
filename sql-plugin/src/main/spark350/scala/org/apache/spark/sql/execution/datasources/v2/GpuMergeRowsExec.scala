@@ -29,15 +29,13 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{ColumnView, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
-import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
-
+import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
@@ -129,9 +127,10 @@ case class GpuMergeRowsExec(
  * @param condition GPU expression for the instruction condition
  * @param outputs GPU expressions for the instruction outputs
  */
-class GpuInstructionExec(
+case class GpuInstructionExec(
+    cpu: Instruction,
     condition: GpuExpression,
-    outputs: Seq[Seq[GpuExpression]]) {
+    outputs: Seq[Seq[GpuExpression]]) extends GpuUnevaluable with ShimExpression {
   
   /**
    * Evaluate the condition on the input batch.
@@ -151,6 +150,12 @@ class GpuInstructionExec(
     outputs.safeMap(output => SpillableColumnarBatch.apply(GpuProjectExec.project(batch, output),
       ACTIVE_ON_DECK_PRIORITY))
   }
+
+  override def nullable: Boolean = cpu.nullable
+
+  override def dataType: DataType = cpu.dataType
+
+  override def children: Seq[Expression] = Seq(condition) ++ outputs.flatten
 }
 
 object GpuInstructionExec {
@@ -159,7 +164,7 @@ object GpuInstructionExec {
     val gpuOutputs = instruction.outputs
       .map(output => output.map(GpuBindReferences.bindGpuReference(_, inputs)))
 
-    new GpuInstructionExec(gpuCond, gpuOutputs)
+    new GpuInstructionExec(instruction, gpuCond, gpuOutputs)
   }
 }
 
