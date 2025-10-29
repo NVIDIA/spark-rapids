@@ -74,11 +74,19 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
       val pinnedBytes = metrics.get("PinnedH2DSize").map(_.value).getOrElse(0L)
       val pageableBytes = metrics.get("PageableH2DSize").map(_.value).getOrElse(0L)
 
-      inputMetrics.setBytesRead(pinnedBytes + pageableBytes)
+      val bytesFromHybrid = pinnedBytes + pageableBytes
+
+      inputMetrics.setBytesRead(bytesFromHybrid)
       inputMetrics.incRecordsRead(math.max(0L, totalRows))
+
+      require(bytesFromHybrid >= 0L,
+        s"HybridParquetScanRDD expected hybrid metrics but received negative value: " +
+          s"pinned=$pinnedBytes pageable=$pageableBytes")
     }
 
+    val iterWithTracking = trackingIter.asInstanceOf[Iterator[InternalRow]]
+
     // TODO: SPARK-25083 remove the type erasure hack in data source scan
-    new InterruptibleIterator(context, trackingIter.asInstanceOf[Iterator[InternalRow]])
+    new InterruptibleIterator(context, iterWithTracking)
   }
 }
