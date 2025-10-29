@@ -188,7 +188,7 @@ query ($sha: String!) {
 }
 """
 
-# Get the previous release version string(yy.mm format, 2 months before the current version)
+# Get the previous release version string(YY.MM format, 2 months before the current version)
 #   from the current version, e.g. YY.MM2[current] --> YY.MM1[previous]
 # param current_ver: the current version, e.g. YY.MM2
 # return: the previous version, e.g. YY.MM1,
@@ -252,8 +252,8 @@ def get_pr_via_commits(ver_commits: set, token: str):
                 # Handle the case of multiple commits being associated with the same PR
                 if pr_item not in pr_list and pr_item['mergedAt'] is not None:
                     pr_list.append(pr_item)
-            except Exception:
-                print(f"Commit sha '{sha}' does not have the associated Pull Request")
+            except Exception as e:
+                print(f"Exception: {e}, commit sha '{sha}' does not have the associated Pull Request")
                 continue
     return pr_list
 
