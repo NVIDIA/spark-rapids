@@ -144,23 +144,26 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
       GpuOverrides.expr[Keep](
         "Keep instruction for MERGE operations - keeps/updates rows based on condition",
         ExprChecks.projectOnly(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
-          TypeSig.all),
+          TypeSig.all,
+          TypeSig.all,
+          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all)),
+          Some(RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))
+        ),
         (keep, conf, p, r) => new GpuKeepInstructionMeta(keep, conf, p, r)),
       GpuOverrides.expr[Discard](
         "Discard instruction for MERGE operations - discards rows based on condition",
         ExprChecks.projectOnly(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
-          TypeSig.all),
+          TypeSig.all,
+          TypeSig.all,
+          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all))),
         (discard, conf, p, r) => new GpuDiscardInstructionMeta(discard, conf, p, r)),
       GpuOverrides.expr[Split](
         "Split instruction for MERGE operations - splits rows into multiple outputs",
         ExprChecks.projectOnly(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
-          TypeSig.all),
+          TypeSig.all,
+          TypeSig.all,
+          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all)),
+          Some(RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))),
         (split, conf, p, r) => new GpuSplitInstructionMeta(split, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
