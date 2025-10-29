@@ -57,10 +57,7 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   private val keyColIndices: Array[Int] = (0 until keyColNum).toArray
 
   /**
-   * The table containing only the partition keys computed from the input.
-   *
-   * @param spillableInput the spillable input columnar batch
-   * @return the keys table computed from the input
+   * Compute keys table from the input.
    */
   private def computeKeysTable(spillableInput: SpillableColumnarBatch): Table = {
     val keyCols = withResource(spillableInput.getColumnarBatch()) { inputBatch =>
@@ -76,8 +73,7 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   }
 
   /**
-   * Compute keys table from the input, then make a new table by combining the keys table
-   * and the input table.
+   * Make a new table by combining the keys table and the input table.
    */
   private def makeKeysValuesTable(spillableInput: SpillableColumnarBatch): Table = {
     val keysTable = computeKeysTable(spillableInput)
@@ -126,13 +122,19 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
       val keysValuesTable = makeKeysValuesTable(scb)
       val valueColumnIndices = makeValueIndices(scb)
       withResource(keysValuesTable) { _ =>
+        // split the keysValuesTable by the key columns
         val splitRet = keysValuesTable.groupBy(keyColIndices: _*)
           .contiguousSplitGroupsAndGenUniqKeys(valueColumnIndices)
         withResource(splitRet) { _ =>
+          // generate the partition keys
           val partitionKeys = toPartitionKeys(spec.partitionType(),
             partitionSparkType,
             splitRet.getUniqKeyTable)
+
+          // get the partitioned value tables
           val partitions = splitRet.getGroups
+
+          // combine the partition keys and partitioned value tables
           partitionKeys.zip(partitions).map { case (partKey, partition) =>
             ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
               .ACTIVE_BATCHING_PRIORITY), partKey)
