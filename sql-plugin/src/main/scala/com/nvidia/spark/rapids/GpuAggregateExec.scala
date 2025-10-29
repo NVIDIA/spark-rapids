@@ -762,7 +762,7 @@ class AggHelper(
       }
     }
     // 4) Shuffle the columns in the original order.
-    mergeWithOriginalOrderAndClose(postedCb, outCols)
+    mergeWithOriginalOrderAndClose(postedCb, outCols.toSeq)
   }
 
   /**
