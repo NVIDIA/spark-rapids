@@ -27,4 +27,4 @@ def skip_if_no_hive(spark):
 def load_hive_udf(spark, udf_name, udf_class):
     drop_udf(spark, udf_name)
     # if UDF failed to load, throws AnalysisException, check if the udf class is in the class path
-    spark.sql("CREATE TEMPORARY FUNCTION {} AS '{}'".format(udf_name, udf_class))
+    spark.sql(f"CREATE TEMPORARY FUNCTION `{udf_name}` AS '{udf_class}'")
