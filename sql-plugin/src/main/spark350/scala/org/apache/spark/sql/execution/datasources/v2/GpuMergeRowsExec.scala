@@ -213,7 +213,7 @@ class GpuMergeBatchIterator(
    */
   private def processBatch(batch: ColumnarBatch): ColumnarBatch = {
 
-    val smallBatches = withRetryNoSplit(batch) { _ =>
+    withRetryNoSplit(batch) { _ =>
       // Evaluate presence flags
       val sourcePresentCol = isSourceRowPresent.columnarEval(batch)
       val targetPresentCol = isTargetRowPresent.columnarEval(batch)
@@ -238,12 +238,6 @@ class GpuMergeBatchIterator(
           }
         }
       }
-
-      outputs
-    }
-
-    withRetryNoSplit(smallBatches) { outputs =>
-
       // TODO: There is a small chance that the output batch is much larger input batch,
       //  e.g. all cases need to update split, which leads to a result batch whose row
       //  count is twice of input batch. We need to handle this case by splitting the outputs
