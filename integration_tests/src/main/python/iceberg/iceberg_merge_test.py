@@ -64,10 +64,19 @@ def create_iceberg_table_with_merge_data(
     # Insert data with optional distinct key constraint
     def insert_data(spark):
         df = data_gen(spark)
+        
         # MERGE requires: each target row matches at most one source row
-        # Ensure distinct join keys (_c0) to satisfy this constraint
+        # Deduplicate before insert to preserve schema and avoid slow RTAS
         if ensure_distinct_key:
-            df = df.dropDuplicates(['_c0'])
+            # Create temp view and use SQL to deduplicate while preserving schema
+            df.createOrReplaceTempView("temp_merge_data")
+            df = spark.sql("""
+                SELECT * FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY _c0 ORDER BY _c0) as rn
+                    FROM temp_merge_data
+                ) WHERE rn = 1
+            """).drop("rn")
+        
         df.writeTo(table_name).append()
     
     with_cpu_session(insert_data)
@@ -93,8 +102,8 @@ def do_merge_test(
         reader_type: Rapids reader type for parquet reading
     """
     base_table_name = get_full_table_name(spark_tmp_table_factory)
-    cpu_target_table = f"{base_table_name}_cpu_target"
-    gpu_target_table = f"{base_table_name}_gpu_target"
+    cpu_target_table = f"{base_table_name}_target_cpu"
+    gpu_target_table = f"{base_table_name}_target_gpu"
     source_table = f"{base_table_name}_source"
     
     # Create identical target tables for CPU and GPU
