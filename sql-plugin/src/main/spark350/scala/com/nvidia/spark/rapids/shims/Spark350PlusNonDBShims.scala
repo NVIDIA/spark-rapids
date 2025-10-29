@@ -146,9 +146,6 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
         ExprChecks.projectOnly(
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
             TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
-          TypeSig.all,
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
           TypeSig.all),
         (keep, conf, p, r) => new GpuKeepInstructionMeta(keep, conf, p, r)),
       GpuOverrides.expr[Discard](
@@ -156,17 +153,11 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
         ExprChecks.projectOnly(
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
             TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
-          TypeSig.all,
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
           TypeSig.all),
         (discard, conf, p, r) => new GpuDiscardInstructionMeta(discard, conf, p, r)),
       GpuOverrides.expr[Split](
         "Split instruction for MERGE operations - splits rows into multiple outputs",
         ExprChecks.projectOnly(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
-          TypeSig.all,
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
             TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
           TypeSig.all),
