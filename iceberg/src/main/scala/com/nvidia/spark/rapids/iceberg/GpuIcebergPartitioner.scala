@@ -119,8 +119,8 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     }
 
     withRetryNoSplit(spillableInput) { scb =>
-      val keysValuesTable = makeKeysValuesTable(scb)
       val valueColumnIndices = makeValueIndices(scb)
+      val keysValuesTable = makeKeysValuesTable(scb)
       withResource(keysValuesTable) { _ =>
         // split the keysValuesTable by the key columns
         val splitRet = keysValuesTable.groupBy(keyColIndices: _*)
