@@ -29,7 +29,6 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{ColumnView, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
@@ -37,11 +36,10 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.logical.MergeRows.Instruction
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
+import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Instruction, ROW_ID}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -74,6 +72,22 @@ case class GpuMergeRowsExec(
     child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   import GpuMetric._
+
+  @transient override lazy val producedAttributes: AttributeSet = {
+    AttributeSet(output.filterNot(attr => inputSet.contains(attr)))
+  }
+
+  @transient
+  override lazy val references: AttributeSet = {
+    val usedExprs = if (checkCardinality) {
+      val rowIdAttr = child.output.find(attr => conf.resolver(attr.name, ROW_ID))
+      assert(rowIdAttr.isDefined, "Cannot find row ID attr")
+      rowIdAttr.get +: expressions
+    } else {
+      expressions
+    }
+    AttributeSet.fromAttributeSets(usedExprs.map(_.references)) -- producedAttributes
+  }
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME_LEGACY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
