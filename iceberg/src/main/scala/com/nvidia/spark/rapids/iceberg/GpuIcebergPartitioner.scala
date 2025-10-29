@@ -57,7 +57,7 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   private val keyColIndices: Array[Int] = (0 until keyColNum).toArray
 
   /**
-   * Make a new table by combining the keys columns and the input columns:
+   * Make a new table: [key columns, input columns]
    * [key columns, input columns]
    */
   private def makeKeysAndInputTable(spillableInput: SpillableColumnarBatch): Table = {
@@ -83,9 +83,9 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   }
 
   /**
-   * Make the value column indices in the keys and values table.
+   * Make the input column indices in the table: [key columns, input columns]
    */
-  private def makeValueIndices(inputColNum: Int): Array[Int] = {
+  private def makeInputIndices(inputColNum: Int): Array[Int] = {
     (keyColNum until (keyColNum + inputColNum)).toArray
   }
 
@@ -99,7 +99,7 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     if (input.numRows() == 0) {
       return Seq.empty
     }
-    val valueColumnIndices = makeValueIndices(input.numCols())
+    val inputColumnIndices = makeInputIndices(input.numCols())
 
     val spillableInput = closeOnExcept(input) { _ =>
       SpillableColumnarBatch(input, ACTIVE_ON_DECK_PRIORITY)
@@ -109,17 +109,17 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
       withResource(makeKeysAndInputTable(scb)) { keysAndInputTable =>
         // split the input table by the key columns
         val splitRet = keysAndInputTable.groupBy(keyColIndices: _*)
-          .contiguousSplitGroupsAndGenUniqKeys(valueColumnIndices)
+          .contiguousSplitGroupsAndGenUniqKeys(inputColumnIndices)
         withResource(splitRet) { _ =>
-          // generate the partition keys
+          // generate the partition keys on the host side
           val partitionKeys = toPartitionKeys(spec.partitionType(),
             partitionSparkType,
             splitRet.getUniqKeyTable)
 
-          // get the partitioned value tables
+          // get the partitions
           val partitions = splitRet.getGroups
 
-          // combine the partition keys and partitioned value tables
+          // combine the partition keys and partitioned tables
           partitionKeys.zip(partitions).map { case (partKey, partition) =>
             ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
               .ACTIVE_BATCHING_PRIORITY), partKey)
