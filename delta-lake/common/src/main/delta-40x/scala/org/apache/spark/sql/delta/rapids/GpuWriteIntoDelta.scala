@@ -339,6 +339,13 @@ case class GpuWriteIntoDelta(
       newDomainMetadata ++
         createSetTransaction(sparkSession, deltaLog, Some(cpuWrite.options)).toSeq ++
         fileActions
+
+    // Register numRemovedFiles metric (even when 0) so WRITE operationMetrics match CPU
+    val removedFilesCount = fileActions.count(_.isInstanceOf[RemoveFile])
+    val m: SQLMetric = SQLMetrics.createMetric(
+      sparkSession.sparkContext, "number of files removed.")
+    m.set(removedFilesCount)
+    txn.registerSQLMetrics(sparkSession, Map("numRemovedFiles" -> m))
     TaggedCommitData(allActions)
   }
 

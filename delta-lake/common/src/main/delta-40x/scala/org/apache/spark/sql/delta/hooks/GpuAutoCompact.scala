@@ -21,10 +21,16 @@
 
 package org.apache.spark.sql.delta.hooks
 
+import org.apache.spark.internal.MDC
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions._
+import org.apache.spark.sql.delta.commands.DeltaOptimizeContext
+import org.apache.spark.sql.delta.commands.optimize._
+import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
+import org.apache.spark.sql.delta.stats.AutoCompactPartitionStats
 
 /**
  * Delta 4.0 version-specific implementation of GpuAutoCompact.
@@ -40,8 +46,59 @@ case object GpuAutoCompact extends GpuAutoCompactBase {
       committedVersion: Long,
       postCommitSnapshot: Snapshot,
       actions: Iterator[Action]): Unit = {
-    run(spark, txn.asInstanceOf[GpuOptimisticTransactionBase],
-      committedVersion, postCommitSnapshot, actions.toSeq)
+    // Avoid casting to GpuOptimisticTransactionBase and drive auto-compaction using only
+    // DeltaTransaction plus commit actions.
+    val conf = spark.sessionState.conf
+    val autoCompactTypeOpt = getAutoCompactType(conf, postCommitSnapshot.metadata)
+    if (shouldSkipAutoCompact(autoCompactTypeOpt, spark, txn)) return
+
+    val committedActions = actions.toSeq
+    val addedPartitions: Option[Set[Map[String, String]]] = {
+      val partitions = committedActions.collect { case a: AddFile => a.partitionValues }.toSet
+      if (partitions.nonEmpty) Some(partitions) else None
+    }
+
+    val autoCompactRequest = AutoCompactUtils.prepareAutoCompactRequest(
+      spark,
+      txn,
+      postCommitSnapshot,
+      addedPartitions,
+      OP_TYPE,
+      maxDeletedRowsRatio = None)
+
+    if (autoCompactRequest.shouldCompact) {
+      try {
+        GpuAutoCompact
+          .compact(
+            spark,
+            txn.deltaLog,
+            txn.catalogTable,
+            autoCompactRequest.targetPartitionsPredicate,
+            OP_TYPE,
+            maxDeletedRowsRatio = None
+          )
+        val partitionsStats = AutoCompactPartitionStats.instance(spark)
+        partitionsStats.markPartitionsAsCompacted(
+          txn.deltaLog.tableId,
+          autoCompactRequest.allowedPartitions
+        )
+      } catch {
+        case e: Throwable =>
+          logError(log"Auto Compaction failed with: ${MDC(DeltaLogKeys.ERROR, e.getMessage)}")
+          recordDeltaEvent(
+            txn.deltaLog,
+            opType = "delta.autoCompaction.error",
+            data = getErrorData(e))
+          throw e
+      } finally {
+        if (AutoCompactUtils.reservePartitionEnabled(spark)) {
+          AutoCompactPartitionReserve.releasePartitions(
+            txn.deltaLog.tableId,
+            autoCompactRequest.allowedPartitions
+          )
+        }
+      }
+    }
   }
 
   override def run(
