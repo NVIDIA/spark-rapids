@@ -85,11 +85,11 @@ trait GpuRollingFileWriter[W <: FileWriter[SpillableColumnarBatch, R], R] extend
 
   private def closeCurrentWriter(): Unit = {
     currentWriter.foreach { w =>
-      w.close()
 
       if (currentFileRows == 0L) {
         io.deleteFile(currentFile.get.encryptingOutputFile)
       } else {
+        w.close()
         addResult(w.result())
       }
 
