@@ -50,6 +50,10 @@ trait GpuRollingFileWriter[W <: FileWriter[SpillableColumnarBatch, R], R] extend
       throw new IllegalStateException("Cannot write to a closed writer")
     }
 
+    if (batch.numRows() <= 0) {
+      return
+    }
+
     if (currentWriter.isEmpty) {
       openCurrentWriter()
     }
