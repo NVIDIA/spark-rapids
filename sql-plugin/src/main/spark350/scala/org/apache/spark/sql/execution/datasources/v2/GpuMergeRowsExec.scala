@@ -29,6 +29,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnView, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
@@ -36,9 +37,11 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.plans.logical.MergeRows.Instruction
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -61,11 +64,11 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param child Child plan providing joined data
  */
 case class GpuMergeRowsExec(
-    isSourceRowPresent: GpuExpression,
-    isTargetRowPresent: GpuExpression,
-    matchedInstructions: Seq[GpuInstructionExec],
-    notMatchedInstructions: Seq[GpuInstructionExec],
-    notMatchedBySourceInstructions: Seq[GpuInstructionExec],
+    isSourceRowPresent: Expression,
+    isTargetRowPresent: Expression,
+    matchedInstructions: Seq[Instruction],
+    notMatchedInstructions: Seq[Instruction],
+    notMatchedBySourceInstructions: Seq[Instruction],
     checkCardinality: Boolean,
     output: Seq[Attribute],
     child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
@@ -87,16 +90,23 @@ case class GpuMergeRowsExec(
 
     val dataTypes = GpuColumnVector.extractTypes(child.schema)
 
+    val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent, child.output)
+    val boundTargetRowPresent = GpuBindReferences.bindGpuReference(isTargetRowPresent, child.output)
+    val boundMatchedInsts = matchedInstructions.map(GpuInstructionExec.bind(_, child.output))
+    val boundNotMatchedInsts = notMatchedInstructions.map(GpuInstructionExec.bind(_, child.output))
+    val boundMatchedBySourceInsts = notMatchedBySourceInstructions
+      .map(GpuInstructionExec.bind(_, child.output))
+
+
     child.executeColumnar().mapPartitions { iter =>
       new GpuMergeBatchIterator(
         dataTypes,
         iter,
-        isSourceRowPresent,
-        isTargetRowPresent,
-        matchedInstructions,
-        notMatchedInstructions,
-        notMatchedBySourceInstructions,
-        output,
+        boundSourceRowPresent,
+        boundTargetRowPresent,
+        boundMatchedInsts,
+        boundNotMatchedInsts,
+        boundMatchedBySourceInsts,
         numOutputRows,
         numOutputBatches,
         opTime)
@@ -118,12 +128,10 @@ case class GpuMergeRowsExec(
  *
  * @param condition GPU expression for the instruction condition
  * @param outputs GPU expressions for the instruction outputs
- * @param childOutput Output schema from child plan for binding expressions
  */
 class GpuInstructionExec(
     condition: GpuExpression,
-    outputs: Seq[Seq[GpuExpression]],
-    childOutput: Seq[Attribute]) {
+    outputs: Seq[Seq[GpuExpression]]) {
   
   /**
    * Evaluate the condition on the input batch.
@@ -145,6 +153,16 @@ class GpuInstructionExec(
   }
 }
 
+object GpuInstructionExec {
+  def bind(instruction: Instruction, inputs: Seq[Attribute]): GpuInstructionExec = {
+    val gpuCond = GpuBindReferences.bindGpuReference(instruction.condition, inputs)
+    val gpuOutputs = instruction.outputs
+      .map(output => output.map(GpuBindReferences.bindGpuReference(_, inputs)))
+
+    new GpuInstructionExec(gpuCond, gpuOutputs)
+  }
+}
+
 /**
  * GPU version of MergeRowIterator. Processes columnar batches for MERGE operations.
  * Similar to Spark's MergeRowIterator but operates on batches instead of rows.
@@ -155,7 +173,6 @@ class GpuInstructionExec(
  * @param matchedInstructionExecs Executors for MATCHED instructions
  * @param notMatchedInstructionExecs Executors for NOT MATCHED instructions
  * @param notMatchedBySourceInstructionExecs Executors for NOT MATCHED BY SOURCE instructions
- * @param outputAttrs Output schema
  * @param numOutputRows Metric for output rows
  * @param numOutputBatches Metric for output batches
  * @param opTime Metric for operation time
@@ -168,7 +185,6 @@ class GpuMergeBatchIterator(
     matchedInstructionExecs: Seq[GpuInstructionExec],
     notMatchedInstructionExecs: Seq[GpuInstructionExec],
     notMatchedBySourceInstructionExecs: Seq[GpuInstructionExec],
-    outputAttrs: Seq[Attribute],
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] {
