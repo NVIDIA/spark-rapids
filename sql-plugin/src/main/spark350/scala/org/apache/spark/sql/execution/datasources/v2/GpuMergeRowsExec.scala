@@ -230,10 +230,10 @@ class GpuMergeBatchIterator(
               processInstructionSet(inputDataTypes, outputs, batch, mask, matchedInstructionExecs)
             }
 
-            processInstructionSet(inputDataTypes, outputs, batch, sourcePresent.getBase,
+            processInstructionSet(inputDataTypes, outputs, batch, targetPresent.getBase,
               notMatchedInstructionExecs)
 
-            processInstructionSet(inputDataTypes, outputs, batch, targetPresent.getBase,
+            processInstructionSet(inputDataTypes, outputs, batch, sourcePresent.getBase,
               notMatchedBySourceInstructionExecs)
           }
         }
