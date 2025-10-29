@@ -55,9 +55,57 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
 
   private val keyColNum: Int = spec.fields().size()
   private val keyColIndices: Array[Int] = (0 until keyColNum).toArray
-  private val keySortOrders: Array[OrderByArg] = (0 until keyColNum)
-    .map(OrderByArg.asc(_, true))
-    .toArray
+
+  /**
+   * The table containing only the partition keys computed from the input.
+   *
+   * @param spillableInput the spillable input columnar batch
+   * @return the keys table computed from the input
+   */
+  private def computeKeysTable(spillableInput: SpillableColumnarBatch): Table = {
+    val keyCols = withResource(spillableInput.getColumnarBatch()) { inputBatch =>
+      partitionExprs.safeMap(_.columnarEval(inputBatch))
+    }
+    withResource(keyCols) { _ =>
+      val arr = new Array[CudfColumnVector](partitionExprs.size)
+      for (i <- partitionExprs.indices) {
+        arr(i) = keyCols(i).getBase
+      }
+      new Table(arr:_*)
+    }
+  }
+
+  /**
+   * Compute keys table from the input, then make a new table by combining the keys table
+   * and the input table.
+   */
+  private def makeKeysValuesTable(spillableInput: SpillableColumnarBatch): Table = {
+    val keysTable = computeKeysTable(spillableInput)
+    withResource(keysTable) { _ =>
+      val inputTable = withResource(spillableInput.getColumnarBatch()) { inputBatch =>
+        GpuColumnVector.from(inputBatch)
+      }
+      withResource(inputTable) { _ =>
+        val numCols = keysTable.getNumberOfColumns + inputTable.getNumberOfColumns
+        val cols = new Array[CudfColumnVector](numCols)
+        for (i <- 0 until keysTable.getNumberOfColumns) {
+          cols(i) = keysTable.getColumn(i).incRefCount()
+        }
+        for (i <- 0 until inputTable.getNumberOfColumns) {
+          cols(i + keysTable.getNumberOfColumns) = inputTable.getColumn(i).incRefCount()
+        }
+        new Table(cols:_*)
+      }
+    }
+  }
+
+  /**
+   * Make the value column indices in the keys and values table.
+   */
+  private def makeValueIndices(spillableInput: SpillableColumnarBatch): Array[Int] = {
+    val numInputCols = spillableInput.getColumnarBatch().numCols()
+    (keyColNum until (keyColNum + numInputCols)).toArray
+  }
 
   /**
    * Partition the `input` columnar batch using iceberg's partition spec.
@@ -70,94 +118,28 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
       return Seq.empty
     }
 
-    val numRows = input.numRows()
-
     val spillableInput = closeOnExcept(input) { _ =>
       SpillableColumnarBatch(input, ACTIVE_ON_DECK_PRIORITY)
     }
 
-    val (partitionKeys, partitions) = withRetryNoSplit(spillableInput) { scb =>
-      val parts = withResource(scb.getColumnarBatch()) { inputBatch =>
-        partitionExprs.safeMap(_.columnarEval(inputBatch))
-      }
-      val keysTable = withResource(parts) { _ =>
-        val arr = new Array[CudfColumnVector](partitionExprs.size)
-        for (i <- partitionExprs.indices) {
-          arr(i) = parts(i).getBase
-        }
-        new Table(arr:_*)
-      }
-
-      val sortedKeyTableWithRowIdx = withResource(keysTable) { _ =>
-        withResource(Scalar.fromInt(0)) { zero =>
-          withResource(CudfColumnVector.sequence(zero, numRows)) { rowIdxCol =>
-            val totalColCount = keysTable.getNumberOfColumns + 1
-            val allCols = new Array[CudfColumnVector](totalColCount)
-
-            for (i <- 0 until keysTable.getNumberOfColumns) {
-              allCols(i) = keysTable.getColumn(i)
-            }
-            allCols(keysTable.getNumberOfColumns) = rowIdxCol
-
-            withResource(new Table(allCols: _*)) { allColsTable =>
-              allColsTable.orderBy(keySortOrders: _*)
-            }
-          }
-        }
-      }
-
-      val (sortedPartitionKeys, splitIds, rowIdxCol) = withResource(sortedKeyTableWithRowIdx) { _ =>
-        val uniqueKeysTable = sortedKeyTableWithRowIdx.groupBy(keyColIndices: _*)
-          .aggregate()
-
-        val sortedUniqueKeysTable = withResource(uniqueKeysTable) { _ =>
-          uniqueKeysTable.orderBy(keySortOrders: _*)
-        }
-
-        val (sortedPartitionKeys, splitIds) = withResource(sortedUniqueKeysTable) { _ =>
+    withRetryNoSplit(spillableInput) { scb =>
+      val keysValuesTable = makeKeysValuesTable(scb)
+      val valueColumnIndices = makeValueIndices(scb)
+      withResource(keysValuesTable) { _ =>
+        val splitRet = keysValuesTable.groupBy(keyColIndices: _*)
+          .contiguousSplitGroupsAndGenUniqKeys(valueColumnIndices)
+        withResource(splitRet) {
           val partitionKeys = toPartitionKeys(spec.partitionType(),
             partitionSparkType,
-            sortedUniqueKeysTable)
-
-          val splitIdsCv = sortedKeyTableWithRowIdx.upperBound(
-            sortedUniqueKeysTable,
-            keySortOrders: _*)
-
-          val splitIds = withResource(splitIdsCv) { _ =>
-            GpuColumnVector.toIntArray(splitIdsCv)
-          }
-
-          (partitionKeys, splitIds)
+            splitRet.getUniqKeyTable)
+          val partitions = splitRet.getGroups
+          partitionKeys.zip(partitions).map { case (partKey, partition) =>
+            ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
+              .ACTIVE_BATCHING_PRIORITY), partKey)
+          }.toSeq
         }
-
-        val rowIdxCol = sortedKeyTableWithRowIdx.getColumn(keyColNum).incRefCount()
-        (sortedPartitionKeys, splitIds, rowIdxCol)
-      }
-
-      withResource(rowIdxCol) { _ =>
-        val inputTable = withResource(scb.getColumnarBatch()) { inputBatch =>
-          GpuColumnVector.from(inputBatch)
-        }
-
-        val sortedDataTable = withResource(inputTable) { _ =>
-          inputTable.gather(rowIdxCol)
-        }
-
-        val partitions = withResource(sortedDataTable) { _ =>
-          sortedDataTable.contiguousSplit(splitIds: _*)
-        }
-
-        (sortedPartitionKeys, partitions)
       }
     }
-
-    withResource(partitions) { _ =>
-      partitionKeys.zip(partitions).map { case (partKey, partition) =>
-        ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
-          .ACTIVE_BATCHING_PRIORITY), partKey)
-      }.toSeq
-    }
-
   }
 
   private def getPartitionExpr(field: PartitionField)
