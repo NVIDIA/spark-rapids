@@ -85,10 +85,10 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
         val numCols = keysTable.getNumberOfColumns + inputTable.getNumberOfColumns
         val cols = new Array[CudfColumnVector](numCols)
         for (i <- 0 until keysTable.getNumberOfColumns) {
-          cols(i) = keysTable.getColumn(i).incRefCount()
+          cols(i) = keysTable.getColumn(i)
         }
         for (i <- 0 until inputTable.getNumberOfColumns) {
-          cols(i + keysTable.getNumberOfColumns) = inputTable.getColumn(i).incRefCount()
+          cols(i + keysTable.getNumberOfColumns) = inputTable.getColumn(i)
         }
         new Table(cols:_*)
       }
