@@ -20,7 +20,7 @@ import java.lang.Math.toIntExact
 
 import scala.collection.JavaConverters._
 
-import ai.rapids.cudf.{ColumnVector => CudfColumnVector, OrderByArg, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Table}
 import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, RapidsHostColumnVector, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
@@ -128,7 +128,7 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
       withResource(keysValuesTable) { _ =>
         val splitRet = keysValuesTable.groupBy(keyColIndices: _*)
           .contiguousSplitGroupsAndGenUniqKeys(valueColumnIndices)
-        withResource(splitRet) {
+        withResource(splitRet) { _ =>
           val partitionKeys = toPartitionKeys(spec.partitionType(),
             partitionSparkType,
             splitRet.getUniqKeyTable)
