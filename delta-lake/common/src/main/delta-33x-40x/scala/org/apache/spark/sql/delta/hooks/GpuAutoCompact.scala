@@ -51,10 +51,6 @@ trait GpuAutoCompactBase extends AutoCompactBase {
    * Compact the target table of write transaction `txn` only when there are sufficient amount of
    * small size files.
    */
-  /**
-   * Compact the target table of write transaction `txn` only when there are sufficient amount of
-   * small size files.
-   */
   private[delta] def compactIfNecessary(
       spark: SparkSession,
       txn: GpuOptimisticTransactionBase,
@@ -111,12 +107,6 @@ trait GpuAutoCompactBase extends AutoCompactBase {
       Seq.empty[OptimizeMetrics]
     }
   }
-  /**
-   * Launch Auto Compaction jobs if there is sufficient capacity.
-   * @param spark The spark session of the parent transaction that triggers this Auto Compaction.
-   * @param deltaLog The delta log of the parent transaction.
-   * @return the optimize metrics of this compaction job.
-   */
   /**
    * Launch Auto Compaction jobs if there is sufficient capacity.
    * @param spark The spark session of the parent transaction that triggers this Auto Compaction.
