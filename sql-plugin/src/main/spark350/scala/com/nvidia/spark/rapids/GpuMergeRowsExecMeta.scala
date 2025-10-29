@@ -128,60 +128,26 @@ class GpuMergeRowsExecMeta(
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[MergeRowsExec](mergeRows, conf, p, rule) {
 
-  // Wrap presence flag expressions
-  private val isSourcePresentMeta: BaseExprMeta[_] = 
-    GpuOverrides.wrapExpr(mergeRows.isSourceRowPresent, conf, Some(this))
-  
-  private val isTargetPresentMeta: BaseExprMeta[_] = 
-    GpuOverrides.wrapExpr(mergeRows.isTargetRowPresent, conf, Some(this))
-
-  // Wrap all instruction sets with proper meta classes
-  private val matchedInstructionMetas: Seq[BaseExprMeta[_]] = 
-    mergeRows.matchedInstructions.map(createInstructionMeta)
-  
-  private val notMatchedInstructionMetas: Seq[BaseExprMeta[_]] = 
-    mergeRows.notMatchedInstructions.map(createInstructionMeta)
-  
-  private val notMatchedBySourceInstructionMetas: Seq[BaseExprMeta[_]] = 
-    mergeRows.notMatchedBySourceInstructions.map(createInstructionMeta)
-
-  /**
-   * Create appropriate concrete InstructionMeta based on the instruction type.
-   * Pattern matches on the instruction type and returns the appropriate meta class.
-   */
-  private def createInstructionMeta(instruction: Instruction): BaseExprMeta[_] = {
-    instruction match {
-      case keep: Keep =>
-        new GpuKeepInstructionMeta(keep, conf, Some(this), rule)
-      case discard: Discard =>
-        new GpuDiscardInstructionMeta(discard, conf, Some(this), rule)
-      case split: Split =>
-        new GpuSplitInstructionMeta(split, conf, Some(this), rule)
-    }
-  }
-
-  // Collect all child expressions from presence flags and instructions
-  override val childExprs: Seq[BaseExprMeta[_]] = {
-    Seq(isSourcePresentMeta, isTargetPresentMeta) ++
-      matchedInstructionMetas ++
-      notMatchedInstructionMetas ++
-      notMatchedBySourceInstructionMetas
-  }
-
   override def convertToGpu(): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
-    
+
     // Convert presence expressions
-    val gpuIsSourceRowPresent = isSourcePresentMeta.convertToGpu()
-    val gpuIsTargetRowPresent = isTargetPresentMeta.convertToGpu()
-    
+    val gpuIsSourceRowPresent = childExprs.head.convertToGpu()
+    val gpuIsTargetRowPresent = childExprs(1).convertToGpu()
+
+    var prevExprCnt = 2
     // Convert instruction sets - they remain as Instruction expressions with GPU children
-    val gpuMatchedInstructions = matchedInstructionMetas.map(
-      _.convertToGpu().asInstanceOf[Instruction])
-    val gpuNotMatchedInstructions = notMatchedInstructionMetas.map(
-      _.convertToGpu().asInstanceOf[Instruction])
-    val gpuNotMatchedBySourceInstructions = notMatchedBySourceInstructionMetas.map(
-      _.convertToGpu().asInstanceOf[Instruction])
+    val gpuMatchedInstructions = childExprs
+      .slice(prevExprCnt, prevExprCnt + mergeRows.matchedInstructions.length)
+      .map(_.convertToGpu().asInstanceOf[Instruction])
+    prevExprCnt += mergeRows.matchedInstructions.length
+    val gpuNotMatchedInstructions = childExprs
+      .slice(prevExprCnt, prevExprCnt + mergeRows.notMatchedInstructions.length)
+      .map(_.convertToGpu().asInstanceOf[Instruction])
+    prevExprCnt += mergeRows.notMatchedInstructions.length
+    val gpuNotMatchedBySourceInstructions = childExprs
+      .slice(prevExprCnt, prevExprCnt + mergeRows.notMatchedBySourceInstructions.length)
+      .map(_.convertToGpu().asInstanceOf[Instruction])
     
     GpuMergeRowsExec(
       gpuIsSourceRowPresent,

@@ -34,6 +34,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, PythonUDAF, ToPrettyString}
+import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Discard, Keep, Split}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
@@ -139,7 +140,37 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
             GpuPythonUDAF(a.name, a.func, a.dataType,
               childExprs.map(_.convertToGpu()),
               a.evalType, a.udfDeterministic, a.resultId)
-        })
+        }),
+      GpuOverrides.expr[Keep](
+        "Keep instruction for MERGE operations - keeps/updates rows based on condition",
+        ExprChecks.projectOnly(
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
+          TypeSig.all,
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
+          TypeSig.all),
+        (keep, conf, p, r) => new GpuKeepInstructionMeta(keep, conf, p, r)),
+      GpuOverrides.expr[Discard](
+        "Discard instruction for MERGE operations - discards rows based on condition",
+        ExprChecks.projectOnly(
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
+          TypeSig.all,
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
+          TypeSig.all),
+        (discard, conf, p, r) => new GpuDiscardInstructionMeta(discard, conf, p, r)),
+      GpuOverrides.expr[Split](
+        "Split instruction for MERGE operations - splits rows into multiple outputs",
+        ExprChecks.projectOnly(
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
+          TypeSig.all,
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY).nested(),
+          TypeSig.all),
+        (split, conf, p, r) => new GpuSplitInstructionMeta(split, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
   }
