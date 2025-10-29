@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
-from iceberg import (create_iceberg_table, get_full_table_name, 
+from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list,
                      rapids_reader_types)
 from marks import allow_non_gpu, iceberg, ignore_order
@@ -27,14 +27,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
                                 reason="Current spark-rapids only support spark 3.5.x")
 
 # Base configuration for Iceberg MERGE tests
-iceberg_merge_enabled_conf = {
-    'spark.rapids.sql.enabled': 'true',
-    'spark.rapids.sql.format.parquet.enabled': 'true',
-    'spark.rapids.sql.format.parquet.write.enabled': 'true',
-    'spark.rapids.sql.format.parquet.read.enabled': 'true',
-    'spark.rapids.sql.format.iceberg.enabled': 'true',
-    'spark.rapids.sql.format.iceberg.write.enabled': 'true'
-}
+iceberg_merge_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
 
 def create_iceberg_table_with_merge_data(
