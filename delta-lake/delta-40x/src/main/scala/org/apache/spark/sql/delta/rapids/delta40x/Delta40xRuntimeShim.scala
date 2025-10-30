@@ -25,9 +25,10 @@ import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, GpuOptimisticTransactionBase, StartTransactionArg}
 
 /**
- * Delta runtime shim for Delta 3.3.x on Spark 3.5.x.
+ * Delta runtime shim for Delta 4.0.x on Spark 4.0.x.
  *
  * @note This class is instantiated via reflection from DeltaProbeImpl
+ */
  */
 class Delta40xRuntimeShim extends DeltaRuntimeShimBase {
 
