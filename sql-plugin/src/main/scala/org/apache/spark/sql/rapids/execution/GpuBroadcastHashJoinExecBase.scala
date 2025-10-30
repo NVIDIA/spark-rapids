@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.rdd.RDD
@@ -164,7 +164,7 @@ abstract class GpuBroadcastHashJoinExecBase(
         if (builtBatch.numRows() == 0) {
           // Build side is empty, return the stream iterator directly.
           withResource(builtBatch)(_ => streamIter)
-        } else if (GpuHashJoin.anyNullInKey(builtBatch, boundBuildKeys)) {
+        } else if (closeOnExcept(builtBatch)(GpuHashJoin.anyNullInKey(_, boundBuildKeys))) {
           // Spark will return an empty iterator if any nulls in the right table
           withResource(builtBatch)(_ => Iterator.empty)
         } else {

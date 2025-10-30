@@ -189,7 +189,7 @@ case class GpuBroadcastHashJoinExec(
         if (builtBatch.numRows() == 0) {
           // Build side is empty, return the stream iterator directly.
           withResource(builtBatch)(_ => streamIter)
-        } else if (GpuHashJoin.anyNullInKey(builtBatch, boundBuildKeys)) {
+        } else if (closeOnExcept(builtBatch)(GpuHashJoin.anyNullInKey(_, boundBuildKeys))) {
           // Spark will return an empty iterator if any nulls in the right table
           withResource(builtBatch)(_ => Iterator.empty)
         } else {

@@ -104,13 +104,7 @@ object JoinTypeChecks {
 object GpuHashJoin {
   // Designed for the null-aware anti-join in GpuBroadcastHashJoin.
   def anyNullInKey(cb: ColumnarBatch, boundKeys: Seq[GpuExpression]): Boolean = {
-    val keysCb = closeOnExcept(cb) { _ =>
-      GpuProjectExec.projectAndCloseWithRetrySingleBatch(
-        SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
-        boundKeys)
-    }
-    withResource(keysCb) { _ =>
+    withResource(GpuProjectExec.project(cb, boundKeys)) { keysCb =>
       (0 until keysCb.numCols()).exists(keysCb.column(_).hasNull)
     }
   }
