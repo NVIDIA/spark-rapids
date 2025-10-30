@@ -29,15 +29,13 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnView, NvtxColor}
+import ai.rapids.cudf.{ColumnVector, ColumnView, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
@@ -45,6 +43,8 @@ import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Instruction, ROW_I
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.annotation.tailrec
 
 
 /**
@@ -242,25 +242,21 @@ class GpuMergeBatchIterator(
         withResource(sourcePresentCol) { sourcePresent =>
           withResource(targetPresentCol) { targetPresent =>
 
-            withResource(sourcePresent.getBase.and(targetPresent.getBase)) { mask =>
-              processInstructionSet(inputDataTypes, outputs, batch, mask, matchedInstructionExecs)
-            }
+            val matchedMask = sourcePresent.getBase.and(targetPresent.getBase)
+            processInstructionSet(inputDataTypes, outputs, batch,
+              matchedMask, matchedInstructionExecs)
 
             val sourceNotMatchedMask = withResource(targetPresent.getBase.not()) { noTargetMask =>
               sourcePresent.getBase.and(noTargetMask)
             }
-            withResource(sourceNotMatchedMask) { mask =>
-              processInstructionSet(inputDataTypes, outputs, batch, mask,
+            processInstructionSet(inputDataTypes, outputs, batch, sourceNotMatchedMask,
                 notMatchedInstructionExecs)
-            }
 
             val targetNotMatchedMask = withResource(sourcePresent.getBase.not()) { noSourceMask =>
               targetPresent.getBase.and(noSourceMask)
             }
-            withResource(targetNotMatchedMask) { mask =>
-              processInstructionSet(inputDataTypes, outputs, batch, mask,
+            processInstructionSet(inputDataTypes, outputs, batch, targetNotMatchedMask,
                 notMatchedBySourceInstructionExecs)
-            }
           }
         }
       }
@@ -276,27 +272,34 @@ class GpuMergeBatchIterator(
   /**
    * Process a set of instructions for rows matching the given mask.
    */
+  @tailrec
   private def processInstructionSet(
      dataTypes: Array[DataType],
      outputs: ArrayBuffer[SpillableColumnarBatch],
      batch: ColumnarBatch,
-     mask: ColumnView,
+     mask: ColumnVector,
      instructionExecs: Seq[GpuInstructionExec]): Unit = {
 
-    if (instructionExecs.isEmpty) return
+    if (instructionExecs.isEmpty) {
+      mask.close()
+      return
+    }
 
-    // For each instruction, check if any rows match and apply outputs
-    for (instructionExec <- instructionExecs) {
-      val condMask = withResource(instructionExec.evaluateCondition(batch)) { cond =>
+    val instructionExec = instructionExecs.head
+
+    val condMask = withResource(mask) { _ =>
+      withResource(instructionExec.evaluateCondition(batch)) { cond =>
         cond.getBase.and(mask)
       }
-      withResource(condMask) { _ =>
-        val thisFilteredBatch = GpuColumnVector.filter(batch, dataTypes, condMask)
-        withResource(thisFilteredBatch) { _ =>
-          outputs ++= instructionExec.applyOutputs(thisFilteredBatch)
-        }
-      }
     }
+
+
+    val thisFilteredBatch = GpuColumnVector.filter(batch, dataTypes, condMask)
+    withResource(thisFilteredBatch) { _ =>
+      outputs ++= instructionExec.applyOutputs(thisFilteredBatch)
+    }
+
+    processInstructionSet(dataTypes, outputs, batch, condMask, instructionExecs.tail)
   }
 }
 
