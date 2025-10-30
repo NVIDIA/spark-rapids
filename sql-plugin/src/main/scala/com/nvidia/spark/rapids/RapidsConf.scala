@@ -3488,7 +3488,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
-  lazy val shuffleKudoMode: ShuffleKudoMode.Value =
+  lazy val shuffleKudoWriteMode: ShuffleKudoMode.Value =
     ShuffleKudoMode.withName(get(SHUFFLE_KUDO_WRITE_MODE))
 
   lazy val shuffleKudoReadMode: ShuffleKudoMode.Value =
@@ -3553,7 +3553,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
 
   def shuffleKudoGpuSerializerEnabled: Boolean = shuffleKudoSerializerEnabled &&
-      shuffleKudoMode == ShuffleKudoMode.GPU
+      shuffleKudoWriteMode == ShuffleKudoMode.GPU
 
   def shuffleKudoGpuSerializerReadEnabled: Boolean = shuffleKudoSerializerEnabled &&
     shuffleKudoReadMode == ShuffleKudoMode.GPU
