@@ -34,16 +34,16 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
-import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
-import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Instruction, ROW_ID}
+import org.apache.spark.sql.catalyst.plans.logical.MergeRows.ROW_ID
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.v2.GpuMergeRowsExec.GpuInstruction
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -68,9 +68,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuMergeRowsExec(
     isTargetRowPresent: Expression,
     isSourceRowPresent: Expression,
-    matchedInstructions: Seq[Instruction],
-    notMatchedInstructions: Seq[Instruction],
-    notMatchedBySourceInstructions: Seq[Instruction],
+    matchedInstructions: Seq[GpuInstruction],
+    notMatchedInstructions: Seq[GpuInstruction],
+    notMatchedBySourceInstructions: Seq[GpuInstruction],
     checkCardinality: Boolean,
     output: Seq[Attribute],
     child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
@@ -110,11 +110,14 @@ case class GpuMergeRowsExec(
 
     val boundTargetRowPresent = GpuBindReferences.bindGpuReference(isTargetRowPresent, child.output)
     val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent, child.output)
-    val boundMatchedInsts = matchedInstructions.map(GpuInstructionExec.bind(_, child.output))
-    val boundNotMatchedInsts = notMatchedInstructions.map(GpuInstructionExec.bind(_, child.output))
-    val boundMatchedBySourceInsts = notMatchedBySourceInstructions
-      .map(GpuInstructionExec.bind(_, child.output))
 
+    val boundMatchedInsts = GpuBindReferences.bindGpuReferences(matchedInstructions, child.output)
+      .asInstanceOf[Seq[GpuInstruction]]
+    val boundNotMatchedInsts = GpuBindReferences.bindGpuReferences(notMatchedInstructions,
+      child.output).asInstanceOf[Seq[GpuInstruction]]
+    val boundMatchedBySourceInsts = GpuBindReferences.bindGpuReferences(
+      notMatchedBySourceInstructions, child.output)
+      .asInstanceOf[Seq[GpuInstruction]]
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuMergeBatchIterator(
@@ -139,54 +142,48 @@ case class GpuMergeRowsExec(
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 }
 
-/**
- * GPU version of InstructionExec. Evaluates merge instruction conditions and applies outputs.
- * 
- * Similar to Spark's InstructionExec which is a private class in MergeRowsExec.
- *
- * @param condition GPU expression for the instruction condition
- * @param outputs GPU expressions for the instruction outputs
- */
-case class GpuInstructionExec(
-    cpu: Instruction,
-    condition: GpuExpression,
-    outputs: Seq[Seq[GpuExpression]]) extends GpuUnevaluable with ShimExpression {
-  
-  /**
-   * Evaluate the condition on the input batch.
-   * @param batch Input columnar batch
-   * @return Column vector containing boolean mask where condition is true
-   */
-  def evaluateCondition(batch: ColumnarBatch): GpuColumnVector = {
-    condition.columnarEval(batch)
+object GpuMergeRowsExec {
+
+  sealed trait GpuInstruction extends GpuUnevaluable with ShimExpression {
+    def condition: Expression
+
+    def outputs: Seq[Seq[Expression]]
+
+    def evaluateCondition(batch: ColumnarBatch): GpuColumnVector = {
+      condition.columnarEval(batch)
+    }
+
+    def applyOutputs(batch: ColumnarBatch): Seq[ColumnarBatch] = {
+      outputs.map(output => GpuProjectExec.project(batch, output))
+    }
+
+    override def nullable: Boolean = false
+    override def dataType: DataType = NullType
   }
 
-  /**
-   * Apply the instruction's outputs to the input batch.
-   * @param batch Input columnar batch
-   * @return Array of column vectors representing the projected outputs
-   */
-  def applyOutputs(batch: ColumnarBatch): Seq[SpillableColumnarBatch] = {
-    outputs.safeMap(output => SpillableColumnarBatch.apply(GpuProjectExec.project(batch, output),
-      ACTIVE_ON_DECK_PRIORITY))
+  case class GpuKeep(condition: Expression, output: Seq[Expression]) extends GpuInstruction {
+
+    override def children: Seq[Expression] = Seq(condition) ++ output
+    override def outputs: Seq[Seq[Expression]] = Seq(output)
   }
 
-  override def nullable: Boolean = cpu.nullable
+  case class GpuDiscard(condition: Expression) extends GpuInstruction {
 
-  override def dataType: DataType = cpu.dataType
+    override def outputs: Seq[Seq[Expression]] = Seq.empty
 
-  override def children: Seq[Expression] = Seq(condition) ++ outputs.flatten
-}
+    override def children: Seq[Expression] = Seq(condition)
+  }
 
-object GpuInstructionExec {
-  def bind(instruction: Instruction, inputs: Seq[Attribute]): GpuInstructionExec = {
-    val gpuCond = GpuBindReferences.bindGpuReference(instruction.condition, inputs)
-    val gpuOutputs = instruction.outputs
-      .map(output => output.map(GpuBindReferences.bindGpuReference(_, inputs)))
+  case class GpuSplit(condition: Expression, extraOutput: Seq[Expression],
+                      output: Seq[Expression]) extends GpuInstruction {
 
-    new GpuInstructionExec(instruction, gpuCond, gpuOutputs)
+    override def outputs: Seq[Seq[Expression]] = Seq(extraOutput, output)
+
+    override def children: Seq[Expression] = Seq(condition) ++ extraOutput ++ output
   }
 }
+
+
 
 /**
  * GPU version of MergeRowIterator. Processes columnar batches for MERGE operations.
@@ -207,9 +204,9 @@ class GpuMergeBatchIterator(
     inputIter: Iterator[ColumnarBatch],
     isTargetRowPresent: GpuExpression,
     isSourceRowPresent: GpuExpression,
-    matchedInstructionExecs: Seq[GpuInstructionExec],
-    notMatchedInstructionExecs: Seq[GpuInstructionExec],
-    notMatchedBySourceInstructionExecs: Seq[GpuInstructionExec],
+    matchedInstructionExecs: Seq[GpuInstruction],
+    notMatchedInstructionExecs: Seq[GpuInstruction],
+    notMatchedBySourceInstructionExecs: Seq[GpuInstruction],
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] {
@@ -217,6 +214,7 @@ class GpuMergeBatchIterator(
   override def hasNext: Boolean = inputIter.hasNext
 
   override def next(): ColumnarBatch = {
+
     val batch = inputIter.next()
     withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
       val result = processBatch(batch)
@@ -242,22 +240,24 @@ class GpuMergeBatchIterator(
 
       closeOnExcept(outputs) { _ =>
         withResource(sourcePresentCol) { sourcePresent =>
+          require(!sourcePresent.hasNull, "Source can has null")
           withResource(targetPresentCol) { targetPresent =>
+            require(!targetPresent.hasNull, "Target can has null")
 
             val matchedMask = sourcePresent.getBase.and(targetPresent.getBase)
             processInstructionSet(inputDataTypes, outputs, batch,
               matchedMask, matchedInstructionExecs)
 
-            val sourceNotMatchedMask = withResource(targetPresent.getBase.not()) { noTargetMask =>
+            val notMatchedMask = withResource(targetPresent.getBase.not()) { noTargetMask =>
               sourcePresent.getBase.and(noTargetMask)
             }
-            processInstructionSet(inputDataTypes, outputs, batch, sourceNotMatchedMask,
+            processInstructionSet(inputDataTypes, outputs, batch, notMatchedMask,
                 notMatchedInstructionExecs)
 
-            val targetNotMatchedMask = withResource(sourcePresent.getBase.not()) { noSourceMask =>
+            val notMatchedBySrcMask = withResource(sourcePresent.getBase.not()) { noSourceMask =>
               targetPresent.getBase.and(noSourceMask)
             }
-            processInstructionSet(inputDataTypes, outputs, batch, targetNotMatchedMask,
+            processInstructionSet(inputDataTypes, outputs, batch, notMatchedBySrcMask,
                 notMatchedBySourceInstructionExecs)
           }
         }
@@ -280,7 +280,7 @@ class GpuMergeBatchIterator(
      outputs: ArrayBuffer[SpillableColumnarBatch],
      batch: ColumnarBatch,
      mask: ColumnVector,
-     instructionExecs: Seq[GpuInstructionExec]): Unit = {
+     instructionExecs: Seq[GpuInstruction]): Unit = {
 
     if (instructionExecs.isEmpty) {
       mask.close()
@@ -304,6 +304,8 @@ class GpuMergeBatchIterator(
         val thisFilteredBatch = GpuColumnVector.filter(batch, dataTypes, condMask)
         withResource(thisFilteredBatch) { _ =>
           outputs ++= instructionExec.applyOutputs(thisFilteredBatch)
+            .map(SpillableColumnarBatch
+              .apply(_, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
         }
       }
     }

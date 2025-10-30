@@ -34,7 +34,8 @@ def create_iceberg_table_with_merge_data(
         table_name: str,
         partition_col_sql=None,
         table_properties=None,
-        ensure_distinct_key=False):
+        ensure_distinct_key=False,
+        seed=None):
     """
     Helper function to create and populate an Iceberg table for MERGE tests.
     
@@ -44,17 +45,23 @@ def create_iceberg_table_with_merge_data(
         table_properties: Additional table properties
         ensure_distinct_key: If True, ensures _c0 (join key) has distinct values
                            to satisfy MERGE cardinality constraint
+        seed: Random seed for data generation (default: None, uses runtime seed)
     """
     # Always use copy-on-write mode for these tests
     base_props = {
         'format-version': '2',
-        'write.merge.mode': 'copy-on-write'
+        'write.merge.mode': 'copy-on-write',
+        # See https://github.com/NVIDIA/spark-rapids/issues/13698
+        'read.parquet.vectorization.enabled': 'false'
     }
     if table_properties:
         base_props.update(table_properties)
     
     def data_gen(spark):
-        return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        if seed is not None:
+            return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), length=12, seed=seed)
+        else:
+            return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), length=12)
     
     create_iceberg_table(table_name,
                         partition_col_sql=partition_col_sql,
@@ -106,14 +113,15 @@ def do_merge_test(
     gpu_target_table = f"{base_table_name}_target_gpu"
     source_table = f"{base_table_name}_source"
     
-    # Create identical target tables for CPU and GPU
+    # Create identical target tables for CPU and GPU (using runtime seed)
     create_iceberg_table_with_merge_data(cpu_target_table, partition_col_sql, table_properties)
     create_iceberg_table_with_merge_data(gpu_target_table, partition_col_sql, table_properties)
     
-    # Create source table with distinct keys to satisfy MERGE cardinality constraint
+    # Create source table with different seed and distinct keys to satisfy MERGE cardinality constraint
     # (each target row matches at most one source row)
+    # Using a fixed different seed ensures source data differs from target data
     create_iceberg_table_with_merge_data(source_table, partition_col_sql, table_properties,
-                                        ensure_distinct_key=True)
+                                        ensure_distinct_key=True, seed=42)
     
     # Merge reader_type into configuration
     test_conf = copy_and_update(iceberg_merge_enabled_conf, {
@@ -125,11 +133,12 @@ def do_merge_test(
         merge_sql_func(spark, gpu_target_table, source_table)
     
     with_gpu_session(do_gpu_merge, conf=test_conf)
-    
+    # with_cpu_session(do_gpu_merge)
+
     # Execute MERGE on CPU
     def do_cpu_merge(spark):
         merge_sql_func(spark, cpu_target_table, source_table)
-    
+
     with_cpu_session(do_cpu_merge)
     
     # Compare results
@@ -178,6 +187,21 @@ def do_merge_test(
         WHEN NOT MATCHED THEN INSERT *
         """,
         id="insert_only"),
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        WHEN NOT MATCHED BY SOURCE THEN DELETE
+        """,
+        id="not_matched_by_source_delete"),
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED BY SOURCE AND t._c2 > 0 THEN DELETE
+        """,
+        id="conditional_not_matched_by_source"),
 ])
 def test_iceberg_merge_copy_on_write(spark_tmp_table_factory, reader_type, partition_col_sql, merge_sql):
     """Test various MERGE operations on Iceberg tables (partitioned and unpartitioned)."""
@@ -204,8 +228,8 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_t
     
     create_iceberg_table_with_merge_data(cpu_target_table)
     create_iceberg_table_with_merge_data(gpu_target_table)
-    # Source table needs distinct keys for MERGE cardinality constraint
-    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True)
+    # Source table needs distinct keys for MERGE cardinality constraint, with different seed
+    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True, seed=42)
     
     # Phase 2: MERGE operation (to be tested with fallback)
     def write_func(spark, target_table_name):
@@ -252,7 +276,7 @@ def test_iceberg_merge_fallback_unsupported_partition_transform(
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
     # Phase 1: Initialize tables with data
-    def init_table(table_name):
+    def init_table(table_name, ensure_distinct_key=False):
         table_props = {
             'format-version': '2',
             'write.merge.mode': 'copy-on-write'
@@ -268,6 +292,19 @@ def test_iceberg_merge_fallback_unsupported_partition_transform(
         
         def insert_data(spark):
             df = data_gen(spark)
+            
+            # MERGE requires: each target row matches at most one source row
+            # Deduplicate before insert to preserve schema
+            if ensure_distinct_key:
+                # Create temp view and use SQL to deduplicate while preserving schema
+                df.createOrReplaceTempView("temp_merge_data")
+                df = spark.sql("""
+                    SELECT * FROM (
+                        SELECT *, ROW_NUMBER() OVER (PARTITION BY _c0 ORDER BY _c0) as rn
+                        FROM temp_merge_data
+                    ) WHERE rn = 1
+                """).drop("rn")
+            
             df.writeTo(table_name).append()
         
         with_cpu_session(insert_data)
@@ -278,19 +315,7 @@ def test_iceberg_merge_fallback_unsupported_partition_transform(
     
     init_table(cpu_target_table)
     init_table(gpu_target_table)
-    init_table(source_table)
-    
-    # Ensure source table has distinct keys for MERGE cardinality constraint
-    def deduplicate_source(spark):
-        # Use window function to keep first row for each _c0
-        spark.sql(f"""
-            CREATE OR REPLACE TABLE {source_table} AS
-            SELECT * FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY _c0 ORDER BY _c0) as rn
-                FROM {source_table}
-            ) WHERE rn = 1
-        """)
-    with_cpu_session(deduplicate_source)
+    init_table(source_table, ensure_distinct_key=True)
     
     # Phase 2: MERGE operation (to be tested with fallback)
     def write_func(spark, target_table_name):
@@ -329,7 +354,7 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
         return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
     
     # Phase 1: Initialize tables
-    def init_table(table_name):
+    def init_table(table_name, ensure_distinct_key=False):
         # Create table with parquet, insert data, then change format
         table_props = {
             'format-version': '2',
@@ -341,6 +366,19 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
         
         def insert_data(spark):
             df = data_gen(spark)
+            
+            # MERGE requires: each target row matches at most one source row
+            # Deduplicate before insert to preserve schema
+            if ensure_distinct_key:
+                # Create temp view and use SQL to deduplicate while preserving schema
+                df.createOrReplaceTempView("temp_merge_data")
+                df = spark.sql("""
+                    SELECT * FROM (
+                        SELECT *, ROW_NUMBER() OVER (PARTITION BY _c0 ORDER BY _c0) as rn
+                        FROM temp_merge_data
+                    ) WHERE rn = 1
+                """).drop("rn")
+            
             df.writeTo(table_name).append()
         
         with_cpu_session(insert_data)
@@ -351,25 +389,13 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
         
         with_cpu_session(change_format)
     
-    cpu_target_table = f'{base_table_name}_cpu_target'
-    gpu_target_table = f'{base_table_name}_gpu_target'
+    cpu_target_table = f'{base_table_name}_target_cpu'
+    gpu_target_table = f'{base_table_name}_target_gpu'
     source_table = f'{base_table_name}_source'
     
     init_table(cpu_target_table)
     init_table(gpu_target_table)
-    init_table(source_table)
-    
-    # Ensure source table has distinct keys for MERGE cardinality constraint
-    def deduplicate_source(spark):
-        # Use window function to keep first row for each _c0
-        spark.sql(f"""
-            CREATE OR REPLACE TABLE {source_table} AS
-            SELECT * FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY _c0 ORDER BY _c0) as rn
-                FROM {source_table}
-            ) WHERE rn = 1
-        """)
-    with_cpu_session(deduplicate_source)
+    init_table(source_table, ensure_distinct_key=True)
     
     # Phase 2: MERGE operation
     def write_func(spark, target_table_name):
@@ -384,6 +410,78 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
     def read_func(spark, table_name):
         # Select 1 to avoid unsupported file format read error
         return spark.sql(f"SELECT 1")
+    
+    assert_gpu_fallback_write_sql(
+        write_func,
+        read_func,
+        base_table_name + "_target",
+        ["ReplaceDataExec"],
+        conf=copy_and_update(iceberg_merge_enabled_conf, {
+            "spark.rapids.sql.format.parquet.reader.type": reader_type
+        })
+    )
+
+
+@allow_non_gpu("ReplaceDataExec", "MergeRowsExec", "BatchScanExec", "ShuffleExchangeExec", "ProjectExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, reader_type):
+    """Test MERGE falls back with unsupported data types (e.g., Decimal128, nested types)"""
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    
+    def data_gen(spark):
+        # Use iceberg_full_gens_list which includes types that may not be fully supported on GPU
+        return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_full_gens_list)))
+    
+    # Phase 1: Initialize tables
+    def init_table(table_name, ensure_distinct_key=False):
+        table_props = {
+            'format-version': '2',
+            'write.merge.mode': 'copy-on-write',
+        }
+        
+        create_iceberg_table(table_name, table_prop=table_props, df_gen=data_gen)
+        
+        def insert_data(spark):
+            df = data_gen(spark)
+            
+            # MERGE requires: each target row matches at most one source row
+            # Deduplicate before insert to preserve schema
+            if ensure_distinct_key:
+                # Create temp view and use SQL to deduplicate while preserving schema
+                df.createOrReplaceTempView("temp_merge_data")
+                df = spark.sql("""
+                    SELECT * FROM (
+                        SELECT *, ROW_NUMBER() OVER (PARTITION BY _c0 ORDER BY _c0) as rn
+                        FROM temp_merge_data
+                    ) WHERE rn = 1
+                """).drop("rn")
+            
+            df.writeTo(table_name).append()
+        
+        with_cpu_session(insert_data)
+    
+    cpu_target_table = f'{base_table_name}_target_cpu'
+    gpu_target_table = f'{base_table_name}_target_gpu'
+    source_table = f'{base_table_name}_source'
+    
+    init_table(cpu_target_table)
+    init_table(gpu_target_table)
+    init_table(source_table, ensure_distinct_key=True)
+    
+    # Phase 2: MERGE operation
+    def write_func(spark, target_table_name):
+        spark.sql(f"""
+            MERGE INTO {target_table_name} t
+            USING {source_table} s
+            ON t._c0 = s._c0
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
+    
+    def read_func(spark, table_name):
+        return spark.sql(f"SELECT * FROM {table_name}")
     
     assert_gpu_fallback_write_sql(
         write_func,
@@ -411,8 +509,8 @@ def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, reader
     
     create_iceberg_table_with_merge_data(cpu_target_table)
     create_iceberg_table_with_merge_data(gpu_target_table)
-    # Source table needs distinct keys for MERGE cardinality constraint
-    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True)
+    # Source table needs distinct keys for MERGE cardinality constraint, with different seed
+    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True, seed=42)
     
     def write_func(spark, target_table_name):
         spark.sql(f"""

@@ -28,9 +28,10 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Discard, Instruction, Keep, Split}
 import org.apache.spark.sql.execution.datasources.v2.{GpuMergeRowsExec, MergeRowsExec}
+import org.apache.spark.sql.execution.datasources.v2.GpuMergeRowsExec.{GpuDiscard, GpuInstruction, GpuKeep, GpuSplit}
 
 /**
  * Abstract base meta class for MergeRows Instruction expressions.
@@ -49,7 +50,7 @@ abstract class InstructionExprMeta[INPUT <: Instruction](
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends BaseExprMeta[INPUT](instruction, conf, parent, rule)
+  extends ExprMeta[INPUT](instruction, conf, parent, rule)
 
 /**
  * Meta class for Keep instruction.
@@ -64,10 +65,10 @@ class GpuKeepInstructionMeta(
     rule: DataFromReplacementRule)
   extends InstructionExprMeta[Keep](keep, conf, parent, rule) {
 
-  override def convertToGpu(): Expression = {
+  override def convertToGpu(): GpuExpression = {
     val gpuCondition = childExprs.head.convertToGpu()
     val gpuOutputs = childExprs.tail.map(_.convertToGpu())
-    Keep(gpuCondition, gpuOutputs)
+    GpuKeep(gpuCondition, gpuOutputs)
   }
 }
 
@@ -84,9 +85,9 @@ class GpuDiscardInstructionMeta(
     rule: DataFromReplacementRule)
   extends InstructionExprMeta[Discard](discard, conf, parent, rule) {
 
-  override def convertToGpu(): Expression = {
+  override def convertToGpu(): GpuExpression = {
     val gpuCondition = childExprs.head.convertToGpu()
-    Discard(gpuCondition)
+    GpuDiscard(gpuCondition)
   }
 }
 
@@ -104,14 +105,14 @@ class GpuSplitInstructionMeta(
     rule: DataFromReplacementRule)
   extends InstructionExprMeta[Split](split, conf, parent, rule) {
 
-  override def convertToGpu(): Expression = {
+  override def convertToGpu(): GpuExpression = {
     val gpuCondition = childExprs.head.convertToGpu()
 
     val (outputsPart, otherOutputsPart) = childExprs.tail.splitAt(childExprs.tail.length / 2)
     val gpuOutputs = outputsPart.map(_.convertToGpu())
     val gpuOtherOutputs = otherOutputsPart.map(_.convertToGpu())
 
-    Split(gpuCondition, gpuOutputs, gpuOtherOutputs)
+    GpuSplit(gpuCondition, gpuOutputs, gpuOtherOutputs)
   }
 }
 
@@ -139,16 +140,23 @@ class GpuMergeRowsExecMeta(
     // Convert instruction sets - they remain as Instruction expressions with GPU children
     val gpuMatchedInstructions = childExprs
       .slice(prevExprCnt, prevExprCnt + mergeRows.matchedInstructions.length)
-      .map(_.convertToGpu().asInstanceOf[Instruction])
+      .map(_.convertToGpu().asInstanceOf[GpuInstruction])
+
     prevExprCnt += mergeRows.matchedInstructions.length
     val gpuNotMatchedInstructions = childExprs
       .slice(prevExprCnt, prevExprCnt + mergeRows.notMatchedInstructions.length)
-      .map(_.convertToGpu().asInstanceOf[Instruction])
+      .map(_.convertToGpu().asInstanceOf[GpuInstruction])
+
     prevExprCnt += mergeRows.notMatchedInstructions.length
     val gpuNotMatchedBySourceInstructions = childExprs
       .slice(prevExprCnt, prevExprCnt + mergeRows.notMatchedBySourceInstructions.length)
-      .map(_.convertToGpu().asInstanceOf[Instruction])
-    
+      .map(_.convertToGpu().asInstanceOf[GpuInstruction])
+
+    prevExprCnt += mergeRows.notMatchedBySourceInstructions.length
+    val gpuOutput = childExprs
+      .slice(prevExprCnt, prevExprCnt + mergeRows.output.length)
+      .map(_.convertToGpu().asInstanceOf[Attribute])
+
     GpuMergeRowsExec(
       gpuIsTargetRowPresent,
       gpuIsSourceRowPresent,
@@ -156,7 +164,7 @@ class GpuMergeRowsExecMeta(
       gpuNotMatchedInstructions,
       gpuNotMatchedBySourceInstructions,
       mergeRows.checkCardinality,
-      mergeRows.output,
+      gpuOutput,
       gpuChild)
   }
 }
