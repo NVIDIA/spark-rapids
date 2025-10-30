@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat, should_sort_on_spark, should_sort_locally, array_columns_to_sort_locally, get_float_check, get_limit, spark_jvm
+from conftest import (is_incompat, should_sort_on_spark, should_sort_locally, array_columns_to_sort_locally, get_float_check,
+                      get_limit, spark_jvm, current_test_has_delta_marker, current_test_allows_non_gpu_delta_write)
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import math
@@ -76,29 +77,29 @@ def _assert_equal(cpu, gpu, float_check, path):
         gpu_items = list(gpu.items()).sort(key=_RowCmp)
         _assert_equal(cpu_items, gpu_items, float_check, path + ["map"])
     elif (t is int):
-        assert cpu == gpu, "GPU and CPU int values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) int values are different at {path}"
     elif (t is float):
         if (math.isnan(cpu)):
-            assert math.isnan(gpu), "GPU and CPU float values are different at {}".format(path)
+            assert math.isnan(gpu), f"GPU ({gpu}) and CPU (nan) float values are different at {path}"
         else:
-            assert float_check(cpu, gpu), "GPU and CPU float values are different {}".format(path)
+            assert float_check(cpu, gpu), f"GPU ({gpu}) and CPU ({cpu}) float values are different at {path}"
     elif isinstance(cpu, str):
-        assert cpu == gpu, "GPU and CPU string values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) string values are different at {path}"
     elif isinstance(cpu, datetime):
-        assert cpu == gpu, "GPU and CPU timestamp values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) timestamp values are different at {path}"
     elif isinstance(cpu, date):
-        assert cpu == gpu, "GPU and CPU date values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) date values are different at {path}"
     elif isinstance(cpu, bool):
-        assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) boolean values are different at {path}"
     elif isinstance(cpu, Decimal):
-        assert cpu == gpu, "GPU and CPU decimal values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) decimal values are different at {path}"
     elif isinstance(cpu, bytearray):
-        assert cpu == gpu, "GPU and CPU bytearray values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) bytearray values are different at {path}"
     elif isinstance(cpu, timedelta):
         # Used by interval type DayTimeInterval for Pyspark 3.3.0+
-        assert cpu == gpu, "GPU and CPU timedelta values are different at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) timedelta values are different at {path}"
     elif (cpu == None):
-        assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
+        assert cpu == gpu, f"GPU ({gpu}) and CPU (null) values are different at {path}"
     else:
         assert False, "Found unexpected type {} at {}".format(t, path)
 
@@ -265,8 +266,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
     gpu_path = base_path + '/GPU'
 
     # Check if current test has delta_lake marker
-    from conftest import current_test_has_delta_marker
-    if current_test_has_delta_marker():
+    if current_test_has_delta_marker() and not current_test_allows_non_gpu_delta_write():
         print("Delta Lake test detected - applying Delta write validation")
         from delta_lake_utils import assert_rapids_delta_write
         assert_rapids_delta_write(lambda spark: write_func(spark, gpu_path), conf=conf)
@@ -324,9 +324,8 @@ def assert_gpu_and_cpu_save_as_table_are_equal_collect(table_name_factory, write
     gpu_start = time.time()
     gpu_table = table_name_factory.get() + '_gpu'
     # Check if current test has delta_lake marker
-    from conftest import current_test_has_delta_marker
-    if current_test_has_delta_marker():
-        print("✓ Delta Lake test detected - applying Delta write validation")
+    if current_test_has_delta_marker() and not current_test_allows_non_gpu_delta_write():
+        print("Delta Lake test detected - applying Delta write validation")
         from delta_lake_utils import assert_rapids_delta_write
         assert_rapids_delta_write(lambda spark : write_func(spark, gpu_table), conf=conf)
     else:

@@ -14,23 +14,21 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.delta33x
+package org.apache.spark.sql.delta.rapids
 
-import com.nvidia.spark.rapids.delta.common.GpuDeltaParquetFileFormatBase
+import org.apache.spark.sql.delta.constraints.{CheckDeltaInvariant, Constraint, DeltaInvariantCheckerExec}
+import org.apache.spark.sql.execution.SparkPlan
 
-import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
-
-case class GpuDelta33xParquetFileFormat(
-    protocol: Protocol,
-    metadata: Metadata,
-    nullableRowTrackingFields: Boolean = false,
-    optimizationsEnabled: Boolean = true,
-    tablePath: Option[String] = None,
-    isCDCRead: Boolean = false
-  ) extends GpuDeltaParquetFileFormatBase(
-    protocol,
-    metadata,
-    nullableRowTrackingFields,
-    optimizationsEnabled,
-    tablePath,
-    isCDCRead)
+/**
+ * Per-version shim for constructing the CPU Delta invariant checker exec.
+ *
+ * Spark 3.3.x-3.5.x Delta expects constraints, not pre-built invariants.
+ */
+object ShimDeltaInvariantCheckerExec {
+  def apply(
+      plan: SparkPlan,
+      constraints: Seq[Constraint],
+      invariants: Seq[CheckDeltaInvariant]): SparkPlan = {
+    DeltaInvariantCheckerExec(plan, constraints)
+  }
+}

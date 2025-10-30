@@ -14,23 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.delta33x
+package com.nvidia.spark.rapids.delta.shims
 
-import com.nvidia.spark.rapids.delta.common.GpuDeltaParquetFileFormatBase
+import org.apache.spark.sql.catalyst.expressions.Expression
 
-import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
+/**
+ * Delta 2.0.x-2.4.x shim: no-op unwrap. RuntimeReplaceable replacement not needed.
+ */
+object StatsExprShim {
+  def unwrapRuntimeReplaceable(expr: Expression): Expression = expr
+}
 
-case class GpuDelta33xParquetFileFormat(
-    protocol: Protocol,
-    metadata: Metadata,
-    nullableRowTrackingFields: Boolean = false,
-    optimizationsEnabled: Boolean = true,
-    tablePath: Option[String] = None,
-    isCDCRead: Boolean = false
-  ) extends GpuDeltaParquetFileFormatBase(
-    protocol,
-    metadata,
-    nullableRowTrackingFields,
-    optimizationsEnabled,
-    tablePath,
-    isCDCRead)

@@ -196,7 +196,9 @@ trait GpuPartitioning extends Partitioning {
 
   private def gpuSplitAndSerialize(table: Table, slices: Int*): Array[DeviceMemoryBuffer] = {
     NvtxRegistry.GPU_KUDO_SERIALIZE {
-      KudoGpuSerializer.splitAndSerializeToDevice(table, slices: _*)
+      withRetryNoSplit {
+        KudoGpuSerializer.splitAndSerializeToDevice(table, slices: _*)
+      }
     }
   }
 

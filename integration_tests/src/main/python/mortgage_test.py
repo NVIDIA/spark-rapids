@@ -22,7 +22,6 @@ from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limi
 @limit
 @ignore_order
 @allow_non_gpu(any=True)
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13652")
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))
