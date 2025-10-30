@@ -54,11 +54,15 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   private val partitionExprs: Seq[GpuExpression] = spec.fields().asScala.map(getPartitionExpr).toSeq
 
   private val keyColNum: Int = spec.fields().size()
+  private val inputColNum: Int = dataSparkType.fields.length
+
+  // key column indices in the table: [key columns, input columns]
   private val keyColIndices: Array[Int] = (0 until keyColNum).toArray
+  // input column indices in the table: [key columns, input columns]
+  private val inputColumnIndices: Array[Int] = (keyColNum until (keyColNum + inputColNum)).toArray
 
   /**
    * Make a new table: [key columns, input columns]
-   * [key columns, input columns]
    */
   private def makeKeysAndInputTable(spillableInput: SpillableColumnarBatch): Table = {
     withResource(spillableInput.getColumnarBatch()) { inputBatch =>
@@ -83,13 +87,6 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   }
 
   /**
-   * Make the input column indices in the table: [key columns, input columns]
-   */
-  private def makeInputIndices(inputColNum: Int): Array[Int] = {
-    (keyColNum until (keyColNum + inputColNum)).toArray
-  }
-
-  /**
    * Partition the `input` columnar batch using iceberg's partition spec.
    * <br/>
    * This method takes the ownership of the input columnar batch, and it should not be used after
@@ -99,7 +96,6 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
     if (input.numRows() == 0) {
       return Seq.empty
     }
-    val inputColumnIndices = makeInputIndices(input.numCols())
 
     val spillableInput = closeOnExcept(input) { _ =>
       SpillableColumnarBatch(input, ACTIVE_ON_DECK_PRIORITY)
