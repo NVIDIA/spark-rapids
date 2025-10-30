@@ -16,17 +16,24 @@
 
 package com.nvidia.spark.rapids.delta.delta40x
 
-import com.nvidia.spark.rapids.delta.{DeltaProbe, DeltaProvider, NoDeltaProvider}
+import com.nvidia.spark.rapids.delta.common.GpuDeltaParquetFileFormatBase
+
+import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
 
 /**
- * Implements the Delta Probe interface for Delta Lake 4.0.x
- * @note This is instantiated via reflection from ShimLoader
+ * Thin 4.0.x wrapper delegating to the shared Parquet format implementation.
  */
-class DeltaProbeImpl extends DeltaProbe {
-  override def getDeltaProvider: DeltaProvider = {
-    // TODO: Implement Delta40xProvider in a later PR
-    // For now, return NoDeltaProvider to allow compilation
-    NoDeltaProvider
-  }
-}
-
+case class GpuDelta40xParquetFileFormat(
+    protocol: Protocol,
+    metadata: Metadata,
+    nullableRowTrackingFields: Boolean = false,
+    optimizationsEnabled: Boolean = true,
+    tablePath: Option[String] = None,
+    isCDCRead: Boolean = false
+  ) extends GpuDeltaParquetFileFormatBase(
+    protocol,
+    metadata,
+    nullableRowTrackingFields,
+    optimizationsEnabled,
+    tablePath,
+    isCDCRead)
