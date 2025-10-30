@@ -36,6 +36,7 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -98,26 +99,40 @@ case class CoalesceReadOption private(
     kudoEnabled: Boolean, kudoMode: RapidsConf.ShuffleKudoMode.Value, kudoDebugMode: DumpOption,
     kudoDebugDumpPrefix: Option[String], useAsync: Boolean)
 
-object CoalesceReadOption {
+object CoalesceReadOption extends Logging {
+
+  private def resolveKudoMode(kudoMode: RapidsConf.ShuffleKudoMode.Value,
+      useAsync: Boolean): RapidsConf.ShuffleKudoMode.Value = {
+    if (useAsync && kudoMode == RapidsConf.ShuffleKudoMode.GPU) {
+      logWarning("Both shuffle async read and kudo GPU mode are enabled. These configurations " +
+        "should not be set together. Giving precedence to async read and overriding kudo mode to CPU.")
+      RapidsConf.ShuffleKudoMode.CPU
+    } else {
+      kudoMode
+    }
+  }
+
   def apply(conf: SQLConf): CoalesceReadOption = {
     val dumpOption = RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.get(conf) match {
       case "NEVER" => DumpOption.Never
       case "ALWAYS" => DumpOption.Always
       case "ONFAILURE" => DumpOption.OnFailure
     }
-    CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
-      RapidsConf.ShuffleKudoMode.withName(RapidsConf.SHUFFLE_KUDO_READ_MODE.get(conf)),
-      dumpOption,
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf),
-      RapidsConf.SHUFFLE_ASYNC_READ_ENABLED.get(conf))
+    val kudoEnabled = RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf)
+    val kudoMode = RapidsConf.ShuffleKudoMode.withName(RapidsConf.SHUFFLE_KUDO_READ_MODE.get(conf))
+    val useAsync = RapidsConf.SHUFFLE_ASYNC_READ_ENABLED.get(conf)
+
+    val finalKudoMode = resolveKudoMode(kudoMode, useAsync)
+
+    CoalesceReadOption(kudoEnabled, finalKudoMode, dumpOption,
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf), useAsync)
   }
 
   def apply(conf: RapidsConf): CoalesceReadOption = {
     CoalesceReadOption(conf.shuffleKudoSerializerEnabled,
-      conf.shuffleKudoReadMode,
+      resolveKudoMode(conf.shuffleKudoReadMode, conf.shuffleAsyncReadEnabled),
       conf.shuffleKudoSerializerDebugMode,
-      conf.shuffleKudoSerializerDebugDumpPrefix,
-      conf.shuffleAsyncReadEnabled)
+      conf.shuffleKudoSerializerDebugDumpPrefix, conf.shuffleAsyncReadEnabled)
   }
 }
 
