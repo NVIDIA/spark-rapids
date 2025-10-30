@@ -75,7 +75,6 @@ class GpuCoalescingIcebergParquetReader(
       }
 
     inited = true
-
     new MultiFileParquetPartitionReader(
       rapidsFileIO,
       conf.conf,
@@ -93,7 +92,7 @@ class GpuCoalescingIcebergParquetReader(
       CpuCompressionConfig.disabled(),
       conf.metrics,
       new StructType(), // partitionSchema
-      conf.threadConf.asInstanceOf[MultiFile].numThreads,
+      conf.threadConf.asInstanceOf[MultiFile].poolConfBuilder.build(),
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
       false) // useFieldId
