@@ -31,7 +31,7 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, NvtxColor}
+import ai.rapids.cudf.{ColumnVector, NvtxColor}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
