@@ -402,8 +402,6 @@ object GpuShuffleExchangeExecBase {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
-          private var isFirstCheck = true
-          private var isSingleBatch = false
           private def partNextBatch(): Unit = {
             if (partitioned != null) {
               partitioned.map(_._1).safeClose()
@@ -419,30 +417,9 @@ object GpuShuffleExchangeExecBase {
               // Get a non-empty batch or the last batch. So still need to
               // check if it is empty for the later case.
               if (batch.numRows > 0) {
-
-                // Check if this is the only batch. We do it before partitioning
-                // because partitioning may release the semaphore, making it time
-                // consuming to do hasNext check.
-                if (isFirstCheck) {
-                  isFirstCheck = false
-
-                  if (!iter.hasNext) {
-                    // It is concerning from a memory pressure standpoint. We don't know what is 
-                    // upstream of this node so asking if there is more could require us to fully
-                    // materialize the next batch. And exhaustively checking each operator's
-                    // implementation seems to be impossible. For now we think that the 
-                    // performance benefit outweighs the potential risk of memory pressure.
-                    isSingleBatch = true
-                  }
-                }
-
                 partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-
                 partitioned.foreach(batches => {
                   metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                  if (isSingleBatch) {
-                    GpuColumnVector.tagAsSubPartitionOfOnlyBatch(batches._1)
-                  }
                 })
                 metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
                 at = 0

@@ -27,8 +27,6 @@ import org.apache.spark.sql.vectorized.ColumnVector;
 public abstract class ColumnVectorWithState extends ColumnVector {
 
   private volatile boolean isFinalBatch = false;
-  // If it is a sub-partition of the only batch of current task
-  private volatile boolean isSubPartitionOfOnlyBatch = false;
 
   protected ColumnVectorWithState(DataType type) {
     super(type);
@@ -48,19 +46,5 @@ public abstract class ColumnVectorWithState extends ColumnVector {
    */
   public boolean isKnownFinalBatch() {
     return isFinalBatch;
-  }
-
-  /**
-   * Set if this is a sub-partition of the only batch for this task or not.
-   */
-  public final void setSubPartitionOfOnlyBatch(boolean isFinal) {
-    isSubPartitionOfOnlyBatch = isFinal;
-  }
-
-  /**
-   * Is this a sub-partition of the only batch or is it unknown.
-   */
-  public boolean isKnownSubPartitionOfOnlyBatch() {
-    return isSubPartitionOfOnlyBatch;
   }
 }

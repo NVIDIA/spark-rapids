@@ -926,34 +926,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Tag a batch that it is known to be a sub-partition of the only batch for a task
-   */
-  public static ColumnarBatch tagAsSubPartitionOfOnlyBatch(ColumnarBatch batch) {
-    int numCols = batch.numCols();
-    for (int col = 0; col < numCols; col++) {
-      ((ColumnVectorWithState)batch.column(col)).setSubPartitionOfOnlyBatch(true);
-    }
-    return batch;
-  }
-
-  /**
-   * Check if a batch is tagged as being a sub-partition of the only batch in a task
-   */
-  public static boolean isTaggedAsSubPartitionOfOnlyBatch(ColumnarBatch batch) {
-    int numCols = batch.numCols();
-    if (numCols <= 0) {
-      return false;
-    }
-    for (int col = 0; col < numCols; col++) {
-      if (!((ColumnVectorWithState)batch.column(col)).isKnownSubPartitionOfOnlyBatch()) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-
-  /**
    * Increment the reference count for all columns in the input batch.
    */
   public static ColumnarBatch incRefCounts(ColumnarBatch batch) {

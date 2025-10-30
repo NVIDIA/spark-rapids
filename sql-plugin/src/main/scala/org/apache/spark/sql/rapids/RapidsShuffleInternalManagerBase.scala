@@ -16,10 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import java.io.{File, FileInputStream, OutputStream}
+import java.io.{File, FileInputStream, IOException, OutputStream}
 import java.util.Optional
 import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
+import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -44,7 +44,7 @@ import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_COMBINE_TIME, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_SHUFFLE_SERIALIZATION_TIME, METRIC_SHUFFLE_WRITE_IO_TIME, METRIC_SHUFFLE_WRITE_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
@@ -247,57 +247,37 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     numWriterThreads: Int)
       extends RapidsShuffleWriter[K, V]
         with RapidsShuffleWriterShimHelper {
-  private val metrics = handle.metrics
-  private val serializationTimeMetric =
-    metrics.get(METRIC_SHUFFLE_SERIALIZATION_TIME)
-  private val shuffleWriteTimeMetric =
-    metrics.get(METRIC_SHUFFLE_WRITE_TIME)
-  private val shuffleCombineTimeMetric =
-    metrics.get(METRIC_SHUFFLE_COMBINE_TIME)
-  private val ioTimeMetric =
-    metrics.get(METRIC_SHUFFLE_WRITE_IO_TIME)
   private val dep: ShuffleDependency[K, V, V] = handle.dependency
   private val shuffleId = dep.shuffleId
   private val partitioner = dep.partitioner
   private val numPartitions = partitioner.numPartitions
   private val serializer = dep.serializer.newInstance()
   private val transferToEnabled = sparkConf.getBoolean("spark.file.transferTo", true)
-  private val fileBufferSize = sparkConf.get(config.SHUFFLE_FILE_BUFFER_SIZE).toInt * 1024
+  private val fileBufferSize = 64 << 10
   private val limiter = new BytesInFlightLimiter(maxBytesInFlight)
 
   private var shuffleWriteRange: NvtxId = NvtxRegistry.THREADED_WRITER_WRITE.push()
 
-  /**
-   * Simple wrapper that tracks the time spent iterating the given iterator.
-   */
-  private class TimeTrackingIterator(delegate: Iterator[Product2[K, V]])
-    extends Iterator[Product2[K, V]] {
-
-    private var iterateTimeNs: Long = 0L
-
-    override def hasNext: Boolean = {
-      val start = System.nanoTime()
-      val ret = delegate.hasNext
-      iterateTimeNs += System.nanoTime() - start
-      ret
-    }
-
-    override def next(): Product2[K, V] = {
-      val start = System.nanoTime()
-      val ret = delegate.next
-      iterateTimeNs += System.nanoTime() - start
-      ret
-    }
-
-    def getIterateTimeNs: Long = iterateTimeNs
-  }
-
-  override def write(records: Iterator[Product2[K, V]]): Unit = {
-    // Iterating the `records` may involve some heavy computations.
-    // TimeTrackingIterator is used to track how much time we spend for such computations.
-    write(new TimeTrackingIterator(records))
-  }
-
+  // Case class for tracking partial sorted files in multi-batch scenario
+  private case class PartialFile(
+    file: File,
+    partitionLengths: Array[Long],
+    mapOutputWriter: ShuffleMapOutputWriter)
+  
+  // Encapsulates all state for processing one GPU batch
+  private case class BatchState(
+    batchId: Int,
+    mapOutputWriter: ShuffleMapOutputWriter,
+    partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
+    partitionFutures: ConcurrentHashMap[Int, 
+      java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]],
+    partitionBytesProgress: ConcurrentHashMap[Int, Long],
+    partitionFuturesProgress: ConcurrentHashMap[Int, Int],
+    maxPartitionSeen: java.util.concurrent.atomic.AtomicInteger,
+    processingComplete: java.util.concurrent.atomic.AtomicBoolean,
+    writerCondition: Object,
+    writerExecutor: java.util.concurrent.ExecutorService,
+    writerFuture: Future[_])
 
   /**
    * Increment the reference count and get the memory size for a value.
@@ -331,49 +311,29 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   }
 
   /**
-   * Optimized write path for single batch tasks that leverages streaming parallel processing
-   * with pipelined partition writing.
-   * 
-   * Main thread processes all records without blocking, while a dedicated background writer thread
-   * waits for each partition to complete and writes them in order (0,1,2,3...).
+   * Create independent state for processing one GPU batch.
+   * This allows multiple batches to be processed in pipeline without blocking.
    */
-  private def writeSingleBatchDirect(
-      records: Iterator[Product2[Any, Any]],
-      mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
-    
-    import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicBoolean}
+  private def createBatchState(
+      batchId: Int,
+      writer: ShuffleMapOutputWriter): BatchState = {
+    import java.util.concurrent.atomic.{AtomicInteger, AtomicBoolean}
     import java.util.concurrent.{ConcurrentHashMap, Executors, ThreadFactory}
     
-    val serializerInstance = serializer
-    var recordsWritten: Long = 0L
-    
-    // Track timing for metrics
-    val writeStartTime = System.nanoTime()
-    // Track total written size (compressed size)
-    val totalCompressedSize = new AtomicLong(0L)
-    var waitTimeOnLimiterNs: Long = 0L
-
-    // Collect compressed buffers from parallel tasks
     val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
-
-    // Finish writing to memory (include compression)
-    val partitionFutures =
-      new ConcurrentHashMap[Int, java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]]()
-    // WriterTask writing to disk
+    val partitionFutures = new ConcurrentHashMap[Int, 
+      java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]]()
     val partitionBytesProgress = new ConcurrentHashMap[Int, Long]()
     val partitionFuturesProgress = new ConcurrentHashMap[Int, Int]()
-
     val maxPartitionSeen = new AtomicInteger(-1)
     val processingComplete = new AtomicBoolean(false)
-    val writerCondition = new Object() // Condition variable to wake up writer thread
+    val writerCondition = new Object()
 
-    // Assign a slot number to each partition for consistent serialization
-    val partitionSlots = new ConcurrentHashMap[Int, Int]()
-
-    // Create dedicated writer thread (not using queueWriteTask)
+    // Create dedicated writer thread for this batch
     val writerThreadFactory = new ThreadFactory {
       override def newThread(r: Runnable): Thread = {
-        val thread = new Thread(r, s"rapids-shuffle-dedicated-writer-${shuffleId}-${mapId}")
+        val thread = new Thread(r, 
+          s"rapids-shuffle-writer-${shuffleId}-${mapId}-batch${batchId}")
         thread.setDaemon(true)
         thread
       }
@@ -381,66 +341,53 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val writerExecutor = Executors.newSingleThreadExecutor(writerThreadFactory)
 
     var unfinishedStream: Option[OutputStream] = None
-    // Helper method to write a single partition buffer
+    
+    // Helper to write partition buffer
     def writePartitionBuffer(
         partitionId: Int,
         start: Long,
         end: Long,
-        doCleanUp: Boolean,
-        partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
-        mapOutputWriter: ShuffleMapOutputWriter): Unit = {
-
-      // Write partition buffer to mapOutputWriter
+        doCleanUp: Boolean): Unit = {
       Option(partitionBuffers.get(partitionId)) match {
         case Some(buffer) =>
           if (unfinishedStream.isEmpty) {
-            unfinishedStream = Some(
-              mapOutputWriter.getPartitionWriter(partitionId).openStream())
+            unfinishedStream = Some(writer.getPartitionWriter(partitionId).openStream())
           }
-
           if (end - start > 0) {
             unfinishedStream.get.write(buffer.getBuf, start.toInt, (end - start).toInt)
           }
-
           if (doCleanUp) {
-            // Clean up buffer after use
             buffer.close()
             partitionBuffers.remove(partitionId)
             unfinishedStream.get.close()
             unfinishedStream = None
-
             partitionFutures.remove(partitionId)
             partitionFuturesProgress.remove(partitionId)
             partitionBytesProgress.remove(partitionId)
           }
         case None =>
-          throw new IllegalStateException(s"No buffer found for partition $partitionId, " +
-            s"start=$start, end=$end, isLast=$doCleanUp")
+          throw new IllegalStateException(
+            s"No buffer found for partition $partitionId in batch $batchId")
       }
     }
 
-    // Writer task that processes partitions in order
+    // Writer task for this batch
     val writerTask = new Runnable {
       override def run(): Unit = {
         var currentPartitionToWrite = 0
-        while (!processingComplete.get() || currentPartitionToWrite != maxPartitionSeen.get()) {
+        while (!processingComplete.get() || 
+            currentPartitionToWrite != maxPartitionSeen.get()) {
           if (currentPartitionToWrite <= maxPartitionSeen.get()) {
-            // Wait for this partition's compression futures to complete
             var containsLastForThisPartition = false
             var futures: java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]] = null
-            maxPartitionSeen.synchronized {
-              futures = partitionFutures.get(currentPartitionToWrite)
-              if (currentPartitionToWrite < maxPartitionSeen.get()) {
-                containsLastForThisPartition = true
-              }
+            futures = partitionFutures.get(currentPartitionToWrite)
+            if (currentPartitionToWrite < maxPartitionSeen.get()) {
+              containsLastForThisPartition = true
             }
 
             if (futures != null) {
-              // Wait for all compression tasks to complete for this partition
-              // and collect record sizes
               import scala.collection.JavaConverters._
-              var newFutureTouched = 
-                false // True means that the writer thread is ahead of the submitting thread
+              var newFutureTouched = false
               val futuresProgress =
                  partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0)
               futures.asScala.zipWithIndex.filter(pair => {
@@ -449,51 +396,37 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 newFutureTouched = true
                 val (recordSize, compressedSize) = future._1.get()
 
-                // Write this partition
-                val bytesProgress = partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L)
+                val bytesProgress = 
+                  partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L)
                 writePartitionBuffer(currentPartitionToWrite,
                   bytesProgress,
                   bytesProgress + compressedSize,
-                  doCleanUp = false,
-                  partitionBuffers,
-                  mapOutputWriter)
+                  doCleanUp = false)
 
-                // Update progress
-                partitionBytesProgress.put(currentPartitionToWrite, bytesProgress + compressedSize)
+                partitionBytesProgress.put(
+                  currentPartitionToWrite, bytesProgress + compressedSize)
                 partitionFuturesProgress.compute(currentPartitionToWrite, 
-                  (key, value) => { value + 1 }
-                )
+                  (key, value) => { value + 1 })
 
-                // Release limiter for all records in this partition after processing is complete
                 limiter.release(recordSize)
               }
 
               if (containsLastForThisPartition) {
-                // just to trigger clean up
-                writePartitionBuffer(currentPartitionToWrite, 0, 0,
-                  doCleanUp = true,
-                  partitionBuffers, mapOutputWriter)
-
+                writePartitionBuffer(currentPartitionToWrite, 0, 0, doCleanUp = true)
                 currentPartitionToWrite += 1
               } else {
                 if (!newFutureTouched) {
-                  // Wait for new data or completion signal
                   writerCondition.synchronized {
                     writerCondition.wait(1)
                   }
                 }
               }
             } else {
-              // Empty partition, still need to call getPartitionWriter for ordering
-              val partWriter = mapOutputWriter.getPartitionWriter(currentPartitionToWrite)
-              partWriter.openStream().close() // Empty partition
-
-              // no data for this partition
+              val partWriter = writer.getPartitionWriter(currentPartitionToWrite)
+              partWriter.openStream().close()
               currentPartitionToWrite += 1
-
             }
           } else {
-            // Wait for new partitions to be available
             writerCondition.synchronized {
               writerCondition.wait(1)
             }
@@ -504,19 +437,125 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     
     val writerFuture = writerExecutor.submit(writerTask)
 
+    BatchState(
+      batchId,
+      writer,
+      partitionBuffers,
+      partitionFutures,
+      partitionBytesProgress,
+      partitionFuturesProgress,
+      maxPartitionSeen,
+      processingComplete,
+      writerCondition,
+      writerExecutor,
+      writerFuture)
+  }
+
+  override def write(records: Iterator[Product2[K, V]]): Unit = {
+    val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
+      shuffleId,
+      mapId,
+      numPartitions)
+    mapOutputWriters += mapOutputWriter  // Track for cleanup
+    
+    val partLengths = if (!records.hasNext) {
+      commitAllPartitions(mapOutputWriter, true)
+    } else {
+      writePartitionedBatch(records, mapOutputWriter)
+    }
+
+    myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
+
+    if (shuffleWriteRange != null) {
+      shuffleWriteRange.pop()
+      shuffleWriteRange = null
+    }
+  }
+
+  /**
+   * Unified write path that handles both single batch and multi-batch tasks.
+   * Leverages streaming parallel processing with pipelined partition writing.
+   * 
+   * For single batch: Main thread processes all records without blocking, while a dedicated
+   * background writer thread waits for each partition to complete and writes them in order.
+   * 
+   * For multi-batch: Detects partition ID decreasing (indicates new batch), creates
+   * partial sorted files for each batch, then merges them in the final output.
+   * Each batch has independent state for true pipeline processing.
+   */
+  private def writePartitionedBatch(
+      records: Iterator[Product2[Any, Any]],
+      mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
+    
+    import java.util.concurrent.atomic.AtomicLong
+    import java.util.concurrent.ConcurrentHashMap
+    import scala.collection.mutable.ArrayBuffer
+    
+    val serializerInstance = serializer
+    var recordsWritten: Long = 0L
+    
+    // Track timing for metrics
+    val writeStartTime = System.nanoTime()
+    // Track total written size (compressed size)
+    val totalCompressedSize = new AtomicLong(0L)
+    var waitTimeOnLimiterNs: Long = 0L
+
+    // Multi-batch tracking
+    val batchStates = new ArrayBuffer[BatchState]()
+    val partialFiles = new ArrayBuffer[PartialFile]()
+    var currentBatchId: Int = 0
+    var previousMaxPartition: Int = -1
+    var isMultiBatch: Boolean = false
+
+    // Assign a slot number to each partition for consistent serialization
+    val partitionSlots = new ConcurrentHashMap[Int, Int]()
+    
+    // Create initial batch state
+    var currentBatch = createBatchState(currentBatchId, mapOutputWriter)
+    
     try {
-      
       while (records.hasNext) {
         val record = records.next()
         val key = record._1
         val value = record._2
         val reducePartitionId: Int = partitioner.getPartition(key)
+        
+        // Detect multi-batch: partition ID decreased means new batch started
+        if (reducePartitionId < previousMaxPartition) {
+          if (!isMultiBatch) {
+            isMultiBatch = true
+            logInfo(s"Detected multi-batch scenario for shuffle $shuffleId, " +
+              s"transitioning to pipeline mode")
+          }
+          
+          // Signal current batch is complete (but don't block next batch!)
+          currentBatch.maxPartitionSeen.set(numPartitions)
+          currentBatch.processingComplete.set(true)
+          currentBatch.writerCondition.synchronized { 
+            currentBatch.writerCondition.notifyAll() 
+          }
+          
+          // Add to list for later finalization
+          batchStates += currentBatch
+          
+          // Immediately create new batch and continue processing (pipeline!)
+          currentBatchId += 1
+          val newWriter = shuffleExecutorComponents.createMapOutputWriter(
+            shuffleId,
+            mapId,
+            numPartitions)
+          mapOutputWriters += newWriter  // Track for cleanup
+          currentBatch = createBatchState(currentBatchId, newWriter)
+          
+          previousMaxPartition = -1
+        }
+        
         recordsWritten += 1
+        previousMaxPartition = math.max(previousMaxPartition, reducePartitionId)
 
-        // Get or create futures queue for this partition
-        val futures = partitionFutures.computeIfAbsent(reducePartitionId, 
+        // Get or create futures queue for this partition in current batch
+        val futures = currentBatch.partitionFutures.computeIfAbsent(reducePartitionId, 
           _ => new java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]())
-
 
         val (cb, recordSize) = incRefCountAndGetSize(value)
 
@@ -532,16 +571,17 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           try {
             withResource(cb) { _ =>
-              // Get or create buffer for this partition
-              val buffer = partitionBuffers.computeIfAbsent(reducePartitionId,
-                _ => new OpenByteArrayOutputStream())
+              // Get or create buffer for this partition in current batch
+              val buffer = currentBatch.partitionBuffers.computeIfAbsent(
+                reducePartitionId, _ => new OpenByteArrayOutputStream())
               val originLength = buffer.getCount
 
               // Serialize + compress to memory buffer
               val compressedOutputStream = blockManager.serializerManager.wrapStream(
                 ShuffleBlockId(shuffleId, mapId, reducePartitionId), buffer)
 
-              val serializationStream = serializerInstance.serializeStream(compressedOutputStream)
+              val serializationStream = serializerInstance.serializeStream(
+                compressedOutputStream)
               withResource(serializationStream) { serializer =>
                 serializer.writeKey(key.asInstanceOf[Any])
                 serializer.writeValue(value.asInstanceOf[Any])
@@ -550,7 +590,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // Track total written data size (compressed size)
               val compressedSize = (buffer.getCount - originLength).toLong
               totalCompressedSize.addAndGet(compressedSize)
-              // return (original size, compressed size)
               (recordSize, compressedSize)
             }
           } catch {
@@ -560,339 +599,258 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             }
           }
         })
-        
-        maxPartitionSeen.synchronized {
-          // Add future to partition's queue
-          futures.add(future)
-          // Track the maximum partition seen for writer thread
-          maxPartitionSeen.set(math.max(maxPartitionSeen.get(), reducePartitionId))
-        }
-        // Wake up writer thread when new data is available
-        // Note: This is called for each record to ensure writer can proceed
-        // immediately. The cost is low since notifyAll on an unwaited condition
-        // is very cheap, and it eliminates potential 1ms delays.
-        writerCondition.synchronized {
-          writerCondition.notifyAll()
+
+        futures.add(future)
+        currentBatch.maxPartitionSeen.set(
+          math.max(currentBatch.maxPartitionSeen.get(), reducePartitionId))
+
+        // Wake up writer thread for current batch
+        currentBatch.writerCondition.synchronized { 
+          currentBatch.writerCondition.notifyAll() 
         }
       }
 
-      maxPartitionSeen.set(maxPartitionSeen.get() + 1) // mark end of partitions
-
-      // Signal that main thread is done processing
-      processingComplete.set(true)
-      // Wake up writer thread to check completion status
-      writerCondition.synchronized {
-        writerCondition.notifyAll()
+      // Mark end of last batch - ensure all partitions are processed
+      currentBatch.maxPartitionSeen.set(numPartitions)
+      currentBatch.processingComplete.set(true)
+      currentBatch.writerCondition.synchronized { 
+        currentBatch.writerCondition.notifyAll() 
       }
+      
+      // Add last batch to list
+      batchStates += currentBatch
 
-      // Wait for writer thread to complete all partitions
-      try {
-        writerFuture.get()
-      } catch {
-        case ee: ExecutionException =>
-          throw ee.getCause
+      // Wait for all batches to complete (now they can finish in parallel!)
+      batchStates.foreach { batch =>
+        try {
+          batch.writerFuture.get()
+        } catch {
+          case ee: ExecutionException => throw ee.getCause
+        }
+
+        // CRITICAL: For multi-batch, preserve outputTempFile before any commit
+        // commitAllPartitions() would rename/move the file, so we extract first
+        if (isMultiBatch) {
+          val (tempFile, partLengths) = extractFileAndLengthsFromWriter(
+            batch.mapOutputWriter)
+          partialFiles += PartialFile(tempFile, partLengths, batch.mapOutputWriter)
+        } else {
+          // Single batch: commit normally
+          val partLengths = commitAllPartitions(batch.mapOutputWriter, true)
+          partialFiles += PartialFile(null, partLengths, batch.mapOutputWriter)
+        }
       }
 
       // Update write metrics
       val totalWriteTime = System.nanoTime() - writeStartTime
-      
-      // Subtract limiter wait time from write time for more accurate compression time measurement
       writeMetrics.incWriteTime(totalWriteTime - waitTimeOnLimiterNs)
       writeMetrics.incRecordsWritten(recordsWritten)
       writeMetrics.incBytesWritten(totalCompressedSize.get())
 
     } finally {
-      // Shutdown writer thread pool gracefully
-      try {
-        writerExecutor.shutdown()
-        if (!writerExecutor.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)) {
-          writerExecutor.shutdownNow()
-        }
-      } catch {
-        case _: InterruptedException =>
-          writerExecutor.shutdownNow()
-          Thread.currentThread().interrupt()
-      }
-      
-      // Cancel any pending compression futures
+      // Cleanup all batch states
       import scala.collection.JavaConverters._
-      partitionFutures.values().asScala.foreach { futuresQueue =>
-        futuresQueue.asScala.foreach(_.cancel(true))
-        futuresQueue.clear()
+      batchStates.foreach { batch =>
+        try {
+          batch.writerExecutor.shutdown()
+          if (!batch.writerExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+            batch.writerExecutor.shutdownNow()
+          }
+        } catch {
+          case _: InterruptedException =>
+            batch.writerExecutor.shutdownNow()
+            Thread.currentThread().interrupt()
+        }
+
+        // Cancel pending futures
+        batch.partitionFutures.values().asScala.foreach { futuresQueue =>
+          futuresQueue.asScala.foreach(_.cancel(true))
+          futuresQueue.clear()
+        }
+
+        // Clean up buffers
+        val iter = batch.partitionBuffers.values().iterator()
+        while (iter.hasNext()) {
+          try {
+            iter.next().close()
+          } catch {
+            case _: Exception => /* ignore */
+          }
+        }
       }
-      partitionFutures.clear()
-      
-      // Clean up any remaining buffers
-      val iter = partitionBuffers.values().iterator()
-      while (iter.hasNext()) {
-        try { iter.next().close() } catch { case _: Exception => /* ignore */ }
-      }
-      partitionBuffers.clear()
-      
-      // Cancel writer future if still running
-      writerFuture.cancel(true)
     }
 
-    // Commit all partitions and return partition lengths
-    commitAllPartitions(mapOutputWriter, true /*non-empty checksums*/)
-  }
-
-  private def write(records: TimeTrackingIterator): Unit = {
-    // Timestamp when the main processing begins
-    val processingStart: Long = System.nanoTime()
-    val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
+    // Handle final output
+    if (isMultiBatch) {
+      // Multi-batch: create NEW writer for final merge
+      // CRITICAL: Cannot reuse mapOutputWriter as it would write to same outputTempFile
+      val finalMergeWriter = shuffleExecutorComponents.createMapOutputWriter(
       shuffleId,
       mapId,
       numPartitions)
+      mapOutputWriters += finalMergeWriter  // Track for cleanup
+      
+      mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
+    } else {
+      // Single batch: already committed, just return lengths
+      getPartitionLengths
+    }
+  }
+  
+  /**
+   * Merge multiple partial sorted files into final output.
+   * Each partial file contains data for all partitions (0 to N) from one GPU batch.
+   * The merged file will have: partition 0 from all batches, partition 1 from all batches, etc.
+   * 
+   * Layout of merged file:
+   *   partition 0 data from partial file 0
+   *   partition 0 data from partial file 1
+   *   ...
+   *   partition 0 data from partial file M
+   *   partition 1 data from partial file 0
+   *   partition 1 data from partial file 1
+   *   ...
+   */
+  private def mergePartialFiles(
+      partialFiles: Seq[PartialFile],
+      finalWriter: ShuffleMapOutputWriter): Array[Long] = {
+
+    val mergeStartTime = System.nanoTime()
+
+    // Open all partial files once, reuse across all partitions
+    // Since partial files are sorted by partition, we read sequentially
+    val partialFileInputs = partialFiles.map { pf =>
+      new FileInputStream(pf.file)
+    }
+
     try {
-      var openTimeNs = 0L
-      val partLengths = if (!records.hasNext) {
-        commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
-      } else {
-        val bufferedIterator = new CloseableBufferedIterator(
-          records.map { r =>
-            new AutoCloseable with Product2[Any, Any] {
-              override def close(): Unit = {
-                r._2 match {
-                  case cb: ColumnarBatch => cb.close()
-                  case _ =>
+      // For each partition, copy data from all partial files in order
+      (0 until numPartitions).foreach { partitionId =>
+        val partWriter = finalWriter.getPartitionWriter(partitionId)
+        val maybeOutputChannel: Optional[WritableByteChannelWrapper] =
+          partWriter.openChannelWrapper()
+
+        if (maybeOutputChannel.isPresent && transferToEnabled) {
+          // Use channel-based fast copy with NIO
+          val outputChannel = maybeOutputChannel.get()
+          withResource(outputChannel) { _ =>
+            partialFiles.zip(partialFileInputs).foreach {
+              case (partialFile, inputStream) =>
+                val partitionLength = partialFile.partitionLengths(partitionId)
+                if (partitionLength > 0) {
+                  val inputChannel = inputStream.getChannel
+                  val currentPos = inputChannel.position()
+                  Utils.copyFileStreamNIO(
+                    inputChannel,
+                    outputChannel.channel,
+                    currentPos,
+                    partitionLength)
+                  // Ensure position advances (copyFileStreamNIO should do this)
+                  inputChannel.position(currentPos + partitionLength)
                 }
-              }
-              override def _1: Any = r._1
-              override def _2: Any = r._2
-              override def canEqual(that: Any): Boolean = true
             }
           }
-        )
-        val recordForFirstPartition = bufferedIterator.head.asInstanceOf[Product2[Any, Any]]
-
-        recordForFirstPartition._2 match {
-          case batch: ColumnarBatch if GpuColumnVector.isTaggedAsSubPartitionOfOnlyBatch(batch) =>
-            // Optimized path for single batch tasks: bypass diskBlockObjectWriters
-            // and write directly to partWriter using serializer
-            logInfo(s"Using optimized single batch write path for shuffle $shuffleId")
-            writeSingleBatchDirect(bufferedIterator, mapOutputWriter)
-          case _ =>
-            // per reduce partition ids
-            // open all the writers ahead of time (Spark does this already)
-            val openStartTime = System.nanoTime()
-            (0 until numPartitions).map { i =>
-              val (blockId, file) = blockManager.diskBlockManager.createTempShuffleBlock()
-              val writer: DiskBlockObjectWriter = blockManager.getDiskWriter(
-                blockId, file, serializer, fileBufferSize, writeMetrics)
-              setChecksumIfNeeded(writer, i) // spark3.2.0+
-
-              // Places writer objects at round robin slot numbers apriori
-              // this choice is for simplicity but likely needs to change so that
-              // we can handle skew better
-              val slotNum = RapidsShuffleInternalManagerBase.getNextWriterSlot
-              diskBlockObjectWriters.put(i, (slotNum, writer))
-            }
-            openTimeNs = System.nanoTime() - openStartTime
-
-            // we call write on every writer for every record in parallel
-            val writeFutures = new mutable.Queue[Future[Unit]]
-            // Accumulated record write time as if they were sequential
-            val recordWriteTime: AtomicLong = new AtomicLong(0L)
-            // Time spent waiting on the limiter
-            var waitTimeOnLimiterNs: Long = 0L
-            // Time spent computing ColumnarBatch sizes
-            var batchSizeComputeTimeNs: Long = 0L
-
-            try {
-              while (bufferedIterator.hasNext) {
-                // get the record
-                val record = bufferedIterator.next()
-                val key = record._1
-                val value = record._2
-                val reducePartitionId: Int = partitioner.getPartition(key)
-                val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
-
-                if (numWriterThreads == 1) {
-                  val recordWriteTimeStart = System.nanoTime()
-                  myWriter.write(key, value)
-                  recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
-                } else {
-                  // we close batches actively in the `records` iterator as we get the next batch
-                  // this makes sure it is kept alive while a task is able to handle it.
-                  val sizeComputeStart = System.nanoTime()
-                  val (cb, size) = incRefCountAndGetSize(value)
-                  val waitOnLimiterStart = System.nanoTime()
-                  batchSizeComputeTimeNs += waitOnLimiterStart - sizeComputeStart
-                  limiter.acquireOrBlock(size)
-                  waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
-                  writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
-                    withResource(cb) { _ =>
-                      try {
-                        val recordWriteTimeStart = System.nanoTime()
-                        myWriter.write(key, value)
-                        recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
-                      } finally {
-                        limiter.release(size)
-                      }
-                    }
-                  })
-                }
-              }
-            } finally {
-              // This is in a finally block so that if there is an exception queueing
-              // futures, that we will have waited for any queued write future before we call
-              // .abort on the map output writer (we had test failures otherwise)
-              NvtxRegistry.WAITING_FOR_WRITES {
-                try {
-                  while (writeFutures.nonEmpty) {
-                    try {
-                      writeFutures.dequeue().get()
-                    } catch {
-                      case ee: ExecutionException =>
-                        // this exception is a wrapper for the underlying exception
-                        // i.e. `IOException`. The ShuffleWriter.write interface says
-                        // it can throw these.
-                        throw ee.getCause
+        } else {
+          // Use stream-based copy (no channels, pure streams)
+          withResource(partWriter.openStream()) { os =>
+            partialFiles.zip(partialFileInputs).foreach {
+              case (partialFile, inputStream) =>
+                val partitionLength = partialFile.partitionLengths(partitionId)
+                if (partitionLength > 0) {
+                  // Read sequentially from current stream position
+                  // No skip/offset needed - stream position auto-advances!
+                  val buffer = new Array[Byte](fileBufferSize)
+                  var remainingBytes = partitionLength
+                  while (remainingBytes > 0) {
+                    val bytesToRead = math.min(remainingBytes, buffer.length).toInt
+                    val bytesRead = inputStream.read(buffer, 0, bytesToRead)
+                    if (bytesRead > 0) {
+                      os.write(buffer, 0, bytesRead)
+                      remainingBytes -= bytesRead
+                    } else {
+                      throw new IOException(
+                        s"Unexpected end of file reading partition $partitionId")
                     }
                   }
-                } finally {
-                  // cancel all pending futures (only in case of error will we cancel)
-                  writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
                 }
-              }
             }
-
-            // writeTimeNs is an approximation of the amount of time we spent in
-            // DiskBlockObjectWriter.write, which involves serializing records and writing them
-            // on disk. As we use multiple threads for writing, writeTimeNs is
-            // estimated by 'the total amount of time it took to finish processing the entire logic
-            // above' minus 'the amount of time it took to do anything expensive other than the
-            // serialization and the write. The latter involves computations in upstream execs,
-            // ColumnarBatch size estimation, and the time blocked on the limiter.
-            val writeTimeNs = (System.nanoTime() - processingStart) -
-              records.getIterateTimeNs - // CAUTION: normally we should use bufferedIterator
-                                         // instead of records
-              batchSizeComputeTimeNs - waitTimeOnLimiterNs
-
-            val combineTimeStart = System.nanoTime()
-            val pl = writePartitionedData(mapOutputWriter)
-            val combineTimeNs = System.nanoTime() - combineTimeStart
-
-            // add openTime which is also done by Spark, and we are counting
-            // in the ioTime later
-            writeMetrics.incWriteTime(openTimeNs)
-
-            // At this point, Spark has timed the amount of time it took to write
-            // to disk (the IO, per write). But note that when we look at the
-            // multi threaded case, this metric is now no longer task-time.
-            // Users need to look at "rs. shuffle write time" (shuffleWriteTimeMetric),
-            // which does its own calculation at the task-thread level.
-            // We use ioTimeNs, however, to get an approximation of serialization time.
-            val ioTimeNs =
-              writeMetrics.asInstanceOf[ThreadSafeShuffleWriteMetricsReporter].getWriteTime
-
-            // serializationTime is the time spent compressing/encoding batches that wasn't
-            // counted in the ioTime
-            val totalPerRecordWriteTime = recordWriteTime.get() + ioTimeNs
-            val ioRatio = (ioTimeNs.toDouble / totalPerRecordWriteTime)
-            val serializationRatio = 1.0 - ioRatio
-
-            // update metrics, note that we expect them to be relative to the task
-            ioTimeMetric.foreach(_ += (ioRatio * writeTimeNs).toLong)
-            serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
-            // we add all three here because this metric is meant to show the time
-            // we are blocked on writes
-            shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
-            shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
-            pl
+          }
         }
       }
-
-      myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
-    } catch {
-      // taken directly from BypassMergeSortShuffleWriter
-      case e: Exception =>
+    } finally {
+      // Close all partial file streams
+      partialFileInputs.foreach { in =>
         try {
-          mapOutputWriter.abort(e)
+          in.close()
         } catch {
-          case e2: Exception =>
-            logError("Failed to abort the writer after failing to write map output.", e2);
-            e.addSuppressed(e2);
-        }
-        throw e
-    }
-
-    if (shuffleWriteRange != null) {
-      shuffleWriteRange.pop()
-      shuffleWriteRange = null
-    }
-  }
-
-  def writePartitionedData(mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
-    // after all temporary shuffle writes are done, we need to produce a single
-    // file (shuffle_[map_id]_0) which is done during this commit phase
-    NvtxRegistry.COMMIT_SHUFFLE {
-      // per reduce partition
-      val segments = (0 until numPartitions).map {
-        reducePartitionId =>
-          withResource(diskBlockObjectWriters(reducePartitionId)._2) { writer =>
-            val segment = writer.commitAndGet()
-            (reducePartitionId, segment.file)
-          }
-      }
-
-      val writeStartTime = System.nanoTime()
-      segments.foreach { case (reducePartitionId, file) =>
-        val partWriter = mapOutputWriter.getPartitionWriter(reducePartitionId)
-        if (file.exists()) {
-          if (transferToEnabled) {
-            val maybeOutputChannel: Optional[WritableByteChannelWrapper] =
-              partWriter.openChannelWrapper()
-            if (maybeOutputChannel.isPresent) {
-              writePartitionedDataWithChannel(file, maybeOutputChannel.get())
-            } else {
-              writePartitionedDataWithStream(file, partWriter)
-            }
-          } else {
-            writePartitionedDataWithStream(file, partWriter)
-          }
-          file.delete()
+          case _: Exception => /* ignore */
         }
       }
-      writeMetrics.incWriteTime(System.nanoTime() - writeStartTime)
-    }
-    commitAllPartitions(mapOutputWriter, false /*non-empty checksums*/)
-  }
-
-  // taken from BypassMergeSortShuffleWriter
-  // this code originally called into guava.Closeables.close
-  // and had logic to silence exceptions thrown while copying
-  // I am ignoring this for now.
-  def writePartitionedDataWithStream(file: java.io.File, writer: ShufflePartitionWriter): Unit = {
-    withResource(new FileInputStream(file)) { in =>
-      withResource(writer.openStream()) { os =>
-        Utils.copyStream(in, os, false, false)
-      }
-    }
-  }
-
-  // taken from BypassMergeSortShuffleWriter
-  // this code originally called into guava.Closeables.close
-  // and had logic to silence exceptions thrown while copying
-  // I am ignoring this for now.
-  def writePartitionedDataWithChannel(
-    file: File,
-    outputChannel: WritableByteChannelWrapper): Unit = {
-    // note outputChannel.close() doesn't actually close it.
-    // The call is there to record keep the partition lengths
-    // after the serialization completes.
-    withResource(outputChannel) { _ =>
-      withResource(new FileInputStream(file)) { in =>
-        withResource(in.getChannel) { inputChannel =>
-          Utils.copyFileStreamNIO(
-            inputChannel, outputChannel.channel, 0L, inputChannel.size)
+      partialFiles.foreach { pf =>
+        try {
+          pf.file.delete()
+        } catch {
+          case _: Exception => /* ignore */
         }
       }
     }
+
+    writeMetrics.incWriteTime(System.nanoTime() - mergeStartTime)
+
+    // Clean up partial files
+    partialFiles.foreach { partialFile =>
+      if (partialFile.file != null && partialFile.file.exists()) {
+        partialFile.file.delete()
+      }
+    }
+
+    // Commit final merged output
+    commitAllPartitions(finalWriter, true)
   }
-
-
+  
+  /**
+   * Extract outputTempFile and partitionLengths from ShuffleMapOutputWriter.
+   * 
+   * IMPORTANT: For partial batches in multi-batch scenario, we should NOT call
+   * commitAllPartitions() as it would rename/move outputTempFile. Instead, we just
+   * close the streams and extract the file reference for later merge.
+   * 
+   * NOTE: Uses reflection to access LocalDiskShuffleMapOutputWriter internals.
+   */
+  private def extractFileAndLengthsFromWriter(
+      writer: ShuffleMapOutputWriter): (File, Array[Long]) = {
+    try {
+      val clazz = writer.getClass
+      
+      // First, ensure all streams are closed by calling cleanUp
+      val cleanUpMethod = clazz.getDeclaredMethod("cleanUp")
+      cleanUpMethod.setAccessible(true)
+      cleanUpMethod.invoke(writer)
+      
+      // Access outputTempFile field
+      val fileField = clazz.getDeclaredField("outputTempFile")
+      fileField.setAccessible(true)
+      val file = fileField.get(writer).asInstanceOf[File]
+      
+      // Access partitionLengths field
+      val lengthsField = clazz.getDeclaredField("partitionLengths")
+      lengthsField.setAccessible(true)
+      val lengths = lengthsField.get(writer).asInstanceOf[Array[Long]]
+      
+      if (file == null) {
+        throw new IllegalStateException(
+          "outputTempFile is null - writer may not have written any data yet")
+      }
+      
+      (file, lengths)
+    } catch {
+      case e: Exception =>
+        throw new IllegalStateException(
+          "Failed to extract outputTempFile and partitionLengths from " +
+          "ShuffleMapOutputWriter. Consider implementing " +
+          "RapidsLocalDiskShuffleMapOutputWriter.", e)
+    }
+  }
 
   def getBytesInFlight: Long = limiter.getBytesInFlight
 }
