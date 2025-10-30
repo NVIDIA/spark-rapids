@@ -289,19 +289,24 @@ class GpuMergeBatchIterator(
 
     val instructionExec = instructionExecs.head
 
-    val condMask = withResource(mask) { _ =>
-      withResource(instructionExec.evaluateCondition(batch)) { cond =>
-        cond.getBase.and(mask)
+    val (condMask, nextMask) = withResource(instructionExec.evaluateCondition(batch)) { cond =>
+      val condMask = cond.getBase.and(mask)
+      val nextMask = withResource(cond.getBase.not()) { notThis =>
+        notThis.and(mask)
+      }
+      (condMask, nextMask)
+    }
+
+    closeOnExcept(nextMask) { _ =>
+      withResource(condMask) { _ =>
+        val thisFilteredBatch = GpuColumnVector.filter(batch, dataTypes, condMask)
+        withResource(thisFilteredBatch) { _ =>
+          outputs ++= instructionExec.applyOutputs(thisFilteredBatch)
+        }
       }
     }
 
-
-    val thisFilteredBatch = GpuColumnVector.filter(batch, dataTypes, condMask)
-    withResource(thisFilteredBatch) { _ =>
-      outputs ++= instructionExec.applyOutputs(thisFilteredBatch)
-    }
-
-    processInstructionSet(dataTypes, outputs, batch, condMask, instructionExecs.tail)
+    processInstructionSet(dataTypes, outputs, batch, nextMask, instructionExecs.tail)
   }
 }
 
