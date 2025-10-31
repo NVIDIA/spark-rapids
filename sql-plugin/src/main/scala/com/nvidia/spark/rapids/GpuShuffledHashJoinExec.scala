@@ -352,9 +352,9 @@ object GpuShuffledHashJoinExec extends Logging {
 
         } else { // Other cases without optimization
           val safeIter = {
-            val autoCloseableSeq = Seq(firstBuildBatch.asInstanceOf[AutoCloseable])
+            val autoCloseableSeq = Seq(firstBuildBatch)
             GpuSubPartitionHashJoin.safeIteratorFromSeq(autoCloseableSeq) ++
-              coalesceBuiltIter.asInstanceOf[Iterator[AutoCloseable]]
+              coalesceBuiltIter
           }
           val gpuBuildIter = if (isHostSerialized) {
             // batches on host, move them to GPU

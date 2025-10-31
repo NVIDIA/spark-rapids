@@ -3616,7 +3616,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
 
   def shuffleKudoGpuSerializerEnabled: Boolean = shuffleKudoSerializerEnabled &&
-      shuffleKudoWriteMode == ShuffleKudoMode.GPU
+    shuffleKudoWriteMode == ShuffleKudoMode.GPU
 
   def shuffleKudoGpuSerializerReadEnabled: Boolean = shuffleKudoSerializerEnabled &&
     shuffleKudoReadMode == ShuffleKudoMode.GPU
