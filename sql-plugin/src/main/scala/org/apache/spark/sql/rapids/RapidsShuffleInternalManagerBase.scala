@@ -320,7 +320,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   private def createBatchState(
       batchId: Int,
       writer: ShuffleMapOutputWriter): BatchState = {
-    import java.util.concurrent.atomic.{AtomicInteger, AtomicBoolean}
+    import java.util.concurrent.atomic.AtomicInteger
     import java.util.concurrent.{ConcurrentHashMap, Executors, ThreadFactory}
     
     val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
