@@ -44,7 +44,7 @@ import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
@@ -255,6 +255,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   private val transferToEnabled = sparkConf.getBoolean("spark.file.transferTo", true)
   private val fileBufferSize = 64 << 10
   private val limiter = new BytesInFlightLimiter(maxBytesInFlight)
+  private val limiterWaitTimeMetric = 
+    handle.metrics.get(METRIC_THREADED_WRITER_LIMITER_WAIT_TIME)
+  private val serializationWaitTimeMetric = 
+    handle.metrics.get(METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME)
 
   private var shuffleWriteRange: NvtxId = NvtxRegistry.THREADED_WRITER_WRITE.push()
 
@@ -342,8 +346,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
     var unfinishedStream: Option[OutputStream] = None
     
-    // Helper to write partition buffer
-    def writePartitionBuffer(
+    // Helper to write the buffer for a single partition
+    def writeBufferForSinglePartition(
         partitionId: Int,
         start: Long,
         end: Long,
@@ -401,7 +405,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
                 val bytesProgress = 
                   partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L)
-                writePartitionBuffer(currentPartitionToWrite,
+                writeBufferForSinglePartition(currentPartitionToWrite,
                   bytesProgress,
                   bytesProgress + compressedSize,
                   doCleanUp = false)
@@ -415,7 +419,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               }
 
               if (containsLastForThisPartition) {
-                writePartitionBuffer(currentPartitionToWrite, 0, 0, doCleanUp = true)
+                writeBufferForSinglePartition(currentPartitionToWrite, 0, 0, doCleanUp = true)
                 currentPartitionToWrite += 1
               } else {
                 if (!newFutureTouched) {
@@ -464,7 +468,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val partLengths = if (!records.hasNext) {
       commitAllPartitions(mapOutputWriter, true)
     } else {
-      writePartitionedBatch(records, mapOutputWriter)
+      writePartitionedGpuBatches(records, mapOutputWriter)
     }
 
     myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
@@ -486,7 +490,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    * partial sorted files for each batch, then merges them in the final output.
    * Each batch has independent state for true pipeline processing.
    */
-  private def writePartitionedBatch(
+  private def writePartitionedGpuBatches(
       records: Iterator[Product2[Any, Any]],
       mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
     
@@ -627,9 +631,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       batchStates += currentBatch
 
       // Wait for all batches to complete (now they can finish in parallel!)
+      var totalSerializationWaitTimeNs: Long = 0L
       batchStates.foreach { batch =>
         try {
+          val waitStart = System.nanoTime()
           batch.writerFuture.get()
+          totalSerializationWaitTimeNs += System.nanoTime() - waitStart
         } catch {
           case ee: ExecutionException => throw ee.getCause
         }
@@ -652,6 +659,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       writeMetrics.incWriteTime(totalWriteTime - waitTimeOnLimiterNs)
       writeMetrics.incRecordsWritten(recordsWritten)
       writeMetrics.incBytesWritten(totalCompressedSize.get())
+      limiterWaitTimeMetric.foreach(_ += waitTimeOnLimiterNs)
+      serializationWaitTimeMetric.foreach(_ += totalSerializationWaitTimeNs)
 
     } finally {
       // Cleanup all batch states

@@ -131,7 +131,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME_LEGACY = "op time (legacy)"
   val DESCRIPTION_OP_TIME_NEW = "op time"
-  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partition & serial)"
+  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partition)"
   val DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ = "op time (shuffle read)"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
