@@ -346,7 +346,8 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
     require(columns.nonEmpty, "no tables to be concatenated")
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
-      throw new NotImplementedError("the zero column case")
+      val totalRowsNum = columns.map(getNumRows).sum
+      new ColumnarBatch(Array.empty, totalRowsNum)
     } else {
       withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>
         val dataBufSize = kudoTables.map(table => {
