@@ -29,7 +29,6 @@ import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, GpuOptimisticTra
  *
  * @note This class is instantiated via reflection from DeltaProbeImpl
  */
- */
 class Delta40xRuntimeShim extends DeltaRuntimeShimBase {
 
   override def getDeltaProvider: DeltaProvider = Delta40xProvider
