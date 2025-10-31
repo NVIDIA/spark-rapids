@@ -278,7 +278,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     partitionBytesProgress: ConcurrentHashMap[Int, Long],
     partitionFuturesProgress: ConcurrentHashMap[Int, Int],
     maxPartitionSeen: java.util.concurrent.atomic.AtomicInteger,
-    processingComplete: java.util.concurrent.atomic.AtomicBoolean,
     writerCondition: Object,
     writerExecutor: java.util.concurrent.ExecutorService,
     writerFuture: Future[_])
@@ -330,7 +329,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val partitionBytesProgress = new ConcurrentHashMap[Int, Long]()
     val partitionFuturesProgress = new ConcurrentHashMap[Int, Int]()
     val maxPartitionSeen = new AtomicInteger(-1)
-    val processingComplete = new AtomicBoolean(false)
     val writerCondition = new Object()
 
     // Create dedicated writer thread for this batch
@@ -379,8 +377,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val writerTask = new Runnable {
       override def run(): Unit = {
         var currentPartitionToWrite = 0
-        while (!processingComplete.get() || 
-            currentPartitionToWrite != maxPartitionSeen.get()) {
+        while (currentPartitionToWrite < numPartitions) {
           if (currentPartitionToWrite <= maxPartitionSeen.get()) {
             var containsLastForThisPartition = false
             var futures: java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]] = null
@@ -452,7 +449,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       partitionBytesProgress,
       partitionFuturesProgress,
       maxPartitionSeen,
-      processingComplete,
       writerCondition,
       writerExecutor,
       writerFuture)
@@ -537,8 +533,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           
           // Signal current batch is complete (but don't block next batch!)
           currentBatch.maxPartitionSeen.set(numPartitions)
-          currentBatch.processingComplete.set(true)
-          currentBatch.writerCondition.synchronized { 
+          currentBatch.writerCondition.synchronized {
             currentBatch.writerCondition.notifyAll() 
           }
           
@@ -622,8 +617,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
       // Mark end of last batch - ensure all partitions are processed
       currentBatch.maxPartitionSeen.set(numPartitions)
-      currentBatch.processingComplete.set(true)
-      currentBatch.writerCondition.synchronized { 
+      currentBatch.writerCondition.synchronized {
         currentBatch.writerCondition.notifyAll() 
       }
       
