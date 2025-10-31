@@ -105,7 +105,8 @@ object CoalesceReadOption extends Logging {
       useAsync: Boolean): RapidsConf.ShuffleKudoMode.Value = {
     if (useAsync && kudoMode == RapidsConf.ShuffleKudoMode.GPU) {
       logWarning("Both shuffle async read and kudo GPU mode are enabled. These configurations " +
-        "should not be set together. Giving precedence to async read and overriding kudo mode to CPU.")
+        "should not be set together. Giving precedence to async read and overriding kudo mode " +
+        "to CPU.")
       RapidsConf.ShuffleKudoMode.CPU
     } else {
       kudoMode
