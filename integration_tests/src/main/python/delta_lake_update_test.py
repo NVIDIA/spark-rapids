@@ -14,12 +14,12 @@
 
 import pytest
 
-from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
+from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
 from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, \
-    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session, is_before_spark_353
+    supports_delta_lake_deletion_vectors, with_cpu_session, is_before_spark_353
 
 delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
@@ -48,7 +48,7 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, enable_deletion_vec
         gpu_path = data_path + "/GPU"
         # compare resulting dataframe from the update operation (some older Spark versions return empty here)
         cpu_result = with_cpu_session(lambda spark: do_update(spark, cpu_path).collect(), conf=conf)
-        gpu_result = with_gpu_session(lambda spark: do_update(spark, gpu_path).collect(), conf=conf)
+        gpu_result = assert_rapids_delta_write(lambda spark: do_update(spark, gpu_path).collect(), conf=conf)
         assert_equal(cpu_result, gpu_result)
         # compare table data results, read both via CPU to make sure GPU write can be read by CPU
         cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).collect(), conf=conf)

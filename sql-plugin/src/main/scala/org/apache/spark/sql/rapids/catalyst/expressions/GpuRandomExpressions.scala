@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package org.apache.spark.sql.rapids.catalyst.expressions
 
-import ai.rapids.cudf.{DType, HostColumnVector, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.Retryable
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral, RetryStateTracker}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral, NvtxRegistry, RetryStateTracker}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
@@ -122,7 +122,7 @@ case class GpuRand(child: Expression, doContextCheck: Boolean) extends ShimUnary
       // make sure here uses the same random generator with checkpoint
       assert(wasInitialized)
     }
-    withResource(new NvtxRange("GpuRand", NvtxColor.RED)) { _ =>
+    NvtxRegistry.RANDOM_EXPR {
       val numRows = batch.numRows()
       withResource(HostColumnVector.builder(DType.FLOAT64, numRows)) { builder =>
         (0 until numRows).foreach(_ => builder.append(rng.nextDouble()))

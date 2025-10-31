@@ -197,12 +197,6 @@ trait SparkShims {
    */
   def reproduceEmptyStringBug: Boolean
 
-  /**
-   * Handle TableCacheQueryStageExec for optimizeAdaptiveTransitions.
-   * Returns the original plan for versions where TableCacheQueryStageExec doesn't exist.
-   */
-  def handleTableCacheInOptimizeAdaptiveTransitions(plan: SparkPlan,
-      parent: Option[SparkPlan]): Option[SparkPlan] = None
 
   /**
    * Handle TableCacheQueryStageExec for getNonQueryStagePlan.

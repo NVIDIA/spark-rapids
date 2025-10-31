@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+// No longer need NvtxColor, NvtxRange imports
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
@@ -241,7 +241,7 @@ case class GpuShuffledHashJoinExec(
       (streamIter, buildIter) => {
         val (buildData, maybeBufferedStreamIter) =
           GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(buildIter,
-            new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
+            new CollectTimeIterator(NvtxRegistry.SHUFFLED_JOIN_STREAM, streamIter, streamTime),
             realTarget, localBuildOutput, buildGoal, subPartConf, coalesceMetrics, readOption)
 
         buildData match {
@@ -377,7 +377,7 @@ object GpuShuffledHashJoinExec extends Logging {
             } else {
               logDebug("Return multiple batches as the build side data for the following " +
                 "sub-partitioning join")
-              Right(new CollectTimeIterator("hash join build", gpuBuildIter, buildTime))
+              Right(new CollectTimeIterator(NvtxRegistry.HASH_JOIN_BUILD, gpuBuildIter, buildTime))
             }
           }
           buildTime += System.nanoTime() - startTime
@@ -427,7 +427,7 @@ object GpuShuffledHashJoinExec extends Logging {
         val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf.toSeq).map { sp =>
           withRetryNoSplit(sp)(_.getColumnarBatch())
         } ++ filteredIter
-        Right(new CollectTimeIterator("hash join build", safeIter, buildTime))
+        Right(new CollectTimeIterator(NvtxRegistry.HASH_JOIN_BUILD, safeIter, buildTime))
       } else {
         // The size after filtering is within the target size or sub-partitioning is disabled.
         while(filteredIter.hasNext) {
@@ -469,7 +469,7 @@ object GpuShuffledHashJoinExec extends Logging {
     // then we bring the build batch to the GPU and return.
     withResource(hostConcatResult) { _ =>
       closeOnExcept(new CloseableBufferedIterator(streamIter)) { bufStreamIter =>
-        withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
+        NvtxRegistry.JOIN_FIRST_STREAM_BATCH {
           if (bufStreamIter.hasNext) {
             bufStreamIter.head
           } else {

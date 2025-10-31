@@ -320,6 +320,7 @@ object RapidsReaderType extends Enumeration {
 
 object RapidsConf extends Logging {
   val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
+
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
   private def register(entry: ConfEntry[_]): Unit = {
@@ -354,7 +355,7 @@ object RapidsConf extends Logging {
       // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
       .internal()
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
       .doc("The maximum amount of off heap memory that the plugin will use. " +
@@ -1155,6 +1156,56 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
+
+  // Memory-bounded multithreaded reading
+  val MULTITHREAD_READ_MEMORY_LIMIT_ENABLED = {
+    // TODO: This conf should be adjusted during the runtime
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.enabled")
+        .doc("Enable memory-bounded multi-threaded reading. When enabled, the concurrency of " +
+            "multi-threaded reading will be dynamically controlled based on the available memory " +
+            s"budget per Spark executor.")
+        .startupOnly()
+        .internal()
+        .booleanConf
+        .createWithDefault(false)
+  }
+
+  val MULTITHREAD_READ_MEMORY_LIMIT_SIZE = {
+    // TODO: This conf should be adjusted during the runtime
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.size")
+        .doc("The maximum memory capacity in bytes to use for reading files in parallel. " +
+            "This can not be changed at runtime after the executor has started. And if 0, it " +
+            "will be set with 90% of executor's off-heap memory. This config only takes effect " +
+            s"when ${MULTITHREAD_READ_MEMORY_LIMIT_ENABLED.key} is enabled.")
+        .startupOnly()
+        .internal()
+        .bytesConf(ByteUnit.BYTE)
+        .checkValue(v => v >= 0, s"The memory capacity must be greatThanOrEqual zero")
+        .createWithDefault(0)
+  }
+
+  val MULTITHREAD_READ_MEMORY_LIMIT_ACQUISITION_TIMEOUT  = {
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout")
+        .doc("The maximum time in milliseconds to wait for a task to acquire required resource " +
+            "before giving up and put off the run, by re-appending the task back into the queue " +
+            "with a priority penality.")
+        .startupOnly()
+        .internal()
+        .longConf
+        .checkValue(v => v >= 0, "The timeout must be greater than zero")
+        .createWithDefault(30 * 1000L)
+  } // 30 seconds
+
+  val MULTITHREAD_READ_MEMORY_LIMIT_TEST_PER_STAGE_POOL = {
+    conf("spark.rapids.sql.multiThreadedRead.memoryLimit.tests.perStagePool")
+        .doc("Enable test mode for the multi-threaded read. This will create different " +
+            "threadpools for each stage, so as to verify threadpools with different configs " +
+            "as independent test cases which can be run in parallel.")
+        .startupOnly()
+        .internal()
+        .booleanConf
+        .createWithDefault(false)
+  }
 
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -2734,9 +2785,11 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     oomInjectionFilter = OomInjectionType.CPU_OR_GPU,
     withSplit = false)
 
-  // a java property to tell whether we need to check for oom injection configs in SQLConf
-  // only if we are running tests. This is set to true in
-  // integration_tests/run_pyspark_from_build.sh
+  // A java property that is set to true when we are running in tests.
+  // We will use this property to check for oom injection configs in SQLConf, and to turn on
+  // the rapids-specific assertInTests function, only if we are running tests. 
+  // This is set to true in integration_tests/run_pyspark_from_build.sh, and in the 
+  // pom for both scalatest and javatest.
   lazy val runningTests = {
     val res = System.getProperty("com.nvidia.spark.rapids.runningTests", "false")
       .toLowerCase.toBoolean
@@ -3289,6 +3342,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   lazy val numFilesFilterParallel: Int = get(NUM_FILES_FILTER_PARALLEL)
+
+  lazy val enableMultiThreadReadMemoryLimit: Boolean = get(MULTITHREAD_READ_MEMORY_LIMIT_ENABLED)
+
+  lazy val multiThreadReadMemoryLimit: Long = get(MULTITHREAD_READ_MEMORY_LIMIT_SIZE)
+
+  lazy val multiThreadReadMemoryAcquireTimeout: Long =
+    get(MULTITHREAD_READ_MEMORY_LIMIT_ACQUISITION_TIMEOUT)
+
+  lazy val multiThreadReadStageLevelPool: Boolean =
+    get(MULTITHREAD_READ_MEMORY_LIMIT_TEST_PER_STAGE_POOL)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 

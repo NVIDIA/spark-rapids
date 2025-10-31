@@ -24,13 +24,14 @@ import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExec, OverwriteByExpressionExecV1, OverwritePartitionsDynamicExec}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -39,7 +40,7 @@ import org.apache.spark.util.Utils
  * spark-avro classes because `class not found` exception may throw if spark-avro does not
  * exist at runtime. Details see: https://github.com/NVIDIA/spark-rapids/issues/5648
  */
-object ExternalSource extends Logging {
+trait ExternalSourceBase extends Logging {
   val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
   lazy val hasSparkAvroJar = {
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
@@ -57,13 +58,13 @@ object ExternalSource extends Logging {
 
   lazy val avroProvider = ShimLoaderTemp.newAvroProvider()
 
-  private lazy val hasIcebergJar = {
+  lazy val hasIcebergJar = {
     IcebergProvider.isSupportedSparkVersion() &&
-      Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
-        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
+      Utils.classIsLoadable(IcebergProvider.cpuBatchQueryScanClassName) &&
+        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuBatchQueryScanClassName)).isSuccess
   }
 
-  private lazy val icebergProvider = IcebergProvider()
+  protected lazy val icebergProvider = IcebergProvider()
 
   private lazy val deltaProvider = DeltaProvider()
 
@@ -74,6 +75,9 @@ object ExternalSource extends Logging {
 
   lazy val execRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     deltaProvider.getExecRules
+
+  lazy val exprRules: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    deltaProvider.getExprs
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
@@ -152,6 +156,8 @@ object ExternalSource extends Logging {
     val catalogClass = cpuExec.catalog.getClass
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.tagForGpu(cpuExec, meta)
+    } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"catalog $catalogClass is not supported")
     }
@@ -163,6 +169,8 @@ object ExternalSource extends Logging {
     val catalogClass = cpuExec.catalog.getClass
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
+    } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
@@ -174,6 +182,8 @@ object ExternalSource extends Logging {
     val catalogClass = cpuExec.catalog.getClass
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.tagForGpu(cpuExec, meta)
+    } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"catalog $catalogClass is not supported")
     }
@@ -185,6 +195,8 @@ object ExternalSource extends Logging {
     val catalogClass = cpuExec.catalog.getClass
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
+    } else if (hasIcebergJar && icebergProvider.isSupportedCatalog(catalogClass)) {
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
@@ -240,7 +252,7 @@ object ExternalSource extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.tagForGpu(cpuExec, meta)
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
     } else {
       meta.willNotWorkOnGpu(s"Append data $writeClass is not supported")
     }
@@ -252,11 +264,60 @@ object ExternalSource extends Logging {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
-      icebergProvider.convertToGpu(cpuExec, meta)
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
     } else {
       throw new IllegalStateException("No GPU conversion")
     }
   }
+
+  def tagForGpu(
+    cpuExec: OverwritePartitionsDynamicExec,
+    meta: OverwritePartitionsDynamicExecMeta): Unit = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Overwrite partitions dynamic $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+    cpuExec: OverwritePartitionsDynamicExec,
+    meta: OverwritePartitionsDynamicExecMeta): GpuExec = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+                 cpuExec: OverwriteByExpressionExec,
+                 meta: OverwriteByExpressionExecMeta): Unit = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Overwrite data $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+                    cpuExec: OverwriteByExpressionExec,
+                    meta: OverwriteByExpressionExecMeta): GpuExec = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
 
   def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
     if (hasIcebergJar) {
@@ -273,4 +334,7 @@ object ExternalSource extends Logging {
       throw new IllegalStateException("StaticInvoke is not supported")
     }
   }
+}
+
+object ExternalSource extends ExternalSourceBase {
 }

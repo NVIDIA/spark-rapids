@@ -245,6 +245,9 @@ object TrampolineUtil {
 
   def getSparkHadoopUtilConf: Configuration = SparkHadoopUtil.get.conf
 
+  def markTaskFailed(ctx: TaskContext, error: Throwable): Unit = {
+    ctx.markTaskFailed(error)
+  }
 }
 
 /**

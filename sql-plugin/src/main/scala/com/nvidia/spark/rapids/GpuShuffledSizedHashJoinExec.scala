@@ -18,9 +18,10 @@ package com.nvidia.spark.rapids
 
 import scala.collection.{mutable, BitSet}
 
-import ai.rapids.cudf.{ContiguousTable, HostMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{ContiguousTable, HostMemoryBuffer}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuShuffledSizedHashJoinExec.JoinInfo
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -381,6 +382,8 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
+    SMALL_JOIN_COUNT -> createMetric(DEBUG_LEVEL, DESCRIPTION_SMALL_JOIN_COUNT),
+    BIG_JOIN_COUNT -> createMetric(DEBUG_LEVEL, DESCRIPTION_BIG_JOIN_COUNT),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
@@ -435,12 +438,14 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
             localCondition, localGpuBatchSizeBytes, localMetrics)
       }
       val joinIterator = if (joinInfo.buildSize <= localGpuBatchSizeBytes) {
+        localMetrics(SMALL_JOIN_COUNT) += 1
         if (localJoinType.isInstanceOf[InnerLike] && joinInfo.buildSize == 0) {
           Iterator.empty
         } else {
           doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
         }
       } else {
+        localMetrics(BIG_JOIN_COUNT) += 1
         doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, partitionNumAmplification, localMetrics)
       }
       val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
@@ -493,7 +498,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       GpuColumnVector.emptyBatchFromTypes(info.exprs.buildTypes)
     }
     val spillableBuiltBatch = withResource(batch) { batch =>
-      assert(!buildIter.hasNext, "build side should have a single batch")
+      assertInTests(!buildIter.hasNext, "build side should have a single batch")
       LazySpillableColumnarBatch(batch, "built")
     }
     createJoinIterator(info, spillableBuiltBatch, lazyStream, gpuBatchSizeBytes, opTime,
@@ -668,8 +673,10 @@ object GpuShuffledSymmetricHashJoinExec {
       val rightTime = new LocalGpuMetric
       val buildTime = metrics(BUILD_TIME)
       val streamTime = metrics(STREAM_TIME)
-      val leftIter = new CollectTimeIterator("probe left", setupForProbe(rawLeftIter), leftTime)
-      val rightIter = new CollectTimeIterator("probe right", setupForProbe(rawRightIter), rightTime)
+      val leftIter = new CollectTimeIterator(NvtxRegistry.PROBE_LEFT,
+        setupForProbe(rawLeftIter), leftTime)
+      val rightIter = new CollectTimeIterator(NvtxRegistry.PROBE_RIGHT,
+        setupForProbe(rawRightIter), rightTime)
       closeOnExcept(mutable.Queue.empty[T]) { leftQueue =>
         closeOnExcept(mutable.Queue.empty[T]) { rightQueue =>
           var leftSize = 0L
@@ -719,7 +726,7 @@ object GpuShuffledSymmetricHashJoinExec {
           } else {
             baseBuildIter
           }
-          val streamIter = new CollectTimeIterator("fetch join stream",
+          val streamIter = new CollectTimeIterator(NvtxRegistry.FETCH_JOIN_STREAM,
             setupForJoin(streamQueue, rawStreamIter, exprs.streamTypes, gpuBatchSizeBytes, metrics),
             streamTime)
           JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
@@ -899,7 +906,7 @@ object GpuShuffledAsymmetricHashJoinExec {
             val (streamRows, streamSize) =
               fetchTargetSize(streamIter, streamQueue, gpuBatchSizeBytes)
             if (streamRows <= Int.MaxValue && streamSize <= gpuBatchSizeBytes) {
-              assert(!streamIter.hasNext, "stream side not exhausted")
+              assertInTests(!streamIter.hasNext, "stream side not exhausted")
               // cannot filter out the nulls on the stream-side since they need to be
               // preserved in the outer join
               val streamBatchIter = new GpuCoalesceIterator(
@@ -917,7 +924,7 @@ object GpuShuffledAsymmetricHashJoinExec {
               if (streamBatchIter.hasNext) {
                 val streamBatch = streamBatchIter.next()
                 val singleStreamIter = new SingleGpuColumnarBatchIterator(streamBatch)
-                assert(!streamBatchIter.hasNext, "stream side not exhausted")
+                assertInTests(!streamBatchIter.hasNext, "stream side not exhausted")
                 val streamStats = JoinBuildSideStats.fromBatch(streamBatch, exprs.boundStreamKeys)
                 if (buildStats.streamMagnificationFactor <
                     streamStats.streamMagnificationFactor) {
@@ -963,7 +970,7 @@ object GpuShuffledAsymmetricHashJoinExec {
         iter: Iterator[T],
         queue: mutable.Queue[T],
         targetSize: Long): (Long, Long) = {
-      withResource(new NvtxRange("asymmetric join probe fetch", NvtxColor.YELLOW)) { _ =>
+      NvtxRegistry.JOIN_ASYMMETRIC_PROBE_FETCH {
         var totalRows: Long = 0
         var totalSize: Long = 0L
         while (totalRows <= Integer.MAX_VALUE && totalSize <= targetSize && iter.hasNext) {
@@ -992,7 +999,7 @@ object GpuShuffledAsymmetricHashJoinExec {
         iter: Iterator[ColumnarBatch],
         queue: mutable.Queue[SpillableColumnarBatch],
         targetSize: Long): (Long, Long) = {
-      withResource(new NvtxRange("asymmetric join fetch", NvtxColor.YELLOW)) { _ =>
+      NvtxRegistry.JOIN_ASYMMETRIC_FETCH {
         var totalRows: Long = 0
         var totalSize: Long = 0L
         while (totalRows <= Integer.MAX_VALUE && totalSize <= targetSize && iter.hasNext) {
@@ -1345,7 +1352,7 @@ abstract class JoinPartitioner(
     withRetryNoSplit(spillableBatch) { _ =>
       opTime.ns {
         val partsTable = hashPartitionAndClose(spillableBatch.getColumnarBatch(), numPartitions,
-          "partition for join")
+          NvtxRegistry.PARTITION_FOR_JOIN)
         val contigTables = withResource(partsTable) { _ =>
           partsTable.getTable.contiguousSplit(partsTable.getPartitions.tail: _*)
         }
@@ -1549,7 +1556,7 @@ class StreamSidePartitioner(
   def hasInputBatches: Boolean = iter.hasNext
 
   def partitionNextBatch(): Unit = {
-    assert(partitions.forall(_.getTotalSize == 0), "leftover partitions from previous batch")
+    assertInTests(partitions.forall(_.getTotalSize == 0), "leftover partitions from previous batch")
     partitionBatch(iter.next)
   }
 
