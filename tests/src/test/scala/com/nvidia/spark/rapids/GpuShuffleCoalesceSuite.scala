@@ -106,6 +106,7 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
     val conf = new SparkConf()
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
         .set(RapidsConf.SHUFFLE_KUDO_WRITE_MODE.key, "GPU")
+        .set(RapidsConf.SHUFFLE_KUDO_READ_MODE.key, "GPU")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf))
       val partitionIndices = Array(0, 2, 2)
