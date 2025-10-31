@@ -240,7 +240,7 @@ class GpuMergeBatchIterator(
 
       closeOnExcept(outputs) { _ =>
         withResource(sourcePresentCol) { sourcePresent =>
-          require(!sourcePresent.hasNull, "Source can has null")
+          require(!sourcePresent.hasNull, "Source cannot have null")
           withResource(targetPresentCol) { targetPresent =>
             require(!targetPresent.hasNull, "Target can has null")
 
