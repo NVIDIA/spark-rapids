@@ -42,7 +42,7 @@ import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
-import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
+import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
@@ -380,9 +380,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           if (currentPartitionToWrite <= maxPartitionSeen.get()) {
             var containsLastForThisPartition = false
             var futures: java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]] = null
-            futures = partitionFutures.get(currentPartitionToWrite)
-            if (currentPartitionToWrite < maxPartitionSeen.get()) {
-              containsLastForThisPartition = true
+
+            maxPartitionSeen.synchronized {
+              futures = partitionFutures.get(currentPartitionToWrite)
+              if (currentPartitionToWrite < maxPartitionSeen.get()) {
+                containsLastForThisPartition = true
+              }
             }
 
             if (futures != null) {
@@ -568,11 +571,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // all tasks for the same partition run serially in the same slot
         val slotNum = partitionSlots.computeIfAbsent(reducePartitionId,
           _ => RapidsShuffleInternalManagerBase.getNextWriterSlot)
+        val finalCurrentBatch = currentBatch
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           try {
             withResource(cb) { _ =>
               // Get or create buffer for this partition in current batch
-              val buffer = currentBatch.partitionBuffers.computeIfAbsent(
+              val buffer = finalCurrentBatch.partitionBuffers.computeIfAbsent(
                 reducePartitionId, _ => new OpenByteArrayOutputStream())
               val originLength = buffer.getCount
 
@@ -600,9 +604,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           }
         })
 
-        futures.add(future)
-        currentBatch.maxPartitionSeen.set(
-          math.max(currentBatch.maxPartitionSeen.get(), reducePartitionId))
+        currentBatch.maxPartitionSeen.synchronized {
+          futures.add(future)
+          currentBatch.maxPartitionSeen.set(
+            math.max(currentBatch.maxPartitionSeen.get(), reducePartitionId))
+        }
 
         // Wake up writer thread for current batch
         currentBatch.writerCondition.synchronized { 
@@ -1663,15 +1669,15 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
           getCatalogOrThrow,
           server,
           gpu.dependency.metrics)
-      case bmssh: BypassMergeSortShuffleHandle[_, _] =>
-        bmssh.dependency match {
+      case handle: BaseShuffleHandle[_, _, _] =>
+        handle.dependency match {
           case gpuDep: GpuShuffleDependency[_, _, _]
               if gpuDep.useMultiThreadedShuffle &&
                   rapidsConf.shuffleMultiThreadedWriterThreads > 0 =>
             // use the threaded writer if the number of threads specified is 1 or above,
             // with 0 threads we fallback to the Spark-provided writer.
             val handleWithMetrics = new ShuffleHandleWithMetrics(
-              bmssh.shuffleId,
+              handle.shuffleId,
               gpuDep.metrics,
               // cast the handle with specific generic types due to type-erasure
               gpuDep.asInstanceOf[GpuShuffleDependency[K, V, V]])
