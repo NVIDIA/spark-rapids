@@ -265,7 +265,7 @@ class GpuMergeBatchIterator(
       // TODO: There is a small chance that the output batch is much larger input batch,
       //  e.g. all cases need to update split, which leads to a result batch whose row
       //  count is twice of input batch. We need to handle this case by splitting the outputs
-      withResource(GpuBatchUtils.concatSpillBatchesAndClose(outputs)) { spillable =>
+      withResource(GpuBatchUtils.concatSpillBatchesAndClose(outputs.toSeq)) { spillable =>
         spillable.get.getColumnarBatch()
       }
     }
