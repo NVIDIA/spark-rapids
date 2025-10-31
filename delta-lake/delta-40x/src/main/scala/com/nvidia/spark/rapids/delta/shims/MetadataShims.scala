@@ -13,20 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids.delta.shims
 
-package com.nvidia.spark.rapids.delta
+import org.apache.spark.sql.delta.stats.DeltaStatistics
 
-import com.nvidia.spark.rapids.delta.{DeltaProbe, DeltaProvider, NoDeltaProvider}
-
-/**
- * Implements the Delta Probe interface for Delta Lake 4.0.x
- * @note This is instantiated via reflection from ShimLoader
- */
-class DeltaProbeImpl extends DeltaProbe {
-  override def getDeltaProvider: DeltaProvider = {
-    // TODO: Implement Delta40xProvider in a later PR
-    // For now, return NoDeltaProvider to allow compilation
-    NoDeltaProvider
-  }
+trait ShimUsesMetadataFields {
+  protected val MAX = DeltaStatistics.MAX
+  protected val MIN = DeltaStatistics.MIN
+  protected val NUM_RECORDS = DeltaStatistics.NUM_RECORDS
+  protected val NULL_COUNT = DeltaStatistics.NULL_COUNT
 }
-
