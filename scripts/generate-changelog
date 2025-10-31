@@ -326,6 +326,7 @@ def process_pr(releases: set, token: str):
     current_ver_float = float(current_ver)
     based_rel = float(FROM_RELEASE)
 
+    # Note: only the last 2 releases are supported/included in the changelog
     # Both releases are after {FROM_RELEASE}
     if current_ver_float > based_rel:
         ver_commits = get_commits(releases)
