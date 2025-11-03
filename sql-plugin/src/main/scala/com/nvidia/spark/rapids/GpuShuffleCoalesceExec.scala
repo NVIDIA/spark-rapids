@@ -198,7 +198,7 @@ object GpuShuffleCoalesceUtils {
         readThrottlingMetric)
     } else {
       if (readOption.kudoEnabled && readOption.kudoMode == RapidsConf.ShuffleKudoMode.GPU) {
-        new GpuGpuShuffleCoalesceIterator(
+        new GpuColumnarBatchMetricIterator(
           maybeBufferedIter.asInstanceOf[Iterator[ColumnarBatch]],
           outBatchesMetric, outRowsMetric, metricsMap(SYNC_READ_TIME), opTimeMetric)
       } else {
@@ -692,6 +692,58 @@ class KudoGpuShuffleCoalesceIterator(
 
 
 /**
+ * Base class for GPU iterators that handle output metrics tracking.
+ * Subclasses implement the specific batch conversion logic.
+ */
+abstract class GpuMetricIteratorBase[T](
+    iter: Iterator[T],
+    outputBatchesMetric: GpuMetric = NoopMetric,
+    outputRowsMetric: GpuMetric = NoopMetric,
+    readTimeMetric: GpuMetric = NoopMetric,
+    opTimeMetric: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+
+  override def hasNext: Boolean = GpuMetric.ns(readTimeMetric, opTimeMetric) {
+    iter.hasNext
+  }
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) {
+      throw new NoSuchElementException("No more columnar batches")
+    }
+    val inputBatch = GpuMetric.ns(readTimeMetric, opTimeMetric) {
+      iter.next()
+    }
+    GpuMetric.ns(opTimeMetric) {
+      NvtxRegistry.SHUFFLE_CONCAT_LOAD_BATCH {
+        val batch = convertToOutputBatch(inputBatch)
+        outputBatchesMetric += 1
+        outputRowsMetric += batch.numRows()
+        batch
+      }
+    }
+  }
+
+  /** Convert the input batch type T to the final ColumnarBatch output */
+  protected def convertToOutputBatch(inputBatch: T): ColumnarBatch
+}
+
+/**
+ * GPU iterator for batches that are already in ColumnarBatch format.
+ * No conversion needed, just passes through with metrics tracking.
+ */
+class GpuColumnarBatchMetricIterator(
+    iter: Iterator[ColumnarBatch],
+    outputBatchesMetric: GpuMetric = NoopMetric,
+    outputRowsMetric: GpuMetric = NoopMetric,
+    readTimeMetric: GpuMetric = NoopMetric,
+    opTimeMetric: GpuMetric = NoopMetric)
+  extends GpuMetricIteratorBase[ColumnarBatch](
+    iter, outputBatchesMetric, outputRowsMetric, readTimeMetric, opTimeMetric) {
+
+  override protected def convertToOutputBatch(batch: ColumnarBatch): ColumnarBatch = batch
+}
+
+/**
  * Iterator that expects only "CoalescedHostResult"s as the input, and transfers
  * them to GPU.
  */
@@ -700,59 +752,18 @@ class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
     outputBatchesMetric: GpuMetric = NoopMetric,
     outputRowsMetric: GpuMetric = NoopMetric,
     readTimeMetric: GpuMetric = NoopMetric,
-    opTimeMetric: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+    opTimeMetric: GpuMetric = NoopMetric) extends GpuMetricIteratorBase[CoalescedHostResult](
+    iter, outputBatchesMetric, outputRowsMetric, readTimeMetric, opTimeMetric) {
 
-  override def hasNext: Boolean = GpuMetric.ns(readTimeMetric, opTimeMetric) {
-    iter.hasNext
-  }
-
-  override def next(): ColumnarBatch = {
-    if (!hasNext) {
-      throw new NoSuchElementException("No more columnar batches")
-    }
-    NvtxRegistry.SHUFFLE_CONCAT_LOAD_BATCH {
-      val hostCoalescedResult = GpuMetric.ns(readTimeMetric, opTimeMetric) {
-        // It covers the time of i/o, deser and concat
-        iter.next()
-      }
-      withResource(hostCoalescedResult) { _ =>
-        // We acquire the GPU regardless of whether `hostConcatResult`
-        // is an empty batch or not, because the downstream tasks expect
-        // the `GpuShuffleCoalesceIterator` to acquire the semaphore and may
-        // generate GPU data from batches that are empty.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        GpuMetric.ns(opTimeMetric) {
-          val batch = hostCoalescedResult.toGpuBatch(dataTypes)
-          outputBatchesMetric += 1
-          outputRowsMetric += batch.numRows()
-          batch
-        }
-      }
+  override protected def convertToOutputBatch(hostCoalescedResult: CoalescedHostResult): ColumnarBatch = {
+    withResource(hostCoalescedResult) { _ =>
+      // We acquire the GPU regardless of whether `hostConcatResult`
+      // is an empty batch or not, because the downstream tasks expect
+      // the `GpuShuffleCoalesceIterator` to acquire the semaphore and may
+      // generate GPU data from batches that are empty.
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      hostCoalescedResult.toGpuBatch(dataTypes)
     }
   }
 }
 
-class GpuGpuShuffleCoalesceIterator(iter: Iterator[ColumnarBatch],
-    outputBatchesMetric: GpuMetric = NoopMetric,
-    outputRowsMetric: GpuMetric = NoopMetric,
-    readTimeMetric: GpuMetric = NoopMetric,
-    opTimeMetric: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
-
-  override def hasNext: Boolean = GpuMetric.ns(readTimeMetric, opTimeMetric) {
-    iter.hasNext
-  }
-
-  override def next(): ColumnarBatch = {
-    if (!hasNext) {
-      throw new NoSuchElementException("No more columnar batches")
-    }
-    withResource(new NvtxRange("GPU Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
-      GpuMetric.ns(opTimeMetric) {
-        val batch = iter.next()
-        outputBatchesMetric += 1
-        outputRowsMetric += batch.numRows()
-        batch
-      }
-    }
-  }
-}
