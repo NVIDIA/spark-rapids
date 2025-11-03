@@ -48,12 +48,9 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * Coalesces serialized tables on the host up to the target batch size before transferring
- * the coalesced result to the GPU. This reduces the overhead of copying data to the GPU
- * and also helps avoid holding onto the GPU semaphore while shuffle I/O is being performed.
- *
- * @note This should ALWAYS appear in the plan after a GPU shuffle when RAPIDS shuffle is
- *       not being used.
+ * A pair of buffers used for kudo serialization format.
+ * The offsets buffer contains a list of byte offsets that index into the data buffer,
+ * which are used by the kudo deserialization algorithm.
  */
 case class KudoBuffers[T <: MemoryBuffer](data: T, offsets: T)
   extends AutoCloseable {
@@ -63,6 +60,14 @@ case class KudoBuffers[T <: MemoryBuffer](data: T, offsets: T)
   }
 }
 
+/**
+ * Coalesces serialized tables on the host up to the target batch size before transferring
+ * the coalesced result to the GPU. This reduces the overhead of copying data to the GPU
+ * and also helps avoid holding onto the GPU semaphore while shuffle I/O is being performed.
+ *
+ * @note This should ALWAYS appear in the plan after a GPU shuffle when RAPIDS shuffle is
+ *       not being used.
+ */
 case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   extends ShimUnaryExecNode with GpuExec {
 
@@ -109,15 +114,14 @@ case class CoalesceReadOption private(
 
 object CoalesceReadOption extends Logging {
 
-  private def resolveKudoMode(kudoMode: RapidsConf.ShuffleKudoMode.Value,
-      useAsync: Boolean): RapidsConf.ShuffleKudoMode.Value = {
+  private def resolveUseAsync(kudoMode: RapidsConf.ShuffleKudoMode.Value,
+      useAsync: Boolean): Boolean = {
     if (useAsync && kudoMode == RapidsConf.ShuffleKudoMode.GPU) {
       logWarning("Both shuffle async read and kudo GPU mode are enabled. These configurations " +
-        "should not be set together. Giving precedence to async read and overriding kudo mode " +
-        "to CPU.")
-      RapidsConf.ShuffleKudoMode.CPU
+        "should not be set together. Giving precedence to GPU kudo mode and disabling async read.")
+      false
     } else {
-      kudoMode
+      useAsync
     }
   }
 
@@ -131,17 +135,16 @@ object CoalesceReadOption extends Logging {
     val kudoMode = RapidsConf.ShuffleKudoMode.withName(RapidsConf.SHUFFLE_KUDO_READ_MODE.get(conf))
     val useAsync = RapidsConf.SHUFFLE_ASYNC_READ_ENABLED.get(conf)
 
-    val finalKudoMode = resolveKudoMode(kudoMode, useAsync)
+    val finalUseAsync = resolveUseAsync(kudoMode, useAsync)
 
-    CoalesceReadOption(kudoEnabled, finalKudoMode, dumpOption,
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf), useAsync)
+    CoalesceReadOption(kudoEnabled, kudoMode, dumpOption,
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf), finalUseAsync)
   }
 
   def apply(conf: RapidsConf): CoalesceReadOption = {
-    CoalesceReadOption(conf.shuffleKudoSerializerEnabled,
-      resolveKudoMode(conf.shuffleKudoReadMode, conf.shuffleAsyncReadEnabled),
-      conf.shuffleKudoSerializerDebugMode,
-      conf.shuffleKudoSerializerDebugDumpPrefix, conf.shuffleAsyncReadEnabled)
+    val finalUseAsync = resolveUseAsync(conf.shuffleKudoReadMode, conf.shuffleAsyncReadEnabled)
+    CoalesceReadOption(conf.shuffleKudoSerializerEnabled, conf.shuffleKudoReadMode,
+      conf.shuffleKudoSerializerDebugMode, conf.shuffleKudoSerializerDebugDumpPrefix, finalUseAsync)
   }
 }
 
@@ -365,7 +368,7 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
           HostMemoryBuffer.allocate(offsetsBufSize))) { case KudoBuffers(dataHost, offsetsHost) =>
           var currentOffset = 0
           var i = 0
-          kudoTables.foreach({table =>
+          kudoTables.foreach {table =>
             offsetsHost.setLong(i * 8L, currentOffset)
             table.getHeader.writeTo(dataHost, currentOffset)
             currentOffset += table.getHeader.getSerializedSize
@@ -374,7 +377,7 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
 
             currentOffset += table.getHeader.getTotalDataLen
             i += 1
-          })
+          }
           offsetsHost.setLong(i * 8L, currentOffset)
           withResource(KudoBuffers[DeviceMemoryBuffer](DeviceMemoryBuffer.allocate(dataHost.getLength),
             DeviceMemoryBuffer.allocate(offsetsHost.getLength))) { case KudoBuffers(dataDev, offsetsDev) =>
