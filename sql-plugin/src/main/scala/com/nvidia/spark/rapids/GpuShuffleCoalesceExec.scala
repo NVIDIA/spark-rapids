@@ -182,8 +182,7 @@ object GpuShuffleCoalesceUtils {
         inRowsMetric, readThrottlingMetric)
     }
     val maybeBufferedIter: Iterator[_ <: AutoCloseable] = if (prefetchFirstBatch) {
-      val bufferedIter =
-        new CloseableBufferedIterator(hostIter.asInstanceOf[Iterator[AutoCloseable]])
+      val bufferedIter = new CloseableBufferedIterator(hostIter)
       NvtxRegistry.SHUFFLE_FETCH_FIRST_BATCH {
         // Force a coalesce of the first batch before we grab the GPU semaphore
         bufferedIter.headOption
