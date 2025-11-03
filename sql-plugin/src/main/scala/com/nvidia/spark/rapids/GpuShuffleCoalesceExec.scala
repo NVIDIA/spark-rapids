@@ -22,7 +22,7 @@ import java.util.concurrent.{Future, TimeUnit}
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, JCudfSerialization, MemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
@@ -55,6 +55,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @note This should ALWAYS appear in the plan after a GPU shuffle when RAPIDS shuffle is
  *       not being used.
  */
+case class KudoBuffers[T <: MemoryBuffer](data: T, offsets: T)
+  extends AutoCloseable {
+  override def close(): Unit = {
+    data.close()
+    offsets.close()
+  }
+}
+
 case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   extends ShimUnaryExecNode with GpuExec {
 
@@ -353,10 +361,8 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
           table.getHeader.getTotalDataLen + table.getHeader.getSerializedSize
         }).sum
         val offsetsBufSize = 8 * (kudoTables.length + 1)
-        withResource(Seq(HostMemoryBuffer.allocate(dataBufSize),
-          HostMemoryBuffer.allocate(offsetsBufSize))) { seq =>
-          val dataHost = seq(0)
-          val offsetsHost = seq(1)
+        withResource(KudoBuffers[HostMemoryBuffer](HostMemoryBuffer.allocate(dataBufSize),
+          HostMemoryBuffer.allocate(offsetsBufSize))) { case KudoBuffers(dataHost, offsetsHost) =>
           var currentOffset = 0
           var i = 0
           kudoTables.foreach({table =>
@@ -370,10 +376,8 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
             i += 1
           })
           offsetsHost.setLong(i * 8L, currentOffset)
-          withResource(Seq(DeviceMemoryBuffer.allocate(dataHost.getLength),
-            DeviceMemoryBuffer.allocate(offsetsHost.getLength))) { seq =>
-            val dataDev = seq(0)
-            val offsetsDev = seq(1)
+          withResource(KudoBuffers[DeviceMemoryBuffer](DeviceMemoryBuffer.allocate(dataHost.getLength),
+            DeviceMemoryBuffer.allocate(offsetsHost.getLength))) { case KudoBuffers(dataDev, offsetsDev) =>
             dataDev.copyFromHostBuffer(dataHost)
             offsetsDev.copyFromHostBuffer(offsetsHost)
 
