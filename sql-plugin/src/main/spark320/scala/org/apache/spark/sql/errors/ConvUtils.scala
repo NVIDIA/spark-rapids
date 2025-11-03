@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "320"}
 {"spark": "321"}
@@ -31,7 +32,6 @@
 {"spark": "333"}
 {"spark": "334"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.errors
 
 object ConvUtils {
