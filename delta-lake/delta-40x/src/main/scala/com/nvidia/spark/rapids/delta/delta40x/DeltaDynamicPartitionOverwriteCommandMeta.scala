@@ -29,4 +29,3 @@ class DeltaDynamicPartitionOverwriteCommandMeta(
     rule: DataFromReplacementRule)
   extends DeltaDynamicPartitionOverwriteCommandMetaBase(
     overwriteCommand, conf, parent, rule, Delta40xCommandShims)
-

@@ -77,4 +77,3 @@ case class GpuDeltaDynamicPartitionOverwriteCommand(
     ).run(sparkSession)
   }
 }
-

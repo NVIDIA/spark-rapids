@@ -242,7 +242,7 @@ def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
                                                                             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "false"})
 
 @allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
-               "FilterExec", "MapElementsExec", "ProjectExec", "FileSourceScanExec")
+               "FilterExec", "MapElementsExec", "ProjectExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
