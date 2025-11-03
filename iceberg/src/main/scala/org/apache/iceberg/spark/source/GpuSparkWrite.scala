@@ -18,7 +18,6 @@ package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success}
-
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
@@ -28,10 +27,11 @@ import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table, TableProperties}
 import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
+import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.{Spark3Util, SparkSchemaUtil}
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
+import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
-
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
@@ -160,7 +160,8 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
 
 object GpuSparkWrite {
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
-    classOf[SparkWrite].isAssignableFrom(cpuClass)
+    classOf[SparkWrite].isAssignableFrom(cpuClass)  ||
+      classOf[SparkPositionDeltaWrite].isAssignableFrom(cpuClass)
   }
 
   /**
@@ -168,32 +169,33 @@ object GpuSparkWrite {
    * This method checks:
    * 1. File format is supported (only Parquet)
    * 2. Partition transforms are supported
-   *
-   * @param dataFileFormat The file format for the write operation
-   * @param partitionSpec The partition specification
-   * @param dsSchema The DataFrame schema
-   * @param writeSchema The write schema
-   * @param meta The metadata for tagging
    */
-  private def tagForGpuWrite(
-      dataFileFormat: FileFormat,
+  private[iceberg] def tagForGpuWrite(
+      dataFormat: Option[FileFormat],
+      dataSparkType: Option[StructType],
+      dataSchema: Option[Schema],
+      deleteFormat: Option[FileFormat],
       partitionSpec: PartitionSpec,
-      dsSchema: StructType,
-      writeSchema: Schema,
       meta: SparkPlanMeta[_]): Unit = {
+
     // Check file format support
-    if (!dataFileFormat.equals(FileFormat.PARQUET)) {
-      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: $dataFileFormat")
+    if (dataFormat.exists(!_.equals(FileFormat.PARQUET))) {
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: ${dataFormat.get}")
+    }
+
+    if (deleteFormat.exists(!_.equals(FileFormat.PARQUET))) {
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: ${deleteFormat.get}")
     }
 
     // Check partition transform support
     if (partitionSpec.isPartitioned) {
+      val tableSparkType = toSparkType(partitionSpec.schema())
       for (partitionField <- partitionSpec.fields().asScala) {
         val transform = partitionField.transform()
         GpuTransform.tryFrom(transform) match {
           case Success(t) =>
             val fieldTransform = GpuFieldTransform(partitionField.sourceId(), t)
-            if (!fieldTransform.supports(dsSchema, writeSchema)) {
+            if (!fieldTransform.supports(tableSparkType, partitionSpec.schema())) {
               meta.willNotWorkOnGpu(
                 s"Iceberg partition transform $transform is not supported on GPU")
             }
@@ -222,7 +224,8 @@ object GpuSparkWrite {
     val writeSchema = FieldUtils.readField(cpuWrite, "writeSchema", true)
       .asInstanceOf[Schema]
 
-    tagForGpuWrite(dataFileFormat, partitionSpec, dsSchema, writeSchema, meta)
+    tagForGpuWrite(Some(dataFileFormat), Some(dsSchema), Some(writeSchema),
+      None, partitionSpec, meta)
   }
 
   /**
@@ -251,7 +254,8 @@ object GpuSparkWrite {
     val partitionSpec = Spark3Util.toPartitionSpec(icebergSchema, cpuExec.partitioning.toArray)
 
     // Reuse tagForGpuWrite for validation
-    tagForGpuWrite(fileFormat, partitionSpec, querySchema, icebergSchema, meta)
+    tagForGpuWrite(Option(fileFormat), Option(querySchema), Option(icebergSchema),
+      None, partitionSpec, meta)
   }
 
   /**
@@ -280,7 +284,8 @@ object GpuSparkWrite {
     val partitionSpec = Spark3Util.toPartitionSpec(icebergSchema, cpuExec.partitioning.toArray)
 
     // Reuse tagForGpuWrite for validation
-    tagForGpuWrite(fileFormat, partitionSpec, querySchema, icebergSchema, meta)
+    tagForGpuWrite(Some(fileFormat), Some(querySchema), Some(icebergSchema),
+      None, partitionSpec, meta)
   }
 
   def convert(cpuWrite: Write): GpuSparkWrite = {
@@ -321,6 +326,7 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
       dsSchema,
       table.sortOrder(),
       format,
+      positionDeleteSparkType,
       outputWriterFactory,
       statsTracker.newTaskInstance(),
       hadoopConf,

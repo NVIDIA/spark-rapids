@@ -29,7 +29,7 @@ import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
-    rapidsConf: RapidsConf,
+    @transient rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean) extends PartitionReaderFactory {
 
   private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
@@ -40,6 +40,8 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   // not honored by Iceberg.
   private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled &&
     !queryUsesInputFile
+
+  private val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] =
     throw new UnsupportedOperationException("GpuReaderFactory does not support createReader()")
@@ -83,7 +85,6 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       val useMultiThread = MultiFileReaderUtils.useMultiThreadReader(canUseCoalescing,
         canUseMultiThread, files, allCloudSchemes)
 
-      val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
       if (useMultiThread) {
         MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel)
       } else {

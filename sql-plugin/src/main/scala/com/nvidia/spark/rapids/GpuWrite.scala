@@ -16,12 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.connector.write.Write
+import org.apache.spark.sql.connector.write.{DeltaWrite, Write}
 
 trait GpuWrite extends Write {
   var metrics: Map[String, GpuMetric] = Map.empty
 }
 
+trait GpuDeltaWrite extends GpuWrite with DeltaWrite
+
 // Allows use of GpuWrite from Java code
 abstract class GpuWriteWrapper extends GpuWrite {
 }
+
+abstract class GpuDeltaWriteWrapper extends GpuDeltaWrite

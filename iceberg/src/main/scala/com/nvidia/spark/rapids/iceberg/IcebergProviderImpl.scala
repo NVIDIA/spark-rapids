@@ -20,16 +20,16 @@ import scala.reflect.ClassTag
 import scala.util.Try
 
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
-import com.nvidia.spark.rapids.shims.ReplaceDataExecMeta
+import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
-import org.apache.iceberg.spark.source.{GpuSparkScan, GpuSparkWrite}
+import org.apache.iceberg.spark.source.{GpuSparkPositionDeltaWrite, GpuSparkScan, GpuSparkWrite}
 import org.apache.iceberg.spark.supportsCatalog
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, GpuReplaceDataExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, GpuReplaceDataExec, GpuWriteDeltaExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec, WriteDeltaExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
 
@@ -252,6 +252,8 @@ class IcebergProviderImpl extends IcebergProvider {
     cpuExec match {
       case replaceData: ReplaceDataExec =>
         tagForGpu(replaceData, meta.asInstanceOf[ReplaceDataExecMeta])
+      case writeDelta: WriteDeltaExec =>
+        tagForGpu(writeDelta, meta.asInstanceOf[WriteDeltaExecMeta])
       case appendData: AppendDataExec =>
         tagForGpu(appendData, meta.asInstanceOf[AppendDataExecMeta])
       case createTable: AtomicCreateTableAsSelectExec =>
@@ -271,6 +273,8 @@ class IcebergProviderImpl extends IcebergProvider {
     cpuExec match {
       case replaceData: ReplaceDataExec =>
         convertToGpu(replaceData, meta.asInstanceOf[ReplaceDataExecMeta])
+      case writeDelta: WriteDeltaExec =>
+        convertToGpu(writeDelta, meta.asInstanceOf[WriteDeltaExecMeta])
       case appendData: AppendDataExec =>
         convertToGpu(appendData, meta.asInstanceOf[AppendDataExecMeta])
       case createTable: AtomicCreateTableAsSelectExec =>
@@ -312,5 +316,33 @@ class IcebergProviderImpl extends IcebergProvider {
       child,
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
+  }
+
+  private def tagForGpu(cpuExec: WriteDeltaExec, meta: WriteDeltaExecMeta): Unit = {
+    if (!meta.conf.isIcebergEnabled) {
+      meta.willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG} to true")
+    }
+
+    if (!meta.conf.isIcebergWriteEnabled) {
+      meta.willNotWorkOnGpu("Iceberg output has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_ICEBERG_WRITE} to true")
+    }
+
+    FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+
+    GpuSparkPositionDeltaWrite.tagForGpu(cpuExec.write, meta)
+  }
+
+  private def convertToGpu(cpuExec: WriteDeltaExec, meta: WriteDeltaExecMeta): GpuExec = {
+    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
+    if (!child.supportsColumnar) {
+      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
+    }
+    GpuWriteDeltaExec(
+      child,
+      cpuExec.refreshCache,
+      cpuExec.projections,
+      GpuSparkPositionDeltaWrite.convert(cpuExec.write))
   }
 }

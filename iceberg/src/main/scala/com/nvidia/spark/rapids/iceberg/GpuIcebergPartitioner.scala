@@ -208,4 +208,78 @@ object GpuIcebergPartitioner {
           }).toArray
     }
   }
+
+  private def addRowIdxToTable(table: Table): Table = {
+    val cols = new Array[CudfColumnVector](table.getNumberOfColumns + 1)
+
+    val rowIdxCol = withResource(Scalar.fromInt(0)) { zero =>
+      CudfColumnVector.sequence(zero, table.getRowCount.toInt)
+    }
+    cols(table.getNumberOfColumns) = rowIdxCol
+
+    closeOnExcept(cols) { _ =>
+      for (idx <- 0 until table.getNumberOfColumns) {
+        cols(idx) = table.getColumn(idx)
+      }
+
+      new Table(cols: _*)
+    }
+  }
+
+  def partitionBy(keys: ColumnarBatch,
+                  keyType: Types.StructType,
+                  keySparkType: StructType,
+                  values: ColumnarBatch,
+                  valueSparkType: Array[DataType]): Seq[ColumnarBatchWithPartition] = {
+    require(keys.numRows() == values.numRows(),
+      s"Keys row count ${keys.numRows()} not matching with values row count ${values.numRows()}")
+
+    val keySortOrders = (0 until keys.numCols()).map(OrderByArg.asc(_, true))
+    val keyAggCols = (0 until keys.numCols()).toArray
+
+    withResource(GpuColumnVector.from(keys)) { keysTable =>
+      withResource(GpuColumnVector.from(values)) { valuesTable =>
+
+        val sortedKeysWithRowIdx = withResource(addRowIdxToTable(keysTable)) { t =>
+          t.orderBy(keySortOrders: _*)
+        }
+
+
+        val (partitionKeys, splits) = withResource(sortedKeysWithRowIdx) { _ =>
+          val sortedUniqueKeyTable = {
+            val uniqueKeyTable = keysTable.groupBy(keyAggCols: _*)
+              .aggregate()
+            withResource(uniqueKeyTable) { _ =>
+              uniqueKeyTable.orderBy(keySortOrders: _*)
+            }
+          }
+
+          withResource(sortedUniqueKeyTable) { _ =>
+            val partKeys = toPartitionKeys(keyType, keySparkType, sortedUniqueKeyTable)
+
+            val splitIdCv = sortedKeysWithRowIdx.upperBound(sortedUniqueKeyTable, keySortOrders: _*)
+            val splitIds = withResource(splitIdCv) { cv =>
+              GpuColumnVector.toIntArray(cv)
+            }
+
+            val sortedRowIdxCol = sortedKeysWithRowIdx
+              .getColumn(keys.numCols())
+
+            val splits= withResource(valuesTable.gather(sortedRowIdxCol)) { sortedValuesTable =>
+              sortedValuesTable.contiguousSplit(splitIds: _*)
+            }
+
+            (partKeys, splits)
+          }
+        }
+
+
+        partitionKeys.zip(splits).map {
+          case (partKey, split) => ColumnarBatchWithPartition(
+            SpillableColumnarBatch(split, valueSparkType, SpillPriorities
+            .ACTIVE_BATCHING_PRIORITY), partKey)
+        }
+      }
+    }
+  }
 }

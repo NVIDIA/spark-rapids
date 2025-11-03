@@ -35,7 +35,7 @@ import org.apache.spark.sql.types._
 
 object SchemaUtils {
   // Parquet field ID metadata key
-  private val FIELD_ID_METADATA_KEY = "parquet.field.id"
+ private val FIELD_ID_METADATA_KEY = "parquet.field.id"
 
   /**
    * Convert a TypeDescription to a Catalyst StructType.
