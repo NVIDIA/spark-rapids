@@ -378,7 +378,8 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
           }
           offsetsHost.setLong(kudoTables.length * 8L, currentOffset)
           withResource(KudoBuffers(DeviceMemoryBuffer.allocate(dataHost.getLength),
-            DeviceMemoryBuffer.allocate(offsetsHost.getLength))) { case KudoBuffers(dataDev, offsetsDev) =>
+            DeviceMemoryBuffer.allocate(offsetsHost.getLength))) {
+              case KudoBuffers(dataDev, offsetsDev) =>
             dataDev.copyFromHostBuffer(dataHost)
             offsetsDev.copyFromHostBuffer(offsetsHost)
 
@@ -760,7 +761,8 @@ class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
     opTimeMetric: GpuMetric = NoopMetric) extends GpuMetricIteratorBase[CoalescedHostResult](
     iter, outputBatchesMetric, outputRowsMetric, readTimeMetric, opTimeMetric) {
 
-  override protected def convertToOutputBatch(hostCoalescedResult: CoalescedHostResult): ColumnarBatch = {
+  override protected def convertToOutputBatch(hostCoalescedResult: CoalescedHostResult):
+    ColumnarBatch = {
     withResource(hostCoalescedResult) { _ =>
       // We acquire the GPU regardless of whether `hostConcatResult`
       // is an empty batch or not, because the downstream tasks expect
