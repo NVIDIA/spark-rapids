@@ -99,7 +99,17 @@ def test_insert_overwrite_dynamic_unpartitioned_table(spark_tmp_table_factory, f
 @pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
-def test_insert_overwrite_dynamic_bucket_partitioned(spark_tmp_table_factory, format_version, write_distribution_mode, fanout):
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+])
+def test_insert_overwrite_dynamic_bucket_partitioned(spark_tmp_table_factory, format_version, write_distribution_mode, fanout, partition_col_sql):
     """Test dynamic overwrite with bucket partitioning - should run on GPU."""
     table_prop = {"format-version": format_version,
                   "write.distribution-mode": write_distribution_mode,
@@ -108,7 +118,7 @@ def test_insert_overwrite_dynamic_bucket_partitioned(spark_tmp_table_factory, fo
     def create_table_with_partition(table_name: str):
         create_iceberg_table(
             table_name,
-            partition_col_sql="bucket(16, _c2), bucket(16, _c3)",
+            partition_col_sql=partition_col_sql,
             table_prop=table_prop)
 
     do_test_insert_overwrite_dynamic(
@@ -170,10 +180,6 @@ def test_insert_overwrite_dynamic_unsupported_data_types_fallback(spark_tmp_tabl
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("truncate(5, _c6)", id="truncate"),
-    pytest.param("year(_c9)", id="year"),
-    pytest.param("month(_c9)", id="month"),
-    pytest.param("day(_c9)", id="day"),
-    pytest.param("hour(_c9)", id="hour"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_insert_overwrite_dynamic_unsupported_partition_fallback(

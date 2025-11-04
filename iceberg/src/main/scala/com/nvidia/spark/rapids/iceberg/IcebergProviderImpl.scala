@@ -21,7 +21,7 @@ import scala.util.Try
 
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
 import com.nvidia.spark.rapids.shims.ReplaceDataExecMeta
-import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
+import org.apache.iceberg.spark.functions.{BucketFunction, DaysFunction, GpuBucketExpression, GpuDaysExpression, GpuHoursExpression, GpuMonthsExpression, GpuYearsExpression, HoursFunction, MonthsFunction, YearsFunction}
 import org.apache.iceberg.spark.source.{GpuSparkScan, GpuSparkWrite}
 import org.apache.iceberg.spark.supportsCatalog
 
@@ -31,6 +31,7 @@ import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, GpuReplaceDataExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.types.{DateType, TimestampType}
 
 
 class IcebergProviderImpl extends IcebergProvider {
@@ -77,6 +78,20 @@ class IcebergProviderImpl extends IcebergProvider {
   override def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
     if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
       GpuBucketExpression.tagExprForGpu(meta)
+    } else if (classOf[YearsFunction.DateToYearsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuYearsExpression.tagExprForGpu(meta, DateType)
+    } else if (classOf[YearsFunction.TimestampToYearsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuYearsExpression.tagExprForGpu(meta, TimestampType)
+    } else if (classOf[MonthsFunction.DateToMonthsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuMonthsExpression.tagExprForGpu(meta, DateType)
+    } else if (classOf[MonthsFunction.TimestampToMonthsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuMonthsExpression.tagExprForGpu(meta, TimestampType)
+    } else if (classOf[DaysFunction.DateToDaysFunction].isAssignableFrom(expr.staticObject)) {
+      GpuDaysExpression.tagExprForGpu(meta, DateType)
+    } else if (classOf[DaysFunction.TimestampToDaysFunction].isAssignableFrom(expr.staticObject)) {
+      GpuDaysExpression.tagExprForGpu(meta, TimestampType)
+    } else if (classOf[HoursFunction.TimestampToHoursFunction].isAssignableFrom(expr.staticObject)) {
+      GpuHoursExpression.tagExprForGpu(meta)
     } else {
       meta.willNotWorkOnGpu(s"StaticInvoke of ${expr.staticObject.getName} is not supported on GPU")
     }
@@ -86,6 +101,20 @@ class IcebergProviderImpl extends IcebergProvider {
     if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
       val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
       GpuBucketExpression(left, right)
+    } else if (classOf[YearsFunction.DateToYearsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuYearsExpression(meta.childExprs.head.convertToGpu())
+    } else if (classOf[YearsFunction.TimestampToYearsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuYearsExpression(meta.childExprs.head.convertToGpu())
+    } else if (classOf[MonthsFunction.DateToMonthsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuMonthsExpression(meta.childExprs.head.convertToGpu())
+    } else if (classOf[MonthsFunction.TimestampToMonthsFunction].isAssignableFrom(expr.staticObject)) {
+      GpuMonthsExpression(meta.childExprs.head.convertToGpu())
+    } else if (classOf[DaysFunction.DateToDaysFunction].isAssignableFrom(expr.staticObject)) {
+      GpuDaysExpression(meta.childExprs.head.convertToGpu())
+    } else if (classOf[DaysFunction.TimestampToDaysFunction].isAssignableFrom(expr.staticObject)) {
+      GpuDaysExpression(meta.childExprs.head.convertToGpu())
+    } else if (classOf[HoursFunction.TimestampToHoursFunction].isAssignableFrom(expr.staticObject)) {
+      GpuHoursExpression(meta.childExprs.head.convertToGpu())
     } else {
       throw new IllegalStateException(
         s"Should have been caught in tagExprForGpu: ${expr.staticObject.getName}")
