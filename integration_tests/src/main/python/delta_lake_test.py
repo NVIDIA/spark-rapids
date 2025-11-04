@@ -166,7 +166,7 @@ def test_delta_read_with_deletion_vectors_enabled_with_fallback(spark_tmp_path):
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_spark_401_or_later(), \
-    reason ="Delta Lake 4.0.0 incompatible with Spark 4.0.1 - ParquetToSparkSchemaConverter API changed")
+    reason="Delta Lake 4.0.0 incompatible with Spark 4.0.1 - ParquetToSparkSchemaConverter API changed")
 @pytest.mark.skipif(not (is_databricks_runtime() or is_spark_340_or_later()), \
                     reason="ParquetToSparkSchemaConverter changes not compatible with Delta Lake")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
