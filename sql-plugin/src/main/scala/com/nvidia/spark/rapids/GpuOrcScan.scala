@@ -1090,7 +1090,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
       closeOnExcept(hostBuffer) { hmb =>
         withResource(new HostMemoryOutputStream(hmb)) { out =>
           writeOrcOutputFile(ctx, out, stripes)
-          (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+          (SpillableHostBuffer(hmb, out.getPos),
             out.getPos)
         }
       }
@@ -2387,8 +2387,7 @@ class MultiFileCloudOrcPartitionReader(
 
           // e: Create the new meta for the combined buffer
           val numRows = combinedMeta.allPartValues.map(_._1).sum
-          val finalBuf = SpillableHostBuffer(maybeNewBuf, maybeNewBuf.getLength,
-            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          val finalBuf = SpillableHostBuffer(maybeNewBuf, maybeNewBuf.getLength)
           val combinedRet = SingleHMBAndMeta(Array(finalBuf), outStream.getPos, numRows,
             blockMetas)
           val newHmbWithMeta = metaToUse.copy(

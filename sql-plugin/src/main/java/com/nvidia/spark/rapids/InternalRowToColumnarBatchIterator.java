@@ -228,7 +228,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     try {
       hBuf = HostAlloc$.MODULE$.alloc((dataBytes + offsetBytes),true);
       SpillableHostBuffer sBuf = SpillableHostBuffer$.MODULE$.apply(hBuf, hBuf.getLength(),
-          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY());
+          Option.empty());
       hBuf = null;  // taken over by spillable host buffer
       return Tuple2.apply(sBuf, numRowsWrapper);
     } finally {

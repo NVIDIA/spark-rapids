@@ -292,7 +292,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
         b = None
         assert(sb.isEmpty)
       }
-      sb = Some(SpillableHostBuffer(tmp, tmp.getLength, priority))
+      sb = Some(SpillableHostBuffer(tmp, tmp.getLength))
       null
     }
 
@@ -700,9 +700,8 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       override def doAlloc(): Void = {
         RmmRapidsRetryIterator.withRetryNoSplit {
 
-          // read shuffle data from remote and put it into Spillalble Framework
-          val w = SpillableHostBuffer.apply(HostAlloc.alloc(1024, preferPinned),
-            1024, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          // read shuffle data from remote and put it into Spillable Framework
+          val w = SpillableHostBuffer.apply(HostAlloc.alloc(1024, preferPinned), 1024)
 
           // let's say we will do sth with the shuffle data read, e.g. concat them
           // for simplicity, we just have one SpillableHostBuffer as input, in real case there

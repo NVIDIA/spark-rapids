@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.jni.kudo
 
 import ai.rapids.cudf.Schema
-import com.nvidia.spark.rapids.{CoalescedHostResult, GpuColumnVector, RmmRapidsRetryIterator, SpillableHostBuffer, SpillPriorities}
+import com.nvidia.spark.rapids.{CoalescedHostResult, GpuColumnVector, RmmRapidsRetryIterator, SpillableHostBuffer}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.types.DataType
@@ -57,7 +57,7 @@ object KudoHostMergeResultWrapper {
   def apply(inner: KudoHostMergeResult): KudoHostMergeResultWrapper = {
     KudoHostMergeResultWrapper(inner.getSchema, inner.getColumnInfoList,
       SpillableHostBuffer(inner.getHostBuf,
-        inner.getHostBuf.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY
+        inner.getHostBuf.getLength
       )
     )
   }

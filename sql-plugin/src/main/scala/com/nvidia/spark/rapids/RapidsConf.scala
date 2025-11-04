@@ -544,6 +544,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
+  val PARTIAL_FILE_BUFFER_MAX_SIZE = 
+    conf("spark.rapids.memory.host.partialFileBufferMaxSize")
+    .doc("The maximum size in bytes for a single host memory buffer used by " +
+        "SpillablePartialFileHandle. When a buffer needs to expand beyond this limit, " +
+        "it will be spilled to disk instead. This prevents excessive memory usage " +
+        "for large shuffle partitions.")
+    .startupOnly()
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(8L * 1024 * 1024 * 1024)  // 8GB
+
   val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
     .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
         "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
@@ -3139,6 +3150,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val integratedGpuMemoryFraction: Double = get(INTEGRATED_GPU_MEMORY_FRACTION)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
+
+  lazy val partialFileBufferMaxSize: Long = get(PARTIAL_FILE_BUFFER_MAX_SIZE)
 
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
 

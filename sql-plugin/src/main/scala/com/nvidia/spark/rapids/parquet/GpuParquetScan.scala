@@ -2010,7 +2010,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is too " +
               s"small, actual written: ${out.getPos}")
         }
-        (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+        (SpillableHostBuffer(hmb, out.getPos),
           outputBlocks)
       }
     }
@@ -2529,7 +2529,7 @@ class MultiFileCloudParquetPartitionReader(
         offset += footerOut.getPos
       }
       val spHostBufs = buffers.map(b =>
-        SpillableHostBuffer(b, b.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+        SpillableHostBuffer(b, b.getLength))
       val newHmbBufferInfo = SingleHMBAndMeta(spHostBufs.toArray, offset,
         combinedMeta.allPartValues.map(_._1).sum, Seq.empty)
       val newHmbMeta = HostMemoryBuffersWithMetaData(

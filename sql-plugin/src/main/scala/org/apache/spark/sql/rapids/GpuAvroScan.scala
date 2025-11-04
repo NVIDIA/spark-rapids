@@ -457,7 +457,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
               throw new QueryExecutionException(s"Calculated buffer size $estOutSize is" +
                 s" too small, actual written: ${out.getPos}")
             }
-            (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+            (SpillableHostBuffer(hmb, out.getPos),
               out.getPos)
           }
         }
@@ -856,8 +856,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach { out =>
-                    val shb = SpillableHostBuffer(optHmb.get, optHmb.get.getLength,
-                      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+                    val shb = SpillableHostBuffer(optHmb.get, optHmb.get.getLength)
                     hostBuffers +=
                       (SingleHMBAndMeta(Array(shb), out.getPos, batchRowsNum, Seq.empty))
                   }
