@@ -242,7 +242,7 @@ class GpuMergeBatchIterator(
         withResource(sourcePresentCol) { sourcePresent =>
           require(!sourcePresent.hasNull, "Source cannot have null")
           withResource(targetPresentCol) { targetPresent =>
-            require(!targetPresent.hasNull, "Target can has null")
+            require(!targetPresent.hasNull, "Target cannot have null")
 
             val matchedMask = sourcePresent.getBase.and(targetPresent.getBase)
             processInstructionSet(inputDataTypes, outputs, batch,
