@@ -55,8 +55,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class KudoBuffers[T <: MemoryBuffer](data: T, offsets: T)
   extends AutoCloseable {
   override def close(): Unit = {
-    data.close()
-    offsets.close()
+    Seq(data, offsets).safeClose()
   }
 }
 
