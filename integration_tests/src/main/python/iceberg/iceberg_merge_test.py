@@ -133,7 +133,6 @@ def do_merge_test(
         merge_sql_func(spark, gpu_target_table, source_table)
     
     with_gpu_session(do_gpu_merge, conf=test_conf)
-    # with_cpu_session(do_gpu_merge)
 
     # Execute MERGE on CPU
     def do_cpu_merge(spark):

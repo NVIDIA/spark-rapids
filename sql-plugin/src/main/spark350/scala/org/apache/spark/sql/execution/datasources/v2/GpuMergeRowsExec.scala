@@ -56,8 +56,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * applying merge logic to determine which rows to insert, update, or delete.
  * 
  *
- * @param isSourceRowPresent GPU expression indicating if source row is present in join
  * @param isTargetRowPresent GPU expression indicating if target row is present in join
+ * @param isSourceRowPresent GPU expression indicating if source row is present in join
  * @param matchedInstructions Sequence of instructions for MATCHED clauses
  * @param notMatchedInstructions Sequence of instructions for NOT MATCHED clauses
  * @param notMatchedBySourceInstructions Sequence of instructions for NOT MATCHED BY SOURCE clauses
@@ -189,9 +189,10 @@ object GpuMergeRowsExec {
  * GPU version of MergeRowIterator. Processes columnar batches for MERGE operations.
  * Similar to Spark's MergeRowIterator but operates on batches instead of rows.
  *
+ * @param inputDataTypes Spark data types of input iterator.
  * @param inputIter Iterator of input columnar batches
- * @param isSourceRowPresent Bound GPU expression to check if source row is present
  * @param isTargetRowPresent Bound GPU expression to check if target row is present
+ * @param isSourceRowPresent Bound GPU expression to check if source row is present
  * @param matchedInstructionExecs Executors for MATCHED instructions
  * @param notMatchedInstructionExecs Executors for NOT MATCHED instructions
  * @param notMatchedBySourceInstructionExecs Executors for NOT MATCHED BY SOURCE instructions
@@ -231,18 +232,17 @@ class GpuMergeBatchIterator(
 
     withRetryNoSplit(batch) { _ =>
       // Evaluate presence flags
-      val sourcePresentCol = isSourceRowPresent.columnarEval(batch)
-      val targetPresentCol = isTargetRowPresent.columnarEval(batch)
-
       val outputs = new ArrayBuffer[SpillableColumnarBatch](
         matchedInstructionExecs.size + notMatchedInstructionExecs.size
           + notMatchedBySourceInstructionExecs.size)
 
       closeOnExcept(outputs) { _ =>
+        val sourcePresentCol = isSourceRowPresent.columnarEval(batch)
         withResource(sourcePresentCol) { sourcePresent =>
-          require(!sourcePresent.hasNull, "Source can has null")
+          require(!sourcePresent.hasNull, "Source cannot have null")
+          val targetPresentCol = isTargetRowPresent.columnarEval(batch)
           withResource(targetPresentCol) { targetPresent =>
-            require(!targetPresent.hasNull, "Target can has null")
+            require(!targetPresent.hasNull, "Target cannot have null")
 
             val matchedMask = sourcePresent.getBase.and(targetPresent.getBase)
             processInstructionSet(inputDataTypes, outputs, batch,
@@ -265,6 +265,7 @@ class GpuMergeBatchIterator(
       // TODO: There is a small chance that the output batch is much larger input batch,
       //  e.g. all cases need to update split, which leads to a result batch whose row
       //  count is twice of input batch. We need to handle this case by splitting the outputs
+      // https://github.com/NVIDIA/spark-rapids/issues/13712
       withResource(GpuBatchUtils.concatSpillBatchesAndClose(outputs.toSeq)) { spillable =>
         spillable.get.getColumnarBatch()
       }
@@ -292,10 +293,12 @@ class GpuMergeBatchIterator(
     val (condMask, nextMask) = withResource(mask) { _ =>
       withResource(instructionExec.evaluateCondition(batch)) { cond =>
         val condMask = cond.getBase.and(mask)
-        val nextMask = withResource(cond.getBase.not()) { notThis =>
-          notThis.and(mask)
+        closeOnExcept(condMask) { _ =>
+          val nextMask = withResource(cond.getBase.not()) { notThis =>
+            notThis.and(mask)
+          }
+          (condMask, nextMask)
         }
-        (condMask, nextMask)
       }
     }
 
