@@ -20,16 +20,15 @@
 #   - UCX_VER, UCX_CUDA_VER, and UCX_ARCH:
 #       Used to pick a package matching a specific UCX version and
 #       CUDA runtime from the UCX github repo. UCX_CUDA_VER is the CUDA version
-#       that UCX is built for (can be older than CUDA_VER due to backwards compatibility;
-#       CUDA 13 UCX builds are not available for Rocky Linux, hence UCX_CUDA_VER=11).
+#       that UCX is built for (can be older than CUDA_VER due to backwards compatibility).
 #       See: https://github.com/openucx/ucx/releases/
 #   - ROCKY_VER: Rocky Linux OS version
 
 ARG CUDA_VER=13.0.1
-ARG UCX_VER=1.19.1-rc1
-ARG UCX_CUDA_VER=11
+ARG UCX_VER=1.19.1-rc2
+ARG UCX_CUDA_VER=13
 ARG UCX_ARCH=x86_64
-ARG ROCKY_VER=8
+ARG ROCKY_VER=9
 FROM nvidia/cuda:${CUDA_VER}-runtime-rockylinux${ROCKY_VER}
 ARG UCX_VER
 ARG UCX_CUDA_VER
@@ -38,7 +37,7 @@ ARG UCX_ARCH
 RUN yum update -y && yum install -y wget bzip2 numactl-libs libgomp
 RUN ls /usr/lib
 RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
-  wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-centos8-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
+  wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-rocky$ROCKY_VER-mofed24.10-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
   tar -xvf *.bz2 && \
   rpm -i `ls ucx-[0-9]*.rpm ucx-cuda-[0-9]*.rpm` --nodeps && \
   rm -rf /tmp/ucx_install
