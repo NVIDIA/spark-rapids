@@ -20,7 +20,7 @@ from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, deletion_
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
-    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors
+    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors, is_spark_401_or_later
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
@@ -165,6 +165,8 @@ def test_delta_read_with_deletion_vectors_enabled_with_fallback(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.skipif(is_spark_401_or_later(), \
+    reason="Delta Lake 4.0.0 incompatible with Spark 4.0.1 - ParquetToSparkSchemaConverter API changed")
 @pytest.mark.skipif(not (is_databricks_runtime() or is_spark_340_or_later()), \
                     reason="ParquetToSparkSchemaConverter changes not compatible with Delta Lake")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
