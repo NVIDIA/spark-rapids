@@ -544,6 +544,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
+  val PARTIAL_FILE_BUFFER_INITIAL_SIZE = 
+    conf("spark.rapids.memory.host.partialFileBufferInitialSize")
+    .doc("The initial size in bytes for a host memory buffer used by " +
+        "SpillablePartialFileHandle. The buffer can expand dynamically up to " +
+        "partialFileBufferMaxSize. A smaller initial size reduces upfront memory " +
+        "allocation but may require more expansions.")
+    .startupOnly()
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(1024L * 1024 * 1024)  // 1GB default
+
   val PARTIAL_FILE_BUFFER_MAX_SIZE = 
     conf("spark.rapids.memory.host.partialFileBufferMaxSize")
     .doc("The maximum size in bytes for a single host memory buffer used by " +
@@ -3150,6 +3161,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val integratedGpuMemoryFraction: Double = get(INTEGRATED_GPU_MEMORY_FRACTION)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
+
+  lazy val partialFileBufferInitialSize: Long = get(PARTIAL_FILE_BUFFER_INITIAL_SIZE)
 
   lazy val partialFileBufferMaxSize: Long = get(PARTIAL_FILE_BUFFER_MAX_SIZE)
 

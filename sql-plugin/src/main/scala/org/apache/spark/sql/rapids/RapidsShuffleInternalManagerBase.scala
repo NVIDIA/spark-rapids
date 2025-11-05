@@ -696,6 +696,15 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         numPartitions)
       mapOutputWriters += finalMergeWriter  // Track for cleanup
 
+      // Force file-only mode for final merge writer since it doesn't benefit
+      // from memory buffering (merge operation is already doing sequential I/O)
+      finalMergeWriter match {
+        case rapidsWriter: org.apache.spark.shuffle.sort.io
+          .RapidsLocalDiskShuffleMapOutputWriter =>
+          rapidsWriter.setForceFileOnlyMode()
+        case _ => // Other writer types don't need this optimization
+      }
+
       mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
     } else {
       // Single batch: already committed, just return lengths

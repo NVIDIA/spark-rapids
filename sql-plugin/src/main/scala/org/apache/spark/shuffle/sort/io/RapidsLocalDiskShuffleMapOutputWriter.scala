@@ -54,11 +54,28 @@ class RapidsLocalDiskShuffleMapOutputWriter(
 
   // RAPIDS configuration
   private val rapidsConf = new RapidsConf(sparkConf)
+  private val initialBufferSize = rapidsConf.partialFileBufferInitialSize
   private val maxBufferSize = rapidsConf.partialFileBufferMaxSize
 
   // RAPIDS optimization: use SpillablePartialFileHandle for unified storage
   private var partialFileHandle: Option[SpillablePartialFileHandle] = None
   private var storageInitAttempted: Boolean = false
+  private var forceFileOnly: Boolean = false
+  
+  /**
+   * Force this writer to use file-only mode, bypassing memory-based buffering.
+   * This is useful for scenarios where memory buffering is not beneficial,
+   * such as final merge operations.
+   * 
+   * This method must be called before any partition writer is requested.
+   */
+  def setForceFileOnlyMode(): Unit = {
+    if (storageInitAttempted) {
+      throw new IllegalStateException(
+        "Cannot set force file-only mode after storage has been initialized")
+    }
+    forceFileOnly = true
+  }
   
   // Try to initialize storage on first partition write
   private def ensureStorageInitialized(): Unit = {
@@ -66,18 +83,24 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       storageInitAttempted = true
       outputTempFile = Utils.tempFileWith(outputFile)
       
-      // Decide storage mode based on memory availability
-      if (HostAlloc.isUsageBelowThreshold(0.5)) {
+      // Check if file-only mode is forced
+      if (forceFileOnly) {
+        // Force file-only mode (e.g., for final merge operations)
+        logDebug(s"Using forced file-only mode for shuffle $shuffleId map $mapId")
+        val handle = SpillablePartialFileHandle.createFileOnly(outputTempFile)
+        partialFileHandle = Some(handle)
+      } else if (HostAlloc.isUsageBelowThreshold(0.5)) {
         // Memory sufficient: use MEMORY_WITH_SPILL mode
-        val initialSize = 512 * 1024 * 1024  // 512MB initial
         try {
           val handle = SpillablePartialFileHandle.createMemoryWithSpill(
-            initialCapacity = initialSize,
+            initialCapacity = initialBufferSize,
             maxBufferSize = maxBufferSize,
             spillFile = outputTempFile,
             priority = Long.MinValue)
           partialFileHandle = Some(handle)
-          logDebug(s"Using memory-with-spill mode for shuffle $shuffleId map $mapId")
+          logDebug(s"Using memory-with-spill mode for shuffle $shuffleId map $mapId " +
+            s"(initial=${initialBufferSize / 1024 / 1024}MB, " +
+            s"max=${maxBufferSize / 1024 / 1024}MB)")
         } catch {
           case e: Exception =>
             logWarning(s"Failed to create memory buffer, falling back to file-only", e)

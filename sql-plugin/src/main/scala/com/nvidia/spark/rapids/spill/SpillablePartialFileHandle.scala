@@ -130,7 +130,16 @@ class SpillablePartialFileHandle private (
           newCapacity = math.min(newCapacity * 2, maxBufferSize)
         }
         
-        // Check if new capacity exceeds limit
+        // Check if new capacity is still insufficient after expansion
+        if (newCapacity < requiredCapacity) {
+          logInfo(s"Buffer expansion cannot meet required capacity " +
+            s"(need $requiredCapacity bytes, max limit is $maxBufferSize bytes), " +
+            s"spilling to disk")
+          spillBufferToFileAndSwitch(currentBuffer)
+          return false
+        }
+        
+        // Check if new capacity exceeds limit (should not happen due to math.min)
         if (newCapacity > maxBufferSize) {
           logInfo(s"Buffer expansion would exceed configured limit " +
             s"(need $newCapacity bytes, limit is $maxBufferSize bytes), spilling to disk")
@@ -438,7 +447,7 @@ class SpillablePartialFileHandle private (
         buffer.close()
         host = None
 
-        logInfo(s"Spilled partial file to ${file.getAbsolutePath} " +
+        logDebug(s"Spilled to ${file.getAbsolutePath} " +
           s"($totalBytesWritten bytes)")
 
         totalBytesWritten
