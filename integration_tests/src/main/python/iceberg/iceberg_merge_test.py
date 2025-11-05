@@ -59,9 +59,9 @@ def create_iceberg_table_with_merge_data(
     
     def data_gen(spark):
         if seed is not None:
-            return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), length=12, seed=seed)
+            return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=seed)
         else:
-            return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), length=12)
+            return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
     
     create_iceberg_table(table_name,
                         partition_col_sql=partition_col_sql,
