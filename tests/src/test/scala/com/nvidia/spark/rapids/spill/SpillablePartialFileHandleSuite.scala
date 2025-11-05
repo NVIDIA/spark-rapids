@@ -75,6 +75,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 1024,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       assert(handle.isMemoryBased, "Should be memory based")
@@ -105,6 +106,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 64,  // Small initial size to force expansion
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // Write data larger than initial capacity
@@ -137,6 +139,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = initialCapacity,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // Write data to fill initial buffer
@@ -145,13 +148,13 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
       (0 until chunkSize).foreach(i => chunk(i) = (i % 256).toByte)
       
       // Fill the buffer completely
-      val numChunks = (initialCapacity / chunkSize).toInt
+      val numChunks = (testMaxBufferSize / chunkSize).toInt
       (0 until numChunks).foreach { _ =>
         handle.write(chunk, 0, chunkSize)
       }
       
       // Write one more byte to trigger expansion, which should fail
-      // and switch to file mode due to 8GB limit
+      // and switch to file mode due to testMaxBufferSize limit
       handle.write(0xFF)
       
       // Write more data to verify file mode is working
@@ -195,6 +198,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 1024,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       val testData = "Data to be spilled".getBytes("UTF-8")
@@ -223,6 +227,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 128,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // Write bytes one by one
@@ -312,6 +317,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 1024,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // Write 100 bytes
@@ -342,6 +348,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 256,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // Mix single byte writes and array writes
@@ -377,6 +384,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 1024,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // Write some test data
@@ -414,6 +422,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 16,  // Very small initial size
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // Write bytes one by one to exceed initial capacity
@@ -443,6 +452,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     withResource(SpillablePartialFileHandle.createMemoryWithSpill(
       initialCapacity = 1024,
       maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
       spillFile = tempFile)) { handle =>
       
       // During write phase, handle should not be spillable

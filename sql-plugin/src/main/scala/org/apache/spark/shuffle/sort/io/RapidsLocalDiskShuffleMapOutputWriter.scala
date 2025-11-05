@@ -56,6 +56,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   private val rapidsConf = new RapidsConf(sparkConf)
   private val initialBufferSize = rapidsConf.partialFileBufferInitialSize
   private val maxBufferSize = rapidsConf.partialFileBufferMaxSize
+  private val memoryThreshold = rapidsConf.partialFileBufferMemoryThreshold
 
   // RAPIDS optimization: use SpillablePartialFileHandle for unified storage
   private var partialFileHandle: Option[SpillablePartialFileHandle] = None
@@ -89,12 +90,13 @@ class RapidsLocalDiskShuffleMapOutputWriter(
         logDebug(s"Using forced file-only mode for shuffle $shuffleId map $mapId")
         val handle = SpillablePartialFileHandle.createFileOnly(outputTempFile)
         partialFileHandle = Some(handle)
-      } else if (HostAlloc.isUsageBelowThreshold(0.5)) {
+      } else if (HostAlloc.isUsageBelowThreshold(memoryThreshold)) {
         // Memory sufficient: use MEMORY_WITH_SPILL mode
         try {
           val handle = SpillablePartialFileHandle.createMemoryWithSpill(
             initialCapacity = initialBufferSize,
             maxBufferSize = maxBufferSize,
+            memoryThreshold = memoryThreshold,
             spillFile = outputTempFile,
             priority = Long.MinValue)
           partialFileHandle = Some(handle)
@@ -148,12 +150,6 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       outputTempFile
     } else {
       null
-    }
-
-    if (resolvedTmp == null) {
-      throw new IllegalStateException(
-        s"Output temp file is null for shuffle $shuffleId map $mapId. " +
-        "This should not happen after spill.")
     }
 
     logDebug(s"Writing shuffle index file for mapId $mapId with length " +

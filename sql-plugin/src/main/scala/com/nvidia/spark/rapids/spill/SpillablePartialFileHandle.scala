@@ -34,7 +34,7 @@ object PartialFileStorageMode extends Enumeration {
  * interfaces for both file-based and memory-based (with spill support) storage.
  *
  * This handle is designed for scenarios where:
- * 1. When memory is scarce (usage > 50%), use file-based storage directly
+ * 1. When memory is scarce (usage > threshold), use file-based storage directly
  * 2. When memory is sufficient, use host memory buffer with automatic spill support
  *
  * Features:
@@ -49,6 +49,7 @@ object PartialFileStorageMode extends Enumeration {
  * @param file File to use for FILE_ONLY mode or as spill target for MEMORY_WITH_SPILL
  * @param initialCapacity Initial capacity for buffer allocation (MEMORY_WITH_SPILL only)
  * @param maxBufferSize Maximum buffer size before spilling to disk
+ * @param memoryThreshold Host memory usage threshold for buffer expansion decisions
  * @param priority Spill priority for memory-based mode
  */
 class SpillablePartialFileHandle private (
@@ -56,6 +57,7 @@ class SpillablePartialFileHandle private (
     file: File,
     initialCapacity: Long,
     maxBufferSize: Long,
+    memoryThreshold: Double,
     priority: Long)
   extends HostSpillableHandle[ai.rapids.cudf.HostMemoryBuffer] with Logging {
 
@@ -114,7 +116,7 @@ class SpillablePartialFileHandle private (
    * 
    * Conditions checked before expansion:
    * 1. New capacity does not exceed configured max buffer size limit
-   * 2. Current memory usage is below 50% threshold
+   * 2. Current memory usage is below configured threshold
    * 
    * @param requiredCapacity The minimum capacity needed
    * @return true if successfully expanded, false if spilled to file instead
@@ -148,8 +150,8 @@ class SpillablePartialFileHandle private (
         }
         
         // Check if memory usage is still below threshold
-        if (!HostAlloc.isUsageBelowThreshold(0.5)) {
-          logInfo(s"Memory usage above 50% threshold, " +
+        if (!HostAlloc.isUsageBelowThreshold(memoryThreshold)) {
+          logInfo(s"Memory usage above ${memoryThreshold * 100}% threshold, " +
             s"spilling to disk instead of expanding")
           spillBufferToFileAndSwitch(currentBuffer)
           return false
@@ -544,6 +546,7 @@ object SpillablePartialFileHandle {
       file = file,
       initialCapacity = 0L,
       maxBufferSize = 0L,
+      memoryThreshold = 0.0,
       priority = Long.MinValue)
   }
 
@@ -554,12 +557,14 @@ object SpillablePartialFileHandle {
    *
    * @param initialCapacity Initial size of host memory buffer to allocate
    * @param maxBufferSize Maximum buffer size before spilling to disk
+   * @param memoryThreshold Host memory usage threshold for buffer expansion decisions
    * @param spillFile File to use when spilling is required
    * @param priority Spill priority
    */
   def createMemoryWithSpill(
       initialCapacity: Long,
       maxBufferSize: Long,
+      memoryThreshold: Double,
       spillFile: File,
       priority: Long = Long.MinValue): SpillablePartialFileHandle = {
     new SpillablePartialFileHandle(
@@ -567,6 +572,7 @@ object SpillablePartialFileHandle {
       file = spillFile,
       initialCapacity = initialCapacity,
       maxBufferSize = maxBufferSize,
+      memoryThreshold = memoryThreshold,
       priority = priority)
   }
 }
