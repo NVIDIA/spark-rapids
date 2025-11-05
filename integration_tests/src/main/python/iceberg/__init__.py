@@ -28,7 +28,8 @@ from spark_session import with_cpu_session
 # iceberg supported types
 iceberg_table_gen = MappingProxyType({
     '_c0': byte_gen, '_c1': short_gen, '_c2': IntegerGen(nullable=False),
-    '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, '_c6': string_gen,
+    '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, 
+    '_c6': string_gen,
     '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen, '_c10': decimal_gen_32bit,
     '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit, '_c13': binary_gen
 })
