@@ -320,22 +320,25 @@ object GpuShuffledHashJoinExec extends Logging {
     val buildDataType = buildOutput.map(_.dataType).toArray
     closeOnExcept(new CloseableBufferedIterator(buildIter)) { bufBuildIter =>
       val startTime = System.nanoTime()
-      var isBuildSerialized = false
+      var isHostSerialized = false
       // Batches type detection
-      val coalesceBuiltIter = getHostShuffleCoalesceIterator(
-        bufBuildIter, buildDataType, targetSize, readOption, coalesceMetrics).map { iter =>
-        isBuildSerialized = true
+      val coalesceBuiltIter = getShuffleCoalesceIterator(
+        bufBuildIter, buildDataType, targetSize, readOption, coalesceMetrics).map {
+          case (iter, isHostResult) =>
+        isHostSerialized = isHostResult
         iter
       }.getOrElse(bufBuildIter)
       if (coalesceBuiltIter.hasNext) {
         val firstBuildBatch = coalesceBuiltIter.next()
         // Batches have coalesced to the target size, so size will overflow if there are
         // more than one batch, or the first batch size already exceeds the target.
-        val sizeOverflow = closeOnExcept(firstBuildBatch) { _ =>
-          coalesceBuiltIter.hasNext || getBatchSize(firstBuildBatch) > targetSize
+        val sizeOverflow = {
+          closeOnExcept(firstBuildBatch) { _ =>
+            coalesceBuiltIter.hasNext || getBatchSize(firstBuildBatch) > targetSize
+          }
         }
         val needSingleBuildBatch = !subPartConf.getOrElse(sizeOverflow)
-        if (needSingleBuildBatch && isBuildSerialized && !sizeOverflow) {
+        if (needSingleBuildBatch && isHostSerialized && !sizeOverflow) {
           // add the time it took to fetch that first host-side build batch
           buildTime += System.nanoTime() - startTime
           // It can be optimized for grabbing the GPU semaphore when there is only a single
@@ -349,9 +352,12 @@ object GpuShuffledHashJoinExec extends Logging {
           (Left(singleBuildCb), bufferedStreamIter)
 
         } else { // Other cases without optimization
-          val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(Seq(firstBuildBatch)) ++
-            coalesceBuiltIter
-          val gpuBuildIter = if (isBuildSerialized) {
+          val safeIter = {
+            val autoCloseableSeq = Seq(firstBuildBatch)
+            GpuSubPartitionHashJoin.safeIteratorFromSeq(autoCloseableSeq) ++
+              coalesceBuiltIter
+          }
+          val gpuBuildIter = if (isHostSerialized) {
             // batches on host, move them to GPU
             new GpuShuffleCoalesceIterator(safeIter.asInstanceOf[Iterator[CoalescedHostResult]],
               buildDataType)
@@ -494,22 +500,30 @@ object GpuShuffledHashJoinExec extends Logging {
     ConcatAndConsumeAll.getSingleBatchWithVerification(singleBatchIter, inputAttrs)
   }
 
-  private def getHostShuffleCoalesceIterator(
+  private def getShuffleCoalesceIterator(
       iter: BufferedIterator[ColumnarBatch],
       dataTypes: Array[DataType],
       targetSize: Long,
       readOption: CoalesceReadOption,
-      coalesceMetrics: Map[String, GpuMetric]): Option[Iterator[CoalescedHostResult]] = {
-    var retIter: Option[Iterator[CoalescedHostResult]] = None
+      coalesceMetrics: Map[String, GpuMetric]): Option[(Iterator[AutoCloseable], Boolean)] = {
+    var retIter: Option[(Iterator[AutoCloseable], Boolean)] = None
     if (iter.hasNext && iter.head.numCols() == 1) {
       val concatTime = coalesceMetrics(GpuMetric.CONCAT_TIME)
       iter.head.column(0) match {
         case _: KudoSerializedTableColumn =>
-          retIter = Some(new KudoHostShuffleCoalesceIterator(iter, targetSize, dataTypes,
-            concatTimeMetric = concatTime, readOption = readOption))
+          if (readOption.kudoMode == RapidsConf.ShuffleKudoMode.GPU) {
+            val gpuIter = new KudoGpuShuffleCoalesceIterator(iter, targetSize, dataTypes,
+              concatTimeMetric = concatTime, readOption = readOption)
+            retIter = Some((gpuIter, false)) // GPU batches
+          } else {
+            val hostIter = new KudoHostShuffleCoalesceIterator(iter, targetSize, dataTypes,
+              concatTimeMetric = concatTime, readOption = readOption)
+            retIter = Some((hostIter, true)) // host results
+          }
         case _: SerializedTableColumn =>
-          retIter = Some(new HostShuffleCoalesceIterator(iter, targetSize,
-            concatTimeMetric = concatTime))
+          val hostIter = new HostShuffleCoalesceIterator(iter, targetSize,
+            concatTimeMetric = concatTime)
+          retIter = Some((hostIter, true)) // host results
         case _ => // should be gpu batches
       }
     }

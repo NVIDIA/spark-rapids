@@ -16,7 +16,9 @@ import pytest
 from _pytest.mark.structures import ParameterSet
 from pyspark.sql.functions import array_contains, broadcast, col, lit
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,
+                     assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture,
+                     assert_cpu_and_gpu_are_equal_sql_with_capture)
 from conftest import is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
@@ -394,6 +396,24 @@ def test_broadcast_join_right_table(data_gen, join_type, kudo_enabled):
         return left.join(broadcast(right), left.a == right.r_a, join_type)
     conf = {kudo_enabled_conf_key: kudo_enabled}
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('rows', ['(1)', '(1), (null)', '()'], ids=['no_nulls', 'has_nulls', 'empty'])
+@allow_non_gpu(*non_utc_allow)
+def test_broadcast_join_null_aware_anti(rows):
+    sub_condition = ''
+    if rows == '()':
+        # 'VALUES()' is not supported by SQL, so leverage 'WHERE false' to produce
+        # an empty right table.
+        sub_condition = ' WHERE false'
+        rows = '(1)'
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: two_col_df(spark, string_gen, int_gen, length=100),
+        sql="SELECT * FROM null_aware_anti_table WHERE b NOT IN ("
+            f"SELECT b FROM VALUES {rows} AS sub_right(b){sub_condition})",
+        table_name='null_aware_anti_table',
+        exist_classes='GpuBroadcastHashJoinExec',
+        conf={'spark.sql.optimizeNullAwareAntiJoin': 'true'})
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)

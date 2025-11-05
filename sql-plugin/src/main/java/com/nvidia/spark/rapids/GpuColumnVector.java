@@ -1056,6 +1056,23 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+    /**
+     * A wrapper method for Table::filter.
+     *
+     * @param batch Input columnar batch to filter. This method will not close it, so it's caller's responsibility to
+     *              close it.
+     * @param mask  A boolean column vector, used to filter rows.
+     * @param dataTypes Data types of `batch`. We add this parameter to avoid repeated allocation of array.
+     * @return Filtered columnar batch.
+     */
+  public static ColumnarBatch filter(ColumnarBatch batch, DataType[] dataTypes, ColumnView mask) {
+      try(Table cudfTable = GpuColumnVector.from(batch)) {
+          try(Table filteredTable = cudfTable.filter(mask)) {
+              return GpuColumnVector.from(filteredTable, dataTypes);
+          }
+      }
+  }
+
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**
@@ -1155,6 +1172,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
     return sum;
   }
+
 
   public final ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;

@@ -35,8 +35,6 @@ class GpuRollingDataWriter(
 
   private val dataFiles: JList[DataFile] = Lists.newArrayList[DataFile]()
 
-  openCurrentWriter()
-
   protected override def newWriter(file: EncryptedOutputFile): DataWriter[SpillableColumnarBatch] =
   {
     gpuSparkFileWriterFactory.newDataWriter(file, spec, partition)
