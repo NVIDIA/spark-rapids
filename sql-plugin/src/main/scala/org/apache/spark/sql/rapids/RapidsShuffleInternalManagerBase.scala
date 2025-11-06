@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import java.io.{File, FileInputStream}
+import java.io.{ByteArrayInputStream, DataInputStream, File, FileInputStream}
 import java.util.Optional
 import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
@@ -26,12 +26,16 @@ import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.MetaUtils
 import com.nvidia.spark.rapids.NvtxRegistry
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader}
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
+
+import ai.rapids.cudf.HostMemoryBuffer
 
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.executor.ShuffleWriteMetrics
@@ -1106,6 +1110,50 @@ class RapidsCachingWriter[K, V](
                 blockId,
                 batch,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_TASK_PRIORITY)
+            case c: SlicedSerializedColumnVector =>
+              // SlicedSerializedColumnVector contains already-serialized data in host memory
+              // We need to deserialize it back to columnar format before storing
+              val hostBuffer = c.getWrap
+              partSize = hostBuffer.getLength
+              uncompressedMetric += partSize
+
+              // Deserialize the KUDO serialized data back to a table
+              val bufferLen = hostBuffer.getLength.toInt
+              val byteBuffer = hostBuffer.asByteBuffer(0, bufferLen)
+              val bytes = new Array[Byte](byteBuffer.remaining())
+              byteBuffer.get(bytes)
+              val dataIn = new DataInputStream(new ByteArrayInputStream(bytes))
+
+              // Read the KUDO header
+              val headerOpt = Option(KudoTableHeader.readFrom(dataIn).orElse(null))
+              if (headerOpt.isEmpty) {
+                throw new IllegalStateException("Failed to read KUDO header from SlicedSerializedColumnVector")
+              }
+              val header = headerOpt.get
+
+              // Create KUDO serializer with the data types from the shuffle dependency
+              val dataTypes = handle.dependency.sparkTypes
+              val kudoSerializer = new KudoSerializer(GpuColumnVector.from(dataTypes))
+
+              // Read the remaining data into a buffer
+              val dataLen = header.getTotalDataLen
+              val dataBuffer = HostMemoryBuffer.allocate(dataLen)
+              dataBuffer.copyFromStream(0, dataIn, dataLen)
+
+              // Create KUDO table and deserialize to CUDF table
+              withResource(new KudoTable(header, dataBuffer)) { kudoTable =>
+                withResource(kudoSerializer.mergeToTable(Array(kudoTable))) { table =>
+                  // Make the table contiguous and add it directly
+                  withResource(table.contiguousSplit()(0)) { contigTable =>
+                    partSize = contigTable.getBuffer.getLength
+                    uncompressedMetric += partSize
+                    catalog.addContiguousTable(
+                      blockId,
+                      contigTable,
+                      SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_TASK_PRIORITY)
+                  }
+                }
+              }
             case c =>
               throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
