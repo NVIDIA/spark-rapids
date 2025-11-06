@@ -18,6 +18,8 @@ package org.apache.spark.shuffle.sort.io
 
 import java.util.Optional
 
+import com.google.common.annotations.VisibleForTesting
+
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
@@ -34,6 +36,16 @@ class RapidsLocalDiskShuffleExecutorComponents(sparkConf: SparkConf)
 
   private var blockManager: BlockManager = null
   private var blockResolver: IndexShuffleBlockResolver = null
+
+  @VisibleForTesting
+  def this(
+      sparkConf: SparkConf,
+      blockManager: BlockManager,
+      blockResolver: IndexShuffleBlockResolver) = {
+    this(sparkConf)
+    this.blockManager = blockManager
+    this.blockResolver = blockResolver
+  }
 
   override def initializeExecutor(
       appId: String,

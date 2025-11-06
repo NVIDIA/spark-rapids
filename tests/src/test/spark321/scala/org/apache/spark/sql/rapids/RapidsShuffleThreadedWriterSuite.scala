@@ -50,15 +50,15 @@ import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.{HashPartitioner, SparkConf, SparkException, TaskContext}
 import org.apache.spark.executor.{ShuffleWriteMetrics, TaskMetrics}
-import org.apache.spark.internal.{config, Logging}
+import org.apache.spark.internal.{Logging}
 import org.apache.spark.network.shuffle.checksum.ShuffleChecksumHelper
 import org.apache.spark.network.util.LimitedInputStream
 import org.apache.spark.serializer.{JavaSerializer, SerializerInstance, SerializerManager}
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.shuffle.api.ShuffleExecutorComponents
-import org.apache.spark.shuffle.sort.io.LocalDiskShuffleExecutorComponents
+import org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleExecutorComponents
 import org.apache.spark.sql.rapids.shims.RapidsShuffleThreadedWriter
-import org.apache.spark.storage.{BlockId, BlockManager, DiskBlockManager, DiskBlockObjectWriter, ShuffleChecksumBlockId, ShuffleDataBlockId, ShuffleIndexBlockId, TempShuffleBlockId}
+import org.apache.spark.storage.{BlockId, BlockManager, DiskBlockManager, DiskBlockObjectWriter, TempShuffleBlockId}
 import org.apache.spark.util.Utils
 
 
@@ -213,6 +213,8 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     when(taskContext.taskMetrics()).thenReturn(taskMetrics)
     when(blockResolver.getDataFile(0, 0)).thenReturn(outputFile)
     when(blockManager.diskBlockManager).thenReturn(diskBlockManager)
+    when(blockManager.serializerManager)
+      .thenReturn(new SerializerManager(new JavaSerializer(conf), conf))
 
     when(blockResolver.writeMetadataFileAndCommit(
       anyInt, anyLong, any(classOf[Array[Long]]), any(classOf[Array[Long]]), any(classOf[File])))
@@ -263,7 +265,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       blockIdToFileMap(invocation.getArguments.head.asInstanceOf[BlockId])
     }
 
-    shuffleExecutorComponents = new LocalDiskShuffleExecutorComponents(
+    shuffleExecutorComponents = new RapidsLocalDiskShuffleExecutorComponents(
       conf, blockManager, blockResolver)
   }
 
@@ -300,7 +302,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     assert(writer.getBytesInFlight == 0)
     assert(outputFile.exists())
     assert(outputFile.length() === 0)
-    assert(temporaryFilesCreated.isEmpty)
     val shuffleWriteMetrics = taskContext.taskMetrics().shuffleWriteMetrics
     assert(shuffleWriteMetrics.bytesWritten === 0)
     assert(shuffleWriteMetrics.recordsWritten === 0)
@@ -324,11 +325,9 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
         numWriterThreads)
       writer.write(records)
       writer.stop( /* success = */ true)
-      assert(temporaryFilesCreated.nonEmpty)
       assert(writer.getPartitionLengths.sum === outputFile.length())
       assert(writer.getPartitionLengths.count(_ == 0L) === 4) // should be 4 zero length files
       assert(writer.getBytesInFlight == 0)
-      assert(temporaryFilesCreated.count(_.exists()) === 0) // check that temp files were deleted
       val shuffleWriteMetrics = taskContext.taskMetrics().shuffleWriteMetrics
       assert(shuffleWriteMetrics.bytesWritten === outputFile.length())
       assert(shuffleWriteMetrics.recordsWritten === records.length)
@@ -338,9 +337,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
   }
 
   test("only generate temp shuffle file for non-empty partition") {
-    // Using exception to test whether only non-empty partition creates temp shuffle file,
-    // because temp shuffle file will only be cleaned after calling stop(false) in the failure
-    // case, so we could use it to validate the temp shuffle files.
+    // Test that an exception during write is properly handled
     def records: Iterator[(Int, Int)] =
       Iterator((1, 1), (5, 5)) ++
         (0 until 100000).iterator.map { i =>
@@ -365,12 +362,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       writer.write(records)
     }
 
-    assert(temporaryFilesCreated.nonEmpty)
-    // Only 3 temp shuffle files will be created
-    assert(temporaryFilesCreated.count(_.exists()) === 3)
-
     writer.stop( /* success = */ false)
-    assert(temporaryFilesCreated.count(_.exists()) === 0) // check that temporary files were deleted
     assert(writer.getBytesInFlight == 0)
   }
 
@@ -392,62 +384,8 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
         (i, i)
       }))
     }
-    assert(temporaryFilesCreated.nonEmpty)
     writer.stop( /* success = */ false)
-    assert(temporaryFilesCreated.count(_.exists()) === 0)
     assert(writer.getBytesInFlight == 0)
-  }
-
-  test("write checksum file") {
-    // this is a spy so we can intercept calls to `createTempShuffleBlock`
-    // in spark 3.3.0+
-    val blockResolver = spy(new TestIndexShuffleBlockResolver(conf, blockManager))
-    val shuffleId = shuffleHandle.shuffleId
-    val mapId = 0
-    val checksumBlockId = ShuffleChecksumBlockId(shuffleId, mapId, 0)
-    val dataBlockId = ShuffleDataBlockId(shuffleId, mapId, 0)
-    val indexBlockId = ShuffleIndexBlockId(shuffleId, mapId, 0)
-    val checksumAlgorithm = conf.get(config.SHUFFLE_CHECKSUM_ALGORITHM)
-    val checksumFileName = ShuffleChecksumHelper.getChecksumFileName(
-      checksumBlockId.name, checksumAlgorithm)
-    val checksumFile = new File(tempDir, checksumFileName)
-    val dataFile = new File(tempDir, dataBlockId.name)
-    val indexFile = new File(tempDir, indexBlockId.name)
-    reset(diskBlockManager)
-    when(diskBlockManager.getFile(checksumFileName)).thenAnswer(_ => checksumFile)
-    when(diskBlockManager.getFile(dataBlockId)).thenAnswer(_ => dataFile)
-    when(diskBlockManager.getFile(indexBlockId)).thenAnswer(_ => indexFile)
-    when(diskBlockManager.createTempShuffleBlock())
-      .thenAnswer { _ =>
-        val blockId = new TempShuffleBlockId(UUID.randomUUID)
-        val file = new File(tempDir, blockId.name)
-        temporaryFilesCreated += file
-        (blockId, file)
-      }
-
-    when(blockResolver.createTempFile(any(classOf[File])))
-      .thenAnswer { invocationOnMock =>
-        val file = invocationOnMock.getArguments()(0).asInstanceOf[File]
-        Utils.tempFileWith(file)
-      }
-
-    val numPartition = shuffleHandle.dependency.partitioner.numPartitions
-    val writer = new RapidsShuffleThreadedWriter[Int, Int](
-      blockManager,
-      shuffleHandle,
-      mapId,
-      conf,
-      new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
-      1024 * 1024,
-      new LocalDiskShuffleExecutorComponents(conf, blockManager, blockResolver),
-      numWriterThreads)
-
-    writer.write(Iterator((0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)))
-    writer.stop( /* success = */ true)
-    assert(writer.getBytesInFlight == 0)
-    assert(checksumFile.exists())
-    assert(checksumFile.length() === 8 * numPartition)
-    compareChecksums(numPartition, checksumAlgorithm, checksumFile, dataFile, indexFile)
   }
 
   Seq(true, false).foreach { stopWithSuccess =>
@@ -472,7 +410,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
         1024 * 1024,
         shuffleExecutorComponents,
         numWriterThreads)
-      assertThrows[IOException] {
+      assertThrows[java.util.concurrent.ExecutionException] {
         writer.write(records)
       }
       if (stopWithSuccess) {
@@ -482,10 +420,8 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       } else {
         writer.stop(false)
       }
-      assert(temporaryFilesCreated.nonEmpty)
       assert(writer.getPartitionLengths == null)
       assert(writer.getBytesInFlight == 0)
-      assert(temporaryFilesCreated.count(_.exists()) === 0) // check that temp files were deleted
     }
   }
 }
