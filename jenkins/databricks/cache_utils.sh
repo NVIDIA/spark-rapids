@@ -29,7 +29,7 @@ download_and_cache_artifact() {
     local download_url=$2
     local extract_dir=${3:-$HOME}
     
-    local ws_cache_dir=${WS_CACHE_DIR:-"/Workspace/databricks/cached_jars"}
+    local ws_cache_dir=${WS_CACHE_DIR:-"/Workspace/databricks_cached_jars"}
     local cache_file="$ws_cache_dir/$jar_file_name"
     
     # Create cache directory if it doesn't exist
