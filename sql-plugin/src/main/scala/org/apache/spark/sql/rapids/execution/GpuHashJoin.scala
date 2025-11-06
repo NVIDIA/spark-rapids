@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{ColumnView, DType, GatherMap, NullEquality, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnView, DType, GatherMap, NullEquality, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -102,6 +102,12 @@ object JoinTypeChecks {
 }
 
 object GpuHashJoin {
+  // Designed for the null-aware anti-join in GpuBroadcastHashJoin.
+  def anyNullInKey(cb: ColumnarBatch, boundKeys: Seq[GpuExpression]): Boolean = {
+    withResource(GpuProjectExec.project(cb, boundKeys)) { keysCb =>
+      (0 until keysCb.numCols()).exists(keysCb.column(_).hasNull)
+    }
+  }
 
   // For the join on struct, it's equal for nulls in child columns of struct column, it's not
   // equal for the root struct when meets both nulls.
@@ -327,7 +333,7 @@ abstract class BaseHashJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends SplittableJoinIterator(
-      s"hash $joinType gather",
+      NvtxRegistry.JOIN_GATHER,
       stream,
       streamAttributes,
       built,
@@ -502,7 +508,7 @@ class HashJoinIterator(
       leftData: LazySpillableColumnarBatch,
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
-    withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.HASH_JOIN_GATHER_MAP, joinTime) {
       // hack to work around unique_join not handling empty tables
       if (joinType.isInstanceOf[InnerLike] &&
         (leftKeys.getRowCount == 0 || rightKeys.getRowCount == 0)) {
@@ -573,7 +579,7 @@ class ConditionalHashJoinIterator(
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
-    withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.HASH_JOIN_GATHER_MAP, joinTime) {
       withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
         withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
           val maps = joinType match {
@@ -739,8 +745,7 @@ class HashJoinStreamSideIterator(
       leftData: LazySpillableColumnarBatch,
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
-    withResource(new NvtxWithMetrics("full hash join gather map",
-      NvtxColor.ORANGE, joinTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.FULL_HASH_JOIN_GATHER_MAP, joinTime) {
       val maps = compiledCondition.map { condition =>
         conditionalJoinGatherMaps(leftKeys, leftData, rightKeys, rightData, condition)
       }.getOrElse {
@@ -750,8 +755,7 @@ class HashJoinStreamSideIterator(
       try {
         val lazyLeftMap = LazySpillableGatherMap(maps(0), "left_map")
         val lazyRightMap = LazySpillableGatherMap(maps(1), "right_map")
-        withResource(new NvtxWithMetrics("update tracking mask",
-          NvtxColor.ORANGE, joinTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.UPDATE_TRACKING_MASK, joinTime) {
           closeOnExcept(Seq(lazyLeftMap, lazyRightMap)) { _ =>
             updateTrackingMask(if (buildSide == GpuBuildRight) lazyRightMap else lazyLeftMap)
           }
@@ -945,7 +949,7 @@ class HashOuterJoinIterator(
   }
 
   private def getFinalBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("get final batch", NvtxColor.ORANGE, joinTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.GET_FINAL_BATCH, joinTime) {
       streamJoinIter.releaseBuiltSideTracker() match {
         case None => None
         case Some(tracker) =>
@@ -1039,9 +1043,7 @@ class HashedExistenceJoinIterator(
   }
 
   override def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
-    withResource(
-      new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)
-    ) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.EXISTENCE_JOIN_SCATTER_MAP, joinTime) {
       withResource(leftKeysTable(leftColumnarBatch)) { leftKeysTab =>
         withResource(rightKeysTable()) { rightKeysTab =>
           compiledConditionRes.map { compiledCondition =>

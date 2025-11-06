@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -131,8 +131,7 @@ trait GpuPartitioning extends Partitioning {
     // We have to wrap the NvtxWithMetrics over both copyToHostAsync and corresponding CudaSync,
     // because the copyToHostAsync calls above are not guaranteed to be asynchronous (e.g.: when
     // the copy is from pageable memory, and we're not guaranteed to be using pinned memory).
-    val hostPartColumns = withResource(
-      new NvtxWithMetrics("PartitionD2H", NvtxColor.CYAN, memCopyTime)) { _ =>
+    val hostPartColumns = NvtxIdWithMetrics(NvtxRegistry.PARTITION_D2H, memCopyTime) {
       val hostColumns = withResource(partitionColumns) { _ =>
         withRetryNoSplit {
           partitionColumns.safeMap(_.copyToHostAsync(Cuda.DEFAULT_STREAM))
@@ -197,7 +196,9 @@ trait GpuPartitioning extends Partitioning {
 
   private def gpuSplitAndSerialize(table: Table, slices: Int*): Array[DeviceMemoryBuffer] = {
     NvtxRegistry.GPU_KUDO_SERIALIZE {
-      KudoGpuSerializer.splitAndSerializeToDevice(table, slices: _*)
+      withRetryNoSplit {
+        KudoGpuSerializer.splitAndSerializeToDevice(table, slices: _*)
+      }
     }
   }
 
@@ -263,14 +264,14 @@ trait GpuPartitioning extends Partitioning {
       sliceAndSerializeOnGpu(numRows, partitionIndexes, partitionColumns)
     } else {
       val sliceOnGpu = usesGPUShuffle
-      val nvtxRangeKey = if (sliceOnGpu) {
-        "sliceInternalOnGpu"
+      val nvtxId = if (sliceOnGpu) {
+        NvtxRegistry.SLICE_INTERNAL_GPU
       } else {
-        "sliceInternalOnCpu"
+        NvtxRegistry.SLICE_INTERNAL_CPU
       }
       // If we are not using the Rapids shuffle we fall back to CPU splits way to avoid the hit
       // for large number of small splits.
-      withResource(new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)) { _ =>
+      nvtxId {
         if (sliceOnGpu) {
           val tmp = sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
           tmp.zipWithIndex.filter(_._1 != null)

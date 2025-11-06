@@ -255,6 +255,9 @@ def is_spark_35x():
 def is_spark_400_or_later():
     return spark_version() >= "4.0.0"
 
+def is_spark_401_or_later():
+    return spark_version() >= "4.0.1"
+
 def is_spark_330():
     return spark_version() == "3.3.0"
 

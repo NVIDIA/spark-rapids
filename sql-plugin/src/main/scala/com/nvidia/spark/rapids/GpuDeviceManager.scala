@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{ThreadFactory, TimeUnit}
+import java.util.concurrent.ThreadFactory
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
@@ -202,25 +202,17 @@ object GpuDeviceManager extends Logging {
     poolSizeLimit = 0L
 
     SpillFramework.shutdown()
+
+    // If we close RMM resources in the shutdown hook in `MemoryCleaner`, will
+    // get segment fault, so close them here before shutdown hook starts.
+    // We assume all RMM resources should be closed at this point, or leaks occurs,
+    // because all Spark tasks/jobs are done at this point.
+    MemoryCleaner.cleanAllRmmBlockers()
+
     RmmSpark.clearEventHandler()
     Rmm.clearEventHandler()
     GpuShuffleEnv.shutdown()
-    // try to avoid segfault on RMM shutdown
-    val timeout = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-    var isFirstTime = true
-    while (Rmm.getTotalBytesAllocated > 0 && System.nanoTime() < timeout) {
-      if (isFirstTime) {
-        logWarning("Waiting for outstanding RMM allocations to be released...")
-        isFirstTime = false
-      }
-      Thread.sleep(10)
-    }
-    if (System.nanoTime() >= timeout) {
-      val remaining = Rmm.getTotalBytesAllocated
-      if (remaining > 0) {
-        logWarning(s"Shutting down RMM even though there are outstanding allocations $remaining")
-      }
-    }
+
     Rmm.shutdown()
     singletonMemoryInitialized = Uninitialized
   }
@@ -487,6 +479,12 @@ object GpuDeviceManager extends Logging {
     }
     // Host memory limits must be set after the pinned memory pool is initialized
     HostAlloc.initialize(nonPinnedLimit)
+    // Fill the MULTITHREAD_READ_MEMORY_LIMIT_SIZE with the 90% of the total OFF_HEAP memory
+    // if it is not set already.
+    if (conf.multiThreadReadMemoryLimit == 0) {
+      sparkConf.set(RapidsConf.MULTITHREAD_READ_MEMORY_LIMIT_SIZE.key,
+        (0.9 * (pinnedSize + nonPinnedLimit)).toLong.toString)
+    }
   }
 
   // visible for testing

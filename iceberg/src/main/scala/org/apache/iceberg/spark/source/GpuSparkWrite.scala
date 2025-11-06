@@ -26,8 +26,9 @@ import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
-import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table}
+import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table, TableProperties}
 import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
+import org.apache.iceberg.spark.{Spark3Util, SparkSchemaUtil}
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
@@ -39,6 +40,7 @@ import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, Write, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -51,7 +53,27 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
   private[source] val format: FileFormat = FieldUtils.readField(cpu, "format", true)
     .asInstanceOf[FileFormat]
 
-  override def toBatch: BatchWrite = new GpuBatchAppend(this)
+  override def toBatch: BatchWrite = {
+    // Call the CPU version's toBatch to get the appropriate BatchWrite implementation
+    // Iceberg's SparkWrite returns different implementations based on write mode:
+    // - BatchAppend for append operations
+    // - DynamicOverwrite for dynamic partition overwrite
+    // - BatchRewrite for copy-on-write operations (DELETE)
+    // Since these are private classes, we check the class name to determine which GPU version
+    // to use
+    val cpuBatch = cpu.toBatch
+    val cpuBatchClassName = cpuBatch.getClass.getSimpleName
+
+    cpuBatchClassName match {
+      case "BatchAppend" => new GpuBatchAppend(this)
+      case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
+      case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatch)
+      case "CopyOnWriteOperation" => new GpuCopyOnWriteOperation(this, cpuBatch)
+      case _ =>
+        throw new UnsupportedOperationException(
+          s"Unsupported Iceberg batch write type: $cpuBatchClassName")
+    }
+  }
 
   override def toStreaming: StreamingWrite = throw new UnsupportedOperationException(
     "GpuSparkWrite does not support streaming write")
@@ -141,28 +163,30 @@ object GpuSparkWrite {
     classOf[SparkWrite].isAssignableFrom(cpuClass)
   }
 
-  def tagForGpu(cpuWrite: Write, meta: SparkPlanMeta[_]): Unit = {
-    if (!supports(cpuWrite.getClass)) {
-      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
-        s"but got: ${cpuWrite.getClass.getName}")
-      return
-    }
-
-    val dataFileFormat: FileFormat = FieldUtils.readField(cpuWrite, "format", true)
-      .asInstanceOf[FileFormat]
-
+  /**
+   * Tag for GPU support for Iceberg write operations.
+   * This method checks:
+   * 1. File format is supported (only Parquet)
+   * 2. Partition transforms are supported
+   *
+   * @param dataFileFormat The file format for the write operation
+   * @param partitionSpec The partition specification
+   * @param dsSchema The DataFrame schema
+   * @param writeSchema The write schema
+   * @param meta The metadata for tagging
+   */
+  private def tagForGpuWrite(
+      dataFileFormat: FileFormat,
+      partitionSpec: PartitionSpec,
+      dsSchema: StructType,
+      writeSchema: Schema,
+      meta: SparkPlanMeta[_]): Unit = {
+    // Check file format support
     if (!dataFileFormat.equals(FileFormat.PARQUET)) {
       meta.willNotWorkOnGpu(s"GpuSparkWrite only supports Parquet, but got: $dataFileFormat")
     }
 
-    val table: Table = FieldUtils.readField(cpuWrite, "table", true).asInstanceOf[Table]
-    val partitionSpec = table.spec()
-
-    val dsSchema = FieldUtils.readField(cpuWrite, "dsSchema", true)
-      .asInstanceOf[StructType]
-    val writeSchema = FieldUtils.readField(cpuWrite, "writeSchema", true)
-      .asInstanceOf[Schema]
-
+    // Check partition transform support
     if (partitionSpec.isPartitioned) {
       for (partitionField <- partitionSpec.fields().asScala) {
         val transform = partitionField.transform()
@@ -180,6 +204,84 @@ object GpuSparkWrite {
     }
   }
 
+  def tagForGpu(cpuWrite: Write, meta: SparkPlanMeta[_]): Unit = {
+    if (!supports(cpuWrite.getClass)) {
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
+        s"but got: ${cpuWrite.getClass.getName}")
+      return
+    }
+
+    val dataFileFormat: FileFormat = FieldUtils.readField(cpuWrite, "format", true)
+      .asInstanceOf[FileFormat]
+
+    val table: Table = FieldUtils.readField(cpuWrite, "table", true).asInstanceOf[Table]
+    val partitionSpec = table.spec()
+
+    val dsSchema = FieldUtils.readField(cpuWrite, "dsSchema", true)
+      .asInstanceOf[StructType]
+    val writeSchema = FieldUtils.readField(cpuWrite, "writeSchema", true)
+      .asInstanceOf[Schema]
+
+    tagForGpuWrite(dataFileFormat, partitionSpec, dsSchema, writeSchema, meta)
+  }
+
+  /**
+   * Tag for GPU support for Iceberg CTAS operations.
+   * This method checks file format and partitioning support for CREATE TABLE AS SELECT.
+   *
+   * @param cpuExec The CPU AtomicCreateTableAsSelectExec
+   * @param meta The metadata for tagging
+   */
+  def tagForGpuCtas(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: SparkPlanMeta[_]): Unit = {
+    val properties: Map[String, String] = Spark3Util
+      .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
+      .asScala.toMap
+    val fileFormatStr = properties.getOrElse(TableProperties.DEFAULT_FILE_FORMAT,
+      TableProperties.DEFAULT_FILE_FORMAT_DEFAULT)
+
+    val fileFormat = FileFormat.fromString(fileFormatStr)
+
+    // Convert Spark schema to Iceberg schema
+    val querySchema = cpuExec.query.schema
+    val icebergSchema = SparkSchemaUtil.convert(querySchema)
+
+    // Convert Spark connector transforms to Iceberg PartitionSpec
+    val partitionSpec = Spark3Util.toPartitionSpec(icebergSchema, cpuExec.partitioning.toArray)
+
+    // Reuse tagForGpuWrite for validation
+    tagForGpuWrite(fileFormat, partitionSpec, querySchema, icebergSchema, meta)
+  }
+
+  /**
+   * Tag for GPU support for Iceberg RTAS operations.
+   * This method checks file format and partitioning support for REPLACE TABLE AS SELECT.
+   *
+   * @param cpuExec The CPU AtomicReplaceTableAsSelectExec
+   * @param meta The metadata for tagging
+   */
+  def tagForGpuRtas(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: SparkPlanMeta[_]): Unit = {
+    val properties: Map[String, String] = Spark3Util
+      .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
+      .asScala.toMap
+    val fileFormatStr = properties.getOrElse(TableProperties.DEFAULT_FILE_FORMAT,
+      TableProperties.DEFAULT_FILE_FORMAT_DEFAULT)
+
+    val fileFormat = FileFormat.fromString(fileFormatStr)
+
+    // Convert Spark schema to Iceberg schema
+    val querySchema = cpuExec.query.schema
+    val icebergSchema = SparkSchemaUtil.convert(querySchema)
+
+    // Convert Spark connector transforms to Iceberg PartitionSpec
+    val partitionSpec = Spark3Util.toPartitionSpec(icebergSchema, cpuExec.partitioning.toArray)
+
+    // Reuse tagForGpuWrite for validation
+    tagForGpuWrite(fileFormat, partitionSpec, querySchema, icebergSchema, meta)
+  }
 
   def convert(cpuWrite: Write): GpuSparkWrite = {
     new GpuSparkWrite(cpuWrite.asInstanceOf[SparkWrite])

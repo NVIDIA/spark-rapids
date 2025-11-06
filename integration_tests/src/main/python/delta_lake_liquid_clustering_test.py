@@ -40,7 +40,7 @@ from delta_lake_merge_test import delta_merge_enabled_conf
 from delta_lake_update_test import delta_update_enabled_conf
 from delta_lake_utils import delta_meta_allow, \
     delta_writes_enabled_conf, delta_write_fallback_allow, assert_gpu_and_cpu_delta_logs_equivalent
-from marks import allow_non_gpu, delta_lake, ignore_order
+from marks import allow_non_gpu, delta_lake, ignore_order, disable_ansi_mode
 from spark_session import is_databricks133_or_later, is_spark_353_or_later, is_spark_356_or_later, with_cpu_session
 
 
@@ -318,6 +318,7 @@ def test_delta_delete_sql_liquid_clustering_fallback(spark_tmp_path,
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
+@disable_ansi_mode
 def test_delta_update_sql_liquid_clustering_fallback(spark_tmp_path,
                                                      spark_tmp_table_factory):
 

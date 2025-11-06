@@ -97,12 +97,14 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* **Enhanced Databricks performance** with GPU-accelerated ColumnarToRow operations replacing CPU variants to avoid host-vector access under TableCache
-* **Delta Lake improvements** including disabled predicate pushdown filters in multithreaded Delta scan when reading Deletion Vectors and better Delta Lake version compatibility
-* **Iceberg support enhancements** with comprehensive insert operations support, GpuRollingFileWriter implementation, and improved write job statistics tracking
-* **Deletion Vector support** for multithreaded Parquet reader with comprehensive read operations
-* **Performance optimizations** including reduced overhead in operation time collection, refined column size estimation for host to GPU operations, and improved metrics handling
-* **Reliability and stability improvements** with graceful fallback when libprofiler cannot be loaded, better error handling for unsupported Iceberg partitions
+* Delta Lake liquid clustering read/write/optimize support
+* Delta Lake optimize support
+* Delta Lake deletion vector support with two caveats: need to set `useMetadataRowIndex=false` and deletion vector support will fall back to the CPU when using the coalescing file reader (these limitations to be removed in a future release)
+* Iceberg insert operations support and improved write job statistics tracking
+* Improved performance for stddev and variance operations in hash based group by aggregations
+* Support for uuid
+* Added Spark 4.0.1 support
+* Added CUDA 13 support, in addition to CUDA 12 support. 
 
 Note: There is a known issue in the 25.10.0 release when decompressing gzip files on H100 GPUs.
 Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).

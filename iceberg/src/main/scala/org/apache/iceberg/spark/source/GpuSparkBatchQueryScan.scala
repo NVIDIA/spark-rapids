@@ -19,16 +19,15 @@ package org.apache.iceberg.spark.source
 import java.util.Objects
 
 import scala.collection.JavaConverters._
-import scala.util.Try
 
 import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
-import org.apache.iceberg.{BaseMetadataTable, PartitionScanTask}
+import org.apache.iceberg.PartitionScanTask
 import org.apache.iceberg.expressions.Expression
 
 import org.apache.spark.sql.connector.expressions.NamedReference
 import org.apache.spark.sql.connector.expressions.filter.Predicate
-import org.apache.spark.sql.connector.read.{Scan, Statistics, SupportsRuntimeV2Filtering}
+import org.apache.spark.sql.connector.read.{Statistics, SupportsRuntimeV2Filtering}
 
 class GpuSparkBatchQueryScan(
     override val cpuScan: SparkBatchQueryScan,
@@ -42,12 +41,6 @@ class GpuSparkBatchQueryScan(
     .asInstanceOf[java.util.List[Expression]]
     .asScala
     .toList
-
-  def hasNestedType: Boolean = {
-    cpuScan.expectedSchema().asStruct().fields().asScala.exists { field =>
-      field.`type`().isNestedType
-    }
-  }
 
   override def filterAttributes(): Array[NamedReference] = cpuScan.filterAttributes()
 
@@ -81,24 +74,5 @@ class GpuSparkBatchQueryScan(
   /** Create a version of this scan with input file name support */
   override def withInputFile(): GpuScan = {
     new GpuSparkBatchQueryScan(cpuScan, rapidsConf, true)
-  }
-}
-
-object GpuSparkBatchQueryScan {
-  def isMetadataScan(scan: Scan): Boolean = {
-    scan.asInstanceOf[SparkScan].table().isInstanceOf[BaseMetadataTable]
-  }
-
-  def tryConvert(cpuScan: Scan, rapidsConf: RapidsConf): Try[GpuSparkBatchQueryScan] = {
-    Try {
-      cpuScan match {
-        case icebergScan: SparkBatchQueryScan =>
-          new GpuSparkBatchQueryScan(icebergScan, rapidsConf, false)
-        case _ =>
-          throw new IllegalArgumentException(
-            s"Currently iceberg support only supports batch query scan, " +
-              s"but got ${cpuScan.getClass.getName}")
-      }
-    }
   }
 }

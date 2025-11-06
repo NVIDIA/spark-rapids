@@ -27,7 +27,7 @@ import java.util.concurrent.ArrayBlockingQueue
 import scala.collection.mutable
 
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer, GpuCompressedColumnVector, GpuDeviceManager, HashedPriorityQueue, HostAlloc, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, RapidsConf, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer, GpuCompressedColumnVector, GpuDeviceManager, HashedPriorityQueue, HostAlloc, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, NvtxId, NvtxRegistry, RapidsConf, RapidsHostColumnVector}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
@@ -1291,7 +1291,7 @@ trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
 
 trait SpillableStore[T <: SpillableHandle]
     extends HandleStore[T] with Logging {
-  protected def spillNvtxRange: NvtxRange
+  protected def spillNvtxRange: NvtxId
 
   /**
    * Internal class to provide an interface to our plan for this spill.
@@ -1362,7 +1362,7 @@ trait SpillableStore[T <: SpillableHandle]
     if (spillNeeded == 0) {
       0L
     } else {
-      withResource(spillNvtxRange) { _ =>
+      spillNvtxRange {
         // Note that we are using a try finally here. This is to reduce the amount
         // of garbage collection that needs to happen. We could use a lot of
         // syntactic sugar to make the code look cleaner, but I don't want to
@@ -1664,13 +1664,11 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     }
   }
 
-  override protected def spillNvtxRange: NvtxRange =
-    new NvtxRange("disk spill", NvtxColor.RED)
+  override protected def spillNvtxRange: NvtxId = NvtxRegistry.DISK_SPILL
 }
 
 class SpillableDeviceStore extends SpillableStore[DeviceSpillableHandle[_]] {
-  override protected def spillNvtxRange: NvtxRange =
-    new NvtxRange("device spill", NvtxColor.ORANGE)
+  override protected def spillNvtxRange: NvtxId = NvtxRegistry.DEVICE_SPILL
 
   override def postSpill(plan: SpillPlan): Unit = {
     // spillables is the list of handles that have to be closed

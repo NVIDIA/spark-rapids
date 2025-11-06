@@ -16,12 +16,11 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids.GpuMetric
-import com.nvidia.spark.rapids.MultiFileReaderUtils
-import com.nvidia.spark.rapids.RapidsConf
+import scala.collection.JavaConverters._
+
+import com.nvidia.spark.rapids.{GpuMetric, MultiFileReaderUtils, RapidsConf, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
-import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.InputPartition
@@ -30,7 +29,7 @@ import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
-    rapidsConf: RapidsConf,
+    @transient rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean) extends PartitionReaderFactory {
 
   private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
@@ -41,6 +40,8 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   // not honored by Iceberg.
   private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled &&
     !queryUsesInputFile
+
+  private val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] =
     throw new UnsupportedOperationException("GpuReaderFactory does not support createReader()")
@@ -85,10 +86,9 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
         canUseMultiThread, files, allCloudSchemes)
 
       if (useMultiThread) {
-        MultiThread(partition.multiThreadReadNumThreads,
-          partition.maxNumParquetFilesParallel)
+        MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel)
       } else {
-        MultiFile(partition.multiThreadReadNumThreads)
+        MultiFile(poolConfBuilder)
       }
     } else {
       throw new UnsupportedOperationException("Currently only parquet format is supported")

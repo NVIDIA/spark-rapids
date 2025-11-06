@@ -40,3 +40,36 @@ class GpuBatchAppend(write: GpuSparkWrite) extends GpuBaseBatchWrite(write) {
     write.commitOperation(append, s"append with $numFiles new data files")
   }
 }
+
+class GpuDynamicOverwrite(
+    write: GpuSparkWrite,
+    cpuBatchWrite: BatchWrite) extends GpuBaseBatchWrite(write) {
+
+  override def commit(messages: Array[WriterCommitMessage]): Unit = {
+    // Delegate to the CPU version's commit method
+    // The CPU version handles all the complex logic for dynamic partition overwrite
+    cpuBatchWrite.commit(messages)
+  }
+}
+
+class GpuOverwriteByFilter(write: GpuSparkWrite, cpuOverwrite: BatchWrite)
+  extends GpuBaseBatchWrite(write) {
+  override def commit(messages: Array[WriterCommitMessage]): Unit = {
+    // Delegate to CPU OverwriteByFilter's commit method
+    cpuOverwrite.commit(messages)
+  }
+}
+
+/**
+ * GPU version of copy-on-write operation's BatchWrite.
+ * This wraps the CPU BatchRewrite for DELETE operations.
+ */
+class GpuCopyOnWriteOperation(write: GpuSparkWrite, cpuBatchWrite: BatchWrite)
+  extends GpuBaseBatchWrite(write) {
+  override def commit(messages: Array[WriterCommitMessage]): Unit = {
+    // Delegate to CPU BatchRewrite's commit method
+    // The CPU version handles the complex logic for copy-on-write operations
+    // including managing deleted and added files
+    cpuBatchWrite.commit(messages)
+  }
+}

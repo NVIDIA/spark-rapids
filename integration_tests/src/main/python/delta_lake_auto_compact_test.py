@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_cpu_session, with_gpu_session
+from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_gpu_session
 from data_gen import copy_and_update, idfn
 from delta_lake_utils import *
 from marks import allow_non_gpu, delta_lake
