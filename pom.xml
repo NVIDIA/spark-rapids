@@ -98,9 +98,9 @@
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
             </properties>
-<!--            <modules>-->
-<!--                <module>delta-lake/delta-20x</module>-->
-<!--            </modules>-->
+            <modules>
+                <module>delta-lake/delta-20x</module>
+            </modules>
         </profile>
         <!-- #endif scala-2.12 -->
         <!-- #if scala-2.12 -->
