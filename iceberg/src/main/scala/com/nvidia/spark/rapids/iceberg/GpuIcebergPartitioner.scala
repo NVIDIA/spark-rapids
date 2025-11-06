@@ -244,7 +244,6 @@ object GpuIcebergPartitioner {
           t.orderBy(keySortOrders: _*)
         }
 
-
         val (partitionKeys, splits) = withResource(sortedKeysWithRowIdx) { _ =>
           val sortedUniqueKeyTable = {
             val uniqueKeyTable = keysTable.groupBy(keyAggCols: _*)
