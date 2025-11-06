@@ -343,7 +343,11 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_type):
+@pytest.mark.parametrize('delete_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
+def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec):
     """Test DELETE falls back with nested types (arrays, structs, maps) - currently unsupported"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
 
@@ -356,7 +360,7 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_ty
     def init_table(table_name):
         table_props = {
             'format-version': '2',
-            'write.delete.mode': 'copy-on-write'
+            'write.delete.mode': delete_mode
         }
 
         create_iceberg_table(table_name,
@@ -388,7 +392,7 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_ty
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        fallback_exec,
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })

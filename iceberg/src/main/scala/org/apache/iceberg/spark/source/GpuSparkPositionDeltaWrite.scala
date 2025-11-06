@@ -160,8 +160,8 @@ object GpuSparkPositionDeltaWrite {
     // safe to use normal write tag method
     GpuSparkWrite.tagForGpuWrite(
       Option(context.dataFileFormat),
-      Option(context.dataSparkType),
-      Option(context.dataSchema),
+      Option(toSparkType(table.schema())),
+      Option(table.schema()),
       Option(context.deleteFileFormat),
       partitionSpec,
       meta)

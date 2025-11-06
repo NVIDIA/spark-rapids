@@ -188,14 +188,13 @@ object GpuSparkWrite {
     }
 
     // Check partition transform support
-    if (partitionSpec.isPartitioned) {
-      val tableSparkType = toSparkType(partitionSpec.schema())
+    if (partitionSpec.isPartitioned && dataSchema.isDefined) {
       for (partitionField <- partitionSpec.fields().asScala) {
         val transform = partitionField.transform()
         GpuTransform.tryFrom(transform) match {
           case Success(t) =>
             val fieldTransform = GpuFieldTransform(partitionField.sourceId(), t)
-            if (!fieldTransform.supports(tableSparkType, partitionSpec.schema())) {
+            if (!fieldTransform.supports(dataSparkType.get, dataSchema.get)) {
               meta.willNotWorkOnGpu(
                 s"Iceberg partition transform $transform is not supported on GPU")
             }
