@@ -399,7 +399,6 @@ def test_broadcast_join_right_table(data_gen, join_type, kudo_enabled):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('rows', ['(1)', '(1), (null)', '()'], ids=['no_nulls', 'has_nulls', 'empty'])
-@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_null_aware_anti(rows):
     sub_condition = ''
     if rows == '()':
