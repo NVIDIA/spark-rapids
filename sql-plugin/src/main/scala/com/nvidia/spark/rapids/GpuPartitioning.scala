@@ -36,7 +36,8 @@ trait GpuPartitioning extends Partitioning {
         _useKudoGPUSlicing, _useMultiThreadedShuffle) = {
     val rapidsConf = new RapidsConf(SQLConf.get)
     val useGPUShuffle = GpuShuffleEnv.useGPUShuffle(rapidsConf)
-    val shuffleKudoGpuSerializerEnabled = !useGPUShuffle && rapidsConf.shuffleKudoGpuSerializerEnabled
+    val shuffleKudoGpuSerializerEnabled = !useGPUShuffle &&
+      rapidsConf.shuffleKudoGpuSerializerEnabled
     (rapidsConf.shuffleParitioningMaxCpuBatchSize,
       rapidsConf.shuffleCompressionMaxBatchMemory,
       useGPUShuffle,
