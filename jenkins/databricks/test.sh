@@ -61,6 +61,8 @@ SOURCE_PATH="/home/ubuntu/spark-rapids"
 source jenkins/databricks/setup.sh
 # Init common variables like SPARK_HOME, spark configs
 source jenkins/databricks/common_vars.sh
+# Source cache utility functions for artifact download/caching
+source jenkins/databricks/cache_utils.sh
 
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
@@ -94,29 +96,10 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
     # Run two-shim smoke test with the base Spark build
     if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
         if [[ ! -d $HOME/spark-3.2.0-bin-hadoop3.2 ]]; then
-            # Workspace cache for Spark
-            WS_CACHE_DIR=${WS_CACHE_DIR:-"/Workspace/databricks/cached_jars"}
-            JAR_FILE_NAME=${JAR_FILE_NAME:-"spark-3.2.0-bin-hadoop3.2.tgz"}
-            SPARK_CACHE_FILE=${SPARK_CACHE_FILE:-"$WS_CACHE_DIR/$JAR_FILE_NAME"}
-            SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-3.2.0/$JAR_FILE_NAME"} 
-            # Create cache directory if it doesn't exist
-            mkdir -p "$WS_CACHE_DIR"
-            # Check if file exists in Workspace cache
-            if [[ -f "$SPARK_CACHE_FILE" ]]; then
-                echo "Found Spark in Workspace cache, copying to /tmp..."
-                cp "$SPARK_CACHE_FILE" "/tmp/$JAR_FILE_NAME"
-            else
-                echo "Spark not found in Workspace cache, downloading from archive.apache.org..."
-                if wget "$SPARK_URL" -P /tmp; then
-                    echo "Download successful, caching to Workspace..."
-                    cp "/tmp/$JAR_FILE_NAME" "$SPARK_CACHE_FILE" || true
-                else
-                    echo "Download failed"
-                    exit 1
-                fi
-            fi
-            tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
-            rm -f "/tmp/$JAR_FILE_NAME"
+            # Download and cache Spark using shared function
+            local spark_file="spark-3.2.0-bin-hadoop3.2.tgz"
+            local spark_url="https://archive.apache.org/dist/spark/spark-3.2.0/$spark_file"
+            download_and_cache_artifact "$spark_file" "$spark_url" "$HOME"
         fi
         SPARK_HOME=$HOME/spark-3.2.0-bin-hadoop3.2 \
         SPARK_SHELL_SMOKE_TEST=1 \

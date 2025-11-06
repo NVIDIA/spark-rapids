@@ -48,6 +48,10 @@ declare -A dep_jars
 # Map of string arrays to hold the groupId and the artifactId for each JAR
 declare -A artifacts
 
+# Source cache utility functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/cache_utils.sh"
+
 # Initializes the scripts and the variables based on teh arguments passed to the script.
 initialize()
 {
@@ -63,30 +67,10 @@ initialize()
     sudo apt install -y rsync
 
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
-        # Workspace cache for Maven
-        WS_CACHE_DIR=${WS_CACHE_DIR:-"/Workspace/databricks/cached_jars"}
-        JAR_FILE_NAME=${JAR_FILE_NAME:-"apache-maven-3.6.3-bin.tar.gz"}
-        MAVEN_CACHE_FILE=${MAVEN_CACHE_FILE:-"$WS_CACHE_DIR/$JAR_FILE_NAME"}
-        MAVEN_URL=${MAVEN_URL:-"https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/$JAR_FILE_NAME"}
-        # Create cache directory if it doesn't exist
-        mkdir -p "$WS_CACHE_DIR"        
-        # Check if file exists in Workspace cache
-        if [[ -f "$MAVEN_CACHE_FILE" ]]; then
-            echo "Found Maven in Workspace cache, copying to /tmp..."
-            cp "$MAVEN_CACHE_FILE" "/tmp/$JAR_FILE_NAME"
-        else
-            echo "Maven not found in Workspace cache, downloading from archive.apache.org..."
-            if wget "$MAVEN_URL" -P /tmp; then
-                echo "Download successful, caching to Workspace..."
-                cp "/tmp/$JAR_FILE_NAME" "$MAVEN_CACHE_FILE" || true
-            else
-                echo "Download failed"
-                exit 1
-            fi
-        fi
-        
-        tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
-        rm -f "/tmp/$JAR_FILE_NAME"
+        # Download and cache Maven using shared function
+        local maven_file="apache-maven-3.6.3-bin.tar.gz"
+        local maven_url="https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/$maven_file"
+        download_and_cache_artifact "$maven_file" "$maven_url" "$HOME"
         sudo ln -s $HOME/apache-maven-3.6.3/bin/mvn /usr/local/bin/mvn
     fi
 
