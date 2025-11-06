@@ -33,7 +33,7 @@ download_and_cache_artifact() {
     local cache_file="$ws_cache_dir/$jar_file_name"
     
     # Create cache directory if it doesn't exist
-    mkdir -p "$ws_cache_dir"
+    # mkdir -p "$ws_cache_dir"
     
     # Check if file exists in Workspace cache
     if [[ -f "$cache_file" ]]; then
