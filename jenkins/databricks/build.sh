@@ -63,21 +63,21 @@ initialize()
     sudo apt install -y rsync
 
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
-        # DBFS cache for Maven
-        DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/cached_jars"}
+        # Workspace cache for Maven
+        WS_CACHE_DIR=${WS_CACHE_DIR:-"/Workspace/databricks/cached_jars"}
         JAR_FILE_NAME=${JAR_FILE_NAME:-"apache-maven-3.6.3-bin.tar.gz"}
-        MAVEN_CACHE_FILE=${MAVEN_CACHE_FILE:-"$DBFS_CACHE_DIR/$JAR_FILE_NAME"}
+        MAVEN_CACHE_FILE=${MAVEN_CACHE_FILE:-"$WS_CACHE_DIR/$JAR_FILE_NAME"}
         MAVEN_URL=${MAVEN_URL:-"https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/$JAR_FILE_NAME"}
         # Create cache directory if it doesn't exist
-        mkdir -p "$DBFS_CACHE_DIR"        
-        # Check if file exists in DBFS cache
+        mkdir -p "$WS_CACHE_DIR"        
+        # Check if file exists in Workspace cache
         if [[ -f "$MAVEN_CACHE_FILE" ]]; then
-            echo "Found Maven in DBFS cache, copying to /tmp..."
+            echo "Found Maven in Workspace cache, copying to /tmp..."
             cp "$MAVEN_CACHE_FILE" "/tmp/$JAR_FILE_NAME"
         else
-            echo "Maven not found in DBFS cache, downloading from archive.apache.org..."
+            echo "Maven not found in Workspace cache, downloading from archive.apache.org..."
             if wget "$MAVEN_URL" -P /tmp; then
-                echo "Download successful, caching to DBFS..."
+                echo "Download successful, caching to Workspace..."
                 cp "/tmp/$JAR_FILE_NAME" "$MAVEN_CACHE_FILE" || true
             else
                 echo "Download failed"
