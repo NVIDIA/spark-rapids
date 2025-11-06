@@ -1180,6 +1180,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return sum;
   }
 
+
   public final ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;
   }

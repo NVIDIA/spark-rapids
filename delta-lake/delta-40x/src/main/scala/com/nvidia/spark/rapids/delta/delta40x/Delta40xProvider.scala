@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 
 import org.apache.spark.sql.connector.catalog.SupportsWrite
-import org.apache.spark.sql.delta.DeltaParquetFileFormat
+import org.apache.spark.sql.delta.{DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.catalog.DeltaTableV2
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -65,7 +65,10 @@ object Delta40xProvider extends DeltaProviderBase {
           (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r)),
       GpuOverrides.runnableCmd[OptimizeTableCommand](
           "Optimize a Delta Lake table",
-          (a, conf, p, r) => new OptimizeTableCommandMeta(a, conf, p, r))
+          (a, conf, p, r) => new OptimizeTableCommandMeta(a, conf, p, r)),
+      GpuOverrides.runnableCmd[DeltaDynamicPartitionOverwriteCommand](
+        "Dynamic partition overwrite to a Delta Lake table",
+        (a, conf, p, r) => new DeltaDynamicPartitionOverwriteCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
