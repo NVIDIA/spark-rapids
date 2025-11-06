@@ -338,6 +338,62 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
         })
     )
 
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_type):
+    """Test DELETE falls back with nested types (arrays, structs, maps) - currently unsupported"""
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+
+    # Use table with all iceberg types including nested types (arrays, structs, maps)
+    def data_gen(spark):
+        cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
+        return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
+
+    # Phase 1: Initialize tables with data (separate for CPU and GPU)
+    def init_table(table_name):
+        table_props = {
+            'format-version': '2',
+            'write.delete.mode': 'copy-on-write'
+        }
+
+        create_iceberg_table(table_name,
+                             table_prop=table_props,
+                             df_gen=data_gen)
+
+        def insert_data(spark):
+            df = data_gen(spark)
+            df.writeTo(table_name).append()
+
+        with_cpu_session(insert_data)
+
+    # Initialize both CPU and GPU tables
+    cpu_table_name = f'{base_table_name}_cpu'
+    gpu_table_name = f'{base_table_name}_gpu'
+    init_table(cpu_table_name)
+    init_table(gpu_table_name)
+
+    # Phase 2: DELETE operation (to be tested with fallback)
+    # Use _c2 (IntegerGen) for DELETE condition as it's a simple type
+    def write_func(spark, table_name):
+        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
+
+    # Read function to verify results
+    def read_func(spark, table_name):
+        return spark.sql(f"SELECT * FROM {table_name}")
+
+    assert_gpu_fallback_write_sql(
+        write_func,
+        read_func,
+        base_table_name,
+        ["ReplaceDataExec"],
+        conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
+            "spark.rapids.sql.format.parquet.reader.type": reader_type
+        })
+    )
+
 
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
 @iceberg
