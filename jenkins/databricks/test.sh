@@ -97,8 +97,8 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
     if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
         if [[ ! -d $HOME/spark-3.2.0-bin-hadoop3.2 ]]; then
             # Download and cache Spark using shared function
-            local spark_file="spark-3.2.0-bin-hadoop3.2.tgz"
-            local spark_url="https://archive.apache.org/dist/spark/spark-3.2.0/$spark_file"
+            spark_file="spark-3.2.0-bin-hadoop3.2.tgz"
+            spark_url="https://archive.apache.org/dist/spark/spark-3.2.0/$spark_file"
             download_and_cache_artifact "$spark_file" "$spark_url" "$HOME"
         fi
         SPARK_HOME=$HOME/spark-3.2.0-bin-hadoop3.2 \
