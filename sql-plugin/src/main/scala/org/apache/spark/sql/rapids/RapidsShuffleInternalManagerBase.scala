@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
+import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.MetaUtils
@@ -34,8 +35,6 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader}
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
-
-import ai.rapids.cudf.HostMemoryBuffer
 
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.executor.ShuffleWriteMetrics
@@ -1127,7 +1126,8 @@ class RapidsCachingWriter[K, V](
               // Read the KUDO header
               val headerOpt = Option(KudoTableHeader.readFrom(dataIn).orElse(null))
               if (headerOpt.isEmpty) {
-                throw new IllegalStateException("Failed to read KUDO header from SlicedSerializedColumnVector")
+                throw new IllegalStateException("Failed to read KUDO header from " +
+                  "SlicedSerializedColumnVector")
               }
               val header = headerOpt.get
 
