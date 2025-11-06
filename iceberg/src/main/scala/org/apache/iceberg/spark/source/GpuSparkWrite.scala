@@ -29,7 +29,6 @@ import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, Me
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table, TableProperties}
 import org.apache.iceberg.io.{DataWriteResult, FileIO, GpuClusteredDataWriter, GpuFanoutDataWriter, GpuRollingDataWriter, OutputFileFactory, PartitioningWriter}
 import org.apache.iceberg.spark.{Spark3Util, SparkSchemaUtil}
-import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
