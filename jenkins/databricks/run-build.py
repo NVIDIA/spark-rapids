@@ -30,10 +30,13 @@ def main():
 
   print("Copying scripts")
   ssh_args = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s" % params.private_key_file
+  # Copy build.sh
   rsync_command = "rsync -I -Pave \"ssh %s\" %s ubuntu@%s:%s" % (ssh_args, params.local_script, master_addr, params.script_dest)
   print("rsync command for build.sh: %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
-  rsync_command = "rsync -I -Pave \"ssh %s\" %s ubuntu@%s:%s" % (ssh_args, params.cache_utils_script, master_addr, params.cache_utils_dest)
+  # Copy cache_utils.sh (derive path from build.sh path - same directory)
+  cache_utils_path = params.local_script.replace('build.sh', params.cache_utils_script)
+  rsync_command = "rsync -I -Pave \"ssh %s\" %s ubuntu@%s:%s" % (ssh_args, cache_utils_path, master_addr, params.cache_utils_dest)
   print("rsync command for cache_utils.sh: %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
