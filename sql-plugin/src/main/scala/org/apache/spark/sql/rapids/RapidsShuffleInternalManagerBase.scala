@@ -152,12 +152,15 @@ object RapidsShuffleInternalManagerBase extends Logging {
   //   spark.rapids.shuffle.multiThreaded.reader.threads
   private var numWriterSlots: Int = 0
   private var numReaderSlots: Int = 0
+  private var numMergerSlots: Int = 0
   private lazy val writerSlots = new mutable.HashMap[Int, Slot]()
   private lazy val readerSlots = new mutable.HashMap[Int, Slot]()
+  private lazy val mergerSlots = new mutable.HashMap[Int, Slot]()
 
   // used by callers to obtain a unique slot
   private val writerSlotNumber = new AtomicInteger(0)
   private val readerSlotNumber= new AtomicInteger(0)
+  private val mergerSlotNumber = new AtomicInteger(0)
 
   private var mtShuffleInitialized: Boolean = false
 
@@ -183,6 +186,17 @@ object RapidsShuffleInternalManagerBase extends Logging {
     readerSlots(slotNum % numReaderSlots).offer(task)
   }
 
+  /**
+   * Send a task to a specific merger slot.
+   * @param slotNum the slot to submit to
+   * @param task a task to execute
+   * @note there must not be an uncaught exception while calling
+   *      `task`.
+   */
+  def queueMergerTask[T](slotNum: Int, task: Callable[T]): Future[T] = {
+    mergerSlots(slotNum % numMergerSlots).offer(task)
+  }
+
   def startThreadPoolIfNeeded(
       numWriterThreads: Int,
       numReaderThreads: Int): Unit = synchronized {
@@ -190,6 +204,8 @@ object RapidsShuffleInternalManagerBase extends Logging {
       mtShuffleInitialized = true
       numWriterSlots = numWriterThreads
       numReaderSlots = numReaderThreads
+      // Use same number of merger slots as writer slots
+      numMergerSlots = numWriterThreads
       if (writerSlots.isEmpty) {
         (0 until numWriterSlots).foreach { slotNum =>
           writerSlots.put(slotNum, new Slot(slotNum, "writer"))
@@ -198,6 +214,11 @@ object RapidsShuffleInternalManagerBase extends Logging {
       if (readerSlots.isEmpty) {
         (0 until numReaderSlots).foreach { slotNum =>
           readerSlots.put(slotNum, new Slot(slotNum, "reader"))
+        }
+      }
+      if (mergerSlots.isEmpty) {
+        (0 until numMergerSlots).foreach { slotNum =>
+          mergerSlots.put(slotNum, new Slot(slotNum, "merger"))
         }
       }
     }
@@ -210,10 +231,14 @@ object RapidsShuffleInternalManagerBase extends Logging {
 
     readerSlots.values.foreach(_.shutdownNow())
     readerSlots.clear()
+
+    mergerSlots.values.foreach(_.shutdownNow())
+    mergerSlots.clear()
   }
 
   def getNextWriterSlot: Int = Math.abs(writerSlotNumber.incrementAndGet())
   def getNextReaderSlot: Int = Math.abs(readerSlotNumber.incrementAndGet())
+  def getNextMergerSlot: Int = Math.abs(mergerSlotNumber.incrementAndGet())
 }
 
 trait RapidsShuffleWriterShimHelper {
@@ -277,7 +302,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     partitionFuturesProgress: ConcurrentHashMap[Int, Int],
     maxPartitionSeen: java.util.concurrent.atomic.AtomicInteger,
     writerCondition: Object,
-    writerExecutor: java.util.concurrent.ExecutorService,
+    mergerSlotNum: Int,
     writerFuture: Future[_])
 
   /**
@@ -319,7 +344,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       batchId: Int,
       writer: ShuffleMapOutputWriter): BatchState = {
     import java.util.concurrent.atomic.AtomicInteger
-    import java.util.concurrent.{ConcurrentHashMap, Executors, ThreadFactory}
+    import java.util.concurrent.ConcurrentHashMap
 
     val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
     val partitionFutures = new ConcurrentHashMap[Int,
@@ -329,16 +354,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val maxPartitionSeen = new AtomicInteger(-1)
     val writerCondition = new Object()
 
-    // Create dedicated writer thread for this batch
-    val writerThreadFactory = new ThreadFactory {
-      override def newThread(r: Runnable): Thread = {
-        val thread = new Thread(r,
-          s"rapids-shuffle-writer-${shuffleId}-${mapId}-batch${batchId}")
-        thread.setDaemon(true)
-        thread
-      }
-    }
-    val writerExecutor = Executors.newSingleThreadExecutor(writerThreadFactory)
+    // Assign a merger slot for this batch
+    val mergerSlotNum = RapidsShuffleInternalManagerBase.getNextMergerSlot
 
     var unfinishedStream: Option[OutputStream] = None
 
@@ -437,7 +454,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       }
     }
 
-    val writerFuture = writerExecutor.submit(writerTask)
+    val writerFuture = RapidsShuffleInternalManagerBase.queueMergerTask(
+      mergerSlotNum, () => {
+        writerTask.run()
+        null
+      })
 
     BatchState(
       batchId,
@@ -448,7 +469,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       partitionFuturesProgress,
       maxPartitionSeen,
       writerCondition,
-      writerExecutor,
+      mergerSlotNum,
       writerFuture)
   }
 
@@ -657,16 +678,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       // Cleanup all batch states
       import scala.collection.JavaConverters._
       batchStates.foreach { batch =>
-        try {
-          batch.writerExecutor.shutdown()
-          if (!batch.writerExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-            batch.writerExecutor.shutdownNow()
-          }
-        } catch {
-          case _: InterruptedException =>
-            batch.writerExecutor.shutdownNow()
-            Thread.currentThread().interrupt()
-        }
+        // Cancel writer future if still running
+        batch.writerFuture.cancel(true)
 
         // Cancel pending futures
         batch.partitionFutures.values().asScala.foreach { futuresQueue =>
