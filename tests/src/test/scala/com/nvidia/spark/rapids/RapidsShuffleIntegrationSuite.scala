@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -46,46 +44,18 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
    */
   private def checkLogsForBufferBehavior(operation: => Unit): 
       (Boolean, Boolean, Boolean) = {
-    val logMessages = new ArrayBuffer[String]()
+    val loggerNames = Seq(
+      "com.nvidia.spark.rapids.spill.SpillablePartialFileHandle",
+      "org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleMapOutputWriter"
+    )
     
-    val spillableLogger = org.apache.log4j.Logger.getLogger(
-      "com.nvidia.spark.rapids.spill.SpillablePartialFileHandle")
-    val writerLogger = org.apache.log4j.Logger.getLogger(
-      "org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleMapOutputWriter")
-    val rootLogger = org.apache.log4j.Logger.getRootLogger
-    
-    val origSpillableLevel = spillableLogger.getLevel
-    val origWriterLevel = writerLogger.getLevel
-    
-    // Enable DEBUG level to capture "Expanded buffer from" messages
-    spillableLogger.setLevel(org.apache.log4j.Level.DEBUG)
-    writerLogger.setLevel(org.apache.log4j.Level.DEBUG)
-    
-    val appender = new org.apache.log4j.AppenderSkeleton {
-      override def append(event: org.apache.log4j.spi.LoggingEvent): Unit = {
-        logMessages += event.getRenderedMessage
-      }
-      override def close(): Unit = {}
-      override def requiresLayout(): Boolean = false
-    }
-    
-    rootLogger.addAppender(appender)
-    try {
+    val logMessages = LogCaptureUtils.captureLogsFrom(loggerNames) {
       operation
-    } finally {
-      rootLogger.removeAppender(appender)
-      if (origSpillableLevel != null) spillableLogger.setLevel(origSpillableLevel)
-      if (origWriterLevel != null) writerLogger.setLevel(origWriterLevel)
     }
     
-    val hasExpansion = logMessages.exists(msg => 
-      msg.contains("Expanded buffer from"))
-    
-    val hasSpill = logMessages.exists(msg =>
-      msg.contains("Spilled buffer to"))
-    
-    val hasForcedFileOnly = logMessages.exists(msg =>
-      msg.contains("Using forced file-only mode"))
+    val hasExpansion = logMessages.exists(_.contains("Expanded buffer from"))
+    val hasSpill = logMessages.exists(_.contains("Spilled buffer to"))
+    val hasForcedFileOnly = logMessages.exists(_.contains("Using forced file-only mode"))
     
     (hasExpansion, hasSpill, hasForcedFileOnly)
   }
