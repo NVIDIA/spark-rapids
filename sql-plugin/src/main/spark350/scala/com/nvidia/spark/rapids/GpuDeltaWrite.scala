@@ -14,14 +14,22 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "350"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "400"}
+{"spark": "401"}
+spark-rapids-shim-json-lines ***/
+
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.connector.write.Write
+import org.apache.spark.sql.connector.write.DeltaWrite
 
-trait GpuWrite extends Write {
-  var metrics: Map[String, GpuMetric] = Map.empty
-}
+trait GpuDeltaWrite extends GpuWrite with DeltaWrite
 
-// Allows use of GpuWrite from Java code
-abstract class GpuWriteWrapper extends GpuWrite {
-}
+abstract class GpuDeltaWriteWrapper extends GpuDeltaWrite

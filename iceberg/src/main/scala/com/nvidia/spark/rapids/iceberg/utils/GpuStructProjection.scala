@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg.utils
 
-import scala.jdk.CollectionConverters._
+import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.GpuColumnVector
