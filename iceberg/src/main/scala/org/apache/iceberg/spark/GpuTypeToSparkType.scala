@@ -63,6 +63,6 @@ class GpuTypeToSparkType extends TypeToSparkType {
           sparkField
       }
 
-    StructType(sparkFields)
+    StructType(sparkFields.toSeq)
   }
 }

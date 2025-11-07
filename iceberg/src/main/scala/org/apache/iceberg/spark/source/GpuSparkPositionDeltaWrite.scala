@@ -383,7 +383,7 @@ class GpuDeleteOnlyDeltaWriter(
                     }
                   }
 
-                  closeOnExcept(partitions.to[mutable.Queue]) { buffer =>
+                  closeOnExcept(mutable.Queue(partitions: _*)) { buffer =>
                     while (buffer.nonEmpty) {
                       val p = buffer.dequeue()
                       delegate.write(p.batch, spec, p.partition)
