@@ -1779,12 +1779,41 @@ object DiskHandleStore {
       if (closed) {
         throw new IllegalStateException("already closed DiskWriter")
       }
+      // First, flush all buffered data from streams to FileChannel.
+      // This ensures LZ4 end markers and all buffered data reach the FileChannel.
+      try {
+        if (outputStream != null) {
+          outputStream.flush()
+        }
+      } catch {
+        case _: Exception => // Continue to force and close even if flush fails
+      }
+      
+      // Then force FileChannel to ensure all data is written to disk.
+      // This prevents EOF errors when reading from DiskHandle in concurrent scenarios.
+      if (fc != null) {
+        try {
+          fc.force(true)
+        } catch {
+          case _: Exception => // Continue to close even if force fails
+        }
+      }
+      
+      // Finally close streams and channels to release resources
       if (outputStream != null) {
-        outputStream.close()
+        try {
+          outputStream.close()
+        } catch {
+          case _: Exception => // Ignore close errors
+        }
         outputStream = null
       }
       if (outputChannel != null) {
-        outputChannel.close()
+        try {
+          outputChannel.close()
+        } catch {
+          case _: Exception => // Ignore close errors
+        }
         outputChannel = null
       }
       closed = true
