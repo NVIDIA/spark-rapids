@@ -91,7 +91,7 @@ class SpillablePartialFileHandle private (
       host = Some(buffer)
       currentBufferCapacity = initialCapacity
       this.taskPriority = priority
-      SpillFramework.stores.hostStore.track(this)
+      SpillFramework.stores.hostStore.trackNoSpill(this)
     } catch {
       case e: Exception =>
         logWarning(s"Failed to allocate initial buffer of $initialCapacity bytes, " +
@@ -169,7 +169,7 @@ class SpillablePartialFileHandle private (
             currentBuffer.close()
             host = Some(newBuffer)
             currentBufferCapacity = newCapacity
-            SpillFramework.stores.hostStore.track(this)
+            SpillFramework.stores.hostStore.trackNoSpill(this)
             
             logDebug(s"Expanded buffer from $oldCapacity to $newCapacity bytes " +
               s"(required $requiredCapacity bytes)")
