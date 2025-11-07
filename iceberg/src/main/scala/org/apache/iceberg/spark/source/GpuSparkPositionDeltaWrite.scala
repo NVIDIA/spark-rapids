@@ -144,6 +144,10 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
 
 
 object GpuSparkPositionDeltaWrite {
+  def tableOf(deltaWrite: DeltaWrite): Table = {
+    FieldUtils.readField(deltaWrite, "table", true).asInstanceOf[Table]
+  }
+
   def tagForGpu(deltaWrite: DeltaWrite, meta: SparkPlanMeta[_]): Unit = {
     if (!supports(deltaWrite.getClass)) {
       meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
@@ -152,7 +156,7 @@ object GpuSparkPositionDeltaWrite {
     }
     val context = GpuWriteContext(FieldUtils.readField(deltaWrite, "context", true))
 
-    val table: Table = FieldUtils.readField(deltaWrite, "table", true).asInstanceOf[Table]
+    val table: Table = tableOf(deltaWrite)
     val partitionSpec = table.spec()
 
     // Iceberg's delta write is similar to normal write, but will write position deletes

@@ -21,8 +21,10 @@ import scala.util.Try
 
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
 import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
+import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
 import org.apache.iceberg.spark.source.{GpuSparkPositionDeltaWrite, GpuSparkScan, GpuSparkWrite}
+import org.apache.iceberg.spark.source.GpuSparkPositionDeltaWrite.tableOf
 import org.apache.iceberg.spark.supportsCatalog
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
@@ -329,7 +331,9 @@ class IcebergProviderImpl extends IcebergProvider {
         s"${RapidsConf.ENABLE_ICEBERG_WRITE} to true")
     }
 
-    FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
+    val outputSchema = toSparkType(tableOf(cpuExec.write).schema())
+    FileFormatChecks.tag(meta, outputSchema,
+      IcebergFormatType, WriteFileOp)
 
     GpuSparkPositionDeltaWrite.tagForGpu(cpuExec.write, meta)
   }
