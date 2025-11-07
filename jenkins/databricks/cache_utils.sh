@@ -17,7 +17,7 @@
 
 # Shared utility functions for caching artifacts
 
-# Download and cache artifact to DBFS cache directory
+# Download and cache artifact to Workspace cache directory
 # Arguments:
 #   $1: jar_file_name - Name of the file to download/cache
 #   $2: download_url - URL to download from if not in cache
@@ -29,20 +29,20 @@ download_and_cache_artifact() {
     local download_url=$2
     local extract_dir=${3:-$HOME}
     
-    local dbfs_cache_dir=${DBFS_CACHE_DIR:-"/dbfs/databricks_cached_jars"}
-    local cache_file="$dbfs_cache_dir/$jar_file_name"
+    local ws_cache_dir=${WS_CACHE_DIR:-"/Workspace/databricks/cached_jars"}
+    local cache_file="$ws_cache_dir/$jar_file_name"
     
-    # Create cache directory if it doesn't exist
-    mkdir -p "$dbfs_cache_dir"
+    # Create cache directory if it doesn't exist (may require permissions)
+    mkdir -p "$ws_cache_dir"
     
-    # Check if file exists in cache
+    # Check if file exists in Workspace cache
     if [[ -f "$cache_file" ]]; then
-        echo "Found $jar_file_name in cache, copying to /tmp..."
+        echo "Found $jar_file_name in Workspace cache, copying to /tmp..."
         cp "$cache_file" "/tmp/$jar_file_name"
     else
-        echo "$jar_file_name not found in cache, downloading from $download_url..."
+        echo "$jar_file_name not found in Workspace cache, downloading from $download_url..."
         if wget "$download_url" -P /tmp; then
-            echo "Download successful, caching to DBFS..."
+            echo "Download successful, caching to Workspace..."
             cp "/tmp/$jar_file_name" "$cache_file" || true
         else
             echo "Download failed"
