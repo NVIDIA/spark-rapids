@@ -109,6 +109,16 @@ private class Log4j1Capturer(
           case "getName" => "TestCaptureAppender"
           case "close" => null
           case "requiresLayout" => java.lang.Boolean.FALSE
+          case "equals" =>
+            if (args != null && args.length == 1) {
+              java.lang.Boolean.valueOf(
+                proxy.asInstanceOf[AnyRef] eq args(0).asInstanceOf[AnyRef])
+            } else {
+              java.lang.Boolean.FALSE
+            }
+          case "hashCode" => 
+            Integer.valueOf(System.identityHashCode(proxy))
+          case "toString" => "TestCaptureAppender"
           case _ => null
         }
       }
@@ -177,6 +187,16 @@ private class Log4j2Capturer(
           case "isStopped" => java.lang.Boolean.FALSE
           case "getLayout" => null
           case "ignoreExceptions" => java.lang.Boolean.TRUE
+          case "equals" =>
+            if (args != null && args.length == 1) {
+              java.lang.Boolean.valueOf(
+                proxy.asInstanceOf[AnyRef] eq args(0).asInstanceOf[AnyRef])
+            } else {
+              java.lang.Boolean.FALSE
+            }
+          case "hashCode" => 
+            Integer.valueOf(System.identityHashCode(proxy))
+          case "toString" => "TestCaptureAppender"
           case _ => null
         }
       }
