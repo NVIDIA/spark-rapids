@@ -51,6 +51,7 @@ object PartialFileStorageMode extends Enumeration {
  * @param maxBufferSize Maximum buffer size before spilling to disk
  * @param memoryThreshold Host memory usage threshold for buffer expansion decisions
  * @param priority Spill priority for memory-based mode
+ * @param syncWrites Whether to force outstanding writes to disk
  */
 class SpillablePartialFileHandle private (
     storageMode: PartialFileStorageMode.Value,
@@ -58,7 +59,8 @@ class SpillablePartialFileHandle private (
     initialCapacity: Long,
     maxBufferSize: Long,
     memoryThreshold: Double,
-    priority: Long)
+    priority: Long,
+    syncWrites: Boolean)
   extends HostSpillableHandle[ai.rapids.cudf.HostMemoryBuffer] with Logging {
 
   // State management
@@ -206,7 +208,9 @@ class SpillablePartialFileHandle private (
       while (bb.hasRemaining) {
         channel.write(bb)
       }
-      channel.force(true)
+      if (syncWrites) {
+        channel.force(true)
+      }
     } finally {
       fos.close()
     }
@@ -440,7 +444,9 @@ class SpillablePartialFileHandle private (
           while (bb.hasRemaining) {
             channel.write(bb)
           }
-          channel.force(true)
+          if (syncWrites) {
+            channel.force(true)
+          }
         } finally {
           fos.close()
         }
@@ -539,41 +545,51 @@ object SpillablePartialFileHandle {
   /**
    * Create a file-only handle.
    * Data is written directly to disk without using host memory.
+   *
+   * @param file File to write data to
+   * @param syncWrites Whether to force outstanding writes to disk
    */
-  def createFileOnly(file: File): SpillablePartialFileHandle = {
+  def createFileOnly(file: File, syncWrites: Boolean = false):
+      SpillablePartialFileHandle = {
     new SpillablePartialFileHandle(
       storageMode = PartialFileStorageMode.FILE_ONLY,
       file = file,
       initialCapacity = 0L,
       maxBufferSize = 0L,
       memoryThreshold = 0.0,
-      priority = Long.MinValue)
+      priority = Long.MinValue,
+      syncWrites = syncWrites)
   }
 
   /**
    * Create a memory-with-spill handle.
-   * Data is initially written to host memory buffer and can be spilled to disk if needed.
-   * The buffer will automatically expand when needed (up to maxBufferSize limit).
+   * Data is initially written to host memory buffer and can be spilled to disk
+   * if needed. The buffer will automatically expand when needed (up to
+   * maxBufferSize limit).
    *
    * @param initialCapacity Initial size of host memory buffer to allocate
    * @param maxBufferSize Maximum buffer size before spilling to disk
-   * @param memoryThreshold Host memory usage threshold for buffer expansion decisions
+   * @param memoryThreshold Host memory usage threshold for buffer expansion
+   *                        decisions
    * @param spillFile File to use when spilling is required
    * @param priority Spill priority
+   * @param syncWrites Whether to force outstanding writes to disk
    */
   def createMemoryWithSpill(
       initialCapacity: Long,
       maxBufferSize: Long,
       memoryThreshold: Double,
       spillFile: File,
-      priority: Long = Long.MinValue): SpillablePartialFileHandle = {
+      priority: Long = Long.MinValue,
+      syncWrites: Boolean = false): SpillablePartialFileHandle = {
     new SpillablePartialFileHandle(
       storageMode = PartialFileStorageMode.MEMORY_WITH_SPILL,
       file = spillFile,
       initialCapacity = initialCapacity,
       maxBufferSize = maxBufferSize,
       memoryThreshold = memoryThreshold,
-      priority = priority)
+      priority = priority,
+      syncWrites = syncWrites)
   }
 }
 

@@ -57,6 +57,9 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   private val initialBufferSize = rapidsConf.partialFileBufferInitialSize
   private val maxBufferSize = rapidsConf.partialFileBufferMaxSize
   private val memoryThreshold = rapidsConf.partialFileBufferMemoryThreshold
+  
+  // Read Spark's shuffle sync configuration to maintain compatibility
+  private val syncWrites = sparkConf.get("spark.shuffle.sync", "false").toBoolean
 
   // RAPIDS optimization: use SpillablePartialFileHandle for unified storage
   private var partialFileHandle: Option[SpillablePartialFileHandle] = None
@@ -88,7 +91,8 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       if (forceFileOnly) {
         // Force file-only mode (e.g., for final merge operations)
         logDebug(s"Using forced file-only mode for shuffle $shuffleId map $mapId")
-        val handle = SpillablePartialFileHandle.createFileOnly(outputTempFile)
+        val handle = SpillablePartialFileHandle.createFileOnly(
+          outputTempFile, syncWrites)
         partialFileHandle = Some(handle)
       } else if (HostAlloc.isUsageBelowThreshold(memoryThreshold)) {
         // Memory sufficient: use MEMORY_WITH_SPILL mode
@@ -98,22 +102,26 @@ class RapidsLocalDiskShuffleMapOutputWriter(
             maxBufferSize = maxBufferSize,
             memoryThreshold = memoryThreshold,
             spillFile = outputTempFile,
-            priority = Long.MinValue)
+            priority = Long.MinValue,
+            syncWrites = syncWrites)
           partialFileHandle = Some(handle)
           logDebug(s"Using memory-with-spill mode for shuffle $shuffleId map $mapId " +
             s"(initial=${initialBufferSize / 1024 / 1024}MB, " +
             s"max=${maxBufferSize / 1024 / 1024}MB)")
         } catch {
           case e: Exception =>
-            logWarning(s"Failed to create memory buffer, falling back to file-only", e)
-            val handle = SpillablePartialFileHandle.createFileOnly(outputTempFile)
+            logWarning(s"Failed to create memory buffer, " +
+              s"falling back to file-only", e)
+            val handle = SpillablePartialFileHandle.createFileOnly(
+              outputTempFile, syncWrites)
             partialFileHandle = Some(handle)
         }
       } else {
         // Memory scarce: use FILE_ONLY mode
         logInfo(s"Host memory usage high, using file-only mode for shuffle " +
           s"$shuffleId map $mapId")
-        val handle = SpillablePartialFileHandle.createFileOnly(outputTempFile)
+        val handle = SpillablePartialFileHandle.createFileOnly(
+          outputTempFile, syncWrites)
         partialFileHandle = Some(handle)
       }
     }
