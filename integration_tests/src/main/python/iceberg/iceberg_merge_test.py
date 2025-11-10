@@ -497,7 +497,6 @@ def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, r
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13649")
 def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type):
     """Test MERGE falls back when Iceberg is completely disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
