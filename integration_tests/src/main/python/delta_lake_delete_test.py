@@ -20,8 +20,6 @@ from delta_lake_utils import *
 import glob
 from marks import *
 import os
-from parquet_test import coalesce_parquet_file_reader_multithread_filter_conf, coalesce_parquet_file_reader_multithread_filter_chunked_conf, \
-    coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf, rebase_write_corrected_conf
 import pyarrow.parquet as pq
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
     with_cpu_session, with_gpu_session, is_before_spark_353, is_spark_353_or_later
@@ -378,6 +376,18 @@ def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns, 
                                                 conf=delta_delete_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
+coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+                                                        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+                                                        'spark.rapids.sql.reader.chunked': False}
+coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+                                                                'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+                                                                'spark.rapids.sql.reader.chunked': True,
+                                                                'spark.rapids.sql.reader.chunked.subPage': True}
+
+coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+                                                                        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+                                                                        'spark.rapids.sql.reader.chunked': True,
+                                                                        'spark.rapids.sql.reader.chunked.subPage': False}
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, int_gen, long_gen]], ids=idfn)
 @pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf,
                                           coalesce_parquet_file_reader_multithread_filter_chunked_conf,
