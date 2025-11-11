@@ -1267,7 +1267,7 @@ arrow_struct_gens = [arrow_one_level_struct_gen,
 # This can be used to add a column to a dataframe if you need to
 # sort on a column with unique values.
 # This collects the data to driver though so can be expensive.
-def append_row_index_col_to_df(dataframe):
+def append_unique_int_col_to_df(dataframe):
     return dataframe.rdd.zipWithIndex() \
         .map(lambda row: (*row[0], row[1])).toDF(dataframe.columns + ["uniq_int"])
 
