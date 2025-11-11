@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.IOException
-import java.nio.charset.StandardCharsets
+import java.nio.charset.{Charset, StandardCharsets}
 
 import scala.collection.JavaConverters._
 
@@ -52,6 +52,21 @@ trait ScanWithMetrics {
 }
 
 object GpuCSVScan {
+  private val utf8Charsets: Set[Charset] = Set(
+    StandardCharsets.UTF_8,
+    StandardCharsets.US_ASCII)
+
+  private val supportedCharsets: Set[Charset] = utf8Charsets ++ Set(
+    Charset.forName("GBK")
+    // ... may have more in the future
+  )
+
+  private def isSupportedCharset(name: String): Boolean = {
+    name != null && supportedCharsets.contains(Charset.forName(name))
+  }
+
+  def isUTF8Charset(charset: Charset): Boolean = utf8Charsets.contains(charset)
+
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
     tagSupport(
@@ -116,9 +131,9 @@ object GpuCSVScan {
       meta.willNotWorkOnGpu("GPU CSV Parsing does not support charToEscapeQuoteEscaping")
     }
 
-    if (StandardCharsets.UTF_8.name() != parsedOptions.charset &&
-        StandardCharsets.US_ASCII.name() != parsedOptions.charset) {
-      meta.willNotWorkOnGpu("GpuCSVScan only supports UTF8 encoded data")
+    if (!isSupportedCharset(parsedOptions.charset)) {
+      meta.willNotWorkOnGpu(s"GpuCSVScan only supports " +
+        s"${supportedCharsets.mkString("[", ", ", "]")} encoded data")
     }
 
     // TODO parsedOptions.ignoreLeadingWhiteSpaceInRead cudf always does this, but not for strings
@@ -323,7 +338,7 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
     bufferFactory: FACT) extends
     GpuTextBasedPartitionReader[BUFF, FACT](conf, partFile,
       dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
-      maxBytesPerChunk, execMetrics, bufferFactory) {
+      maxBytesPerChunk, execMetrics, bufferFactory, Charset.forName(parsedOptions.charset)) {
 
   /**
    * File format short name used for logging and other things to uniquely identity

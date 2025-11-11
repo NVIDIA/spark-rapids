@@ -701,3 +701,14 @@ def test_read_case_col_name(spark_tmp_path, spark_tmp_table_factory, read_func, 
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : reader(spark).selectExpr(col_name),
             conf=all_confs)
+
+@ignore_order(local=True)
+@allow_non_gpu('CollectLimitExec')
+def test_csv_read_gbk_encoded_data(std_input_path):
+    data_path = std_input_path + "/test_gbk.csv"
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read
+            .option("charset", "GBK")
+            .option("header", "true")
+            .schema("name string, age int, city string, job string")
+            .csv(data_path))
