@@ -62,7 +62,11 @@ object GpuCSVScan {
   )
 
   private def isSupportedCharset(name: String): Boolean = {
-    name != null && supportedCharsets.contains(Charset.forName(name))
+    try {
+      name != null && supportedCharsets.contains(Charset.forName(name))
+    } catch {
+      case _: IllegalArgumentException => false
+    }
   }
 
   def isUTF8Charset(charset: Charset): Boolean = utf8Charsets.contains(charset)
