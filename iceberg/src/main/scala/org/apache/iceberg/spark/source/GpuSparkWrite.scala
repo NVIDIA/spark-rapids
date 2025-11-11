@@ -21,6 +21,7 @@ import scala.util.{Failure, Success}
 
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
@@ -411,7 +412,7 @@ class GpuPartitionedDataWriter(
 
   override def write(record: ColumnarBatch): Unit = {
     partitioner.partition(record)
-      .foreach { part =>
+      .safeConsume { part =>
         delegate.write(part.batch, spec, part.partition)
       }
   }

@@ -23,7 +23,7 @@ import ai.rapids.cudf.{Scalar, Table => CudfTable}
 import ai.rapids.cudf.Table.DuplicateKeepOption
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuColumnVector, GpuDeltaWrite, GpuParquetFileFormat, RapidsHostColumnVector, SparkPlanMeta, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray, AutoCloseableSeq}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
@@ -442,16 +442,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
                     }
                   }
 
-                  closeOnExcept(mutable.Queue(partitions: _*)) { buffer =>
-                    while (buffer.nonEmpty) {
-                      val p = buffer.dequeue()
-                      // Write to delete writer via GpuBasePositionDeltaWriter's deleteWriter
-                      // Since we need access to the deleteWriter directly, we'll need to
-                      // expose it or create a method to write deletes
-                      // For now, we'll write to the spec with the partition
-                      writeDelete(p.batch, spec, p.partition)
-                    }
-                  }
+                  partitions.safeConsume(p => writeDelete(p.batch, spec, p.partition))
                 }
               }
             }
@@ -591,12 +582,7 @@ class GpuDeleteOnlyDeltaWriter(
                     }
                   }
 
-                  closeOnExcept(mutable.Queue(partitions: _*)) { buffer =>
-                    while (buffer.nonEmpty) {
-                      val p = buffer.dequeue()
-                      delegate.write(p.batch, spec, p.partition)
-                    }
-                  }
+                  partitions.safeConsume(p => delegate.write(p.batch, spec, p.partition))
                 }
               }
             }
@@ -734,7 +720,7 @@ class GpuPartitionedDeltaWriter(
   override def insert(row: ColumnarBatch): Unit = {
     // Partition the data and write each partition
     dataPartitioner.partition(row)
-      .foreach { part =>
+      .safeConsume { part =>
         delegate.insert(part.batch, dataSpec, part.partition)
       }
   }
