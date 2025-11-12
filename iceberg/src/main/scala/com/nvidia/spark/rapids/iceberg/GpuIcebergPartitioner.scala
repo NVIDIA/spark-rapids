@@ -268,9 +268,14 @@ object GpuIcebergPartitioner {
               sortedValuesTable.contiguousSplit(splitIds: _*)
             }
 
-            require(partKeys.length == splits.length, s"Partition key length ${partKeys.length} " +
+            val (leftSplits, last) = (splits.init, splits.last)
+            require(partKeys.length == leftSplits.length,
+              s"Partition key length ${partKeys.length}" +
               s"not matching with number of column batches ${splits.length}")
-            (partKeys, splits)
+            require(last.getRowCount == 0, s"Expecting last split empty, but has " +
+              s"${last.getRowCount} rows")
+            last.close()
+            (partKeys, leftSplits)
           }
         }
 
