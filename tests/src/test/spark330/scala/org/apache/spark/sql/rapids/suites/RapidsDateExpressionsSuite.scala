@@ -65,7 +65,7 @@ class RapidsDateExpressionsSuite extends DateExpressionsSuite with RapidsTestsTr
 
   // Override the problematic test to remove the intercept[Exception] part
   // Original test: DateExpressionsSuite.scala lines 1813-1867
-  test("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp - modified") {
+  testRapids("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp") {
     val sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     Seq(TimestampType, TimestampNTZType).foreach { dt =>
       for (zid <- outstandingZoneIds) {
