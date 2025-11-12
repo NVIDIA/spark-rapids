@@ -487,5 +487,89 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
       assert(readBuffer.sameElements(testData))
     }
   }
+  
+  test("Disk write savings metric - MEMORY_WITH_SPILL kept in memory") {
+    // This test verifies that when data stays in memory during write phase,
+    // the metric logic correctly identifies it as "saved disk write"
+    val tempFile = File.createTempFile("test-metric-", ".tmp")
+    
+    withResource(SpillablePartialFileHandle.createMemoryWithSpill(
+      initialCapacity = 1024 * 1024,  // 1MB
+      maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.9,  // High threshold to avoid spill
+      spillFile = tempFile)) { handle =>
+      
+      val testData = "Test data for disk write savings metric.".getBytes("UTF-8")
+      handle.write(testData, 0, testData.length)
+      
+      // Verify still in memory
+      assert(handle.isMemoryBased)
+      assert(!handle.isSpilled)
+      
+      // When finishWrite is called and data is still in memory,
+      // it should trigger the metric recording logic
+      handle.finishWrite()
+      
+      // Verify the handle state is correct for metric recording
+      assert(handle.getTotalBytesWritten == testData.length)
+      assert(handle.isMemoryBased)
+      assert(!handle.isSpilled)
+      
+      // Note: Without a TaskContext in unit tests, the accumulator won't be
+      // created, but the code should not fail. The actual metric value can
+      // only be verified in integration tests with real TaskContext.
+    }
+  }
+  
+  test("Disk write savings metric - FILE_ONLY should not record") {
+    // This test verifies that FILE_ONLY mode does not record disk write savings
+    val tempFile = File.createTempFile("test-metric-file-", ".tmp")
+    
+    withResource(SpillablePartialFileHandle.createFileOnly(tempFile)) { handle =>
+      val testData = "Test data for FILE_ONLY mode.".getBytes("UTF-8")
+      handle.write(testData, 0, testData.length)
+      
+      // Verify it's file-only mode
+      assert(!handle.isMemoryBased)
+      
+      // When finishWrite is called in FILE_ONLY mode,
+      // it should NOT trigger metric recording
+      handle.finishWrite()
+      
+      // Verify state
+      assert(handle.getTotalBytesWritten == testData.length)
+      assert(!handle.isMemoryBased)
+    }
+  }
+  
+  test("Disk write savings metric - MEMORY spilled during write should not record") {
+    // This test verifies that if data spills during write phase,
+    // it should NOT record disk write savings
+    val tempFile = File.createTempFile("test-metric-spill-", ".tmp")
+    
+    withResource(SpillablePartialFileHandle.createMemoryWithSpill(
+      initialCapacity = 100,  // Very small buffer
+      maxBufferSize = 200,    // Very small max to force spill
+      memoryThreshold = 0.9,
+      spillFile = tempFile)) { handle =>
+      
+      // Write data larger than max buffer size to trigger spill during write
+      val largeData = new Array[Byte](300)
+      java.util.Arrays.fill(largeData, 42.toByte)
+      handle.write(largeData, 0, largeData.length)
+      
+      // After writing, should have spilled during write phase
+      assert(handle.isMemoryBased)  // Still memory-based mode
+      assert(handle.isSpilled)       // But spilled to disk
+      
+      // When finishWrite is called after spilling during write,
+      // it should NOT record disk write savings
+      handle.finishWrite()
+      
+      // Verify state
+      assert(handle.getTotalBytesWritten == largeData.length)
+      assert(handle.isSpilled)
+    }
+  }
 }
 

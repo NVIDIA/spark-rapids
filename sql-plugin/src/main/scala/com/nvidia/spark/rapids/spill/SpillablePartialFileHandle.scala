@@ -21,6 +21,7 @@ import java.io.File
 import com.nvidia.spark.rapids.HostAlloc
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 /**
  * Storage mode for SpillablePartialFileHandle.
@@ -308,10 +309,14 @@ class SpillablePartialFileHandle private (
   /**
    * Finish write phase and enable spilling.
    * After this call, no more writes are allowed but reads can proceed.
+   * 
+   * This is where we record disk write savings metric: if this handle is in
+   * MEMORY_WITH_SPILL mode and hasn't spilled yet, it means we successfully
+   * avoided disk writes during the write phase.
    */
   def finishWrite(): Unit = {
     // Extract streams under lock, close them outside
-    val (bos, fos) = synchronized {
+    val (bos, fos, shouldRecordSavings) = synchronized {
       if (writeFinished) {
         return
       }
@@ -320,11 +325,18 @@ class SpillablePartialFileHandle private (
       totalBytesWritten = writePosition
       protectedFromSpill = false
 
+      // Check if we should record disk write savings:
+      // 1. Must be MEMORY_WITH_SPILL mode (not FILE_ONLY)
+      // 2. Must not have spilled yet (data still in memory)
+      // This means we successfully avoided disk writes during write phase
+      val recordSavings = storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
+        !spilledToDisk && totalBytesWritten > 0
+
       val b = bufferedOutputStream
       val f = fileOutputStream
       bufferedOutputStream = None
       fileOutputStream = None
-      (b, f)
+      (b, f, recordSavings)
     }
 
     // Close streams outside lock (IO operations can be slow)
@@ -333,6 +345,13 @@ class SpillablePartialFileHandle private (
       s.close()
     }
     fos.foreach(_.close())
+    
+    // Record disk write savings if applicable
+    if (shouldRecordSavings) {
+      SpillablePartialFileHandle.recordDiskWriteSaved(totalBytesWritten)
+      logInfo(s"Recorded disk write savings: $totalBytesWritten bytes " +
+        s"(kept in memory during write phase)")
+    }
   }
 
   /**
@@ -420,7 +439,6 @@ class SpillablePartialFileHandle private (
 
   /**
    * Spill memory buffer to disk.
-   * Note: This is only called after write phase is finished (protectedFromSpill=false).
    */
   override def spill(): Long = synchronized {
     if (storageMode != PartialFileStorageMode.MEMORY_WITH_SPILL) {
@@ -541,7 +559,25 @@ class SpillablePartialFileHandle private (
   }
 }
 
-object SpillablePartialFileHandle {
+object SpillablePartialFileHandle extends Logging {
+  
+  /**
+   * Record disk write savings for a SpillablePartialFileHandle.
+   * Should be called when a handle successfully avoided disk writes during write phase.
+   * 
+   * This tracks bytes that were kept in memory during shuffle write phase,
+   * avoiding disk writes compared to the baseline implementation.
+   * 
+   * @param bytesSaved Number of bytes that avoided disk write
+   */
+  private[spill] def recordDiskWriteSaved(bytesSaved: Long): Unit = {
+    if (bytesSaved > 0) {
+      GpuTaskMetrics.get.addDiskWriteSaved(bytesSaved)
+      logInfo(s"Recorded disk write savings: $bytesSaved bytes " +
+        s"(kept in memory during write phase)")
+    }
+  }
+  
   /**
    * Create a file-only handle.
    * Data is written directly to disk without using host memory.
