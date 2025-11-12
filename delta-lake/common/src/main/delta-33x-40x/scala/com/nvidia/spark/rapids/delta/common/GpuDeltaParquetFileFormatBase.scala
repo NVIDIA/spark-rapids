@@ -331,12 +331,22 @@ class DeltaMultiFileReaderFactory(
 
   override protected def getMultiFileReader(files: Array[PartitionedFile], conf: Configuration,
      poolConf: ThreadPoolConf, clippedBlocks: ArrayBuffer[ParquetSingleDataBlockMeta]) = {
-    new DeltaCoalescingFileParquetPartitionReader(fileIO, conf, files, clippedBlocks.toSeq,
-      isCaseSensitive, debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
-      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
-      metrics, partitionSchema, poolConf, ignoreMissingFiles, ignoreCorruptFiles,
-      readUseFieldId, isRowDeletedColumn, tablePath, rowIndexColumn)
+
+    if (RapidsDeletionVectorUtils.noDeletionVectorsPresent(
+      useMetadataRowIndex = false,
+      isRowDeletedColumn = isRowDeletedColumn,
+      rowIndexColumn = rowIndexColumn,
+      optimizationsEnabled = false,
+      hasTablePath = tablePath.isDefined)) {
+      super.getMultiFileReader(files, conf, poolConf, clippedBlocks)
+    } else {
+      new DeltaCoalescingFileParquetPartitionReader(fileIO, conf, files, clippedBlocks.toSeq,
+        isCaseSensitive, debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows,
+        maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
+        useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
+        metrics, partitionSchema, poolConf, ignoreMissingFiles, ignoreCorruptFiles,
+        readUseFieldId, isRowDeletedColumn, tablePath, rowIndexColumn)
+    }
   }
 
   override def createColumnarReader(p: InputPartition): PartitionReader[ColumnarBatch] = {
@@ -397,15 +407,6 @@ class DeltaCoalescingFileParquetPartitionReader(
       partitionSchema: StructType,
       maxGpuColumnSizeBytes: Long
       ): Iterator[ColumnarBatch] = {
-
-    if (RapidsDeletionVectorUtils.noDeletionVectorsPresent(
-      useMetadataRowIndex = false,
-      isRowDeletedColumn = isRowDeletedColumnOpt,
-      rowIndexColumn = rowIndexColumnOpt,
-      optimizationsEnabled = false,
-      hasTablePath = tablePath.isDefined)) {
-      return batchIter
-    }
 
     var rowIndex = 0L
     new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
