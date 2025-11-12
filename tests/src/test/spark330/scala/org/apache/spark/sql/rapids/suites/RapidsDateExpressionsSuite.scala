@@ -19,16 +19,16 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
+import java.sql.Timestamp
 import java.text.SimpleDateFormat
 import java.time.Duration
 import java.time.LocalDateTime
-import java.sql.Timestamp
 import java.util.{Locale, TimeZone}
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.DateExpressionsSuite
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.util.DateTimeTestUtils._
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.rapids.utils.RapidsTestsTrait
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.types.DataTypeTestUtils.dayTimeIntervalTypes
