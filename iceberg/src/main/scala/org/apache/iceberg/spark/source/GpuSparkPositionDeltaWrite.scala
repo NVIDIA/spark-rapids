@@ -327,14 +327,17 @@ class GpuDeleteOnlyDeltaWriter(
   override def delete(metadata: ColumnarBatch, rowId: ColumnarBatch): Unit = {
     require(metadata != null, "Metadata batch must be non null for delete-only writer")
 
-    val spillPartValues = SpillableColumnarBatch(
-      extractToStruct(metadata, partitionOrdinal),
-      ACTIVE_ON_DECK_PRIORITY)
-    val spillPosDeletes = closeOnExcept(spillPartValues) { _ =>
-      SpillableColumnarBatch(extractPositionDeletes(rowId, fileOrdinal, positionOrdinal),
+    val (spillPartValues, spillPosDeletes) = withResource(Seq(metadata, rowId)) { _ =>
+      val spillPartValues = SpillableColumnarBatch(
+        extractToStruct(metadata, partitionOrdinal),
         ACTIVE_ON_DECK_PRIORITY)
-    }
 
+      val spillPosDeletes = closeOnExcept(spillPartValues) { _ =>
+        SpillableColumnarBatch(extractPositionDeletes(rowId, fileOrdinal, positionOrdinal),
+          ACTIVE_ON_DECK_PRIORITY)
+      }
+      (spillPartValues, spillPosDeletes)
+    }
 
     withRetryNoSplit(Seq(spillPartValues, spillPosDeletes)) { _ =>
       withResource(spillPartValues.getColumnarBatch()) { partValues =>
