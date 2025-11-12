@@ -217,9 +217,9 @@ object GpuIcebergPartitioner {
     }
     cols(table.getNumberOfColumns) = rowIdxCol
 
-    closeOnExcept(cols) { _ =>
+    withResource(cols) { _ =>
       for (idx <- 0 until table.getNumberOfColumns) {
-        cols(idx) = table.getColumn(idx)
+        cols(idx) = table.getColumn(idx).incRefCount()
       }
 
       new Table(cols: _*)
