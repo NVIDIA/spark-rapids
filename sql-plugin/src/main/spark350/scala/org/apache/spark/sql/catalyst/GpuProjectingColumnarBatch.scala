@@ -36,11 +36,13 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 
 case class GpuProjectingColumnarBatch(schema: StructType, colOrdinals: Seq[Int]) {
+
   /**
-   * Extract some columns from input batch. It's caller's responsibility to close batch.
+   * Project a subset of columns from a `ColumnarBatch` onto a new batch
+   * based on the specified column ordinals and output schema. 
    *
-   * @param batch
-   * @return
+   * @param batch The input batch to project. It's caller's responsibility to close batch.
+   * @return The projected batch.
    */
   def project(batch: ColumnarBatch): ColumnarBatch = {
     closeOnExcept(new Array[ColumnVector](colOrdinals.length)) { arr =>

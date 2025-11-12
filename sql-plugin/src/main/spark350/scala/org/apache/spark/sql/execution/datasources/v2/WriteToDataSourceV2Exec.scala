@@ -340,8 +340,6 @@ trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with S
         CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
       }
 
-      CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
-
       val msg = if (useCommitCoordinator) {
         val coordinator = SparkEnv.get.outputCommitCoordinator
         val commitAuthorized = coordinator.canCommit(stageId, stageAttempt, partId, attemptId)
@@ -407,22 +405,30 @@ case class GpuDeltaWritingSparkTask(
       withResource(deleteFilter) { _ =>
         withResource(rowIdProjection.project(batch)) { rowIds =>
           val rowIdBatch = GpuColumnVector.filter(rowIds, rowIdDataTypes, deleteFilter)
-          writer.delete(null, rowIdBatch)
+          if (rowIdBatch.numRows() > 0) {
+            writer.delete(null, rowIdBatch)
+          } else {
+            rowIdBatch.close()
+          }
         }
       }
 
       val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
       withResource(updateFilter) { _ =>
-        val rowIds =  withResource(rowIdProjection.project(batch)) { rowIds =>
+        val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
           GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
         }
 
         closeOnExcept(rowIds) { _ =>
-          val rows = withResource(rowProjection.project(batch)) { rows =>
-            GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
-          }
+          if (rowIds.numRows() > 0) {
+            val rows = withResource(rowProjection.project(batch)) { rows =>
+              GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
+            }
 
-          writer.update(null, rowIds, rows)
+            writer.update(null, rowIds, rows)
+          } else {
+            rowIds.close()
+          }
         }
       }
 
@@ -430,7 +436,11 @@ case class GpuDeltaWritingSparkTask(
       withResource(insertFilter) { _ =>
         withResource(rowProjection.project(batch)) { rows =>
           val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
-          writer.insert(filteredRows)
+          if (filteredRows.numRows() > 0) {
+            writer.insert(filteredRows)
+          } else {
+            filteredRows.close()
+          }
         }
       }
     }
@@ -465,7 +475,7 @@ case class GpuDeltaWithMetadataWritingSparkTask(
     withRetryNoSplit(batch) { _ =>
       val deleteFilter = filterByOperation(batch, DELETE_OPERATION)
       withResource(deleteFilter) { _ =>
-        val rowIds =  withResource(rowIdProjection.project(batch)) { rowIds =>
+        val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
           GpuColumnVector.filter(rowIds, rowIdDataTypes, deleteFilter)
         }
 
@@ -476,13 +486,15 @@ case class GpuDeltaWithMetadataWritingSparkTask(
             }
 
             writer.delete(metadataBatch, rowIds)
+          } else {
+            rowIds.close()
           }
         }
       }
 
       val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
       withResource(updateFilter) { _ =>
-        val rowIds =  withResource(rowIdProjection.project(batch)) { rowIds =>
+        val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
           GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
         }
 
@@ -499,19 +511,20 @@ case class GpuDeltaWithMetadataWritingSparkTask(
 
               writer.update(metadataBatch, rowIds, rows)
             }
+          } else {
+            rowIds.close()
           }
         }
       }
 
       val insertFilter = filterByOperation(batch, INSERT_OPERATION)
       withResource(insertFilter) { _ =>
-        withResource(insertFilter.any()) { s =>
-          if (s.getBoolean) {
-            withResource(rowProjection.project(batch)) { rows =>
-              val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
-
-              writer.insert(filterRows)
-            }
+        withResource(rowProjection.project(batch)) { rows =>
+          val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
+          if (filterRows.numRows() > 0) {
+            writer.insert(filterRows)
+          } else {
+            filterRows.close()
           }
         }
       }
