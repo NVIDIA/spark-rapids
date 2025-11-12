@@ -391,7 +391,9 @@ object GpuDataWritingSparkTask extends GpuWritingSparkTask[DataWriter[ColumnarBa
 case class GpuDeltaWritingSparkTask(
     projs: WriteDeltaProjections) extends GpuWritingSparkTask[DeltaWriter[ColumnarBatch]] {
 
-  private lazy val rowProjection = projs.rowProjection.map(GpuProjectingColumnarBatch(_)).orNull
+  private lazy val rowProjection = projs.rowProjection
+    .map(GpuProjectingColumnarBatch(_))
+    .orNull
   private lazy val rowDataTypes = projs.rowProjection
     .map(_.schema.fields.map(f => f.dataType))
     .orNull
@@ -413,33 +415,35 @@ case class GpuDeltaWritingSparkTask(
         }
       }
 
-      val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
-      withResource(updateFilter) { _ =>
-        val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
-          GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
-        }
+      if (rowProjection != null) {
+        val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
+        withResource(updateFilter) { _ =>
+          val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
+            GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
+          }
 
-        closeOnExcept(rowIds) { _ =>
-          if (rowIds.numRows() > 0) {
-            val rows = withResource(rowProjection.project(batch)) { rows =>
-              GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
+          closeOnExcept(rowIds) { _ =>
+            if (rowIds.numRows() > 0) {
+              val rows = withResource(rowProjection.project(batch)) { rows =>
+                GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
+              }
+
+              writer.update(null, rowIds, rows)
+            } else {
+              rowIds.close()
             }
-
-            writer.update(null, rowIds, rows)
-          } else {
-            rowIds.close()
           }
         }
-      }
 
-      val insertFilter = filterByOperation(batch, INSERT_OPERATION)
-      withResource(insertFilter) { _ =>
-        withResource(rowProjection.project(batch)) { rows =>
-          val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
-          if (filteredRows.numRows() > 0) {
-            writer.insert(filteredRows)
-          } else {
-            filteredRows.close()
+        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        withResource(insertFilter) { _ =>
+          withResource(rowProjection.project(batch)) { rows =>
+            val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
+            if (filteredRows.numRows() > 0) {
+              writer.insert(filteredRows)
+            } else {
+              filteredRows.close()
+            }
           }
         }
       }
@@ -473,58 +477,64 @@ case class GpuDeltaWithMetadataWritingSparkTask(
 
   override protected def write(writer: DeltaWriter[ColumnarBatch], batch: ColumnarBatch): Unit = {
     withRetryNoSplit(batch) { _ =>
-      val deleteFilter = filterByOperation(batch, DELETE_OPERATION)
-      withResource(deleteFilter) { _ =>
-        val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
-          GpuColumnVector.filter(rowIds, rowIdDataTypes, deleteFilter)
-        }
-
-        closeOnExcept(rowIds) { _ =>
-          if (rowIds.numRows() > 0) {
-            val metadataBatch = withResource(metadataProjection.project(batch)) { metaBatch =>
-              GpuColumnVector.filter(metaBatch, metadataDataTypes, deleteFilter)
-            }
-
-            writer.delete(metadataBatch, rowIds)
-          } else {
-            rowIds.close()
+      if (metadataProjection != null) {
+        val deleteFilter = filterByOperation(batch, DELETE_OPERATION)
+        withResource(deleteFilter) { _ =>
+          val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
+            GpuColumnVector.filter(rowIds, rowIdDataTypes, deleteFilter)
           }
-        }
-      }
 
-      val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
-      withResource(updateFilter) { _ =>
-        val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
-          GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
-        }
-
-        closeOnExcept(rowIds) { _ =>
-          if (rowIds.numRows() > 0) {
-            val rows = withResource(rowProjection.project(batch)) { rows =>
-              GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
-            }
-
-            closeOnExcept(rows) { _ =>
-              val metadataBatch = withResource(metadataProjection.project(batch)) { metadata =>
-                GpuColumnVector.filter(metadata, metadataDataTypes, updateFilter)
+          closeOnExcept(rowIds) { _ =>
+            if (rowIds.numRows() > 0) {
+              val metadataBatch = withResource(metadataProjection.project(batch)) { metaBatch =>
+                GpuColumnVector.filter(metaBatch, metadataDataTypes, deleteFilter)
               }
 
-              writer.update(metadataBatch, rowIds, rows)
+              writer.delete(metadataBatch, rowIds)
+            } else {
+              rowIds.close()
             }
-          } else {
-            rowIds.close()
           }
         }
       }
 
-      val insertFilter = filterByOperation(batch, INSERT_OPERATION)
-      withResource(insertFilter) { _ =>
-        withResource(rowProjection.project(batch)) { rows =>
-          val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
-          if (filterRows.numRows() > 0) {
-            writer.insert(filterRows)
-          } else {
-            filterRows.close()
+      if (rowProjection != null && metadataProjection != null) {
+        val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
+        withResource(updateFilter) { _ =>
+          val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
+            GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
+          }
+
+          closeOnExcept(rowIds) { _ =>
+            if (rowIds.numRows() > 0) {
+              val rows = withResource(rowProjection.project(batch)) { rows =>
+                GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
+              }
+
+              closeOnExcept(rows) { _ =>
+                val metadataBatch = withResource(metadataProjection.project(batch)) { metadata =>
+                  GpuColumnVector.filter(metadata, metadataDataTypes, updateFilter)
+                }
+
+                writer.update(metadataBatch, rowIds, rows)
+              }
+            } else {
+              rowIds.close()
+            }
+          }
+        }
+      }
+
+      if (rowProjection != null) {
+        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        withResource(insertFilter) { _ =>
+          withResource(rowProjection.project(batch)) { rows =>
+            val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
+            if (filterRows.numRows() > 0) {
+              writer.insert(filterRows)
+            } else {
+              filterRows.close()
+            }
           }
         }
       }
