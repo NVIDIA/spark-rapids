@@ -13,6 +13,7 @@
 # limitations under the License.
 """Upload & run test script on Databricks cluster."""
 
+import os
 import subprocess
 import sys
 
@@ -36,10 +37,14 @@ def main():
     print("rsync command: %s" % rsync_command)
     subprocess.check_call(rsync_command, shell=True)
 
+    # Get DATABRICKS credentials from environment (set by Jenkinsfile)
+    databricks_host = os.getenv('DATABRICKS_HOST', params.workspace)
+    databricks_token = os.getenv('DATABRICKS_TOKEN', params.token)
+
     ssh_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
-        "'LOCAL_JAR_PATH=%s SPARK_CONF=%s BASE_SPARK_VERSION=%s EXTRA_ENVS=%s TEST_TYPE=%s bash %s %s 2>&1 | tee testout; " \
+        "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s LOCAL_JAR_PATH=%s SPARK_CONF=%s BASE_SPARK_VERSION=%s EXTRA_ENVS=%s TEST_TYPE=%s bash %s %s 2>&1 | tee testout; " \
         "if [ ${PIPESTATUS[0]} -ne 0 ]; then false; else true; fi'" % \
-        (params.jar_path, params.spark_conf, params.base_spark_pom_version, params.extra_envs, params.test_type,
+        (databricks_host, databricks_token, params.jar_path, params.spark_conf, params.base_spark_pom_version, params.extra_envs, params.test_type,
          params.script_dest, ' '.join(params.script_args))
     print("ssh command: %s" % ssh_command)
     try:
