@@ -429,9 +429,8 @@ def _maybe_apply_random_select(config, items):
     if mode == "count":
         selected_count = max(0, min(target, total))
     elif mode == "fraction":
-        fraction = _random_select_config["target"]
-        selected_count = min(total, max(0, math.ceil(total * fraction)))
-    if selected_count == total:
+        selected_count = min(total, max(0, math.ceil(total * target)))
+    if selected_count >= total:
         reporter = config.pluginmanager.get_plugin("terminalreporter")
         if reporter:
             reporter.write_line(
