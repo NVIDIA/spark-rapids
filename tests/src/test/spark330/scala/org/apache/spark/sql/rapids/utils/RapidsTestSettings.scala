@@ -35,6 +35,7 @@ import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaByteArrayEncodingSui
 import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingInteger
 import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingLong
 import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaLengthByteArrayEncodingSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetEncodingSuite
 import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdIOSuite
 import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdSchemaSuite
 import org.apache.spark.sql.rapids.suites.RapidsParquetFileFormatSuite
@@ -109,6 +110,10 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingInteger]
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
+  enableSuite[RapidsParquetEncodingSuite]
+    .exclude("Read row group containing both dictionary and plain encoded pages", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13739"))
+    .exclude("parquet v2 pages - delta encoding", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13745"))
+    .exclude("parquet v2 pages - rle encoding for boolean value columns", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13746"))
   enableSuite[RapidsParquetFileFormatSuite]
     .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11602"))
   enableSuite[RapidsParquetFieldIdIOSuite]
