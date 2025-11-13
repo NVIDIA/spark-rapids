@@ -430,10 +430,7 @@ def _maybe_apply_random_select(config, items):
         selected_count = max(0, min(target, total))
     elif mode == "fraction":
         fraction = _random_select_config["target"]
-        if fraction <= 0:
-            selected_count = 0
-        else:
-            selected_count = min(total, max(0, math.ceil(total * fraction)))
+        selected_count = min(total, max(0, math.ceil(total * fraction)))
     if selected_count == total:
         reporter = config.pluginmanager.get_plugin("terminalreporter")
         if reporter:
