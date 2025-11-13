@@ -20,9 +20,9 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import org.apache.spark.sql.DataFrameComplexTypeSuite
-import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 class RapidsDataFrameComplexTypeSuite
   extends DataFrameComplexTypeSuite
-  with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsTrait {}
 
