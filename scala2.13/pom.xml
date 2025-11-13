@@ -1052,7 +1052,6 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
-
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
