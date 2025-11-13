@@ -19,7 +19,38 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsDateExpressionsSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathExpressionsSuite, RapidsMathFunctionsSuite, RapidsMiscFunctionsSuite, RapidsParquetAvroCompatibilitySuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite, RapidsParquetEncodingSuite, RapidsParquetFieldIdIOSuite, RapidsParquetFieldIdSchemaSuite, RapidsParquetFileFormatSuite, RapidsParquetInteroperabilitySuite, RapidsParquetPartitionDiscoverySuite, RapidsParquetProtobufCompatibilitySuite, RapidsParquetQuerySuite, RapidsParquetRebaseDatetimeSuite, RapidsParquetSchemaPruningSuite, RapidsParquetSchemaSuite, RapidsParquetThriftCompatibilitySuite, RapidsParquetVectorizedSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
+import org.apache.spark.sql.rapids.suites.RapidsCastSuite
+import org.apache.spark.sql.rapids.suites.RapidsDataFrameAggregateSuite
+import org.apache.spark.sql.rapids.suites.RapidsDateExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsJsonExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsJsonFunctionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsJsonSuite
+import org.apache.spark.sql.rapids.suites.RapidsMathExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsMathFunctionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsMiscFunctionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetAvroCompatibilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetColumnIndexSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetCompressionCodecPrecedenceSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaByteArrayEncodingSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingInteger
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingLong
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaLengthByteArrayEncodingSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetEncodingSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdIOSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdSchemaSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetFileFormatSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetInteroperabilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetPartitionDiscoverySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetProtobufCompatibilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetQuerySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetRebaseDatetimeSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetSchemaPruningSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetSchemaSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetThriftCompatibilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetVectorizedSuite
+import org.apache.spark.sql.rapids.suites.RapidsRegexpExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsStringExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsStringFunctionsSuite
 
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
