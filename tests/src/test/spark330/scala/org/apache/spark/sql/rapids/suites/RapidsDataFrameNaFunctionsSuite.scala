@@ -20,10 +20,10 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import org.apache.spark.sql.DataFrameNaFunctionsSuite
-import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 class RapidsDataFrameNaFunctionsSuite
   extends DataFrameNaFunctionsSuite
-  with RapidsSQLTestsBaseTrait {
+  with RapidsSQLTestsTrait {
 }
 
