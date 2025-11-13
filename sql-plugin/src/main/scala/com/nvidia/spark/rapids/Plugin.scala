@@ -781,7 +781,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     // Make sure that the thread/task is registered before we try and block
     // For the task main thread, we want to make sure that it's registered in the OOM state
     // machine throughout the task lifecycle.
-    TaskRegistryTracker.registerThreadForRetry()
+    TaskRegistryTracker.registerDedicatedThreadForRetry()
   }
 
   override def onTaskSucceeded(): Unit = {
