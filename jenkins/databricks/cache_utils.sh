@@ -17,6 +17,18 @@
 
 # Shared utility functions for caching artifacts
 
+# Use databricks CLI installed by official script at $HOME/bin/databricks
+DATABRICKS_CLI=${DATABRICKS_CLI:-$HOME/bin/databricks}
+
+# Print CLI version for debugging
+if [[ -x "$DATABRICKS_CLI" ]]; then
+    echo "Using Databricks CLI: $DATABRICKS_CLI"
+    $DATABRICKS_CLI --version 2>/dev/null || echo "Unable to determine CLI version"
+else
+    echo "Warning: Databricks CLI not found at $DATABRICKS_CLI"
+fi
+
+
 # Download and cache artifact to Workspace cache directory
 # Arguments:
 #   $1: jar_file_name - Name of the file to download/cache
@@ -29,21 +41,30 @@ download_and_cache_artifact() {
     local download_url=$2
     local extract_dir=${3:-$HOME}
     
-    local ws_cache_dir=${WS_CACHE_DIR:-"/Workspace/databricks/cached_jars"}
-    local cache_file="$ws_cache_dir/$jar_file_name"
+    # Workspace path for caching (accessed via Databricks CLI API, not local FUSE)
+    local ws_cache_dir=${WS_CACHE_DIR:-"/databricks/cached_jars"}
+    local local_cache_dir="/tmp/workspace_cache"
+    local local_file="$local_cache_dir/$jar_file_name"
     
-    # Create cache directory if it doesn't exist (may require permissions)
-    mkdir -p "$ws_cache_dir"
+    mkdir -p "$local_cache_dir"
     
-    # Check if file exists in Workspace cache
-    if [[ -f "$cache_file" ]]; then
-        echo "Found $jar_file_name in Workspace cache, copying to /tmp..."
-        cp "$cache_file" "/tmp/$jar_file_name"
+    # Try to export entire cache directory from Workspace using Databricks CLI
+    echo "Syncing Workspace cache to local ($ws_cache_dir -> $local_cache_dir)..."
+    $DATABRICKS_CLI workspace export-dir "$ws_cache_dir" "$local_cache_dir" 2>/dev/null || \
+        echo "Workspace cache not found or empty, will download"
+    
+    # Check if file exists in local cache after export
+    if [[ -f "$local_file" ]]; then
+        echo "Found $jar_file_name in Workspace cache"
     else
-        echo "$jar_file_name not found in Workspace cache, downloading from $download_url..."
-        if wget "$download_url" -P /tmp; then
-            echo "Download successful, caching to Workspace..."
-            cp "/tmp/$jar_file_name" "$cache_file" || true
+        echo "$jar_file_name not found in cache, downloading from $download_url..."
+        if wget "$download_url" -O "$local_file"; then
+            echo "Download successful, importing to Workspace cache..."
+            # Create workspace directory if needed
+            $DATABRICKS_CLI workspace mkdirs "$ws_cache_dir" 2>/dev/null || true
+            # Import entire directory back to Workspace (without --overwrite to skip existing files)
+            $DATABRICKS_CLI workspace import-dir "$local_cache_dir" "$ws_cache_dir" 2>/dev/null || \
+                echo "Warning: Could not cache to Workspace (continuing anyway)"
         else
             echo "Download failed"
             return 1
@@ -51,8 +72,7 @@ download_and_cache_artifact() {
     fi
     
     # Extract the file
-    tar xf "/tmp/$jar_file_name" -C "$extract_dir"
-    rm -f "/tmp/$jar_file_name"
+    tar xf "$local_file" -C "$extract_dir"
     return 0
 }
 
