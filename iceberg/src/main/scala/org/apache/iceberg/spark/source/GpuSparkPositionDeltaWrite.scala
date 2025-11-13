@@ -659,7 +659,7 @@ class GpuUnpartitionedDeltaWriter(
     writerFactory: GpuSparkFileWriterFactory,
     dataFileFactory: OutputFileFactory,
     deleteFileFactory: OutputFileFactory,
-    context: GpuWriteContext) extends GpuDeleteAndDataDeltaWriter {
+    override val context: GpuWriteContext) extends GpuDeleteAndDataDeltaWriter {
 
   protected val io: FileIO = table.io()
   protected val specs: mutable.Map[Integer, PartitionSpec] = table.specs().asScala
@@ -709,7 +709,7 @@ class GpuPartitionedDeltaWriter(
     writerFactory: GpuSparkFileWriterFactory,
     dataFileFactory: OutputFileFactory,
     deleteFileFactory: OutputFileFactory,
-    context: GpuWriteContext) extends GpuDeleteAndDataDeltaWriter {
+    override val context: GpuWriteContext) extends GpuDeleteAndDataDeltaWriter {
 
   protected val io: FileIO = table.io()
   protected val specs: mutable.Map[Integer, PartitionSpec] = table.specs().asScala
