@@ -61,8 +61,6 @@ SOURCE_PATH="/home/ubuntu/spark-rapids"
 source jenkins/databricks/setup.sh
 # Init common variables like SPARK_HOME, spark configs
 source jenkins/databricks/common_vars.sh
-# Source cache utility functions for artifact download/caching
-source jenkins/databricks/cache_utils.sh
 
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
@@ -96,10 +94,21 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
     # Run two-shim smoke test with the base Spark build
     if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
         if [[ ! -d $HOME/spark-3.2.0-bin-hadoop3.2 ]]; then
-            # Download and cache Spark using shared function
+            # Check local cache first (synced from Workspace by setup-cache stage)
             spark_file="spark-3.2.0-bin-hadoop3.2.tgz"
-            spark_url="https://archive.apache.org/dist/spark/spark-3.2.0/$spark_file"
-            download_and_cache_artifact "$spark_file" "$spark_url" "$HOME"
+            local_cache="/tmp/workspace_cache/$spark_file"
+            
+            if [[ -f "$local_cache" ]]; then
+                echo "Using Spark from local cache"
+                tar xf "$local_cache" -C "$HOME"
+            else
+                # Fallback to direct download if cache not available
+                echo "Spark not in cache, downloading..."
+                spark_url="https://archive.apache.org/dist/spark/spark-3.2.0/$spark_file"
+                wget "$spark_url" -P /tmp
+                tar xf "/tmp/$spark_file" -C "$HOME"
+                rm -f "/tmp/$spark_file"
+            fi
         fi
         SPARK_HOME=$HOME/spark-3.2.0-bin-hadoop3.2 \
         SPARK_SHELL_SMOKE_TEST=1 \

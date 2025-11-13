@@ -48,26 +48,34 @@ download_and_cache_artifact() {
     
     mkdir -p "$local_cache_dir"
     
-    # Try to export entire cache directory from Workspace using Databricks CLI
-    echo "Syncing Workspace cache to local ($ws_cache_dir -> $local_cache_dir)..."
-    $DATABRICKS_CLI workspace export-dir "$ws_cache_dir" "$local_cache_dir" 2>/dev/null || \
-        echo "Workspace cache not found or empty, will download"
-    
-    # Check if file exists in local cache after export
+    # Check if file exists in local cache first (from setup-cache stage)
     if [[ -f "$local_file" ]]; then
-        echo "Found $jar_file_name in Workspace cache"
+        echo "Found $jar_file_name in local cache"
     else
-        echo "$jar_file_name not found in cache, downloading from $download_url..."
-        if wget "$download_url" -O "$local_file"; then
-            echo "Download successful, importing to Workspace cache..."
-            # Create workspace directory if needed
-            $DATABRICKS_CLI workspace mkdirs "$ws_cache_dir" 2>/dev/null || true
-            # Import entire directory back to Workspace (without --overwrite to skip existing files)
-            $DATABRICKS_CLI workspace import-dir "$local_cache_dir" "$ws_cache_dir" 2>/dev/null || \
-                echo "Warning: Could not cache to Workspace (continuing anyway)"
+        echo "$jar_file_name not found in local cache"
+        
+        # Try to sync from Workspace using Databricks CLI (if CLI is available and configured)
+        echo "Syncing from Workspace cache ($ws_cache_dir -> $local_cache_dir)..."
+        $DATABRICKS_CLI workspace export-dir "$ws_cache_dir" "$local_cache_dir" 2>/dev/null || \
+            echo "Workspace cache not found or empty"
+        
+        # Check again after sync attempt
+        if [[ -f "$local_file" ]]; then
+            echo "Found $jar_file_name in Workspace cache"
         else
-            echo "Download failed"
-            return 1
+            # Download from URL as fallback
+            echo "Downloading $jar_file_name from $download_url..."
+            if wget "$download_url" -O "$local_file"; then
+                echo "Download successful"
+                # Try to cache to Workspace if CLI is available
+                echo "Caching to Workspace..."
+                $DATABRICKS_CLI workspace mkdirs "$ws_cache_dir" 2>/dev/null || true
+                $DATABRICKS_CLI workspace import-dir "$local_cache_dir" "$ws_cache_dir" 2>/dev/null || \
+                    echo "Warning: Could not cache to Workspace (continuing anyway)"
+            else
+                echo "Download failed"
+                return 1
+            fi
         fi
     fi
     

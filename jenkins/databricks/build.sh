@@ -48,10 +48,6 @@ declare -A dep_jars
 # Map of string arrays to hold the groupId and the artifactId for each JAR
 declare -A artifacts
 
-# Source cache utility functions
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/cache_utils.sh"
-
 # Initializes the scripts and the variables based on teh arguments passed to the script.
 initialize()
 {
@@ -67,10 +63,21 @@ initialize()
     sudo apt install -y rsync
 
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
-        # Download and cache Maven using shared function
+        # Check local cache first (synced from Workspace by setup-cache stage)
         local maven_file="apache-maven-3.6.3-bin.tar.gz"
-        local maven_url="https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/$maven_file"
-        download_and_cache_artifact "$maven_file" "$maven_url" "$HOME"
+        local local_cache="/tmp/workspace_cache/$maven_file"
+        
+        if [[ -f "$local_cache" ]]; then
+            echo "Using Maven from local cache"
+            tar xf "$local_cache" -C "$HOME"
+        else
+            # Fallback to direct download if cache not available
+            echo "Maven not in cache, downloading..."
+            local maven_url="https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/$maven_file"
+            wget "$maven_url" -P /tmp
+            tar xf "/tmp/$maven_file" -C "$HOME"
+            rm -f "/tmp/$maven_file"
+        fi
         sudo ln -s $HOME/apache-maven-3.6.3/bin/mvn /usr/local/bin/mvn
     fi
 
