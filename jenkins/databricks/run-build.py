@@ -31,7 +31,7 @@ def main():
   print("Copying script")
   ssh_args = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s" % params.private_key_file
   rsync_command = "rsync -I -Pave \"ssh %s\" %s ubuntu@%s:%s" % (ssh_args, params.local_script, master_addr, params.script_dest)
-  print("rsync command for %s" % rsync_command)
+  print("rsync command: %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
   print("Copying source")
