@@ -167,9 +167,9 @@ void databricksBuild() {
             echo CLUSTER_ID
         }
 
-        stage("Setup Cache for $SPARK_MAJOR DB") {
+            stage("Setup Cache for $SPARK_MAJOR DB") {
             withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                def CACHE_PARAMS = "-s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -p \$DATABRICKS_PRIVKEY"
+                def CACHE_PARAMS = "-w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -p \$DATABRICKS_PRIVKEY"
                 // Sync all artifacts (Maven, Spark) from Workspace cache to local /tmp/workspace_cache
                 // This single cache setup serves both build and test stages
                 sh "python3 ./jenkins/databricks/setup-cache.py $CACHE_PARAMS"
