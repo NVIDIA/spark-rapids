@@ -20,6 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import com.nvidia.spark.rapids.GpuUnionExec
+
 import org.apache.spark.sql.{DataFrameSetOperationsSuite, Row}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
@@ -32,7 +33,8 @@ class RapidsDataFrameSetOperationsSuite
   
   import testImplicits._
 
-  testRapids("SPARK-37371: GPU UnionExec should support columnar if all children support columnar") {
+  testRapids(
+      "SPARK-37371: GPU UnionExec should support columnar if all children support columnar") {
     def checkGpuPlanExists(
         plan: SparkPlan,
         targetPlan: (SparkPlan) => Boolean): Unit = {
@@ -42,7 +44,8 @@ class RapidsDataFrameSetOperationsSuite
       assert(target.nonEmpty, s"No matching GPU plan nodes found in: ${plan.treeString}")
       // GPU always supports columnar execution regardless of cache settings
       assert(target.forall(_.supportsColumnar),
-        s"GPU plan nodes should always support columnar: ${target.map(p => (p.getClass.getSimpleName, p.supportsColumnar))}")
+        s"GPU plan nodes should always support columnar: " +
+          s"${target.map(p => (p.getClass.getSimpleName, p.supportsColumnar))}")
     }
 
     Seq(true, false).foreach { supported =>
@@ -57,7 +60,8 @@ class RapidsDataFrameSetOperationsSuite
         val union = df1.union(df2)
         
         // Check GpuInMemoryTableScanExec exists and supports columnar
-        // Note: Unlike CPU, GPU always supports columnar regardless of CACHE_VECTORIZED_READER_ENABLED
+        // Note: Unlike CPU, GPU always supports columnar regardless of
+        // CACHE_VECTORIZED_READER_ENABLED configuration
         checkGpuPlanExists(union.queryExecution.executedPlan,
           _.isInstanceOf[GpuInMemoryTableScanExec])
         
