@@ -16,6 +16,7 @@ import requests
 import sys
 import getopt
 import time
+import os
 import subprocess
 from clusterutils import ClusterUtils
 import params
@@ -27,11 +28,10 @@ def main():
       sys.exit(1)
   print("Master node address is: %s" % master_addr)
 
-  print("Copying scripts")
+  print("Copying script")
   ssh_args = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s" % params.private_key_file
-  # Copy build.sh
   rsync_command = "rsync -I -Pave \"ssh %s\" %s ubuntu@%s:%s" % (ssh_args, params.local_script, master_addr, params.script_dest)
-  print("rsync command for build.sh: %s" % rsync_command)
+  print("rsync command for %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
   print("Copying source")

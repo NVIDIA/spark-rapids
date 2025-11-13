@@ -22,6 +22,19 @@ from clusterutils import ClusterUtils
 import params
 
 
+# Define files to cache with their download URLs
+CACHE_FILES = [
+    {
+        'name': 'apache-maven-3.6.3-bin.tar.gz',
+        'url': 'https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz'
+    },
+    {
+        'name': 'spark-3.2.0-bin-hadoop3.2.tgz',
+        'url': 'https://archive.apache.org/dist/spark/spark-3.2.0/spark-3.2.0-bin-hadoop3.2.tgz'
+    }
+]
+
+
 def main():
     """Setup cache on Databricks cluster."""
     master_addr = ClusterUtils.cluster_get_master_addr(params.workspace, params.clusterid, params.token)
@@ -48,12 +61,62 @@ def main():
     local_cache_dir = "/tmp/workspace_cache"
     
     sync_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
-        "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace export-dir %s %s 2>&1 || echo \"No cache found in Workspace\"'" % \
-        (databricks_host, databricks_token, ws_cache_dir, local_cache_dir)
+        "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s mkdir -p %s && $HOME/bin/databricks workspace export-dir %s %s 2>&1 || echo \"No cache found in Workspace\"'" % \
+        (databricks_host, databricks_token, local_cache_dir, ws_cache_dir, local_cache_dir)
     print("sync command: %s" % sync_command)
     subprocess.call(sync_command, shell=True)  # Use call to allow failure if no cache exists
 
-    print("Cache setup completed")
+    # Check each file and download if missing
+    print("\nVerifying cached files...")
+    missing_files = []
+    
+    for file in CACHE_FILES:
+        file_name = file['name']
+        print("Checking for %s..." % file_name)
+        
+        check_command = "ssh %s ubuntu@%s 'test -f %s/%s && echo EXISTS || echo MISSING'" % \
+            (ssh_args, master_addr, local_cache_dir, file_name)
+        result = subprocess.check_output(check_command, shell=True).decode('utf-8').strip()
+        
+        if 'MISSING' in result:
+            print("  -> Missing: %s" % file_name)
+            missing_files.append(file)
+        else:
+            print("  -> Found: %s" % file_name)
+    
+    # Download and upload missing files
+    if missing_files:
+        print("\nDownloading and caching %d missing file(s)..." % len(missing_files))
+        
+        for file in missing_files:
+            file_name = file['name']
+            file_url = file['url']
+            
+            print("\nProcessing %s:" % file_name)
+            print("  1. Downloading from %s" % file_url)
+            
+            download_command = "ssh %s ubuntu@%s 'cd %s && wget -q --show-progress %s -O %s'" % \
+                (ssh_args, master_addr, local_cache_dir, file_url, file_name)
+            
+            download_result = subprocess.call(download_command, shell=True)
+            
+            if download_result == 0:
+                print("  2. Uploading to Workspace cache...")
+                
+                # Import the single file to Workspace
+                upload_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
+                    "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace mkdirs %s 2>/dev/null || true && " \
+                    "$HOME/bin/databricks workspace import-dir %s %s 2>&1 || echo \"Warning: Could not upload to Workspace\"'" % \
+                    (databricks_host, databricks_token, ws_cache_dir, local_cache_dir, ws_cache_dir)
+                
+                subprocess.call(upload_command, shell=True)
+                print("  -> Completed: %s" % file_name)
+            else:
+                print("  -> Failed to download: %s" % file_name)
+    else:
+        print("\nAll files found in cache!")
+
+    print("\nCache setup completed")
 
 
 if __name__ == '__main__':
