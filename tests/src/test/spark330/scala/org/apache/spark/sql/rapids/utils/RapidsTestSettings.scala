@@ -73,7 +73,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", WONT_FIX_ISSUE("Codegen related UT, not applicable for GPU"))
     .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"), (getJavaMajorVersion() >= 17))
   enableSuite[RapidsDataFrameSetOperationsSuite]
-    .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13769"))
+    .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", ADJUST_UT("CPU test uses CPU-specific node checks (InMemoryTableScanExec, UnionExec); GPU version implemented as testRapids() in RapidsDataFrameSetOperationsSuite"))
   enableSuite[RapidsJsonExpressionsSuite]
     .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
     .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))
