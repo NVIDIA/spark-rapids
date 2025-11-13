@@ -319,7 +319,6 @@ class GpuParquetWriter(
     fileIO: RapidsFileIO)
   extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
     statsTrackers, debugDumpPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
-
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>

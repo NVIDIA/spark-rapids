@@ -147,17 +147,26 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
           sortedDataTable.contiguousSplit(splitIds: _*)
         }
 
-        (sortedPartitionKeys, partitions)
+        val (init, last) = (partitions.init, partitions.last)
+
+        withResource(last) { _ =>
+          closeOnExcept(init) { _ =>
+            require(sortedPartitionKeys.length == init.length,
+              s"Partition key length ${sortedPartitionKeys.length}" +
+                s"not matching with number of column batches ${init.length}")
+            require(last.getRowCount == 0, s"Expecting last split empty, but has " +
+              s"${last.getRowCount} rows")
+
+            (sortedPartitionKeys, init)
+          }
+        }
       }
     }
 
-    withResource(partitions) { _ =>
-      partitionKeys.zip(partitions).map { case (partKey, partition) =>
-        ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
-          .ACTIVE_BATCHING_PRIORITY), partKey)
-      }.toSeq
-    }
-
+    partitionKeys.zip(partitions).map { case (partKey, partition) =>
+      ColumnarBatchWithPartition(SpillableColumnarBatch(partition, sparkType, SpillPriorities
+        .ACTIVE_BATCHING_PRIORITY), partKey)
+    }.toSeq
   }
 
   private def getPartitionExpr(field: PartitionField)
@@ -217,9 +226,9 @@ object GpuIcebergPartitioner {
     }
     cols(table.getNumberOfColumns) = rowIdxCol
 
-    closeOnExcept(cols) { _ =>
+    withResource(cols) { _ =>
       for (idx <- 0 until table.getNumberOfColumns) {
-        cols(idx) = table.getColumn(idx)
+        cols(idx) = table.getColumn(idx).incRefCount()
       }
 
       new Table(cols: _*)
@@ -268,10 +277,19 @@ object GpuIcebergPartitioner {
               sortedValuesTable.contiguousSplit(splitIds: _*)
             }
 
-            (partKeys, splits)
+            val (leftSplits, last) = (splits.init, splits.last)
+            withResource(last) { _ =>
+              closeOnExcept(leftSplits) { _ =>
+                require(partKeys.length == leftSplits.length,
+                  s"Partition key length ${partKeys.length}" +
+                    s"not matching with number of column batches ${splits.length}")
+                require(last.getRowCount == 0, s"Expecting last split empty, but has " +
+                  s"${last.getRowCount} rows")
+                (partKeys, leftSplits)
+              }
+            }
           }
         }
-
 
         partitionKeys.zip(splits).map {
           case (partKey, split) => ColumnarBatchWithPartition(
