@@ -16,17 +16,16 @@
 
 package com.nvidia.spark.rapids.delta.delta40x
 
-import com.nvidia.spark.rapids.delta.{DeltaProbe, DeltaProvider, NoDeltaProvider}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.delta.common.DeltaDynamicPartitionOverwriteCommandMetaBase
 
-/**
- * Implements the Delta Probe interface for Delta Lake 4.0.x
- * @note This is instantiated via reflection from ShimLoader
- */
-class DeltaProbeImpl extends DeltaProbe {
-  override def getDeltaProvider: DeltaProvider = {
-    // TODO: Implement Delta40xProvider in a later PR
-    // For now, return NoDeltaProvider to allow compilation
-    NoDeltaProvider
-  }
-}
+import org.apache.spark.sql.delta.DeltaDynamicPartitionOverwriteCommand
+import org.apache.spark.sql.delta.rapids.delta40x.Delta40xCommandShims
 
+class DeltaDynamicPartitionOverwriteCommandMeta(
+    overwriteCommand: DeltaDynamicPartitionOverwriteCommand,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends DeltaDynamicPartitionOverwriteCommandMetaBase(
+    overwriteCommand, conf, parent, rule, Delta40xCommandShims)

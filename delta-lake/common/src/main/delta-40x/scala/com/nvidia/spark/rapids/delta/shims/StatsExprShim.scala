@@ -14,19 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta
+package com.nvidia.spark.rapids.delta.shims
 
-import com.nvidia.spark.rapids.delta.{DeltaProbe, DeltaProvider, NoDeltaProvider}
+import org.apache.spark.sql.catalyst.expressions.{Expression, RuntimeReplaceable}
 
 /**
- * Implements the Delta Probe interface for Delta Lake 4.0.x
- * @note This is instantiated via reflection from ShimLoader
+ * Spark 4.0 shim: unwrap RuntimeReplaceable to make expressions evaluable at task time.
  */
-class DeltaProbeImpl extends DeltaProbe {
-  override def getDeltaProvider: DeltaProvider = {
-    // TODO: Implement Delta40xProvider in a later PR
-    // For now, return NoDeltaProvider to allow compilation
-    NoDeltaProvider
-  }
+object StatsExprShim {
+  def unwrapRuntimeReplaceable(expr: Expression): Expression =
+    expr.transform { case rr: RuntimeReplaceable => rr.replacement }
 }
-

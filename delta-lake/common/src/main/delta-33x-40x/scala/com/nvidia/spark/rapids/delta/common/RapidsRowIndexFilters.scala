@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.delta33x
+package com.nvidia.spark.rapids.delta.common
 
-import ai.rapids.cudf._
-import com.nvidia.spark.rapids._
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuColumnVector
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.deletionvectors._
+import org.apache.spark.sql.delta.actions.DeletionVectorDescriptor
+import org.apache.spark.sql.delta.deletionvectors.{RoaringBitmapArray, StoredBitmap}
 import org.apache.spark.sql.delta.storage.dv.HadoopFileSystemDVStore
 import org.apache.spark.sql.types.{ByteType, LongType}
 
@@ -36,7 +36,7 @@ trait RapidsRowIndexFilter {
  * in the bitmap. It's the inverse of RapidsDropMarkedRowsFilter
  */
 final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
+  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
     val markedRowIndices = bitmap.toArray
     val containsMarkedRows =
       withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
@@ -57,7 +57,7 @@ final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends Rapid
  * in the bitmap.
  */
 final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
+  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
     val markedRowIndices = bitmap.toArray
     val containsMarkedRows =
       withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
@@ -66,6 +66,22 @@ final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends Rapid
       }
     withResource(containsMarkedRows) { containsMarkedRows =>
       GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
+    }
+  }
+}
+
+object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
+  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
+    withResource(Scalar.fromByte(1.toByte)) { one =>
+      GpuColumnVector.from(one, rowIndexCol.getRowCount.toInt, ByteType)
+    }
+  }
+}
+
+object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
+  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
+    withResource(Scalar.fromByte(0.toByte)) { zero =>
+      GpuColumnVector.from(zero, rowIndexCol.getRowCount.toInt, ByteType)
     }
   }
 }
@@ -90,23 +106,6 @@ object RapidsDropMarkedRowsFilter extends RapidsRowIndexMarkingFiltersBuilder {
 
   override def getFilterForNonEmptyDeletionVector(
       bitmap: RoaringBitmapArray): RapidsRowIndexFilter = new RapidsDropMarkedRowsFilter(bitmap)
-
-}
-
-object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(1.toByte)) { one =>
-      GpuColumnVector.from(one, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
-}
-
-object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
-  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(0.toByte)) { zero =>
-      GpuColumnVector.from(zero, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
 }
 
 trait RapidsRowIndexMarkingFiltersBuilder {
@@ -114,9 +113,9 @@ trait RapidsRowIndexMarkingFiltersBuilder {
   def getFilterForNonEmptyDeletionVector(bitmap: RoaringBitmapArray): RapidsRowIndexFilter
 
   def createInstance(
-     deletionVector: DeletionVectorDescriptor,
-     hadoopConf: Configuration,
-     tablePath: Option[Path]): RapidsRowIndexFilter = {
+      deletionVector: DeletionVectorDescriptor,
+      hadoopConf: Configuration,
+      tablePath: Option[Path]): RapidsRowIndexFilter = {
     if (deletionVector.cardinality == 0) {
       getFilterForEmptyDeletionVector()
     } else {
@@ -128,3 +127,4 @@ trait RapidsRowIndexMarkingFiltersBuilder {
     }
   }
 }
+

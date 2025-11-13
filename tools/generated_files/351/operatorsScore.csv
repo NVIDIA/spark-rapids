@@ -27,9 +27,11 @@ AppendDataExecV1,3.0
 AtomicCreateTableAsSelectExec,3.0
 AtomicReplaceTableAsSelectExec,3.0
 BatchScanExec,3.0
+MergeRowsExec,3.0
 OverwriteByExpressionExec,3.0
 OverwriteByExpressionExecV1,3.0
 OverwritePartitionsDynamicExec,3.0
+ReplaceDataExec,3.0
 BroadcastExchangeExec,3.0
 ShuffleExchangeExec,4.2
 BroadcastHashJoinExec,5.1
@@ -121,6 +123,7 @@ DayOfMonth,4
 DayOfWeek,4
 DayOfYear,4
 DenseRank,4
+Discard,4
 Divide,4
 DivideDTInterval,4
 DivideYMInterval,4
@@ -168,6 +171,7 @@ IsNotNull,4
 IsNull,4
 JsonToStructs,4
 JsonTuple,4
+Keep,4
 KnownFloatingPointNormalized,4
 KnownNotNull,4
 KnownNullable,4
@@ -262,6 +266,7 @@ SortArray,4
 SortOrder,4
 SparkPartitionID,4
 SpecifiedWindowFrame,4
+Split,4
 Sqrt,4
 Stack,4
 StartsWith,4

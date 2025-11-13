@@ -17,12 +17,13 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
@@ -100,8 +101,18 @@ abstract class GpuBroadcastHashJoinExecBase(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
+    right: SparkPlan,
+    isNullAwareAntiJoin: Boolean) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
+
+  // Same checks as Spark
+  if (isNullAwareAntiJoin) {
+    require(leftKeys.length == 1, "leftKeys length should be 1")
+    require(rightKeys.length == 1, "rightKeys length should be 1")
+    require(joinType == LeftAnti, "joinType must be LeftAnti.")
+    require(buildSide == GpuBuildRight, "buildSide must be BuildRight.")
+    require(condition.isEmpty, "null aware anti join optimize condition should be empty.")
+  }
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -146,14 +157,40 @@ abstract class GpuBroadcastHashJoinExecBase(
 
     val rdd = streamedPlan.executeColumnar()
     val buildSchema = buildPlan.schema
+    val localIsNullAwareAntiJoin = isNullAwareAntiJoin
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
         GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
           broadcastRelation,
           buildSchema,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
-      // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+      if (localIsNullAwareAntiJoin) {
+        // This is to support the null-aware anti join for the LeftAnti join with
+        // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".
+        // Spark already executes all the check for the requirements, e.g. join type,
+        // build side, keys length == 1. So no need to do it here again.
+        // This will cover mainly 3 cases as below, similar as what Spark does.
+        if (builtBatch.numRows() == 0) {
+          // Build side is empty, return the stream iterator directly.
+          withResource(builtBatch)(_ => streamIter)
+        } else if (closeOnExcept(builtBatch)(GpuHashJoin.anyNullInKey(_, boundBuildKeys))) {
+          // Spark will return an empty iterator if any nulls in the right table
+          withResource(builtBatch)(_ => Iterator.empty)
+        } else {
+          // Nulls will be filtered out
+          val nullFilteredStreamIter = streamIter.map { cb =>
+            GpuHashJoin.filterNullsWithRetryAndClose(
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+              boundStreamKeys)
+          }
+          doJoin(builtBatch, nullFilteredStreamIter, targetSize, numOutputRows,
+            numOutputBatches, opTime, joinTime)
+        }
+      } else {
+        // builtBatch will be closed in doJoin
+        doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime,
+          joinTime)
+      }
     }
   }
 

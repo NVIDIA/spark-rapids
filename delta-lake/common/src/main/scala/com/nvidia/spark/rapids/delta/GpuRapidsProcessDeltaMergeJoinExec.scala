@@ -21,6 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
@@ -127,7 +128,7 @@ class RapidsProcessDeltaMergeJoinMeta(
   private def convertExprToGpu(e: Expression): Expression = {
     val meta = GpuOverrides.wrapExpr(e, conf, None)
     meta.tagForGpu()
-    assert(meta.canExprTreeBeReplaced, meta.toString)
+    assertInTests(meta.canExprTreeBeReplaced, meta.toString)
     meta.convertToGpu()
   }
 }

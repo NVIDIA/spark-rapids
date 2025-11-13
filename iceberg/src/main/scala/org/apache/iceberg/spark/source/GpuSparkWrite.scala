@@ -40,7 +40,7 @@ import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, RequiresDistributionAndOrdering, Write, WriterCommitMessage}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -58,6 +58,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     // Iceberg's SparkWrite returns different implementations based on write mode:
     // - BatchAppend for append operations
     // - DynamicOverwrite for dynamic partition overwrite
+    // - BatchRewrite for copy-on-write operations (DELETE)
     // Since these are private classes, we check the class name to determine which GPU version
     // to use
     val cpuBatch = cpu.toBatch
@@ -67,6 +68,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       case "BatchAppend" => new GpuBatchAppend(this)
       case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
       case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatch)
+      case "CopyOnWriteOperation" => new GpuCopyOnWriteOperation(this, cpuBatch)
       case _ =>
         throw new UnsupportedOperationException(
           s"Unsupported Iceberg batch write type: $cpuBatchClassName")
@@ -232,6 +234,35 @@ object GpuSparkWrite {
    */
   def tagForGpuCtas(
       cpuExec: AtomicCreateTableAsSelectExec,
+      meta: SparkPlanMeta[_]): Unit = {
+    val properties: Map[String, String] = Spark3Util
+      .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
+      .asScala.toMap
+    val fileFormatStr = properties.getOrElse(TableProperties.DEFAULT_FILE_FORMAT,
+      TableProperties.DEFAULT_FILE_FORMAT_DEFAULT)
+
+    val fileFormat = FileFormat.fromString(fileFormatStr)
+
+    // Convert Spark schema to Iceberg schema
+    val querySchema = cpuExec.query.schema
+    val icebergSchema = SparkSchemaUtil.convert(querySchema)
+
+    // Convert Spark connector transforms to Iceberg PartitionSpec
+    val partitionSpec = Spark3Util.toPartitionSpec(icebergSchema, cpuExec.partitioning.toArray)
+
+    // Reuse tagForGpuWrite for validation
+    tagForGpuWrite(fileFormat, partitionSpec, querySchema, icebergSchema, meta)
+  }
+
+  /**
+   * Tag for GPU support for Iceberg RTAS operations.
+   * This method checks file format and partitioning support for REPLACE TABLE AS SELECT.
+   *
+   * @param cpuExec The CPU AtomicReplaceTableAsSelectExec
+   * @param meta The metadata for tagging
+   */
+  def tagForGpuRtas(
+      cpuExec: AtomicReplaceTableAsSelectExec,
       meta: SparkPlanMeta[_]): Unit = {
     val properties: Map[String, String] = Spark3Util
       .rebuildCreateProperties(cpuExec.tableSpec.properties.asJava)
