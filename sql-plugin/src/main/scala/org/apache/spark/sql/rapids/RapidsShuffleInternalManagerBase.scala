@@ -303,7 +303,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     maxPartitionSeen: java.util.concurrent.atomic.AtomicInteger,
     writerCondition: Object,
     mergerSlotNum: Int,
-    writerFuture: Future[_])
+    mergerFuture: Future[_])
 
   /**
    * Increment the reference count and get the memory size for a value.
@@ -388,8 +388,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       }
     }
 
-    // Writer task for this batch
-    val writerTask = new Runnable {
+    // Merger task for this batch
+    val mergerTask = new Runnable {
       override def run(): Unit = {
         var currentPartitionToWrite = 0
         while (currentPartitionToWrite < numPartitions) {
@@ -454,9 +454,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       }
     }
 
-    val writerFuture = RapidsShuffleInternalManagerBase.queueMergerTask(
+    val mergerFuture = RapidsShuffleInternalManagerBase.queueMergerTask(
       mergerSlotNum, () => {
-        writerTask.run()
+        mergerTask.run()
         null
       })
 
@@ -470,7 +470,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       maxPartitionSeen,
       writerCondition,
       mergerSlotNum,
-      writerFuture)
+      mergerFuture)
   }
 
   override def write(records: Iterator[Product2[K, V]]): Unit = {
@@ -648,7 +648,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       batchStates.foreach { batch =>
         try {
           val waitStart = System.nanoTime()
-          batch.writerFuture.get()
+          batch.mergerFuture.get()
           totalSerializationWaitTimeNs += System.nanoTime() - waitStart
         } catch {
           case ee: ExecutionException => throw ee.getCause
@@ -679,7 +679,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       import scala.collection.JavaConverters._
       batchStates.foreach { batch =>
         // Cancel writer future if still running
-        batch.writerFuture.cancel(true)
+        batch.mergerFuture.cancel(true)
 
         // Cancel pending futures
         batch.partitionFutures.values().asScala.foreach { futuresQueue =>
