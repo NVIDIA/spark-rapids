@@ -18,10 +18,11 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, CudaException, DeviceMemoryBuffer, HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM}
 import com.nvidia.spark.rapids.jni.kudo.KudoGpuSerializer
 
 import org.apache.spark.TaskContext
@@ -199,9 +200,9 @@ trait GpuPartitioning extends Partitioning {
 
   private def gpuSplitAndSerialize(table: Table, slices: Int*): Array[DeviceMemoryBuffer] = {
     NvtxRegistry.GPU_KUDO_SERIALIZE {
-      withRetryNoSplit {
-        KudoGpuSerializer.splitAndSerializeToDevice(table, slices: _*)
-      }
+      // we don't use withRetry here because we want to just fallback to cpu kudo
+      // if we hit a GpuOOM
+      KudoGpuSerializer.splitAndSerializeToDevice(table, slices: _*)
     }
   }
 
@@ -261,27 +262,39 @@ trait GpuPartitioning extends Partitioning {
     }
   }
 
+  private def sliceInternalNonKudoGpuOrCpuAndClose(numRows: Int,
+      partitionIndexes: Array[Int],
+      partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
+    val sliceOnGpu = usesGPUShuffle
+    val nvtxId = if (sliceOnGpu) {
+      NvtxRegistry.SLICE_INTERNAL_GPU
+    } else {
+      NvtxRegistry.SLICE_INTERNAL_CPU
+    }
+    // If we are not using the Rapids shuffle we fall back to CPU splits way to avoid the hit
+    // for large number of small splits.
+    nvtxId {
+      if (sliceOnGpu) {
+        val tmp = sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
+        tmp.zipWithIndex.filter(_._1 != null)
+      } else {
+        sliceInternalOnCpuAndClose(numRows, partitionIndexes, partitionColumns)
+      }
+    }
+  }
+
   def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
     if (usesKudoGPUSlicing) {
-      sliceAndSerializeOnGpu(numRows, partitionIndexes, partitionColumns)
+      try {
+        sliceAndSerializeOnGpu(numRows, partitionIndexes, partitionColumns)
+      } catch {
+        case _: GpuRetryOOM | _: GpuSplitAndRetryOOM | _: CudaException =>
+          // Fallback to non-Kudo GPU/CPU slicing on GPU OOM
+          sliceInternalNonKudoGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
+      }
     } else {
-      val sliceOnGpu = usesGPUShuffle
-      val nvtxId = if (sliceOnGpu) {
-        NvtxRegistry.SLICE_INTERNAL_GPU
-      } else {
-        NvtxRegistry.SLICE_INTERNAL_CPU
-      }
-      // If we are not using the Rapids shuffle we fall back to CPU splits way to avoid the hit
-      // for large number of small splits.
-      nvtxId {
-        if (sliceOnGpu) {
-          val tmp = sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
-          tmp.zipWithIndex.filter(_._1 != null)
-        } else {
-          sliceInternalOnCpuAndClose(numRows, partitionIndexes, partitionColumns)
-        }
-      }
+      sliceInternalNonKudoGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
     }
   }
 

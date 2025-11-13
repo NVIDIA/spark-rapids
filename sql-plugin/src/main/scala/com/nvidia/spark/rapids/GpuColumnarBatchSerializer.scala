@@ -180,11 +180,7 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
 
   override def newInstance(): SerializerInstance = {
     if (useKudo) {
-      if (kudoMode == ShuffleKudoMode.GPU) {
-        new KudoGpuSerializerInstance(metrics, dataTypes)
-      } else {
-        new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
-      }
+      new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
     }
@@ -405,156 +401,12 @@ private class KudoSerializerInstance(
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
-      val numColumns = batch.numCols()
-      val columns: Array[HostColumnVector] = new Array(numColumns)
-      withResource(new ArrayBuffer[AutoCloseable](numColumns)) { toClose =>
-        var startRow = 0
-        val numRows = batch.numRows()
-        if (batch.numCols() > 0) {
-          val firstCol = batch.column(0)
-          if (firstCol.isInstanceOf[SlicedGpuColumnVector]) {
-            // We don't have control over ColumnarBatch to put in the slice, so we have to do it
-            // for each column.  In this case we are using the first column.
-            startRow = firstCol.asInstanceOf[SlicedGpuColumnVector].getStart
-            for (i <- 0 until numColumns) {
-              columns(i) = batch.column(i).asInstanceOf[SlicedGpuColumnVector].getBase
-            }
-          } else {
-            for (i <- 0 until numColumns) {
-              batch.column(i) match {
-                case gpu: GpuColumnVector =>
-                  val cpu = gpu.copyToHostAsync(Cuda.DEFAULT_STREAM)
-                  toClose += cpu
-                  columns(i) = cpu.getBase
-                case cpu: RapidsHostColumnVector =>
-                  columns(i) = cpu.getBase
-              }
-            }
-
-            Cuda.DEFAULT_STREAM.sync()
-          }
-
-          NvtxRegistry.SERIALIZE_BATCH {
-            val writeInput = WriteInput.builder
-              .setColumns(columns)
-              .setOutputStream(out)
-              .setNumRows(numRows)
-              .setRowOffset(startRow)
-              .setMeasureCopyBufferTime(measureBufferCopyTime)
-              .build
-            val writeMetric = kudo
-              .getOrElse(throw new IllegalStateException("Kudo serializer not initialized."))
-              .writeToStreamWithMetrics(writeInput)
-
-            dataSize += writeMetric.getWrittenBytes
-            if (measureBufferCopyTime) {
-              // These metrics will not show up in the UI if it's not modified
-              serCopyBufferTime += writeMetric.getCopyBufferTime
-            }
-          }
-        } else {
-          NvtxRegistry.SERIALIZE_ROW_ONLY_BATCH {
-            dataSize += KudoSerializer.writeRowCountToStream(out, numRows)
-          }
-        }
-        this
-      }
-    }
-
-    override def writeKey[T: ClassTag](key: T): SerializationStream = {
-      // The key is only needed on the map side when computing partition ids. It does not need to
-      // be shuffled.
-      assert(null == key || key.isInstanceOf[Int])
-      this
-    }
-
-    override def writeAll[T: ClassTag](iter: Iterator[T]): SerializationStream = {
-      // This method is never called by shuffle code.
-      throw new UnsupportedOperationException
-    }
-
-    override def writeObject[T: ClassTag](t: T): SerializationStream = {
-      // This method is never called by shuffle code.
-      throw new UnsupportedOperationException
-    }
-
-    override def flush(): Unit = {
-      out.flush()
-    }
-
-    override def close(): Unit = {
-      out.close()
-    }
-  }
-
-  override def deserializeStream(in: InputStream): DeserializationStream = {
-    new DeserializationStream {
-      private[this] val wrappedIn = new InputStreamWrapper(in, stalledByInputStream)
-      private[this] val dIn: DataInputStream =
-        new DataInputStream(new BufferedInputStream(wrappedIn))
-
-      override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
-        new KudoSerializedBatchIterator(dIn, deserTime)
-      }
-
-      override def asIterator: Iterator[Any] = {
-        // This method is never called by shuffle code.
-        throw new UnsupportedOperationException
-      }
-
-      override def readKey[T]()(implicit classType: ClassTag[T]): T = {
-        // We skipped serialization of the key in writeKey(), so just return a dummy value since
-        // this is going to be discarded anyways.
-        null.asInstanceOf[T]
-      }
-
-      override def readValue[T]()(implicit classType: ClassTag[T]): T = {
-        // This method should never be called by shuffle code.
-        throw new UnsupportedOperationException
-      }
-
-      override def readObject[T]()(implicit classType: ClassTag[T]): T = {
-        // This method is never called by shuffle code.
-        throw new UnsupportedOperationException
-      }
-
-      override def close(): Unit = {
-        dIn.close()
-      }
-    }
-  }
-
-  // These methods are never called by shuffle code.
-  override def serialize[T: ClassTag](t: T): ByteBuffer = throw new UnsupportedOperationException
-
-  override def deserialize[T: ClassTag](bytes: ByteBuffer): T =
-    throw new UnsupportedOperationException
-
-  override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
-    throw new UnsupportedOperationException
-}
-
-
-
-
-private class KudoGpuSerializerInstance(
-    val metrics: Map[String, GpuMetric],
-    val dataTypes: Array[DataType],
-) extends SerializerInstance {
-  private val dataSize = metrics(METRIC_DATA_SIZE)
-  private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
-  private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
-  private val stalledByInputStream = metrics(METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM)
-
-  override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
-
-    override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
-      NvtxRegistry.GPU_KUDO_WRITE_BUFFERS {
-        val batch = value.asInstanceOf[ColumnarBatch]
-        if (batch.numCols() > 0) {
-          val firstCol = batch.column(0)
-          firstCol match {
-            case vector: SlicedSerializedColumnVector =>
+      if (batch.numCols() > 0) {
+        val firstCol = batch.column(0)
+        firstCol match {
+          case vector: SlicedSerializedColumnVector =>
+            // GPU-serialized path: data is already serialized, just write it directly
+            NvtxRegistry.GPU_KUDO_WRITE_BUFFERS {
               val data = vector.getWrap
               val dataLen = data.getLength
               dataSize += dataLen
@@ -569,13 +421,62 @@ private class KudoGpuSerializerInstance(
                 remaining = remaining - read
               }
               flush()
-            case _ =>
-          }
-        } else {
+            }
+          case _ =>
+            // CPU-serialized path: serialize using KudoSerializer
+            val numColumns = batch.numCols()
+            val columns: Array[HostColumnVector] = new Array(numColumns)
+            withResource(new ArrayBuffer[AutoCloseable](numColumns)) { toClose =>
+              var startRow = 0
+              val numRows = batch.numRows()
+              if (firstCol.isInstanceOf[SlicedGpuColumnVector]) {
+                // We don't have control over ColumnarBatch to put in the slice, so we have to do it
+                // for each column.  In this case we are using the first column.
+                startRow = firstCol.asInstanceOf[SlicedGpuColumnVector].getStart
+                for (i <- 0 until numColumns) {
+                  columns(i) = batch.column(i).asInstanceOf[SlicedGpuColumnVector].getBase
+                }
+              } else {
+                for (i <- 0 until numColumns) {
+                  batch.column(i) match {
+                    case gpu: GpuColumnVector =>
+                      val cpu = gpu.copyToHostAsync(Cuda.DEFAULT_STREAM)
+                      toClose += cpu
+                      columns(i) = cpu.getBase
+                    case cpu: RapidsHostColumnVector =>
+                      columns(i) = cpu.getBase
+                  }
+                }
+
+                Cuda.DEFAULT_STREAM.sync()
+              }
+
+              NvtxRegistry.SERIALIZE_BATCH {
+                val writeInput = WriteInput.builder
+                  .setColumns(columns)
+                  .setOutputStream(out)
+                  .setNumRows(numRows)
+                  .setRowOffset(startRow)
+                  .setMeasureCopyBufferTime(measureBufferCopyTime)
+                  .build
+                val writeMetric = kudo
+                  .getOrElse(throw new IllegalStateException("Kudo serializer not initialized."))
+                  .writeToStreamWithMetrics(writeInput)
+
+                dataSize += writeMetric.getWrittenBytes
+                if (measureBufferCopyTime) {
+                  // These metrics will not show up in the UI if it's not modified
+                  serCopyBufferTime += writeMetric.getCopyBufferTime
+                }
+              }
+            }
+        }
+      } else {
+        NvtxRegistry.SERIALIZE_ROW_ONLY_BATCH {
           dataSize += KudoSerializer.writeRowCountToStream(out, batch.numRows())
         }
-        this
       }
+      this
     }
 
     override def writeKey[T: ClassTag](key: T): SerializationStream = {
