@@ -269,13 +269,14 @@ object GpuIcebergPartitioner {
             }
 
             val (leftSplits, last) = (splits.init, splits.last)
-            require(partKeys.length == leftSplits.length,
-              s"Partition key length ${partKeys.length}" +
-              s"not matching with number of column batches ${splits.length}")
-            require(last.getRowCount == 0, s"Expecting last split empty, but has " +
-              s"${last.getRowCount} rows")
-            last.close()
-            (partKeys, leftSplits)
+            withResource(last) { _ =>
+              require(partKeys.length == leftSplits.length,
+                s"Partition key length ${partKeys.length}" +
+                  s"not matching with number of column batches ${splits.length}")
+              require(last.getRowCount == 0, s"Expecting last split empty, but has " +
+                s"${last.getRowCount} rows")
+              (partKeys, leftSplits)
+            }
           }
         }
 
