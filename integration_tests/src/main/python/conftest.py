@@ -460,6 +460,7 @@ def _maybe_apply_random_select(config, items):
 
 _random_select_config = _parse_random_select_config()
 
+@pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(config, items):
     _maybe_apply_random_select(config, items)
     r = random.Random(oom_random_injection_seed)
