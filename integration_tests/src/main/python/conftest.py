@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import os
 import pytest
 import random
@@ -59,6 +60,8 @@ _per_test_ansi_mode_enabled = None
 _current_test_has_delta_marker = False
 _current_test_allow_non_gpu_delta_write = False
 
+
+_random_select_config = None
 
 def is_allowing_any_non_gpu():
     return _allow_any_non_gpu
@@ -399,7 +402,85 @@ def get_effective_seed(item, datagen_overrides):
 
     return (_test_datagen_random_seed_init, False)
 
+def _parse_random_select_config():
+    value = os.getenv("RANDOM_SELECT")
+    if value is None or value.strip() == "":
+        return None
+    value = value.strip()
+    try:
+        numeric_value = float(value)
+    except ValueError:
+        warnings.warn(f"Ignoring RANDOM_SELECT value '{value}': not a number")
+        return None
+    if numeric_value < 0:
+        warnings.warn(f"Ignoring RANDOM_SELECT value '{value}': must be non-negative")
+        return None
+    config = {"raw": value}
+    if numeric_value >= 1:
+        config["mode"] = "count"
+        config["target"] = int(numeric_value)
+    else:
+        if numeric_value == 0:
+            config["mode"] = "count"
+            config["target"] = 0
+        else:
+            config["mode"] = "fraction"
+            config["target"] = numeric_value
+    seed_value = os.getenv("RANDOM_SELECT_SEED")
+    if seed_value is None or seed_value.strip() == "":
+        seed = 0
+    else:
+        try:
+            seed = int(seed_value)
+        except ValueError:
+            warnings.warn(f"Ignoring RANDOM_SELECT_SEED value '{seed_value}': not an int")
+            seed = 0
+    config["seed"] = seed
+    return config
+
+def _maybe_apply_random_select(config, items):
+    if not _random_select_config:
+        return
+    total = len(items)
+    if total == 0:
+        return
+    mode = _random_select_config["mode"]
+    target = _random_select_config["target"]
+    seed = _random_select_config["seed"]
+    selected_count = total
+    if mode == "count":
+        selected_count = max(0, min(target, total))
+    elif mode == "fraction":
+        selected_count = min(total, max(0, math.ceil(total * target)))
+    if selected_count >= total:
+        reporter = config.pluginmanager.get_plugin("terminalreporter")
+        if reporter:
+            reporter.write_line(
+                f"RANDOM_SELECT active but requested {selected_count} tests >= total {total}; running all tests."
+            )
+        return
+    rng = random.Random(seed)
+    if selected_count == 0:
+        selected_indices = []
+    else:
+        selected_indices = sorted(rng.sample(range(total), selected_count))
+    selected_idx_set = set(selected_indices)
+    deselected = [item for idx, item in enumerate(items) if idx not in selected_idx_set]
+    items[:] = [item for idx, item in enumerate(items) if idx in selected_idx_set]
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    if reporter:
+        reporter.write_line(
+            f"RANDOM_SELECT active: running {len(items)} of {total} tests "
+            f"(seed={seed}, value={_random_select_config['raw']})."
+        )
+
+_random_select_config = _parse_random_select_config()
+
+@pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(config, items):
+    _maybe_apply_random_select(config, items)
     r = random.Random(oom_random_injection_seed)
     for item in items:
         extras = []
