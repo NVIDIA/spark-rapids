@@ -100,7 +100,7 @@ case class GpuOptimizeWriteExchangeExec(
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
-  private lazy val childNumPartitions = inputRDD.getNumPartitions
+  @transient private lazy val childNumPartitions = inputRDD.getNumPartitions
 
   @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
     if (childNumPartitions == 0) {
@@ -110,7 +110,7 @@ case class GpuOptimizeWriteExchangeExec(
     }
   }
 
-  private lazy val actualNumPartitions: Int = {
+  @transient private lazy val actualNumPartitions: Int = {
     if (childNumPartitions == 0) {
       0
     } else {
@@ -124,7 +124,7 @@ case class GpuOptimizeWriteExchangeExec(
   // The actual partitioning to use for the shuffle exchange. The input partition count can be
   // adjusted based on the number of partitions in the input RDD and the target number of shuffle
   // blocks.
-  private lazy val actualPartitioning: GpuPartitioning = partitioning match {
+  @transient private lazy val actualPartitioning: GpuPartitioning = partitioning match {
     // Currently only hash and round-robin partitioning are supported.
     // See DeltaShufflePartitionsUtil.partitioningForRebalance() for more details.
     case p: GpuHashPartitioning => p.copy(numPartitions = actualNumPartitions)
