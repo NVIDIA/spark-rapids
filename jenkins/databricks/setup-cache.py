@@ -61,7 +61,7 @@ def main():
     local_cache_dir = "/tmp/workspace_cache"
     
     sync_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
-        "'mkdir -p %s && DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace export-dir %s %s 2>&1 || echo \"No cache found in Workspace\"'" % \
+        "'mkdir -p %s && DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace export-dir %s %s 2>&1 || echo \"No cache found in Workspace (or files too large)\"'" % \
         (local_cache_dir, databricks_host, databricks_token, ws_cache_dir, local_cache_dir)
     print("sync command: %s" % sync_command)
     subprocess.call(sync_command, shell=True)  # Use call to allow failure if no cache exists
