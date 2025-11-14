@@ -16,53 +16,17 @@
 
 package com.nvidia.spark.rapids.delta.delta33x
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
-import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.delta.common.DeltaDynamicPartitionOverwriteCommandMetaBase
 
-import org.apache.spark.sql.GpuDeltaDynamicPartitionOverwriteCommand
 import org.apache.spark.sql.delta.DeltaDynamicPartitionOverwriteCommand
-import org.apache.spark.sql.delta.commands.DeletionVectorUtils
-import org.apache.spark.sql.delta.rapids.GpuDeltaLog
-import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.delta.rapids.delta33x.Delta33xCommandShims
 
 class DeltaDynamicPartitionOverwriteCommandMeta(
     overwriteCommand: DeltaDynamicPartitionOverwriteCommand,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends RunnableCommandMeta[DeltaDynamicPartitionOverwriteCommand](overwriteCommand, conf,
-    parent, rule) {
+  extends DeltaDynamicPartitionOverwriteCommandMetaBase(
+    overwriteCommand, conf, parent, rule, Delta33xCommandShims)
 
-  override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaWriteEnabled) {
-      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-
-    val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(
-      overwriteCommand.deltaTable.deltaLog.unsafeVolatileSnapshot)
-
-    if (dvFeatureEnabled && overwriteCommand.conf.getConf(
-      DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)) {
-      // https://github.com/NVIDIA/spark-rapids/issues/8554
-      willNotWorkOnGpu("Writes with deletion vectors are not supported on GPU")
-    }
-
-    RapidsDeltaUtils.tagForDeltaWrite(this, overwriteCommand.table.schema,
-      Some(overwriteCommand.deltaTable.deltaLog),
-      Map.empty, overwriteCommand.deltaTable.spark)
-  }
-
-  override def convertToGpu(): RunnableCommand = {
-    GpuDeltaDynamicPartitionOverwriteCommand(
-      new GpuDeltaLog(overwriteCommand.deltaTable.deltaLog, conf),
-      overwriteCommand.table,
-      overwriteCommand.deltaTable,
-      overwriteCommand.query,
-      overwriteCommand.writeOptions,
-      overwriteCommand.isByName,
-      overwriteCommand.analyzedQuery,
-    )
-  }
-}

@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.delta.DeltaOptions
 import org.apache.spark.sql.delta.catalog.DeltaTableV2
 import org.apache.spark.sql.delta.commands.WriteIntoDelta
-import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuWriteIntoDelta}
+import org.apache.spark.sql.delta.rapids.{DeltaCommandShims, GpuDeltaLog, GpuWriteIntoDelta}
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 case class GpuDeltaDynamicPartitionOverwriteCommand(
@@ -32,7 +32,8 @@ case class GpuDeltaDynamicPartitionOverwriteCommand(
     query: LogicalPlan,
     writeOptions: Map[String, String],
     isByName: Boolean,
-    analyzedQuery: Option[LogicalPlan] = None) extends RunnableCommand with V2WriteCommand {
+    analyzedQuery: Option[LogicalPlan] = None,
+    shims: DeltaCommandShims) extends RunnableCommand with V2WriteCommand {
 
   override def child: LogicalPlan = query
 
@@ -59,6 +60,9 @@ case class GpuDeltaDynamicPartitionOverwriteCommand(
             DeltaOptions.PARTITION_OVERWRITE_MODE_DYNAMIC)),
       sparkSession.sessionState.conf)
 
+    val operationSession = shims.toOperationSparkSession(
+      sparkSession.asInstanceOf[shims.ShimSparkSession])
+    
     GpuWriteIntoDelta(
       gpuDeltaLog,
       WriteIntoDelta(
@@ -67,7 +71,7 @@ case class GpuDeltaDynamicPartitionOverwriteCommand(
         deltaOptions,
         partitionColumns = Nil,
         deltaTable.deltaLog.unsafeVolatileSnapshot.metadata.configuration,
-        Dataset.ofRows(sparkSession, query),
+        shims.createDataFrame(operationSession, query),
         deltaTable.catalogTable
       )
     ).run(sparkSession)

@@ -50,12 +50,19 @@ trait GpuRollingFileWriter[W <: FileWriter[SpillableColumnarBatch, R], R] extend
       throw new IllegalStateException("Cannot write to a closed writer")
     }
 
+    if (batch.numRows() <= 0) {
+      return
+    }
+
+    if (currentWriter.isEmpty) {
+      openCurrentWriter()
+    }
+
     currentWriter.get.write(batch)
     currentFileRows += batch.numRows()
 
     if (currentWriter.get.length() >= targetFileSize) {
       closeCurrentWriter()
-      openCurrentWriter()
     }
   }
 
@@ -78,11 +85,11 @@ trait GpuRollingFileWriter[W <: FileWriter[SpillableColumnarBatch, R], R] extend
 
   private def closeCurrentWriter(): Unit = {
     currentWriter.foreach { w =>
-      w.close()
 
       if (currentFileRows == 0L) {
         io.deleteFile(currentFile.get.encryptingOutputFile)
       } else {
+        w.close()
         addResult(w.result())
       }
 

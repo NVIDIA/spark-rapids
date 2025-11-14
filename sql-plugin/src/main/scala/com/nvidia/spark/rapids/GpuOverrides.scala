@@ -2074,16 +2074,6 @@ object GpuOverrides extends Logging {
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128).withAllLit(),
           TypeSig.comparable))),
       (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          val unaliased = in.list.map(extractLit)
-          val hasNullLiteral = unaliased.exists {
-            case Some(l) => l.value == null
-            case _ => false
-          }
-          if (hasNullLiteral) {
-            willNotWorkOnGpu("nulls are not supported")
-          }
-        }
         override def convertToGpu(): GpuExpression =
           GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]].map(_.value))
       }),
@@ -2092,11 +2082,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128, TypeSig.comparable),
       (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (in.hset.contains(null)) {
-            willNotWorkOnGpu("nulls are not supported")
-          }
-        }
         override def convertToGpu(): GpuExpression =
           GpuInSet(childExprs.head.convertToGpu(), in.hset.toSeq)
       }),
