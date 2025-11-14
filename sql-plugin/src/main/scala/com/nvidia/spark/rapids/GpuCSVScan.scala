@@ -63,12 +63,34 @@ object GpuCSVScan extends Logging {
     }
   }
 
+  private def legacyCharsetEnabled: Boolean = {
+    try {
+      // Use reflection to determine if this conf is defined to avoid the
+      // complicated shim things due to only a boolean diff in CSV read.
+      SQLConf.getClass.getMethod("LEGACY_JAVA_CHARSETS")
+      // Spark 4.0.0 or later, since this conf is defined, so get the value from it.
+      SQLConf.get.getConfString("spark.sql.legacy.javaCharsets", "false").toBoolean
+    } catch {
+      case _: NoSuchMethodException =>
+        // Spark before 4.0.0, no this conf, so always returns true
+        true
+    }
+  }
+
   private val utf8Charsets: Set[Charset] = Set(
     StandardCharsets.UTF_8,
     StandardCharsets.US_ASCII)
 
   // May have more in the future
-  private val supportedCharsets: Set[Charset] = utf8Charsets ++ tryLoadCharset("GBK")
+  private lazy val supportedCharsets: Set[Charset] = {
+    // Spark restricts charsets in CSV from 4.0.0.
+    // See https://issues.apache.org/jira/browse/SPARK-48857
+    if (legacyCharsetEnabled) {
+      utf8Charsets ++ tryLoadCharset("GBK")
+    } else {
+      utf8Charsets
+    }
+  }
 
   private def isSupportedCharset(name: String): Boolean = {
     try {
