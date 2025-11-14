@@ -55,16 +55,32 @@ def main():
     databricks_host = os.getenv('DATABRICKS_HOST', params.workspace)
     databricks_token = os.getenv('DATABRICKS_TOKEN', params.token)
 
-    # Sync cache from Workspace to local cluster
+    # Sync cache from Workspace to local cluster (per-file to handle size limits)
     print("Syncing cache from Workspace to cluster")
     ws_cache_dir = "/databricks/cached_jars"
     local_cache_dir = "/tmp/workspace_cache"
     
-    sync_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
-        "'mkdir -p %s && DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace export-dir %s %s 2>&1 || echo \"No cache found in Workspace (or files too large)\"'" % \
-        (local_cache_dir, databricks_host, databricks_token, ws_cache_dir, local_cache_dir)
-    print("sync command: %s" % sync_command)
-    subprocess.call(sync_command, shell=True)  # Use call to allow failure if no cache exists
+    # Create local cache directory
+    mkdir_command = "ssh %s ubuntu@%s 'mkdir -p %s'" % (ssh_args, master_addr, local_cache_dir)
+    subprocess.call(mkdir_command, shell=True)
+    
+    # Try to export each file individually (small files will succeed, large files will fail gracefully)
+    print("\nAttempting to export files from Workspace:")
+    for file in CACHE_FILES:
+        file_name = file['name']
+        ws_file_path = "%s/%s" % (ws_cache_dir, file_name)
+        local_file_path = "%s/%s" % (local_cache_dir, file_name)
+        
+        print("  Trying to export %s..." % file_name)
+        export_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
+            "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace export %s --file %s --format AUTO 2>&1'" % \
+            (databricks_host, databricks_token, ws_file_path, local_file_path)
+        
+        result = subprocess.call(export_command, shell=True)
+        if result == 0:
+            print("    -> Exported successfully")
+        else:
+            print("    -> Export failed (file may be too large or not exist)")
 
     # Check each file and download if missing
     print("\nVerifying cached files...")
@@ -104,10 +120,13 @@ def main():
                 print("  2. Uploading to Workspace cache...")
                 
                 # Import the single file to Workspace
+                local_file_path = "%s/%s" % (local_cache_dir, file_name)
+                ws_file_path = "%s/%s" % (ws_cache_dir, file_name)
+                
                 upload_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
                     "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace mkdirs %s 2>/dev/null || true && " \
-                    "DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace import-dir %s %s 2>&1 || echo \"Warning: Could not upload to Workspace\"'" % \
-                    (databricks_host, databricks_token, ws_cache_dir, databricks_host, databricks_token, local_cache_dir, ws_cache_dir)
+                    "DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace import --file %s %s --format AUTO --overwrite 2>&1 || echo \"Warning: Could not upload to Workspace (file may be too large)\"'" % \
+                    (databricks_host, databricks_token, ws_cache_dir, databricks_host, databricks_token, local_file_path, ws_file_path)
                 
                 subprocess.call(upload_command, shell=True)
                 print("  -> Completed: %s" % file_name)
