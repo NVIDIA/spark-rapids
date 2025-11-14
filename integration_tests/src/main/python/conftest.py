@@ -199,7 +199,7 @@ _std_input_path = None
 def get_std_input_path():
     return _std_input_path
 
-def _get_java_avaiable_charsets():
+def _get_java_available_charsets():
     charset_names = spark_jvm().java.nio.charset.Charset.availableCharsets().keySet()
     iter_charsets = charset_names.iterator()
     charset_list = []
@@ -211,7 +211,7 @@ _jvm_available_charsets = None
 def is_gbk_supported():
     global _jvm_available_charsets
     if _jvm_available_charsets is None:
-        _jvm_available_charsets = _get_java_avaiable_charsets()
+        _jvm_available_charsets = _get_java_available_charsets()
     return 'GBK' in _jvm_available_charsets
 
 def pytest_runtest_setup(item):
