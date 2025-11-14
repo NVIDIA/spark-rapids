@@ -63,8 +63,6 @@ _current_test_allow_non_gpu_delta_write = False
 
 _random_select_config = None
 
-_random_select_config = None
-
 def is_allowing_any_non_gpu():
     return _allow_any_non_gpu
 
