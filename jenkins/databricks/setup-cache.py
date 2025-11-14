@@ -61,8 +61,8 @@ def main():
     local_cache_dir = "/tmp/workspace_cache"
     
     sync_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
-        "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s mkdir -p %s && $HOME/bin/databricks workspace export-dir %s %s 2>&1 || echo \"No cache found in Workspace\"'" % \
-        (databricks_host, databricks_token, local_cache_dir, ws_cache_dir, local_cache_dir)
+        "'mkdir -p %s && DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace export-dir %s %s 2>&1 || echo \"No cache found in Workspace\"'" % \
+        (local_cache_dir, databricks_host, databricks_token, ws_cache_dir, local_cache_dir)
     print("sync command: %s" % sync_command)
     subprocess.call(sync_command, shell=True)  # Use call to allow failure if no cache exists
 
@@ -106,8 +106,8 @@ def main():
                 # Import the single file to Workspace
                 upload_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
                     "'DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace mkdirs %s 2>/dev/null || true && " \
-                    "$HOME/bin/databricks workspace import-dir %s %s 2>&1 || echo \"Warning: Could not upload to Workspace\"'" % \
-                    (databricks_host, databricks_token, ws_cache_dir, local_cache_dir, ws_cache_dir)
+                    "DATABRICKS_HOST=%s DATABRICKS_TOKEN=%s $HOME/bin/databricks workspace import-dir %s %s 2>&1 || echo \"Warning: Could not upload to Workspace\"'" % \
+                    (databricks_host, databricks_token, ws_cache_dir, databricks_host, databricks_token, local_cache_dir, ws_cache_dir)
                 
                 subprocess.call(upload_command, shell=True)
                 print("  -> Completed: %s" % file_name)
