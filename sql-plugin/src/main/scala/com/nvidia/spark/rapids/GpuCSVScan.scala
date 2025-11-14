@@ -29,6 +29,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
@@ -51,15 +52,23 @@ trait ScanWithMetrics {
   var metrics : Map[String, GpuMetric] = Map.empty
 }
 
-object GpuCSVScan {
+object GpuCSVScan extends Logging {
+  private def tryLoadCharset(name: String): Option[Charset] = {
+    try {
+      Some(Charset.forName(name))
+    } catch {
+      case _: IllegalArgumentException =>
+        logWarning(s"Failed to load charset for '$name'")
+        None
+    }
+  }
+
   private val utf8Charsets: Set[Charset] = Set(
     StandardCharsets.UTF_8,
     StandardCharsets.US_ASCII)
 
-  private val supportedCharsets: Set[Charset] = utf8Charsets ++ Set(
-    Charset.forName("GBK")
-    // ... may have more in the future
-  )
+  // May have more in the future
+  private val supportedCharsets: Set[Charset] = utf8Charsets ++ tryLoadCharset("GBK")
 
   private def isSupportedCharset(name: String): Boolean = {
     try {
