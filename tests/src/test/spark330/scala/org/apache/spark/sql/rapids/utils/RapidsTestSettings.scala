@@ -21,6 +21,7 @@ package org.apache.spark.sql.rapids.utils
 
 import org.apache.spark.sql.rapids.suites.RapidsCastSuite
 import org.apache.spark.sql.rapids.suites.RapidsDataFrameAggregateSuite
+import org.apache.spark.sql.rapids.suites.RapidsDataFramePivotSuite
 import org.apache.spark.sql.rapids.suites.RapidsJsonExpressionsSuite
 import org.apache.spark.sql.rapids.suites.RapidsJsonFunctionsSuite
 import org.apache.spark.sql.rapids.suites.RapidsJsonSuite
@@ -73,6 +74,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-17641: collect functions should not collect null values", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", WONT_FIX_ISSUE("Codegen related UT, not applicable for GPU"))
     .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"), (getJavaMajorVersion() >= 17))
+  enableSuite[RapidsDataFramePivotSuite]
   enableSuite[RapidsJsonExpressionsSuite]
     .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
     .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))
