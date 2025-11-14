@@ -464,7 +464,7 @@ class HMBInputFile(buffer: HostMemoryBuffer) extends InputFile {
     getLength)
 }
 
-private case class GpuParquetFileFilterHandler(
+protected case class GpuParquetFileFilterHandler(
     @transient sqlConf: SQLConf,
     metrics: Map[String, GpuMetric]) extends Logging {
 
@@ -1096,12 +1096,26 @@ private case class GpuParquetFileFilterHandler(
   }
 }
 
+case class GpuParquetMultiFilePartitionReaderFactory(
+    @transient sqlConf: SQLConf,
+    broadcastedConf: Broadcast[SerializableConfiguration],
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    partitionSchema: StructType,
+    filters: Array[Filter],
+    @transient rapidsConf: RapidsConf,
+    poolConfBuilder: ThreadPoolConfBuilder,
+    metrics: Map[String, GpuMetric],
+    queryUsesInputFile: Boolean) extends GpuParquetMultiFilePartitionReaderFactoryBase (sqlConf,
+      broadcastedConf, dataSchema, readDataSchema, partitionSchema, filters, rapidsConf,
+      poolConfBuilder, metrics, queryUsesInputFile)
+
 /**
  * Similar to GpuParquetPartitionReaderFactory but extended for reading multiple files
  * in an iteration. This will allow us to read multiple small files and combine them
  * on the CPU side before sending them down to the GPU.
  */
-case class GpuParquetMultiFilePartitionReaderFactory(
+abstract class GpuParquetMultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
@@ -1118,15 +1132,16 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   // from a task when we need to create the fileIO instance. This stops a regression
   // when we materialize the hadoop conf eagerly, see:
   // https://github.com/NVIDIA/spark-rapids/issues/13353
-  @transient private lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
-  private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
-  private val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
-  private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
-  private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
-  private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
-  private val filterHandler = GpuParquetFileFilterHandler(sqlConf, metrics)
-  private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
+  @transient protected lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
+  protected val isCaseSensitive: Boolean = sqlConf.caseSensitiveAnalysis
+  protected val debugDumpPrefix: Option[String] = rapidsConf.parquetDebugDumpPrefix
+  protected val debugDumpAlways: Boolean = rapidsConf.parquetDebugDumpAlways
+  protected val maxNumFileProcessed: Int = rapidsConf.maxNumParquetFilesParallel
+  protected val ignoreMissingFiles: Boolean = sqlConf.ignoreMissingFiles
+  protected val ignoreCorruptFiles: Boolean = sqlConf.ignoreCorruptFiles
+  protected val filterHandler: GpuParquetFileFilterHandler =
+    GpuParquetFileFilterHandler(sqlConf, metrics)
+  protected val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
     rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
@@ -1146,7 +1161,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           "the deprecated one will be honored if both are set.")
         f.intValue()
       }.getOrElse(rapidsConf.getMultithreadedCombineWaitTime)
-  private val keepReadsInOrderFromConf =
+  protected val keepReadsInOrderFromConf =
     RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER.get(sqlConf)
       .map { deprecatedVal =>
         logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER} is deprecated, " +
@@ -1154,7 +1169,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           "the deprecated one will be honored if both are set.")
         deprecatedVal
       }.getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
-  private val compressCfg = CpuCompressionConfig.forParquet(rapidsConf)
+  protected val compressCfg = CpuCompressionConfig.forParquet(rapidsConf)
 
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -1182,6 +1197,17 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     val poolConf = poolConfBuilder.build()
+    getCloudReader(metrics, partitionSchema, poolConf, conf, combineConf, files, filterFunc)
+  }
+
+  protected def getCloudReader(
+    metrics: Map[String, GpuMetric],
+    partitionSchema: StructType,
+    poolConf: ThreadPoolConf,
+    conf: Configuration,
+    combineConf: CombineConf,
+    files: Array[PartitionedFile],
+    filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta): PartitionReader[ColumnarBatch] = {
     val reader = new MultiFileCloudParquetPartitionReader(fileIO, conf, files, filterFunc,
       isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
@@ -2494,7 +2520,7 @@ class MultiFileCloudParquetPartitionReader(
 
   // assumes all these are ok to combine and have the same metadata for schema
   // and *RebaseMode and timestamp type settings
-  private def doCombineHMBs(combinedMeta: CombinedMeta): HostMemoryBuffersWithMetaDataBase = {
+  protected def doCombineHMBs(combinedMeta: CombinedMeta): HostMemoryBuffersWithMetaDataBase = {
     val toCombineHmbs = combinedMeta.toCombine.filterNot(_.isInstanceOf[HostMemoryEmptyMetaData])
     val metaToUse = combinedMeta.firstNonEmpty
     logDebug(s"Using Combine mode and actually combining, num files ${toCombineHmbs.size} " +
