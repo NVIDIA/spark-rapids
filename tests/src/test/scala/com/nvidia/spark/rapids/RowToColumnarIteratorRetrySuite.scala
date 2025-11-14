@@ -46,4 +46,15 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       row2ColIter.next()
     }
   }
+
+  test("test simple CPU OOM retry") {
+    val rowIter: Iterator[InternalRow] = (1 to 10).map(InternalRow(_)).toIterator
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.CPU.ordinal, 0)
+    Arm.withResource(row2ColIter.next()) { batch =>
+      assertResult(10)(batch.numRows())
+    }
+  }
 }

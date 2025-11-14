@@ -389,6 +389,93 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     return valid.getLength() - prevValidSize;
   }
 
+  public void reserveRows(long rowsToReserve) {
+    if (rowsToReserve <= 0) {
+      return;
+    }
+    long requiredRows = Math.max(rowsToReserve, estimatedRows);
+    if (type == DType.LIST) {
+      ensureListCapacity(requiredRows);
+    } else if (type == DType.STRUCT) {
+      ensureStructCapacity(requiredRows);
+    } else if (type == DType.STRING) {
+      ensureStringCapacity(requiredRows);
+    } else {
+      ensureFixedWidthCapacity(requiredRows);
+    }
+    for (RapidsHostColumnBuilder childBuilder : childBuilders) {
+      childBuilder.reserveRows(requiredRows);
+    }
+    ensureValidCapacity(rowCapacity);
+  }
+
+  private void ensureFixedWidthCapacity(long requiredRows) {
+    long cappedRows = Math.min(requiredRows, Integer.MAX_VALUE - 1L);
+    if (data == null) {
+      data = HostMemoryBuffer.allocate(cappedRows << bitShiftBySize);
+      rowCapacity = cappedRows;
+    } else if (rowCapacity < cappedRows) {
+      data = copyBuffer(HostMemoryBuffer.allocate(cappedRows << bitShiftBySize), data);
+      rowCapacity = cappedRows;
+    } else {
+      rowCapacity = Math.max(rowCapacity, cappedRows);
+    }
+  }
+
+  private void ensureListCapacity(long requiredRows) {
+    long cappedRows = Math.min(requiredRows, Integer.MAX_VALUE - 2L);
+    if (offsets == null) {
+      offsets = HostMemoryBuffer.allocate((cappedRows + 1) << bitShiftByOffset);
+      offsets.setInt(0, 0);
+      rowCapacity = cappedRows;
+    } else if (rowCapacity < cappedRows) {
+      offsets = copyBuffer(HostMemoryBuffer.allocate((cappedRows + 1) << bitShiftByOffset), offsets);
+      rowCapacity = cappedRows;
+    } else {
+      rowCapacity = Math.max(rowCapacity, cappedRows);
+    }
+  }
+
+  private void ensureStringCapacity(long requiredRows) {
+    long cappedRows = Math.min(requiredRows, Integer.MAX_VALUE - 2L);
+    if (offsets == null) {
+      offsets = HostMemoryBuffer.allocate((cappedRows + 1) << bitShiftByOffset);
+      offsets.setInt(0, 0);
+    } else if (rowCapacity < cappedRows) {
+      offsets = copyBuffer(HostMemoryBuffer.allocate((cappedRows + 1) << bitShiftByOffset), offsets);
+    }
+    if (data == null) {
+      data = HostMemoryBuffer.allocate(1);
+    }
+    rowCapacity = Math.max(rowCapacity, cappedRows);
+  }
+
+  private void ensureStructCapacity(long requiredRows) {
+    long cappedRows = Math.min(requiredRows, Integer.MAX_VALUE - 1L);
+    rowCapacity = Math.max(rowCapacity, cappedRows);
+  }
+
+  private void ensureValidCapacity(long requiredRows) {
+    if (!nullable) {
+      return;
+    }
+    long targetRows = Math.max(requiredRows, 1L);
+    if (valid != null && validCapacity >= targetRows) {
+      return;
+    }
+    long actualBytes = (targetRows + 7) >> 3;
+    long maskBytes = ((actualBytes + 63) >> 6) << 6;
+    if (valid == null) {
+      valid = HostMemoryBuffer.allocate(maskBytes);
+      valid.setMemory(0, valid.getLength(), (byte) 0xFF);
+    } else {
+      HostMemoryBuffer newValid = HostMemoryBuffer.allocate(maskBytes);
+      newValid.setMemory(0, newValid.getLength(), (byte) 0xFF);
+      valid = copyBuffer(newValid, valid);
+    }
+    validCapacity = targetRows;
+  }
+
   //For structs
   private long append(HostColumnVector.StructData structData) {
     assert type.isNestedType();

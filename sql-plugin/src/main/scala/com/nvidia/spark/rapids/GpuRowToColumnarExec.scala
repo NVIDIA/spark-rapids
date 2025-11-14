@@ -631,7 +631,15 @@ class RowToColumnarIterator(
       }
 
       val buildersInit = RmmRapidsRetryIterator.withRetryNoSplit[GpuColumnarBatchBuilder] {
-        new GpuColumnarBatchBuilder(localSchema, initialRows)
+        val builder = new GpuColumnarBatchBuilder(localSchema, initialRows)
+        if (initialRows > 0) {
+          var colIdx = 0
+          while (colIdx < localSchema.fields.length) {
+            builder.builder(colIdx).reserveRows(initialRows)
+            colIdx += 1
+          }
+        }
+        builder
       }
       withResource(buildersInit) { builders =>
         var rowCount = 0

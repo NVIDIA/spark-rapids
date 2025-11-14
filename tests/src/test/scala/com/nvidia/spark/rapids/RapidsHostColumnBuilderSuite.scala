@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.DType
-import ai.rapids.cudf.HostColumnVector.BasicType
+import ai.rapids.cudf.{DType, HostMemoryBuffer}
+import ai.rapids.cudf.HostColumnVector.{BasicType, ListType}
 import org.scalatest.funsuite.AnyFunSuite
 
 class RapidsHostColumnBuilderSuite extends AnyFunSuite {
@@ -37,5 +37,67 @@ class RapidsHostColumnBuilderSuite extends AnyFunSuite {
     v2.close()
     b1.close()
     b2.close()
+  }
+
+  private def getLongField(instance: AnyRef, name: String): Long = {
+    val field = instance.getClass.getDeclaredField(name)
+    field.setAccessible(true)
+    field.getLong(instance)
+  }
+
+  private def getBufferField(instance: AnyRef, name: String): HostMemoryBuffer = {
+    val field = instance.getClass.getDeclaredField(name)
+    field.setAccessible(true)
+    field.get(instance).asInstanceOf[HostMemoryBuffer]
+  }
+
+  test("reserveRows preallocates fixed width buffers") {
+    val builder = new RapidsHostColumnBuilder(new BasicType(false, DType.INT32), 0)
+    try {
+      builder.reserveRows(8)
+      val rowCapacity = getLongField(builder, "rowCapacity")
+      val rows = getLongField(builder, "rows")
+      assert(rowCapacity >= 8)
+      assert(rows == 0)
+      val data = getBufferField(builder, "data")
+      assert(data != null)
+      assert(data.getLength >= rowCapacity * java.lang.Integer.BYTES)
+    } finally {
+      builder.close()
+    }
+  }
+
+  test("reserveRows preallocates offsets for strings") {
+    val builder = new RapidsHostColumnBuilder(new BasicType(false, DType.STRING), 0)
+    try {
+      builder.reserveRows(4)
+      val rowCapacity = getLongField(builder, "rowCapacity")
+      val offsets = getBufferField(builder, "offsets")
+      val data = getBufferField(builder, "data")
+      assert(rowCapacity >= 4)
+      assert(offsets != null)
+      assert(offsets.getLength >= (rowCapacity + 1L) * java.lang.Integer.BYTES)
+      assert(data != null)
+      assert(data.getLength >= 1) // std::string builder keeps at least byte
+    } finally {
+      builder.close()
+    }
+  }
+
+  test("reserveRows cascades to child builders for lists") {
+    val listType = new ListType(false, new BasicType(false, DType.INT32))
+    val builder = new RapidsHostColumnBuilder(listType, 0)
+    try {
+      builder.reserveRows(5)
+      val rowCapacity = getLongField(builder, "rowCapacity")
+      val offsets = getBufferField(builder, "offsets")
+      assert(rowCapacity >= 5)
+      assert(offsets != null)
+      val child = builder.getChild(0)
+      val childCapacity = getLongField(child, "rowCapacity")
+      assert(childCapacity >= 5)
+    } finally {
+      builder.close()
+    }
   }
 }
