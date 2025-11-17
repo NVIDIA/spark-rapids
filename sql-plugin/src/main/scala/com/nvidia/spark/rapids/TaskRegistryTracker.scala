@@ -51,20 +51,34 @@ object TaskRegistryTracker {
     }
   }
 
-  def registerThreadForRetry(): Unit = synchronized {
+  /**
+   * Called only from `Plugin.onTaskStart` from Spark's thread pool for tasks.
+   * This function registers the thread as "dedicated" (not a pool thread)
+   */
+  def registerDedicatedThreadForRetry(): Unit =
+    registerThreadForRetry(addDedicatedThread = true)
+
+  /**
+   * Called to register a thread, pool or otherwise, with TaskRegistryTracker.
+   * If the thread is a spark task thread, then set `addDedicatedThread` to true.
+   * @param addDedicatedThread whether this thread is the spark specific task thread.
+   */
+  def registerThreadForRetry(addDedicatedThread: Boolean = false): Unit = synchronized {
     val tc = TaskContext.get()
     if (
       tc != null &&
         !RmmSpark.isThreadWorkingOnTaskAsPoolThread // check if the thread is a pool thread
     ) {
       // If we don't have a TaskContext we are either in a test or in some other thread
-      // If it is some other thread, then they are responsible to amke sure things are
+      // If it is some other thread, then they are responsible to make sure things are
       // registered properly themselves. If it is a test, well you need to update your
       // test code to make this work properly.
       val threadId = RmmSpark.getCurrentThreadId
       val taskId = tc.taskAttemptId()
       if (registeredThreads.add(threadId)) {
-        RmmSpark.currentThreadIsDedicatedToTask(taskId)
+        if (addDedicatedThread) {
+          RmmSpark.currentThreadIsDedicatedToTask(taskId)
+        }
         if (!taskToThread.containsKey(taskId)) {
           taskToThread.put(taskId, ArrayBuffer(threadId))
           ScalableTaskCompletion.onTaskCompletion(tc) {
