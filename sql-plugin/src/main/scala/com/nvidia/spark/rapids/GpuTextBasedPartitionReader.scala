@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.charset.{Charset, StandardCharsets}
 import java.time.DateTimeException
 import java.util
 import java.util.Optional
@@ -29,6 +30,7 @@ import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+import org.apache.hadoop.io.Text
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.TaskContext
@@ -354,7 +356,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric],
-    bufferFactory: FACT)
+    bufferFactory: FACT,
+    charset: Charset = StandardCharsets.UTF_8)
   extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
   import GpuMetric._
 
@@ -384,6 +387,19 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     }
   }
 
+  private lazy val toUTF8Bytes: Text => (Array[Byte], Int) =
+    if (GpuCSVScan.isUTF8Charset(charset)) {
+      // Already utf8, return it directly
+      line => (line.getBytes, line.getLength)
+    } else {
+      // Do the decoding and encoding on CPU now, but better support the translation on GPU.
+      line => {
+        val utf8Bytes = new String(line.getBytes, 0, line.getLength, charset)
+          .getBytes(StandardCharsets.UTF_8)
+        (utf8Bytes, utf8Bytes.length)
+      }
+    }
+
   private def readPartFile(): (BUFF, Long) = {
     NvtxRegistry.BUFFER_FILE_SPLIT_TEXT {
       isFirstChunkForIterator = false
@@ -396,8 +412,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
         while (lineReader.hasNext
           && totalRows != maxRowsPerChunk
           && totalSize <= maxBytesPerChunk /* soft limit and returns at least one row */) {
-          val line = lineReader.next()
-          hmb.add(line.getBytes, 0, line.getLength)
+          val (lineBytes, bytesLen) = toUTF8Bytes(lineReader.next())
+          hmb.add(lineBytes, 0, bytesLen)
           totalRows = hmb.getNumLines
           totalSize = hmb.getLength
         }
