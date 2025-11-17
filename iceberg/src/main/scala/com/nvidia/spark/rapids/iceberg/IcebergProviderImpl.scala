@@ -22,7 +22,7 @@ import scala.util.Try
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
 import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
-import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression}
+import org.apache.iceberg.spark.functions.{BucketFunction, GpuBucketExpression, GpuTruncateExpression, TruncateFunction}
 import org.apache.iceberg.spark.source.{GpuSparkPositionDeltaWrite, GpuSparkScan, GpuSparkWrite}
 import org.apache.iceberg.spark.source.GpuSparkPositionDeltaWrite.tableOf
 import org.apache.iceberg.spark.supportsCatalog
@@ -79,6 +79,16 @@ class IcebergProviderImpl extends IcebergProvider {
   override def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = {
     if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
       GpuBucketExpression.tagExprForGpu(meta)
+    } else if (classOf[TruncateFunction.TruncateInt].isAssignableFrom(expr.staticObject)) {
+      GpuTruncateExpression.tagExprForGpu(meta)
+    } else if (classOf[TruncateFunction.TruncateBigInt].isAssignableFrom(expr.staticObject)) {
+      GpuTruncateExpression.tagExprForGpu(meta)
+    } else if (classOf[TruncateFunction.TruncateString].isAssignableFrom(expr.staticObject)) {
+      GpuTruncateExpression.tagExprForGpu(meta)
+    } else if (classOf[TruncateFunction.TruncateBinary].isAssignableFrom(expr.staticObject)) {
+      GpuTruncateExpression.tagExprForGpu(meta)
+    } else if (classOf[TruncateFunction.TruncateDecimal].isAssignableFrom(expr.staticObject)) {
+      GpuTruncateExpression.tagExprForGpu(meta)
     } else {
       meta.willNotWorkOnGpu(s"StaticInvoke of ${expr.staticObject.getName} is not supported on GPU")
     }
