@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>25.12.0-SNAPSHOT</version>
+    <version>26.02.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -751,6 +751,30 @@
                 <module>iceberg</module>
             </modules>
         </profile>
+        <profile>
+            <id>release357</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>357</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>357</buildver>
+                <spark.version>${spark357.version}</spark.version>
+                <spark.test.version>${spark357.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
+                <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-33x</module>
+                <module>iceberg</module>
+            </modules>
+        </profile>
 	<!-- #if scala-2.13 --><!--
         <profile>
             <id>release400</id>
@@ -908,6 +932,7 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
+        <!-- TODO: https://github.com/NVIDIA/spark-rapids/issues/13794 -->
         <spark-rapids-jni.version>25.12.0-SNAPSHOT</spark-rapids-jni.version>
         <spark-rapids-private.version>25.12.0-SNAPSHOT</spark-rapids-private.version>
         <spark-rapids-hybrid.version>25.12.0-SNAPSHOT</spark-rapids-hybrid.version>
@@ -985,6 +1010,7 @@
         <spark354.version>3.5.4</spark354.version>
         <spark355.version>3.5.5</spark355.version>
         <spark356.version>3.5.6</spark356.version>
+        <spark357.version>3.5.7</spark357.version>
         <spark400.version>4.0.0</spark400.version>
         <spark401.version>4.0.1</spark401.version>
         <mockito.version>3.12.4</mockito.version>
@@ -1027,7 +1053,6 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
-
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
