@@ -1014,6 +1014,27 @@ def test_delta_write_optimized_table_props_aqe(spark_tmp_path, confkey, aqe_enab
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_353(), reason="Delta Lake optimized writes are not supported before Spark 3.5.3 on Apache Spark")
+def test_delta_write_optimized_empty_output(spark_tmp_path):
+    num_chunks = 20
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    gen = IntegerGen(nullable=False)
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.optimizeWrite.enabled" : "true"
+    })
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        # filter everything out in the generated data
+        lambda spark, path: unary_op_df(spark, gen) \
+            .filter("a is null") \
+            .repartition(num_chunks).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_353(), reason="Delta Lake optimized writes are not supported before Spark 3.5.3 on Apache Spark")
