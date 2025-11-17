@@ -18,7 +18,6 @@ import pytest
 import random
 import warnings
 
-
 # TODO redo _spark stuff using fixtures
 #
 # Don't import pyspark / _spark directly in conftest globally
@@ -202,6 +201,21 @@ def _get_limit_from_mark(mark):
 _std_input_path = None
 def get_std_input_path():
     return _std_input_path
+
+def _get_java_available_charsets():
+    charset_names = spark_jvm().java.nio.charset.Charset.availableCharsets().keySet()
+    iter_charsets = charset_names.iterator()
+    charset_list = []
+    while iter_charsets.hasNext():
+        charset_list.append(iter_charsets.next())
+    return charset_list
+
+_jvm_available_charsets = None
+def is_gbk_supported():
+    global _jvm_available_charsets
+    if _jvm_available_charsets is None:
+        _jvm_available_charsets = _get_java_available_charsets()
+    return 'GBK' in _jvm_available_charsets
 
 def pytest_runtest_setup(item):
     global _sort_on_spark
