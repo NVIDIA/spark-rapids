@@ -22,7 +22,6 @@ package org.apache.spark.sql.rapids.utils
 // Import all Rapids test suites to avoid merge conflicts when multiple people add new suites
 import org.apache.spark.sql.rapids.suites._
 
-
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
 
@@ -44,11 +43,19 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-17641: collect functions should not collect null values", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", WONT_FIX_ISSUE("Codegen related UT, not applicable for GPU"))
     .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"), (getJavaMajorVersion() >= 17))
+  enableSuite[RapidsDataFrameComplexTypeSuite]
   enableSuite[RapidsDataFramePivotSuite]
   enableSuite[RapidsDataFrameWindowFunctionsSuite]
     .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13763"))
     .exclude("SPARK-21258: complex object in combination with spilling", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13764"))
     .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13765"))
+  enableSuite[RapidsDateExpressionsSuite]
+    .exclude("unsupported fmt fields for trunc/date_trunc results null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13757"))
+    .exclude("SPARK-31896: Handle am-pm timestamp parsing when hour is missing", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13758"))
+    .exclude("DATE_FROM_UNIX_DATE", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13760"))
+    .exclude("TIMESTAMP_MICROS", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13760"))
+    .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
+    .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
   enableSuite[RapidsJsonExpressionsSuite]
     .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
     .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))
