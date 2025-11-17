@@ -18,7 +18,7 @@ from pyspark.sql.functions import array_contains, broadcast, col, lit
 from pyspark.sql.types import *
 from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,
                      assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture,
-                     assert_cpu_and_gpu_are_equal_sql_with_capture)
+                     assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_sql)
 from conftest import is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
@@ -413,6 +413,33 @@ def test_broadcast_join_null_aware_anti(rows):
         table_name='null_aware_anti_table',
         exist_classes='GpuBroadcastHashJoinExec',
         conf={'spark.sql.optimizeNullAwareAntiJoin': 'true'})
+
+@ignore_order(local=True)
+def test_broadcast_nested_loop_join_degen_left_outer_build_no_columns():
+    def gen_df_func(spark):
+        spark.sql("create or replace temp view right_tbl(r1) as values (22),(33);")
+        return unary_op_df(spark, int_gen, length=300)
+
+    # The sql is from https://github.com/NVIDIA/spark-rapids/issues/13731.
+    # The degenerate left-outer join (no columns in the build side) only appears
+    # from Spark 4.0.0, but ok to test against all the Spark versions.
+    assert_gpu_and_cpu_are_equal_sql(gen_df_func,
+        sql="SELECT * FROM left_tbl WHERE EXISTS "
+            "(SELECT COUNT(*) FROM right_tbl WHERE left_tbl.a = 1);",
+        table_name='left_tbl')
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('a_val', ['1', '10'], ids=idfn)  # 1: in t1, 10: not in t1
+def test_broadcast_nested_loop_join_degen_left_outer_stream_no_columns(a_val):
+    def degen_join_func(spark):
+        # This repro case is from https://github.com/NVIDIA/spark-rapids/issues/13708.
+        # And here does some change to cover more cases.
+        spark.sql(f"create or replace temp view t0 as select {a_val} as a;")
+        spark.sql("create or replace temp view t1(b) as values (1),(2);")
+        spark.sql("create or replace temp view t2(c) as values (22),(33),(44);")
+        return spark.sql("select a, cast(c as string) from t0 left join t2 on (a in (select b from t1));")
+
+    assert_gpu_and_cpu_are_equal_collect(degen_join_func)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
