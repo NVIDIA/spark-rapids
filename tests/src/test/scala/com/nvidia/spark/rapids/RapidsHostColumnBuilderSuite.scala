@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DType, HostMemoryBuffer}
 import ai.rapids.cudf.HostColumnVector.{BasicType, ListType}
-import org.scalatest.funsuite.AnyFunSuite
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 
-class RapidsHostColumnBuilderSuite extends AnyFunSuite {
+class RapidsHostColumnBuilderSuite extends RmmSparkRetrySuiteBase {
   test("growing buffer preserves correctness") {
     val b1 = new RapidsHostColumnBuilder(new BasicType(false, DType.INT32), 0) // grows
     val b2 = new RapidsHostColumnBuilder(new BasicType(false, DType.INT32), 8) // does not grow
@@ -96,6 +96,22 @@ class RapidsHostColumnBuilderSuite extends AnyFunSuite {
       val child = builder.getChild(0)
       val childCapacity = getLongField(child, "rowCapacity")
       assert(childCapacity >= 5)
+    } finally {
+      builder.close()
+    }
+  }
+
+  test("reserveRows insufficient triggers CPU OOM on growth") {
+    val builder = new RapidsHostColumnBuilder(new BasicType(false, DType.INT32), 0)
+    try {
+      builder.reserveRows(2)
+      builder.append(0)
+      builder.append(1)
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.CPU.ordinal, 0)
+      assertThrows[CpuRetryOOM] {
+        builder.append(2)
+      }
     } finally {
       builder.close()
     }
