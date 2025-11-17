@@ -19,38 +19,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.rapids.suites.RapidsCastSuite
-import org.apache.spark.sql.rapids.suites.RapidsDataFrameAggregateSuite
-import org.apache.spark.sql.rapids.suites.RapidsDataFrameNaFunctionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsJsonExpressionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsJsonFunctionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsJsonSuite
-import org.apache.spark.sql.rapids.suites.RapidsMathExpressionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsMathFunctionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsMiscFunctionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetAvroCompatibilitySuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetColumnIndexSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetCompressionCodecPrecedenceSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaByteArrayEncodingSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingInteger
-import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingLong
-import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaLengthByteArrayEncodingSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetEncodingSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdIOSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdSchemaSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetFileFormatSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetInteroperabilitySuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetPartitionDiscoverySuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetProtobufCompatibilitySuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetQuerySuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetRebaseDatetimeSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetSchemaPruningSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetSchemaSuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetThriftCompatibilitySuite
-import org.apache.spark.sql.rapids.suites.RapidsParquetVectorizedSuite
-import org.apache.spark.sql.rapids.suites.RapidsRegexpExpressionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsStringExpressionsSuite
-import org.apache.spark.sql.rapids.suites.RapidsStringFunctionsSuite
+// Import all Rapids test suites to avoid merge conflicts when multiple people add new suites
+import org.apache.spark.sql.rapids.suites._
 
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
@@ -74,6 +44,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", WONT_FIX_ISSUE("Codegen related UT, not applicable for GPU"))
     .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"), (getJavaMajorVersion() >= 17))
   enableSuite[RapidsDataFrameNaFunctionsSuite]
+  enableSuite[RapidsDataFramePivotSuite]
   enableSuite[RapidsJsonExpressionsSuite]
     .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
     .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))

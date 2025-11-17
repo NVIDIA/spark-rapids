@@ -243,9 +243,6 @@ def is_spark_353_or_later():
 def is_spark_351_or_later():
     return spark_version() >= "3.5.1"
 
-def is_spark_356():
-    return spark_version() == "3.5.6"
-
 def is_spark_356_or_later():
     return spark_version() >= "3.5.6"
 
