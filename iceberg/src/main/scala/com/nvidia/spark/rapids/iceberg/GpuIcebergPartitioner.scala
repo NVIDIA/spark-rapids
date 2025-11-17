@@ -54,9 +54,12 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
   private val partitionExprs: Seq[GpuExpression] = spec.fields().asScala.map(getPartitionExpr).toSeq
 
   private val keyColNum: Int = spec.fields().size()
+  private val inputColNum: Int = dataSparkType.fields.length
 
   // key column indices in the table: [key columns, input columns]
   private val keyColIndices: Array[Int] = (0 until keyColNum).toArray
+  // input column indices in the table: [key columns, input columns]
+  private val inputColumnIndices: Array[Int] = (keyColNum until (keyColNum + inputColNum)).toArray
 
   /**
    * Make a new table: [key columns, input columns]
@@ -106,7 +109,7 @@ class GpuIcebergPartitioner(val spec: PartitionSpec,
       // note: the result does not contain the key columns
       val splitRet = withResource(keysAndInputTable) { _ =>
         keysAndInputTable.groupBy(keyColIndices: _*)
-          .contiguousSplitGroupsAndGenUniqKeys()
+          .contiguousSplitGroupsAndGenUniqKeys(inputColumnIndices)
       }
 
       // generate results
