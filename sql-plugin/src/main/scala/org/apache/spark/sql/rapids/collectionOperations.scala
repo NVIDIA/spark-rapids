@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimE
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
-import org.apache.spark.sql.catalyst.util.GenericArrayData
+import org.apache.spark.sql.catalyst.util.{GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -730,6 +730,83 @@ case class GpuMapEntries(child: Expression) extends GpuUnaryExpression with Expe
     // Internally the format for a list of key/value structs is the same, so just
     // return the same thing, and let Spark think it is a different type.
     input.getBase.incRefCount()
+  }
+}
+
+case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
+
+  private val mapKeyDedupPolicy = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY)
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType)
+
+  @transient private lazy val childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
+
+  @transient
+  private lazy val dataTypeDetails: Option[(MapType, Boolean, Boolean)] = child.dataType match {
+    case ArrayType(
+      StructType(Array(
+        StructField(_, keyType, keyNullable, _),
+        StructField(_, valueType, valueNullable, _))),
+        containsNull) => 
+      Some((MapType(keyType, valueType, valueNullable), keyNullable, containsNull))
+    case _ => None
+  }
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    dataTypeDetails match {
+      case Some((mapType, _, _)) =>
+        TypeUtils.checkForMapKeyType(mapType.keyType)
+      case _ =>
+        TypeCheckResult.TypeCheckFailure(
+          s"The input to function $prettyName should be an array of struct<key, value>, " +
+          s"but it's ${child.dataType.catalogString}")
+    }
+  }
+
+  override def dataType: DataType = {
+    childDataType.elementType match {
+      case StructType(Array(
+        StructField(_, keyType, _, _),
+        StructField(_, valueType, valueNullable, _))) =>
+        MapType(keyType, valueType, valueNullable)
+      case _ =>
+        // This should not happen as checkInputDataTypes should catch it
+        throw new IllegalStateException(
+          s"Invalid input type for $prettyName: ${child.dataType.catalogString}")
+    }
+  }
+
+  override def prettyName: String = "gpu_map_from_entries"
+
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    // Internally the format for a list of key/value structs is the same as a map,
+    // so we can just return the same column with proper validation and deduplication.
+    val inputBase = input.getBase
+    
+    // Check for null keys
+    GpuMapUtils.assertNoNullKeys(inputBase)
+    
+    // Handle duplicate keys based on the policy
+    mapKeyDedupPolicy.toUpperCase match {
+      case "EXCEPTION" =>
+        // Check if there are any duplicate keys
+        withResource(inputBase.dropListDuplicatesWithKeysValues()) { deduped =>
+          withResource(deduped.getChildColumnView(0)) { dedupedChild =>
+            withResource(inputBase.getChildColumnView(0)) { originalChild =>
+              if (dedupedChild.getRowCount != originalChild.getRowCount) {
+                throw GpuMapUtils.duplicateMapKeyFoundError
+              }
+            }
+          }
+        }
+        inputBase.incRefCount()
+      case "LAST_WIN" =>
+        // Remove duplicates, keeping the last occurrence
+        inputBase.dropListDuplicatesWithKeysValues()
+      case other =>
+        throw new IllegalArgumentException(
+          s"Unsupported map key deduplication policy: $other")
+    }
   }
 }
 
