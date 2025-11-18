@@ -201,6 +201,7 @@ MapConcat,4
 MapEntries,4
 MapFilter,4
 MapFromArrays,4
+MapFromEntries,4
 MapKeys,4
 MapValues,4
 MapZipWith,4
