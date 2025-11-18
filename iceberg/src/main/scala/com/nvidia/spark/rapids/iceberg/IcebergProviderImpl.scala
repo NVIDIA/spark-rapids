@@ -22,7 +22,7 @@ import scala.util.Try
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
 import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
-import org.apache.iceberg.spark.functions.{BucketFunction, DaysFunction, GpuBucketExpression, GpuDaysExpression, GpuHoursExpression, GpuMonthsExpression, GpuTruncateExpression, GpuYearsExpression, HoursFunction, MonthsFunction, TruncateFunction, YearsFunction}
+import org.apache.iceberg.spark.functions._
 import org.apache.iceberg.spark.source.{GpuSparkPositionDeltaWrite, GpuSparkScan, GpuSparkWrite}
 import org.apache.iceberg.spark.source.GpuSparkPositionDeltaWrite.tableOf
 import org.apache.iceberg.spark.supportsCatalog
@@ -132,6 +132,21 @@ class IcebergProviderImpl extends IcebergProvider {
     } else if (
       classOf[HoursFunction.TimestampToHoursFunction].isAssignableFrom(expr.staticObject)) {
       GpuHoursExpression(meta.childExprs.head.convertToGpu())
+    } else if (classOf[TruncateFunction.TruncateInt].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateBigInt].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateString].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateBinary].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateDecimal].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
     } else {
       throw new IllegalStateException(
         s"Should have been caught in tagExprForGpu: ${expr.staticObject.getName}")

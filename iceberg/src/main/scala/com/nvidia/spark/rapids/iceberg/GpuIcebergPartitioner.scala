@@ -74,7 +74,7 @@ class GpuIcebergPartitioner(
 
     // Combine keys and values into a single batch: [key columns, input columns]
     val keysAndInputBatch = GpuColumnVector.combineColumns(keys, values)
-    
+
     withResource(keysAndInputBatch) { _ =>
       withResource(GpuColumnVector.from(keysAndInputBatch)) { keysAndInputTable =>
         // Split the input columns by the key columns using the efficient JNI API
@@ -171,6 +171,8 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
       case GpuMonths => GpuMonthsExpression(inputRefExpr)
       case GpuDays => GpuDaysExpression(inputRefExpr)
       case GpuHours => GpuHoursExpression(inputRefExpr)
+      case GpuTruncate(width) =>
+        GpuTruncateExpression(GpuLiteral.create(width), inputRefExpr)
     }
   }
 }
