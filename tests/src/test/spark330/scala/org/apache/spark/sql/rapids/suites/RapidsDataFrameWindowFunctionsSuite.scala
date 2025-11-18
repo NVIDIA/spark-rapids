@@ -24,5 +24,5 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsDataFrameWindowFunctionsSuite
   extends DataFrameWindowFunctionsSuite
-  with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsTrait {}
 
