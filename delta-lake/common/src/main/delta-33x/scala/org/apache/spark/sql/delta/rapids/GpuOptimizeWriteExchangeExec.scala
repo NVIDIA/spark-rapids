@@ -108,27 +108,31 @@ case class GpuOptimizeWriteExchangeExec(
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
+  @transient private lazy val childNumPartitions = inputRDD.getNumPartitions
+
   @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
-    if (inputRDD.getNumPartitions == 0) {
+    if (childNumPartitions == 0) {
       Future.successful(null)
     } else {
       sparkContext.submitMapStage(shuffleDependency)
     }
   }
 
-  private lazy val childNumPartitions = inputRDD.getNumPartitions
-
-  private lazy val actualNumPartitions: Int = {
-    val targetShuffleBlocks = conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_SHUFFLE_BLOCKS)
-    math.min(
-      math.max(targetShuffleBlocks / childNumPartitions, 1),
-      conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_MAX_SHUFFLE_PARTITIONS))
+  @transient private lazy val actualNumPartitions: Int = {
+    if (childNumPartitions == 0) {
+      0
+    } else {
+      val targetShuffleBlocks = conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_SHUFFLE_BLOCKS)
+      math.min(
+        math.max(targetShuffleBlocks / childNumPartitions, 1),
+        conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_MAX_SHUFFLE_PARTITIONS))
+    }
   }
 
   // The actual partitioning to use for the shuffle exchange. The input partition count can be
   // adjusted based on the number of partitions in the input RDD and the target number of shuffle
   // blocks.
-  private lazy val actualPartitioning: GpuPartitioning = partitioning match {
+  @transient private lazy val actualPartitioning: GpuPartitioning = partitioning match {
     // Currently only hash and round-robin partitioning are supported.
     // See DeltaShufflePartitionsUtil.partitioningForRebalance() for more details.
     case p: GpuHashPartitioning => p.copy(numPartitions = actualNumPartitions)

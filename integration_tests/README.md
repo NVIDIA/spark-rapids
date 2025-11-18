@@ -365,6 +365,56 @@ This marker has the following arguments:
                need the special override.
 - `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
 
+### Randomly selecting tests
+
+To shorten feedback cycles, you can ask the harness to execute only a random subset of the collected
+tests by setting the `RANDOM_SELECT` environment variable before invoking
+`run_pyspark_from_build.sh`. Values greater than or equal to `1` are treated as an absolute number of
+tests to run, values between `0` and `1` are interpreted as a fraction of the collected test set, and
+`0` skips all tests. Leave the variable unset to execute the full suite. You can combine `RANDOM_SELECT`
+with `TESTS`, `-k`, or `-m` filters to limit the pool of tests that the random selection operates on.
+
+Set `RANDOM_SELECT_SEED` to make the selection deterministic when reproducing runs. If omitted, the
+seed defaults to `0`.
+
+Examples:
+
+```shell
+# Run 100 random tests out of the collected set
+RANDOM_SELECT=100 ./integration_tests/run_pyspark_from_build.sh
+
+# Run roughly 10% of the collected tests
+RANDOM_SELECT=0.1 ./integration_tests/run_pyspark_from_build.sh
+
+# Run 100 random tests with a fixed seed for reproducibility
+RANDOM_SELECT=100 RANDOM_SELECT_SEED=42 ./integration_tests/run_pyspark_from_build.sh
+
+# Run 100 random tests chosen from cases matching the keyword "aggregate"
+RANDOM_SELECT=100 ./integration_tests/run_pyspark_from_build.sh -k 'aggregate'
+```
+
+If the requested count or fraction is greater than or equal to the number of collected tests, the full
+set is executed and a message is printed indicating that no reduction was applied.
+
+### Controlling OOM injection
+
+Synthetic GPU out-of-memory (OOM) injection helps exercise recovery paths in the plugin. Use the pytest
+option `--test_oom_injection_mode` to choose how the harness injects OOMs:
+
+- `random` (default): randomly inject OOMs into a subset of tests.
+- `always`: inject OOMs into every eligible test.
+- `never`: disable OOM injection.
+
+Pass the option through the wrapper script by appending it after `--`, for example:
+
+```shell
+./integration_tests/run_pyspark_from_build.sh -- --test_oom_injection_mode=never
+```
+
+The randomness used when the mode is `random` is controlled by the `SPARK_RAPIDS_TEST_INJECT_OOM_SEED`
+environment variable. If unset, the launcher script assigns the current timestamp and prints the seed at
+startup so that the run can be reproduced.
+
 ### Running with non-UTC time zone
 For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
 The non-UTC nightly CIs are verifing all cases with non-UTC time zone.
