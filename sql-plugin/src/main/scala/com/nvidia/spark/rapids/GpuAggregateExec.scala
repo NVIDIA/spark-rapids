@@ -741,7 +741,7 @@ object GpuAggregateIterator extends Logging {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     // 1) a pre-processing step required before we go into the cuDF aggregate, This has already
-    // been done and is skippe
+    // been done and is skipped
 
     val spillableInput = inputBatches.map { cb =>
       withResource(new MetricRange(computeAggTime, opTime)) { _ =>
@@ -815,7 +815,8 @@ object GpuAggFirstPassIterator extends Logging {
     val skipPostUpdate = aggHelper.isPostUpdatePassthrough
     if (skipPostUpdate) {
       logInfo(s"FirstPass: Skipping postUpdate for ${aggHelper.aggregateExpressions.size} " +
-        s"aggregates (${aggHelper.aggregateExpressions.map(_.aggregateFunction.getClass.getSimpleName).mkString(", ")})")
+        s"aggregates (${aggHelper.aggregateExpressions.map(
+          _.aggregateFunction.getClass.getSimpleName).mkString(", ")})")
     }
     computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper,
       skipPostUpdate)
@@ -1114,7 +1115,8 @@ class GpuMergeAggregateIterator(
       forceMerge = true, conf, isSorted = false)
     if (helper.isPreMergePassthrough) {
       logInfo(s"Merge: Skipping preMerge for ${helper.aggregateExpressions.size} " +
-        s"aggregates (${helper.aggregateExpressions.map(_.aggregateFunction.getClass.getSimpleName).mkString(", ")})")
+        s"aggregates (${helper.aggregateExpressions.map(
+          _.aggregateFunction.getClass.getSimpleName).mkString(", ")})")
     }
     helper
   }
