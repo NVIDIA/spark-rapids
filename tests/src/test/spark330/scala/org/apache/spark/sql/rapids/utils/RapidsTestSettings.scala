@@ -46,6 +46,8 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsDataFrameComplexTypeSuite]
   enableSuite[RapidsDataFrameNaFunctionsSuite]
   enableSuite[RapidsDataFramePivotSuite]
+  enableSuite[RapidsDataFrameSetOperationsSuite]
+    .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", ADJUST_UT("CPU test uses CPU-specific node checks (InMemoryTableScanExec, UnionExec); GPU version implemented as testRapids() in RapidsDataFrameSetOperationsSuite"))
   enableSuite[RapidsDataFrameWindowFunctionsSuite]
     .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13763"))
     .exclude("SPARK-21258: complex object in combination with spilling", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13764"))
