@@ -30,7 +30,7 @@ iceberg_delete_cow_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {}
 # Configuration for merge-on-read DELETE operations
 iceberg_delete_mor_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
-# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example, 
+# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example,
 # if deleted data exactly match some data files, we could remove all files using delete metadata only operation, then the physical plan 
 # would be DeleteFromTableExec.
 DELETE_TEST_SEED = 42
@@ -408,6 +408,7 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_ty
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
 ])
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13649")
 def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec):
     """Test DELETE falls back when Iceberg is completely disabled (both modes)"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
