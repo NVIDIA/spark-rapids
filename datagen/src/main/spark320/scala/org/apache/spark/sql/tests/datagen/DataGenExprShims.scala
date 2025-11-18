@@ -44,6 +44,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.tests.datagen
 

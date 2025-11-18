@@ -751,6 +751,30 @@
                 <module>iceberg</module>
             </modules>
         </profile>
+        <profile>
+            <id>release357</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>357</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>357</buildver>
+                <spark.version>${spark357.version}</spark.version>
+                <spark.test.version>${spark357.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
+                <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-33x</module>
+                <module>iceberg</module>
+            </modules>
+        </profile>
 	<!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
@@ -785,11 +809,11 @@
                 <spark.version>${spark401.version}</spark.version>
                 <spark.test.version>${spark401.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-40x</module>
             </modules>
         </profile>
         <!-- #endif scala-2.13 -->
@@ -985,6 +1009,7 @@
         <spark354.version>3.5.4</spark354.version>
         <spark355.version>3.5.5</spark355.version>
         <spark356.version>3.5.6</spark356.version>
+        <spark357.version>3.5.7</spark357.version>
         <spark400.version>4.0.0</spark400.version>
         <spark401.version>4.0.1</spark401.version>
         <mockito.version>3.12.4</mockito.version>
@@ -1027,7 +1052,6 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
-
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
