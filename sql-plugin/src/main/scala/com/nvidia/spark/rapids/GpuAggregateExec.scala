@@ -144,7 +144,18 @@ object AggregateUtils extends Logging {
       val concatSpillable = concatenateBatchesWithRetry(metrics, batches.toSeq)
       withRetryNoSplit(concatSpillable)(_.getColumnarBatch())
     }
-    computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
+    
+    // Optimization: skip preProcess when preMerge is a passthrough.
+    // In this case, the input is already in aggBufferAttributes format from
+    // the postUpdate step (or directly from updateAggregates if postUpdate was skipped),
+    // and preMerge would just pass it through without any transformation.
+    val skipPreMerge = concatAndMergeHelper.isPreMergePassthrough
+    if (skipPreMerge) {
+      computeAggregateWithoutPreprocessAndClose(metrics, 
+        Iterator(concatBatch), concatAndMergeHelper, skipPostProcess = false).next()
+    } else {
+      computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
+    }
   }
 
   /**
@@ -360,7 +371,7 @@ object AggregateModeInfo {
 class AggHelper(
     inputAttributes: Seq[Attribute],
     groupingExpressions: Seq[NamedExpression],
-    aggregateExpressions: Seq[GpuAggregateExpression],
+    val aggregateExpressions: Seq[GpuAggregateExpression],
     forceMerge: Boolean,
     conf: SQLConf,
     isSorted: Boolean = false) extends Serializable {
@@ -450,6 +461,64 @@ class AggHelper(
   // a bound expression that is applied after the cuDF aggregate
   private val postStepBound = GpuBindReferences.bindGpuReferencesTiered(postStep.toList,
     postStepAttr.toList, conf)
+
+  /**
+   * Check if postUpdate is a passthrough (i.e., no transformation needed).
+   * This is true when all postUpdate expressions are just postUpdateAttr references,
+   * or identity casts (casting to the same type).
+   * When this is true, we can skip the postProcess step in update operations.
+   */
+  lazy val isPostUpdatePassthrough: Boolean = {
+    if (forceMerge) {
+      // Only relevant for update operations
+      false
+    } else {
+      // Check if postStep expressions are exactly the same as postStepAttr
+      // or are identity casts (cast to the same type)
+      postStep.size == postStepAttr.size &&
+        postStep.zip(postStepAttr).forall {
+          case (expr: AttributeReference, attr: AttributeReference) =>
+            // Direct reference passthrough
+            expr.exprId == attr.exprId && expr.dataType == attr.dataType
+          case (GpuCast(child: AttributeReference, toType, _, _, _, _), 
+            attr: AttributeReference) =>
+            // Identity cast: Cast(attr, sameType) is a no-op
+            child.exprId == attr.exprId && 
+            child.dataType == toType && 
+            toType == attr.dataType
+          case _ => false
+        }
+    }
+  }
+
+  /**
+   * Check if preMerge is a passthrough (i.e., no transformation needed).
+   * This is true when forceMerge=true and all preMerge expressions are just
+   * aggBufferAttributes without any transformation, or identity casts.
+   * When this is true, we can skip the preProcess step in merge operations.
+   */
+  lazy val isPreMergePassthrough: Boolean = {
+    if (!forceMerge) {
+      // Only relevant for merge operations
+      false
+    } else {
+      // Check if preStep expressions are exactly the same as aggBufferAttributes
+      // or are identity casts (cast to the same type)
+      preStep.size == aggBufferAttributes.size &&
+        preStep.zip(aggBufferAttributes).forall {
+          case (expr: AttributeReference, attr: AttributeReference) =>
+            // Direct reference passthrough
+            expr.exprId == attr.exprId && expr.dataType == attr.dataType
+          case (GpuCast(child: AttributeReference, toType, _, _, _, _), 
+            attr: AttributeReference) =>
+            // Identity cast: Cast(attr, sameType) is a no-op
+            child.exprId == attr.exprId && 
+            child.dataType == toType && 
+            toType == attr.dataType
+          case _ => false
+        }
+    }
+  }
 
   /**
    * Apply the "pre" step: preMerge for merge, or pass-through in the update case
@@ -667,11 +736,12 @@ object GpuAggregateIterator extends Logging {
   def computeAggregateWithoutPreprocessAndClose(
       metrics: GpuHashAggregateMetrics,
       inputBatches: Iterator[ColumnarBatch],
-      helper: AggHelper): Iterator[SpillableColumnarBatch] = {
+      helper: AggHelper,
+      skipPostProcess: Boolean = false): Iterator[SpillableColumnarBatch] = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     // 1) a pre-processing step required before we go into the cuDF aggregate, This has already
-    // been done and is skipped
+    // been done and is skippe
 
     val spillableInput = inputBatches.map { cb =>
       withResource(new MetricRange(computeAggTime, opTime)) { _ =>
@@ -684,8 +754,12 @@ object GpuAggregateIterator extends Logging {
     val aggregatedSpillable = helper.aggregateWithoutCombine(metrics, spillableInput)
 
     // 3) a post-processing step required in some scenarios, casting or picking
-    // apart a struct
-    helper.postProcess(aggregatedSpillable, metrics)
+    // apart a struct. Skip if postUpdate is a passthrough.
+    if (skipPostProcess) {
+      aggregatedSpillable
+    } else {
+      helper.postProcess(aggregatedSpillable, metrics)
+    }
   }
 
   /**
@@ -725,7 +799,7 @@ object GpuAggregateIterator extends Logging {
   }
 }
 
-object GpuAggFirstPassIterator {
+object GpuAggFirstPassIterator extends Logging {
   def apply(cbIter: Iterator[ColumnarBatch],
       aggHelper: AggHelper,
       metrics: GpuHashAggregateMetrics
@@ -734,7 +808,17 @@ object GpuAggFirstPassIterator {
       val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       aggHelper.preStepBound.projectAndCloseWithRetrySingleBatch(sb)
     }
-    computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper)
+    
+    // Optimization: skip postUpdate if it's a passthrough.
+    // When postUpdate is just postUpdateAttr (no transformation), the
+    // updateAggregates output is already in aggBufferAttributes format.
+    val skipPostUpdate = aggHelper.isPostUpdatePassthrough
+    if (skipPostUpdate) {
+      logInfo(s"FirstPass: Skipping postUpdate for ${aggHelper.aggregateExpressions.size} " +
+        s"aggregates (${aggHelper.aggregateExpressions.map(_.aggregateFunction.getClass.getSimpleName).mkString(", ")})")
+    }
+    computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper,
+      skipPostUpdate)
   }
 }
 
@@ -1025,9 +1109,15 @@ class GpuMergeAggregateIterator(
     AggregateUtils.computeTargetBatchSize(confTargetSize, mergedTypes, mergedTypes, isReductionOnly)
   }
 
-  private lazy val concatAndMergeHelper =
-    new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
+  private lazy val concatAndMergeHelper = {
+    val helper = new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
       forceMerge = true, conf, isSorted = false)
+    if (helper.isPreMergePassthrough) {
+      logInfo(s"Merge: Skipping preMerge for ${helper.aggregateExpressions.size} " +
+        s"aggregates (${helper.aggregateExpressions.map(_.aggregateFunction.getClass.getSimpleName).mkString(", ")})")
+    }
+    helper
+  }
 
   private case class ConcatIterator(
       input: CloseableBufferedIterator[SpillableColumnarBatch],
