@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import org.apache.spark.sql.DataFrameWindowFunctionsSuite
-import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 class RapidsDataFrameWindowFunctionsSuite
   extends DataFrameWindowFunctionsSuite
