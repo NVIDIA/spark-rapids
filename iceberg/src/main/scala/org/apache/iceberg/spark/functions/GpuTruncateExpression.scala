@@ -65,7 +65,7 @@ case class GpuTruncateExpression(width: Expression, value: Expression)
 
   override def right: Expression = value
 
-  override def dataType: DataType = DataTypes.IntegerType
+  override def dataType: DataType = value.dataType
 }
 
 object GpuTruncateExpression {

@@ -148,7 +148,7 @@ def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_facto
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
 ])
-def test_insert_into_partitioned_table(spark_tmp_table_factory, format_version, fanout, write_distribution_mode, partition_col_sql):
+def test_insert_into_partitioned_table1(spark_tmp_table_factory, format_version, fanout, write_distribution_mode, partition_col_sql):
     table_prop = {"format-version": format_version,
                   "write.spark.fanout.enabled": str(fanout).lower(),
                   "write.distribution-mode": write_distribution_mode}
@@ -205,7 +205,6 @@ def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_insert_into_partitioned_table_unsupported_partition_fallback(

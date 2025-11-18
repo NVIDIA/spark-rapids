@@ -200,7 +200,7 @@ object GpuIcebergPartitioner {
       hostCols
     }
 
-    withResource(new ColumnarBatch(hostColsArray, numRows)) { hostBatch =>
+    withResource(new ColumnarBatchForPartitionWriter(hostColsArray, numRows)) { hostBatch =>
         hostBatch.rowIterator()
           .asScala
           .map(internalRow => new GpuInternalRow(internalRow))
