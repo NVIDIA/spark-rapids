@@ -19,7 +19,7 @@ import ai.rapids.cudf.{ColumnView, DType, GatherMap, NullEquality, OutOfBoundsPo
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.{GpuOOM, JoinPrimitives}
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
@@ -575,40 +575,30 @@ abstract class BaseHashJoinIterator(
       rightRowCount: Long,
       targetJoinType: JoinType,
       errorContext: String): Array[GatherMap] = {
-    try {
-      val result = targetJoinType match {
-        case _: InnerLike =>
-          // Already have inner join maps, just return them
-          Array(innerMaps(0), innerMaps(1))
-        case LeftOuter =>
-          val outerMaps = JoinPrimitives.makeLeftOuter(
+    targetJoinType match {
+      case _: InnerLike => innerMaps.reverse
+      case LeftOuter =>
+        withResource(innerMaps) { _ =>
+          JoinPrimitives.makeLeftOuter(
             innerMaps(0), innerMaps(1), leftRowCount.toInt, rightRowCount.toInt)
-          innerMaps.foreach(_.close())
-          outerMaps
-        case RightOuter =>
-          // Right outer is left outer with sides swapped
-          val rightOuterMaps = JoinPrimitives.makeLeftOuter(
-            innerMaps(1), innerMaps(0), rightRowCount.toInt, leftRowCount.toInt)
-          innerMaps.foreach(_.close())
-          Array(rightOuterMaps(1), rightOuterMaps(0))
-        case LeftSemi =>
-          val semiMap = JoinPrimitives.makeSemi(innerMaps(0), leftRowCount.toInt)
-          innerMaps.foreach(_.close())
-          Array(semiMap)
-        case LeftAnti =>
-          val antiMap = JoinPrimitives.makeAnti(innerMaps(0), leftRowCount.toInt)
-          innerMaps.foreach(_.close())
-          Array(antiMap)
-        case _ =>
-          innerMaps.foreach(_.close())
-          throw new NotImplementedError(
-            s"Join $targetJoinType with $errorContext is not currently supported")
-      }
-      result
-    } catch {
-      case e: Throwable =>
-        innerMaps.foreach(_.close())
-        throw e
+        }
+      case RightOuter =>
+        withResource(innerMaps) { _ =>
+          JoinPrimitives.makeLeftOuter(
+            innerMaps(1), innerMaps(0), rightRowCount.toInt, leftRowCount.toInt).reverse
+        }
+      case LeftSemi =>
+        withResource(innerMaps) { _ =>
+          Array(JoinPrimitives.makeSemi(innerMaps(0), leftRowCount.toInt))
+        }
+      case LeftAnti =>
+        withResource(innerMaps) { _ =>
+          Array(JoinPrimitives.makeAnti(innerMaps(0), leftRowCount.toInt))
+        }
+      case _ =>
+        innerMaps.safeClose()
+        throw new NotImplementedError(
+          s"Join $targetJoinType with $errorContext is not currently supported")
     }
   }
 
@@ -1008,7 +998,7 @@ class ConditionalHashJoinIterator(
     }
 
     // Filter by AST condition
-    val filteredMaps = try {
+    val filteredMaps = withResource(innerMaps) { _ =>
       // For the AST to work properly we have to match the rules that the condition was compiled for
       // InnerLike && GpuBuildRight | LeftOuter | LeftSemi | LeftAnti =>
       //   LEFT, RIGHT
@@ -1026,9 +1016,6 @@ class ConditionalHashJoinIterator(
         JoinPrimitives.filterGatherMapsByAST(
           innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
       }
-    } finally {
-      // Close innerMaps immediately to reduce peak memory usage
-      innerMaps.foreach(_.close())
     }
 
     // Convert filtered inner maps to target join type
@@ -1059,7 +1046,7 @@ class ConditionalHashJoinIterator(
     }
 
     // Filter by AST condition
-    val filteredMaps = try {
+    val filteredMaps = withResource(innerMaps) { _ =>
       // For AST to work we have to match the order of the left and right tables
       // that it was compiled for
       // InnerLike && GpuBuildRight | LeftOuter | LeftSemi | LeftAnti =>
@@ -1078,9 +1065,6 @@ class ConditionalHashJoinIterator(
         JoinPrimitives.filterGatherMapsByAST(
           innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
       }
-    } finally {
-      // Close innerMaps immediately to reduce peak memory usage
-      innerMaps.foreach(_.close())
     }
 
     // Convert filtered inner maps to target join type
@@ -1387,7 +1371,7 @@ class HashJoinStreamSideIterator(
     }
 
     // Filter by AST condition
-    val filteredMaps = try {
+    val filteredMaps = withResource(innerMaps) { _ =>
       // For AST to work we have to match the order of the left and right tables
       // that it was compiled for
       // subJoinType == LeftOuter | Inner => LEFT, RIGHT
@@ -1399,9 +1383,6 @@ class HashJoinStreamSideIterator(
         JoinPrimitives.filterGatherMapsByAST(
           innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
       }
-    } finally {
-      // Close innerMaps immediately to reduce peak memory usage
-      innerMaps.foreach(_.close())
     }
 
     // Convert filtered inner maps to target sub-join type
@@ -1438,7 +1419,7 @@ class HashJoinStreamSideIterator(
     // that it was compiled for
     // subJoinType == LeftOuter | Inner => LEFT, RIGHT
     // subJoinType == RightOuter => RIGHT, LEFT
-    val filteredMaps = try {
+    val filteredMaps = withResource(innerMaps) { _ =>
       if (subJoinType == RightOuter) {
         JoinPrimitives.filterGatherMapsByAST(
           innerMaps(1), innerMaps(0), rightTable, leftTable, compiledCondition).reverse
@@ -1446,9 +1427,6 @@ class HashJoinStreamSideIterator(
         JoinPrimitives.filterGatherMapsByAST(
           innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
       }
-    } finally {
-      // Close innerMaps immediately to reduce peak memory usage
-      innerMaps.foreach(_.close())
     }
 
     // Convert filtered inner maps to target sub-join type
@@ -1499,8 +1477,8 @@ class HashJoinStreamSideIterator(
         unconditionalJoinGatherMaps(leftKeys, rightKeys)
       }
       
-      assert(maps.length == 2)
-      try {
+      withResource(maps) { _ =>
+        assert(maps.length == 2)
         val lazyLeftMap = LazySpillableGatherMap(maps(0), "left_map")
         val lazyRightMap = LazySpillableGatherMap(maps(1), "right_map")
         NvtxIdWithMetrics(NvtxRegistry.UPDATE_TRACKING_MASK, joinTime) {
@@ -1523,8 +1501,6 @@ class HashJoinStreamSideIterator(
         } else {
           Some(gatherer)
         }
-      } finally {
-        maps.foreach(_.close())
       }
     }
   }
