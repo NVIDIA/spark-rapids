@@ -29,19 +29,22 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
-import com.nvidia.spark.rapids.GpuColumnarToRowExec
-import com.nvidia.spark.rapids.GpuExec
-import com.nvidia.spark.rapids.GpuMetric
-import com.nvidia.spark.rapids.GpuWrite
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar => CudfScalar}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuColumnVector, GpuExec, GpuMetric, GpuWrite}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{GpuProjectingColumnarBatch, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
+import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, INSERT_OPERATION, UPDATE_OPERATION}
+import org.apache.spark.sql.catalyst.util.WriteDeltaProjections
+import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, DeltaWrite, DeltaWriter, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.filterByOperation
 import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{LongAccumulator, Utils}
@@ -265,6 +268,47 @@ case class GpuReplaceDataExec(
 }
 
 /**
+ * Physical plan node for writing delta (position deletes) in a v2 table.
+ *
+ * Used by merge-on-read operations like DELETE to write position delete files.
+ * Position deletes track which rows should be logically deleted without rewriting data files.
+ */
+case class GpuWriteDeltaExec(
+                               inner: SparkPlan,
+                               refreshCache: () => Unit,
+                               projections: WriteDeltaProjections,
+                               write: DeltaWrite) extends GpuV2ExistingTableWriteExec {
+
+  override def supportsColumnar: Boolean = false
+
+  override def query: SparkPlan = {
+    inner match {
+      case c2r: GpuColumnarToRowExec => c2r.child
+      case _ => inner
+    }
+  }
+
+  override lazy val writingTask: GpuWritingSparkTask[_] = {
+    // Match the CPU implementation: use DeltaWithMetadataWritingSparkTask if metadata
+    // projection is defined, otherwise use DeltaWritingSparkTask
+    if (projections.metadataProjection.isDefined) {
+      GpuDeltaWithMetadataWritingSparkTask(projections)
+    } else {
+      GpuDeltaWritingSparkTask(projections)
+    }
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(
+      "GpuWriteDeltaExec does not support columnar execution")
+  }
+
+  override protected def withNewChildInternal(newChild: SparkPlan): GpuWriteDeltaExec = {
+    copy(inner = newChild)
+  }
+}
+
+/**
  * This class is derived from [[org.apache.spark.sql.execution.datasources.v2.WritingSparkTask]].
  */
 trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with Serializable {
@@ -296,8 +340,6 @@ trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with S
         count += numRows
         CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
       }
-
-      CustomMetrics.updateMetrics(dataWriter.currentMetricsValues, customMetrics)
 
       val msg = if (useCommitCoordinator) {
         val coordinator = SparkEnv.get.outputCommitCoordinator
@@ -340,5 +382,171 @@ trait GpuWritingSparkTask[W <: DataWriter[ColumnarBatch]] extends Logging with S
 object GpuDataWritingSparkTask extends GpuWritingSparkTask[DataWriter[ColumnarBatch]] {
   override protected def write(writer: DataWriter[ColumnarBatch], row: ColumnarBatch): Unit = {
     writer.write(row)
+  }
+}
+
+/**
+ * GPU version of DeltaWritingSparkTask for writing delta (position delete) operations.
+ * Applies projections to extract row data and metadata before writing.
+ */
+case class GpuDeltaWritingSparkTask(
+    projs: WriteDeltaProjections) extends GpuWritingSparkTask[DeltaWriter[ColumnarBatch]] {
+
+  private lazy val rowProjection = projs.rowProjection
+    .map(GpuProjectingColumnarBatch(_))
+    .orNull
+  private lazy val rowDataTypes = projs.rowProjection
+    .map(_.schema.fields.map(f => f.dataType))
+    .orNull
+
+  private lazy val rowIdProjection = GpuProjectingColumnarBatch(projs.rowIdProjection)
+  private lazy val rowIdDataTypes = rowIdProjection.schema.fields.map(_.dataType)
+
+  override protected def write(writer: DeltaWriter[ColumnarBatch], batch: ColumnarBatch): Unit = {
+    withRetryNoSplit(batch) { _ =>
+      val deleteFilter = filterByOperation(batch, DELETE_OPERATION)
+      withResource(deleteFilter) { _ =>
+        withResource(rowIdProjection.project(batch)) { rowIds =>
+          val rowIdBatch = GpuColumnVector.filter(rowIds, rowIdDataTypes, deleteFilter)
+          if (rowIdBatch.numRows() > 0) {
+            writer.delete(null, rowIdBatch)
+          } else {
+            rowIdBatch.close()
+          }
+        }
+      }
+
+      if (rowProjection != null) {
+        val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
+        withResource(updateFilter) { _ =>
+          val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
+            GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
+          }
+
+          closeOnExcept(rowIds) { _ =>
+            if (rowIds.numRows() > 0) {
+              val rows = withResource(rowProjection.project(batch)) { rows =>
+                GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
+              }
+
+              writer.update(null, rowIds, rows)
+            } else {
+              rowIds.close()
+            }
+          }
+        }
+
+        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        withResource(insertFilter) { _ =>
+          withResource(rowProjection.project(batch)) { rows =>
+            val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
+            if (filteredRows.numRows() > 0) {
+              writer.insert(filteredRows)
+            } else {
+              filteredRows.close()
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * GPU version of DeltaWithMetadataWritingSparkTask for writing delta operations with metadata.
+ * Applies both row and metadata projections before writing.
+ */
+case class GpuDeltaWithMetadataWritingSparkTask(
+    projs: WriteDeltaProjections) extends GpuWritingSparkTask[DeltaWriter[ColumnarBatch]] {
+
+  private lazy val rowProjection = projs.rowProjection
+    .map(GpuProjectingColumnarBatch(_))
+    .orNull
+  private lazy val rowDataTypes = projs.rowProjection
+    .map(_.schema.fields.map(f => f.dataType))
+    .orNull
+
+  private lazy val rowIdProjection = GpuProjectingColumnarBatch(projs.rowIdProjection)
+  private lazy val rowIdDataTypes = rowIdProjection.schema.fields.map(_.dataType)
+
+  private lazy val metadataProjection = projs.metadataProjection
+    .map(GpuProjectingColumnarBatch(_))
+    .orNull
+  private lazy val metadataDataTypes = projs.metadataProjection
+    .map(_.schema.fields.map(f => f.dataType))
+    .orNull
+
+  override protected def write(writer: DeltaWriter[ColumnarBatch], batch: ColumnarBatch): Unit = {
+    withRetryNoSplit(batch) { _ =>
+      if (metadataProjection != null) {
+        val deleteFilter = filterByOperation(batch, DELETE_OPERATION)
+        withResource(deleteFilter) { _ =>
+          val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
+            GpuColumnVector.filter(rowIds, rowIdDataTypes, deleteFilter)
+          }
+
+          closeOnExcept(rowIds) { _ =>
+            if (rowIds.numRows() > 0) {
+              val metadataBatch = withResource(metadataProjection.project(batch)) { metaBatch =>
+                GpuColumnVector.filter(metaBatch, metadataDataTypes, deleteFilter)
+              }
+
+              writer.delete(metadataBatch, rowIds)
+            } else {
+              rowIds.close()
+            }
+          }
+        }
+      }
+
+      if (rowProjection != null && metadataProjection != null) {
+        val updateFilter = filterByOperation(batch, UPDATE_OPERATION)
+        withResource(updateFilter) { _ =>
+          val rowIds = withResource(rowIdProjection.project(batch)) { rowIds =>
+            GpuColumnVector.filter(rowIds, rowIdDataTypes, updateFilter)
+          }
+
+          closeOnExcept(rowIds) { _ =>
+            if (rowIds.numRows() > 0) {
+              val rows = withResource(rowProjection.project(batch)) { rows =>
+                GpuColumnVector.filter(rows, rowDataTypes, updateFilter)
+              }
+
+              closeOnExcept(rows) { _ =>
+                val metadataBatch = withResource(metadataProjection.project(batch)) { metadata =>
+                  GpuColumnVector.filter(metadata, metadataDataTypes, updateFilter)
+                }
+
+                writer.update(metadataBatch, rowIds, rows)
+              }
+            } else {
+              rowIds.close()
+            }
+          }
+        }
+      }
+
+      if (rowProjection != null) {
+        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        withResource(insertFilter) { _ =>
+          withResource(rowProjection.project(batch)) { rows =>
+            val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
+            if (filterRows.numRows() > 0) {
+              writer.insert(filterRows)
+            } else {
+              filterRows.close()
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+object GpuDelteWritingSparkTask {
+  private[v2] def filterByOperation(batch: ColumnarBatch, op: Int): CudfColumnVector = {
+    withResource(CudfScalar.fromInt(op)) { cudfOp =>
+      batch.column(0).asInstanceOf[GpuColumnVector].getBase.equalTo(cudfOp)
+    }
   }
 }

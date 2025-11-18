@@ -31,7 +31,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.GpuExec
 
-import org.apache.spark.sql.execution.datasources.v2.ReplaceDataExec
+import org.apache.spark.sql.execution.datasources.v2.{ReplaceDataExec, WriteDeltaExec}
 import org.apache.spark.sql.rapids.ExternalSourceBase
 
 object ExternalSourceShim extends ExternalSourceBase {
@@ -50,6 +50,30 @@ object ExternalSourceShim extends ExternalSourceBase {
   def convertToGpu(
                     cpuExec: ReplaceDataExec,
                     meta: ReplaceDataExecMeta): GpuExec = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+                 cpuExec: WriteDeltaExec,
+                 meta: WriteDeltaExecMeta): Unit = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Write delta $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+                    cpuExec: WriteDeltaExec,
+                    meta: WriteDeltaExecMeta): GpuExec = {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {

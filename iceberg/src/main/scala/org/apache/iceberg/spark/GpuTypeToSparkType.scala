@@ -16,17 +16,53 @@
 
 package org.apache.iceberg.spark
 
-import org.apache.iceberg.Schema
+import scala.collection.JavaConverters._
+
+import org.apache.iceberg.{MetadataColumns, Schema}
+import org.apache.iceberg.spark.GpuTypeToSparkType.fieldMetadataOf
 import org.apache.iceberg.types.{Types, TypeUtil}
 
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.catalyst.util.METADATA_COL_ATTR_KEY
+import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils.FIELD_ID_METADATA_KEY
+import org.apache.spark.sql.types.{DataType, Metadata, MetadataBuilder, StructField, StructType}
 
 object GpuTypeToSparkType {
   def toSparkType(schema: Schema): StructType = {
-    TypeUtil.visit(schema, new TypeToSparkType).asInstanceOf[StructType]
+    TypeUtil.visit(schema, new GpuTypeToSparkType).asInstanceOf[StructType]
   }
 
   def toSparkType(icebergStruct: Types.StructType): StructType = {
-    TypeUtil.visit(icebergStruct, new TypeToSparkType).asInstanceOf[StructType]
+    TypeUtil.visit(icebergStruct, new GpuTypeToSparkType).asInstanceOf[StructType]
+  }
+
+  private[iceberg] def fieldMetadataOf(fieldId: Int): Metadata = {
+    val builder = new MetadataBuilder()
+    .putLong(FIELD_ID_METADATA_KEY, fieldId)
+
+    if (MetadataColumns.metadataFieldIds().contains(fieldId)) {
+      builder.putBoolean(METADATA_COL_ATTR_KEY, true)
+    }
+
+    builder.build()
+  }
+}
+
+class GpuTypeToSparkType extends TypeToSparkType {
+  override def struct(struct: Types.StructType,
+                      fieldResults: java.util.List[DataType]): DataType = {
+
+    val sparkFields = struct.fields().asScala
+      .zip(fieldResults.asScala)
+      .map {
+        case (field, fieldResult) =>
+          val metadata = fieldMetadataOf(field.fieldId())
+          var sparkField = StructField(field.name(), fieldResult, field.isOptional, metadata)
+          if (field.doc() != null) {
+            sparkField = sparkField.withComment(field.doc())
+          }
+          sparkField
+      }
+
+    StructType(sparkFields.toSeq)
   }
 }

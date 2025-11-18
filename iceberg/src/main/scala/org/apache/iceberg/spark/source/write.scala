@@ -16,7 +16,7 @@
 
 package org.apache.iceberg.spark.source
 
-import org.apache.spark.sql.connector.write.{BatchWrite, DataWriterFactory, PhysicalWriteInfo, WriterCommitMessage}
+import org.apache.spark.sql.connector.write.{BatchWrite, DataWriterFactory, DeltaBatchWrite, DeltaWriterFactory, PhysicalWriteInfo, WriterCommitMessage}
 
 abstract class GpuBaseBatchWrite(write: GpuSparkWrite) extends BatchWrite {
   override def createBatchWriterFactory(physicalWriteInfo: PhysicalWriteInfo): DataWriterFactory
@@ -71,5 +71,32 @@ class GpuCopyOnWriteOperation(write: GpuSparkWrite, cpuBatchWrite: BatchWrite)
     // The CPU version handles the complex logic for copy-on-write operations
     // including managing deleted and added files
     cpuBatchWrite.commit(messages)
+  }
+}
+
+/**
+ * GPU version of position delta batch write for merge-on-read DELETE operations.
+ * This wraps the CPU PositionDeltaBatchWrite to handle position delete files.
+ */
+class GpuPositionDeltaBatchWrite(write: GpuSparkPositionDeltaWrite,
+                                 cpuBatchWrite: DeltaBatchWrite)
+  extends DeltaBatchWrite {
+  
+
+  override def commit(messages: Array[WriterCommitMessage]): Unit = {
+    // Delegate to CPU PositionDeltaBatchWrite's commit method
+    // The CPU version handles the complex logic for position deletes
+    // including managing delete files and row delta transactions
+    cpuBatchWrite.commit(messages)
+  }
+
+  override def abort(messages: Array[WriterCommitMessage]): Unit = {
+    cpuBatchWrite.abort(messages)
+  }
+
+  override def useCommitCoordinator(): Boolean = cpuBatchWrite.useCommitCoordinator()
+
+  override def createBatchWriterFactory(info: PhysicalWriteInfo): DeltaWriterFactory = {
+    write.createDeltaWriterFactory
   }
 }
