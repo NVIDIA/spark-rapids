@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArra
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
-import com.nvidia.spark.rapids.iceberg.{ColumnarBatchWithPartition, GpuIcebergPartitioner}
+import com.nvidia.spark.rapids.iceberg.{ColumnarBatchWithPartition, GpuIcebergPartitioner, GpuIcebergSpecPartitioner}
 import com.nvidia.spark.rapids.iceberg.utils.GpuStructProjection
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
@@ -423,7 +423,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
   protected val tablePartitionDataTypes: Array[DataType]
   protected val deletePartitionProjections: Map[Int, GpuStructProjection]
 
-  protected val specSparkTypeMap: mutable.Map[Int, StructType] = mutable.Map()
+  private val partitioners: mutable.Map[Int, GpuIcebergPartitioner] = mutable.Map()
 
   private var closed: Boolean = false
 
@@ -446,8 +446,9 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
               val specIdHost = specIdCol.getInt(rowIdx)
               withResource(Scalar.fromInt(specIdHost)) { specId =>
                 val spec = specs(specIdHost)
-                val specSparkType = specSparkTypeMap.getOrElseUpdate(spec.specId(),
-                  toSparkType(spec.partitionType()))
+                val partitioner = partitioners.getOrElseUpdate(spec.specId(),
+                  new GpuIcebergPartitioner(spec.partitionType(),
+                    DeleteSchemaUtil.pathPosSchema().asStruct()))
 
                 val specIdFilter = metadata.column(specIdOrdinal)
                   .asInstanceOf[GpuColumnVector]
@@ -469,11 +470,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
 
                     if (specProjection.numCols() > 0) {
                       withResource(filteredPositionDeletes) { _ =>
-                        GpuIcebergPartitioner.partitionBy(specProjection,
-                          spec.partitionType(),
-                          specSparkType,
-                          filteredPositionDeletes,
-                          positionDeleteDataTypes)
+                        partitioner.partition(specProjection, filteredPositionDeletes)
                       }
                     } else {
                       // Unpartitioned spec
@@ -540,7 +537,7 @@ class GpuDeleteOnlyDeltaWriter(
 
   private val io: FileIO = table.io()
   private val specs: mutable.Map[Integer, PartitionSpec] = table.specs().asScala
-  private val specSparkTypeMap: mutable.Map[Int, StructType] = mutable.Map()
+  private val partitioners: mutable.Map[Int, GpuIcebergPartitioner] = mutable.Map()
 
   // Ordinals for extracting fields from delete records
   private val tablePartitionType: IcebergTypes.StructType = Partitioning.partitionType(table)
@@ -573,8 +570,9 @@ class GpuDeleteOnlyDeltaWriter(
             val specIdHost = uniqueSpecIdCol.getInt(rowIdx)
             withResource(Scalar.fromInt(specIdHost)) { specId =>
               val spec = table.specs().get(specIdHost)
-              val specSparkType = specSparkTypeMap.getOrElseUpdate(spec.specId(),
-                toSparkType(spec.partitionType()))
+              val partitioner = partitioners.getOrElseUpdate(spec.specId(),
+                  new GpuIcebergPartitioner(spec.partitionType(),
+                    DeleteSchemaUtil.pathPosSchema().asStruct()))
 
               val specIdFilter = deleteWriteContext.specIdCol
                 .equalTo(specId)
@@ -594,11 +592,7 @@ class GpuDeleteOnlyDeltaWriter(
 
                   if (specProjection.numCols() > 0) {
                     withResource(filteredPositionDeletes) { _ =>
-                      GpuIcebergPartitioner.partitionBy(specProjection,
-                        spec.partitionType(),
-                        specSparkType,
-                        filteredPositionDeletes,
-                        positionDeleteDataTypes)
+                      partitioner.partition(specProjection, filteredPositionDeletes)
                     }
                   } else {
                     // Unpartitioned spec
@@ -716,8 +710,8 @@ class GpuPartitionedDeltaWriter(
 
   // The data spec for writing new rows
   private val dataSpec: PartitionSpec = table.spec()
-  private val dataPartitioner: GpuIcebergPartitioner =
-    new GpuIcebergPartitioner(dataSpec, context.dataSparkType)
+  private val dataPartitioner: GpuIcebergSpecPartitioner =
+    new GpuIcebergSpecPartitioner(dataSpec, table.schema().asStruct())
 
   // Ordinals for extracting fields from delete records
   protected val specIdOrdinal: Int = context.specIdOrdinal()
