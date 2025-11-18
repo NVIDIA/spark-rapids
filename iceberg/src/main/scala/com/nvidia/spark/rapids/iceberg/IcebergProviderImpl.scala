@@ -98,6 +98,21 @@ class IcebergProviderImpl extends IcebergProvider {
     if (classOf[BucketFunction.BucketBase].isAssignableFrom(expr.staticObject)) {
       val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
       GpuBucketExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateInt].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateBigInt].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateString].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateBinary].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
+    } else if (classOf[TruncateFunction.TruncateDecimal].isAssignableFrom(expr.staticObject)) {
+      val Seq(left, right) = meta.childExprs.map(_.convertToGpu())
+      GpuTruncateExpression(left, right)
     } else {
       throw new IllegalStateException(
         s"Should have been caught in tagExprForGpu: ${expr.staticObject.getName}")
