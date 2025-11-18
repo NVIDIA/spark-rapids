@@ -386,8 +386,7 @@ class GpuBasePositionDeltaWriter(
   }
 
   def close(): Unit = {
-    dataWriter.close()
-    deleteWriter.close()
+    Seq(dataWriter, deleteWriter).safeClose()
   }
 
   def result(): WriteResult = {
