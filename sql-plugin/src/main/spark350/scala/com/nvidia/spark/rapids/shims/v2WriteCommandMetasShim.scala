@@ -31,7 +31,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 
-import org.apache.spark.sql.execution.datasources.v2.ReplaceDataExec
+import org.apache.spark.sql.execution.datasources.v2.{ReplaceDataExec, WriteDeltaExec}
 
 class ReplaceDataExecMeta(
     wrapped: ReplaceDataExec,
@@ -39,6 +39,22 @@ class ReplaceDataExecMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[ReplaceDataExec](wrapped, conf, parent, rule) {
+
+  override def tagPlanForGpu(): Unit = {
+    ExternalSourceShim.tagForGpu(wrapped, this)
+  }
+
+  override def convertToGpu(): GpuExec = {
+    ExternalSourceShim.convertToGpu(wrapped, this)
+  }
+}
+
+class WriteDeltaExecMeta(
+    wrapped: WriteDeltaExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends SparkPlanMeta[WriteDeltaExec](wrapped, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
     ExternalSourceShim.tagForGpu(wrapped, this)

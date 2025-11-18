@@ -1065,13 +1065,20 @@ public class GpuColumnVector extends GpuColumnVectorBase {
      * @param dataTypes Data types of `batch`. We add this parameter to avoid repeated allocation of array.
      * @return Filtered columnar batch.
      */
-  public static ColumnarBatch filter(ColumnarBatch batch, DataType[] dataTypes, ColumnView mask) {
-      try(Table cudfTable = GpuColumnVector.from(batch)) {
-          try(Table filteredTable = cudfTable.filter(mask)) {
-              return GpuColumnVector.from(filteredTable, dataTypes);
-          }
-      }
-  }
+    public static ColumnarBatch filter(ColumnarBatch batch, DataType[] dataTypes, ColumnView mask) {
+        if (dataTypes.length == 0) {
+            try(Scalar s = mask.sum(DType.INT64)) {
+                int numRows = Math.toIntExact(s.getLong());
+                return new ColumnarBatch(new ColumnVector[0], numRows);
+            }
+        } else {
+            try(Table cudfTable = GpuColumnVector.from(batch)) {
+                try(Table filteredTable = cudfTable.filter(mask)) {
+                    return GpuColumnVector.from(filteredTable, dataTypes);
+                }
+            }
+        }
+    }
 
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
@@ -1079,7 +1086,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * Take an INT32 column vector and return a host side int array.  Don't use this for anything
    * too large.  Note that this ignores validity totally.
    */
-  public static int[] toIntArray(ai.rapids.cudf.ColumnVector vec) {
+  public static int[] toIntArray(ai.rapids.cudf.ColumnView vec) {
     assert vec.getType() == DType.INT32;
     int rowCount = (int)vec.getRowCount();
     int[] output = new int[rowCount];
