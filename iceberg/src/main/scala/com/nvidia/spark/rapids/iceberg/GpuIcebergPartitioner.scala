@@ -29,7 +29,7 @@ import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner.toPartitionKeys
 import org.apache.iceberg.{PartitionField, PartitionSpec, Schema, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
-import org.apache.iceberg.spark.functions.{GpuBucket, GpuBucketExpression, GpuTransform, GpuTruncate, GpuTruncateExpression}
+import org.apache.iceberg.spark.functions._
 import org.apache.iceberg.types.Types
 
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
@@ -175,7 +175,7 @@ object GpuIcebergPartitioner {
       hostCols
     }
 
-    withResource(new ColumnarBatch(hostColsArray, numRows)) { hostBatch =>
+    withResource(new ColumnarBatchForPartitionWriter(hostColsArray, numRows)) { hostBatch =>
         hostBatch.rowIterator()
           .asScala
           .map(internalRow => {
