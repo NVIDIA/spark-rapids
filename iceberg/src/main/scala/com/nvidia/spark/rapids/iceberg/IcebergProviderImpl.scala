@@ -20,16 +20,18 @@ import scala.reflect.ClassTag
 import scala.util.Try
 
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
-import com.nvidia.spark.rapids.shims.ReplaceDataExecMeta
-import org.apache.iceberg.spark.functions.{BucketFunction, DaysFunction, GpuBucketExpression, GpuDaysExpression, GpuHoursExpression, GpuMonthsExpression, GpuYearsExpression, HoursFunction, MonthsFunction, YearsFunction}
-import org.apache.iceberg.spark.source.{GpuSparkScan, GpuSparkWrite}
+import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
+import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
+{BucketFunction, DaysFunction, GpuBucketExpression, GpuDaysExpression, GpuHoursExpression, GpuMonthsExpression, GpuYearsExpression, HoursFunction, MonthsFunction, YearsFunction}
+import org.apache.iceberg.spark.source.{GpuSparkPositionDeltaWrite, GpuSparkScan, GpuSparkWrite}
+import org.apache.iceberg.spark.source.GpuSparkPositionDeltaWrite.tableOf
 import org.apache.iceberg.spark.supportsCatalog
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, GpuReplaceDataExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, GpuReplaceDataExec, GpuWriteDeltaExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec, WriteDeltaExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.types.{DateType, TimestampType}
 
