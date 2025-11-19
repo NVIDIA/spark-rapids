@@ -429,7 +429,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
           }
         }
       }
-    } else { // (streamAttrs.nomEmpty && builtBatch.numCols == 0), aka build has no columns.
+    } else { // (streamAttrs.nonEmpty && builtBatch.numCols == 0), aka build has no columns.
       stream.map { scb =>
         withRetryNoSplit(scb) { _ =>
           // Build is empty, so each matched stream row will match "builtBatch.numRows" times.
