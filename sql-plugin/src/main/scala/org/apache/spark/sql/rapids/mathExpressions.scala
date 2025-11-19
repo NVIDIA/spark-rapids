@@ -316,7 +316,7 @@ case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
   override def unaryOp: UnaryOp = UnaryOp.LOG
   override def outputTypeOverride: DType = DType.FLOAT64
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpInput(input, child.dataType)) { normalized =>
+    withResource(GpuLogarithm.nullOutNegatives(input, child.dataType)) { normalized =>
       super.doColumnar(normalized)
     }
   }
@@ -328,7 +328,7 @@ object GpuLogarithm {
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned GpuColumnVector.
    */
-  def fixUpInput(input: GpuColumnVector, dt: DataType): GpuColumnVector = {
+  def nullOutNegatives(input: GpuColumnVector, dt: DataType): GpuColumnVector = {
     val ret = withResource(Scalar.fromDouble(0)) { zero =>
       withResource(input.getBase.binaryOp(BinaryOp.LESS_EQUAL, zero, DType.BOOL8)) { zeroOrLess =>
         withResource(Scalar.fromNull(DType.FLOAT64)) { nullScalar =>
@@ -343,7 +343,7 @@ object GpuLogarithm {
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned Scalar.
    */
-  def fixUpInput(input: GpuScalar): GpuScalar = {
+  def nullOutNegatives(input: GpuScalar): GpuScalar = {
     if (input.isValid && input.getValue.asInstanceOf[Double] <= 0) {
       GpuScalar(null, DoubleType)
     } else {
@@ -360,32 +360,32 @@ case class GpuLogarithm(left: Expression, right: Expression)
   override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpInput(lhs, left.dataType)) { fixedLhs =>
-      withResource(GpuLogarithm.fixUpInput(rhs, right.dataType)) { fixedRhs =>
+    withResource(GpuLogarithm.nullOutNegatives(lhs, left.dataType)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs, right.dataType)) { fixedRhs =>
         super.doColumnar(fixedLhs, fixedRhs)
       }
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpInput(lhs)) { fixedLhs =>
-      withResource(GpuLogarithm.fixUpInput(rhs, right.dataType)) { fixedRhs =>
+    withResource(GpuLogarithm.nullOutNegatives(lhs)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs, right.dataType)) { fixedRhs =>
         super.doColumnar(fixedLhs, fixedRhs)
       }
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuLogarithm.fixUpInput(lhs, left.dataType)) { fixedLhs =>
-      withResource(GpuLogarithm.fixUpInput(rhs)) { fixedRhs =>
+    withResource(GpuLogarithm.nullOutNegatives(lhs, left.dataType)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs)) { fixedRhs =>
         super.doColumnar(fixedLhs, fixedRhs)
       }
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuLogarithm.fixUpInput(lhs)) { fixedLhs =>
-      withResource(GpuLogarithm.fixUpInput(rhs)) { fixedRhs =>
+    withResource(GpuLogarithm.nullOutNegatives(lhs)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs)) { fixedRhs =>
         super.doColumnar(numRows, fixedLhs, fixedRhs)
       }
     }
