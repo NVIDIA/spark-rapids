@@ -217,14 +217,28 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
   }
 
   def registerShuffleHeartbeat(): Unit = {
-    val rapidsShuffleManagerProxy = SparkEnv.get.shuffleManager
-      .asInstanceOf[ProxyRapidsShuffleInternalManagerBase]
-    val rapidsShuffleManager = rapidsShuffleManagerProxy.getRealImpl
-      .asInstanceOf[RapidsShuffleInternalManagerBase]
-    if (rapidsShuffleManager.isDriver) {
-      logDebug("Local mode detected. Skipping shuffle heartbeat registration.")
-    } else {
-      executorService.submit(new InitializeShuffleManager(pluginContext, rapidsShuffleManager))
+    val shuffleManager = SparkEnv.get.shuffleManager
+    if (shuffleManager == null) {
+      logWarning("Shuffle manager not available yet, will retry heartbeat registration later.")
+      // Retry after a short delay to allow shuffle manager to be initialized
+      executorService.schedule(new Runnable {
+        override def run(): Unit = registerShuffleHeartbeat()
+      }, 100, TimeUnit.MILLISECONDS)
+      return
+    }
+
+    shuffleManager match {
+      case rapidsShuffleManagerProxy: ProxyRapidsShuffleInternalManagerBase =>
+        val rapidsShuffleManager = rapidsShuffleManagerProxy.getRealImpl
+          .asInstanceOf[RapidsShuffleInternalManagerBase]
+        if (rapidsShuffleManager.isDriver) {
+          logDebug("Local mode detected. Skipping shuffle heartbeat registration.")
+        } else {
+          executorService.submit(new InitializeShuffleManager(pluginContext, rapidsShuffleManager))
+        }
+      case _ =>
+        logWarning(s"Unexpected shuffle manager type: ${shuffleManager.getClass}. " +
+          "Expected ProxyRapidsShuffleInternalManagerBase. Skipping early heartbeat registration.")
     }
   }
 
