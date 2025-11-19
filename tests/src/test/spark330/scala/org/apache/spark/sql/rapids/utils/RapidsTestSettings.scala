@@ -80,10 +80,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("Loading a JSON dataset from a text file with SQL", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
     .exclude("Loading a JSON dataset from a text file", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
   enableSuite[RapidsMathExpressionsSuite]
-    .exclude("conv", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13737"))
-    .exclude("log10", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13738"))
-    .exclude("log2", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13740"))
-    .exclude("binary log", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13741"))
     .exclude("round/bround/floor/ceil", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13747"))
   enableSuite[RapidsMathFunctionsSuite]
     .exclude("SPARK-33428 conv function shouldn't raise error if input string is too big", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
