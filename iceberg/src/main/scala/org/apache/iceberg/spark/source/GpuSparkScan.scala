@@ -118,7 +118,8 @@ object GpuSparkScan {
     gpuScan match {
       case Success(s) =>
         if (s.hasNestedType) {
-          meta.willNotWorkOnGpu("Iceberg current doesn't support nested types")
+          meta.willNotWorkOnGpu(s"Iceberg current doesn't support nested types: " +
+            s"${s.cpuScan.readSchema()}")
         }
       case Failure(e) => meta.willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
     }
