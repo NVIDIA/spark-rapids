@@ -46,6 +46,12 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsDataFrameComplexTypeSuite]
   enableSuite[RapidsDataFrameNaFunctionsSuite]
   enableSuite[RapidsDataFramePivotSuite]
+  enableSuite[RapidsDataFrameSetOperationsSuite]
+    .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", ADJUST_UT("CPU test uses CPU-specific node checks (InMemoryTableScanExec, UnionExec); GPU version implemented as testRapids() in RapidsDataFrameSetOperationsSuite"))
+  enableSuite[RapidsDataFrameWindowFunctionsSuite]
+    .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13763"))
+    .exclude("SPARK-21258: complex object in combination with spilling", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13764"))
+    .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13765"))
   enableSuite[RapidsDateExpressionsSuite]
     .exclude("unsupported fmt fields for trunc/date_trunc results null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13757"))
     .exclude("SPARK-31896: Handle am-pm timestamp parsing when hour is missing", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13758"))
@@ -53,6 +59,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("TIMESTAMP_MICROS", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13760"))
     .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
     .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
+  enableSuite[RapidsIntervalFunctionsSuite]
   enableSuite[RapidsJsonExpressionsSuite]
     .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
     .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))
