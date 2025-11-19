@@ -329,30 +329,11 @@ def test_delta_update_sql_liquid_clustering_fallback(spark_tmp_path,
         lambda table_name: f"UPDATE {table_name} SET e = e+1 WHERE a > 0")
 
 
-@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
-               "AppendDataExecV1")
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
                     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+")
-@pytest.mark.skipif(not is_databricks_runtime(),
-                    reason="Spark-RAPIDS plugin supports liquid clustering for Delta IO")
-def test_delta_merge_sql_liquid_clustering_fallback(spark_tmp_path,
-                                                    spark_tmp_table_factory):
-
-    do_test_delta_dml_sql_liquid_clustering_fallback(
-        spark_tmp_path, spark_tmp_table_factory, delta_merge_enabled_conf,
-        lambda table_name: f"MERGE INTO {table_name} "
-                           f"USING {table_name} as src_table "
-                           f"ON {table_name}.a == src_table.a "
-                           f"WHEN NOT MATCHED THEN INSERT *")
-
-
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="Spark-RAPIDS plugin does not support liquid clustering for Databricks Delta")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS plugin supports liquid clustering for Delta IO 3.3+")
 def test_delta_merge_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_factory):
