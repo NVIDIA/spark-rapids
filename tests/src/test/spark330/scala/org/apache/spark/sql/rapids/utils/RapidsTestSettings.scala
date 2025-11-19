@@ -144,5 +144,8 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsFirstLastTestSuite]
   enableSuite[RapidsProductAggSuite]
   enableSuite[RapidsApproximatePercentileSuite]
+  enableSuite[RapidsComplexTypesSuite]
+  enableSuite[RapidsCsvFunctionsSuite]
+  enableSuite[RapidsGeneratorFunctionSuite]
 }
 // scalastyle:on line.size.limit
