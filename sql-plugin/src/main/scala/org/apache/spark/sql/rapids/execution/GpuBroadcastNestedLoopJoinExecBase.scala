@@ -432,8 +432,9 @@ object GpuBroadcastNestedLoopJoinExecBase {
     } else { // (streamAttrs.nonEmpty && builtBatch.numCols == 0), aka build has no columns.
       stream.map { scb =>
         withRetryNoSplit(scb) { _ =>
-          // Build is empty, so each matched stream row will match "builtBatch.numRows" times.
-          // And keep the notmatched rows unchanged, aka 1 for the repeat count.
+          // Build has no columns (but may have rows), so each matched stream row will
+          // match "builtBatch.numRows" times. And keep the notmatched rows unchanged,
+          // aka 1 for the repeat count.
           val repeatCnts = withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
             withResource(Scalar.fromInt(builtBatch.numRows)) { matchedRowsCnt =>
               // Keep the not match stream rows unchanged.
