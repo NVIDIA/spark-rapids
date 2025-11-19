@@ -60,7 +60,7 @@ case object GpuSinglePartitioning extends GpuExpression with ShimExpression
     GpuShuffleEnv.useMultiThreadedShuffle(new RapidsConf(SQLConf.get))
 
   override def usesKudoGPUSlicing: Boolean =
-    new RapidsConf(SQLConf.get).shuffleKudoGpuSerializerEnabled
+    !usesGPUShuffle && new RapidsConf(SQLConf.get).shuffleKudoGpuSerializerEnabled
 
   override def nullable: Boolean = false
 
