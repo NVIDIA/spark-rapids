@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar, Table}
 import ai.rapids.cudf.ColumnView.FindOptions
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
@@ -442,6 +442,56 @@ case class GpuGetArrayStructFields(
     }
     withResource(listView) { _ =>
       listView.copyToColumnVector()
+    }
+  }
+}
+
+/**
+ * Gather rows from the values column by the specified indices.
+ */
+case class GpuGather(values: Expression, indices: Expression)
+    extends GpuBinaryExpression with NullIntolerantShim {
+  override def left: Expression = values
+
+  override def right: Expression = indices
+
+  override def dataType: DataType = values.dataType
+
+  // Null is returned for invalid indices.
+  override def nullable: Boolean = true
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    ColumnVector.fromScalar(lhs.getBase.getScalarElement(rhs.getBase.getInt), 1)
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, values.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, values.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    withResource(new Table(lhs.getBase)) { lhsTable =>
+      if (rhs.hasNull) {
+        withResource(Scalar.fromInt(-1)) { invalidIndexSentinel =>
+          withResource(rhs.getBase.replaceNulls(invalidIndexSentinel)) { nullsReplacedRhs =>
+            withResource(lhsTable.gather(nullsReplacedRhs)) { gathered =>
+              gathered.getColumn(0).incRefCount
+            }
+          }
+        }
+      }
+      else {
+        withResource(lhsTable.gather(rhs.getBase)) { gathered =>
+          gathered.getColumn(0).incRefCount
+        }
+      }
     }
   }
 }
