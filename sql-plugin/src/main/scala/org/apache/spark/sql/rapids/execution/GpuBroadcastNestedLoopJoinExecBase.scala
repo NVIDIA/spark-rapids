@@ -349,13 +349,14 @@ object GpuBroadcastNestedLoopJoinExecBase {
         }
       } else {
         if (isDegenerateLeftOuterJoin(joinType, buildSide, builtBatch, streamAttributes)) {
-          return degenerateLeftOuterJoinIterator(stream, streamAttributes, builtBatch,
+          degenerateLeftOuterJoinIterator(stream, streamAttributes, builtBatch,
             boundCondition.get)
+        } else {
+          val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
+          new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
+            stream, streamAttributes, targetSize, compiledAst,
+            opTime = opTime, joinTime = joinTime)
         }
-        val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
-        new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
-          stream, streamAttributes, targetSize, compiledAst,
-          opTime = opTime, joinTime = joinTime)
       }
     }
     joinIterator.map { cb =>
