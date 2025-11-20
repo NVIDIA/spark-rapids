@@ -142,23 +142,16 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
       return Seq.empty
     }
 
-    closeOnExcept(input) { _ =>
-      // Compute partition key columns
-      val keyCols = partitionExprs.safeMap(_.columnarEval(input))
-      
-      closeOnExcept(keyCols) { _ =>
-        // Create key batch from computed key columns
-        val keyBatch = new ColumnarBatch(keyCols.toArray, input.numRows())
-        
-        // Delegate to the underlying partitioner
-        // Note: partitioner.partition does NOT take ownership of the inputs,
-        // so we manage the lifecycle here
-        try {
-          partitioner.partition(keyBatch, input)
-        } finally {
-          keyBatch.close()
-          input.close()
+    withResource(input) { _ =>
+      val keyBatch = {
+        val keyCols = partitionExprs.safeMap(_.columnarEval(input))
+        closeOnExcept(keyCols) { _ =>
+          new ColumnarBatch(keyCols.toArray, input.numRows())
         }
+      }
+
+      withResource(keyBatch) { _ =>
+        partitioner.partition(keyBatch, input)
       }
     }
   }
