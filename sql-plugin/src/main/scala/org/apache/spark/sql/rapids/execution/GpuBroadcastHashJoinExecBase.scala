@@ -152,6 +152,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
 
     val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
 
@@ -183,12 +184,12 @@ abstract class GpuBroadcastHashJoinExecBase(
               SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
               boundStreamKeys)
           }
-          doJoin(builtBatch, nullFilteredStreamIter, targetSize, numOutputRows,
+          doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
             numOutputBatches, opTime, joinTime)
         }
       } else {
         // builtBatch will be closed in doJoin
-        doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime,
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
           joinTime)
       }
     }
