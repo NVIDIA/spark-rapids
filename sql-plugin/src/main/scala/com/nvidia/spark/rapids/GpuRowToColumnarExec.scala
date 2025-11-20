@@ -625,6 +625,14 @@ class RowToColumnarIterator(
     case other => other.copy()
   }
 
+  /**
+   * Build a single GPU batch using up to `targetRowCount` rows.
+   *
+   * Rows are pulled from `pendingRows` (populated via `ensurePendingRow`) so that we can
+   * replay them if the retry framework decides to split and try again. The method keeps
+   * track of how many rows were consumed and returns that along with the resulting batch
+   * so callers can drop the rows that were successfully materialized.
+   */
   private def buildBatchAttempt(targetRowCount: Int): BuildBatchResult = {
     val maxRows = math.max(1, targetRowCount)
     val builderInitialRows =
@@ -701,6 +709,9 @@ class RowToColumnarIterator(
         }
       }
 
+      // `targetRows` starts at 0 and is only populated after we have read the first batch
+      // and computed an estimate. Guard against the bootstrap case so we always attempt to
+      // build at least one row.
       val desiredTargetRows = math.max(targetRows, 1)
       val result =
         if (localGoal.isInstanceOf[RequireSingleBatchLike]) {
@@ -758,12 +769,16 @@ class RowToColumnarIterator(
   }
 }
 
-private object RowToColumnarIterator {
-  val PendingBufferInitCapacity = 64
-}
-
+/**
+ * Small ring buffer that stores pending rows that have already been copied from the input.
+ * We need to be able to replay rows when the retry framework asks us to split the work,
+ * therefore we hold on to copies of the incoming rows until we know they made it into a
+ * GPU batch. The ring buffer avoids the O(N) left-shift that ArrayBuffer.remove would incur.
+ */
 private class PendingRowBuffer {
-  import RowToColumnarIterator.PendingBufferInitCapacity
+  // Start with 64 rows (heuristic) to keep the initial heap footprint small; the ring buffer
+  // doubles automatically as more rows are buffered.
+  private val PendingBufferInitCapacity = 64
 
   private var buffer = new Array[InternalRow](PendingBufferInitCapacity)
   private var start = 0

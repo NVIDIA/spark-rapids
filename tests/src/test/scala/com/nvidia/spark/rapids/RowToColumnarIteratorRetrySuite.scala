@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.jni.{CpuSplitAndRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
 
 import scala.collection.mutable.ArrayBuffer
 
