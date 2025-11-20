@@ -16,33 +16,50 @@
 
 package com.nvidia.spark.rapids.delta.common
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{DType, HostColumnVector}
+import com.nvidia.spark.rapids.{GpuColumnVector, RapidsHostColumnBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuColumnVector
+import scala.collection._
 
 import org.apache.spark.sql.delta.deletionvectors.RoaringBitmapArray
 import org.apache.spark.sql.types.{ByteType, LongType}
 
 trait RapidsRowIndexFilter {
-  private val EMPTY_BITMAP = new RoaringBitmapArray()
+  protected val EMPTY_BITMAP = new RoaringBitmapArray()
   def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector
   def getBitmap: RoaringBitmapArray = EMPTY_BITMAP
+  protected def getMarkedRowIndices: HostColumnVector =
+    HostColumnVector.fromLongs(Array.empty[Long]: _*)
 }
 
 /**
  * This creates a Rapids filter to create a skip_row column that will keep all the rows marked
  * in the bitmap. It's the inverse of RapidsDropMarkedRowsFilter
  */
-final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
+class RapidsKeepMarkedRowsFilter(bitmap: Option[RoaringBitmapArray]) extends RapidsRowIndexFilter {
 
-  override def getBitmap: RoaringBitmapArray = bitmap
+  def this(bitmap: RoaringBitmapArray) = {
+    this(Some(bitmap))
+  }
 
-  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = bitmap.toArray
+  override def getBitmap: RoaringBitmapArray = bitmap.get
+
+  override def getMarkedRowIndices: HostColumnVector = {
+    val arr = getBitmap.toArray
+    withResource(new RapidsHostColumnBuilder(
+        new HostColumnVector.BasicType(false, DType.INT64), arr.length)) { builder =>
+      builder.appendArray(arr: _*)
+      builder.build()
+    }
+  }
+
+  def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
     val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
+      withResource(getMarkedRowIndices) { hostArray =>
+        withResource(GpuColumnVector.from(hostArray.copyToDevice(), LongType)) {
+          markedRowIndicesCol =>
+            rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
+        }
       }
     val indicesToDelete = withResource(containsMarkedRows) { containsMarkedRows =>
       containsMarkedRows.not()
@@ -57,78 +74,64 @@ final class RapidsKeepMarkedRowsFilter(bitmap: RoaringBitmapArray) extends Rapid
  * This creates a Rapids filter to create a skip_row column that will drop all the rows marked
  * in the bitmap.
  */
-final class RapidsDropMarkedRowsFilter(bitmap: RoaringBitmapArray) extends RapidsRowIndexFilter {
+class RapidsDropMarkedRowsFilter(bitmap: Option[RoaringBitmapArray]) extends RapidsRowIndexFilter {
 
-  override def getBitmap: RoaringBitmapArray = bitmap
+  def this(bitmap: RoaringBitmapArray) = {
+    this(Some(bitmap))
+  }
+
+  override def getBitmap: RoaringBitmapArray = bitmap.get
+
+  override def getMarkedRowIndices: HostColumnVector = {
+    val arr = getBitmap.toArray
+    withResource(new RapidsHostColumnBuilder(
+      new HostColumnVector.BasicType(false, DType.INT64), arr.length)) { builder =>
+      builder.appendArray(arr: _*)
+      builder.build()
+    }
+  }
 
   override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = bitmap.toArray
     val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
+      withResource(getMarkedRowIndices) { hostArray =>
+        withResource(GpuColumnVector.from(hostArray.copyToDevice(), LongType)) {
+          markedRowIndicesCol =>
+            rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
+        }
       }
     withResource(containsMarkedRows) { containsMarkedRows =>
       GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
-    }
-  }
-}
-
-final class CoalescedRapidsKeepMarkedRowsFilter(
-  filters: Seq[RapidsRowIndexFilter],
-  offsets: Seq[Long]) extends RapidsRowIndexFilter {
-
-  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = filters.zip(offsets).map { case (filter, offset) =>
-      filter.getBitmap.toArray.map(i => i + offset)
-    }.flatten
-    val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
-      }
-    val indicesToDelete = withResource(containsMarkedRows) { containsMarkedRows =>
-      containsMarkedRows.not()
-    }
-    withResource(indicesToDelete) { indicesToDelete =>
-      GpuColumnVector.from(indicesToDelete.castTo(DType.INT8), ByteType)
     }
   }
 }
 
 final class CoalescedRapidsDropMarkedRowsFilter(
   filters: Seq[RapidsRowIndexFilter],
-  offsets: Seq[Long]) extends RapidsRowIndexFilter {
-
-  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    val markedRowIndices = filters.zip(offsets).map { case (filter, offset) =>
-      filter.getBitmap.toArray.map(i => i + offset)
-    }.flatten
-    val containsMarkedRows =
-      withResource(GpuColumnVector.from(ColumnVector.fromLongs(markedRowIndices: _*), LongType)) {
-        markedRowIndicesCol =>
-          rowIndexCol.getBase.contains(markedRowIndicesCol.getBase)
-      }
-    withResource(containsMarkedRows) { containsMarkedRows =>
-      GpuColumnVector.from(containsMarkedRows.castTo(DType.INT8), ByteType)
+  offsets: Seq[Long]) extends RapidsDropMarkedRowsFilter(None) {
+  override def getMarkedRowIndices: HostColumnVector = {
+    val size = filters.map(_.getBitmap.cardinality).sum.toInt
+    if (size > 0) {
+        withResource(
+          new RapidsHostColumnBuilder(new HostColumnVector.BasicType(false, DType.INT64), size)) {
+          builder =>
+            // add the first filter without offsets
+            builder.appendArray(filters.head.getBitmap.toArray: _*)
+            // drop the first filter and the offset which is zero anyway
+            filters.tail.zip(offsets.tail).map {
+              case (filter, offset) =>
+                if (!filter.getBitmap.isEmpty) {
+                  val arr = filter.getBitmap.toArray
+                  arr.foreach(i => builder.append(i + offset))
+                }
+            }
+            builder.build()
+        }
+    } else {
+      HostColumnVector.fromLongs(Array.empty[Long]: _*)
     }
   }
 }
 
-object RapidsDropAllRowsFilter extends RapidsRowIndexFilter {
-
-  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(1.toByte)) { one =>
-      GpuColumnVector.from(one, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
-}
-
-object RapidsKeepAllRowsFilter extends RapidsRowIndexFilter {
-
-  override def materializeIntoVector(rowIndexCol: GpuColumnVector): GpuColumnVector = {
-    withResource(Scalar.fromByte(0.toByte)) { zero =>
-      GpuColumnVector.from(zero, rowIndexCol.getRowCount.toInt, ByteType)
-    }
-  }
+object RapidsKeepAllRowsFilter extends RapidsDropMarkedRowsFilter(None) {
+  override def getBitmap: RoaringBitmapArray = EMPTY_BITMAP
 }

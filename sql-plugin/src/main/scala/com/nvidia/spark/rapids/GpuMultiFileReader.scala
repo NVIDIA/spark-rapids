@@ -1291,11 +1291,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           }
         }
       }
-      wrapIterator(batchIter, currentChunkMeta, partitionSchema, maxGpuColumnSizeBytes)
+      getCoalescingIterator(batchIter, currentChunkMeta, partitionSchema, maxGpuColumnSizeBytes)
     }
   }
 
-  protected def wrapIterator(
+  protected def getCoalescingIterator(
      batchIter: Iterator[ColumnarBatch],
      currentChunkMeta: CurrentChunkMeta,
      partitionSchema: StructType,

@@ -401,7 +401,7 @@ class DeltaCoalescingFileParquetPartitionReader(
 
   private val pathToPartitionedFile = splits.map(pf => pf.filePath.toPath -> pf).toMap
 
-  override protected def wrapIterator(
+  override protected def getCoalescingIterator(
       batchIter: Iterator[ColumnarBatch],
       currentChunkMeta: CurrentChunkMeta,
       partitionSchema: StructType,
@@ -669,7 +669,6 @@ object RapidsDeletionVectorUtils {
     val endIndex = boundaries.indexWhere(b => b > endRowIndex) - 1
 
     val relevantFiles = partitionedFiles.slice(startIndex, endIndex + 1)
-
     val offsets = boundaries.slice(startIndex, endIndex + 1)
 
     val filters = relevantFiles.map { f =>
