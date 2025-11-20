@@ -429,7 +429,8 @@ def test_broadcast_nested_loop_join_degen_left_outer_build_no_columns():
         table_name='left_tbl')
 
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_330(), reason="GPU supports InSubqueryExec from 330")
+@pytest.mark.skipif(is_before_spark_330() or is_databricks_runtime(),
+                    reason="GPU does not support InSubqueryExec before 330 and on DBs")
 @pytest.mark.parametrize('a_val', ['1', '10'], ids=idfn)  # 1: in t1, 10: not in t1
 def test_broadcast_nested_loop_join_degen_left_outer_stream_no_columns(a_val):
     def degen_join_func(spark):
