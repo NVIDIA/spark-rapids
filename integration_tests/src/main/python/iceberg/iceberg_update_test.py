@@ -34,12 +34,20 @@ UPDATE_TEST_SEED_OVERRIDE_REASON = "Ensure reproducible test data for UPDATE ope
 def create_iceberg_table_with_data(table_name: str, 
                                    partition_col_sql=None,
                                    data_gen_func=None,
-                                   table_properties=None):
-    """Helper function to create and populate an Iceberg table for UPDATE tests."""
-    # Always use copy-on-write mode for these tests
+                                   table_properties=None,
+                                   update_mode='copy-on-write'):
+    """Helper function to create and populate an Iceberg table for UPDATE tests.
+    
+    Args:
+        table_name: Name of the table to create
+        partition_col_sql: SQL for partitioning clause
+        data_gen_func: Function to generate test data
+        table_properties: Additional table properties
+        update_mode: Update mode - 'copy-on-write' or 'merge-on-read'
+    """
     base_props = {
         'format-version': '2',
-        'write.update.mode': 'copy-on-write'
+        'write.update.mode': update_mode
     }
     if table_properties:
         base_props.update(table_properties)
@@ -52,7 +60,7 @@ def create_iceberg_table_with_data(table_name: str,
                         partition_col_sql=partition_col_sql,
                         table_prop=base_props,
                         df_gen=data_gen_func)
-    
+
     # Insert data
     def insert_data(spark):
         df = data_gen_func(spark)
@@ -61,7 +69,8 @@ def create_iceberg_table_with_data(table_name: str,
     with_cpu_session(insert_data)
 
 def do_update_test(spark_tmp_table_factory, update_sql_func, data_gen_func=None, 
-                  partition_col_sql=None, table_properties=None, reader_type='COALESCING'):
+                  partition_col_sql=None, table_properties=None, reader_type='COALESCING',
+                  update_mode='copy-on-write'):
     """
     Helper function to test UPDATE operations by comparing CPU and GPU results.
     
@@ -72,6 +81,7 @@ def do_update_test(spark_tmp_table_factory, update_sql_func, data_gen_func=None,
         partition_col_sql: SQL for partitioning clause
         table_properties: Additional table properties
         reader_type: Rapids reader type for parquet reading
+        update_mode: Update mode - 'copy-on-write' or 'merge-on-read'
     """
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
@@ -79,9 +89,9 @@ def do_update_test(spark_tmp_table_factory, update_sql_func, data_gen_func=None,
     
     # Create identical tables for CPU and GPU
     create_iceberg_table_with_data(cpu_table_name, partition_col_sql, 
-                                   data_gen_func, table_properties)
+                                   data_gen_func, table_properties, update_mode)
     create_iceberg_table_with_data(gpu_table_name, partition_col_sql, 
-                                   data_gen_func, table_properties)
+                                   data_gen_func, table_properties, update_mode)
     
     # Merge reader_type into configuration
     test_conf = copy_and_update(iceberg_update_cow_enabled_conf, {
@@ -106,71 +116,87 @@ def do_update_test(spark_tmp_table_factory, update_sql_func, data_gen_func=None,
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_update_unpartitioned_table_single_column(spark_tmp_table_factory, reader_type):
+def test_iceberg_update_unpartitioned_table_single_column(spark_tmp_table_factory, reader_type, update_mode):
     """Test UPDATE on unpartitioned table with single column update"""
     do_update_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100 WHERE _c2 % 3 = 0"),
-        reader_type=reader_type
+        reader_type=reader_type,
+        update_mode=update_mode
     )
 
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_factory, reader_type):
+def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_factory, reader_type, update_mode):
     """Test UPDATE on unpartitioned table with multiple column updates"""
     do_update_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100, _c6 = 'updated' WHERE _c2 % 3 = 0"),
-        reader_type=reader_type
+        reader_type=reader_type,
+        update_mode=update_mode
     )
 
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, reader_type):
+def test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, reader_type, update_mode):
     """Test UPDATE on bucket-partitioned table with single column update"""
     do_update_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100 WHERE _c2 % 3 = 0"),
         partition_col_sql="bucket(16, _c2)",
-        reader_type=reader_type
+        reader_type=reader_type,
+        update_mode=update_mode
     )
 
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_factory, reader_type):
+def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_factory, reader_type, update_mode):
     """Test UPDATE on bucket-partitioned table with multiple column updates"""
     do_update_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100, _c6 = 'updated' WHERE _c2 % 3 = 0"),
         partition_col_sql="bucket(16, _c2)",
-        reader_type=reader_type
+        reader_type=reader_type,
+        update_mode=update_mode
     )
 
 
-@allow_non_gpu("ReplaceDataExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, reader_type):
+def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, reader_type, update_mode, fallback_exec):
     """Test UPDATE falls back when Iceberg write is disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
     # Phase 1: Initialize tables with data (separate for CPU and GPU)
     cpu_table_name = f'{base_table_name}_cpu'
     gpu_table_name = f'{base_table_name}_gpu'
-    create_iceberg_table_with_data(cpu_table_name)
-    create_iceberg_table_with_data(gpu_table_name)
+    create_iceberg_table_with_data(cpu_table_name, update_mode=update_mode)
+    create_iceberg_table_with_data(gpu_table_name, update_mode=update_mode)
     
     # Phase 2: UPDATE operation (to be tested with fallback)
     def write_func(spark, table_name):
@@ -184,17 +210,21 @@ def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, reader_
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_update_cow_enabled_conf, {
             "spark.rapids.sql.format.iceberg.write.enabled": "false",
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
@@ -205,7 +235,7 @@ def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, reader_
     pytest.param("hour(_c9)", id="hour"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
-def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table_factory, reader_type, partition_col_sql):
+def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table_factory, reader_type, partition_col_sql, update_mode, fallback_exec):
     """Test UPDATE falls back with unsupported partition transforms"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
@@ -216,7 +246,7 @@ def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table
     def init_table(table_name):
         table_props = {
             'format-version': '2',
-            'write.update.mode': 'copy-on-write'
+            'write.update.mode': update_mode
         }
         
         create_iceberg_table(table_name,
@@ -248,19 +278,23 @@ def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_update_cow_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec", "ShuffleExchangeExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
-def test_iceberg_update_fallback_unsupported_file_format(spark_tmp_table_factory, reader_type, file_format):
+def test_iceberg_update_fallback_unsupported_file_format(spark_tmp_table_factory, reader_type, file_format, update_mode, fallback_exec):
     """Test UPDATE falls back with unsupported file formats (ORC, Avro)
     
     This test creates a table with parquet format, inserts data, then changes the
@@ -277,7 +311,7 @@ def test_iceberg_update_fallback_unsupported_file_format(spark_tmp_table_factory
         # Step 1: Create table with parquet as default write format
         table_props = {
             'format-version': '2',
-            'write.update.mode': 'copy-on-write',
+            'write.update.mode': update_mode,
             'write.format.default': 'parquet'
         }
         
@@ -317,18 +351,22 @@ def test_iceberg_update_fallback_unsupported_file_format(spark_tmp_table_factory
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_update_cow_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ExpandExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_update_fallback_nested_types(spark_tmp_table_factory, reader_type):
+def test_iceberg_update_fallback_nested_types(spark_tmp_table_factory, reader_type, update_mode, fallback_exec):
     """Test UPDATE falls back with nested types (arrays, structs, maps) - currently unsupported"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
@@ -341,7 +379,7 @@ def test_iceberg_update_fallback_nested_types(spark_tmp_table_factory, reader_ty
     def init_table(table_name):
         table_props = {
             'format-version': '2',
-            'write.update.mode': 'copy-on-write'
+            'write.update.mode': update_mode
         }
         
         create_iceberg_table(table_name,
@@ -373,27 +411,30 @@ def test_iceberg_update_fallback_nested_types(spark_tmp_table_factory, reader_ty
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_update_cow_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13649")
-def test_iceberg_update_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type):
+def test_iceberg_update_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type, update_mode, fallback_exec):
     """Test UPDATE falls back when Iceberg is completely disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
     # Phase 1: Initialize tables with data (separate for CPU and GPU)
     cpu_table_name = f'{base_table_name}_cpu'
     gpu_table_name = f'{base_table_name}_gpu'
-    create_iceberg_table_with_data(cpu_table_name)
-    create_iceberg_table_with_data(gpu_table_name)
+    create_iceberg_table_with_data(cpu_table_name, update_mode=update_mode)
+    create_iceberg_table_with_data(gpu_table_name, update_mode=update_mode)
     
     # Phase 2: UPDATE operation (to be tested with fallback)
     def write_func(spark, table_name):
@@ -407,7 +448,7 @@ def test_iceberg_update_fallback_iceberg_disabled(spark_tmp_table_factory, reade
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_update_cow_enabled_conf, {
             "spark.rapids.sql.format.iceberg.enabled": "false",
             "spark.rapids.sql.format.parquet.reader.type": reader_type
