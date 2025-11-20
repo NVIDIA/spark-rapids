@@ -309,6 +309,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.MapEntries"></a>spark.rapids.sql.expression.MapEntries|`map_entries`|Returns an unordered array of all entries in the given map|true|None|
 <a name="sql.expression.MapFilter"></a>spark.rapids.sql.expression.MapFilter|`map_filter`|Filters entries in a map using the function|true|None|
 <a name="sql.expression.MapFromArrays"></a>spark.rapids.sql.expression.MapFromArrays|`map_from_arrays`|Creates a new map from two arrays|true|None|
+<a name="sql.expression.MapFromEntries"></a>spark.rapids.sql.expression.MapFromEntries|`map_from_entries`|Creates a map from an array of entries (structs of key-value pairs)|true|None|
 <a name="sql.expression.MapKeys"></a>spark.rapids.sql.expression.MapKeys|`map_keys`|Returns an unordered array containing the keys of the map|true|None|
 <a name="sql.expression.MapValues"></a>spark.rapids.sql.expression.MapValues|`map_values`|Returns an unordered array containing the values of the map|true|None|
 <a name="sql.expression.MapZipWith"></a>spark.rapids.sql.expression.MapZipWith|`map_zip_with`|Filters entries in a map using the function|true|None|

@@ -2724,6 +2724,29 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMapEntries(child)
       }),
+    expr[MapFromEntries](
+      "Creates a map from an array of entries (structs of key-value pairs)",
+      ExprChecks.unaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY),
+        TypeSig.MAP.nested(TypeSig.all),
+        // Input is an array of struct<key, value>
+        // The struct fields can contain the supported types
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      (in, conf, p, r) => new UnaryExprMeta[MapFromEntries](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
+            case "EXCEPTION" | "LAST_WIN" => // Good we can support this
+            case other =>
+              willNotWorkOnGpu(s"$other is not supported for config setting" +
+                  s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
+          }
+        }
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMapFromEntries(child)
+      }),
     expr[StringToMap](
       "Creates a map after splitting the input string into pairs of key-value strings",
       // Java's split API produces different behaviors than cudf when splitting with empty pattern
