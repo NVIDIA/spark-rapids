@@ -365,6 +365,9 @@ object GpuBroadcastNestedLoopJoinExecBase {
     }
   }
 
+  // A degenerate left-outer join means either the build or stream side has no columns.
+  // There are degenerate cases already found for the left-outer join with BuildRight.
+  // So now it just takes care of the left-outer join here.
   private def isDegenerateLeftOuterJoin(joinType: JoinType, side: GpuBuildSide,
       builtBatch: LazySpillableColumnarBatch, streamAtts: Seq[Attribute]): Boolean = {
     joinType match {
