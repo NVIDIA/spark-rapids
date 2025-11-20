@@ -32,7 +32,6 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import scala.collection.mutable.ArrayBuffer
 
 private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
@@ -604,31 +603,21 @@ class RowToColumnarIterator(
   private var totalOutputRows: Long = 0
   // Rows are copied into this buffer so we can safely replay them if the retry
   // framework asks us to split and try again.
-  private val pendingRows = new ArrayBuffer[InternalRow]()
-  private var pendingStart = 0
+  private val pendingRows = new PendingRowBuffer
 
-  private def pendingLength: Int = pendingRows.length - pendingStart
+  private def pendingLength: Int = pendingRows.length
 
-  private def pendingRowAt(idx: Int): InternalRow = pendingRows(pendingStart + idx)
+  private def pendingRowAt(idx: Int): InternalRow = pendingRows(idx)
 
   private def dropPendingRows(count: Int): Unit = {
-    if (count > 0) {
-      pendingStart += count
-      if (pendingStart >= pendingRows.length) {
-        pendingRows.clear()
-        pendingStart = 0
-      } else if (pendingStart >= pendingRows.length / 2) {
-        pendingRows.remove(0, pendingStart)
-        pendingStart = 0
-      }
-    }
+    pendingRows.drop(count)
   }
 
   private def ensurePendingRow(idx: Int): Boolean = {
-    while (pendingStart + idx >= pendingRows.length && rowIter.hasNext) {
-      pendingRows += copyRow(rowIter.next())
+    while (pendingRows.length <= idx && rowIter.hasNext) {
+      pendingRows.add(copyRow(rowIter.next()))
     }
-    pendingStart + idx < pendingRows.length
+    pendingRows.length > idx
   }
 
   private def copyRow(row: InternalRow): InternalRow = row match {
@@ -713,18 +702,30 @@ class RowToColumnarIterator(
       }
 
       val desiredTargetRows = math.max(targetRows, 1)
-      val buildIter = RmmRapidsRetryIterator.withRetry(
-        AutoCloseableTargetSize(desiredTargetRows.toLong, 1L),
-        RmmRapidsRetryIterator.splitTargetSizeInHalfCpu) { attemptSize =>
-        val cappedTarget =
-          math.max(1L, math.min((Int.MaxValue - 1).toLong, attemptSize.targetSize)).toInt
-        buildBatchAttempt(cappedTarget)
-      }
-      require(buildIter.hasNext,
-        "Retry iterator returned no result when building a batch.")
-      val result = buildIter.next()
-      require(!buildIter.hasNext,
-        "Retry iterator produced more than one result when building a batch.")
+      val result =
+        if (localGoal.isInstanceOf[RequireSingleBatchLike]) {
+          RmmRapidsRetryIterator.withRetryNoSplit {
+            val cappedTarget =
+              math.max(1L,
+                math.min((Int.MaxValue - 1).toLong, desiredTargetRows.toLong)).toInt
+            buildBatchAttempt(cappedTarget)
+          }
+        } else {
+          val buildIter = RmmRapidsRetryIterator.withRetry(
+            AutoCloseableTargetSize(desiredTargetRows.toLong, 1L),
+            RmmRapidsRetryIterator.splitTargetSizeInHalfCpu) { attemptSize =>
+            val cappedTarget =
+              math.max(1L,
+                math.min((Int.MaxValue - 1).toLong, attemptSize.targetSize)).toInt
+            buildBatchAttempt(cappedTarget)
+          }
+          require(buildIter.hasNext,
+            "Retry iterator returned no result when building a batch.")
+          val attemptResult = buildIter.next()
+          require(!buildIter.hasNext,
+            "Retry iterator produced more than one result when building a batch.")
+          attemptResult
+        }
 
       // enforce RequireSingleBatch limit
       if (result.hasMoreRows && localGoal.isInstanceOf[RequireSingleBatchLike]) {
@@ -754,6 +755,74 @@ class RowToColumnarIterator(
       // The returned batch will be closed by the consumer of it
       ret
     }
+  }
+}
+
+private object RowToColumnarIterator {
+  val PendingBufferInitCapacity = 64
+}
+
+private class PendingRowBuffer {
+  import RowToColumnarIterator.PendingBufferInitCapacity
+
+  private var buffer = new Array[InternalRow](PendingBufferInitCapacity)
+  private var start = 0
+  private var size = 0
+
+  def length: Int = size
+
+  def apply(idx: Int): InternalRow = {
+    require(idx >= 0 && idx < size, s"Index $idx is out of bounds for pending size $size")
+    buffer(physicalIndex(idx))
+  }
+
+  def add(row: InternalRow): Unit = {
+    ensureCapacity(size + 1)
+    buffer(physicalIndex(size)) = row
+    size += 1
+  }
+
+  def drop(count: Int): Unit = {
+    if (count > 0) {
+      val toDrop = math.min(count, size)
+      var i = 0
+      while (i < toDrop) {
+        buffer(physicalIndex(i)) = null
+        i += 1
+      }
+      start = physicalIndex(toDrop)
+      size -= toDrop
+      if (size == 0) {
+        start = 0
+      }
+    }
+  }
+
+  def clear(): Unit = drop(size)
+
+  private def ensureCapacity(minCapacity: Int): Unit = {
+    if (minCapacity > buffer.length) {
+      var newCapacity = buffer.length * 2
+      while (newCapacity < minCapacity) {
+        newCapacity *= 2
+      }
+      val newBuffer = new Array[InternalRow](newCapacity)
+      if (size > 0) {
+        val rightLen = math.min(buffer.length - start, size)
+        System.arraycopy(buffer, start, newBuffer, 0, rightLen)
+        if (rightLen < size) {
+          System.arraycopy(buffer, 0, newBuffer, rightLen, size - rightLen)
+        }
+      }
+      buffer = newBuffer
+      start = 0
+    }
+  }
+
+  private def physicalIndex(offset: Int): Int = {
+    val idx = start + offset
+    val len = buffer.length
+    if (idx >= len) idx - len else idx
   }
 }
 

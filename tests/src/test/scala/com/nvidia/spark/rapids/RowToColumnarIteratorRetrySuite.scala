@@ -74,10 +74,9 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    Arm.withResource(row2ColIter.next()) { batch =>
-      assertResult(10)(batch.numRows())
+    assertThrows[GpuSplitAndRetryOOM] {
+      row2ColIter.next()
     }
-    assert(!row2ColIter.hasNext)
   }
 
   test("test CPU split and retry OOM") {
@@ -86,10 +85,9 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.CPU.ordinal, 0)
-    Arm.withResource(row2ColIter.next()) { batch =>
-      assertResult(10)(batch.numRows())
+    assertThrows[CpuSplitAndRetryOOM] {
+      row2ColIter.next()
     }
-    assert(!row2ColIter.hasNext)
   }
 
   test("gpu split and retry can continue across multiple batches") {
@@ -106,9 +104,8 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val row2ColIter = newIterator(numRows = 64, goal = RequireSingleBatch)
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 26,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    val ex = intercept[IllegalStateException] {
+    assertThrows[GpuSplitAndRetryOOM] {
       row2ColIter.next()
     }
-    assert(ex.getMessage.contains("single batch is required"))
   }
 }
