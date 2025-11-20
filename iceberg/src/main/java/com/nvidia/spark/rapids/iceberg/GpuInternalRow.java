@@ -23,7 +23,6 @@ import org.apache.spark.sql.types.DataType;
 
 import org.apache.spark.sql.types.DateType;
 import org.apache.spark.sql.types.Decimal;
-import org.apache.spark.sql.vectorized.ColumnarBatchRow;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -31,20 +30,16 @@ import java.time.LocalDate;
 
 /**
  * A wrapper class of InternalRow.
- * This class is used to fix the issue of partition writer for Date type.
+ * This class is used to fix the issue of partition writer for Date type:
+ * For date type, should return a local date instead of an integer.
  */
-public class ColumnarBatchRowForPartitionWriter extends InternalRow {
+public class GpuInternalRow extends InternalRow {
 
-  // The wrapped `ColumnarBatchRow`
-  // `ColumnarBatchRow` is final class, so we use composition instead of inheritance.
-  private final ColumnarBatchRow wrapped;
+  // The wrapped `InternalRow`
+  private final InternalRow wrapped;
 
-  public ColumnarBatchRowForPartitionWriter(ColumnarBatchRow row) {
+  public GpuInternalRow(InternalRow row) {
     this.wrapped = row;
-  }
-
-  public void setRowId(int rowId) {
-    this.wrapped.rowId = rowId;
   }
 
   /**
@@ -67,7 +62,7 @@ public class ColumnarBatchRowForPartitionWriter extends InternalRow {
     }
   }
 
-  // ===========  The following are just forwards to the wrapped ColumnarBatchRow ===========
+  // ===========  The following are just forwards to the wrapped InternalRow ===========
   @Override
   public boolean isNullAt(int ordinal) {
     return wrapped.isNullAt(ordinal);
