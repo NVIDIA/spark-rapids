@@ -75,7 +75,7 @@ class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
         .bucket("d", 20)
         .build()
 
-    val partitioner = new GpuIcebergPartitioner(icebergPartitionSpec, sparkType)
+    val partitioner = new GpuIcebergSpecPartitioner(icebergPartitionSpec, icebergSchema.asStruct())
 
     val totalRowCount = 1000
 

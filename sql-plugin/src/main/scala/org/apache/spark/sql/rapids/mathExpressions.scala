@@ -316,8 +316,8 @@ case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
   override def unaryOp: UnaryOp = UnaryOp.LOG
   override def outputTypeOverride: DType = DType.FLOAT64
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(input)) { normalized =>
-      super.doColumnar(GpuColumnVector.from(normalized, child.dataType))
+    withResource(GpuLogarithm.nullOutNegatives(input, child.dataType)) { normalized =>
+      super.doColumnar(normalized)
     }
   }
 }
@@ -328,21 +328,22 @@ object GpuLogarithm {
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned GpuColumnVector.
    */
-  def fixUpLhs(input: GpuColumnVector): ColumnVector = {
-    withResource(Scalar.fromDouble(0)) { zero =>
+  def nullOutNegatives(input: GpuColumnVector, dt: DataType): GpuColumnVector = {
+    val ret = withResource(Scalar.fromDouble(0)) { zero =>
       withResource(input.getBase.binaryOp(BinaryOp.LESS_EQUAL, zero, DType.BOOL8)) { zeroOrLess =>
         withResource(Scalar.fromNull(DType.FLOAT64)) { nullScalar =>
           zeroOrLess.ifElse(nullScalar, input.getBase)
         }
       }
     }
+    GpuColumnVector.from(ret, dt)
   }
 
   /**
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned Scalar.
    */
-  def fixUpLhs(input: GpuScalar): GpuScalar = {
+  def nullOutNegatives(input: GpuScalar): GpuScalar = {
     if (input.isValid && input.getValue.asInstanceOf[Double] <= 0) {
       GpuScalar(null, DoubleType)
     } else {
@@ -356,22 +357,37 @@ case class GpuLogarithm(left: Expression, right: Expression)
 
   override def binaryOp: BinaryOp = BinaryOp.LOG_BASE
   override def outputTypeOverride: DType = DType.FLOAT64
+  override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(GpuColumnVector.from(fixedLhs, left.dataType), rhs)
+    withResource(GpuLogarithm.nullOutNegatives(lhs, left.dataType)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs, right.dataType)) { fixedRhs =>
+        super.doColumnar(fixedLhs, fixedRhs)
+      }
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(fixedLhs, rhs)
+    withResource(GpuLogarithm.nullOutNegatives(lhs)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs, right.dataType)) { fixedRhs =>
+        super.doColumnar(fixedLhs, fixedRhs)
+      }
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(GpuColumnVector.from(fixedLhs, left.dataType), rhs)
+    withResource(GpuLogarithm.nullOutNegatives(lhs, left.dataType)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs)) { fixedRhs =>
+        super.doColumnar(fixedLhs, fixedRhs)
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuLogarithm.nullOutNegatives(lhs)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs)) { fixedRhs =>
+        super.doColumnar(numRows, fixedLhs, fixedRhs)
+      }
     }
   }
 }
@@ -574,6 +590,14 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, right.dataType)) { expandedRhs =>
       doColumnar(lhs, expandedRhs)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      withResource(GpuColumnVector.from(rhs, numRows, right.dataType)) { expandedRhs =>
+        doColumnar(expandedLhs, expandedRhs)
+      }
     }
   }
 }
