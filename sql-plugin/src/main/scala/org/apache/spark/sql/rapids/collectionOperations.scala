@@ -739,18 +739,18 @@ case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with 
 
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType)
 
-  @transient private lazy val childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
-
   @transient
   private lazy val dataTypeDetails: Option[(MapType, Boolean, Boolean)] = child.dataType match {
     case ArrayType(
       StructType(Array(
         StructField(_, keyType, keyNullable, _),
         StructField(_, valueType, valueNullable, _))),
-        containsNull) => 
+        containsNull) =>
       Some((MapType(keyType, valueType, valueNullable), keyNullable, containsNull))
     case _ => None
   }
+
+  @transient override lazy val dataType: MapType = dataTypeDetails.get._1
 
   override def checkInputDataTypes(): TypeCheckResult = {
     dataTypeDetails match {
@@ -763,20 +763,16 @@ case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with 
     }
   }
 
-  override def dataType: DataType = {
-    childDataType.elementType match {
-      case StructType(Array(
-        StructField(_, keyType, _, _),
-        StructField(_, valueType, valueNullable, _))) =>
-        MapType(keyType, valueType, valueNullable)
-      case _ =>
-        // This should not happen as checkInputDataTypes should catch it
-        throw new IllegalStateException(
-          s"Invalid input type for $prettyName: ${child.dataType.catalogString}")
-    }
-  }
+  override def prettyName: String = "map_from_entries"
 
-  override def prettyName: String = "gpu_map_from_entries"
+  @transient private lazy val nullEntries: Boolean = dataTypeDetails.get._3
+
+  override def nullable: Boolean = child.nullable || nullEntries
+
+  // The CPU also sets the `stateful` flag to say that this function should
+  // not be evaluated multiple times for a single row, which looks to be an issue for
+  // interpreted execution. Not an issue for GPU execution.
+  // override def stateful: Boolean = true
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     // Internally the format for a list of key/value structs is the same as a map,
