@@ -30,7 +30,7 @@ iceberg_delete_cow_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {}
 # Configuration for merge-on-read DELETE operations
 iceberg_delete_mor_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
-# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example, 
+# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example,
 # if deleted data exactly match some data files, we could remove all files using delete metadata only operation, then the physical plan 
 # would be DeleteFromTableExec.
 DELETE_TEST_SEED = 42

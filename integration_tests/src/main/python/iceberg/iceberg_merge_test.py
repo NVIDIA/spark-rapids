@@ -35,7 +35,8 @@ def create_iceberg_table_with_merge_data(
         partition_col_sql=None,
         table_properties=None,
         ensure_distinct_key=False,
-        seed=None):
+        seed=None,
+        merge_mode='copy-on-write'):
     """
     Helper function to create and populate an Iceberg table for MERGE tests.
     
@@ -46,11 +47,11 @@ def create_iceberg_table_with_merge_data(
         ensure_distinct_key: If True, ensures _c0 (join key) has distinct values
                            to satisfy MERGE cardinality constraint
         seed: Random seed for data generation (default: None, uses runtime seed)
+        merge_mode: Merge mode - 'copy-on-write' or 'merge-on-read'
     """
-    # Always use copy-on-write mode for these tests
     base_props = {
         'format-version': '2',
-        'write.merge.mode': 'copy-on-write',
+        'write.merge.mode': merge_mode,
         # See https://github.com/NVIDIA/spark-rapids/issues/13698
         'read.parquet.vectorization.enabled': 'false'
     }
@@ -94,7 +95,8 @@ def do_merge_test(
         merge_sql_func,
         partition_col_sql=None,
         table_properties=None,
-        reader_type='COALESCING'):
+        reader_type='COALESCING',
+        merge_mode='copy-on-write'):
     """
     Helper function to test MERGE operations by comparing CPU and GPU results.
     
@@ -107,6 +109,7 @@ def do_merge_test(
         partition_col_sql: SQL for partitioning clause
         table_properties: Additional table properties
         reader_type: Rapids reader type for parquet reading
+        merge_mode: Merge mode - 'copy-on-write' or 'merge-on-read'
     """
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_target_table = f"{base_table_name}_target_cpu"
@@ -114,14 +117,14 @@ def do_merge_test(
     source_table = f"{base_table_name}_source"
     
     # Create identical target tables for CPU and GPU (using runtime seed)
-    create_iceberg_table_with_merge_data(cpu_target_table, partition_col_sql, table_properties)
-    create_iceberg_table_with_merge_data(gpu_target_table, partition_col_sql, table_properties)
+    create_iceberg_table_with_merge_data(cpu_target_table, partition_col_sql, table_properties, merge_mode=merge_mode)
+    create_iceberg_table_with_merge_data(gpu_target_table, partition_col_sql, table_properties, merge_mode=merge_mode)
     
     # Create source table with different seed and distinct keys to satisfy MERGE cardinality constraint
     # (each target row matches at most one source row)
     # Using a fixed different seed ensures source data differs from target data
     create_iceberg_table_with_merge_data(source_table, partition_col_sql, table_properties,
-                                        ensure_distinct_key=True, seed=42)
+                                        ensure_distinct_key=True, seed=42, merge_mode=merge_mode)
     
     # Merge reader_type into configuration
     test_conf = copy_and_update(iceberg_merge_enabled_conf, {
@@ -146,9 +149,10 @@ def do_merge_test(
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
+@pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize('partition_col_sql', [None, "bucket(16, _c2)"])
 @pytest.mark.parametrize('merge_sql', [
@@ -202,21 +206,26 @@ def do_merge_test(
         """,
         id="conditional_not_matched_by_source"),
 ])
-def test_iceberg_merge_copy_on_write(spark_tmp_table_factory, reader_type, partition_col_sql, merge_sql):
+def test_iceberg_merge(spark_tmp_table_factory, reader_type, partition_col_sql, merge_sql, merge_mode):
     """Test various MERGE operations on Iceberg tables (partitioned and unpartitioned)."""
     do_merge_test(
         spark_tmp_table_factory,
         lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
         partition_col_sql=partition_col_sql,
-        reader_type=reader_type
+        reader_type=reader_type,
+        merge_mode=merge_mode
     )
 
 
-@allow_non_gpu("ReplaceDataExec", "MergeRowsExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.parametrize('merge_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_type):
+def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_type, merge_mode, fallback_exec):
     """Test MERGE falls back when Iceberg write is disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
@@ -225,10 +234,10 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_t
     gpu_target_table = f'{base_table_name}_target_gpu'
     source_table = f'{base_table_name}_source'
     
-    create_iceberg_table_with_merge_data(cpu_target_table)
-    create_iceberg_table_with_merge_data(gpu_target_table)
+    create_iceberg_table_with_merge_data(cpu_target_table, merge_mode=merge_mode)
+    create_iceberg_table_with_merge_data(gpu_target_table, merge_mode=merge_mode)
     # Source table needs distinct keys for MERGE cardinality constraint, with different seed
-    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True, seed=42)
+    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True, seed=42, merge_mode=merge_mode)
     
     # Phase 2: MERGE operation (to be tested with fallback)
     def write_func(spark, target_table_name):
@@ -248,7 +257,7 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_t
         write_func,
         read_func,
         base_table_name + "_target",
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_merge_enabled_conf, {
             "spark.rapids.sql.format.iceberg.write.enabled": "false",
             "spark.rapids.sql.format.parquet.reader.type": reader_type
@@ -256,9 +265,13 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_t
     )
 
 
-@allow_non_gpu("ReplaceDataExec", "MergeRowsExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.parametrize('merge_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
@@ -270,7 +283,7 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_t
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_iceberg_merge_fallback_unsupported_partition_transform(
-        spark_tmp_table_factory, reader_type, partition_col_sql):
+        spark_tmp_table_factory, reader_type, partition_col_sql, merge_mode, fallback_exec):
     """Test MERGE falls back with unsupported partition transforms"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
@@ -278,7 +291,7 @@ def test_iceberg_merge_fallback_unsupported_partition_transform(
     def init_table(table_name, ensure_distinct_key=False):
         table_props = {
             'format-version': '2',
-            'write.merge.mode': 'copy-on-write'
+            'write.merge.mode': merge_mode
         }
         
         def data_gen(spark):
@@ -333,19 +346,23 @@ def test_iceberg_merge_fallback_unsupported_partition_transform(
         write_func,
         read_func,
         base_table_name + "_target",
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_merge_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
 
-@allow_non_gpu("ReplaceDataExec", "MergeRowsExec", "BatchScanExec", "ShuffleExchangeExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.parametrize('merge_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
-def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory, reader_type, file_format):
+def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory, reader_type, file_format, merge_mode, fallback_exec):
     """Test MERGE falls back with unsupported file formats (ORC, Avro)"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
@@ -357,7 +374,7 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
         # Create table with parquet, insert data, then change format
         table_props = {
             'format-version': '2',
-            'write.merge.mode': 'copy-on-write',
+            'write.merge.mode': merge_mode,
             'write.format.default': 'parquet'
         }
         
@@ -414,18 +431,22 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
         write_func,
         read_func,
         base_table_name + "_target",
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_merge_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
 
-@allow_non_gpu("ReplaceDataExec", "MergeRowsExec", "BatchScanExec", "ShuffleExchangeExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.parametrize('merge_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, reader_type):
+def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, reader_type, merge_mode, fallback_exec):
     """Test MERGE falls back with unsupported data types (e.g., Decimal128, nested types)"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
@@ -437,7 +458,7 @@ def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, r
     def init_table(table_name, ensure_distinct_key=False):
         table_props = {
             'format-version': '2',
-            'write.merge.mode': 'copy-on-write',
+            'write.merge.mode': merge_mode,
         }
         
         create_iceberg_table(table_name, table_prop=table_props, df_gen=data_gen)
@@ -486,19 +507,22 @@ def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, r
         write_func,
         read_func,
         base_table_name + "_target",
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_merge_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
 
-@allow_non_gpu("ReplaceDataExec", "MergeRowsExec", "BatchScanExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.parametrize('merge_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13649")
-def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type):
+def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type, merge_mode, fallback_exec):
     """Test MERGE falls back when Iceberg is completely disabled"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
@@ -506,10 +530,10 @@ def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, reader
     gpu_target_table = f'{base_table_name}_target_gpu'
     source_table = f'{base_table_name}_source'
     
-    create_iceberg_table_with_merge_data(cpu_target_table)
-    create_iceberg_table_with_merge_data(gpu_target_table)
+    create_iceberg_table_with_merge_data(cpu_target_table, merge_mode=merge_mode)
+    create_iceberg_table_with_merge_data(gpu_target_table, merge_mode=merge_mode)
     # Source table needs distinct keys for MERGE cardinality constraint, with different seed
-    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True, seed=42)
+    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True, seed=42, merge_mode=merge_mode)
     
     def write_func(spark, target_table_name):
         spark.sql(f"""
@@ -527,7 +551,7 @@ def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, reader
         write_func,
         read_func,
         base_table_name + "_target",
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_merge_enabled_conf, {
             "spark.rapids.sql.format.iceberg.enabled": "false",
             "spark.rapids.sql.format.parquet.reader.type": reader_type
