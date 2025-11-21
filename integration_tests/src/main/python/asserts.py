@@ -112,9 +112,17 @@ def assert_equal(cpu, gpu):
     try:
         _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
     except:
+        def to_txt(data):
+            try:
+                # Try to iterate over the data
+                return [f"{x}\n" for x in data]
+            except TypeError:
+                # If not iterable, convert to string directly
+                return [f"{data}\n"]
+            
         sys.stdout.writelines(difflib.unified_diff(
-            a=[f"{x}\n" for x in cpu],
-            b=[f"{x}\n" for x in gpu],
+            a=to_txt(cpu),
+            b=to_txt(gpu),
             fromfile='CPU OUTPUT',
             tofile='GPU OUTPUT'))
         raise

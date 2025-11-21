@@ -136,12 +136,14 @@ class CrossJoinIterator(
     builtBatch: LazySpillableColumnarBatch,
     stream: Iterator[LazySpillableColumnarBatch],
     targetSize: Long,
+    sizeEstimateThreshold: Double,
     buildSide: GpuBuildSide,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
       NvtxRegistry.JOIN_GATHER,
       targetSize,
+      sizeEstimateThreshold,
       opTime,
       joinTime) {
   override def close(): Unit = {
@@ -201,6 +203,7 @@ class ConditionalNestedLoopJoinIterator(
     stream: Iterator[LazySpillableColumnarBatch],
     streamAttributes: Seq[Attribute],
     targetSize: Long,
+    sizeEstimateThreshold: Double,
     condition: ast.CompiledExpression,
     opTime: GpuMetric,
     joinTime: GpuMetric)
@@ -210,6 +213,7 @@ class ConditionalNestedLoopJoinIterator(
       streamAttributes,
       builtBatch,
       targetSize,
+      sizeEstimateThreshold,
       opTime = opTime,
       joinTime = joinTime) {
   override def close(): Unit = {
@@ -328,6 +332,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
       stream: Iterator[LazySpillableColumnarBatch],
       streamAttributes: Seq[Attribute],
       targetSize: Long,
+      sizeEstimateThreshold: Double,
       boundCondition: Option[GpuExpression],
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -337,7 +342,8 @@ object GpuBroadcastNestedLoopJoinExecBase {
       // Semi and anti nested loop joins without a condition are degenerate joins and should have
       // been handled at a higher level rather than calling this method.
       assert(joinType.isInstanceOf[InnerLike], s"Unexpected unconditional join type: $joinType")
-      new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, opTime, joinTime)
+      new CrossJoinIterator(builtBatch, stream, targetSize, sizeEstimateThreshold, buildSide,
+        opTime, joinTime)
     } else {
       if (joinType.isInstanceOf[ExistenceJoin]) {
         if (builtBatch.numCols == 0) {
@@ -354,7 +360,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
         } else {
           val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
           new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
-            stream, streamAttributes, targetSize, compiledAst,
+            stream, streamAttributes, targetSize, sizeEstimateThreshold, compiledAst,
             opTime = opTime, joinTime = joinTime)
         }
       }
@@ -730,6 +736,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           val joinTime = gpuLongMetric(JOIN_TIME)
           val buildSchema = buildPlan.schema
           val postProjectionAndClose = buildSidePostProjection
+          val sizeEstimateThreshold = RapidsConf.JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
           streamed.executeColumnar().mapPartitions { streamedIter =>
             // Will materialize the stream batch before materializing the build batch.
             val (buildBatch, bufferedStream) = makeBuiltBatchAndStreamIter(
@@ -767,6 +774,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
                   spillableBuiltBatch,
                   lazyStream,
                   targetSizeBytes,
+                  sizeEstimateThreshold,
                   buildSide,
                   opTime = opTime,
                   joinTime = joinTime)
@@ -878,6 +886,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val buildSide = gpuBuildSide
     val buildSchema = buildPlan.schema
     val postProjectionAndClose = buildSidePostProjection
+    val sizeEstimateThreshold = RapidsConf.JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
     streamed.executeColumnar().mapPartitions { streamedIter =>
       // Will materialize the stream batch before materializing the build batch.
       val (buildBatch, bufferedStream) = makeBuiltBatchAndStreamIter(
@@ -900,7 +909,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
         nestedLoopJoinType, buildSide, numFirstTableColumns,
         spillableBuiltBatch,
-        lazyStream, streamAttributes, targetSizeBytes, boundCondition,
+        lazyStream, streamAttributes, targetSizeBytes, sizeEstimateThreshold, boundCondition,
         numOutputRows = numOutputRows,
         numOutputBatches = numOutputBatches,
         opTime = opTime,

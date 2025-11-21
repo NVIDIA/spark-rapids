@@ -32,6 +32,7 @@ import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
+import org.apache.spark.sql.rapids.execution.{JoinOptions, JoinStrategy}
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -689,6 +690,44 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val JOIN_STRATEGY = conf("spark.rapids.sql.join.strategy")
+    .doc("Specifies the join strategy to use for GPU joins. Options are: " +
+      "AUTO (default) - automatically determine the best join strategy using heuristics; " +
+      "INNER_HASH_WITH_POST - use inner hash join with post-processing to convert to other " +
+      "join types and apply join filtering; " +
+      "INNER_SORT_WITH_POST - use inner sort-merge join with post-processing, falls back to " +
+      "INNER_HASH_WITH_POST for ARRAY/STRUCT key types; " +
+      "HASH_ONLY - use traditional hash join only.")
+    .internal()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(JoinStrategy.values.map(_.toString))
+    .createWithDefault(JoinStrategy.AUTO.toString)
+
+  val LOG_JOIN_CARDINALITY = conf("spark.rapids.sql.join.logCardinality")
+    .doc("Enable logging of join cardinality statistics to help diagnose performance issues. " +
+      "When enabled, logs task context, key data types, join condition, row counts, and " +
+      "distinct key counts for both left and right sides of joins. This can help identify " +
+      "problematic join patterns but may impact performance due to the additional computation " +
+      "required to calculate distinct counts.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD =
+    conf("spark.rapids.sql.join.gatherer.sizeEstimateThreshold")
+    .doc("When a join is gathered we try to output a batch that is close to the target batch " +
+      "size. But that can be expensive so we use a heuristic to estimate the size. It is based " +
+      "on the average size of left and right rows. If that average size times the number of " +
+      "output rows is less than the target batch size times this threshold, we assume that " +
+      "output will fit and output it. Otherwise we do an expensive calculation to get the " +
+      "real size of the output. This value can be between 0.0, which disables the " +
+      "cheap heuristic, and 2.0, which allows the cheap heuristic to exceed the target batch size.")
+    .internal()
+    .doubleConf
+    .checkValue(v => v >= 0.0 && v <= 2.0, "The threshold must be between 0.0 and 2.0.")
+    .createWithDefault(0.75)
 
   val SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE =
     conf("spark.rapids.sql.shuffledHashJoin.optimizeShuffle")
@@ -3017,6 +3056,22 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       }
     }
   }
+
+  /**
+   * Get join options based on the configuration.
+   * @param conf the SQL configuration
+   * @param targetSize the target batch size in bytes to use for the join
+   * @return JoinOptions configured based on the join strategy and targetSize
+   */
+  def getJoinOptions(
+      conf: SQLConf,
+      targetSize: Long): JoinOptions = {
+    val strategyStr = JOIN_STRATEGY.get(conf)
+    val strategy = JoinStrategy.withName(strategyStr)
+    val logCardinality = LOG_JOIN_CARDINALITY.get(conf)
+    val sizeEstimateThreshold = JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
+    JoinOptions(strategy, targetSize, logCardinality, sizeEstimateThreshold)
+  }
 }
 
 class RapidsConf(conf: Map[String, String]) extends Logging {
@@ -3097,6 +3152,23 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
 
   lazy val bucketJoinIoPrefetch: Boolean = get(BUCKET_JOIN_IO_PREFETCH)
+
+  lazy val logJoinCardinality: Boolean = get(LOG_JOIN_CARDINALITY)
+
+  lazy val joinGathererSizeEstimateThreshold: Double = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
+
+  /**
+   * Get join options based on the current configuration.
+   * @param targetSize the target batch size in bytes to use for the join
+   * @return JoinOptions configured based on the join strategy and targetSize
+   */
+  def getJoinOptions(targetSize: Long): JoinOptions = {
+    val strategyStr = get(JOIN_STRATEGY)
+    val strategy = JoinStrategy.withName(strategyStr)
+    val logCardinality = get(LOG_JOIN_CARDINALITY)
+    val sizeEstimateThreshold = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
+    JoinOptions(strategy, targetSize, logCardinality, sizeEstimateThreshold)
+  }
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
 

@@ -63,7 +63,7 @@ object GpuCSVScan extends Logging {
     }
   }
 
-  private def legacyCharsetEnabled: Boolean = {
+  private def legacyCharsetEnabled(): Boolean = {
     try {
       // Use reflection to determine if this conf is defined to avoid the
       // complicated shim things due to only a boolean diff in CSV read.
@@ -82,10 +82,10 @@ object GpuCSVScan extends Logging {
     StandardCharsets.US_ASCII)
 
   // May have more in the future
-  private lazy val supportedCharsets: Set[Charset] = {
+  private def supportedCharsets(): Set[Charset] = {
     // Spark restricts charsets in CSV from 4.0.0.
     // See https://issues.apache.org/jira/browse/SPARK-48857
-    if (legacyCharsetEnabled) {
+    if (legacyCharsetEnabled()) {
       utf8Charsets ++ tryLoadCharset("GBK")
     } else {
       utf8Charsets
@@ -94,7 +94,7 @@ object GpuCSVScan extends Logging {
 
   private def isSupportedCharset(name: String): Boolean = {
     try {
-      name != null && supportedCharsets.contains(Charset.forName(name))
+      name != null && supportedCharsets().contains(Charset.forName(name))
     } catch {
       case _: IllegalArgumentException => false
     }
@@ -168,7 +168,7 @@ object GpuCSVScan extends Logging {
 
     if (!isSupportedCharset(parsedOptions.charset)) {
       meta.willNotWorkOnGpu(s"GpuCSVScan only supports " +
-        s"${supportedCharsets.mkString("[", ", ", "]")} encoded data")
+        s"${supportedCharsets().mkString("[", ", ", "]")} encoded data")
     }
 
     // TODO parsedOptions.ignoreLeadingWhiteSpaceInRead cudf always does this, but not for strings

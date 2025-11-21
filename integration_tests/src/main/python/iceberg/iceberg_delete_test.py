@@ -27,7 +27,10 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 # Configuration for copy-on-write DELETE operations
 iceberg_delete_cow_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
-# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example, 
+# Configuration for merge-on-read DELETE operations
+iceberg_delete_mor_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
+
+# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example,
 # if deleted data exactly match some data files, we could remove all files using delete metadata only operation, then the physical plan 
 # would be DeleteFromTableExec.
 DELETE_TEST_SEED = 42
@@ -36,12 +39,13 @@ DELETE_TEST_SEED_OVERRIDE_REASON = "Ensure reproducible test data for DELETE ope
 def create_iceberg_table_with_data(table_name: str, 
                                    partition_col_sql=None,
                                    data_gen_func=None,
-                                   table_properties=None):
+                                   table_properties=None,
+                                   delete_mode='copy-on-write'):
     """Helper function to create and populate an Iceberg table for DELETE tests."""
-    # Always use copy-on-write mode for these tests
+    # Default to copy-on-write mode, but allow override for merge-on-read tests
     base_props = {
         'format-version': '2',
-        'write.delete.mode': 'copy-on-write'
+        'write.delete.mode': delete_mode
     }
     if table_properties:
         base_props.update(table_properties)
@@ -63,7 +67,8 @@ def create_iceberg_table_with_data(table_name: str,
     with_cpu_session(insert_data)
 
 def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None, 
-                  partition_col_sql=None, table_properties=None, reader_type='COALESCING'):
+                  partition_col_sql=None, table_properties=None, reader_type='COALESCING',
+                  delete_mode='copy-on-write'):
     """
     Helper function to test DELETE operations by comparing CPU and GPU results.
     
@@ -74,6 +79,7 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
         partition_col_sql: SQL for partitioning clause
         table_properties: Additional table properties
         reader_type: Rapids reader type for parquet reading
+        delete_mode: 'copy-on-write' or 'merge-on-read'
     """
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
@@ -81,9 +87,9 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
     
     # Create identical tables for CPU and GPU
     create_iceberg_table_with_data(cpu_table_name, partition_col_sql, 
-                                   data_gen_func, table_properties)
+                                   data_gen_func, table_properties, delete_mode)
     create_iceberg_table_with_data(gpu_table_name, partition_col_sql, 
-                                   data_gen_func, table_properties)
+                                   data_gen_func, table_properties, delete_mode)
     
     # Merge reader_type into configuration
     test_conf = copy_and_update(iceberg_delete_cow_enabled_conf, {
@@ -108,46 +114,75 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+# This requires reading of _partition field, which is a struct
+@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, reader_type):
-    """Test DELETE on unpartitioned table with fixed seed"""
+@pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
+def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, reader_type, delete_mode):
+    """Test DELETE on unpartitioned table with both copy-on-write and merge-on-read modes"""
     do_delete_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 % 3 = 0"),
-        reader_type=reader_type
+        reader_type=reader_type,
+        delete_mode=delete_mode
     )
 
+# This requires reading of _partition field, which is a struct
+@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, reader_type):
-    """Test DELETE on bucket-partitioned table with fixed seed"""
+@pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
+def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, reader_type, delete_mode):
+    """Test DELETE on bucket-partitioned table with both copy-on-write and merge-on-read modes"""
     do_delete_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 % 3 = 0"),
         partition_col_sql="bucket(16, _c2)",
-        reader_type=reader_type
+        reader_type=reader_type,
+        delete_mode=delete_mode
     )
 
-
-@allow_non_gpu("ReplaceDataExec")
+@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, reader_type):
-    """Test DELETE falls back when Iceberg write is disabled"""
+@pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
+def test_iceberg_delete_with_complex_predicate(spark_tmp_table_factory, reader_type, delete_mode):
+    """Test DELETE with complex predicate"""
+    do_delete_test(
+        spark_tmp_table_factory,
+        lambda spark, table: spark.sql(
+            f"DELETE FROM {table} WHERE _c2 > 100 AND _c3 < 50 OR _c1 IS NULL"
+        ),
+        reader_type=reader_type,
+        delete_mode=delete_mode
+    )
+
+
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.parametrize('delete_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
+def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec):
+    """Test DELETE falls back when Iceberg write is disabled (both modes)"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
     # Phase 1: Initialize tables with data (separate for CPU and GPU)
     cpu_table_name = f'{base_table_name}_cpu'
     gpu_table_name = f'{base_table_name}_gpu'
-    create_iceberg_table_with_data(cpu_table_name)
-    create_iceberg_table_with_data(gpu_table_name)
+    create_iceberg_table_with_data(cpu_table_name, delete_mode=delete_mode)
+    create_iceberg_table_with_data(gpu_table_name, delete_mode=delete_mode)
     
     # Phase 2: DELETE operation (to be tested with fallback)
     def write_func(spark, table_name):
@@ -161,18 +196,22 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, reader_
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
             "spark.rapids.sql.format.iceberg.write.enabled": "false",
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.parametrize('delete_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("truncate(5, _c6)", id="truncate"),
@@ -182,8 +221,8 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, reader_
     pytest.param("hour(_c9)", id="hour"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
-def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table_factory, reader_type, partition_col_sql):
-    """Test DELETE falls back with unsupported partition transforms"""
+def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec, partition_col_sql):
+    """Test DELETE falls back with unsupported partition transforms (both modes use same fallback)"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
     def data_gen(spark):
@@ -193,7 +232,7 @@ def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table
     def init_table(table_name):
         table_props = {
             'format-version': '2',
-            'write.delete.mode': 'copy-on-write'
+            'write.delete.mode': delete_mode
         }
         
         create_iceberg_table(table_name,
@@ -225,25 +264,24 @@ def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec", "ShuffleExchangeExec", "ProjectExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.parametrize('delete_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
-def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory, reader_type, file_format):
-    """Test DELETE falls back with unsupported file formats (ORC, Avro)
-    
-    This test creates a table with parquet format, inserts data, then changes the
-    default write format to an unsupported format. When DELETE is executed, it needs
-    to write new files in the unsupported format, which should trigger a fallback.
-    """
+def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec, file_format):
+    """Test DELETE falls back with unsupported file formats (ORC, Avro) for both modes"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
     def data_gen(spark):
@@ -254,7 +292,7 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
         # Step 1: Create table with parquet as default write format
         table_props = {
             'format-version': '2',
-            'write.delete.mode': 'copy-on-write',
+            'write.delete.mode': delete_mode,
             'write.format.default': 'parquet'
         }
         
@@ -294,83 +332,92 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec")
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_type):
+@pytest.mark.parametrize('delete_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
+def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec):
     """Test DELETE falls back with nested types (arrays, structs, maps) - currently unsupported"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
-    
+
     # Use table with all iceberg types including nested types (arrays, structs, maps)
     def data_gen(spark):
         cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
         return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
-    
+
     # Phase 1: Initialize tables with data (separate for CPU and GPU)
     def init_table(table_name):
         table_props = {
             'format-version': '2',
-            'write.delete.mode': 'copy-on-write'
+            'write.delete.mode': delete_mode
         }
-        
+
         create_iceberg_table(table_name,
-                            table_prop=table_props,
-                            df_gen=data_gen)
-        
+                             table_prop=table_props,
+                             df_gen=data_gen)
+
         def insert_data(spark):
             df = data_gen(spark)
             df.writeTo(table_name).append()
-        
+
         with_cpu_session(insert_data)
-    
+
     # Initialize both CPU and GPU tables
     cpu_table_name = f'{base_table_name}_cpu'
     gpu_table_name = f'{base_table_name}_gpu'
     init_table(cpu_table_name)
     init_table(gpu_table_name)
-    
+
     # Phase 2: DELETE operation (to be tested with fallback)
     # Use _c2 (IntegerGen) for DELETE condition as it's a simple type
     def write_func(spark, table_name):
         spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
-    
+
     # Read function to verify results
     def read_func(spark, table_name):
         return spark.sql(f"SELECT * FROM {table_name}")
-    
+
     assert_gpu_fallback_write_sql(
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        fallback_exec,
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "BatchScanExec")
+
+@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.parametrize('delete_mode,fallback_exec', [
+    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
+    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
+])
 @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/13649")
-def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type):
-    """Test DELETE falls back when Iceberg is completely disabled"""
+def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec):
+    """Test DELETE falls back when Iceberg is completely disabled (both modes)"""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     
     # Phase 1: Initialize tables with data (separate for CPU and GPU)
     cpu_table_name = f'{base_table_name}_cpu'
     gpu_table_name = f'{base_table_name}_gpu'
-    create_iceberg_table_with_data(cpu_table_name)
-    create_iceberg_table_with_data(gpu_table_name)
+    create_iceberg_table_with_data(cpu_table_name, delete_mode=delete_mode)
+    create_iceberg_table_with_data(gpu_table_name, delete_mode=delete_mode)
     
     # Phase 2: DELETE operation (to be tested with fallback)
     def write_func(spark, table_name):
@@ -384,7 +431,7 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory, reade
         write_func,
         read_func,
         base_table_name,
-        ["ReplaceDataExec"],
+        [fallback_exec],
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
             "spark.rapids.sql.format.iceberg.enabled": "false",
             "spark.rapids.sql.format.parquet.reader.type": reader_type

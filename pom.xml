@@ -932,10 +932,9 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <!-- TODO: https://github.com/NVIDIA/spark-rapids/issues/13794 -->
-        <spark-rapids-jni.version>25.12.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>25.12.0-SNAPSHOT</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>25.12.0-SNAPSHOT</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>26.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>26.02.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>26.02.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
@@ -946,7 +945,7 @@
         https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
-        <ucx.baseVersion>1.19.1-rc1</ucx.baseVersion>
+        <ucx.baseVersion>1.19.1-rc2</ucx.baseVersion>
         <roaringbitmap.version>1.0.6</roaringbitmap.version>
         <!-- ucx x86 is just the base version (implied), arm is specified under arm64 profile. -->
         <ucx.version>${ucx.baseVersion}</ucx.version>

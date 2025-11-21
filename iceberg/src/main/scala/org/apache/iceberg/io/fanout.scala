@@ -18,9 +18,10 @@
 package org.apache.iceberg.io
 
 import com.nvidia.spark.rapids.SpillableColumnarBatch
-import org.apache.iceberg.{DataFile, PartitionSpec, StructLike}
+import org.apache.iceberg.{DataFile, DeleteFile, PartitionSpec, StructLike}
 import org.apache.iceberg.relocated.com.google.common.collect.Lists
 import org.apache.iceberg.spark.source.GpuSparkFileWriterFactory
+import org.apache.iceberg.util.CharSequenceSet
 
 class GpuFanoutDataWriter(
   writerFactory: GpuSparkFileWriterFactory,
@@ -46,5 +47,28 @@ class GpuFanoutDataWriter(
 
   override def aggregatedResult(): DataWriteResult = {
     new DataWriteResult(dataFiles)
+  }
+}
+
+class GpuFanoutPositionDeleteWriter(
+  writerFactory: GpuSparkFileWriterFactory,
+  fileFactory: OutputFileFactory,
+  io: FileIO,
+  targetFileSize: Long) extends FanoutWriter[SpillableColumnarBatch, DeleteWriteResult] {
+
+  private val deleteFiles = Lists.newArrayList[DeleteFile]()
+  private val referencedDataFiles = CharSequenceSet.empty()
+
+  override def newWriter(partitionSpec: PartitionSpec, structLike: StructLike):
+  FileWriter[SpillableColumnarBatch, DeleteWriteResult] = new GpuRollingPositionDeleteWriter(
+    writerFactory, fileFactory, io, targetFileSize, partitionSpec, structLike)
+
+  override def addResult(r: DeleteWriteResult): Unit = {
+    deleteFiles.addAll(r.deleteFiles())
+    referencedDataFiles.addAll(r.referencedDataFiles())
+  }
+
+  override def aggregatedResult(): DeleteWriteResult = {
+    new DeleteWriteResult(deleteFiles, referencedDataFiles)
   }
 }
