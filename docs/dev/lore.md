@@ -40,6 +40,22 @@ You also need to set `spark.rapids.sql.lore.dumpPath` to tell LORE where to dump
 value of which should point to a directory. All dumped data of a query will live in this 
 directory. Note, the directory may either not exist, in which case it will be created, or it should be empty.
 If the directory exists and contains files, an `IllegalArgumentException` will be thrown to prevent overwriting existing data.
+
+### Non-strict best-effort dumping
+
+By default, LORE operates in _strict_ mode: if any requested operator cannot be dumped (for example
+because the operator type is not supported or because tagging its inputs raises an error) the entire
+query fails fast. For large ETL jobs where you want to specify a broad set of lore ids and keep any
+successful dumps, you can switch to best-effort mode with:
+
+```
+spark.rapids.sql.lore.nonStrictMode = true
+```
+
+When enabled, LORE logs a warning and skips only the failing lore id while continuing with other
+ids. This makes it easier to use “fuzzy” lore id lists without iteratively pruning unsupported
+operators.
+
 ### Preserve original schema names in Parquet
 
 By default, LORE writes Parquet files using the original Spark schema names (including nested
