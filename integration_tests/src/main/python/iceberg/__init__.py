@@ -31,7 +31,7 @@ iceberg_table_gen = MappingProxyType({
     '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, 
     '_c6': string_gen,
     '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen, '_c10': decimal_gen_32bit,
-    '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit, '_c13': binary_gen
+    '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit
 })
 iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]

@@ -162,6 +162,7 @@ case class GpuBroadcastHashJoinExec(
     val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
 
     // Get all the broadcast data from the shuffle coalesced into a single partition 
     val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
@@ -199,12 +200,12 @@ case class GpuBroadcastHashJoinExec(
               SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
               boundStreamKeys)
           }
-          doJoin(builtBatch, nullFilteredStreamIter, targetSize, numOutputRows,
+          doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
             numOutputBatches, opTime, joinTime)
         }
       } else {
         // builtBatch will be closed in doJoin
-        doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime,
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
           joinTime)
       }
     }
