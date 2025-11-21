@@ -40,9 +40,9 @@ from delta_lake_merge_test import delta_merge_enabled_conf
 from delta_lake_update_test import delta_update_enabled_conf
 from delta_lake_utils import delta_meta_allow, \
     delta_writes_enabled_conf, delta_write_fallback_allow, assert_gpu_and_cpu_delta_logs_equivalent
-from marks import allow_non_gpu, delta_lake, ignore_order, disable_ansi_mode
+from marks import allow_non_gpu, delta_lake, ignore_order, disable_ansi_mode, allow_non_gpu_conditional
 from spark_session import is_databricks133_or_later, is_spark_353_or_later, is_spark_356_or_later, \
-    is_before_spark_353, with_cpu_session
+    is_before_spark_353, with_cpu_session, is_spark_400_or_later
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -340,6 +340,7 @@ def test_delta_update_sql_liquid_clustering(spark_tmp_path,
 
 
 @allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu_conditional(is_spark_400_or_later(), "HashAggregateExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
@@ -385,7 +386,8 @@ def test_delta_merge_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_facto
             WHEN NOT MATCHED THEN
               INSERT *
             """
-        spark.sql(sql).show()
+        print(f"Running sql on {type} table:\n{sql}")
+        spark.sql(sql).collect()
 
     assert_gpu_and_cpu_writes_are_equal_collect(
         merge_table,
