@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.jni.{CpuSplitAndRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
-
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.catalyst.InternalRow
