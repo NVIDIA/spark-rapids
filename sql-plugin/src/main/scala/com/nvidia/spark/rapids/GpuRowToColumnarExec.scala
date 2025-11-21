@@ -724,7 +724,7 @@ class RowToColumnarIterator(
         } else {
           val buildIter = RmmRapidsRetryIterator.withRetry(
             AutoCloseableTargetSize(desiredTargetRows.toLong, 1L),
-            RmmRapidsRetryIterator.splitTargetSizeInHalfCpu) { attemptSize =>
+            RmmRapidsRetryIterator.splitTargetSizeInHalfGpu) { attemptSize =>
             val cappedTarget =
               math.max(1L,
                 math.min((Int.MaxValue - 1).toLong, attemptSize.targetSize)).toInt
@@ -741,7 +741,11 @@ class RowToColumnarIterator(
       // enforce RequireSingleBatch limit
       if (result.hasMoreRows && localGoal.isInstanceOf[RequireSingleBatchLike]) {
         // Close the batch we just built before propagating the error to avoid leaks.
-        result.batch.close()
+        try {
+          result.batch.close()
+        } finally {
+          dropPendingRows(result.rowsConsumed)
+        }
         throw new IllegalStateException("A single batch is required for this operation." +
             " Please try increasing your partition count.")
       }
