@@ -108,10 +108,21 @@ def test_ctas_unpartitioned_table(spark_tmp_table_factory,
 @pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("bucket(8, _c2)", id="bucket(8, int_column)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+])
 def test_ctas_partitioned_table(spark_tmp_table_factory,
                                 format_version,
                                 write_distribution_mode,
-                                fanout):
+                                fanout,
+                                partition_col_sql):
     table_prop = {
         "format-version": format_version,
         "write.distribution-mode": write_distribution_mode,
@@ -123,7 +134,7 @@ def test_ctas_partitioned_table(spark_tmp_table_factory,
     _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
                                 df_gen,
                                 table_prop,
-                                partition_col_sql="bucket(8, _c2)")
+                                partition_col_sql=partition_col_sql)
 
 
 @iceberg
@@ -254,10 +265,6 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("truncate(5, _c6)", id="truncate"),
-    pytest.param("year(_c9)", id="year"),
-    pytest.param("month(_c9)", id="month"),
-    pytest.param("day(_c9)", id="day"),
-    pytest.param("hour(_c9)", id="hour"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_ctas_partitioned_table_unsupported_partition_fallback(

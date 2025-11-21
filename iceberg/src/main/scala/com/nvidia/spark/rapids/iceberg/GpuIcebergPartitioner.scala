@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.iceberg.{PartitionField, PartitionSpec, Schema, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
-import org.apache.iceberg.spark.functions.{GpuBucket, GpuBucketExpression, GpuTransform}
+import org.apache.iceberg.spark.functions._
 import org.apache.iceberg.types.Types
 
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
@@ -166,8 +166,11 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
 
     GpuTransform(transform.toString) match {
       // bucket transform is like "bucket[16]"
-      case GpuBucket(bucket) =>
-        GpuBucketExpression(GpuLiteral.create(bucket), inputRefExpr)
+      case GpuBucket(bucket) => GpuBucketExpression(GpuLiteral.create(bucket), inputRefExpr)
+      case GpuYears => GpuYearsExpression(inputRefExpr)
+      case GpuMonths => GpuMonthsExpression(inputRefExpr)
+      case GpuDays => GpuDaysExpression(inputRefExpr)
+      case GpuHours => GpuHoursExpression(inputRefExpr)
     }
   }
 }
@@ -198,6 +201,7 @@ object GpuIcebergPartitioner {
     withResource(new ColumnarBatch(hostColsArray, numRows)) { hostBatch =>
         hostBatch.rowIterator()
           .asScala
+          .map(internalRow => new GpuInternalRow(internalRow))
           .map(internalRow => {
             val row = new GenericRowWithSchema(internalRow.toSeq(sparkType).toArray, sparkType)
             new SparkStructLike(icebergType).wrap(row)
