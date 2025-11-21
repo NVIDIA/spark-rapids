@@ -462,9 +462,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // and the output does not contain _metadata, this is a Delta DV scan, not the user asking for _metadata
       // current implementation does not rely on _metadata so just drop it recursively.
       case dvRoot @ GpuProjectExec(outputList,
-          dvFilter @ GpuFilterExec(GpuEqualTo(AttributeReference("__delta_internal_is_row_deleted", _, _, _), _),
+          dvFilter @ GpuFilterExec(condition,
             dvFilterInput @ GpuProjectExec(inputList, _, _)), _)
-              if !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
+              if condition.references.exists(_.name == "__delta_internal_is_row_deleted") &&
+                !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
                 dvRoot.withNewChildren(Seq(
                   dvFilter.withNewChildren(Seq(
                     dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))

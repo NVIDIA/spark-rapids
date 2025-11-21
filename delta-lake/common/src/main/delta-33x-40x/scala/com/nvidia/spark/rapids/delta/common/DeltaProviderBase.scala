@@ -94,15 +94,6 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      val session = meta.wrapped.session
-      val useMetadataRowIndex =
-        session.sessionState.conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
-      val requiredSchema = meta.wrapped.requiredSchema
-      val isRowDeletedCol =  requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
-      if (useMetadataRowIndex && isRowDeletedCol) {
-        meta.willNotWorkOnGpu("we don't support generating metadata row index for " +
-          s"${meta.wrapped.getClass.getSimpleName}")
-      }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")

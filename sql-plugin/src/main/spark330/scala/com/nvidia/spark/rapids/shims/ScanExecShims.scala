@@ -63,13 +63,9 @@ object ScanExecShims {
         .map(_.wrapped)
 
       maybeDVScan.foreach {
-        case
-          ProjectExec(outputList,
-            FilterExec(EqualTo(AttributeReference("__delta_internal_is_row_deleted", _, _, _), _),
-              ProjectExec(inputList, _)))
-          if inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata") =>
-          // Delta DV Scan
-            meta.wrapped.requiredSchema
+        case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _)))
+          if condition.references.exists(_.name == "__delta_internal_is_row_deleted") &&
+              inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata") => ()
         case _ =>
           meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
       }
