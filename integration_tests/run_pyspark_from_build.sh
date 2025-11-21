@@ -57,6 +57,7 @@
 # ============================================================================
 
 set -ex
+PS4='+${LINENO}: '
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 cd "$SCRIPTPATH"
@@ -271,7 +272,7 @@ else
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
-    TEST_COMMON_OPTS=(-v
+    TEST_COMMON_OPTS=(-v -x
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$STD_INPUT_PATH"
@@ -615,6 +616,11 @@ PY
         unset PYSP_TEST_spark_jars_packages
         unset PYSP_TEST_spark_jars_repositories
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+
+
+        # Comment this out if you want to run remote debug this local mode spark process
+        # Don't forget to set TEST_PARALLEL=1 to ensure local mode spark 
+        # export SPARK_SUBMIT_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$driverJavaOpts" \
