@@ -315,8 +315,9 @@ object GpuLore extends Logging {
                         registerCleanup(cleanupActions)(
                           subqueries -= sub.plan.canonicalized)
                       } else {
-                        throw new IllegalArgumentException("Subquery reuse is enabled, and we found" +
-                          " duplicated subqueries, which is currently not supported by LORE.")
+                        throw new IllegalArgumentException(
+                          "Subquery reuse is enabled, and we found duplicated subqueries, " +
+                            "which is currently not supported by LORE.")
                       }
                     }
                     tagSubqueryPlan(nextId, sub, loreOutputInfo, hadoopConf,
