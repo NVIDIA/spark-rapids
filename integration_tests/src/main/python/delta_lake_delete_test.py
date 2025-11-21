@@ -236,10 +236,7 @@ def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
 
     with_cpu_session(write_func(data_path), conf=enable_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path, lrg_min_value), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type,
-                                                                            # we need to set the useMetadataRowIndex = false as there are other
-                                                                            # hidden metadata columns that we don't support on the GPU
-                                                                            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "false"})
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path, lrg_min_value), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type})
 
 @allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
                "FilterExec", "MapElementsExec", "ProjectExec")
@@ -276,10 +273,7 @@ def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):
     with_cpu_session(setup_tables, conf=enable_conf)
     with_cpu_session(write_func(data_path), conf=enable_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type,
-                                                                            # we need to set the useMetadataRowIndex = false as there are other
-                                                                            # hidden metadata columns that we don't support on the GPU
-                                                                            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "false"})
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type})
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
