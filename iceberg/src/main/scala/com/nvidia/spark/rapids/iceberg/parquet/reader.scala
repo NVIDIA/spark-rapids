@@ -199,9 +199,8 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       val fileSchema = reader.getFileMetaData.getSchema
 
       val rowGroupFirstRowIndices = new Array[Long](reader.getRowGroups.size())
-      rowGroupFirstRowIndices(0) = 0
-      var accumulatedRowCount = reader.getRowGroups.get(0).getRowCount
-      for (i <- 1 until reader.getRowGroups.size()) {
+      var accumulatedRowCount = 0L
+      for (i <- 0 until reader.getRowGroups.size()) {
         rowGroupFirstRowIndices(i) = accumulatedRowCount
         accumulatedRowCount += reader.getRowGroups.get(i).getRowCount
       }
