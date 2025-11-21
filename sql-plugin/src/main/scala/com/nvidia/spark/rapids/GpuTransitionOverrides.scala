@@ -35,7 +35,12 @@ import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedC
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
-import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
+import org.apache.spark.sql.rapids.{
+  GpuDataSourceScanExec,
+  GpuEqualTo,
+  GpuFileSourceScanExec,
+  GpuShuffleEnv,
+  GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
 
@@ -451,6 +456,24 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     fss.copy(requiredPartitionSchema = prunedPartSchema)(fss.rapidsConf)
   }
 
+  private def pruneFileMetaDataFromDelta(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // if the input of filter child has _metadata and __delta_internal_is_row_deleted
+      // and the output does not contain _metadata, this is a Delta DV scan, not the user asking for _metadata
+      // current implementation does not rely on _metadata so just drop it recursively.
+      case dvRoot @ GpuProjectExec(outputList,
+          dvFilter @ GpuFilterExec(GpuEqualTo(AttributeReference("__delta_internal_is_row_deleted", _, _, _), _),
+            dvFilterInput @ GpuProjectExec(inputList, _, _)), _)
+              if !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
+                dvRoot.withNewChildren(Seq(
+                  dvFilter.withNewChildren(Seq(
+                    dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
+                  ))))
+      case _ =>
+        plan.withNewChildren(plan.children.map(pruneFileMetaDataFromDelta))
+    }
+  }
+
   // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging
   // the project list of the first GpuProjectExec after a GpuFileSourceScanExec.
   private def prunePartitionForFileSourceScan(plan: SparkPlan): SparkPlan = plan match {
@@ -796,7 +819,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
-        var updatedPlan = insertHashOptimizeSorts(plan)
+        var updatedPlan = pruneFileMetaDataFromDelta(plan)
+        updatedPlan = insertHashOptimizeSorts(updatedPlan)
         updatedPlan = updateScansForInputAndOrder(updatedPlan)
         if (rapidsConf.isFileScanPrunePartitionEnabled) {
           updatedPlan = prunePartitionForFileSourceScan(updatedPlan)
