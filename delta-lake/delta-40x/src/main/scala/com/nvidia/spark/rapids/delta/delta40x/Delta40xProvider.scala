@@ -77,7 +77,7 @@ object Delta40xProvider extends DeltaProviderBase {
       protocol = fmt.protocol,
       metadata = fmt.metadata,
       nullableRowTrackingFields = false,
-      optimizationsEnabled = fmt.optimizationsEnabled,
+      optimizationsEnabled = false, // we don't support splits and predicate pushdown yet
       tablePath = fmt.tablePath,
       isCDCRead = fmt.isCDCRead)
 
