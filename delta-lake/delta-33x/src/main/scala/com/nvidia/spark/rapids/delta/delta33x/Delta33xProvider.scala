@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
+
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.catalog.DeltaTableV2

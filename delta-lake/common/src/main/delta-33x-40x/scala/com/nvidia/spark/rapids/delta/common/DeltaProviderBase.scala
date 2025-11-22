@@ -140,7 +140,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
     plan match {
       // if the input of filter child has _metadata and __delta_internal_is_row_deleted
-      // and the output does not contain _metadata, this is a Delta DV scan, not the user asking for _metadata
+      // and the output does not contain _metadata, this is a Delta DV scan,
+      // not the user asking for _metadata
       // current implementation does not rely on _metadata so just drop it recursively.
       case dvRoot @ GpuProjectExec(outputList,
       dvFilter @ GpuFilterExec(condition,
@@ -152,8 +153,9 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
             dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
               .withNewChildren(Seq(
                 fsse.copy(
-                  requiredSchema = StructType(fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index"))
-                )(fsse.rapidsConf)))))))
+                  requiredSchema = StructType(
+                    fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
+                  ))(fsse.rapidsConf)))))))
       case _ =>
         plan.withNewChildren(plan.children.map(pruneFileMetadata))
     }

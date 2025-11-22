@@ -46,6 +46,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.DeltaProvider
+
 import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, FileSourceMetadataAttribute}
 import org.apache.spark.sql.execution._
