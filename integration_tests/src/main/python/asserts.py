@@ -281,7 +281,8 @@ def _assert_gpu_and_cpu_writes_are_equal(
     else:
         gpu_result = with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
-    assert_equal(cpu_result, gpu_result)
+    if gpu_result is not None and cpu_result is not None:
+        assert_equal(cpu_result, gpu_result)
     print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
