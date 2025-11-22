@@ -169,7 +169,7 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
 
     maybeDVScan.map {
       case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
-        condition.references.exists(_.name == "__delta_internal_is_row_deleted") &&
+        condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
           inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata")
       case _ =>
         false
