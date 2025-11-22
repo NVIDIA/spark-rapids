@@ -159,7 +159,7 @@ def test_delta_read_with_deletion_vectors_enabled_with_fallback(spark_tmp_path):
         return lambda spark : spark.sql('select * from delta.`{}` where a > 3'.format(data_path))
 
     with_cpu_session(create_delta)
-    assert_gpu_fallback_collect(read_delta_sql(data_path), "FileSourceScanExec", conf=delta_conf)
+    assert_gpu_fallback_collect(read_delta_sql(data_path), conf=delta_conf)
 
 
 @allow_non_gpu(*delta_meta_allow)

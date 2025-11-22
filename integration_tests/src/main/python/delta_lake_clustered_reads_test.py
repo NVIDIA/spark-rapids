@@ -167,6 +167,5 @@ def test_delta_clustered_read_with_deletion_vectors_fallback(spark_tmp_path, spa
     with_cpu_session(setup_tables)
 
     assert_gpu_fallback_collect(
-        lambda spark: spark.read.table(table_name),
-        "FileSourceScanExec"
+        lambda spark: spark.read.table(table_name)
     )

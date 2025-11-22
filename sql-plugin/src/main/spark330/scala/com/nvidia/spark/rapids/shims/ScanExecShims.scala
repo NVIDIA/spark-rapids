@@ -45,6 +45,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, FileSourceMetadataAttribute}
 import org.apache.spark.sql.execution._
@@ -57,17 +58,8 @@ object ScanExecShims {
       case FileSourceMetadataAttribute(_) => true
       case _ => false
     }) {
-      val maybeDVScan = meta.parent // project input
-        .flatMap(_.parent) // filter
-        .flatMap(_.parent) // project output
-        .map(_.wrapped)
-
-      maybeDVScan.foreach {
-        case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _)))
-          if condition.references.exists(_.name == "__delta_internal_is_row_deleted") &&
-              inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata") => ()
-        case _ =>
-          meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
+      if (!DeltaProvider().isDVScan(meta)) {
+        meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
       }
     }
     GpuFileSourceScanExec.tagSupport(meta)

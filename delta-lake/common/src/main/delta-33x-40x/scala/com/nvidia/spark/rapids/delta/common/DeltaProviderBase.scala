@@ -30,13 +30,13 @@ import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.metric.IncrementMetric
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
-import org.apache.spark.sql.rapids.ExternalSource
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources.CreatableRelationProvider
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // Expression support shared across versions - defined outside class to avoid serialization issues
@@ -135,6 +135,45 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       cpuExec.orCreate,
       cpuExec.invalidateCache)
   }
+
+
+  override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // if the input of filter child has _metadata and __delta_internal_is_row_deleted
+      // and the output does not contain _metadata, this is a Delta DV scan, not the user asking for _metadata
+      // current implementation does not rely on _metadata so just drop it recursively.
+      case dvRoot @ GpuProjectExec(outputList,
+      dvFilter @ GpuFilterExec(condition,
+      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
+        if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
+          !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
+        dvRoot.withNewChildren(Seq(
+          dvFilter.withNewChildren(Seq(
+            dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
+              .withNewChildren(Seq(
+                fsse.copy(
+                  requiredSchema = StructType(fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index"))
+                )(fsse.rapidsConf)))))))
+      case _ =>
+        plan.withNewChildren(plan.children.map(pruneFileMetadata))
+    }
+  }
+
+  override def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
+    val maybeDVScan = meta.parent // project input
+      .flatMap(_.parent) // filter
+      .flatMap(_.parent) // project output
+      .map(_.wrapped)
+
+    maybeDVScan.map {
+      case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
+        condition.references.exists(_.name == "__delta_internal_is_row_deleted") &&
+          inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata")
+      case _ =>
+        false
+    }.getOrElse(false)
+  }
+
 }
 
 class DeltaCreatableRelationProviderMeta(
