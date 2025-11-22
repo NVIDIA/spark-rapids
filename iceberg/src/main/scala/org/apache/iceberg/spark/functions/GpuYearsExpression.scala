@@ -17,11 +17,10 @@
 package org.apache.iceberg.spark.functions
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{ExprMeta, GpuColumnVector, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
 import com.nvidia.spark.rapids.jni.iceberg.IcebergDateTimeUtil
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.types.{DataType, IntegerType}
 
 case class GpuYearsExpression(child: Expression) extends GpuUnaryExpression {
@@ -31,15 +30,4 @@ case class GpuYearsExpression(child: Expression) extends GpuUnaryExpression {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     IcebergDateTimeUtil.yearsFromEpoch(input.getBase);
-}
-
-object GpuYearsExpression {
-
-  def tagExprForGpu(meta: ExprMeta[StaticInvoke], expectedDataType: DataType): Unit = {
-    val valueExpr = meta.wrapped.arguments.head
-    if (valueExpr.dataType != expectedDataType) {
-      meta.willNotWorkOnGpu(s"Gpu years function does not support type ${valueExpr.dataType} " +
-        s"as values")
-    }
-  }
 }
