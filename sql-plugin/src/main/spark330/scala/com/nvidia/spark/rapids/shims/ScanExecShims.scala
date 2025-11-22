@@ -48,7 +48,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.rapids.hybrid.HybridExecutionUtils
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, FileSourceMetadataAttribute}
+import org.apache.spark.sql.catalyst.expressions.{FileSourceMetadataAttribute}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
