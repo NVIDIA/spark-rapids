@@ -267,7 +267,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
     print('### CPU RUN ###')
     cpu_start = time.time()
     cpu_path = base_path + '/CPU'
-    with_cpu_session(lambda spark : write_func(spark, cpu_path), conf=conf)
+    cpu_result = with_cpu_session(lambda spark : write_func(spark, cpu_path), conf=conf)
     cpu_end = time.time()
     print('### GPU RUN ###')
     gpu_start = time.time()
@@ -277,10 +277,11 @@ def _assert_gpu_and_cpu_writes_are_equal(
     if current_test_has_delta_marker() and not current_test_allows_non_gpu_delta_write():
         print("Delta Lake test detected - applying Delta write validation")
         from delta_lake_utils import assert_rapids_delta_write
-        assert_rapids_delta_write(lambda spark: write_func(spark, gpu_path), conf=conf)
+        gpu_result = assert_rapids_delta_write(lambda spark: write_func(spark, gpu_path), conf=conf)
     else:
-        with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
+        gpu_result = with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
+    assert_equal(cpu_result, gpu_result)
     print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
