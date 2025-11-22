@@ -670,6 +670,17 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     return endList();
   }
 
+  public RapidsHostColumnBuilder appendArray(long... values) {
+    assert type.isBackedByLong();
+    if (values.length > 0) {
+      growFixedWidthBuffersAndRows(values.length);
+      assert currentIndex < rows;
+      data.setLongs(currentIndex * type.getSizeInBytes(), values, 0, values.length);
+      currentIndex += values.length;
+    }
+    return this;
+  }
+
   /**
    * Accepts a byte array containing the two's-complement representation of the unscaled value, which
    * is in big-endian byte-order. Then, transforms it into the representation of cuDF Decimal128 for

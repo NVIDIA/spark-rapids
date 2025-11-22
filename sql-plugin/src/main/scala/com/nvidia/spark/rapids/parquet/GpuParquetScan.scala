@@ -1118,15 +1118,15 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   // from a task when we need to create the fileIO instance. This stops a regression
   // when we materialize the hadoop conf eagerly, see:
   // https://github.com/NVIDIA/spark-rapids/issues/13353
-  @transient private lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
-  private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
-  private val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
-  private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
-  private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
-  private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
+  @transient protected lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
+  protected val isCaseSensitive = sqlConf.caseSensitiveAnalysis
+  protected val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
+  protected val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
+  protected val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
+  protected val ignoreMissingFiles = sqlConf.ignoreMissingFiles
+  protected val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf, metrics)
-  private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
+  protected val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
     rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
@@ -1154,7 +1154,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           "the deprecated one will be honored if both are set.")
         deprecatedVal
       }.getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
-  private val compressCfg = CpuCompressionConfig.forParquet(rapidsConf)
+  protected val compressCfg = CpuCompressionConfig.forParquet(rapidsConf)
 
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -1309,6 +1309,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       }
     }
 
+    getMultiFileReader(files, conf, poolConf, clippedBlocks)
+  }
+
+  protected def getMultiFileReader(files: Array[PartitionedFile], conf: Configuration,
+     poolConf: ThreadPoolConf, clippedBlocks: ArrayBuffer[ParquetSingleDataBlockMeta]) = {
     new MultiFileParquetPartitionReader(fileIO, conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
