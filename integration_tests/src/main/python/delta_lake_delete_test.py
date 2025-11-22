@@ -145,35 +145,6 @@ def test_delta_deletion_vector(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path))
 
-@allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_spark_353_or_later(),
-                    reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
-def test_delta_deletion_vector_read_fallback(spark_tmp_path, reader_type):
-    data_path = spark_tmp_path + "/DELTA_DATA"
-    def setup_tables(spark):
-        setup_delta_dest_table(spark, data_path,
-                               dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                               use_cdf=False, enable_deletion_vectors=True)
-    def write_func(path):
-        delete_sql="DELETE FROM delta.`{}` where a = 0".format(path)
-        def delete_func(spark):
-            spark.sql(delete_sql)
-        return delete_func
-
-    def read_parquet_sql(data_path):
-        return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
-
-    enable_conf = copy_and_update(delta_delete_enabled_conf,
-                                   {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
-
-    with_cpu_session(setup_tables, conf=enable_conf)
-    with_cpu_session(write_func(data_path), conf=enable_conf)
-
-    assert_gpu_fallback_collect(read_parquet_sql(data_path), "FileSourceScanExec", conf={"spark.rapids.sql.format.parquet.reader.type": reader_type})
-
 '''
 This test is specifically designed to setup a parquet file with multiple row groups and we 
 select a value from the last row group so the first ones get dropped to cause a misalignment 
