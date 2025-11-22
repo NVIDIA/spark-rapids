@@ -40,7 +40,8 @@ case class LoreDumpRDDInfo(
     loreOutputInfo: LoreOutputInfo,
     attrs: Seq[Attribute],
     hadoopConf: Broadcast[SerializableConfiguration],
-    useOriginalSchemaNames: Boolean = false)
+    useOriginalSchemaNames: Boolean = false,
+    nonStrictMode: Boolean = false)
 
 class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
   extends RDD[ColumnarBatch](input) with GpuLoreRDD {
