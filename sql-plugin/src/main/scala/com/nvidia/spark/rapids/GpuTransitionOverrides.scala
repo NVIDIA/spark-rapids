@@ -463,13 +463,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // current implementation does not rely on _metadata so just drop it recursively.
       case dvRoot @ GpuProjectExec(outputList,
           dvFilter @ GpuFilterExec(condition,
-            dvFilterInput @ GpuProjectExec(inputList, _, _)), _)
+            dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
               if condition.references.exists(_.name == "__delta_internal_is_row_deleted") &&
                 !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
                 dvRoot.withNewChildren(Seq(
                   dvFilter.withNewChildren(Seq(
                     dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
-                  ))))
+                      .withNewChildren(Seq(
+                        fsse.copy(
+                          requiredSchema = StructType(fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index"))
+                        )(fsse.rapidsConf)))))))
       case _ =>
         plan.withNewChildren(plan.children.map(pruneFileMetaDataFromDelta))
     }
