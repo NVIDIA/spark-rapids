@@ -386,7 +386,6 @@ def test_delta_merge_sql_liquid_clustering(spark_tmp_path, spark_tmp_table_facto
             WHEN NOT MATCHED THEN
               INSERT *
             """
-        print(f"Running sql on {type} table:\n{sql}")
         spark.sql(sql).collect()
 
     assert_gpu_and_cpu_writes_are_equal_collect(
