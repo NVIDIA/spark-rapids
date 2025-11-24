@@ -20,7 +20,9 @@ import java.io.{IOException, UncheckedIOException}
 import java.net.URI
 import java.util.Objects
 
-import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric}
+import scala.collection.JavaConverters._
+
+import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
@@ -39,7 +41,6 @@ import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
 import org.apache.parquet.hadoop.metadata.BlockMetaData
-import scala.collection.JavaConverters._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -112,9 +113,11 @@ sealed trait ThreadConf
 
 case object SingleFile extends ThreadConf
 
-case class MultiThread(numThreads: Int, maxNumFilesProcessed: Int) extends ThreadConf
+case class MultiThread(
+    poolConfBuilder: ThreadPoolConfBuilder,
+    maxNumFilesProcessed: Int) extends ThreadConf
 
-case class MultiFile(numThreads: Int) extends ThreadConf
+case class MultiFile(poolConfBuilder: ThreadPoolConfBuilder) extends ThreadConf
 
 
 case class GpuIcebergParquetReaderConf(
@@ -196,9 +199,8 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       val fileSchema = reader.getFileMetaData.getSchema
 
       val rowGroupFirstRowIndices = new Array[Long](reader.getRowGroups.size())
-      rowGroupFirstRowIndices(0) = 0
-      var accumulatedRowCount = reader.getRowGroups.get(0).getRowCount
-      for (i <- 1 until reader.getRowGroups.size()) {
+      var accumulatedRowCount = 0L
+      for (i <- 0 until reader.getRowGroups.size()) {
         rowGroupFirstRowIndices(i) = accumulatedRowCount
         accumulatedRowCount += reader.getRowGroups.get(i).getRowCount
       }

@@ -18,7 +18,7 @@ from pyspark.sql.types import StringType, IntegerType
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import gen_df, int_gen, string_gen, long_gen, SetValuesGen
 from delta_lake_utils import delta_meta_allow
-from marks import allow_non_gpu, delta_lake, ignore_order
+from marks import allow_non_gpu, delta_lake, disable_ansi_mode, ignore_order
 from spark_session import (
     is_databricks_runtime,
     is_databricks133_or_later,
@@ -71,6 +71,7 @@ def setup_clustered_table(spark, path, table_name, enable_dv):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
+@disable_ansi_mode
 @pytest.mark.skipif(
     is_databricks_runtime() and not is_databricks133_or_later(),
     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+",
@@ -105,6 +106,7 @@ def test_delta_clustered_read_sql(spark_tmp_path, spark_tmp_table_factory):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
+@disable_ansi_mode
 @pytest.mark.skipif(
     is_databricks_runtime() and not is_databricks133_or_later(),
     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+",

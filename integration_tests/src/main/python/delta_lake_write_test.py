@@ -427,6 +427,7 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, enable_deletion
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@allow_non_gpu_delta_write_if(is_before_spark_353(), reason="Dynamic partition overwrites are not supported before Spark 3.5.3")
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
@@ -450,6 +451,7 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@allow_non_gpu_delta_write_if(is_before_spark_353(), reason="Dynamic partition overwrites are not supported before Spark 3.5.3")
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
@@ -545,11 +547,17 @@ def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
                        end=datetime(2000, 1, 1, tzinfo=timezone.utc)).with_special_case(
         datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)
     data_path = spark_tmp_path + "/DELTA_DATA"
-    all_confs = copy_and_update(delta_writes_enabled_conf, {
+    # Spark 4.0 renamed the parquet write rebase configs. Use version-appropriate keys.
+    rebase_write_confs = ({
+        "spark.sql.parquet.datetimeRebaseModeInWrite": "LEGACY",
+        "spark.sql.parquet.int96RebaseModeInWrite": "LEGACY",
+        "spark.sql.parquet.outputTimestampType": ts_write
+    } if not is_before_spark_400() else {
         "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.int96RebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.outputTimestampType": ts_write
     })
+    all_confs = copy_and_update(delta_writes_enabled_conf, rebase_write_confs)
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
@@ -1014,6 +1022,27 @@ def test_delta_write_optimized_table_props_aqe(spark_tmp_path, confkey, aqe_enab
             data_path,
             conf=conf)
     do_test_optimize_write(spark_tmp_path, aqe_enabled, do_write, num_chunks)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_353(), reason="Delta Lake optimized writes are not supported before Spark 3.5.3 on Apache Spark")
+def test_delta_write_optimized_empty_output(spark_tmp_path):
+    num_chunks = 20
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    gen = IntegerGen(nullable=False)
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.optimizeWrite.enabled" : "true"
+    })
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        # filter everything out in the generated data
+        lambda spark, path: unary_op_df(spark, gen) \
+            .filter("a is null") \
+            .repartition(num_chunks).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

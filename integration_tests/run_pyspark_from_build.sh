@@ -369,6 +369,15 @@ else
     # Set a seed to be used to pick random tests to inject with OOM
     export SPARK_RAPIDS_TEST_INJECT_OOM_SEED=${SPARK_RAPIDS_TEST_INJECT_OOM_SEED:-`date +%s`}
     echo "SPARK_RAPIDS_TEST_INJECT_OOM_SEED used: $SPARK_RAPIDS_TEST_INJECT_OOM_SEED"
+    if [[ -n "${RANDOM_SELECT}" ]]; then
+        if [[ -n "${RANDOM_SELECT_SEED}" ]]; then
+            echo "RANDOM_SELECT configured: value=${RANDOM_SELECT}, seed=${RANDOM_SELECT_SEED}"
+        else
+            echo "RANDOM_SELECT configured: value=${RANDOM_SELECT}, seed=default(0)"
+        fi
+    else
+        echo "RANDOM_SELECT not set"
+    fi
 
     # If you want to change the amount of GPU memory allocated you have to change it here
     # and where TEST_PARALLEL is calculated
@@ -527,11 +536,12 @@ else
             exit 1
         fi
 
-        # Create a venv and install only pyspark[connect] to ensure a pure Python client
+        # Create a venv and install only pyspark-client to ensure a pure Python client
+        # See: https://spark.apache.org/docs/latest/api/python/getting_started/install.html#python-spark-connect-client
         CONNECT_CLIENT_VENV="${RUN_DIR}/connect_client_venv"
         python -m venv "$CONNECT_CLIENT_VENV"
         "$CONNECT_CLIENT_VENV/bin/python" -m pip install --upgrade pip >/dev/null
-        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "pyspark[connect]==${VERSION_STRING}" >/dev/null
+        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "pyspark-client==${VERSION_STRING}" > /dev/null
 
         # Run a simple query using the Connect client and assert expected result and GPU operator in the plan
         output=$(CONNECT_URL="$CONNECT_SERVER_URL" \
@@ -572,7 +582,7 @@ PY
           # command-line using the COVERAGE_SUBMIT_FLAGS which won't be possible if we were to just say
           # export $PYSP_TEST_spark_driver_extraJavaOptions = "$PYSP_TEST_spark_driver_extraJavaOptions $LOG4J_CONF"
           LOG4J_CONF="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log"
-          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS"
+          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS $ENABLE_TEST_FEATURES"
         fi
 
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1

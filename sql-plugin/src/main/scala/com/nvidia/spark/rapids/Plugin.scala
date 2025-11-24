@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.io.async.TrafficController
-import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, TaskPriority}
+import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -509,13 +509,40 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 }
 
 /**
+ * This class wraps an nvtx range, and a call to `removeTaskMetrics` to ensure
+ * we don't leak metrics for this task.
+ *
+ * We store the object in concurrent map where the key is the executor task thread.
+ * It is `AutoCloseable`, so the caller must close it on task success or failure.
+ */
+case class ActiveTaskMetrics(
+    stageId: Int,
+    taskAttemptId: Long,
+    attemptNumber: Int) extends AutoCloseable {
+  private var nvtx = new NvtxRange(
+    s"Stage $stageId Task $taskAttemptId-$attemptNumber", NvtxColor.DARK_GREEN)
+  private var closed = false
+  override def close(): Unit = {
+    if (!closed) {
+      closed = true
+      RmmSpark.removeTaskMetrics(taskAttemptId)
+      if (nvtx != null) {
+        nvtx.close()
+        nvtx = null
+      }
+    }
+  }
+}
+
+/**
  * The Spark executor plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
-  private val activeTaskNvtx = new ConcurrentHashMap[Thread, NvtxRange]()
+
+  private val activeTaskInfo = new ConcurrentHashMap[Thread, ActiveTaskMetrics]()
 
   private var isAsyncProfilerEnabled = false
 
@@ -541,13 +568,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             "profiler is enabled for better profiling accuracy.")
         }
         AsyncProfilerOnExecutor.init(pluginContext, conf)
-      }
-
-      // Checks if the current GPU architecture is supported by the
-      // spark-rapids-jni and cuDF libraries.
-      // Note: We allow this check to be skipped for off-chance cases.
-      if (!conf.skipGpuArchCheck && conf.isSqlExecuteOnGPU) {
-        RapidsPluginUtils.validateGpuArchitecture()
       }
 
       // Fail if there are multiple plugin jars in the classpath.
@@ -595,6 +615,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
           }
         }
+      }
+
+      // Checks if the current GPU architecture is supported by the
+      // spark-rapids-jni and cuDF libraries.
+      // Note: We allow this check to be skipped for off-chance cases.
+      if (!conf.skipGpuArchCheck && conf.isSqlExecuteOnGPU) {
+        RapidsPluginUtils.validateGpuArchitecture()
       }
 
       logDebug("Loading extra executor plugins: " +
@@ -754,7 +781,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     // Make sure that the thread/task is registered before we try and block
     // For the task main thread, we want to make sure that it's registered in the OOM state
     // machine throughout the task lifecycle.
-    TaskRegistryTracker.registerThreadForRetry()
+    TaskRegistryTracker.registerDedicatedThreadForRetry()
   }
 
   override def onTaskSucceeded(): Unit = {
@@ -766,14 +793,15 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     val stageId = taskCtx.stageId()
     val taskAttemptId = taskCtx.taskAttemptId()
     val attemptNumber = taskCtx.attemptNumber()
-    activeTaskNvtx.put(Thread.currentThread(),
-      new NvtxRange(s"Stage $stageId Task $taskAttemptId-$attemptNumber", NvtxColor.DARK_GREEN))
+    activeTaskInfo.put(
+      Thread.currentThread(),
+      ActiveTaskMetrics(stageId, taskAttemptId, attemptNumber))
   }
 
   private def endTaskNvtx(): Unit = {
-    val nvtx = activeTaskNvtx.remove(Thread.currentThread())
-    if (nvtx != null) {
-      nvtx.close()
+    val taskInfo = activeTaskInfo.remove(Thread.currentThread())
+    if (taskInfo != null) {
+      taskInfo.close()
     }
   }
 }

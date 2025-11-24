@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,7 +112,12 @@ object GpuCanonicalize {
     case GpuNot(GpuLessThanOrEqual(l, r)) => GpuGreaterThan(l, r)
 
     // order the list in the In operator
-    case GpuInSet(value, list) if list.length > 1 => GpuInSet(value, list.sortBy(_.hashCode()))
+    case GpuInSet(value, list) if list.length > 1 =>
+      val orderedList = list.sortBy {
+        case null => 0
+        case nonNull => nonNull.hashCode()
+      }
+      GpuInSet(value, orderedList)
 
     case g: GpuGreatest =>
       val newChildren = orderCommutative(g, { case GpuGreatest(children) => children })

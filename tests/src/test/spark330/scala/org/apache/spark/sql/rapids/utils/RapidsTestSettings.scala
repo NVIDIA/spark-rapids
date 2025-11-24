@@ -19,7 +19,39 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsParquetAvroCompatibilitySuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite,  RapidsParquetFieldIdIOSuite, RapidsParquetFieldIdSchemaSuite, RapidsParquetFileFormatSuite, RapidsParquetInteroperabilitySuite, RapidsParquetPartitionDiscoverySuite, RapidsParquetProtobufCompatibilitySuite, RapidsParquetQuerySuite, RapidsParquetRebaseDatetimeSuite, RapidsParquetSchemaPruningSuite, RapidsParquetSchemaSuite, RapidsParquetThriftCompatibilitySuite, RapidsParquetVectorizedSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
+import org.apache.spark.sql.rapids.suites.RapidsCastSuite
+import org.apache.spark.sql.rapids.suites.RapidsDataFrameAggregateSuite
+import org.apache.spark.sql.rapids.suites.RapidsDataFramePivotSuite
+import org.apache.spark.sql.rapids.suites.RapidsJsonExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsJsonFunctionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsJsonSuite
+import org.apache.spark.sql.rapids.suites.RapidsMathExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsMathFunctionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsMiscFunctionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetAvroCompatibilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetColumnIndexSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetCompressionCodecPrecedenceSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaByteArrayEncodingSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingInteger
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaEncodingLong
+import org.apache.spark.sql.rapids.suites.RapidsParquetDeltaLengthByteArrayEncodingSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetEncodingSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdIOSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetFieldIdSchemaSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetFileFormatSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetInteroperabilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetPartitionDiscoverySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetProtobufCompatibilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetQuerySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetRebaseDatetimeSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetSchemaPruningSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetSchemaSuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetThriftCompatibilitySuite
+import org.apache.spark.sql.rapids.suites.RapidsParquetVectorizedSuite
+import org.apache.spark.sql.rapids.suites.RapidsRegexpExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsStringExpressionsSuite
+import org.apache.spark.sql.rapids.suites.RapidsStringFunctionsSuite
+
 
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
@@ -42,6 +74,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-17641: collect functions should not collect null values", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", WONT_FIX_ISSUE("Codegen related UT, not applicable for GPU"))
     .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"), (getJavaMajorVersion() >= 17))
+  enableSuite[RapidsDataFramePivotSuite]
   enableSuite[RapidsJsonExpressionsSuite]
     .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
     .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))
@@ -59,9 +92,12 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("Applying schemas", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
     .exclude("Loading a JSON dataset from a text file with SQL", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
     .exclude("Loading a JSON dataset from a text file", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
+  enableSuite[RapidsMathExpressionsSuite]
+    .exclude("round/bround/floor/ceil", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13747"))
   enableSuite[RapidsMathFunctionsSuite]
     .exclude("SPARK-33428 conv function shouldn't raise error if input string is too big", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
     .exclude("SPARK-36229 conv should return result equal to -1 in base of toBase", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
+  enableSuite[RapidsMiscFunctionsSuite]
   enableSuite[RapidsParquetAvroCompatibilitySuite]
     .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11592"))
   enableSuite[RapidsParquetColumnIndexSuite]
@@ -71,6 +107,10 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingInteger]
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
+  enableSuite[RapidsParquetEncodingSuite]
+    .exclude("Read row group containing both dictionary and plain encoded pages", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13739"))
+    .exclude("parquet v2 pages - delta encoding", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13745"))
+    .exclude("parquet v2 pages - rle encoding for boolean value columns", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13746"))
   enableSuite[RapidsParquetFileFormatSuite]
     .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11602"))
   enableSuite[RapidsParquetFieldIdIOSuite]

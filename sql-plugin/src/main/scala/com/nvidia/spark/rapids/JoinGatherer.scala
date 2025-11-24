@@ -158,7 +158,8 @@ object JoinGatherer {
     MultiJoinGather(left, right)
   }
 
-  def getRowsInNextBatch(gatherer: JoinGatherer, targetSize: Long): Int = {
+  def getRowsInNextBatch(gatherer: JoinGatherer, targetSize: Long,
+      sizeEstimateThreshold: Double = 0.75): Int = {
     NvtxRegistry.CALC_GATHER_SIZE {
       val rowsLeft = gatherer.numRowsLeft
       val rowEstimate: Long = gatherer.getFixedWidthBitSize match {
@@ -167,7 +168,8 @@ object JoinGatherer {
           Math.max(1, (targetSize / fixedBitSize) * 8)
         case None =>
           // Heuristic to see if we need to do the expensive calculation
-          if (rowsLeft * gatherer.realCheapPerRowSizeEstimate <= targetSize * 0.75) {
+          if ((rowsLeft * gatherer.realCheapPerRowSizeEstimate) <= 
+            (targetSize * sizeEstimateThreshold)) {
             rowsLeft
           } else {
             gatherer.gatherRowEstimate(targetSize)
