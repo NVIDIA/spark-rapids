@@ -143,7 +143,7 @@ type `DECIMAL64(scale=-2)`.
 Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/UDF-Examples/RAPIDS-accelerated-UDFs) project.
 
 ## RAPIDS Accelerated User-Defined Aggregate Functions (UDAFs)
-The RAPIDS also supports an accelerated version of UDAFs via the `RapidsUDAF` interface.
+RAPIDS also supports an accelerated version of UDAFs via the `RapidsUDAF` interface.
 Users can choose to implement its APIs as below to get the GPU acceleration.
 
 - ```java
