@@ -269,10 +269,11 @@ def test_delta_insert_overwrite_replace_where_sql_liquid_clustering(spark_tmp_pa
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 
-def do_test_delta_dml_sql_liquid_clustering_fallback(spark_tmp_path,
+def do_test_delta_dml_sql_liquid_clustering(spark_tmp_path,
                                                      spark_tmp_table_factory,
                                                      conf: Dict[str, str],
-                                                     sql_func: Callable[[str], str]):
+                                                     sql_func: Callable[[str], str],
+                                                     expect_fallback):
 
     base_data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER"
     cpu_data_path = f"{base_data_path}/CPU"
@@ -291,11 +292,18 @@ def do_test_delta_dml_sql_liquid_clustering_fallback(spark_tmp_path,
         table_name = cpu_table_name if path == cpu_data_path else gpu_table_name
         spark.sql(sql_func(table_name))
 
-    assert_gpu_fallback_write(modify_table,
-                              lambda spark, path: spark.read.format("delta").load(path),
-                              base_data_path,
-                              "ExecutedCommandExec",
-                              conf=conf)
+    if expect_fallback:
+        assert_gpu_fallback_write(modify_table,
+                                  lambda spark, path: spark.read.format("delta").load(path),
+                                  base_data_path,
+                                  "ExecutedCommandExec",
+                                  conf=conf)
+    else:
+        assert_gpu_and_cpu_writes_are_equal_collect(
+            modify_table,
+            lambda spark, path: spark.read.format("delta").load(path),
+            base_data_path,
+            conf=conf)
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
                "AppendDataExecV1")
@@ -308,9 +316,10 @@ def do_test_delta_dml_sql_liquid_clustering_fallback(spark_tmp_path,
 def test_delta_delete_sql_liquid_clustering_fallback(spark_tmp_path,
                                                      spark_tmp_table_factory):
 
-    do_test_delta_dml_sql_liquid_clustering_fallback(
+    do_test_delta_dml_sql_liquid_clustering(
         spark_tmp_path, spark_tmp_table_factory, delta_delete_enabled_conf,
-        lambda table_name: f"DELETE FROM {table_name} WHERE a > 0")
+        lambda table_name: f"DELETE FROM {table_name} WHERE a > 0",
+        expect_fallback=True)
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow, "CreateTableExec",
                "AppendDataExecV1")
@@ -321,12 +330,13 @@ def test_delta_delete_sql_liquid_clustering_fallback(spark_tmp_path,
 @pytest.mark.skipif(not is_spark_353_or_later(),
                     reason="Create table with cluster by is only supported on delta 3.1+")
 @disable_ansi_mode
-def test_delta_update_sql_liquid_clustering_fallback(spark_tmp_path,
-                                                     spark_tmp_table_factory):
+def test_delta_update_sql_liquid_clustering(spark_tmp_path,
+                                            spark_tmp_table_factory):
 
-    do_test_delta_dml_sql_liquid_clustering_fallback(
+    do_test_delta_dml_sql_liquid_clustering(
         spark_tmp_path, spark_tmp_table_factory, delta_update_enabled_conf,
-        lambda table_name: f"UPDATE {table_name} SET e = e+1 WHERE a > 0")
+        lambda table_name: f"UPDATE {table_name} SET e = e+1 WHERE a > 0",
+        expect_fallback=False)
 
 
 @allow_non_gpu(*delta_meta_allow)
