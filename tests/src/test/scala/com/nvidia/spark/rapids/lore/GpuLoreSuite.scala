@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.lore
 
 import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -27,15 +28,15 @@ import org.apache.spark.sql.internal.SQLConf
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   /**
-   * Check if the current version should be skipped for GpuInsertIntoHiveTable test
+   * Check if the current version should be skipped for GpuInsertIntoHiveTable test.
+   * Skip whenever the shim enables GPU WriteFiles because LORE dumping will fail.
    */
-  private def skipIfUnsupportedVersion(testName: String): Unit = {
+  private def skipIfGpuWriteFilesEnabled(testName: String): Unit = {
     val version = ShimLoader.getShimVersion
-    val unsupportedVersions = GpuLore.getGpuWriteFilesUnsupportedVersions
+    val hasGpuWriteFiles = SparkShimImpl.hasGpuWriteFiles
 
-    // Skip this test if the current version is in unsupported versions
-    assume(!unsupportedVersions.contains(version),
-      s"Skipping $testName for version $version as it's in the unsupported versions list")
+    assume(!hasGpuWriteFiles,
+      s"Skipping $testName for version $version because GPU WriteFiles is enabled on this shim")
   }
 
   // Reusable Derby cleanup function
@@ -286,7 +287,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     */
 
     // Skip this test for versions that are in unsupportedHiveInsertVersions
-    skipIfUnsupportedVersion("GpuInsertIntoHiveTable with LoRE dump and replay")
+    skipIfGpuWriteFilesEnabled("GpuInsertIntoHiveTable with LoRE dump and replay")
     // Clean up before test starts
     cleanupDerbyFiles()
     // Create unique metastore location for this test run
@@ -390,11 +391,9 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   test("LORE dump should throw exception for GpuDataWritingCommandExec on unsupported versions") {
     // Only run this test for versions that are in unsupported versions
     val currentShimVersion = ShimLoader.getShimVersion
-    val unsupportedVersions = GpuLore.getGpuWriteFilesUnsupportedVersions
-
-    // Skip this test if the current version is NOT in unsupported versions
-    assume(unsupportedVersions.contains(currentShimVersion),
-      s"Skipping test for version $currentShimVersion as it's not in the unsupported versions list")
+    // Skip this test if GPU WriteFiles is disabled on the current shim
+    assume(SparkShimImpl.hasGpuWriteFiles,
+      s"Skipping test for version $currentShimVersion because GPU WriteFiles is disabled")
 
     // Clean up before test starts
     cleanupDerbyFiles()
@@ -429,7 +428,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         // Verify the exception message contains the expected information
         assert(exception.getMessage.contains("LORE dump is not supported for" +
           " GpuDataWritingCommandExec"))
-        assert(exception.getMessage.contains("Unsupported versions:"))
+        assert(exception.getMessage.contains("because GPU WriteFiles is enabled on this shim"))
       }
     } finally {
       // Clean up Derby files after test completes
