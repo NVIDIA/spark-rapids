@@ -154,7 +154,17 @@ def do_merge_test(
 @ignore_order(local=True)
 @pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.parametrize('partition_col_sql', [None, "bucket(16, _c2)"])
+@pytest.mark.parametrize('partition_col_sql', [
+    None,
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+])
 @pytest.mark.parametrize('merge_sql', [
     pytest.param(
         """
@@ -275,12 +285,8 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_t
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate"),
-    pytest.param("year(_c9)", id="year"),
-    pytest.param("month(_c9)", id="month"),
-    pytest.param("day(_c9)", id="day"),
-    pytest.param("hour(_c9)", id="hour"),
-    pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("bucket(8, _c6)", id="bucket(8, string_col)"),
 ])
 def test_iceberg_merge_fallback_unsupported_partition_transform(
         spark_tmp_table_factory, reader_type, partition_col_sql, merge_mode, fallback_exec):
