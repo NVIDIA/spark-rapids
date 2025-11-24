@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.commands.{DeleteCommand, DeletionVectorUtils}
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 
 abstract class DeleteCommandMetaBase(
@@ -42,12 +41,6 @@ abstract class DeleteCommandMetaBase(
         DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)) {
       // https://github.com/NVIDIA/spark-rapids/issues/8554
       willNotWorkOnGpu("Deletion vectors are not supported on GPU")
-    }
-
-    val isClusteredTable = ClusteredTableUtils.getClusterBySpecOptional(
-      deleteCmd.deltaLog.unsafeVolatileSnapshot).isDefined
-    if (isClusteredTable) {
-      willNotWorkOnGpu("Liquid clustering is not supported on GPU")
     }
 
     RapidsDeltaUtils.tagForDeltaWrite(this, deleteCmd.target.schema, Some(deleteCmd.deltaLog),
