@@ -74,7 +74,7 @@ class GpuIcebergPartitioner(
 
     // Combine keys and values into a single batch: [key columns, input columns]
     val keysAndInputBatch = GpuColumnVector.combineColumns(keys, values)
-
+    
     withResource(keysAndInputBatch) { _ =>
       withResource(GpuColumnVector.from(keysAndInputBatch)) { keysAndInputTable =>
         // Split the input columns by the key columns using the efficient JNI API
@@ -201,13 +201,13 @@ object GpuIcebergPartitioner {
     }
 
     withResource(new ColumnarBatch(hostColsArray, numRows)) { hostBatch =>
-      hostBatch.rowIterator()
-        .asScala
-        .map(internalRow => new GpuInternalRow(internalRow))
-        .map(internalRow => {
-          val row = new GenericRowWithSchema(internalRow.toSeq(sparkType).toArray, sparkType)
-          new SparkStructLike(icebergType).wrap(row)
-        }).toArray
+        hostBatch.rowIterator()
+          .asScala
+          .map(internalRow => new GpuInternalRow(internalRow))
+          .map(internalRow => {
+            val row = new GenericRowWithSchema(internalRow.toSeq(sparkType).toArray, sparkType)
+            new SparkStructLike(icebergType).wrap(row)
+          }).toArray
     }
   }
 }
