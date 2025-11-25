@@ -145,11 +145,12 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       // https://github.com/delta-io/delta/blob/f405c3fc4ea3a3ed420f58fb8581aa34e0f0826c
       // /spark/src/main/scala/org/apache/spark/sql/delta/PreprocessTableWithDVs.scala#L69
       //
-      // to compute is_deleted from row_index. Not only Plugin's current logic is not taking advantage of this but
-      // it also requires producing the rest of completely unrelated file metadata.
+      // to compute is_deleted from row_index. Not only Plugin's current logic is not taking
+      // advantage of this but it also requires producing the rest of completely unrelated
+      // file metadata.
       //
-      // The following logic along with isDVScan matches DV-enabled scan produced by the Delta rule and cleans
-      // out _metadata. If _metadata is used above the DV-Scan we fallback on CPU
+      // The following logic along with isDVScan matches DV-enabled scan produced by the Delta
+      // rule and cleans out _metadata. If _metadata is used above the DV-Scan we fallback on CPU
       //
       case dvRoot @ GpuProjectExec(outputList,
       dvFilter @ GpuFilterExec(condition,
