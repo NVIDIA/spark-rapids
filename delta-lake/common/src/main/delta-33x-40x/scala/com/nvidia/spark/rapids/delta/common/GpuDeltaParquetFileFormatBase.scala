@@ -58,14 +58,16 @@ class GpuDeltaParquetFileFormatBase(
   ) extends com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat with Logging {
 
   // Validate either we have all arguments for DV enabled read or none of them.
-  if (hasTablePath) {
-    SparkSession.getActiveSession.map { session =>
-      val useMetadataRowIndex =
-        session.sessionState.conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
-      require(useMetadataRowIndex == optimizationsEnabled,
-        "Wrong arguments for Delta table scan with deletion vectors")
-    }
-  }
+
+  // disable optimizations
+  //  if (hasTablePath) {
+  //    SparkSession.getActiveSession.map { session =>
+  //      val useMetadataRowIndex =
+  //        session.sessionState.conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
+  //      require(useMetadataRowIndex == optimizationsEnabled,
+  //        "Wrong arguments for Delta table scan with deletion vectors")
+  //    }
+  //  }
 
   if (SparkSession.getActiveSession.isDefined) {
     val session = SparkSession.getActiveSession.get
