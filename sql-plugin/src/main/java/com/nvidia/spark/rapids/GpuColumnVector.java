@@ -291,6 +291,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return cv;
     }
 
+    /**
+     * Materialize the column data on the host and cache it for subsequent retries.
+     * Once this returns a non-null array, repeated calls simply reuse the cached
+     * host columns so that retry logic does not need to rebuild them.
+     */
     public HostColumnVector[] buildHostColumns() {
       if (hostColumns != null) {
         return hostColumns;
@@ -312,7 +317,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return hostColumns;
     }
 
-    public HostColumnVector[] detachHostColumns() {
+    /**
+     * Transfer ownership of the cached host columns to the caller for retry logic.
+     * After this returns the builder relinquishes its reference, so the caller
+     * must eventually close the host columns.
+     */
+    public HostColumnVector[] stealHostColumnsForRetry() {
       HostColumnVector[] result = buildHostColumns();
       hostColumns = null;
       return result;

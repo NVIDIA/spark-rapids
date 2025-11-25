@@ -107,4 +107,13 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       row2ColIter.next()
     }
   }
+
+  test("cpu retry succeeds for multi-batch goal") {
+    val row2ColIter = newIterator(numRows = 16, goal = TargetSize(32), targetBatchSize = 32)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.CPU.ordinal, 0)
+    val rowCounts = collectBatchRowCounts(row2ColIter)
+    assertResult(16)(rowCounts.sum)
+    assert(rowCounts.nonEmpty, "expected at least one batch")
+  }
 }
