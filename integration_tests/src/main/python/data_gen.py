@@ -262,27 +262,19 @@ class IntegerGen(DataGen):
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False, full_precision=False, precision_fixed=False):
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False, full_precision=False):
         """full_precision: If True, generate decimals with full precision without leading and trailing zeros."""
         if precision is None:
             #Maximum number of decimal digits a Long can represent is 18
             precision = 18
             scale = 0
-
-        fixed_precision = precision
-
-        if precision_fixed and scale > 0:
-            # For number 12345.67, the input precision is 5, input scale is 2, fixed_precision is 5 + 2 = 7
-            fixed_precision = precision + scale
-
-        DECIMAL_MIN = Decimal('-' + ('9' * fixed_precision) + 'e' + str(-scale))
-        DECIMAL_MAX = Decimal(('9'* fixed_precision) + 'e' + str(-scale))
+        DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
+        DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
         if special_cases is None:
             special_cases = [DECIMAL_MIN, Decimal('0')]
             if not avoid_positive_values:
                 special_cases.append(DECIMAL_MAX)
-
-        super().__init__(DecimalType(fixed_precision, scale), nullable=nullable, special_cases=special_cases)
+        super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self.scale = scale
         self.precision = precision
         self.avoid_positive_values = avoid_positive_values

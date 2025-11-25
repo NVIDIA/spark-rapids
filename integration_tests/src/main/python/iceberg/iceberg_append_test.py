@@ -65,7 +65,6 @@ def test_insert_into_unpartitioned_table(spark_tmp_table_factory, format_version
         spark_tmp_table_factory,
         lambda table_name: create_iceberg_table(table_name, table_prop=table_prop))
 
-
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
@@ -148,12 +147,6 @@ def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_facto
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
-    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
-    # pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
-    # pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
-    # pytest.param("truncate(10, _c10)", id="truncate(10, decimal32_col)"),
-    # pytest.param("truncate(10, _c11)", id="truncate(10, decimal64_col)"),
-    # pytest.param("truncate(10, _c12)", id="truncate(10, decimal128_col)"),
 ])
 def test_insert_into_partitioned_table1(spark_tmp_table_factory, format_version, fanout, write_distribution_mode, partition_col_sql):
     table_prop = {"format-version": format_version,

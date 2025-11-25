@@ -25,23 +25,13 @@ from pyspark.sql.types import FloatType, DoubleType, BinaryType
 from data_gen import *
 from spark_session import with_cpu_session
 
-# Generates the same data as DecimalGen(precision=6, scale=3, precision_fixed=False)
-# But fix the precision to 9, and the data type gets: decimal(9, 3) as Spark does
-fixed_decimal_gen_32bit = DecimalGen(precision=6, scale=3, precision_fixed=True)
-# Generates the same data as DecimalGen(precision=12, scale=2, precision_fixed=False)
-# But fix the precision to 14, and the data type gets: decimal(14, 2) as Spark does
-fixed_decimal_gen_64bit = DecimalGen(precision=12, scale=2, precision_fixed=True)
-# Generates the same data as DecimalGen(precision=20, scale=2, precision_fixed=False)
-# But fix the precision to 22, and the data type gets: decimal(22, 2) as Spark does
-fixed_decimal_gen_128bit = DecimalGen(precision=20, scale=2, precision_fixed=True)
-
 # iceberg supported types
 iceberg_table_gen = MappingProxyType({
     '_c0': byte_gen, '_c1': short_gen, '_c2': IntegerGen(nullable=False),
     '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, 
     '_c6': string_gen,
-    '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen, '_c10': fixed_decimal_gen_32bit,
-    '_c11': fixed_decimal_gen_64bit, '_c12': fixed_decimal_gen_128bit
+    '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen, '_c10': decimal_gen_32bit,
+    '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit
 })
 iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
