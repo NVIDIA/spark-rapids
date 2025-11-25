@@ -536,12 +536,22 @@ else
             exit 1
         fi
 
-        # Create a venv and install only pyspark-client to ensure a pure Python client
-        # See: https://spark.apache.org/docs/latest/api/python/getting_started/install.html#python-spark-connect-client
+        case $VERSION_STRING in
+          3.5.*)
+            CONNECT_PIP_PACKAGE="pyspark[connect]"
+            ;;
+          
+          4.*)
+            # Create a venv and install only pyspark-client to ensure a pure Python client
+            # See: https://spark.apache.org/docs/latest/api/python/getting_started/install.html#python-spark-connect-client
+            CONNECT_PIP_PACKAGE="pyspark-client"
+            ;;
+        esac
+
         CONNECT_CLIENT_VENV="${RUN_DIR}/connect_client_venv"
         python -m venv "$CONNECT_CLIENT_VENV"
         "$CONNECT_CLIENT_VENV/bin/python" -m pip install --upgrade pip >/dev/null
-        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "pyspark-client==${VERSION_STRING}" > /dev/null
+        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "$CONNECT_PIP_PACKAGE==${VERSION_STRING}" > /dev/null
 
         # Run a simple query using the Connect client and assert expected result and GPU operator in the plan
         output=$(CONNECT_URL="$CONNECT_SERVER_URL" \
