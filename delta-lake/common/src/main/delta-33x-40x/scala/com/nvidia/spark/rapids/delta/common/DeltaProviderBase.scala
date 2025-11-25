@@ -138,10 +138,19 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
 
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
     plan match {
-      // if the input of filter child has _metadata and __delta_internal_is_row_deleted
-      // and the output does not contain _metadata, this is a Delta DV scan,
-      // not the user asking for _metadata
-      // current implementation does not rely on _metadata so just drop it recursively.
+      // This logic is a special case of eliminating of unused columns.
+      //
+      // Delta modifies the logical plan (if there is a deletion vector present on the Delta table)
+      //
+      // https://github.com/delta-io/delta/blob/f405c3fc4ea3a3ed420f58fb8581aa34e0f0826c
+      // /spark/src/main/scala/org/apache/spark/sql/delta/PreprocessTableWithDVs.scala#L69
+      //
+      // to compute is_deleted from row_index. Not only Plugin's current logic is not taking advantage of this but
+      // it also requires producing the rest of completely unrelated file metadata.
+      //
+      // The following logic along with isDVScan matches DV-enabled scan produced by the Delta rule and cleans
+      // out _metadata. If _metadata is used above the DV-Scan we fallback on CPU
+      //
       case dvRoot @ GpuProjectExec(outputList,
       dvFilter @ GpuFilterExec(condition,
       dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
