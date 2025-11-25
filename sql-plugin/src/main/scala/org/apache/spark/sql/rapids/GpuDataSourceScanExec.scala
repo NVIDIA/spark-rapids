@@ -111,11 +111,12 @@ object GpuDataSourceScanExec {
   private def abbreviate(str: String, abbrevMarker: String, len: Int): String = {
     if (str == null || abbrevMarker == null) {
       null
-    } else if (str.length() <= len || str.length() <= abbrevMarker.length()) {
+    } else if (len < abbrevMarker.length() || str.length() <= len || str.length() <= abbrevMarker.length()) {
       str
     } else {
       str.substring(0, len - abbrevMarker.length()) + abbrevMarker
     }
+  }
   }
 
   /**
