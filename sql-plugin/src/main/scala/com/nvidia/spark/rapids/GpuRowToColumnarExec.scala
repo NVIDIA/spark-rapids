@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuSplitAndRetryOOM}
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -31,7 +32,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
@@ -584,7 +585,7 @@ private[rapids] object GpuRowToColumnConverter {
   }
 }
 
-class RowToColumnarIterator(
+class SingleBatchRowToColumnarIterator(
     rowIter: Iterator[InternalRow],
     localSchema: StructType,
     localGoal: CoalesceSizeGoal,
@@ -601,8 +602,6 @@ class RowToColumnarIterator(
   private var targetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
-  // Rows are copied into this buffer so we can safely replay them if the retry
-  // framework asks us to split and try again.
   private val pendingRows = new PendingRowBuffer
 
   private def pendingLength: Int = pendingRows.length
@@ -625,14 +624,6 @@ class RowToColumnarIterator(
     case other => other.copy()
   }
 
-  /**
-   * Build a single GPU batch using up to `targetRowCount` rows.
-   *
-   * Rows are pulled from `pendingRows` (populated via `ensurePendingRow`) so that we can
-   * replay them if the retry framework decides to split and try again. The method keeps
-   * track of how many rows were consumed and returns that along with the resulting batch
-   * so callers can drop the rows that were successfully materialized.
-   */
   private def buildBatchAttempt(targetRowCount: Int): BuildBatchResult = {
     val maxRows = math.max(1, targetRowCount)
     val builderInitialRows =
@@ -640,7 +631,6 @@ class RowToColumnarIterator(
     withResource(new GpuColumnarBatchBuilder(localSchema, builderInitialRows)) { builders =>
       var rowCount = 0
       var rowsProcessed = 0
-      // Double because validity can be < 1 byte, and this is just an estimate anyways
       var byteCount: Double = 0
       var continue = true
       while (continue && (rowCount == 0 || (rowCount < maxRows && byteCount < targetSizeBytes))) {
@@ -667,8 +657,6 @@ class RowToColumnarIterator(
       val hasMoreRows =
         (pendingLength - rowsProcessed) > 0 || rowIter.hasNext
 
-      // About to place data back on the GPU
-      // note that TaskContext.get() can return null during unit testing so we wrap it in an option
       Option(TaskContext.get())
           .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
@@ -693,12 +681,8 @@ class RowToColumnarIterator(
   private def buildBatch(): ColumnarBatch = {
     NvtxRegistry.ROW_TO_COLUMNAR {
       val streamStart = System.nanoTime()
-      // estimate the size of the first batch based on the schema
       if (targetRows == 0) {
         if (localSchema.fields.isEmpty) {
-          // if there are no columns then we just default to a small number
-          // of rows for the first batch
-          // TODO do we even need to allocate anything here?
           targetRows = 1024
           initialRows = targetRows
         } else {
@@ -709,9 +693,6 @@ class RowToColumnarIterator(
         }
       }
 
-      // `targetRows` starts at 0 and is only populated after we have read the first batch
-      // and computed an estimate. Guard against the bootstrap case so we always attempt to
-      // build at least one row.
       val desiredTargetRows = math.max(targetRows, 1)
       val result =
         if (localGoal.isInstanceOf[RequireSingleBatchLike]) {
@@ -738,9 +719,7 @@ class RowToColumnarIterator(
           attemptResult
         }
 
-      // enforce RequireSingleBatch limit
       if (result.hasMoreRows && localGoal.isInstanceOf[RequireSingleBatchLike]) {
-        // Close the batch we just built before propagating the error to avoid leaks.
         result.batch.close()
         dropPendingRows(result.rowsConsumed)
         throw new IllegalStateException("A single batch is required for this operation." +
@@ -756,7 +735,6 @@ class RowToColumnarIterator(
       numOutputRows += result.rowCount
       numOutputBatches += 1
 
-      // refine the targetRows estimate based on the average of all batches processed so far
       totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
       totalOutputRows += result.rowCount
       if (totalOutputRows > 0 && totalOutputBytes > 0) {
@@ -764,21 +742,12 @@ class RowToColumnarIterator(
           GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)
       }
 
-      // The returned batch will be closed by the consumer of it
       ret
     }
   }
 }
 
-/**
- * Small ring buffer that stores pending rows that have already been copied from the input.
- * We need to be able to replay rows when the retry framework asks us to split the work,
- * therefore we hold on to copies of the incoming rows until we know they made it into a
- * GPU batch. The ring buffer avoids the O(N) left-shift that ArrayBuffer.remove would incur.
- */
 private class PendingRowBuffer {
-  // Start with 64 rows (heuristic) to keep the initial heap footprint small; the ring buffer
-  // doubles automatically as more rows are buffered.
   private val PendingBufferInitCapacity = 64
 
   private var buffer = new Array[InternalRow](PendingBufferInitCapacity)
@@ -814,8 +783,6 @@ private class PendingRowBuffer {
     }
   }
 
-  def clear(): Unit = drop(size)
-
   private def ensureCapacity(minCapacity: Int): Unit = {
     if (minCapacity > buffer.length) {
       var newCapacity = buffer.length * 2
@@ -847,6 +814,279 @@ private case class BuildBatchResult(
     rowsConsumed: Int,
     rowCount: Int,
     hasMoreRows: Boolean)
+
+class RowToColumnarIterator(
+    rowIter: Iterator[InternalRow],
+    localSchema: StructType,
+    localGoal: CoalesceSizeGoal,
+    batchSizeBytes: Long,
+    converters: GpuRowToColumnConverter,
+    numInputRows: GpuMetric = NoopMetric,
+    numOutputRows: GpuMetric = NoopMetric,
+    numOutputBatches: GpuMetric = NoopMetric,
+    streamTime: GpuMetric = NoopMetric,
+    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+
+  private val targetSizeBytes = localGoal.targetSizeBytes
+  private var initialRows = 0
+  private var targetRows = 0
+  private var totalOutputBytes: Long = 0
+  private var totalOutputRows: Long = 0
+  private var pendingHostResultIter: Option[Iterator[ColumnarBatch]] = None
+
+  override def hasNext: Boolean = hasPendingHostResult || rowIter.hasNext
+
+  override def next(): ColumnarBatch =
+    if (hasNext) {
+      buildBatch()
+    } else {
+      throw new NoSuchElementException
+    }
+
+  private def hasPendingHostResult: Boolean = {
+    pendingHostResultIter match {
+      case Some(iter) if iter.hasNext => true
+      case Some(_) =>
+        pendingHostResultIter = None
+        false
+      case None => false
+    }
+  }
+
+  private def buildBatch(): ColumnarBatch = {
+    NvtxRegistry.ROW_TO_COLUMNAR {
+      val streamStart = System.nanoTime()
+      val batch =
+        if (hasPendingHostResult) {
+          val iter = pendingHostResultIter.get
+          val nextBatch = iter.next()
+          if (!iter.hasNext) {
+            pendingHostResultIter = None
+          }
+          nextBatch
+        } else {
+          val outcome = buildFromInput()
+          pendingHostResultIter = outcome.pendingIter
+          outcome.batch
+        }
+
+      streamTime += System.nanoTime() - streamStart
+      updateMetrics(batch)
+      batch
+    }
+  }
+
+  private def updateMetrics(batch: ColumnarBatch): Unit = {
+    numInputRows += batch.numRows()
+    numOutputRows += batch.numRows()
+    numOutputBatches += 1
+    totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(batch)
+    totalOutputRows += batch.numRows()
+    if (totalOutputRows > 0 && totalOutputBytes > 0) {
+      targetRows =
+        GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)
+    }
+  }
+
+  private case class BuildOutcome(
+      batch: ColumnarBatch,
+      pendingIter: Option[Iterator[ColumnarBatch]],
+      hasMoreInput: Boolean)
+
+  private def buildFromInput(): BuildOutcome = {
+    if (targetRows == 0) {
+      if (localSchema.fields.isEmpty) {
+        targetRows = 1024
+        initialRows = targetRows
+      } else {
+        val sampleRows = GpuBatchUtils.VALIDITY_BUFFER_BOUNDARY_ROWS
+        val sampleBytes = GpuBatchUtils.estimateGpuMemory(localSchema, sampleRows)
+        targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
+        initialRows = GpuBatchUtils.estimateRowCount(batchSizeBytes, sampleBytes, sampleRows)
+      }
+    }
+
+    val desiredTargetRows = math.max(targetRows, 1)
+    val cappedTarget =
+      math.max(1L,
+        math.min((Int.MaxValue - 1).toLong, desiredTargetRows.toLong)).toInt
+    val builderInitialRows =
+      if (initialRows > 0) math.min(initialRows, cappedTarget) else cappedTarget
+
+    withResource(new GpuColumnarBatchBuilder(localSchema, builderInitialRows)) { builders =>
+      var rowCount = 0
+      var byteCount: Double = 0
+      var continue = true
+      while (continue && (rowCount == 0 ||
+          (rowCount < cappedTarget && byteCount < targetSizeBytes))) {
+        if (!rowIter.hasNext) {
+          continue = false
+        } else {
+          val row = rowIter.next()
+          byteCount += RmmRapidsRetryIterator.withRetryNoSplit[Double] {
+            converters.convert(row, builders)
+          }
+          rowCount += 1
+          if (rowCount >= cappedTarget || byteCount >= targetSizeBytes) {
+            continue = false
+          }
+        }
+      }
+      if (rowCount == 0) {
+        throw new NoSuchElementException("Could not build batch because no rows remain.")
+      }
+
+      val hasMoreInput = rowIter.hasNext
+
+      tryBuildDirect(builders, rowCount) match {
+        case Right(batch) =>
+          BuildOutcome(batch, None, hasMoreInput)
+        case Left(ex) =>
+          if (localGoal.isInstanceOf[RequireSingleBatchLike]) {
+            throw ex
+          } else {
+            fallbackToHost(builders, rowCount, hasMoreInput)
+          }
+      }
+    }
+  }
+
+  private def fallbackToHost(
+      builders: GpuColumnarBatchBuilder,
+      rowCount: Int,
+      hasMoreInput: Boolean): BuildOutcome = {
+    val hostColumns = builders.detachHostColumns()
+    val hostRef = new HostBatchRef(localSchema, hostColumns, rowCount)
+    val initialWork =
+      new HostRangeWork(hostRef, 0, rowCount, localSchema, converters, opTime)
+    val hostIter = createHostRetryIterator(initialWork)
+    require(hostIter.hasNext,
+      "Retry iterator returned no result when rebuilding a host-backed batch.")
+    val first = hostIter.next()
+    val pendingIter = if (hostIter.hasNext) Some(hostIter) else None
+    BuildOutcome(first, pendingIter, hasMoreInput)
+  }
+
+  private def tryBuildDirect(
+      builders: GpuColumnarBatchBuilder,
+      rowCount: Int): Either[Throwable, ColumnarBatch] = {
+    try {
+      Option(TaskContext.get())
+        .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
+      val batch = NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
+        RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
+          builders.tryBuild(rowCount)
+        }
+      }
+      Right(batch)
+    } catch {
+      case ex @ (_: GpuSplitAndRetryOOM | _: CpuSplitAndRetryOOM | _: CpuRetryOOM) => Left(ex)
+    }
+  }
+
+  private def createHostRetryIterator(
+      work: HostRangeWork): Iterator[ColumnarBatch] = {
+    RmmRapidsRetryIterator.withRetry(work, splitHostRange _) { attempt =>
+      attempt.buildBatch()
+    }
+  }
+
+  private def splitHostRange(work: HostRangeWork): Seq[HostRangeWork] = {
+    withResource(work) { cur =>
+      val leftCount = cur.rowCount / 2
+      val rightCount = cur.rowCount - leftCount
+      if (leftCount == 0 || rightCount == 0) {
+        throw new GpuSplitAndRetryOOM(
+          s"GPU OutOfMemory: host range of ${cur.rowCount} rows cannot be split further!")
+      }
+      Seq(
+        new HostRangeWork(cur.batchRef, cur.startRow, leftCount,
+          localSchema, converters, opTime),
+        new HostRangeWork(cur.batchRef, cur.startRow + leftCount, rightCount,
+          localSchema, converters, opTime))
+    }
+  }
+
+}
+
+private class HostBatchRef(
+    schema: StructType,
+    hostColumns: Array[ai.rapids.cudf.HostColumnVector],
+    numRows: Int) {
+
+  private val rapidsColumns =
+    schema.fields.zip(hostColumns).map { case (field, column) =>
+      new RapidsHostColumnVector(field.dataType, column)
+    }
+
+  private val batch =
+    new ColumnarBatch(rapidsColumns.asInstanceOf[Array[ColumnVector]], numRows)
+
+  private var refCount = 0
+
+  def retain(): Unit = {
+    refCount += 1
+  }
+
+  def release(): Unit = {
+    refCount -= 1
+    if (refCount == 0) {
+      batch.close()
+    } else if (refCount < 0) {
+      throw new IllegalStateException("HostBatchRef released too many times")
+    }
+  }
+
+  def getBatch: ColumnarBatch = batch
+}
+
+private class HostRangeWork(
+    val batchRef: HostBatchRef,
+    val startRow: Int,
+    val rowCount: Int,
+    schema: StructType,
+    converters: GpuRowToColumnConverter,
+    opTime: GpuMetric) extends AutoCloseable {
+
+  batchRef.retain()
+  private var closed = false
+
+  def buildBatch(): ColumnarBatch = {
+    withResource(new GpuColumnarBatchBuilder(schema, math.max(1, rowCount))) { builders =>
+      val hostBatch = batchRef.getBatch
+      val rowIter = hostBatch.rowIterator()
+      var toSkip = startRow
+      while (toSkip > 0 && rowIter.hasNext) {
+        rowIter.next()
+        toSkip -= 1
+      }
+      var processed = 0
+      while (processed < rowCount && rowIter.hasNext) {
+        val row = rowIter.next()
+        converters.convert(row, builders)
+        processed += 1
+      }
+      if (processed != rowCount) {
+        throw new IllegalStateException(
+          s"Expected $rowCount rows in host range but processed $processed")
+      }
+      Option(TaskContext.get())
+          .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
+      NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
+        RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
+          builders.tryBuild(rowCount)
+        }
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    if (!closed) {
+      closed = true
+      batchRef.release()
+    }
+  }
+}
 
 object GeneratedInternalRowToCudfRowIterator extends Logging {
   def apply(input: Iterator[InternalRow],
@@ -1084,9 +1324,19 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
       val converters = new GpuRowToColumnConverter(localSchema)
       val conf = new RapidsConf(child.conf)
       val batchSizeBytes = conf.gpuTargetBatchSizeBytes
-      rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, batchSizeBytes, converters,
-        numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
+      rowBased.mapPartitions { rowIter =>
+        val iterator =
+          if (localGoal.isInstanceOf[RequireSingleBatchLike]) {
+            new SingleBatchRowToColumnarIterator(rowIter,
+              localSchema, localGoal, batchSizeBytes, converters,
+              numInputRows, numOutputRows, numOutputBatches, streamTime, opTime)
+          } else {
+            new RowToColumnarIterator(rowIter,
+              localSchema, localGoal, batchSizeBytes, converters,
+              numInputRows, numOutputRows, numOutputBatches, streamTime, opTime)
+          }
+        iterator
+      }
     }
   }
 }

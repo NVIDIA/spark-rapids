@@ -292,9 +292,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     public HostColumnVector[] buildHostColumns() {
-      // buildHostColumns is called from tryBuild, and tryBuild has to be safe to call
-      // multiple times, so if a retry exception happens in this code, we need to pick
-      // up where we left off last time.
+      if (hostColumns != null) {
+        return hostColumns;
+      }
       if (wipHostColumns == null) {
         wipHostColumns = new HostColumnVector[builders.length];
       }
@@ -307,8 +307,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           throw new IllegalStateException("buildHostColumns cannot be called more than once");
         }
       }
-      HostColumnVector[] result = wipHostColumns;
+      hostColumns = wipHostColumns;
       wipHostColumns = null;
+      return hostColumns;
+    }
+
+    public HostColumnVector[] detachHostColumns() {
+      HostColumnVector[] result = buildHostColumns();
+      hostColumns = null;
       return result;
     }
 
