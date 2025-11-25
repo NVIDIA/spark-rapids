@@ -45,8 +45,8 @@ AggregateInPandasExec,1.2
 ArrowEvalPythonExec,1.2
 FlatMapCoGroupsInPandasExec,3.0
 FlatMapGroupsInPandasExec,1.2
-MapInArrowExec,3.0
 MapInPandasExec,1.2
+PythonMapInArrowExec,3.0
 WindowInPandasExec,1.2
 WindowExec,3.0
 WindowGroupLimitExec,3.0
@@ -102,8 +102,6 @@ Cbrt,4
 Ceil,4
 CheckOverflowInTableInsert,4
 Coalesce,4
-CollationAwareMurmur3Hash,4
-CollationAwareXxHash64,4
 CollectList,4
 CollectSet,4
 Concat,4
@@ -170,7 +168,6 @@ InputFileBlockLength,4
 InputFileBlockStart,4
 InputFileName,4
 IntegralDivide,4
-Invoke,4
 IsNaN,4
 IsNotNull,4
 IsNull,4
@@ -202,7 +199,6 @@ MapConcat,4
 MapEntries,4
 MapFilter,4
 MapFromArrays,4
-MapFromEntries,4
 MapKeys,4
 MapValues,4
 MapZipWith,4
