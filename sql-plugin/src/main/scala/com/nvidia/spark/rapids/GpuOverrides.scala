@@ -4716,11 +4716,6 @@ object GpuOverrides extends Logging {
     }
   }
 
-  val preRowToColProjection = TreeNodeTag[Seq[NamedExpression]]("rapids.gpu.preRowToColProcessing")
-
-  val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
-    "rapids.gpu.postColToRowProcessing")
-
   def wrapAndTagPlan(plan: SparkPlan, conf: RapidsConf): SparkPlanMeta[SparkPlan] = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
     wrap.tagForGpu()
