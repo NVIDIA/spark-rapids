@@ -17,34 +17,69 @@
 package com.nvidia.spark.rapids.iceberg
 
 import java.lang.Math.toIntExact
-
 import scala.collection.JavaConverters._
-
-import ai.rapids.cudf.Table
-import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, RapidsHostColumnVector, SpillableColumnarBatch, SpillPriorities}
+import ai.rapids.cudf.{DType, Table}
+import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, RapidsHostColumnVector, SpillPriorities, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.iceberg.{PartitionField, PartitionSpec, Schema, StructLike}
 import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
 import org.apache.iceberg.spark.functions._
 import org.apache.iceberg.types.Types
-
+import org.apache.iceberg.types.Types.{DecimalType => IcebergDecimalType}
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.catalyst.expressions.NamedExpression.newExprId
 import org.apache.spark.sql.types.{DataType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 /**
  * A GPU based Iceberg partitioner that partitions columnar batches by key.
  * This class takes pre-computed keys and values as separate columnar batches.
  *
- * @param keyType the iceberg struct type of the partition keys
+ * @param spec the partition spec
  * @param dataType the iceberg struct type of the input data
  */
 class GpuIcebergPartitioner(
-  val keyType: Types.StructType,
+  val spec: PartitionSpec,
   val dataType: Types.StructType) {
 
+  /**
+   * Fix for the type promotion of truncating decimal types in partition spec:
+   * Input Decimal32 => Output Decimal64
+   * Input Decimal64 => Output Decimal128
+   *
+   * @return the fixed partition key type
+   * TODO: Supports nested types
+   */
+  private def getKeyType(spec: PartitionSpec): Types.StructType = {
+    val fields = spec.fields().asScala.map { field =>
+      val transform = field.transform()
+      val sourceType = spec.schema.findType(field.sourceId)
+      val resultType = transform.getResultType(sourceType)
+
+      val fixedType = GpuTransform(transform.toString) match {
+        case _: GpuTruncate =>
+          resultType match {
+            case dt: IcebergDecimalType =>
+              if (dt.precision <= DType.DECIMAL32_MAX_PRECISION) {
+                // promote the decimal type: decimal 32 -> decimal 64
+                Types.DecimalType.of(DType.DECIMAL64_MAX_PRECISION, dt.scale)
+              } else if (dt.precision <= DType.DECIMAL64_MAX_PRECISION) {
+                // promote the decimal type: decimal 64 -> decimal 128
+                Types.DecimalType.of(DType.DECIMAL128_MAX_PRECISION, dt.scale)
+              } else {
+                Types.DecimalType.of(DType.DECIMAL128_MAX_PRECISION, dt.scale)
+              }
+            case _ => resultType
+          }
+        case _ => resultType
+      }
+      Types.NestedField.optional(field.fieldId(), field.name(), fixedType)
+    }
+    Types.StructType.of(fields: _*)
+  }
+
+  private val keyType = getKeyType(spec)
   private val keySparkType: StructType = GpuTypeToSparkType.toSparkType(keyType)
   private val dataSparkType: StructType = GpuTypeToSparkType.toSparkType(dataType)
   private val valueSparkType: Array[DataType] = dataSparkType.fields.map(_.dataType)
@@ -126,7 +161,10 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
   private val partitionExprs: Seq[GpuExpression] = spec.fields().asScala.map(getPartitionExpr).toSeq
 
   // Create the underlying partitioner
-  private val partitioner = new GpuIcebergPartitioner(spec.partitionType(), dataType)
+  private val partitioner = {
+    // TODO
+    new GpuIcebergPartitioner(spec, dataType)
+  }
 
   /**
    * Partition the `input` columnar batch using iceberg's partition spec.

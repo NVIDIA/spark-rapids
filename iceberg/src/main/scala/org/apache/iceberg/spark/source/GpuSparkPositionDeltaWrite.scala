@@ -438,8 +438,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
             withResource(Scalar.fromInt(specIdHost)) { specId =>
               val spec = specs(specIdHost)
               val partitioner = partitioners.getOrElseUpdate(spec.specId(),
-                new GpuIcebergPartitioner(spec.partitionType(),
-                  DeleteSchemaUtil.pathPosSchema().asStruct()))
+                new GpuIcebergPartitioner(spec, DeleteSchemaUtil.pathPosSchema().asStruct()))
 
               val specIdFilter = deleteWriteContext.specIdCol.equalTo(specId)
 
@@ -558,8 +557,7 @@ class GpuDeleteOnlyDeltaWriter(
             withResource(Scalar.fromInt(specIdHost)) { specId =>
               val spec = table.specs().get(specIdHost)
               val partitioner = partitioners.getOrElseUpdate(spec.specId(),
-                  new GpuIcebergPartitioner(spec.partitionType(),
-                    DeleteSchemaUtil.pathPosSchema().asStruct()))
+                 new GpuIcebergPartitioner(spec, DeleteSchemaUtil.pathPosSchema().asStruct()))
 
               val specIdFilter = deleteWriteContext.specIdCol
                 .equalTo(specId)

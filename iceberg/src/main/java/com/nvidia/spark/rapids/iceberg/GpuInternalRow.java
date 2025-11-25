@@ -23,6 +23,7 @@ import org.apache.spark.sql.types.DataType;
 
 import org.apache.spark.sql.types.DateType;
 import org.apache.spark.sql.types.Decimal;
+import org.apache.spark.sql.types.DecimalType;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -56,8 +57,13 @@ public class GpuInternalRow extends InternalRow {
     if (dataType instanceof DateType) {
       // Override for Date type.
       return LocalDate.ofEpochDay(getInt(ordinal));
+    } else if (dataType instanceof DecimalType) {
+      // Override for Decimal type.
+      DecimalType decimalType = (DecimalType) dataType;
+      int precision = decimalType.precision();
+      int scale = decimalType.scale();
+      return getDecimal(ordinal, precision, scale).toJavaBigDecimal();
     } else {
-      // use the original get method for other data types.
       return wrapped.get(ordinal, dataType);
     }
   }
