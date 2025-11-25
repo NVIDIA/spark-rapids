@@ -464,7 +464,8 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
   run_pyarrow_tests
 fi
 
-if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "EXTRA_JOIN_ONLY" ]]; then
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/13854
+if [[ "$TEST_MODE" == "EXTRA_JOIN_ONLY" ]]; then
   run_other_join_modes_tests
 fi
 
