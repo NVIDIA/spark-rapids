@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,11 @@ case class SparkShimVersion(major: Int, minor: Int, patch: Int) extends ShimVers
 case class ClouderaShimVersion(major: Int, minor: Int, patch: Int, clouderaVersion: String)
   extends ShimVersion {
   override def toString(): String = s"$major.$minor.$patch-cloudera-$clouderaVersion"
+}
+
+case class AcceldataShimVersion(major: Int, minor: Int, patch: Int, acceldataVersion: String)
+  extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch-acceldata-$acceldataVersion"
 }
 
 case class DatabricksShimVersion(

@@ -2286,6 +2286,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)
       case ClouderaShimVersion(a, b, c, _) => (a, b, c)
+      case AcceldataShimVersion(a, b, c, _) => (a, b, c)
     }
     val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
     val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
