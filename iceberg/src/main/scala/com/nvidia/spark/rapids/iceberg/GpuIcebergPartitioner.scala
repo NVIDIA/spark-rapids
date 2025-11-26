@@ -161,10 +161,7 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
   private val partitionExprs: Seq[GpuExpression] = spec.fields().asScala.map(getPartitionExpr).toSeq
 
   // Create the underlying partitioner
-  private val partitioner = {
-    // TODO
-    new GpuIcebergPartitioner(spec, dataType)
-  }
+  private val partitioner = new GpuIcebergPartitioner(spec, dataType)
 
   /**
    * Partition the `input` columnar batch using iceberg's partition spec.
