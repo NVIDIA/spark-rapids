@@ -2143,6 +2143,8 @@ case class GpuStringInstr(str: Expression, substr: Expression)
 case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, ansiEnabled: Boolean)
   extends GpuTernaryExpression {
 
+  override def nullable: Boolean = true
+
   override def doColumnar(
     strCv: GpuColumnVector,
     fromCv: GpuColumnVector,
@@ -2230,7 +2232,9 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     fromS: GpuScalar,
     toS: GpuScalar
   ): ColumnVector = {
-    throw new RuntimeException("Logic error: Spark should fold the conv expr into scalar value.")
+    withResource(GpuColumnVector.from(toS, numRows, toBase.dataType)) { expandedToS =>
+      doColumnar(strSr, fromS, expandedToS)
+    }
   }
 
   override def doColumnar(

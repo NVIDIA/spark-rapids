@@ -55,12 +55,14 @@ trait TaskAutoCloseableResource extends AutoCloseable {
  * Base class for iterators producing the results of a join.
  * @param gatherNvtxId NvtxId to use for the NVTX range when producing the join gather maps
  * @param targetSize configured target batch size in bytes
+ * @param sizeEstimateThreshold threshold for deciding when to skip expensive size estimation
  * @param opTime metric to record op time in the iterator
  * @param joinTime metric to record GPU time spent in join
  */
 abstract class AbstractGpuJoinIterator(
     gatherNvtxId: NvtxId,
     targetSize: Long,
+    sizeEstimateThreshold: Double,
     val opTime: GpuMetric,
     joinTime: GpuMetric)
     extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
@@ -148,7 +150,8 @@ abstract class AbstractGpuJoinIterator(
         gather.checkpoint()
         withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
           withRestoreOnRetry(gather) {
-            val nextRows = JoinGatherer.getRowsInNextBatch(gather, attempt.targetSize)
+            val nextRows = JoinGatherer.getRowsInNextBatch(gather, attempt.targetSize,
+              sizeEstimateThreshold)
             gather.gatherNext(nextRows)
           }
         }.next()
@@ -175,6 +178,7 @@ abstract class AbstractGpuJoinIterator(
  * @param streamAttributes attributes corresponding to the streaming side input
  * @param builtBatch batch for the built side input of the join
  * @param targetSize configured target batch size in bytes
+ * @param sizeEstimateThreshold threshold for deciding when to skip expensive size estimation
  * @param opTime metric to record time spent for this operation
  * @param joinTime metric to record GPU time spent in join
  */
@@ -184,11 +188,13 @@ abstract class SplittableJoinIterator(
     streamAttributes: Seq[Attribute],
     builtBatch: LazySpillableColumnarBatch,
     targetSize: Long,
+    sizeEstimateThreshold: Double,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
       gatherNvtxId,
       targetSize,
+      sizeEstimateThreshold,
       opTime = opTime,
       joinTime = joinTime) with Logging {
   // For some join types even if there is no stream data we might output something
