@@ -170,6 +170,8 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
     Map.empty
   }
 
+  override def hasGpuWriteFiles: Boolean = true
+
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
     Seq(
