@@ -70,6 +70,26 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
     }
   }
 
+  private def cleanupLoreRootQuietly(): Unit = {
+    try {
+      val fs = loreRootPath.getFileSystem(hadoopConfiguration)
+      if (fs.exists(loreRootPath)) {
+        fs.delete(loreRootPath, true)
+      }
+    } catch {
+      case NonFatal(e) =>
+        logWarning(s"Failed cleaning partial LORE dump at $loreRootPath", e)
+    }
+  }
+
+  private def cleanupAfterStrictFailure(batch: ColumnarBatch): Unit = {
+    try {
+      batch.close()
+    } finally {
+      cleanupLoreRootQuietly()
+    }
+  }
+
   private def handleNonStrictFailure(reason: Throwable, onStrictFailure: () => Unit): Unit = {
     if (!info.nonStrictMode) {
       onStrictFailure()
@@ -130,7 +150,7 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
                 hadoopConfiguration)
             } catch {
               case NonFatal(e) =>
-                handleNonStrictFailure(e, () => ret.close())
+                handleNonStrictFailure(e, () => cleanupAfterStrictFailure(ret))
             }
           }
           ret
@@ -156,7 +176,7 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
             }
           } catch {
             case NonFatal(e) =>
-              handleNonStrictFailure(e, () => batch.close())
+              handleNonStrictFailure(e, () => cleanupAfterStrictFailure(batch))
           }
           batch
         }
