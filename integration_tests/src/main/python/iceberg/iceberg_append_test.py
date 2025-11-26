@@ -139,22 +139,22 @@ def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_facto
 @pytest.mark.parametrize("write_distribution_mode", ["none"],
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
-    # pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
-    # pytest.param("year(_c8)", id="year(date_col)"),
-    # pytest.param("month(_c8)", id="month(date_col)"),
-    # pytest.param("day(_c8)", id="day(date_col)"),
-    # pytest.param("year(_c9)", id="year(timestamp_col)"),
-    # pytest.param("month(_c9)", id="month(timestamp_col)"),
-    # pytest.param("day(_c9)", id="day(timestamp_col)"),
-    # pytest.param("hour(_c9)", id="hour(timestamp_col)"),
-    # pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
-    # pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
-    # pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
     pytest.param("truncate(10, _c10)", id="truncate(10, decimal32_col)"),
-    # pytest.param("truncate(10, _c11)", id="truncate(10, decimal64_col)"),
-    # pytest.param("truncate(10, _c12)", id="truncate(10, decimal128_col)"),
+    pytest.param("truncate(10, _c11)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c12)", id="truncate(10, decimal128_col)"),
 ])
-def test_insert_into_partitioned_table1(spark_tmp_table_factory, format_version, fanout, write_distribution_mode, partition_col_sql):
+def test_insert_into_partitioned_table(spark_tmp_table_factory, format_version, fanout, write_distribution_mode, partition_col_sql):
     table_prop = {"format-version": format_version,
                   "write.spark.fanout.enabled": str(fanout).lower(),
                   "write.distribution-mode": write_distribution_mode}

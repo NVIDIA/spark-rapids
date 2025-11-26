@@ -152,6 +152,12 @@ def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory, fo
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c10)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c11)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c12)", id="truncate(10, decimal128_col)"),
 ])
 def test_insert_overwrite_partitioned_table(spark_tmp_table_factory, format_version, fanout, write_distribution_mode, partition_col_sql):
     """Test INSERT OVERWRITE on partitioned Iceberg tables."""
@@ -322,7 +328,6 @@ def test_insert_overwrite_partitioned_table_all_cols_fallback(spark_tmp_table_fa
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_insert_overwrite_partitioned_table_unsupported_partition_fallback(

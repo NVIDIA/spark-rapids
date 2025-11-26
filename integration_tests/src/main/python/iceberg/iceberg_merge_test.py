@@ -164,6 +164,12 @@ def do_merge_test(
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c10)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c11)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c12)", id="truncate(10, decimal128_col)"),
 ])
 @pytest.mark.parametrize('merge_sql', [
     pytest.param(
@@ -285,7 +291,6 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, reader_t
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
     pytest.param("bucket(8, _c6)", id="bucket(8, string_col)"),
 ])
 def test_iceberg_merge_fallback_unsupported_partition_transform(
