@@ -29,14 +29,13 @@ import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_N
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.metric.IncrementMetric
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
-import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
-import org.apache.spark.sql.rapids.ExternalSource
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources.CreatableRelationProvider
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // Expression support shared across versions - defined outside class to avoid serialization issues
@@ -94,15 +93,6 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      val session = meta.wrapped.session
-      val useMetadataRowIndex =
-        session.sessionState.conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
-      val requiredSchema = meta.wrapped.requiredSchema
-      val isRowDeletedCol =  requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
-      if (useMetadataRowIndex && isRowDeletedCol) {
-        meta.willNotWorkOnGpu("we don't support generating metadata row index for " +
-          s"${meta.wrapped.getClass.getSimpleName}")
-      }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
@@ -144,6 +134,57 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       cpuExec.orCreate,
       cpuExec.invalidateCache)
   }
+
+
+  override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // This logic is a special case of eliminating of unused columns.
+      //
+      // Delta modifies the logical plan (if there is a deletion vector present on the Delta table)
+      //
+      // https://github.com/delta-io/delta/blob/f405c3fc4ea3a3ed420f58fb8581aa34e0f0826c
+      // /spark/src/main/scala/org/apache/spark/sql/delta/PreprocessTableWithDVs.scala#L69
+      //
+      // to compute is_deleted from row_index. Not only Plugin's current logic is not taking
+      // advantage of this but it also requires producing the rest of completely unrelated
+      // file metadata.
+      //
+      // The following logic along with isDVScan matches DV-enabled scan produced by the Delta
+      // rule and cleans out _metadata. If _metadata is used above the DV-Scan we fallback on CPU
+      //
+      case dvRoot @ GpuProjectExec(outputList,
+      dvFilter @ GpuFilterExec(condition,
+      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
+        if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
+          !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
+        dvRoot.withNewChildren(Seq(
+          dvFilter.withNewChildren(Seq(
+            dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
+              .withNewChildren(Seq(
+                fsse.copy(
+                  requiredSchema = StructType(
+                    fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
+                  ))(fsse.rapidsConf)))))))
+      case _ =>
+        plan.withNewChildren(plan.children.map(pruneFileMetadata))
+    }
+  }
+
+  override def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
+    val maybeDVScan = meta.parent // project input
+      .flatMap(_.parent) // filter
+      .flatMap(_.parent) // project output
+      .map(_.wrapped)
+
+    maybeDVScan.map {
+      case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
+        condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
+          inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata")
+      case _ =>
+        false
+    }.getOrElse(false)
+  }
+
 }
 
 class DeltaCreatableRelationProviderMeta(

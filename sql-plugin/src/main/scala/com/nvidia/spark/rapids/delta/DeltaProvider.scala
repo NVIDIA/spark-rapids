@@ -92,6 +92,10 @@ trait DeltaProvider {
   def convertToGpu(
       cpuExec: OverwriteByExpressionExecV1,
       meta: OverwriteByExpressionExecV1Meta): GpuExec
+
+  def pruneFileMetadata(plan: SparkPlan): SparkPlan = plan
+
+  def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = false
 }
 
 object DeltaProvider {
