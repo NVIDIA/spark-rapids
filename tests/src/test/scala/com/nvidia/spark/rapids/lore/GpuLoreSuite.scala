@@ -22,6 +22,8 @@ import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, GpuHa
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
 
+import java.util.UUID
+
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
@@ -546,7 +548,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       val plan = initialDf.queryExecution.executedPlan
       val aggLoreId = findLoreId[GpuHashAggregateExec](plan)
       val aggLoreIdInt = aggLoreId.toInt
-      val loreRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/non-strict-runtime-failure")
+      val runId = UUID.randomUUID().toString
+      val loreRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/non-strict-runtime-failure-$runId")
       val fs = loreRoot.getFileSystem(spark.sparkContext.hadoopConfiguration)
       val strictLoreIdsConf = s"$aggLoreId[*]"
       val nonStrictLoreIdsConf = s"$aggLoreId[*]"
