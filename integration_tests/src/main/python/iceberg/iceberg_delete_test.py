@@ -18,7 +18,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list, rapids_reader_types)
-from marks import allow_non_gpu, iceberg, ignore_order
+from marks import allow_non_gpu, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_35x, with_cpu_session, with_gpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
@@ -133,6 +133,7 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, reader_type
 # This requires reading of _partition field, which is a struct
 @allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)

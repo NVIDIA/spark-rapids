@@ -22,7 +22,7 @@ from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf)
-from marks import iceberg, ignore_order, allow_non_gpu
+from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 
 pytestmark = [
@@ -103,6 +103,7 @@ def test_ctas_unpartitioned_table(spark_tmp_table_factory,
 
 
 @iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],

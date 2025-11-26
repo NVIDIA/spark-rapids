@@ -20,7 +20,7 @@ from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list,
                      rapids_reader_types)
-from marks import allow_non_gpu, iceberg, ignore_order
+from marks import allow_non_gpu, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
@@ -151,6 +151,7 @@ def do_merge_test(
 
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
