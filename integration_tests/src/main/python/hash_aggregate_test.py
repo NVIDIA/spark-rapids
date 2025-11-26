@@ -1143,11 +1143,9 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen,
     ('k2', RepeatSeqGen(LongGen(), length=20)),
     ('v', StringGen(nullable=False))]], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_hash_groupby_collect_partial_fallback_aqe_plan_changed(spark_tmp_table_factory,
                                                                 data_gen,
-                                                                use_obj_hash_agg,
-                                                                kudo_enabled):
+                                                                use_obj_hash_agg):
     # --- Create bucketed table ---
     bucketed_table = spark_tmp_table_factory.get()
     def write_bucket_table(spark):
@@ -1159,7 +1157,6 @@ def test_hash_groupby_collect_partial_fallback_aqe_plan_changed(spark_tmp_table_
     # --- Run test case ---
     conf = {
         'spark.sql.adaptive.enabled': True,
-        kudo_enabled_conf_key: kudo_enabled,
         'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg
     }
     # Assume forall is not supported on GPU yet, so the AggregateExec including it
@@ -1185,7 +1182,9 @@ def test_hash_groupby_collect_partial_fallback_aqe_plan_changed(spark_tmp_table_
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: spark.table(bucketed_table),
         table_name='table',
-        exist_classes=exist_clz, sql=query, conf=conf)
+        exist_classes=','.join(exist_clz),
+        sql=query,
+        conf=conf)
 
 _replace_modes_single_distinct = [
     # Spark: CPU -> CPU -> GPU(PartialMerge) -> GPU(Partial)

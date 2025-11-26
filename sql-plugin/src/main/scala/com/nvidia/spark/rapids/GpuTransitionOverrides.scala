@@ -55,7 +55,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuRowToColumnarExec(projectedChild, goal)
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
-    case p if p.children.size == 1 => // single child case
+    case p if p.children.size == 1 =>
+      // single child case, need to check over GpuColumnarToRowExec for injected projects
       val optChild = optimizeGpuPlanTransitions(p.children.head)
       if (optChild.isInstanceOf[GpuColumnarToRowExec]) {
         // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
