@@ -22,6 +22,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuTypedImperativeSupportedAggregateExecMeta.{preRowToColProjection, readBufferConverter}
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
@@ -803,7 +804,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
-        var updatedPlan = insertHashOptimizeSorts(plan)
+        var updatedPlan = DeltaProvider().pruneFileMetadata(plan)
+        updatedPlan = insertHashOptimizeSorts(updatedPlan)
         updatedPlan = updateScansForInputAndOrder(updatedPlan)
         if (rapidsConf.isFileScanPrunePartitionEnabled) {
           updatedPlan = prunePartitionForFileSourceScan(updatedPlan)

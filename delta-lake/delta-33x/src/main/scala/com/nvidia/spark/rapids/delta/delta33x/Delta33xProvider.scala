@@ -74,7 +74,8 @@ object Delta33xProvider extends DeltaProviderBase {
 
   override protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat =
     GpuDelta33xParquetFileFormat(fmt.protocol, fmt.metadata, fmt.nullableRowTrackingFields,
-      fmt.optimizationsEnabled, fmt.tablePath, fmt.isCDCRead)
+      false, // we don't support splits and predicate pushdown yet
+      fmt.tablePath, fmt.isCDCRead)
 
   override def convertToGpu(
       cpuExec: AppendDataExecV1,
