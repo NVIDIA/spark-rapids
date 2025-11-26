@@ -22,6 +22,9 @@ import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, GpuHa
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
 
+import java.util.UUID
+
+import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
@@ -534,6 +537,72 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         assert(!fs.exists(rangePath), s"Unexpected dump artifacts for loreId $rangeLoreId")
       } finally {
         cleanupLoreConf()
+      }
+    }
+  }
+
+  test("Non-strict LORE tolerates runtime dump failures") {
+    withGpuSparkSession { spark =>
+      val initialDf = buildRangeAggDf(spark)
+      initialDf.collect()
+      val plan = initialDf.queryExecution.executedPlan
+      val aggLoreId = findLoreId[GpuHashAggregateExec](plan)
+      val aggLoreIdInt = aggLoreId.toInt
+      val runId = UUID.randomUUID().toString
+      val loreRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/non-strict-runtime-failure-$runId")
+      val fs = loreRoot.getFileSystem(spark.sparkContext.hadoopConfiguration)
+      val strictLoreIdsConf = s"$aggLoreId[*]"
+      val nonStrictLoreIdsConf = s"$aggLoreId[*]"
+
+      def cleanupLoreConf(): Unit = {
+        Seq(
+          RapidsConf.LORE_DUMP_IDS.key,
+          RapidsConf.LORE_DUMP_PATH.key,
+          RapidsConf.LORE_NON_STRICT_MODE.key
+        ).foreach { key =>
+          spark.conf.getOption(key).foreach(_ => spark.conf.unset(key))
+        }
+        if (fs.exists(loreRoot)) {
+          fs.delete(loreRoot, true)
+        }
+        val aggLorePath = new Path(loreRoot, s"loreId-$aggLoreId")
+        val marker = GpuLore.nonStrictSkipMarkerPath(aggLorePath)
+        val markerFs = marker.getFileSystem(spark.sparkContext.hadoopConfiguration)
+        if (markerFs.exists(marker)) {
+          markerFs.delete(marker, false)
+        }
+      }
+
+      cleanupLoreConf()
+      try {
+        // Strict mode should still fail fast when runtime dumping errors occur
+        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, loreRoot.toString)
+        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, strictLoreIdsConf)
+        LoreTestHooks.failNextDumpFor(aggLoreIdInt)
+        val strictDf = buildRangeAggDf(spark)
+        val strictError = intercept[SparkException] {
+          strictDf.collect()
+        }
+        assert(strictError.getCause.isInstanceOf[RuntimeException])
+        assert(strictError.getCause.getMessage.contains("Injected LORE dump failure"))
+        cleanupLoreConf()
+        LoreTestHooks.clear()
+
+        // Non-strict mode should swallow the runtime failure, clean up, and keep dumping other ids
+        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, loreRoot.toString)
+        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, nonStrictLoreIdsConf)
+        spark.conf.set(RapidsConf.LORE_NON_STRICT_MODE.key, "true")
+        LoreTestHooks.failNextDumpFor(aggLoreIdInt)
+        val relaxedDf = buildRangeAggDf(spark)
+        assert(relaxedDf.collect().nonEmpty)
+        val aggPath = new Path(loreRoot, s"loreId-$aggLoreId")
+        assert(!fs.exists(aggPath), s"Unexpected dump artifacts for loreId $aggLoreId")
+        val marker = GpuLore.nonStrictSkipMarkerPath(aggPath)
+        assert(marker.getFileSystem(spark.sparkContext.hadoopConfiguration).exists(marker),
+          s"Expected skip marker at $marker")
+      } finally {
+        cleanupLoreConf()
+        LoreTestHooks.clear()
       }
     }
   }
