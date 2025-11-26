@@ -1162,6 +1162,8 @@ def test_hash_groupby_collect_partial_fallback_aqe_plan_changed(spark_tmp_table_
         kudo_enabled_conf_key: kudo_enabled,
         'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg
     }
+    # Assume forall is not supported on GPU yet, so the AggregateExec including it
+    # will be half on CPU and half on GPU.
     query = """
         select a,
             forall(collect_list(b), x -> length(x) > 0),
@@ -1172,12 +1174,18 @@ def test_hash_groupby_collect_partial_fallback_aqe_plan_changed(spark_tmp_table_
             group by k1
         ) t
         group by a"""
+
+    # Under Databricks runtimes, there is no partial Aggregate stage for the one including collect_ops, since
+    # the map-side combine is removed. So only CPU CollectList/Set will appear in the plan.
+    if is_databricks_runtime():
+        exist_clz = ['CollectList', 'CollectSet']
+    else:
+        exist_clz = ['CollectList', 'CollectSet', 'GpuCollectList', 'GpuCollectSet']
+
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: spark.table(bucketed_table),
         table_name='table',
-        exist_classes='CollectSet,GpuCollectSet,CollectList,GpuCollectList',
-        sql=query,
-        conf=conf)
+        exist_classes=exist_clz, sql=query, conf=conf)
 
 _replace_modes_single_distinct = [
     # Spark: CPU -> CPU -> GPU(PartialMerge) -> GPU(Partial)
