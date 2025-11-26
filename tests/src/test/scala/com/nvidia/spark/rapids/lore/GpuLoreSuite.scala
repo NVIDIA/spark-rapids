@@ -16,16 +16,16 @@
 
 package com.nvidia.spark.rapids.lore
 
-import scala.reflect.ClassTag
-
 import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, GpuHashAggregateExec, GpuRangeExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
-import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.execution.SparkPlan
+import scala.reflect.ClassTag
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   /**
@@ -502,7 +502,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
           RapidsConf.LORE_DUMP_PATH.key,
           RapidsConf.LORE_NON_STRICT_MODE.key
         ).foreach { key =>
-          spark.conf.getOption(key).foreach { _ =>
+          if (spark.conf.contains(key)) {
             spark.conf.unset(key)
           }
         }
