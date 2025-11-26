@@ -422,7 +422,8 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
 fi
 
 # Iceberg tests
-if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/13885
+if [[ "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
 fi
 
