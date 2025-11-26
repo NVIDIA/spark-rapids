@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.lore
 
-import scala.util.control.NonFatal
-
 import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, GpuExec, KudoSerializedTableColumn, SerializedTableColumn}
 import com.nvidia.spark.rapids.GpuCoalesceExec.EmptyPartition
 import com.nvidia.spark.rapids.jni.kudo.KudoSerializer
@@ -46,59 +44,19 @@ case class LoreDumpRDDInfo(
     nonStrictMode: Boolean = false)
 
 class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
-  extends RDD[ColumnarBatch](input) with GpuLoreRDD with Logging {
+  extends RDD[ColumnarBatch](input) with GpuLoreRDD {
   override def rootPath: Path = pathOfChild(info.loreOutputInfo.path, info.idxInParent)
   private val factDataTypes = info.attrs.map(_.dataType)
   lazy val kudoSerializer: KudoSerializer = new KudoSerializer(
     GpuColumnVector.from(factDataTypes.toArray))
-  private val loreRootPath = info.loreOutputInfo.path
-  @volatile private var skipDetected = false
-
-  private def hadoopConfiguration: org.apache.hadoop.conf.Configuration =
-    info.hadoopConf.value.value
-
-  private def skipActive: Boolean = {
-    if (!info.nonStrictMode) {
-      false
-    } else if (skipDetected) {
-      true
-    } else if (GpuLore.isLoreSkipActive(loreRootPath, hadoopConfiguration)) {
-      skipDetected = true
-      true
-    } else {
-      false
-    }
-  }
-
-  private def handleNonStrictFailure(reason: Throwable, onStrictFailure: () => Unit): Unit = {
-    if (!info.nonStrictMode) {
-      onStrictFailure()
-      throw reason
-    }
-    if (!skipDetected) {
-      skipDetected = true
-      GpuLore.markLoreSkipped(
-        loreRootPath,
-        hadoopConfiguration,
-        reason,
-        Some(info.loreOutputInfo.outputLoreId.loreId))
-    }
-  }
-
-  private def maybeInjectTestFailure(): Unit = {
-    if (LoreTestHooks.shouldFailDump(info.loreOutputInfo.outputLoreId.loreId)) {
-      throw new RuntimeException(
-        s"Injected LORE dump failure for loreId=${info.loreOutputInfo.outputLoreId.loreId}")
-    }
-  }
 
   def saveMeta(): Unit = {
     val meta = LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index), info.attrs)
-    GpuLore.dumpObject(meta, pathOfMeta, hadoopConfiguration)
+    GpuLore.dumpObject(meta, pathOfMeta, this.context.hadoopConfiguration)
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
-    if (info.loreOutputInfo.outputLoreId.shouldOutputPartition(split.index) && !skipActive) {
+    if (info.loreOutputInfo.outputLoreId.shouldOutputPartition(split.index)) {
       val originalIter = input.compute(split, context)
       new Iterator[ColumnarBatch] {
         var batchIdx: Int = -1
@@ -114,7 +72,7 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
         override def next(): ColumnarBatch = {
           val ret = dumpCurrentBatch()
           loadNextBatch()
-          if (!hasNext && !skipActive) {
+          if (!hasNext) {
             // This is the last batch, save the partition meta
             val isFromShuffle = ret.numCols() == 1 &&
               (ret.column(0).isInstanceOf[SerializedTableColumn] || ret.column(0)
@@ -125,40 +83,25 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
             } else {
               LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
             }
-            try {
-              GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index),
-                hadoopConfiguration)
-            } catch {
-              case NonFatal(e) =>
-                handleNonStrictFailure(e, () => ret.close())
-            }
+            GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index),
+              info.hadoopConf.value.value)
           }
           ret
         }
 
         private def dumpCurrentBatch(): ColumnarBatch = {
-          if (skipActive) {
-            return nextBatch.get
-          }
-          val batch = nextBatch.get
           val outputPath = pathOfBatch(split.index, batchIdx)
-          try {
-            maybeInjectTestFailure()
-            val fs = outputPath.getFileSystem(hadoopConfiguration)
-            val outputStream = fs.create(outputPath, true)
-            if (info.useOriginalSchemaNames) {
-              val colNames = info.attrs.map(_.name)
-              val sparkTypes = info.attrs.map(_.dataType)
-              DumpUtils.dumpToParquet(batch, outputStream, colNames, sparkTypes,
-                Some(kudoSerializer))
-            } else {
-              DumpUtils.dumpToParquet(batch, outputStream, Some(kudoSerializer))
-            }
-          } catch {
-            case NonFatal(e) =>
-              handleNonStrictFailure(e, () => batch.close())
+          val outputStream = outputPath.getFileSystem(info.hadoopConf.value.value)
+            .create(outputPath, true)
+          if (info.useOriginalSchemaNames) {
+            val colNames = info.attrs.map(_.name)
+            val sparkTypes = info.attrs.map(_.dataType)
+            DumpUtils.dumpToParquet(nextBatch.get, outputStream, colNames, sparkTypes,
+              Some(kudoSerializer))
+          } else {
+            DumpUtils.dumpToParquet(nextBatch.get, outputStream, Some(kudoSerializer))
           }
-          batch
+          nextBatch.get
         }
 
         private def loadNextBatch(): Unit = {

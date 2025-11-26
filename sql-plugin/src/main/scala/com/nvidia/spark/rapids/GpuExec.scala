@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import scala.util.control.NonFatal
-
 import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
@@ -365,46 +363,17 @@ trait GpuExec extends SparkPlan with Logging {
 
   private def dumpLoreMetaInfo(): Unit = {
     if (!LORE_SKIP_DUMPING_PLAN.get(conf)) {
-      val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
-      val nonStrictMode = RapidsConf.LORE_NON_STRICT_MODE.get(conf)
-      val loreIdOpt = GpuLore.loreIdOf(this).map(_.toInt)
       getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
-        val loreRoot = new Path(rootPath)
-        val skipActive = nonStrictMode && GpuLore.isLoreSkipActive(loreRoot, hadoopConf)
-        if (!skipActive) {
-          try {
-            GpuLore.dumpPlan(this, loreRoot)
-          } catch {
-            case NonFatal(e) if nonStrictMode =>
-              GpuLore.markLoreSkipped(loreRoot, hadoopConf, e, loreIdOpt)
-          }
-        }
+        GpuLore.dumpPlan(this, new Path(rootPath))
       }
     }
   }
 
   protected def dumpLoreRDD(inner: RDD[ColumnarBatch]): RDD[ColumnarBatch] = {
     getTagValue(LORE_DUMP_RDD_TAG).map { info =>
-      val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
-      val loreRoot = info.loreOutputInfo.path
-      val skipActive = info.nonStrictMode && GpuLore.isLoreSkipActive(loreRoot, hadoopConf)
-      if (skipActive) {
-        inner
-      } else {
-        try {
-          val rdd = new GpuLoreDumpRDD(info, inner)
-          rdd.saveMeta()
-          rdd
-        } catch {
-          case NonFatal(e) if info.nonStrictMode =>
-            GpuLore.markLoreSkipped(
-              loreRoot,
-              hadoopConf,
-              e,
-              Some(info.loreOutputInfo.outputLoreId.loreId))
-            inner
-        }
-      }
+      val rdd = new GpuLoreDumpRDD(info, inner)
+      rdd.saveMeta()
+      rdd
     }.getOrElse(inner)
   }
 

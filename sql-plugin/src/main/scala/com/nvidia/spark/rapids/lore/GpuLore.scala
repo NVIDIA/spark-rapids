@@ -64,57 +64,6 @@ trait GpuLoreRDD {
 }
 
 object GpuLore extends Logging {
-  private val NON_STRICT_SKIP_MARKER_PREFIX = ".lore-nonstrict-skip-"
-
-  private[rapids] def nonStrictSkipMarkerPath(rootPath: Path): Path = {
-    val parent = Option(rootPath.getParent).getOrElse(rootPath)
-    new Path(parent, s"$NON_STRICT_SKIP_MARKER_PREFIX${rootPath.getName}")
-  }
-
-  private[rapids] def isLoreSkipActive(rootPath: Path, conf: Configuration): Boolean = {
-    val marker = nonStrictSkipMarkerPath(rootPath)
-    try {
-      marker.getFileSystem(conf).exists(marker)
-    } catch {
-      case NonFatal(e) =>
-        logWarning(s"Unable to check non-strict skip marker at $marker", e)
-        false
-    }
-  }
-
-  private[rapids] def markLoreSkipped(
-      rootPath: Path,
-      conf: Configuration,
-      reason: Throwable,
-      loreId: Option[LoreId]): Unit = {
-    val alreadySkipped = isLoreSkipActive(rootPath, conf)
-    try {
-      val fs = rootPath.getFileSystem(conf)
-      if (fs.exists(rootPath)) {
-        fs.delete(rootPath, true)
-      }
-    } catch {
-      case NonFatal(cleanupErr) =>
-        logWarning(s"Failed cleaning partial LORE dump at $rootPath", cleanupErr)
-    }
-    val marker = nonStrictSkipMarkerPath(rootPath)
-    try {
-      val fs = marker.getFileSystem(conf)
-      if (!fs.exists(marker)) {
-        val out = fs.create(marker, true)
-        out.close()
-      }
-    } catch {
-      case NonFatal(markerErr) =>
-        logWarning(s"Failed creating non-strict marker at $marker", markerErr)
-    }
-    if (!alreadySkipped) {
-      val prefix = loreId.map(id => s"loreId=$id ").getOrElse("")
-      logWarning(
-        s"Skipping LORE dump ${prefix}at ${rootPath.toString} because: ${reason.getMessage}",
-        reason)
-    }
-  }
   /**
    * Lore id of a plan node.
    */
