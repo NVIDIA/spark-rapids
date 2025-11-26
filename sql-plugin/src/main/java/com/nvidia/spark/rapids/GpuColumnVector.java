@@ -328,6 +328,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return result;
     }
 
+    public void rollbackTo(int rowCount) {
+      for (RapidsHostColumnBuilder b : builders) {
+        if (b != null) {
+          b.truncate(rowCount);
+        }
+      }
+    }
+
     /**
      * Build a columnar batch without releasing the holding data on host.
      * It is safe to call this multiple times, and data will be released

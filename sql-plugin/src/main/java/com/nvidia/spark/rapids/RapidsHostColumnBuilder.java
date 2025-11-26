@@ -691,6 +691,105 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     return childBuilders.get(index);
   }
 
+  public void rollbackRow() {
+    if (type.equals(DType.LIST)) {
+      // For list, we need to revert offsets and recursively rollback children
+      // currentIndex points to the *next* row (which we failed to add fully or are rolling back)
+      // But wait, did we increment currentIndex?
+      // In append(List), we call appendChildOrNull loop, then endList().
+      // endList() increments currentIndex and adds offset.
+      // If we failed *during* append, we might not have called endList().
+      // But the caller (GpuRowToColumnarExec) calls converters.convert -> append.
+      // If convert fails, it might be in the middle of a list or struct.
+      // This suggests we need to rollback *whatever partial state* exists.
+      // If endList() was NOT called, currentIndex is unchanged for this builder, but child builders might have advanced.
+      // If endList() WAS called, currentIndex is incremented.
+
+      // However, rollbackRow is called when we failed to add the *entire* row to the batch.
+      // The converters.convert() might have partially succeeded (e.g. col 0 success, col 1 failed).
+      // For the column that FAILED, it might be in partial state.
+      // For the column that SUCCEEDED, it is in "committed" state for that row.
+      // This is getting complicated. "rollbackRow" usually implies "undo the last completed row" or "undo current partial row".
+      
+      // If we assume converters.convert works sequentially on columns:
+      // If col i fails, cols 0..i-1 have added a row. Col i has added partial data. Cols i+1..N have added nothing.
+      // We need to:
+      // 1. Rollback cols 0..i-1 (decrement row count, etc).
+      // 2. Cleanup col i (partial state).
+      // 3. Cols i+1..N are fine.
+      
+      // To simplify, maybe we can just rely on "rows" and "currentIndex".
+      // If we successfully added a row, rows++ and currentIndex++.
+      // If we are in the middle, rows might be equal to committed rows (if we increment at end) or start (if we increment at start).
+      // RapidsHostColumnBuilder increments rows/currentIndex inside append().
+      // For Primitives: append(int) -> calls grow -> set value -> currentIndex++.
+      // So if primitive append succeeded, it's done.
+      // For Struct: append(struct) -> calls append children -> endStruct() -> currentIndex++.
+      // So if struct fails in middle of children, currentIndex is NOT incremented yet.
+      
+      // So:
+      // If builder.rows > initialRows (at start of row processing), it means we completed the append?
+      // No, we track rows processed in the loop.
+      // Let's just look at what `rollbackRow` should do assuming the builder thinks it has `N` rows but we want it to have `N-1`.
+      // Or if it has partial garbage at N.
+      
+      // This requires precise knowledge of whether the row was "completed" or "partial".
+      // Since we don't know easily, maybe we can just reset state to `N` where `N` is the number of fully processed rows before this one.
+      // We know `rowCount` (successful rows) in `buildFromInput`.
+      // We can pass `rowCount` to `rollback`.
+      
+      truncate(rowCount);
+    }
+  }
+
+  public void truncate(int rowCount) {
+     // Revert this builder to have exactly rowCount rows.
+     if (this.rows <= rowCount) {
+         // Nothing to do, or maybe we have partial data but rows counter wasn't incr?
+         // If we have partial data but rows wasn't incremented (e.g. struct child added, but struct not ended),
+         // we still need to clean up children.
+         // But wait, "rows" tracks "populatedRows".
+         // For struct/list, we increment rows/currentIndex at endStruct/endList?
+         // endStruct -> currentIndex++. growStructBuffersAndRows -> rows++.
+         // grow... is called at START of append.
+         // So if we started appending, `rows` might be `rowCount + 1`.
+         // `currentIndex` might be `rowCount` (if not finished) or `rowCount + 1` (if finished).
+     }
+     
+     // Reset rows and currentIndex
+     this.rows = rowCount;
+     this.currentIndex = rowCount;
+     
+     // For strings, we need to reset currentStringByteIndex.
+     if (type.equals(DType.STRING)) {
+         // offsets[rowCount] points to the start of the (now deleted) row.
+         if (offsets != null) {
+             this.currentStringByteIndex = offsets.getInt(rowCount << bitShiftByOffset);
+         } else {
+             this.currentStringByteIndex = 0;
+         }
+     }
+     
+     // For lists, we need to reset offsets and truncate children
+     if (type.equals(DType.LIST)) {
+         // offsets[rowCount] points to the start index for children
+         int childIndex = 0;
+         if (offsets != null) {
+             childIndex = offsets.getInt(rowCount << bitShiftByOffset);
+         }
+         // Truncate children to this childIndex
+         for (RapidsHostColumnBuilder child : childBuilders) {
+             child.truncate(childIndex);
+         }
+     } else if (type.equals(DType.STRUCT)) {
+         // Structs don't have offsets. The children should be aligned with this builder's rowCount.
+         // So truncate children to rowCount.
+         for (RapidsHostColumnBuilder child : childBuilders) {
+             child.truncate(rowCount);
+         }
+     }
+  }
+
   /**
    * Finish and create the immutable ColumnVector, copied to the device.
    */

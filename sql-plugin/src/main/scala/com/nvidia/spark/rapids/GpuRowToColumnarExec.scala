@@ -674,12 +674,13 @@ class RowToColumnarIterator(
   private val requireSingleBatch = localGoal.isInstanceOf[RequireSingleBatchLike]
   private var pendingHostResultIter: Option[Iterator[ColumnarBatch]] = None
   private val singleBatchRows = if (requireSingleBatch) Some(new PendingRowBuffer) else None
+  private var pendingRow: Option[InternalRow] = None
 
   override def hasNext: Boolean =
     if (requireSingleBatch) {
       pendingLength > 0 || rowIter.hasNext
     } else {
-      hasPendingHostResult || rowIter.hasNext
+      hasPendingHostResult || pendingRow.isDefined || rowIter.hasNext
     }
 
   override def next(): ColumnarBatch =
@@ -858,16 +859,37 @@ class RowToColumnarIterator(
       var continue = true
       while (continue && (rowCount == 0 ||
           (rowCount < cappedTarget && byteCount < targetSizeBytes))) {
-        if (!rowIter.hasNext) {
+        if (pendingRow.isEmpty && !rowIter.hasNext) {
           continue = false
         } else {
-          val row = rowIter.next()
-          byteCount += RmmRapidsRetryIterator.withRetryNoSplit[Double] {
-            converters.convert(row, builders)
+          val row = if (pendingRow.isDefined) {
+            val r = pendingRow.get
+            pendingRow = None
+            r
+          } else {
+            rowIter.next()
           }
-          rowCount += 1
-          if (rowCount >= cappedTarget || byteCount >= targetSizeBytes) {
-            continue = false
+          try {
+            byteCount += RmmRapidsRetryIterator.withRetryNoSplit[Double] {
+              converters.convert(row, builders)
+            }
+            rowCount += 1
+            if (rowCount >= cappedTarget || byteCount >= targetSizeBytes) {
+              continue = false
+            }
+          } catch {
+            case oom: OutOfMemoryError if !oom.isInstanceOf[GpuSplitAndRetryOOM] &&
+                !oom.isInstanceOf[CpuSplitAndRetryOOM] &&
+                !oom.isInstanceOf[CpuRetryOOM] =>
+              if (rowCount == 0) {
+                // If we can't even process a single row, we are in trouble.
+                throw oom
+              }
+              // Rollback the partial row
+              builders.rollbackTo(rowCount)
+              // Save the row for next time
+              pendingRow = Some(copyRow(row))
+              continue = false
           }
         }
       }
@@ -875,7 +897,7 @@ class RowToColumnarIterator(
         throw new NoSuchElementException("Could not build batch because no rows remain.")
       }
 
-      val hasMoreInput = rowIter.hasNext
+      val hasMoreInput = pendingRow.isDefined || rowIter.hasNext
 
       tryBuildDirect(builders, rowCount) match {
         case Right(batch) =>
