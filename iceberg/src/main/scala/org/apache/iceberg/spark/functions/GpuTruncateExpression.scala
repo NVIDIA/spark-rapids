@@ -40,7 +40,6 @@ case class GpuTruncateExpression(width: Expression, value: Expression)
     // `width` MUST be valid
     require (widthInteger != null)
 
-    // Always promote the decimal types, refer to the `dataType` method
     IcebergTruncate.truncate(rhs.getBase, widthInteger.intValue())
   }
 
@@ -66,28 +65,7 @@ case class GpuTruncateExpression(width: Expression, value: Expression)
 
   override def right: Expression = value
 
-  /**
-   * Always promote decimal type to avoid overflow after truncate
-   */
-  override def dataType: DataType = {
-    value.dataType match {
-      case dt: DecimalType =>
-        // Truncate may cause precision promotion for decimal type
-        // E.g.: truncate(decimal(precision=9, scale=2), width=10)
-        // When value is -9,999,999.99, result is -10,000,000.00 which needs precision=11, scale=2
-        // Here, always promote the decimal type:
-        //  decimal 32 => decimal 64
-        //  decimal 64 => decimal 128
-        if (DecimalType.is32BitDecimalType(dt)) {
-          DecimalType(DType.DECIMAL64_MAX_PRECISION, dt.scale)
-        } else if (DecimalType.is64BitDecimalType(dt)) {
-          DecimalType(DType.DECIMAL128_MAX_PRECISION, dt.scale)
-        } else {
-          DecimalType(DType.DECIMAL128_MAX_PRECISION, dt.scale)
-        }
-      case _ => value.dataType
-    }
-  }
+  override def dataType: DataType = value.dataType
 }
 
 object GpuTruncateExpression {
