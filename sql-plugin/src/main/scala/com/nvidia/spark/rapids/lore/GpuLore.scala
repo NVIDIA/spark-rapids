@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
-import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.{DatabricksShimVersion, GpuColumnarToRowExec, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader, ShimVersion, SparkShimVersion}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -30,7 +29,6 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -63,7 +61,7 @@ trait GpuLoreRDD {
   }
 }
 
-object GpuLore extends Logging {
+object GpuLore {
   /**
    * Lore id of a plan node.
    */
@@ -79,50 +77,6 @@ object GpuLore extends Logging {
    */
   val LORE_DUMP_RDD_TAG: TreeNodeTag[LoreDumpRDDInfo] = new TreeNodeTag[LoreDumpRDDInfo](
     "rapids.gpu.lore.dump.rdd.info")
-
-  private type CleanupAction = () => Unit
-
-  private def registerCleanup(cleanupActions: mutable.ArrayBuffer[CleanupAction])(
-      cleanup: => Unit): Unit = {
-    cleanupActions += (() => cleanup)
-  }
-
-  private def setLoreDumpPathTag(
-      target: SparkPlan,
-      path: String,
-      cleanupActions: mutable.ArrayBuffer[CleanupAction]): Unit = {
-    target.setTagValue(LORE_DUMP_PATH_TAG, path)
-    registerCleanup(cleanupActions)(target.unsetTagValue(LORE_DUMP_PATH_TAG))
-  }
-
-  private def setLoreDumpRDDTag(
-      target: SparkPlan,
-      info: LoreDumpRDDInfo,
-      cleanupActions: mutable.ArrayBuffer[CleanupAction]): Unit = {
-    target.setTagValue(LORE_DUMP_RDD_TAG, info)
-    registerCleanup(cleanupActions)(target.unsetTagValue(LORE_DUMP_RDD_TAG))
-  }
-
-  private def executeWithNonStrictGuard(
-      loreId: LoreId,
-      nodeName: String,
-      rapidsConf: RapidsConf,
-      cleanupActions: mutable.ArrayBuffer[CleanupAction])(
-      body: => Unit): Boolean = {
-    try {
-      body
-      cleanupActions.clear()
-      true
-    } catch {
-      case NonFatal(e) if rapidsConf.loreNonStrictMode =>
-        cleanupActions.foreach(action => action())
-        cleanupActions.clear()
-        logWarning(
-          s"Skipping LORE dump for loreId=$loreId on $nodeName because: ${e.getMessage}",
-          e)
-        false
-    }
-  }
 
   def pathOfRootPlanMeta(rootPath: Path): Path = {
     new Path(rootPath, "plan.meta")
@@ -285,45 +239,37 @@ object GpuLore extends Logging {
             g.setTagValue(LORE_ID_TAG, loreId.toString)
 
             loreDumpIds.get(loreId).foreach { outputLoreIds =>
-              val cleanupActions = mutable.ArrayBuffer.empty[CleanupAction]
-              executeWithNonStrictGuard(loreId, g.nodeName, rapidsConf, cleanupActions) {
-                checkUnsupportedOperator(g)
-                val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
-                setLoreDumpPathTag(g, currentExecRootPath.toString, cleanupActions)
-                val loreOutputInfo = LoreOutputInfo(outputLoreIds,
-                  currentExecRootPath.toString)
+              checkUnsupportedOperator(g)
+              val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
+              g.setTagValue(LORE_DUMP_PATH_TAG, currentExecRootPath.toString)
+              val loreOutputInfo = LoreOutputInfo(outputLoreIds,
+                currentExecRootPath.toString)
 
-                g.children.zipWithIndex.foreach {
-                  case (child, idx) =>
-                    val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf,
-                      useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames,
-                      nonStrictMode = rapidsConf.loreNonStrictMode)
-                    child match {
-                      case c: BroadcastQueryStageExec =>
-                        setLoreDumpRDDTag(c.broadcast, dumpRDDInfo, cleanupActions)
-                      case o =>
-                        setLoreDumpRDDTag(o, dumpRDDInfo, cleanupActions)
-                    }
-                }
+              g.children.zipWithIndex.foreach {
+                case (child, idx) =>
+                  val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf,
+                    useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames)
+                  child match {
+                    case c: BroadcastQueryStageExec =>
+                      c.broadcast.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
+                    case o => o.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
+                  }
+              }
 
-                var nextId = g.children.length
-                g.transformExpressionsUp {
-                  case sub: ExecSubqueryExpression =>
-                    if (spark.sessionState.conf.subqueryReuseEnabled) {
-                      if (!subqueries.contains(sub.plan.canonicalized)) {
-                        subqueries += sub.plan.canonicalized
-                        registerCleanup(cleanupActions)(
-                          subqueries -= sub.plan.canonicalized)
-                      } else {
-                        throw new IllegalArgumentException("Subquery reuse is enabled, and we found" +
-                          " duplicated subqueries, which is currently not supported by LORE.")
-                      }
+              var nextId = g.children.length
+              g.transformExpressionsUp {
+                case sub: ExecSubqueryExpression =>
+                  if (spark.sessionState.conf.subqueryReuseEnabled) {
+                    if (!subqueries.contains(sub.plan.canonicalized)) {
+                      subqueries += sub.plan.canonicalized
+                    } else {
+                      throw new IllegalArgumentException("Subquery reuse is enabled, and we found" +
+                        " duplicated subqueries, which is currently not supported by LORE.")
                     }
-                    tagSubqueryPlan(nextId, sub, loreOutputInfo, hadoopConf,
-                      cleanupActions, rapidsConf.loreNonStrictMode)
-                    nextId += 1
-                    sub
-                }
+                  }
+                  tagSubqueryPlan(nextId, sub, loreOutputInfo, hadoopConf)
+                  nextId += 1
+                  sub
               }
             }
           }
@@ -352,26 +298,17 @@ object GpuLore extends Logging {
     node.getTagValue(LORE_ID_TAG)
   }
 
-  private def tagSubqueryPlan(
-      id: Int,
-      sub: ExecSubqueryExpression,
-      loreOutputInfo: LoreOutputInfo,
-      hadoopConf: Broadcast[SerializableConfiguration],
-      cleanupActions: mutable.ArrayBuffer[CleanupAction],
-      nonStrictMode: Boolean): Unit = {
+  private def tagSubqueryPlan(id: Int, sub: ExecSubqueryExpression,
+      loreOutputInfo: LoreOutputInfo, hadoopConf: Broadcast[SerializableConfiguration]) = {
     val innerPlan = sub.plan.child
     if (innerPlan.isInstanceOf[GpuExec]) {
-      val useOriginalSchemaNames = RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES
-        .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf)
       val dumpRDDInfo = LoreDumpRDDInfo(id, loreOutputInfo, innerPlan.output,
         hadoopConf,
-        useOriginalSchemaNames = useOriginalSchemaNames,
-        nonStrictMode = nonStrictMode)
+        useOriginalSchemaNames = RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES
+          .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf))
       innerPlan match {
-        case p: GpuColumnarToRowExec =>
-          setLoreDumpRDDTag(p.child, dumpRDDInfo, cleanupActions)
-        case c =>
-          setLoreDumpRDDTag(c, dumpRDDInfo, cleanupActions)
+        case p: GpuColumnarToRowExec => p.child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
+        case c => c.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
       }
     } else {
       throw new IllegalArgumentException(s"Subquery plan ${innerPlan.getClass.getSimpleName} " +

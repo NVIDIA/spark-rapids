@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, GpuHashAggregateExec, GpuRangeExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
+import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.fs.Path
 
@@ -24,8 +24,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.execution.SparkPlan
-import scala.reflect.ClassTag
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   /**
@@ -479,79 +477,6 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       val directDf = spark.read.parquet(parquetFile.toString)
       assert(directDf.columns.toSeq == expectedNames)
     }
-  }
-
-  test("Non-strict LORE skips unsupported lore ids") {
-    withGpuSparkSession { spark =>
-      val initialDf = buildRangeAggDf(spark)
-      // Execute once to assign lore ids
-      initialDf.collect()
-      val plan = initialDf.queryExecution.executedPlan
-      val rangeLoreId = findLoreId[GpuRangeExec](plan)
-      val aggLoreId = findLoreId[GpuHashAggregateExec](plan)
-      val loreRoot = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/non-strict-mode")
-      val fs = loreRoot.getFileSystem(spark.sparkContext.hadoopConfiguration)
-      if (fs.exists(loreRoot)) {
-        fs.delete(loreRoot, true)
-      }
-      val loreIdsConf = s"$rangeLoreId[*], $aggLoreId[*]"
-
-      def cleanupLoreConf(): Unit = {
-        Seq(
-          RapidsConf.LORE_DUMP_IDS.key,
-          RapidsConf.LORE_DUMP_PATH.key,
-          RapidsConf.LORE_NON_STRICT_MODE.key
-        ).foreach { key =>
-          if (spark.conf.contains(key)) {
-            spark.conf.unset(key)
-          }
-        }
-        if (fs.exists(loreRoot)) {
-          fs.delete(loreRoot, true)
-        }
-      }
-
-      try {
-        // Strict mode should fail when an unsupported operator id is requested
-        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, loreRoot.toString)
-        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreIdsConf)
-        val strictDf = buildRangeAggDf(spark)
-        val strictError = intercept[UnsupportedOperationException] {
-          strictDf.collect()
-        }
-        assert(strictError.getMessage.contains("don't support dumping input"))
-        cleanupLoreConf()
-
-        // Non-strict mode should skip the unsupported id but still dump the supported one
-        spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, loreRoot.toString)
-        spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreIdsConf)
-        spark.conf.set(RapidsConf.LORE_NON_STRICT_MODE.key, "true")
-        val relaxedDf = buildRangeAggDf(spark)
-        assert(relaxedDf.collect().nonEmpty)
-        val aggPath = new Path(loreRoot, s"loreId-$aggLoreId")
-        val rangePath = new Path(loreRoot, s"loreId-$rangeLoreId")
-        assert(fs.exists(aggPath), s"Expected dump artifacts for loreId $aggLoreId")
-        assert(!fs.exists(rangePath), s"Unexpected dump artifacts for loreId $rangeLoreId")
-      } finally {
-        cleanupLoreConf()
-      }
-    }
-  }
-
-  private def buildRangeAggDf(spark: SparkSession): DataFrame = {
-    spark.range(0, 100, 1, 10)
-      .selectExpr("id", "id % 5 as bucket")
-      .groupBy("bucket")
-      .agg(functions.count("*").as("cnt"))
-  }
-
-  private def findLoreId[T <: SparkPlan : ClassTag](plan: SparkPlan): String = {
-    plan.collectFirst {
-      case node: T =>
-        GpuLore.loreIdOf(node).getOrElse(
-          fail(s"Missing lore id for ${node.nodeName}"))
-    }.getOrElse(
-      fail(s"Unable to find ${implicitly[ClassTag[T]].runtimeClass.getSimpleName} in plan:\n$plan"))
   }
 
   private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {

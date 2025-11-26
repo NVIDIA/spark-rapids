@@ -2726,13 +2726,6 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .stringConf
     .createOptional
 
-  val LORE_NON_STRICT_MODE = conf("spark.rapids.sql.lore.nonStrictMode")
-    .doc("Enable best-effort LORE dumps. When true, operators that are unsupported or encounter " +
-      "errors while configuring LORE dumping are skipped (with a warning) so that the query can " +
-      "continue dumping other requested lore ids.")
-    .booleanConf
-    .createWithDefault(false)
-
   val LORE_SKIP_DUMPING_PLAN = conf("spark.rapids.sql.lore.skip.plan.dump")
     .doc("Skip dumping plan metadata when doing lore dump")
     .internal()
@@ -3831,8 +3824,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     .getOrElse(Map.empty)
 
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
-
-  lazy val loreNonStrictMode: Boolean = get(LORE_NON_STRICT_MODE)
 
   lazy val loreSkipDumpingPlan: Boolean = get(LORE_SKIP_DUMPING_PLAN)
 
