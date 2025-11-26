@@ -64,11 +64,12 @@ public interface RapidsUDAFGroupByAggregation {
    * Users should close the input columns to avoid GPU memory leak, but the
    * returned columns will be closed automatically.
    *
+   * @param numRows The number of rows in the aggregated data.
    * @param aggregatedData The output from the aggregation step. They should be
    *                      closed when no longer needed.
    * @return An array of ColumnVectors compatible with the merge step.
    */
-  default ColumnVector[] postStep(ColumnVector[] aggregatedData) {
+  default ColumnVector[] postStep(int numRows, ColumnVector[] aggregatedData) {
     return aggregatedData;
   }
 }
