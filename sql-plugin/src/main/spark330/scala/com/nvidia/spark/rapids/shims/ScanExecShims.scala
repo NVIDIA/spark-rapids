@@ -45,10 +45,11 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.rapids.hybrid.HybridExecutionUtils
-import org.apache.spark.sql.catalyst.expressions.FileSourceMetadataAttribute
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.catalyst.expressions.{FileSourceMetadataAttribute}
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 
@@ -58,7 +59,9 @@ object ScanExecShims {
       case FileSourceMetadataAttribute(_) => true
       case _ => false
     }) {
-      meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
+      if (!DeltaProvider().isDVScan(meta)) {
+        meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
+      }
     }
     GpuFileSourceScanExec.tagSupport(meta)
   }
