@@ -134,9 +134,9 @@ def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_facto
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("fanout", [True], ids=lambda x: f"fanout={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none"],
+@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
+@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
