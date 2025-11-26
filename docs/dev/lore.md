@@ -129,7 +129,9 @@ restored data to console.
    - Spark 3.5.4 (`354`)
    - Spark 3.5.5 (`355`)
    - Spark 3.5.6 (`356`)
+   - Spark 3.5.7 (`357`)
    - Spark 4.0.0 (`400`)
+   - Spark 4.0.1 (`401`)
 
    When attempting to dump a `GpuDataWritingCommandExec` on these versions, LORE will throw an
    `UnsupportedOperationException` with a clear error message indicating the unsupported version.
