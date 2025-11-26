@@ -167,9 +167,9 @@ def do_merge_test(
     pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
     pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
     pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
-    pytest.param("truncate(10, _c10)", id="truncate(10, decimal32_col)"),
-    pytest.param("truncate(10, _c11)", id="truncate(10, decimal64_col)"),
-    pytest.param("truncate(10, _c12)", id="truncate(10, decimal128_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
 @pytest.mark.parametrize('merge_sql', [
     pytest.param(
