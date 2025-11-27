@@ -76,10 +76,9 @@ public interface RapidsUDAF {
    * Data types of the aggregate buffer.
    * <br/>
    * It is better to align with the "bufferSchema" of "UserDefinedAggregateFunction", or
-   * It is better to align with the "bufferSchema" of "UserDefinedAggregateFunction", or data corruption is likely
-   * to happen when some operations of this aggregation fall back to CPU. E.g. Partial
-   * aggregates runs on CPU but final aggregates runs on GPU, or vice-versa. This is rare
-   * but just in case.
+   * data corruption is likely to happen when some operations of this aggregation fall
+   * back to CPU. E.g. Partial aggregates runs on CPU but final aggregates runs on GPU,
+   * or vice-versa. This is rare but just in case.
    */
   DataType[] bufferTypes();
 }
