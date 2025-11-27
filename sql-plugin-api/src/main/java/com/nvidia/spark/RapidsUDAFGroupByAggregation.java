@@ -65,8 +65,7 @@ public interface RapidsUDAFGroupByAggregation {
    * returned columns will be closed automatically.
    *
    * @param numRows The number of rows in the aggregated data.
-   * @param aggregatedData The output from the aggregation step. They should be
-   *                      closed when no longer needed.
+   * @param aggregatedData The output from the aggregation step.
    * @return An array of ColumnVectors compatible with the merge step.
    */
   default ColumnVector[] postStep(int numRows, ColumnVector[] aggregatedData) {
