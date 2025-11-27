@@ -144,6 +144,16 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsProductAggSuite]
   enableSuite[RapidsApproximatePercentileSuite]
   enableSuite[RapidsComplexTypesSuite]
+  enableSuite[RapidsCSVSuite]
+    .exclude("parse unescaped quotes with maxCharsPerColumn", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13889"))
+    .exclude("DDL test parsing decimal type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13890"))
+    .exclude("nullable fields with user defined null value of \"null\"", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13893"))
+    .exclude("empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13894"))
+    .exclude("save csv with empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13895"))
+    .exclude("SPARK-24329: skip lines with comments, and one or multiple whitespaces", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13896"))
+    .exclude("SPARK-23786: warning should be printed if CSV header doesn't conform to schema", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13897"))
+    .exclude("SPARK-32810: CSV data source should be able to read files with escaped glob metacharacter in the paths", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13898"))
+    .exclude("SPARK-33566: configure UnescapedQuoteHandling to parse unescaped quotes and unescaped delimiter data correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13901"))
   enableSuite[RapidsCsvFunctionsSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
 }
