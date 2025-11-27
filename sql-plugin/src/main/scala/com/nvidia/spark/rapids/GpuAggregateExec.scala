@@ -1657,7 +1657,7 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
             val expressions = createBufferConverter(stages(i), stages(i + 1),
               fromCpuToGpu = true)
             // Insert the converter into childPlan as a tag value
-            insertBufferConverter(childPlan, expressions, isR2C = true)
+            insertBufferConverter(childPlan, expressions, fromCpuToGpu = true)
           // create postColumnarToRowTransition, and bind it to the parent node (CPU plan) of
           // GpuColumnarToRowExec
           case List(parent, _) =>
@@ -1665,7 +1665,7 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
             val expressions = createBufferConverter(stages(i), stages(i + 1),
               fromCpuToGpu = false)
             // Insert the converter into parentPlan as a tag value
-            insertBufferConverter(parentPlan, expressions, isR2C = false)
+            insertBufferConverter(parentPlan, expressions, fromCpuToGpu = false)
         }
       case _ =>
     }
@@ -1682,8 +1682,8 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
    * and the newly-created plans won't carry the tags stored in the original physical plans.
    */
   private def insertBufferConverter(plan: SparkPlan,
-      expr: Seq[NamedExpression], isR2C: Boolean): Unit = {
-    val tag: TreeNodeTag[TypedAggBufConverter] = bufConverterTag(isR2C)
+      expr: Seq[NamedExpression], fromCpuToGpu: Boolean): Unit = {
+    val tag: TreeNodeTag[TypedAggBufConverter] = bufConverterTag(fromCpuToGpu)
     if (!plan.conf.adaptiveExecutionEnabled) {
       plan.setTagValue(tag, (expr, 0))
     } else {
