@@ -189,7 +189,7 @@ def test_insert_overwrite_partitioned_table(spark_tmp_table_factory, format_vers
 def test_insert_overwrite_specific_partition_identity_fallback(spark_tmp_table_factory, format_version, write_distribution_mode):
     """Test INSERT OVERWRITE with PARTITION clause for specific partitions (identity partition - falls back to CPU)."""
     # Extend base columns with a partition column that has limited values
-    partition_col = '_c14'
+    partition_col = '_c999'
     partition_gen = StringGen(pattern='category_[ABC]', nullable=False)  # Generates category_A, category_B, category_C
     
     extended_cols = iceberg_base_table_cols + [partition_col]
