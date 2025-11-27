@@ -224,7 +224,8 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
           TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
-        (p, conf, parent, r) => new WriteDeltaExecMeta(p, conf, parent, r)),
+        (p, conf, parent, r) => new WriteDeltaExecMeta(p, conf, parent, r))
+        .disabledByDefault("Merge on read support for iceberg is experimental"),
       InMemoryTableScanUtils.getTableCacheQueryStageExecRule
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
