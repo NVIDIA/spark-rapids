@@ -24,6 +24,7 @@ import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DateType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.DecimalType;
+import org.apache.spark.sql.types.StringType;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -57,6 +58,12 @@ public class GpuInternalRow extends InternalRow {
     if (dataType instanceof DateType) {
       // Override for Date type.
       return LocalDate.ofEpochDay(getInt(ordinal));
+    } else if (dataType instanceof StringType) {
+      UTF8String utf8String = getUTF8String(ordinal);
+      if (utf8String == null) {
+        return null;
+      }
+      return utf8String.toString();
     } else if (dataType instanceof DecimalType) {
       // Override for Decimal type.
       DecimalType decimalType = (DecimalType) dataType;
