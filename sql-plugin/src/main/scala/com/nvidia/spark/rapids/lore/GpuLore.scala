@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
+import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -30,6 +31,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -62,7 +64,7 @@ trait GpuLoreRDD {
   }
 }
 
-object GpuLore {
+object GpuLore extends Logging {
   /**
    * Lore id of a plan node.
    */
@@ -78,6 +80,14 @@ object GpuLore {
    */
   val LORE_DUMP_RDD_TAG: TreeNodeTag[LoreDumpRDDInfo] = new TreeNodeTag[LoreDumpRDDInfo](
     "rapids.gpu.lore.dump.rdd.info")
+
+  private type TagRollback = () => Unit
+
+  private def registerTag[T](plan: SparkPlan, tag: TreeNodeTag[T], value: T,
+      tracker: mutable.ArrayBuffer[TagRollback]): Unit = {
+    plan.setTagValue(tag, value)
+    tracker += (() => plan.unsetTagValue(tag))
+  }
 
   def pathOfRootPlanMeta(rootPath: Path): Path = {
     new Path(rootPath, "plan.meta")
@@ -205,6 +215,7 @@ object GpuLore {
 
   def tagForLore(sparkPlan: SparkPlan, rapidsConf: RapidsConf): SparkPlan = {
     val loreDumpIds = rapidsConf.loreDumpIds
+    val allowNonStrictMode = rapidsConf.loreDumpNonStrictMode
 
     val newPlan = if (loreDumpIds.nonEmpty) {
       // We need to dump the output of nodes with the lore id in the dump ids
@@ -220,8 +231,13 @@ object GpuLore {
           val path = new Path(loreOutputRootPath)
           val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
           if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
-            throw new IllegalArgumentException(
-              s"LORE dump path $loreOutputRootPath already exists and is not empty.")
+            val msg =
+              s"LORE dump path $loreOutputRootPath already exists and is not empty."
+            if (allowNonStrictMode) {
+              logWarning(s"$msg Continuing because non-strict mode is enabled.")
+            } else {
+              throw new IllegalArgumentException(msg)
+            }
           }
           true
         })
@@ -240,37 +256,52 @@ object GpuLore {
             g.setTagValue(LORE_ID_TAG, loreId.toString)
 
             loreDumpIds.get(loreId).foreach { outputLoreIds =>
-              checkUnsupportedOperator(g)
-              val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
-              g.setTagValue(LORE_DUMP_PATH_TAG, currentExecRootPath.toString)
-              val loreOutputInfo = LoreOutputInfo(outputLoreIds,
-                currentExecRootPath.toString)
+              val tagRollbacks = mutable.ArrayBuffer.empty[TagRollback]
+              val addedSubqueries = mutable.ArrayBuffer.empty[SparkPlan]
+              try {
+                checkUnsupportedOperator(g)
+                val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
+                registerTag(g, LORE_DUMP_PATH_TAG, currentExecRootPath.toString, tagRollbacks)
+                val loreOutputInfo = LoreOutputInfo(outputLoreIds,
+                  currentExecRootPath.toString)
 
-              g.children.zipWithIndex.foreach {
-                case (child, idx) =>
-                  val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf,
-                    useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames)
-                  child match {
-                    case c: BroadcastQueryStageExec =>
-                      c.broadcast.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
-                    case o => o.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
-                  }
-              }
-
-              var nextId = g.children.length
-              g.transformExpressionsUp {
-                case sub: ExecSubqueryExpression =>
-                  if (spark.sessionState.conf.subqueryReuseEnabled) {
-                    if (!subqueries.contains(sub.plan.canonicalized)) {
-                      subqueries += sub.plan.canonicalized
-                    } else {
-                      throw new IllegalArgumentException("Subquery reuse is enabled, and we found" +
-                        " duplicated subqueries, which is currently not supported by LORE.")
+                g.children.zipWithIndex.foreach {
+                  case (child, idx) =>
+                    val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf,
+                      useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames,
+                      nonStrictMode = allowNonStrictMode)
+                    child match {
+                      case c: BroadcastQueryStageExec =>
+                        registerTag(c.broadcast, LORE_DUMP_RDD_TAG, dumpRDDInfo, tagRollbacks)
+                      case o =>
+                        registerTag(o, LORE_DUMP_RDD_TAG, dumpRDDInfo, tagRollbacks)
                     }
-                  }
-                  tagSubqueryPlan(nextId, sub, loreOutputInfo, hadoopConf)
-                  nextId += 1
-                  sub
+                }
+
+                var nextId = g.children.length
+                g.transformExpressionsUp {
+                  case sub: ExecSubqueryExpression =>
+                    if (spark.sessionState.conf.subqueryReuseEnabled) {
+                      val canonicalPlan = sub.plan.canonicalized
+                      if (!subqueries.contains(canonicalPlan)) {
+                        subqueries += canonicalPlan
+                        addedSubqueries += canonicalPlan
+                      } else {
+                        throw new IllegalArgumentException("Subquery reuse is enabled, and we " +
+                          "found a duplicated subquery, which is currently not supported by LORE.")
+                      }
+                    }
+                    tagSubqueryPlan(nextId, sub, loreOutputInfo, hadoopConf, tagRollbacks,
+                      allowNonStrictMode)
+                    nextId += 1
+                    sub
+                }
+              } catch {
+                case NonFatal(e) if allowNonStrictMode =>
+                  tagRollbacks.reverseIterator.foreach(_.apply())
+                  addedSubqueries.foreach(subqueries -= _)
+                  logWarning(
+                    s"Skipping LORE dump for loreId $loreId on ${g.nodeName}: ${e.getMessage}", e)
               }
             }
           }
@@ -300,16 +331,20 @@ object GpuLore {
   }
 
   private def tagSubqueryPlan(id: Int, sub: ExecSubqueryExpression,
-      loreOutputInfo: LoreOutputInfo, hadoopConf: Broadcast[SerializableConfiguration]) = {
+      loreOutputInfo: LoreOutputInfo, hadoopConf: Broadcast[SerializableConfiguration],
+      tagRollbacks: mutable.ArrayBuffer[TagRollback], nonStrictMode: Boolean) = {
     val innerPlan = sub.plan.child
     if (innerPlan.isInstanceOf[GpuExec]) {
       val dumpRDDInfo = LoreDumpRDDInfo(id, loreOutputInfo, innerPlan.output,
         hadoopConf,
         useOriginalSchemaNames = RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES
-          .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf))
+          .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf),
+        nonStrictMode = nonStrictMode)
       innerPlan match {
-        case p: GpuColumnarToRowExec => p.child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
-        case c => c.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
+        case p: GpuColumnarToRowExec =>
+          registerTag(p.child, LORE_DUMP_RDD_TAG, dumpRDDInfo, tagRollbacks)
+        case c =>
+          registerTag(c, LORE_DUMP_RDD_TAG, dumpRDDInfo, tagRollbacks)
       }
     } else {
       throw new IllegalArgumentException(s"Subquery plan ${innerPlan.getClass.getSimpleName} " +
