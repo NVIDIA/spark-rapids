@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.{CpuSplitAndRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.jni.RmmSpark
+
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -73,9 +74,10 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    assertThrows[GpuSplitAndRetryOOM] {
-      row2ColIter.next()
+    Arm.withResource(row2ColIter.next()) { batch =>
+      assertResult(10)(batch.numRows())
     }
+    assert(!row2ColIter.hasNext)
   }
 
   test("test CPU split and retry OOM") {
@@ -84,9 +86,10 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.CPU.ordinal, 0)
-    assertThrows[CpuSplitAndRetryOOM] {
-      row2ColIter.next()
+    Arm.withResource(row2ColIter.next()) { batch =>
+      assertResult(10)(batch.numRows())
     }
+    assert(!row2ColIter.hasNext)
   }
 
   test("gpu split and retry can continue across multiple batches") {
@@ -103,17 +106,9 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val row2ColIter = newIterator(numRows = 64, goal = RequireSingleBatch)
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 26,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    assertThrows[GpuSplitAndRetryOOM] {
+    val ex = intercept[IllegalStateException] {
       row2ColIter.next()
     }
-  }
-
-  test("cpu retry succeeds for multi-batch goal") {
-    val row2ColIter = newIterator(numRows = 16, goal = TargetSize(32), targetBatchSize = 32)
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.CPU.ordinal, 0)
-    val rowCounts = collectBatchRowCounts(row2ColIter)
-    assertResult(16)(rowCounts.sum)
-    assert(rowCounts.nonEmpty, "expected at least one batch")
+    assert(ex.getMessage.contains("single batch is required"))
   }
 }

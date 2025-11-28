@@ -291,15 +291,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return cv;
     }
 
-    /**
-     * Materialize the column data on the host and cache it for subsequent retries.
-     * Once this returns a non-null array, repeated calls simply reuse the cached
-     * host columns so that retry logic does not need to rebuild them.
-     */
     public HostColumnVector[] buildHostColumns() {
-      if (hostColumns != null) {
-        return hostColumns;
-      }
+      // buildHostColumns is called from tryBuild, and tryBuild has to be safe to call
+      // multiple times, so if a retry exception happens in this code, we need to pick
+      // up where we left off last time.
       if (wipHostColumns == null) {
         wipHostColumns = new HostColumnVector[builders.length];
       }
@@ -312,28 +307,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           throw new IllegalStateException("buildHostColumns cannot be called more than once");
         }
       }
-      hostColumns = wipHostColumns;
+      HostColumnVector[] result = wipHostColumns;
       wipHostColumns = null;
-      return hostColumns;
-    }
-
-    /**
-     * Transfer ownership of the cached host columns to the caller for retry logic.
-     * After this returns the builder relinquishes its reference, so the caller
-     * must eventually close the host columns.
-     */
-    public HostColumnVector[] stealHostColumnsForRetry() {
-      HostColumnVector[] result = buildHostColumns();
-      hostColumns = null;
       return result;
-    }
-
-    public void rollbackTo(int rowCount) {
-      for (RapidsHostColumnBuilder b : builders) {
-        if (b != null) {
-          b.truncate(rowCount);
-        }
-      }
     }
 
     /**
