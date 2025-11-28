@@ -510,9 +510,8 @@ class SpillFrameworkSuite
   }
 
   test("host originated: get host memory buffer") {
-    val spillPriority = -10
     val hmb = HostMemoryBuffer.allocate(1L * 1024)
-    val spillableBuffer = SpillableHostBuffer(hmb, hmb.getLength, spillPriority)
+    val spillableBuffer = SpillableHostBuffer(hmb, hmb.getLength)
     withResource(spillableBuffer) { _ =>
       // the refcount of 1 is the store
       assertResult(1)(hmb.getRefCount)
@@ -525,12 +524,10 @@ class SpillFrameworkSuite
   }
 
   test("host originated: get host memory buffer after spill to disk") {
-    val spillPriority = -10
     val hmb = HostMemoryBuffer.allocate(1L * 1024)
     val spillableBuffer = SpillableHostBuffer(
       hmb,
-      hmb.getLength,
-      spillPriority)
+      hmb.getLength)
     assertResult(1)(hmb.getRefCount)
     //  we spill it
     SpillFramework.stores.hostStore.spill(hmb.getLength)
@@ -544,9 +541,8 @@ class SpillFrameworkSuite
   }
 
   test("host originated: a buffer is not spillable when we leak it") {
-    val spillPriority = -10
     val hmb = HostMemoryBuffer.allocate(1L * 1024)
-    withResource(SpillableHostBuffer(hmb, hmb.getLength, spillPriority)) { spillableBuffer =>
+    withResource(SpillableHostBuffer(hmb, hmb.getLength)) { spillableBuffer =>
       withResource(spillableBuffer.getHostBuffer()) { _ =>
         assertResult(0)(SpillFramework.stores.hostStore.spill(hmb.getLength))
       }
