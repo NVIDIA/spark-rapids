@@ -17,10 +17,8 @@
 package org.apache.spark.sql.rapids.execution
 
 import java.util.concurrent.{ScheduledExecutorService, ThreadPoolExecutor}
-
 import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
-
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -37,6 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
@@ -115,7 +114,10 @@ object TrampolineUtil {
    * @param amountSpilled amount of memory spilled in bytes
    */
   def incTaskMetricsMemoryBytesSpilled(amountSpilled: Long): Unit = {
-    Option(TaskContext.get).foreach(_.taskMetrics().incMemoryBytesSpilled(amountSpilled))
+    Option(TaskContext.get).foreach { tc =>
+      tc.taskMetrics().incMemoryBytesSpilled(amountSpilled)
+      GpuTaskMetrics.get.recordSpillToHost(amountSpilled)
+    }
   }
 
   /**
@@ -129,6 +131,7 @@ object TrampolineUtil {
       if (metrics != null) {
         metrics.incDiskBytesSpilled(amountSpilled)
       }
+      GpuTaskMetrics.get.recordSpillToDisk(amountSpilled)
     })
   }
 
