@@ -90,17 +90,23 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     private final long currentIndex;
     private final long currentStringByteIndex;
     private final long nullCount;
+    private final boolean hadValidBuffer;
+    private final boolean hadOffsetsBuffer;
     private final BuilderSnapshot[] childStates;
 
     private BuilderSnapshot(long rows,
         long currentIndex,
         long currentStringByteIndex,
         long nullCount,
+        boolean hadValidBuffer,
+        boolean hadOffsetsBuffer,
         BuilderSnapshot[] childStates) {
       this.rows = rows;
       this.currentIndex = currentIndex;
       this.currentStringByteIndex = currentStringByteIndex;
       this.nullCount = nullCount;
+      this.hadValidBuffer = hadValidBuffer;
+      this.hadOffsetsBuffer = hadOffsetsBuffer;
       this.childStates = childStates;
     }
   }
@@ -123,7 +129,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
    */
   public BuilderSnapshot captureState() {
     return new BuilderSnapshot(rows, currentIndex, currentStringByteIndex, nullCount,
-        captureChildStates());
+        valid != null, offsets != null, captureChildStates());
   }
 
   /**
@@ -136,7 +142,10 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     if (snapshot == null) {
       throw new IllegalArgumentException("snapshot cannot be null");
     }
-    if (valid != null && currentIndex > snapshot.currentIndex) {
+    // Only clear validity bits if the valid buffer existed at snapshot time.
+    // If it was allocated after the snapshot, we don't need to clear anything
+    // since we're rolling back to a state before any rows were added.
+    if (snapshot.hadValidBuffer && valid != null && currentIndex > snapshot.currentIndex) {
       setValidRange(snapshot.currentIndex, currentIndex);
     }
     this.rows = snapshot.rows;
@@ -152,14 +161,19 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
         childBuilders.get(i).restoreState(snapshot.childStates[i]);
       }
     }
-    if (type.equals(DType.STRING) && offsets != null) {
-      offsets.setInt(
-          Math.toIntExact(snapshot.currentIndex << bitShiftByOffset),
-          Math.toIntExact(snapshot.currentStringByteIndex));
-    } else if (type.equals(DType.LIST) && offsets != null && !childBuilders.isEmpty()) {
-      offsets.setInt(
-          Math.toIntExact((snapshot.currentIndex + 1) << bitShiftByOffset),
-          childBuilders.get(0).getCurrentIndex());
+    // Only restore offsets if the offsets buffer existed at snapshot time.
+    // If it was allocated after the snapshot, we don't need to set anything
+    // since currentIndex is being reset to the snapshot value.
+    if (snapshot.hadOffsetsBuffer && offsets != null) {
+      if (type.equals(DType.STRING)) {
+        offsets.setInt(
+            Math.toIntExact(snapshot.currentIndex << bitShiftByOffset),
+            Math.toIntExact(snapshot.currentStringByteIndex));
+      } else if (type.equals(DType.LIST) && !childBuilders.isEmpty()) {
+        offsets.setInt(
+            Math.toIntExact((snapshot.currentIndex + 1) << bitShiftByOffset),
+            childBuilders.get(0).getCurrentIndex());
+      }
     }
   }
 
