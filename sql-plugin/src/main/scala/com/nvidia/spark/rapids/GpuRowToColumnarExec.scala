@@ -708,21 +708,30 @@ private class RowConvertAttempt(
     projection: UnsafeProjection)
   extends AutoCloseable with Retryable {
 
-  // Builder state captured lazily before conversion starts.
-  // Using lazy val ensures it's captured exactly once, on first currentRow access.
-  private lazy val builderSnapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot] =
-    builders.captureState()
+  // Builder state - captured once on first call to ensureSnapshotCaptured()
+  private var builderSnapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot] = _
+  private var snapshotCaptured: Boolean = false
 
   // Row snapshot - only created when restore() is called (i.e., OOM happened)
   private var rowSnapshot: Option[UnsafeRow] = None
 
-  /** 
-   * The row to convert. On first access, triggers builder state capture.
+  /**
+   * Ensures builder state is captured exactly once, before conversion starts.
+   * This must be called before convert() to enable rollback on OOM.
+   */
+  private def ensureSnapshotCaptured(): Unit = {
+    if (!snapshotCaptured) {
+      builderSnapshots = builders.captureState()
+      snapshotCaptured = true
+    }
+  }
+
+  /**
+   * The row to convert. Captures builder state on first access.
    * After restore(), returns the copied row for retry.
    */
   def currentRow: InternalRow = {
-    // Force builder snapshot capture before returning the row
-    builderSnapshots
+    ensureSnapshotCaptured()
     rowSnapshot.getOrElse(initialRow)
   }
 
