@@ -43,7 +43,6 @@ import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonToStructsReader
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
@@ -4715,11 +4714,6 @@ object GpuOverrides extends Logging {
       case "CORRECTED" => CorrectedTimeParserPolicy
     }
   }
-
-  val preRowToColProjection = TreeNodeTag[Seq[NamedExpression]]("rapids.gpu.preRowToColProcessing")
-
-  val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
-    "rapids.gpu.postColToRowProcessing")
 
   def wrapAndTagPlan(plan: SparkPlan, conf: RapidsConf): SparkPlanMeta[SparkPlan] = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
