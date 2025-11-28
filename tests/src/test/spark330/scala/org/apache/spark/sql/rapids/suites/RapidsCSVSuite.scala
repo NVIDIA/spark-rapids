@@ -29,7 +29,8 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
  * It extends the original Spark CSVSuite to ensure GPU implementation
  * produces the same results as CPU.
  *
- * Original Spark test: sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/csv/CSVSuite.scala
+ * Original Spark test:
+ *  sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/csv/CSVSuite.scala
  * Test count: 125 tests
  *
  * Migration notes:
