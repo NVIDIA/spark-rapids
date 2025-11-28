@@ -268,7 +268,8 @@ object GpuLore extends Logging {
                 g.children.zipWithIndex.foreach {
                   case (child, idx) =>
                     val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf,
-                      useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames)
+                      useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames,
+                      nonStrictMode = allowNonStrictMode)
                     child match {
                       case c: BroadcastQueryStageExec =>
                         registerTag(c.broadcast, LORE_DUMP_RDD_TAG, dumpRDDInfo, tagRollbacks)
@@ -290,7 +291,8 @@ object GpuLore extends Logging {
                           "found a duplicated subquery, which is currently not supported by LORE.")
                       }
                     }
-                    tagSubqueryPlan(nextId, sub, loreOutputInfo, hadoopConf, tagRollbacks)
+                    tagSubqueryPlan(nextId, sub, loreOutputInfo, hadoopConf, tagRollbacks,
+                      allowNonStrictMode)
                     nextId += 1
                     sub
                 }
@@ -330,13 +332,14 @@ object GpuLore extends Logging {
 
   private def tagSubqueryPlan(id: Int, sub: ExecSubqueryExpression,
       loreOutputInfo: LoreOutputInfo, hadoopConf: Broadcast[SerializableConfiguration],
-      tagRollbacks: mutable.ArrayBuffer[TagRollback]) = {
+      tagRollbacks: mutable.ArrayBuffer[TagRollback], nonStrictMode: Boolean) = {
     val innerPlan = sub.plan.child
     if (innerPlan.isInstanceOf[GpuExec]) {
       val dumpRDDInfo = LoreDumpRDDInfo(id, loreOutputInfo, innerPlan.output,
         hadoopConf,
         useOriginalSchemaNames = RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES
-          .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf))
+          .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf),
+        nonStrictMode = nonStrictMode)
       innerPlan match {
         case p: GpuColumnarToRowExec =>
           registerTag(p.child, LORE_DUMP_RDD_TAG, dumpRDDInfo, tagRollbacks)
