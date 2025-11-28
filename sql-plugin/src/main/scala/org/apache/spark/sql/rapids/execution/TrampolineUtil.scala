@@ -17,8 +17,10 @@
 package org.apache.spark.sql.rapids.execution
 
 import java.util.concurrent.{ScheduledExecutorService, ThreadPoolExecutor}
+
 import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
+
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil

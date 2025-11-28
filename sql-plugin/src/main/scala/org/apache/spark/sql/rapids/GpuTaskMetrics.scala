@@ -107,12 +107,12 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
  * Accumulator to sum up size in bytes, almost identical to LongAccumulator but with
  * a user-friendly representation of the value.
  */
-class SizeInByTesAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
+class SizeInBytesAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
   private var _sum = 0L
   override def isZero: Boolean = _sum == 0
 
-  override def copy(): SizeInByTesAccumulator = {
-    val newAcc = new SizeInByTesAccumulator
+  override def copy(): SizeInBytesAccumulator = {
+    val newAcc = new SizeInBytesAccumulator
     newAcc._sum = this._sum
     newAcc
   }
@@ -126,7 +126,7 @@ class SizeInByTesAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
   }
 
   override def merge(other: AccumulatorV2[jl.Long, SizeInBytes]): Unit = other match {
-    case sb: SizeInByTesAccumulator =>
+    case sb: SizeInBytesAccumulator =>
       _sum += sb._sum
     case _ =>
       throw new UnsupportedOperationException(
@@ -267,8 +267,8 @@ class GpuTaskMetrics extends Serializable with Logging {
   private val spillToDiskTimeNs = new NanoSecondAccumulator
   private val readSpillFromHostTimeNs = new NanoSecondAccumulator
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
-  private val spillToHostBytes = new SizeInByTesAccumulator
-  private val spillToDiskBytes = new SizeInByTesAccumulator
+  private val spillToHostBytes = new SizeInBytesAccumulator
+  private val spillToDiskBytes = new SizeInBytesAccumulator
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
   private val maxHostMemoryBytes = new HighWatermarkAccumulator
@@ -276,7 +276,7 @@ class GpuTaskMetrics extends Serializable with Logging {
   private val maxPinnedMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
 
-  private val maxGpuFootprint = new SizeInByTesAccumulator
+  private val maxGpuFootprint = new SizeInBytesAccumulator
 
   private var maxHostBytesAllocated: Long = 0
   private var maxPageableBytesAllocated: Long = 0
