@@ -203,4 +203,10 @@ trait SparkShims {
    * Returns None for versions where TableCacheQueryStageExec doesn't exist.
    */
   def getTableCacheNonQueryStagePlan(plan: SparkPlan): Option[SparkPlan] = None
+
+  /**
+   * Return true if this shim registers GPU replacements for `WriteFilesExec`.
+   * Used to keep higher-level feature gating (e.g. LORE) aligned with shim coverage.
+   */
+  def hasGpuWriteFiles: Boolean = false
 }

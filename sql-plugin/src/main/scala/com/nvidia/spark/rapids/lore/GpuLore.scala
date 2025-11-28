@@ -22,8 +22,9 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, GpuColumnarToRowExec, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader, ShimVersion, SparkShimVersion}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuDataWritingCommandExec, GpuExec, RapidsConf, ShimLoader}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -332,46 +333,14 @@ object GpuLore {
   }
 
   /**
-   * Check if the current Spark version is in the unsupported versions list for GpuWriteFiles
+   * Disable LORE dumping when the current shim enables GPU WriteFiles.
    */
   private def checkGpuDataWritingCommandSupportedVersion(): Unit = {
-    val currentShimVersion = ShimLoader.getShimVersion
-    // Get the list of unsupported versions
-    val unsupportedVersions = getGpuWriteFilesUnsupportedVersions
-    if (unsupportedVersions.contains(currentShimVersion)) {
+    if (SparkShimImpl.hasGpuWriteFiles) {
+      val currentShimVersion = ShimLoader.getShimVersion
       throw new UnsupportedOperationException(
         s"LORE dump is not supported for GpuDataWritingCommandExec on Spark" +
-          s" version $currentShimVersion. " +
-        s"Unsupported versions: ${unsupportedVersions.mkString(", ")}")
+          s" version $currentShimVersion because GPU WriteFiles is enabled on this shim.")
     }
-  }
-
-  /**
-   * Get the unsupported versions for GpuWriteFiles
-   * @return Set of unsupported ShimVersion instances
-   */
-  private[lore] lazy val getGpuWriteFilesUnsupportedVersions: Set[ShimVersion] = {
-    // These versions are extracted from GpuWriteFiles.scala spark-rapids-shim-json-lines
-    Set(
-      // Spark versions
-      SparkShimVersion(3, 4, 0),
-      SparkShimVersion(3, 4, 1),
-      SparkShimVersion(3, 4, 2),
-      SparkShimVersion(3, 4, 3),
-      SparkShimVersion(3, 4, 4),
-      SparkShimVersion(3, 5, 0),
-      SparkShimVersion(3, 5, 1),
-      SparkShimVersion(3, 5, 2),
-      SparkShimVersion(3, 5, 3),
-      SparkShimVersion(3, 5, 4),
-      SparkShimVersion(3, 5, 5),
-      SparkShimVersion(3, 5, 6),
-      SparkShimVersion(4, 0, 0),
-      SparkShimVersion(4, 0, 1),
-      // Databricks versions
-      DatabricksShimVersion(3, 3, 2, "12.2"), // 332db
-      DatabricksShimVersion(3, 4, 1, "13.3"), // 341db143
-      DatabricksShimVersion(3, 5, 0, "14.3") // 350db143
-    )
   }
 }

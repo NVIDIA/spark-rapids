@@ -30,7 +30,7 @@ iceberg_delete_cow_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {}
 # Configuration for merge-on-read DELETE operations
 iceberg_delete_mor_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
-# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example, 
+# Fixed seed for reproducible test data. Iceberg's delete test plan will be different with different data and filter. For example,
 # if deleted data exactly match some data files, we could remove all files using delete metadata only operation, then the physical plan 
 # would be DeleteFromTableExec.
 DELETE_TEST_SEED = 42
@@ -136,13 +136,23 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, reader_type
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+])
 @pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
-def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, reader_type, delete_mode):
+def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, reader_type, partition_col_sql, delete_mode):
     """Test DELETE on bucket-partitioned table with both copy-on-write and merge-on-read modes"""
     do_delete_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 % 3 = 0"),
-        partition_col_sql="bucket(16, _c2)",
+        partition_col_sql=partition_col_sql,
         reader_type=reader_type,
         delete_mode=delete_mode
     )
@@ -215,10 +225,6 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, reader_
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("truncate(5, _c6)", id="truncate"),
-    pytest.param("year(_c9)", id="year"),
-    pytest.param("month(_c9)", id="month"),
-    pytest.param("day(_c9)", id="day"),
-    pytest.param("hour(_c9)", id="hour"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec, partition_col_sql):

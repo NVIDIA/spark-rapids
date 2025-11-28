@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -25,7 +27,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, SortOrder, SpecializedGetters, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, SortOrder, SpecializedGetters, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator, GenerateUnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
@@ -601,6 +603,7 @@ class RowToColumnarIterator(
   private var targetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
+  private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
 
   override def hasNext: Boolean = rowIter.hasNext
 
@@ -637,8 +640,13 @@ class RowToColumnarIterator(
         // read at least one row
         while (rowIter.hasNext &&
             (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
-          val row = rowIter.next()
-          byteCount += converters.convert(row, builders)
+          val attempt = new RowConvertAttempt(rowIter.next(), builders, rowCopyProjection)
+          val bytesWritten = withRetryNoSplit(attempt) { att =>
+            withRestoreOnRetry(att) {
+              converters.convert(att.currentRow, builders)
+            }
+          }
+          byteCount += bytesWritten
           rowCount += 1
         }
 
@@ -678,6 +686,65 @@ class RowToColumnarIterator(
       }
     }
   }
+
+}
+
+/**
+ * Encapsulates the state needed to retry a single row conversion.
+ *
+ * This class implements `Retryable` to integrate with the retry framework via
+ * `withRestoreOnRetry`. The design defers expensive operations to when OOM actually occurs:
+ *
+ * - Builder state is captured lazily on first `currentRow` access (before convert runs)
+ * - Row copying is deferred to `restore()` - only happens if OOM occurs
+ * - `checkpoint()` is a no-op since we capture state lazily
+ *
+ * This minimizes overhead in the common case (no OOM) while still enabling proper
+ * rollback when OOM does occur.
+ */
+private class RowConvertAttempt(
+    initialRow: InternalRow,
+    builders: GpuColumnarBatchBuilder,
+    projection: UnsafeProjection)
+  extends AutoCloseable with Retryable {
+
+  // Builder state captured lazily before conversion starts.
+  // Using lazy val ensures it's captured exactly once, on first currentRow access.
+  private lazy val builderSnapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot] =
+    builders.captureState()
+
+  // Row snapshot - only created when restore() is called (i.e., OOM happened)
+  private var rowSnapshot: Option[UnsafeRow] = None
+
+  /** 
+   * The row to convert. On first access, triggers builder state capture.
+   * After restore(), returns the copied row for retry.
+   */
+  def currentRow: InternalRow = {
+    // Force builder snapshot capture before returning the row
+    builderSnapshots
+    rowSnapshot.getOrElse(initialRow)
+  }
+
+  override def checkpoint(): Unit = ()
+
+  /**
+   * Called by withRestoreOnRetry when an OOM occurs.
+   * Copies the row (for retry) and rolls back the builders to pre-conversion state.
+   */
+  override def restore(): Unit = {
+    // Snapshot the row for the retry attempt (only on first restore)
+    if (rowSnapshot.isEmpty) {
+      rowSnapshot = Some(initialRow match {
+        case unsafe: UnsafeRow => unsafe.copy()
+        case other => projection.apply(other).copy()
+      })
+    }
+    // Roll back builders to state before this row's conversion started
+    builders.restoreState(builderSnapshots)
+  }
+
+  override def close(): Unit = ()
 }
 
 object GeneratedInternalRowToCudfRowIterator extends Logging {

@@ -21,9 +21,10 @@ import scala.util.{Failure, Success}
 
 import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetFileFormat, GpuWrite, SparkPlanMeta, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
-import com.nvidia.spark.rapids.iceberg.GpuIcebergPartitioner
+import com.nvidia.spark.rapids.iceberg.GpuIcebergSpecPartitioner
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg.{DataFile, FileFormat, PartitionSpec, Schema, SerializableTable, SnapshotUpdate, Table, TableProperties}
@@ -407,11 +408,11 @@ class GpuPartitionedDataWriter(
         targetFileSize)
     }
 
-  private val partitioner = new GpuIcebergPartitioner(spec, dataSparkType)
+  private val partitioner = new GpuIcebergSpecPartitioner(spec, dataSchema.asStruct())
 
   override def write(record: ColumnarBatch): Unit = {
     partitioner.partition(record)
-      .foreach { part =>
+      .safeConsume { part =>
         delegate.write(part.batch, spec, part.partition)
       }
   }
