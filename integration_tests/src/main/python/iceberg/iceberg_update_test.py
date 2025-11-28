@@ -18,7 +18,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list, rapids_reader_types)
-from marks import allow_non_gpu, iceberg, ignore_order
+from marks import allow_non_gpu, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_35x, with_cpu_session, with_gpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
@@ -148,6 +148,7 @@ def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_fac
 
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
@@ -161,6 +162,12 @@ def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_fac
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
 def test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, reader_type, update_mode, partition_col_sql):
     """Test UPDATE on bucket-partitioned table with single column update"""
@@ -238,7 +245,6 @@ def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, reader_
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table_factory, reader_type, partition_col_sql, update_mode, fallback_exec):
