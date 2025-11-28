@@ -570,3 +570,47 @@ def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, reader
         })
     )
 
+@allow_non_gpu("WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_merge_mor_fallback_writedelta_disabled(spark_tmp_table_factory, reader_type):
+    """Test merge-on-read MERGE falls back when WriteDeltaExec is disabled
+    
+    This test verifies that when WriteDeltaExec is explicitly disabled (it's disabled by default
+    as experimental), merge-on-read MERGE operations correctly fallback to CPU execution.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    
+    cpu_target_table = f'{base_table_name}_target_cpu'
+    gpu_target_table = f'{base_table_name}_target_gpu'
+    source_table = f'{base_table_name}_source'
+    
+    create_iceberg_table_with_merge_data(cpu_target_table, merge_mode='merge-on-read')
+    create_iceberg_table_with_merge_data(gpu_target_table, merge_mode='merge-on-read')
+    # Source table needs distinct keys for MERGE cardinality constraint, with different seed
+    create_iceberg_table_with_merge_data(source_table, ensure_distinct_key=True, seed=42, merge_mode='merge-on-read')
+    
+    def write_func(spark, target_table_name):
+        spark.sql(f"""
+            MERGE INTO {target_table_name} t
+            USING {source_table} s
+            ON t._c0 = s._c0
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
+    
+    def read_func(spark, table_name):
+        return spark.sql(f"SELECT * FROM {table_name}")
+    
+    assert_gpu_fallback_write_sql(
+        write_func,
+        read_func,
+        base_table_name + "_target",
+        ['WriteDeltaExec'],
+        conf=copy_and_update(iceberg_merge_enabled_conf, {
+            "spark.rapids.sql.exec.WriteDeltaExec": "false",
+            "spark.rapids.sql.format.parquet.reader.type": reader_type
+        })
+    )
+

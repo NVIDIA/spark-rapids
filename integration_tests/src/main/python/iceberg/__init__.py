@@ -69,6 +69,9 @@ iceberg_write_enabled_conf = {
     "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
     "spark.rapids.sql.format.iceberg.enabled": "true",
     "spark.rapids.sql.format.iceberg.write.enabled": "true",
+    # WriteDeltaExec is disabled by default as it's experimental, but we need it enabled
+    # for merge-on-read (MOR) DML operations (UPDATE/DELETE/MERGE with write.*.mode='merge-on-read')
+    "spark.rapids.sql.exec.WriteDeltaExec": "true",
 }
 
 
