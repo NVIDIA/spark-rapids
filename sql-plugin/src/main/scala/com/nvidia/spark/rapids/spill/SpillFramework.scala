@@ -454,16 +454,14 @@ class SpillableHostBufferHandle private (
               val outputChannel = diskHandleBuilder.getChannel
               // the spill IO is non-blocking as it won't impact dev or host directly
               // instead we "atomically" swap the buffers below once they are ready
-              GpuTaskMetrics.get.spillToDiskTime {
-                val iter = new HostByteBufferIterator(buf)
-                iter.foreach { bb =>
-                  try {
-                    while (bb.hasRemaining) {
-                      outputChannel.write(bb)
-                    }
-                  } finally {
-                    RapidsStorageUtils.dispose(bb)
+              val iter = new HostByteBufferIterator(buf)
+              iter.foreach { bb =>
+                try {
+                  while (bb.hasRemaining) {
+                    outputChannel.write(bb)
                   }
+                } finally {
+                  RapidsStorageUtils.dispose(bb)
                 }
               }
               val actualBytes = diskHandleBuilder.size // actual bytes to be spilled
@@ -1127,11 +1125,9 @@ class SpillableHostColumnarBatchHandle private (
         inCaseSpillingFailed(spillToDisk = true) { () =>
           withResource(host.get) { cb =>
             withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
-              GpuTaskMetrics.get.spillToDiskTime {
-                val dos = diskHandleBuilder.getDataOutputStream
-                val columns = RapidsHostColumnVector.extractBases(cb)
-                JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
-              }
+              val dos = diskHandleBuilder.getDataOutputStream
+              val columns = RapidsHostColumnVector.extractBases(cb)
+              JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
               val actualBytes = diskHandleBuilder.size
               var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
               synchronized {
