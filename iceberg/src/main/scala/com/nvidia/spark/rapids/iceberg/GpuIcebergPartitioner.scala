@@ -171,6 +171,8 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
       case GpuMonths => GpuMonthsExpression(inputRefExpr)
       case GpuDays => GpuDaysExpression(inputRefExpr)
       case GpuHours => GpuHoursExpression(inputRefExpr)
+      case GpuTruncate(width) =>
+        GpuTruncateExpression(GpuLiteral.create(width), inputRefExpr)
     }
   }
 }
