@@ -17,9 +17,9 @@ import pytest
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from delta_lake_utils import *
+import glob
 from marks import *
 import os
-import glob
 import pyarrow.parquet as pq
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
     with_cpu_session, with_gpu_session, is_before_spark_353, is_spark_353_or_later
@@ -340,3 +340,30 @@ def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns, 
     assert_gpu_and_cpu_writes_are_equal_collect(do_delete, read_func, data_path,
                                                 conf=delta_delete_enabled_conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+                                                        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+                                                        'spark.rapids.sql.reader.chunked': False}
+coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+                                                                'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+                                                                'spark.rapids.sql.reader.chunked': True,
+                                                                'spark.rapids.sql.reader.chunked.subPage': True}
+
+coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+                                                                        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+                                                                        'spark.rapids.sql.reader.chunked': True,
+                                                                        'spark.rapids.sql.reader.chunked.subPage': False}
+@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, int_gen, long_gen]], ids=idfn)
+@pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf,
+                                          coalesce_parquet_file_reader_multithread_filter_chunked_conf,
+                                          coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf])
+@pytest.mark.parametrize('batch_size_bytes', [100, 1000])
+@pytest.mark.parametrize('row_indices_to_delete', ["coalesce_dv_test_seq", "coalesce_dv_test_random"])
+@allow_non_gpu(*delta_meta_allow)
+def test_deletion_vectors_coalescing_multiple_files(std_input_path, parquet_gens, reader_confs, batch_size_bytes, row_indices_to_delete):
+    data_path = f"{std_input_path}/{row_indices_to_delete}"
+    all_confs = copy_and_update(reader_confs, {
+        'spark.rapids.sql.batchSizeBytes': batch_size_bytes,
+        'spark.databricks.delta.deletionVectors.useMetadataRowIndex': False})
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(f"select * from delta.`{data_path}` order by uniq_int"),
+                                         conf=all_confs)

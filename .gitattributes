@@ -1,0 +1,2 @@
+integration_tests/src/test/resources/coalesce_dv_test_random/ filter=lfs diff=lfs merge=lfs -text
+integration_tests/src/test/resources/coalesce_dv_test_seq/ filter=lfs diff=lfs merge=lfs -text
