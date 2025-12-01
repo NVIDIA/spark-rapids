@@ -101,6 +101,324 @@ object JoinTypeChecks {
     Map(CONDITION -> condition.toSeq)
 }
 
+object GatherMapsResult {
+  def apply(left: GatherMap, right: GatherMap): GatherMapsResult =
+    new GatherMapsResult(Some(left), Some(right))
+
+  def makeFromLeft(left: GatherMap): GatherMapsResult =
+    new GatherMapsResult(Some(left), None)
+
+  def makeFromRight(right: GatherMap): GatherMapsResult =
+    new GatherMapsResult(None, Some(right))
+}
+
+/**
+ * Holds the result of a left and right gather map
+ */
+class GatherMapsResult(private var leftOpt: Option[GatherMap],
+                       private var rightOpt: Option[GatherMap]) extends AutoCloseable {
+
+  def left: GatherMap = leftOpt.get
+  def hasLeft: Boolean = leftOpt.isDefined
+  def releaseLeft(): GatherMap = {
+    val ret =  leftOpt.get
+    leftOpt = None
+    ret
+  }
+
+  def right: GatherMap = rightOpt.get
+  def hasRight: Boolean = rightOpt.isDefined
+  def releaseRight(): GatherMap = {
+    val ret =  rightOpt.get
+    rightOpt = None
+    ret
+  }
+
+  override def close(): Unit = {
+    leftOpt.foreach(_.close)
+    rightOpt.foreach(_.close())
+  }
+}
+
+object JoinImpl {
+  def filterInnerJoinWithAST(inner: GatherMapsResult,
+                             leftTable: Table,
+                             rightTable: Table,
+                             compiledCondition: CompiledExpression): GatherMapsResult = {
+    val arrayRet = JoinPrimitives.filterGatherMapsByAST(
+      inner.left, inner.right, leftTable, rightTable, compiledCondition)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def filterInnerJoinWithSwappedAST(inner: GatherMapsResult,
+                                    leftTable: Table,
+                                    rightTable: Table,
+                                    compiledCondition: CompiledExpression): GatherMapsResult = {
+    // The compiled condition has the left and right tables swapped, but we cannot change
+    // that, so swap the input tables, then swap back the outputs to properly match
+    val arrayRet = JoinPrimitives.filterGatherMapsByAST(
+      inner.right, inner.left, rightTable, leftTable, compiledCondition)
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  /**
+   * Applies the AST filter to the inner gather maps result.
+   * Detects how the AST is compiled based on earlier rules.
+   * This is fragile and needs to be used with caution. This is
+   * not the same for all paths through join.
+   * @param inner the set of maps to filter
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param joinType the type of join being done
+   * @param buildSide the build side of the join
+   * @return a new set of filtered gather maps
+   */
+  def filterInnerJoinWithASTSwapByJoinTypeAndBuildSide(
+      inner: GatherMapsResult,
+      leftTable: Table,
+      rightTable: Table,
+      compiledCondition: CompiledExpression,
+      joinType: JoinType,
+      buildSide: GpuBuildSide): GatherMapsResult = {
+    // For the AST to work properly we have to match the rules that the condition was compiled for
+    // InnerLike && GpuBuildRight | LeftOuter | LeftSemi | LeftAnti =>
+    //   LEFT, RIGHT
+    // InnerLike && GpuBuildLeft | RightOuter=>
+    //   RIGHT, LEFT
+    val conditionCompiledRightLeft = joinType match {
+      case _: InnerLike if buildSide == GpuBuildLeft => true
+      case RightOuter => true
+      case _ => false
+    }
+    if (conditionCompiledRightLeft) {
+      filterInnerJoinWithSwappedAST(inner, leftTable, rightTable, compiledCondition)
+    } else {
+      filterInnerJoinWithAST(inner, leftTable, rightTable, compiledCondition)
+    }
+  }
+
+  /**
+   * Applies the AST filter to the inner gather maps result.
+   * Detects how the AST is compiled based on earlier rules.
+   * This is fragile and needs to be used with caution. This is
+   * not the same for all paths through join.
+   * @param inner the set of maps to filter
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param subJoinType the type of join being done
+   * @return a new set of filtered gather maps
+   */
+  def filterInnerJoinWithASTSwapBySubJoinType(inner: GatherMapsResult,
+                                              leftTable: Table,
+                                              rightTable: Table,
+                                              compiledCondition: CompiledExpression,
+                                              subJoinType: JoinType) = {
+    // For AST to work we have to match the order of the left and right tables
+    // that it was compiled for
+    // In this case it is
+    // subJoinType == LeftOuter | Inner => LEFT, RIGHT
+    // subJoinType == RightOuter => RIGHT, LEFT
+    // But that is not consistent everywhere
+    if (subJoinType == RightOuter) {
+      filterInnerJoinWithSwappedAST(inner, leftTable, rightTable, compiledCondition)
+    } else {
+      filterInnerJoinWithAST(inner, leftTable, rightTable, compiledCondition)
+    }
+  }
+
+  /**
+   * Convert the results of an inner join to a left outer join
+   * @param inner the inner join results
+   * @param leftRowCount the number of rows in the left hand table
+   * @param rightRowCount the number of rows in the right hand table
+   * @return a gather maps result for a left outer join
+   */
+  def makeLeftOuter(inner: GatherMapsResult,
+                    leftRowCount: Int, rightRowCount: Int): GatherMapsResult = {
+    val arrayRet = JoinPrimitives.makeLeftOuter(
+      inner.left, inner.right, leftRowCount, rightRowCount)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  /**
+   * Convert the results of an inner join to a right outer join
+   * @param inner the inner join results
+   * @param leftRowCount the number of rows in the left hand table
+   * @param rightRowCount the number of rows in the right hand table
+   * @return a gather maps result for a right outer join
+   */
+  def makeRightOuter(inner: GatherMapsResult,
+                     leftRowCount: Int, rightRowCount: Int): GatherMapsResult = {
+    // Switching left and right to allow us to use makeLeftOuter as a stand in for
+    // makeRightOuter
+    val arrayRet = JoinPrimitives.makeLeftOuter(
+      inner.right, inner.left, rightRowCount, leftRowCount)
+    // Then switch the results back so we are good
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  /**
+   * Convert the results of an inner join to a left semi join
+   * @param inner the inner join results
+   * @param leftRowCount the number of rows in the left hand table
+   * @return a gather maps result for a left semi join
+   */
+  def makeLeftSemi(inner: GatherMapsResult, leftRowCount: Int): GatherMapsResult = {
+    val leftRet = JoinPrimitives.makeSemi(inner.left, leftRowCount)
+    GatherMapsResult.makeFromLeft(leftRet)
+  }
+
+  /**
+   * Convert the results of an inner join to a left anti join
+   * @param inner the inner join results
+   * @param leftRowCount the number of rows in the left hand table
+   * @return a gather maps result for a left anti join
+   */
+  def makeLeftAnti(inner: GatherMapsResult, leftRowCount: Int): GatherMapsResult = {
+    val leftRet = JoinPrimitives.makeAnti(inner.left, leftRowCount)
+    GatherMapsResult.makeFromLeft(leftRet)
+  }
+
+  def innerHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
+                             compareNullsEqual: Boolean): GatherMapsResult = {
+    // The build table is always the right table, so switch the tables passed in
+    val arrayRet = JoinPrimitives.hashInnerJoin(rightKeys, leftKeys, compareNullsEqual)
+    // Then switch the gather maps result
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def innerHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
+                              leftTable: Table, rightTable: Table,
+                              compiledCondition: CompiledExpression,
+                              nullEquality: NullEquality): GatherMapsResult = {
+    // Even though it's an inner join, we need to switch the join order since the
+    // condition has been compiled to expect the build side on the left and the stream
+    // side on the right.
+    val arrayRet = Table.mixedInnerJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
+      compiledCondition, nullEquality)
+    // Reverse the output of the join, because we expect the right gather map to
+    // always be on the right.
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def innerHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                              compareNullsEqual: Boolean): GatherMapsResult = {
+    // The build table is always the right table
+    val arrayRet = JoinPrimitives.hashInnerJoin(leftKeys, rightKeys, compareNullsEqual)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def innerHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                              leftTable: Table, rightTable: Table,
+                              compiledCondition: CompiledExpression,
+                              nullEquality: NullEquality): GatherMapsResult = {
+    val arrayRet = Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+      compiledCondition, nullEquality)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def innerHashJoinBuildSmallest(leftKeys: Table, rightKeys: Table,
+                                 compareNullsEqual: Boolean): GatherMapsResult = {
+    if (leftKeys.getRowCount < rightKeys.getRowCount) {
+      innerHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
+    } else {
+      innerHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
+    }
+  }
+
+  def innerSortJoinBuildLeft(leftKeys: Table, rightKeys: Table,
+                             compareNullsEqual: Boolean): GatherMapsResult = {
+    // The build table is always the right table, so switch the tables passed in
+    val arrayRet = JoinPrimitives.sortMergeInnerJoin(rightKeys, leftKeys,
+      false, false, compareNullsEqual)
+    // Then switch the gather maps result
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def innerSortJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                              compareNullsEqual: Boolean): GatherMapsResult = {
+    // The build table is always the right table
+    val arrayRet = JoinPrimitives.sortMergeInnerJoin(leftKeys, rightKeys,
+      false, false, compareNullsEqual)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def innerSortJoinBuildSmallest(leftKeys: Table, rightKeys: Table,
+                                 compareNullsEqual: Boolean): GatherMapsResult = {
+    if (leftKeys.getRowCount < rightKeys.getRowCount) {
+      innerSortJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
+    } else {
+      innerSortJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
+    }
+  }
+
+  def leftOuterHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                                  compareNullsEqual: Boolean): GatherMapsResult = {
+    val arrayRet = leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def leftOuterHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                                  leftTable: Table, rightTable: Table,
+                                  compiledCondition: CompiledExpression,
+                                  nullEquality: NullEquality): GatherMapsResult = {
+    val arrayRet = Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+      compiledCondition, nullEquality)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def rightOuterHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
+                                  compareNullsEqual: Boolean): GatherMapsResult = {
+    // Reverse the input to the join so we can use left outer to computer right outer
+    val arrayRet = rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual)
+    // Then switch the output so the gather maps are correct
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def rightOuterHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
+                                  leftTable: Table, rightTable: Table,
+                                  compiledCondition: CompiledExpression,
+                                  nullEquality: NullEquality): GatherMapsResult = {
+    // Reverse the output of the join, because we expect the right gather map to
+    // always be on the right
+    val arrayRet = Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
+      compiledCondition, nullEquality)
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def leftSemiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                                  compareNullsEqual: Boolean): GatherMapsResult = {
+    val leftRet = leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual)
+    GatherMapsResult.makeFromLeft(leftRet)
+  }
+
+  def leftSemiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                                 leftTable: Table, rightTable: Table,
+                                 compiledCondition: CompiledExpression,
+                                 nullEquality: NullEquality): GatherMapsResult = {
+    val leftRet = Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+      compiledCondition, nullEquality)
+    GatherMapsResult.makeFromLeft(leftRet)
+  }
+
+  def leftAntiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                                 compareNullsEqual: Boolean): GatherMapsResult = {
+    val leftRet = leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual)
+    GatherMapsResult.makeFromLeft(leftRet)
+  }
+
+  def leftAntiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
+                                 leftTable: Table, rightTable: Table,
+                                 compiledCondition: CompiledExpression,
+                                 nullEquality: NullEquality): GatherMapsResult = {
+    val leftRet = Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+      compiledCondition, nullEquality)
+    GatherMapsResult.makeFromLeft(leftRet)
+  }
+}
+
 object GpuHashJoin {
   // Designed for the null-aware anti-join in GpuBroadcastHashJoin.
   def anyNullInKey(cb: ColumnarBatch, boundKeys: Seq[GpuExpression]): Boolean = {
@@ -570,33 +888,31 @@ abstract class BaseHashJoinIterator(
    * @return Array of gather maps for the target join type
    */
   protected def convertInnerJoinMapsToTargetType(
-      innerMaps: Array[GatherMap],
+      innerMaps: GatherMapsResult,
       leftRowCount: Long,
       rightRowCount: Long,
       targetJoinType: JoinType,
-      errorContext: String): Array[GatherMap] = {
+      errorContext: String): GatherMapsResult = {
     targetJoinType match {
-      case _: InnerLike => innerMaps.reverse
+      case _: InnerLike => innerMaps
       case LeftOuter =>
         withResource(innerMaps) { _ =>
-          JoinPrimitives.makeLeftOuter(
-            innerMaps(0), innerMaps(1), leftRowCount.toInt, rightRowCount.toInt)
+          JoinImpl.makeLeftOuter(innerMaps, leftRowCount.toInt, rightRowCount.toInt)
         }
       case RightOuter =>
         withResource(innerMaps) { _ =>
-          JoinPrimitives.makeLeftOuter(
-            innerMaps(1), innerMaps(0), rightRowCount.toInt, leftRowCount.toInt).reverse
+          JoinImpl.makeRightOuter(innerMaps, leftRowCount.toInt, rightRowCount.toInt)
         }
       case LeftSemi =>
         withResource(innerMaps) { _ =>
-          Array(JoinPrimitives.makeSemi(innerMaps(0), leftRowCount.toInt))
+          JoinImpl.makeLeftSemi(innerMaps, leftRowCount.toInt)
         }
       case LeftAnti =>
         withResource(innerMaps) { _ =>
-          Array(JoinPrimitives.makeAnti(innerMaps(0), leftRowCount.toInt))
+          JoinImpl.makeLeftAnti(innerMaps, leftRowCount.toInt)
         }
       case _ =>
-        innerMaps.safeClose()
+        innerMaps.close()
         throw new NotImplementedError(
           s"Join $targetJoinType with $errorContext is not currently supported")
     }
@@ -771,15 +1087,18 @@ class HashJoinIterator(
           logJoinCardinality(leftKeys, rightKeys, "distinct")
           val result = joinType match {
             case LeftOuter =>
-              Array(leftKeys.leftDistinctJoinGatherMap(rightKeys, compareNullsEqual))
+              val rightRet = leftKeys.leftDistinctJoinGatherMap(rightKeys, compareNullsEqual)
+              GatherMapsResult.makeFromRight(rightRet)
             case RightOuter =>
-              Array(rightKeys.leftDistinctJoinGatherMap(leftKeys, compareNullsEqual))
+              val leftRet = rightKeys.leftDistinctJoinGatherMap(leftKeys, compareNullsEqual)
+              GatherMapsResult.makeFromLeft(leftRet)
             case _: InnerLike =>
-              if (buildSide == GpuBuildRight) {
+              val arrayRet = if (buildSide == GpuBuildRight) {
                 leftKeys.innerDistinctJoinGatherMaps(rightKeys, compareNullsEqual)
               } else {
                 rightKeys.innerDistinctJoinGatherMaps(leftKeys, compareNullsEqual).reverse
               }
+              GatherMapsResult(arrayRet(0), arrayRet(1))
             case _ =>
               // Fall through to strategy-based dispatching for non-outer joins
               computeNonDistinctJoin(leftKeys, rightKeys, leftData, rightData)
@@ -800,7 +1119,7 @@ class HashJoinIterator(
       leftKeys: Table,
       rightKeys: Table,
       leftData: LazySpillableColumnarBatch,
-      rightData: LazySpillableColumnarBatch): Array[GatherMap] = {
+      rightData: LazySpillableColumnarBatch): GatherMapsResult = {
     joinOptions.strategy match {
       case JoinStrategy.INNER_HASH_WITH_POST =>
         // Use composable JNI APIs: inner join -> convert to target join type
@@ -829,26 +1148,19 @@ class HashJoinIterator(
   private def computeNonCondInnerHashWithPost(
       leftKeys: Table,
       rightKeys: Table,
-      isFallback: Boolean = false): Array[GatherMap] = {
+      isFallback: Boolean = false): GatherMapsResult = {
     val implName = if (isFallback) {
       "INNER_HASH_WITH_POST (fallback from INNER_SORT_WITH_POST)"
     } else {
       "INNER_HASH_WITH_POST"
     }
     logJoinCardinality(leftKeys, rightKeys, implName)
-    
-    // Perform inner hash join with smaller table on the right for better performance
-    val leftRowCount = leftKeys.getRowCount
-    val rightRowCount = rightKeys.getRowCount
-    
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.hashInnerJoin(rightKeys, leftKeys, compareNullsEqual).reverse
-    } else {
-      JoinPrimitives.hashInnerJoin(leftKeys, rightKeys, compareNullsEqual)
-    }
+
+    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
 
     // Convert to target join type
+    val leftRowCount = leftKeys.getRowCount
+    val rightRowCount = rightKeys.getRowCount
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
       joinType, "INNER_HASH_WITH_POST strategy")
     logJoinCompletion()
@@ -857,22 +1169,14 @@ class HashJoinIterator(
 
   private def computeNonCondInnerSortWithPost(
       leftKeys: Table,
-      rightKeys: Table): Array[GatherMap] = {
+      rightKeys: Table): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, "INNER_SORT_WITH_POST")
     
-    // Perform inner sort-merge join with smaller table on the right for better performance
-    val leftRowCount = leftKeys.getRowCount
-    val rightRowCount = rightKeys.getRowCount
-    
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    // Note: isLeftKeySorted=false, isRightKeySorted=false since keys are not pre-sorted
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.sortMergeInnerJoin(rightKeys, leftKeys, compareNullsEqual, false, false).reverse
-    } else {
-      JoinPrimitives.sortMergeInnerJoin(leftKeys, rightKeys, compareNullsEqual, false, false)
-    }
+    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
 
     // Convert to target join type
+    val leftRowCount = leftKeys.getRowCount
+    val rightRowCount = rightKeys.getRowCount
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
       joinType, "INNER_SORT_WITH_POST strategy")
     logJoinCompletion()
@@ -881,18 +1185,20 @@ class HashJoinIterator(
 
   private def computeWithHashJoin(
       leftKeys: Table,
-      rightKeys: Table): Array[GatherMap] = {
+      rightKeys: Table): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, "hash join")
     
     val result = joinType match {
-      case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+      case LeftOuter =>
+        JoinImpl.leftOuterHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
       case RightOuter =>
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right
-        rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
-      case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
-      case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
-      case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
+        JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
+      case _: InnerLike =>
+        JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+      case LeftSemi =>
+        JoinImpl.leftSemiHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
+      case LeftAnti =>
+        JoinImpl.leftAntiHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
       case _ =>
         throw new NotImplementedError(s"Join Type ${joinType.getClass} is not currently" +
           s" supported")
@@ -978,7 +1284,7 @@ class ConditionalHashJoinIterator(
       leftTable: Table,
       rightTable: Table,
       nullEquality: NullEquality,
-      isFallback: Boolean = false): Array[GatherMap] = {
+      isFallback: Boolean = false): GatherMapsResult = {
     val implName = if (isFallback) {
       "INNER_HASH_WITH_POST (conditional, fallback from INNER_SORT_WITH_POST)"
     } else {
@@ -990,32 +1296,13 @@ class ConditionalHashJoinIterator(
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
 
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.hashInnerJoin(rightKeys, leftKeys, nullEquality == NullEquality.EQUAL).reverse
-    } else {
-      JoinPrimitives.hashInnerJoin(leftKeys, rightKeys, nullEquality == NullEquality.EQUAL)
-    }
+    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys,
+      nullEquality == NullEquality.EQUAL)
 
     // Filter by AST condition
     val filteredMaps = withResource(innerMaps) { _ =>
-      // For the AST to work properly we have to match the rules that the condition was compiled for
-      // InnerLike && GpuBuildRight | LeftOuter | LeftSemi | LeftAnti =>
-      //   LEFT, RIGHT
-      // InnerLike && GpuBuildLeft | RightOuter=>
-      //   RIGHT, LEFT
-      val conditionCompiledRightLeft = joinType match {
-        case _: InnerLike if buildSide == GpuBuildLeft => true
-        case RightOuter => true
-        case _ => false
-      }
-      if (conditionCompiledRightLeft) {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(1), innerMaps(0), rightTable, leftTable, compiledCondition).reverse
-      } else {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
-      }
+      JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide( innerMaps, leftTable, rightTable,
+        compiledCondition, joinType, buildSide)
     }
 
     // Convert filtered inner maps to target join type
@@ -1030,41 +1317,20 @@ class ConditionalHashJoinIterator(
       rightKeys: Table,
       leftTable: Table,
       rightTable: Table,
-      nullEquality: NullEquality): Array[GatherMap] = {
+      nullEquality: NullEquality): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, "INNER_SORT_WITH_POST (conditional)")
     
     // Perform inner sort-merge join with smaller table on the right for better performance
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
 
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    // Note: isLeftKeySorted=false, isRightKeySorted=false since keys are not pre-sorted
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.sortMergeInnerJoin(rightKeys, leftKeys, nullEquality == NullEquality.EQUAL, false, false).reverse
-    } else {
-      JoinPrimitives.sortMergeInnerJoin(leftKeys, rightKeys, nullEquality == NullEquality.EQUAL, false, false)
-    }
+    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys,
+      nullEquality == NullEquality.EQUAL)
 
     // Filter by AST condition
     val filteredMaps = withResource(innerMaps) { _ =>
-      // For AST to work we have to match the order of the left and right tables
-      // that it was compiled for
-      // InnerLike && GpuBuildRight | LeftOuter | LeftSemi | LeftAnti =>
-      //   LEFT, RIGHT
-      // InnerLike && GpuBuildLeft | RightOuter=>
-      //   RIGHT, LEFT
-      val conditionCompiledRightLeft = joinType match {
-        case _: InnerLike if buildSide == GpuBuildLeft => true
-        case RightOuter => true
-        case _ => false
-      }
-      if (conditionCompiledRightLeft) {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(1), innerMaps(0), rightTable, leftTable, compiledCondition).reverse
-      } else {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
-      }
+      JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide( innerMaps, leftTable, rightTable,
+        compiledCondition, joinType, buildSide)
     }
 
     // Convert filtered inner maps to target join type
@@ -1079,35 +1345,28 @@ class ConditionalHashJoinIterator(
       rightKeys: Table,
       leftTable: Table,
       rightTable: Table,
-      nullEquality: NullEquality): Array[GatherMap] = {
+      nullEquality: NullEquality): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, "mixed join (conditional)")
     
     val result = joinType match {
       case _: InnerLike if buildSide == GpuBuildRight =>
-        Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+        JoinImpl.innerHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
           compiledCondition, nullEquality)
       case _: InnerLike if buildSide == GpuBuildLeft =>
-        // Even though it's an inner join, we need to switch the join order since the
-        // condition has been compiled to expect the build side on the left and the stream
-        // side on the right.
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right.
-        Table.mixedInnerJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
-          compiledCondition, nullEquality).reverse
+        JoinImpl.innerHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
+          compiledCondition, nullEquality)
       case LeftOuter =>
-        Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+        JoinImpl.leftOuterHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
           compiledCondition, nullEquality)
       case RightOuter =>
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right
-        Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
-          compiledCondition, nullEquality).reverse
+        JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
+          compiledCondition, nullEquality)
       case LeftSemi =>
-        Array(Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality))
+        JoinImpl.leftSemiHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
+          compiledCondition, nullEquality)
       case LeftAnti =>
-        Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality))
+        JoinImpl.leftAntiHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
+          compiledCondition, nullEquality)
       case _ =>
         throw new NotImplementedError(s"Join $joinType $buildSide is not currently supported")
     }
@@ -1198,7 +1457,7 @@ class HashJoinStreamSideIterator(
   private[this] var builtSideTracker: Option[SpillableColumnarBatch] = buildSideTrackerInit
 
   private def unconditionalJoinGatherMaps(
-      leftKeys: Table, rightKeys: Table): Array[GatherMap] = {
+      leftKeys: Table, rightKeys: Table): GatherMapsResult = {
     // Pass the original joinType if it was transformed to subJoinType
     val originalJoinType = if (joinType != subJoinType) Some(joinType) else None
     
@@ -1230,24 +1489,18 @@ class HashJoinStreamSideIterator(
       leftKeys: Table,
       rightKeys: Table,
       originalJoinType: Option[JoinType],
-      isFallback: Boolean = false): Array[GatherMap] = {
+      isFallback: Boolean = false): GatherMapsResult = {
     val implName = if (isFallback) {
       s"INNER_HASH_WITH_POST (outer: $joinType, fallback from INNER_SORT_WITH_POST)"
     } else {
       s"INNER_HASH_WITH_POST (outer: $joinType)"
     }
     logJoinCardinality(leftKeys, rightKeys, implName, originalJoinType)
-    
-    // Perform inner hash join with smaller table on the right for better performance
+
+    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
-    
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.hashInnerJoin(rightKeys, leftKeys, compareNullsEqual).reverse
-    } else {
-      JoinPrimitives.hashInnerJoin(leftKeys, rightKeys, compareNullsEqual)
-    }
 
     // Convert to target sub-join type
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
@@ -1259,21 +1512,14 @@ class HashJoinStreamSideIterator(
   private def computeUnconditionalInnerSortWithPost(
       leftKeys: Table,
       rightKeys: Table,
-      originalJoinType: Option[JoinType]): Array[GatherMap] = {
+      originalJoinType: Option[JoinType]): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, s"INNER_SORT_WITH_POST (outer: $joinType)", 
       originalJoinType)
-    
-    // Perform inner sort-merge join with smaller table on the right for better performance
+
+    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
-    
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    // Note: isLeftKeySorted=false, isRightKeySorted=false since keys are not pre-sorted
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.sortMergeInnerJoin(rightKeys, leftKeys, compareNullsEqual, false, false).reverse
-    } else {
-      JoinPrimitives.sortMergeInnerJoin(leftKeys, rightKeys, compareNullsEqual, false, false)
-    }
 
     // Convert to target sub-join type
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
@@ -1285,18 +1531,16 @@ class HashJoinStreamSideIterator(
   private def computeUnconditionalHashJoin(
       leftKeys: Table,
       rightKeys: Table,
-      originalJoinType: Option[JoinType]): Array[GatherMap] = {
+      originalJoinType: Option[JoinType]): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, s"hash join (outer: $joinType)", originalJoinType)
     
     val result = subJoinType match {
       case LeftOuter =>
-        leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+        JoinImpl.leftOuterHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
       case RightOuter =>
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right
-        rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
+        JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
       case Inner =>
-        leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
+        JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
       case t =>
         throw new IllegalStateException(s"unsupported join type: $t")
     }
@@ -1309,7 +1553,7 @@ class HashJoinStreamSideIterator(
       leftData: LazySpillableColumnarBatch,
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch,
-      compiledCondition: CompiledExpression): Array[GatherMap] = {
+      compiledCondition: CompiledExpression): GatherMapsResult = {
     // Pass the original joinType if it was transformed to subJoinType
     val originalJoinType = if (joinType != subJoinType) Some(joinType) else None
     
@@ -1351,39 +1595,24 @@ class HashJoinStreamSideIterator(
       rightTable: Table,
       compiledCondition: CompiledExpression,
       originalJoinType: Option[JoinType],
-      isFallback: Boolean = false): Array[GatherMap] = {
+      isFallback: Boolean = false): GatherMapsResult = {
     val implName = if (isFallback) {
       s"INNER_HASH_WITH_POST (outer: $joinType, conditional, fallback from INNER_SORT_WITH_POST)"
     } else {
       s"INNER_HASH_WITH_POST (outer: $joinType, conditional)"
     }
     logJoinCardinality(leftKeys, rightKeys, implName, originalJoinType)
-    
-    // Perform inner hash join with smaller table on the right for better performance
-    val leftRowCount = leftTable.getRowCount
-    val rightRowCount = rightTable.getRowCount
-    
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.hashInnerJoin(rightKeys, leftKeys, compareNullsEqual).reverse
-    } else {
-      JoinPrimitives.hashInnerJoin(leftKeys, rightKeys, compareNullsEqual)
-    }
+
+    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
 
     // Filter by AST condition
     val filteredMaps = withResource(innerMaps) { _ =>
-      // For AST to work we have to match the order of the left and right tables
-      // that it was compiled for
-      // subJoinType == LeftOuter | Inner => LEFT, RIGHT
-      // subJoinType == RightOuter => RIGHT, LEFT
-      if (subJoinType == RightOuter) {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(1), innerMaps(0), rightTable, leftTable, compiledCondition).reverse
-      } else {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
-      }
+      JoinImpl.filterInnerJoinWithASTSwapBySubJoinType(innerMaps, leftTable, rightTable,
+        compiledCondition, subJoinType)
     }
+
+    val leftRowCount = leftTable.getRowCount
+    val rightRowCount = rightTable.getRowCount
 
     // Convert filtered inner maps to target sub-join type
     val result = convertInnerJoinMapsToTargetType(filteredMaps, leftRowCount, rightRowCount,
@@ -1398,36 +1627,20 @@ class HashJoinStreamSideIterator(
       leftTable: Table,
       rightTable: Table,
       compiledCondition: CompiledExpression,
-      originalJoinType: Option[JoinType]): Array[GatherMap] = {
+      originalJoinType: Option[JoinType]): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, s"INNER_SORT_WITH_POST (outer: $joinType, conditional)",
       originalJoinType)
-    
-    // Perform inner sort-merge join with smaller table on the right for better performance
-    val leftRowCount = leftTable.getRowCount
-    val rightRowCount = rightTable.getRowCount
-    
-    // innerMaps(0) is always the left table and innerMaps(1) is always the right table
-    // Note: isLeftKeySorted=false, isRightKeySorted=false since keys are not pre-sorted
-    val innerMaps = if (rightRowCount > leftRowCount) {
-      JoinPrimitives.sortMergeInnerJoin(rightKeys, leftKeys, compareNullsEqual, false, false).reverse
-    } else {
-      JoinPrimitives.sortMergeInnerJoin(leftKeys, rightKeys, compareNullsEqual, false, false)
-    }
+
+    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
 
     // Filter by AST condition
-    // For AST to work we have to match the order of the left and right tables
-    // that it was compiled for
-    // subJoinType == LeftOuter | Inner => LEFT, RIGHT
-    // subJoinType == RightOuter => RIGHT, LEFT
     val filteredMaps = withResource(innerMaps) { _ =>
-      if (subJoinType == RightOuter) {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(1), innerMaps(0), rightTable, leftTable, compiledCondition).reverse
-      } else {
-        JoinPrimitives.filterGatherMapsByAST(
-          innerMaps(0), innerMaps(1), leftTable, rightTable, compiledCondition)
-      }
+      JoinImpl.filterInnerJoinWithASTSwapBySubJoinType(innerMaps, leftTable, rightTable,
+        compiledCondition, subJoinType)
     }
+
+    val leftRowCount = leftTable.getRowCount
+    val rightRowCount = rightTable.getRowCount
 
     // Convert filtered inner maps to target sub-join type
     val result = convertInnerJoinMapsToTargetType(filteredMaps, leftRowCount, rightRowCount,
@@ -1442,21 +1655,19 @@ class HashJoinStreamSideIterator(
       leftTable: Table,
       rightTable: Table,
       compiledCondition: CompiledExpression,
-      originalJoinType: Option[JoinType]): Array[GatherMap] = {
+      originalJoinType: Option[JoinType]): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, s"mixed join (outer: $joinType, conditional)",
       originalJoinType)
     
     val result = subJoinType match {
       case LeftOuter =>
-        Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+        JoinImpl.leftOuterHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
           compiledCondition, nullEquality)
       case RightOuter =>
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right
-        Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
-          compiledCondition, nullEquality).reverse
+        JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
+          compiledCondition, nullEquality)
       case Inner =>
-        Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+        JoinImpl.innerHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
           compiledCondition, nullEquality)
       case t =>
         throw new IllegalStateException(s"unsupported join type: $t")
@@ -1478,9 +1689,8 @@ class HashJoinStreamSideIterator(
       }
       
       withResource(maps) { _ =>
-        assert(maps.length == 2)
-        val lazyLeftMap = LazySpillableGatherMap(maps(0), "left_map")
-        val lazyRightMap = LazySpillableGatherMap(maps(1), "right_map")
+        val lazyLeftMap = LazySpillableGatherMap(maps.left, "left_map")
+        val lazyRightMap = LazySpillableGatherMap(maps.right, "right_map")
         NvtxIdWithMetrics(NvtxRegistry.UPDATE_TRACKING_MASK, joinTime) {
           closeOnExcept(Seq(lazyLeftMap, lazyRightMap)) { _ =>
             updateTrackingMask(if (buildSide == GpuBuildRight) lazyRightMap else lazyLeftMap)
@@ -1747,9 +1957,9 @@ class HashedExistenceJoinIterator(
     leftKeysTab: Table,
     rightKeysTab: Table,
     compiledCondition: CompiledExpression): GatherMap = {
-    withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>
+    val result = withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>
       withResource(GpuColumnVector.from(spillableBuiltBatch.getBatch)) { rightTab =>
-        Table.mixedLeftSemiJoinGatherMap(
+        JoinImpl.leftSemiHashJoinBuildRight(
           leftKeysTab,
           rightKeysTab,
           leftTab,
@@ -1758,13 +1968,19 @@ class HashedExistenceJoinIterator(
           if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL)
         }
     }
+    withResource(result) { _ =>
+      result.releaseLeft()
+    }
   }
 
   private def unconditionalBatchLeftSemiJoin(
     leftKeysTab: Table,
     rightKeysTab: Table
   ): GatherMap = {
-    leftKeysTab.leftSemiJoinGatherMap(rightKeysTab, compareNullsEqual)
+    withResource(JoinImpl.leftSemiHashJoinBuildRight(leftKeysTab, rightKeysTab,
+      compareNullsEqual)) { result =>
+      result.releaseLeft()
+    }
   }
 
   override def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {

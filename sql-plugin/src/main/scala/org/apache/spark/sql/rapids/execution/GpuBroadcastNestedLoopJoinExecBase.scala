@@ -283,41 +283,45 @@ class ConditionalNestedLoopJoinIterator(
   private def computeGatherMaps(
       left: Table,
       right: Table,
-      numJoinRows: Option[Long]): Array[GatherMap] = {
+      numJoinRows: Option[Long]): GatherMapsResult = {
     joinType match {
       case _: InnerLike =>
-        numJoinRows.map { rowCount =>
+        val arraysRet = numJoinRows.map { rowCount =>
           left.conditionalInnerJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
           left.conditionalInnerJoinGatherMaps(right, condition)
         }
+        GatherMapsResult(arraysRet(0), arraysRet(1))
       case LeftOuter =>
-        numJoinRows.map { rowCount =>
+        val arraysRet = numJoinRows.map { rowCount =>
           left.conditionalLeftJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
           left.conditionalLeftJoinGatherMaps(right, condition)
         }
+        GatherMapsResult(arraysRet(0), arraysRet(1))
       case RightOuter =>
-        val maps = numJoinRows.map { rowCount =>
+        // switch the inputs to the join so we can use left join for right
+        val arraysRet = numJoinRows.map { rowCount =>
           right.conditionalLeftJoinGatherMaps(left, condition, rowCount)
         }.getOrElse {
           right.conditionalLeftJoinGatherMaps(left, condition)
         }
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right
-        maps.reverse
+        // Then switch them back
+        GatherMapsResult(arraysRet(1), arraysRet(0))
       case LeftSemi =>
-        numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount))
+        val leftGather = numJoinRows.map { rowCount =>
+          left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount)
         }.getOrElse {
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition))
+          left.conditionalLeftSemiJoinGatherMap(right, condition)
         }
+        GatherMapsResult.makeFromLeft(leftGather)
       case LeftAnti =>
-        numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount))
+        val leftGatherer = numJoinRows.map { rowCount =>
+          left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount)
         }.getOrElse {
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition))
+          left.conditionalLeftAntiJoinGatherMap(right, condition)
         }
+        GatherMapsResult.makeFromLeft(leftGatherer)
       case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
     }
   }
