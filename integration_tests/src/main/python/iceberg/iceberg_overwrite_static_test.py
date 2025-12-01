@@ -20,7 +20,7 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update, StringGen
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf
-from marks import iceberg, ignore_order, allow_non_gpu
+from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
@@ -138,6 +138,7 @@ def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory, fo
 
 
 @iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
@@ -152,6 +153,12 @@ def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory, fo
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
 def test_insert_overwrite_partitioned_table(spark_tmp_table_factory, format_version, fanout, write_distribution_mode, partition_col_sql):
     """Test INSERT OVERWRITE on partitioned Iceberg tables."""
@@ -182,7 +189,7 @@ def test_insert_overwrite_partitioned_table(spark_tmp_table_factory, format_vers
 def test_insert_overwrite_specific_partition_identity_fallback(spark_tmp_table_factory, format_version, write_distribution_mode):
     """Test INSERT OVERWRITE with PARTITION clause for specific partitions (identity partition - falls back to CPU)."""
     # Extend base columns with a partition column that has limited values
-    partition_col = '_c14'
+    partition_col = '_c999'
     partition_gen = StringGen(pattern='category_[ABC]', nullable=False)  # Generates category_A, category_B, category_C
     
     extended_cols = iceberg_base_table_cols + [partition_col]
@@ -322,7 +329,6 @@ def test_insert_overwrite_partitioned_table_all_cols_fallback(spark_tmp_table_fa
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_insert_overwrite_partitioned_table_unsupported_partition_fallback(
