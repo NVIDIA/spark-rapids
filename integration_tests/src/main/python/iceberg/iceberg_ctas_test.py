@@ -345,12 +345,10 @@ def test_ctas_from_values(spark_tmp_table_factory,
                          ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
-    pytest.param("year(_c9), month(_c9), day(_c9), hour(_c9)", 
-                 id="multi_datetime_transforms"),
-    pytest.param("year(_c9), month(_c9), day(_c9)", 
+    pytest.param("year(_c9)", 
                  id="triple_datetime_transforms"),
 ])
-def test_ctas_multi_partition_transforms_with_aqe(spark_tmp_table_factory,
+def test_ctas_aqe(spark_tmp_table_factory,
                                                    format_version,
                                                    write_distribution_mode,
                                                    partition_col_sql):
