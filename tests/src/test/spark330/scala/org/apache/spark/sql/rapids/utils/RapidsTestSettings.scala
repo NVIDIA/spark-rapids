@@ -154,6 +154,8 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-23786: warning should be printed if CSV header doesn't conform to schema", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13897"))
     .exclude("SPARK-32810: CSV data source should be able to read files with escaped glob metacharacter in the paths", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13898"))
     .exclude("SPARK-33566: configure UnescapedQuoteHandling to parse unescaped quotes and unescaped delimiter data correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13901"))
+  enableSuite[RapidsCsvExpressionsSuite]
+    .exclude("unsupported mode", ADJUST_UT("Replaced by a testRapids case which changed the expectation of SparkException instead of TestFailedException"))
   enableSuite[RapidsCsvFunctionsSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
 }
