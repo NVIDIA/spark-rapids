@@ -40,7 +40,7 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
    * Builds a dummy function that simulates the CPU task, which returns the timestamp of the
    * completion of the task.
    */
-  def buildDummyFn(startBlk: Lock): () => Long = {
+  private def buildDummyFn(startBlk: Lock): () => Long = {
     () => {
       // Block the start of task execution until the lock is released.
       startBlk.lock()
