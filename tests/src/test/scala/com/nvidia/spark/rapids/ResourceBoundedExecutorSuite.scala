@@ -107,7 +107,7 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     }
 
     // Comprehensive test for task priority and memory usage (including unbounded tasks):
-    // Execution order: 1, 4, 6, 2, 5, 3
+    // Execution order: 2(prior=4), 3(prior=2), 5(prior=-46), 1(prior=MAX), 4(prior=-3)
     val futures = mutable.ArrayBuffer[JFuture[AsyncResult[Long]]]()
     lck.lock() // Block tasks from starting execution.
     executor.submit(AsyncRunner.newUnboundedTask(buildDummyFn(lck)))
@@ -127,7 +127,7 @@ class ResourceBoundedExecutorSuite extends AnyFunSuite with RmmSparkRetrySuiteBa
     futures += executor.submit(AsyncRunner.newCpuTask(buildDummyFn(lck),
       memoryBytes = 10 << 10, priority = 7L))
     lck.unlock() // Allow tasks to start executing.
-    results = Array(2, 3, 5, 1, 4).zip(futures).sortBy(_._1).map {
+    results = Seq(2, 3, 5, 1, 4).zip(futures).sortBy(_._1).map {
       case (_, fut) => fut.get().data
     }
     (0 until results.length - 1).foreach { i =>
