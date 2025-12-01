@@ -56,7 +56,7 @@ case class GpuAtomicCreateTableAsSelectExec(
 
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
-  override def supportsColumnar: Boolean = false
+  override def supportsColumnar: Boolean = true
 
   override protected def run(): Seq[InternalRow] = {
     if (catalog.tableExists(ident)) {
