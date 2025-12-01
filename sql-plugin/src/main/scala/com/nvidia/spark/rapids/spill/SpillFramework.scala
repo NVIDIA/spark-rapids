@@ -227,12 +227,12 @@ trait SpillableHandle extends StoreHandle with Logging {
   private[spill] def doClose(): Unit
 
   /**
-   * When the current handle is actually doing spilling, it might encounter exceptions, e.g.
-   * InterruptedException. This method is used to catch those exceptions and reset spilling state
-   * to false. In addition, it also updates the spill metrics accordingly. In terms of metrics,
-   * metrics are distinguished by whether the spill is to disk or to host.
+   * Executes a spill operation while handling exceptions and updating metrics.
+   * If an exception occurs during spilling (e.g. InterruptedException), this method
+   * catches it and resets the spilling state to false. Metrics are tracked separately
+   * for disk spills vs host spills.
    */
-  def inCaseSpillingFailed(spillToDisk: Boolean)(block: () => Long): Long = {
+  def executeSpill(spillToDisk: Boolean)(block: () => Long): Long = {
     def impl(): Long = {
       try {
         block()
@@ -448,7 +448,7 @@ class SpillableHostBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed(spillToDisk = true) { () =>
+        executeSpill(spillToDisk = true) { () =>
           withResource(host.get) { buf =>
             withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
               val outputChannel = diskHandleBuilder.getChannel
@@ -624,7 +624,7 @@ class SpillableDeviceBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed(spillToDisk = false) { () =>
+        executeSpill(spillToDisk = false) { () =>
           withResource(dev.get) { buf =>
             // the spill IO is non-blocking as it won't impact dev or host directly
             // instead we "atomically" swap the buffers below once they are ready
@@ -734,7 +734,7 @@ class SpillableColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed(spillToDisk = false) { () =>
+        executeSpill(spillToDisk = false) { () =>
           withChunkedPacker(dev.get) { chunkedPacker =>
             meta = Some(chunkedPacker.getPackedMeta)
             var staging: Option[SpillableHostBufferHandle] =
@@ -887,7 +887,7 @@ class SpillableColumnarBatchFromBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed(spillToDisk = false) { () =>
+        executeSpill(spillToDisk = false) { () =>
           withResource(dev.get) { cb =>
             val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
             meta = Some(cvFromBuffer.getTableMeta)
@@ -1004,7 +1004,7 @@ class SpillableCompressedColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed(spillToDisk = false) { () =>
+        executeSpill(spillToDisk = false) { () =>
           withResource(dev.get) { cb =>
             val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
             meta = Some(cvFromBuffer.getTableMeta)
@@ -1122,7 +1122,7 @@ class SpillableHostColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed(spillToDisk = true) { () =>
+        executeSpill(spillToDisk = true) { () =>
           withResource(host.get) { cb =>
             withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
               val dos = diskHandleBuilder.getDataOutputStream
