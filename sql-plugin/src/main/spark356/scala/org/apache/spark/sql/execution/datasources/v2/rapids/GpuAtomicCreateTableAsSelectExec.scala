@@ -21,15 +21,15 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
 import scala.collection.JavaConverters._
-
-import com.nvidia.spark.rapids.GpuExec
-
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, DataWritingCommandMeta, GpuExec, GpuOverrides, PartMeta, RapidsConf, RapidsMeta, ScanMeta, SparkPlanMeta}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec}
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec, UnaryNode}
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
+import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy, UnaryExecNode}
 import org.apache.spark.sql.execution.datasources.v2.V2CreateTableAsSelectBaseExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -56,7 +56,7 @@ case class GpuAtomicCreateTableAsSelectExec(
 
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
-  override def supportsColumnar: Boolean = true
+  override def supportsColumnar: Boolean = false
 
   override protected def run(): Seq[InternalRow] = {
     if (catalog.tableExists(ident)) {
@@ -69,11 +69,12 @@ case class GpuAtomicCreateTableAsSelectExec(
     val stagedTable = catalog.stageCreate(
       ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
       partitioning.toArray, properties.asJava)
-    writeToTable(catalog, stagedTable, writeOptions, ident, query, overwrite = false)
+    writeToTable(catalog, stagedTable, writeOptions, ident, RapidsTableWrite(query),
+      overwrite = false)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    run()
-    sparkContext.emptyRDD
+    throw new IllegalStateException("GpuAtomicCreateTableAsSelectExec only supports row command.")
   }
 }
+
