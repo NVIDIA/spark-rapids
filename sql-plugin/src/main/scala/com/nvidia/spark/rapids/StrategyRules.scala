@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy}
@@ -32,7 +33,7 @@ class StrategyRules extends SparkStrategy {
     // Currently we only have custom plan nodes that originate from
     // DeltaLake, but if we add other custom plan nodes later
     // their strategies can be appended here.
-    DeltaProvider().getStrategyRules
+    DeltaProvider().getStrategyRules ++ SparkShimImpl.getStrategyRules
   }
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = {

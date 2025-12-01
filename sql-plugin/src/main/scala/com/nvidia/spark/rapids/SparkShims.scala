@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
+import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, PartitionedFile, PartitioningAwareFileIndex}
@@ -203,4 +203,6 @@ trait SparkShims {
    * Returns None for versions where TableCacheQueryStageExec doesn't exist.
    */
   def getTableCacheNonQueryStagePlan(plan: SparkPlan): Option[SparkPlan] = None
+
+  def getStrategyRules: Seq[SparkStrategy] = Seq.empty
 }

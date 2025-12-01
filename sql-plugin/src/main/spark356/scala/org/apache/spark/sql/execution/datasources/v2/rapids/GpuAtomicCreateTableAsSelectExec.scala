@@ -22,17 +22,15 @@ package org.apache.spark.sql.execution.datasources.v2.rapids
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, DataWritingCommandMeta, GpuExec, GpuOverrides, PartMeta, RapidsConf, RapidsMeta, ScanMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.GpuExec
 import com.nvidia.spark.rapids.shims.RapidsTableWrite
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec, UnaryNode}
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec}
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy, UnaryExecNode}
 import org.apache.spark.sql.execution.datasources.v2.V2CreateTableAsSelectBaseExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
