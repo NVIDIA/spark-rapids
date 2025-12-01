@@ -158,6 +158,15 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("unsupported mode", ADJUST_UT("Replaced by a testRapids case which changed the expectation of SparkException instead of TestFailedException"))
   enableSuite[RapidsCsvFunctionsSuite]
   enableSuite[RapidsCSVInferSchemaSuite]
+  enableSuite[RapidsCSVReadSchemaSuite]
+  enableSuite[RapidsHeaderCSVReadSchemaSuite]
+  enableSuite[RapidsJsonReadSchemaSuite]
+  enableSuite[RapidsOrcReadSchemaSuite]
+  enableSuite[RapidsVectorizedOrcReadSchemaSuite]
+  enableSuite[RapidsMergedOrcReadSchemaSuite]
+  enableSuite[RapidsParquetReadSchemaSuite]
+  enableSuite[RapidsVectorizedParquetReadSchemaSuite]
+  enableSuite[RapidsMergedParquetReadSchemaSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
 }
 // scalastyle:on line.size.limit
