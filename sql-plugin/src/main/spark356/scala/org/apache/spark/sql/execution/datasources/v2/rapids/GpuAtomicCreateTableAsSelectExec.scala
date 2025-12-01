@@ -72,6 +72,8 @@ case class GpuAtomicCreateTableAsSelectExec(
     writeToTable(catalog, stagedTable, writeOptions, ident, query, overwrite = false)
   }
 
-  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =
-    throw new IllegalStateException("Columnar execution not supported")
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    run()
+    sparkContext.emptyRDD
+  }
 }
