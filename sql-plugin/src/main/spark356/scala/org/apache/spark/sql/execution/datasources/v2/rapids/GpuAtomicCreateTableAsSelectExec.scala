@@ -21,7 +21,10 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
 import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, DataWritingCommandMeta, GpuExec, GpuOverrides, PartMeta, RapidsConf, RapidsMeta, ScanMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.shims.RapidsTableWrite
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
