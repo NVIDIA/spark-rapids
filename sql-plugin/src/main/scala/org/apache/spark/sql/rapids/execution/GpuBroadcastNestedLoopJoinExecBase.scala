@@ -448,9 +448,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
           val repeatCnts = if (builtBatch.numRows == 0) {
             // Build side has no rows, so all stream rows should appear once (unmatched)
             withResource(Scalar.fromInt(1)) { oneScalar =>
-              withResource(cudf.ColumnVector.fromScalar(oneScalar, scb.numRows)) { ones =>
-                ones.incRefCount()
-              }
+              cudf.ColumnVector.fromScalar(oneScalar, scb.numRows)
             }
           } else {
             withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
