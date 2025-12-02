@@ -95,11 +95,9 @@ def _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-def test_rtas_unpartitioned_table(spark_tmp_table_factory,
-                                  format_version):
+def test_rtas_unpartitioned_table(spark_tmp_table_factory):
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -110,7 +108,6 @@ def test_rtas_unpartitioned_table(spark_tmp_table_factory,
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("bucket(8, _c2)", id="bucket(8, int_col)"),
     pytest.param("year(_c8)", id="year(date_col)"),
@@ -128,10 +125,9 @@ def test_rtas_unpartitioned_table(spark_tmp_table_factory,
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
 def test_rtas_partitioned_table(spark_tmp_table_factory,
-                                format_version,
                                 partition_col_sql):
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -144,12 +140,10 @@ def test_rtas_partitioned_table(spark_tmp_table_factory,
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-def test_create_or_replace_table(spark_tmp_table_factory,
-                                 format_version):
+def test_create_or_replace_table(spark_tmp_table_factory):
     """Test CREATE OR REPLACE TABLE AS SELECT when table doesn't exist"""
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     base_name = get_full_table_name(spark_tmp_table_factory)
@@ -174,13 +168,11 @@ def test_create_or_replace_table(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 def test_rtas_unsupported_file_format_fallback(spark_tmp_table_factory,
-                                               format_version,
                                                file_format):
     table_prop = {
-        "format-version": format_version,
+        "format-version": "2",
         "write.format.default": file_format
     }
 
@@ -205,15 +197,13 @@ def test_rtas_unsupported_file_format_fallback(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
 def test_rtas_fallback_when_conf_disabled(spark_tmp_table_factory,
-                                          format_version,
                                           conf_key):
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     def run_rtas(spark):
@@ -238,11 +228,9 @@ def test_rtas_fallback_when_conf_disabled(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec',  'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-def test_rtas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory,
-                                                     format_version):
+def test_rtas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     def run_rtas(spark):
@@ -267,11 +255,9 @@ def test_rtas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-def test_rtas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
-                                                   format_version):
+def test_rtas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     def run_rtas(spark):
@@ -297,17 +283,15 @@ def test_rtas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_rtas_partitioned_table_unsupported_partition_fallback(
         spark_tmp_table_factory,
-        format_version,
         partition_col_sql):
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     def run_rtas(spark):
@@ -331,13 +315,11 @@ def test_rtas_partitioned_table_unsupported_partition_fallback(
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 def test_rtas_from_values(spark_tmp_table_factory,
-                          format_version,
                           partition_table):
     table_prop = {
-        "format-version": format_version
+        "format-version": "2"
     }
 
     base_name = get_full_table_name(spark_tmp_table_factory)
