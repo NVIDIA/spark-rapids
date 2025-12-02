@@ -227,38 +227,32 @@ trait SpillableHandle extends StoreHandle with Logging {
   private[spill] def doClose(): Unit
 
   /**
-   * Executes a spill operation while handling exceptions and updating metrics.
+   * Executes a spill operation while handling exceptions.
    * If an exception occurs during spilling (e.g. InterruptedException), this method
-   * catches it and resets the spilling state to false. Metrics are tracked separately
-   * for disk spills vs host spills.
+   * catches it, logs a warning, resets the spilling state to false, and rethrows the exception.
+   *
+   * Subclasses override this method to wrap the spill operation with appropriate metrics tracking:
+   * - DeviceSpillableHandle tracks spillToHostTime and memory bytes spilled
+   * - HostSpillableHandle tracks spillToDiskTime and disk bytes spilled
+   *
+   * @param block the spill operation to execute, should return the number of bytes spilled
+   * @return the number of bytes spilled, or 0 if the spill was not successful (only being used
+   *         for metrics tracking for the time being)
    */
-  def executeSpill(spillToDisk: Boolean)(block: () => Long): Long = {
+  protected def executeSpill(block: => Long): Long = {
     def impl(): Long = {
       try {
-        block()
+        block
       } catch {
         case e: Throwable =>
-          logWarning("Failed to spill SpillableColumnarBatchHandle", e)
+          logWarning(s"Failed to spill $this", e)
           synchronized {
             spilling = false
           }
           throw e
       }
     }
-
-    if (spillToDisk) {
-      GpuTaskMetrics.get.spillToDiskTime {
-        val spilledBytes = impl()
-        TrampolineUtil.incTaskMetricsDiskBytesSpilled(spilledBytes)
-        spilledBytes
-      }
-    } else {
-      GpuTaskMetrics.get.spillToHostTime {
-        val spilledBytes = impl()
-        TrampolineUtil.incTaskMetricsMemoryBytesSpilled(spilledBytes)
-        spilledBytes
-      }
-    }
+    impl()
   }
 
   /**
@@ -314,6 +308,15 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   def releaseSpilled(): Unit = {
     releaseDeviceResource()
   }
+
+  // Wrap spill execution with memory spill metrics tracking
+  override protected def executeSpill(block: => Long): Long = {
+    GpuTaskMetrics.get.spillToHostTime {
+      val spilledBytes = super.executeSpill(block)
+      TrampolineUtil.incTaskMetricsMemoryBytesSpilled(spilledBytes)
+      spilledBytes
+    }
+  }
 }
 
 /**
@@ -333,6 +336,15 @@ trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
     synchronized {
       host.foreach(_.close())
       host = None
+    }
+  }
+
+  // Wrap spill execution with disk spill metrics tracking
+  override protected def executeSpill(block: => Long): Long = {
+    GpuTaskMetrics.get.spillToDiskTime {
+      val spilledBytes = super.executeSpill(block)
+      TrampolineUtil.incTaskMetricsDiskBytesSpilled(spilledBytes)
+      spilledBytes
     }
   }
 }
@@ -448,7 +460,7 @@ class SpillableHostBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        executeSpill(spillToDisk = true) { () =>
+        executeSpill {
           withResource(host.get) { buf =>
             var staging: Option[DiskHandle] = None
             val actualBytes = withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
@@ -626,7 +638,7 @@ class SpillableDeviceBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        executeSpill(spillToDisk = false) { () =>
+        executeSpill {
           withResource(dev.get) { buf =>
             // the spill IO is non-blocking as it won't impact dev or host directly
             // instead we "atomically" swap the buffers below once they are ready
@@ -736,7 +748,7 @@ class SpillableColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        executeSpill(spillToDisk = false) { () =>
+        executeSpill {
           withChunkedPacker(dev.get) { chunkedPacker =>
             meta = Some(chunkedPacker.getPackedMeta)
             var staging: Option[SpillableHostBufferHandle] =
@@ -889,7 +901,7 @@ class SpillableColumnarBatchFromBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        executeSpill(spillToDisk = false) { () =>
+        executeSpill {
           withResource(dev.get) { cb =>
             val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
             meta = Some(cvFromBuffer.getTableMeta)
@@ -1006,7 +1018,7 @@ class SpillableCompressedColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        executeSpill(spillToDisk = false) { () =>
+        executeSpill {
           withResource(dev.get) { cb =>
             val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
             meta = Some(cvFromBuffer.getTableMeta)
@@ -1124,7 +1136,7 @@ class SpillableHostColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        executeSpill(spillToDisk = true) { () =>
+        executeSpill {
           withResource(host.get) { cb =>
             withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
               val dos = diskHandleBuilder.getDataOutputStream
@@ -1658,7 +1670,6 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       require(handle != null, "Called build too many times")
       require(copied == handle.sizeInBytes,
         s"Expected ${handle.sizeInBytes} B but copied $copied B instead")
-      TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
       handle.setDisk(diskHandleBuilder.build)
       val res = handle
       handle = null
