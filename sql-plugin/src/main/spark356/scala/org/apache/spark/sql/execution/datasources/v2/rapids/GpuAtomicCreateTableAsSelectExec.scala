@@ -69,7 +69,7 @@ case class GpuAtomicCreateTableAsSelectExec(
     val stagedTable = catalog.stageCreate(
       ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
       partitioning.toArray, properties.asJava)
-    writeToTable(catalog, stagedTable, writeOptions, ident, Project(query.output, query),
+    writeToTable(catalog, stagedTable, writeOptions, ident, query,
       overwrite = false)
   }
 

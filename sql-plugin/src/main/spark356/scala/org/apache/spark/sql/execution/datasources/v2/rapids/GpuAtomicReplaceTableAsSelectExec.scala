@@ -82,7 +82,7 @@ case class GpuAtomicReplaceTableAsSelectExec(
     } else {
       throw QueryCompilationErrors.cannotReplaceMissingTableError(ident)
     }
-    writeToTable(catalog, staged, writeOptions, ident, Project(query.output, query),
+    writeToTable(catalog, staged, writeOptions, ident, query,
       overwrite = true)
   }
 
