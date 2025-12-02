@@ -445,11 +445,19 @@ object GpuBroadcastNestedLoopJoinExecBase {
           // Build has no columns (but may have rows), so each matched stream row will
           // match "builtBatch.numRows" times. And keep the notmatched rows unchanged,
           // aka 1 for the repeat count.
-          val repeatCnts = withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
-            withResource(Scalar.fromInt(builtBatch.numRows)) { matchedRowsCnt =>
-              // Keep the not match stream rows unchanged.
-              withResource(Scalar.fromInt(1)) { notmatchedRowsCnt =>
-                matched.getBase.ifElse(matchedRowsCnt, notmatchedRowsCnt)
+          val repeatCnts = if (builtBatch.numRows == 0) {
+            // Build side has no rows, so all stream rows should appear once (unmatched)
+            withResource(Scalar.fromInt(1)) { oneScalar =>
+              withResource(cudf.ColumnVector.fromScalar(oneScalar, scb.numRows)) { ones =>
+                ones.incRefCount()
+              }
+            }
+          } else {
+            withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
+              withResource(Scalar.fromInt(builtBatch.numRows)) { matchedRowsCnt =>
+                withResource(Scalar.fromInt(1)) { notmatchedRowsCnt =>
+                  matched.getBase.ifElse(matchedRowsCnt, notmatchedRowsCnt)
+                }
               }
             }
           }
