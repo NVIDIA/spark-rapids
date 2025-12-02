@@ -91,7 +91,11 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
     println(s"Before final query: ${q}")
     val ret = q match {
       case aqe: AdaptiveSparkPlanExec if aqe.inputPlan.isInstanceOf[GpuColumnarToRowExec] =>
-        aqe.withNewChildren(Seq(aqe.inputPlan.asInstanceOf[GpuColumnarToRowExec].child))
+        AdaptiveSparkPlanExec(aqe.inputPlan.asInstanceOf[GpuColumnarToRowExec].child,
+          aqe.context,
+          aqe.preprocessingRules,
+          aqe.isSubquery,
+          supportsColumnar = true)
       case GpuColumnarToRowExec(inner, _)  => inner
       case p => p
     }
