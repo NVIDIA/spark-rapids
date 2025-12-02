@@ -476,3 +476,45 @@ def test_iceberg_update_mor_fallback_writedelta_disabled(spark_tmp_table_factory
         })
     )
 
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_update_aqe(spark_tmp_table_factory, partition_col_sql):
+    """
+    Test UPDATE with AQE enabled.
+    """
+    table_prop = {
+        'format-version': '2',
+    }
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table = f"{base_table_name}_cpu"
+    gpu_table = f"{base_table_name}_gpu"
+
+    def initialize_table(table_name):
+        df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        create_iceberg_table(table_name, partition_col_sql, table_prop, df_gen)
+
+    with_cpu_session(lambda spark: initialize_table(cpu_table))
+    with_cpu_session(lambda spark: initialize_table(gpu_table))
+
+    def update_table(spark, table_name):
+        spark.sql(f"UPDATE {table_name} SET _c2 = _c2 + 1 WHERE _c0 > 0")
+
+    with_gpu_session(lambda spark: update_table(spark, gpu_table), conf=conf)
+    with_cpu_session(lambda spark: update_table(spark, cpu_table), conf=conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)

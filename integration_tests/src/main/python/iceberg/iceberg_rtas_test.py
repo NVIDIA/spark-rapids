@@ -349,3 +349,33 @@ def test_rtas_from_values(spark_tmp_table_factory,
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_rtas_aqe(spark_tmp_table_factory, partition_col_sql):
+    """
+    Test REPLACE TABLE AS SELECT with AQE enabled.
+    """
+    table_prop = {
+        "format-version": "2",
+    }
+
+    df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
+                                df_gen,
+                                table_prop,
+                                partition_col_sql=partition_col_sql,
+                                create_or_replace=False,
+                                conf=conf)
