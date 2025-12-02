@@ -227,7 +227,10 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
         (p, conf, parent, r) => new WriteDeltaExecMeta(p, conf, parent, r)),
       exec[RapidsTableWriteExec](
         "Placeholder for rapids table write",
-        ExecChecks(TypeSig.all, TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
         (p, conf, parent, r) => new RapidsTableWriteExecMeta(p, conf, parent, r)),
       InMemoryTableScanUtils.getTableCacheQueryStageExecRule
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap

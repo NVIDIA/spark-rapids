@@ -88,7 +88,7 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
 
   private lazy val finalQuery: SparkPlan = {
     val q = query
-    println(s"Before final query: ${q}")
+    System.err.println(s"Before final query: ${q}")
     val ret = q match {
       case aqe: AdaptiveSparkPlanExec if aqe.inputPlan.isInstanceOf[GpuColumnarToRowExec] =>
         AdaptiveSparkPlanExec(aqe.inputPlan.asInstanceOf[GpuColumnarToRowExec].child,
@@ -100,7 +100,7 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
       case p => p
     }
 
-    println(s"After final query: ${ret}")
+    System.err.println(s"After final query: ${ret}")
     ret
   }
 
