@@ -21,7 +21,9 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
 import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.GpuExec
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
