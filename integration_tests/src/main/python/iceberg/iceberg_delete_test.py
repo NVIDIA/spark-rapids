@@ -18,7 +18,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list, rapids_reader_types)
-from marks import allow_non_gpu, iceberg, ignore_order
+from marks import allow_non_gpu, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_35x, with_cpu_session, with_gpu_session
 
 pytestmark = pytest.mark.skipif(not is_spark_35x(),
@@ -133,6 +133,7 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, reader_type
 # This requires reading of _partition field, which is a struct
 @allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
@@ -145,6 +146,12 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, reader_type
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
 @pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
 def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, reader_type, partition_col_sql, delete_mode):
@@ -224,7 +231,6 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, reader_
 ])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table_factory, reader_type, delete_mode, fallback_exec, partition_col_sql):
@@ -440,6 +446,44 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory, reade
         [fallback_exec],
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
             "spark.rapids.sql.format.iceberg.enabled": "false",
+            "spark.rapids.sql.format.parquet.reader.type": reader_type
+        })
+    )
+
+@allow_non_gpu("WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory, reader_type):
+    """Test merge-on-read DELETE falls back when WriteDeltaExec is disabled
+    
+    This test verifies that when WriteDeltaExec is explicitly disabled (it's disabled by default
+    as experimental), merge-on-read DELETE operations correctly fallback to CPU execution.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    
+    # Phase 1: Initialize tables with data (separate for CPU and GPU)
+    cpu_table_name = f'{base_table_name}_cpu'
+    gpu_table_name = f'{base_table_name}_gpu'
+    create_iceberg_table_with_data(cpu_table_name, delete_mode='merge-on-read')
+    create_iceberg_table_with_data(gpu_table_name, delete_mode='merge-on-read')
+    
+    # Phase 2: DELETE operation (to be tested with fallback)
+    def write_func(spark, table_name):
+        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
+    
+    # Read function to verify results
+    def read_func(spark, table_name):
+        return spark.sql(f"SELECT * FROM {table_name}")
+    
+    assert_gpu_fallback_write_sql(
+        write_func,
+        read_func,
+        base_table_name,
+        ['WriteDeltaExec'],
+        conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
+            "spark.rapids.sql.exec.WriteDeltaExec": "false",
             "spark.rapids.sql.format.parquet.reader.type": reader_type
         })
     )

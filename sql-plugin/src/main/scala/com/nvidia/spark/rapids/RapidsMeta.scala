@@ -16,10 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
+
+import scala.collection.mutable
+
+import com.nvidia.spark.rapids.GpuTypedImperativeSupportedAggregateExecMeta.{preRowToColProjection, readBufferConverter}
 import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
-import java.time.ZoneId
-import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp,  WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -690,9 +693,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
       }
 
-      childPlans.head.wrapped
-          .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
-        wrapped.setTagValue(GpuOverrides.preRowToColProjection, r2c)
+      readBufferConverter(childPlans.head.wrapped, isR2C = true).foreach { r2c =>
+        wrapped.setTagValue(preRowToColProjection, r2c -> 0)
       }
     }
   }

@@ -1120,6 +1120,71 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen,
         non_exist_classes=','.join(non_exist_clz),
         conf=conf)
 
+# The special case is to test when the physical plan is being re-written due to the re-optimize
+# of AQE taking effect, which is rare in real world scenarios. So far, this kind of problem only
+# has encountered when there exists a local aggregate ahead of the TypedImperativeAggregate. Then,
+# the local aggregate will be folded by the original rule `FoldLocalAggregate`, which triggers the
+# re-write of the physical plan.
+#
+# In order to simulate this kind of scenario, we create a bucketed table and read it back to
+# enforce a local shuffle exchange and local aggregate before the TypedImperativeAggregate.
+# And wrap the columns of TypedImperativeAggregate with the expressions leading to fallbackToCpu(
+# `forall`), to create the AggregateExec half on CPU and half on GPU. Under this situation, when AQE
+# is enabled, the gpuToCpuBufferConverter being inserted into physical plan will be lost due to
+# the plan re-write, which requires us to store the gpuToCpuBufferConverter into related LogicalPlan
+# instead of PhysicalPlan only.
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
+               'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
+               'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
+               'AggregateExpression', 'ProjectExec', *non_utc_allow)
+@pytest.mark.parametrize('data_gen', [[
+    ('k1', RepeatSeqGen(LongGen(), length=100)),
+    ('k2', RepeatSeqGen(LongGen(), length=20)),
+    ('v', StringGen(nullable=False))]], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+def test_hash_groupby_collect_partial_fallback_aqe_plan_changed(spark_tmp_table_factory,
+                                                                data_gen,
+                                                                use_obj_hash_agg):
+    # --- Create bucketed table ---
+    bucketed_table = spark_tmp_table_factory.get()
+    def write_bucket_table(spark):
+        df = gen_df(spark, data_gen, length=4096)
+        return df.write.bucketBy(8, "k1").format('parquet').mode("overwrite") \
+            .saveAsTable(bucketed_table)
+    with_cpu_session(write_bucket_table)
+
+    # --- Run test case ---
+    conf = {
+        'spark.sql.adaptive.enabled': True,
+        'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg
+    }
+    # Assume forall is not supported on GPU yet, so the AggregateExec including it
+    # will be half on CPU and half on GPU.
+    query = """
+        select a,
+            forall(collect_list(b), x -> length(x) > 0),
+            forall(collect_set(b), x -> length(x) > 1)
+        from (
+            select k1, max(k2) as a, max(v) as b
+            from table
+            group by k1
+        ) t
+        group by a"""
+
+    # Under Databricks runtimes, there is no partial Aggregate stage for the one including collect_ops, since
+    # the map-side combine is removed. So only CPU CollectList/Set will appear in the plan.
+    if is_databricks_runtime():
+        exist_clz = ['CollectList', 'CollectSet']
+    else:
+        exist_clz = ['CollectList', 'CollectSet', 'GpuCollectList', 'GpuCollectSet']
+
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.table(bucketed_table),
+        table_name='table',
+        exist_classes=','.join(exist_clz),
+        sql=query,
+        conf=conf)
 
 _replace_modes_single_distinct = [
     # Spark: CPU -> CPU -> GPU(PartialMerge) -> GPU(Partial)

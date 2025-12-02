@@ -450,7 +450,8 @@ class SpillableHostBufferHandle private (
       if (thisThreadSpills) {
         executeSpill(spillToDisk = true) { () =>
           withResource(host.get) { buf =>
-            withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+            var staging: Option[DiskHandle] = None
+            val actualBytes = withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
               val outputChannel = diskHandleBuilder.getChannel
               // the spill IO is non-blocking as it won't impact dev or host directly
               // instead we "atomically" swap the buffers below once they are ready
@@ -464,21 +465,22 @@ class SpillableHostBufferHandle private (
                   RapidsStorageUtils.dispose(bb)
                 }
               }
-              val actualBytes = diskHandleBuilder.size // actual bytes to be spilled
-              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
-              synchronized {
-                spilling = false
-                if (closed) {
-                  staging.foreach(_.close())
-                  staging = None
-                  doClose()
-                } else {
-                  disk = staging
-                }
-              }
-              releaseHostResource()
-              actualBytes
+              staging = Some(diskHandleBuilder.build(taskPriority))
+              diskHandleBuilder.size // actual bytes to be spilled
             }
+            // diskHandleBuilder is now closed, safe to expose disk handle to other threads
+            synchronized {
+              spilling = false
+              if (closed) {
+                staging.foreach(_.close())
+                staging = None
+                doClose()
+              } else {
+                disk = staging
+              }
+            }
+            releaseHostResource()
+            actualBytes // return actual bytes spilled for metrics
           }
         }
         sizeInBytes
