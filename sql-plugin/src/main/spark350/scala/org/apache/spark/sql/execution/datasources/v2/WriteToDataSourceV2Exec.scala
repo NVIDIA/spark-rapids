@@ -30,9 +30,11 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar => CudfScalar}
+
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnarToRowExec, GpuExec, GpuMetric, GpuWrite}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -73,8 +75,7 @@ trait GpuV2ExistingTableWriteExec extends GpuV2TableWriteExec {
  * This class is derived from
  * [[org.apache.spark.sql.execution.datasources.v2.V2TableWriteExec]].
  */
-trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec with
-  ColumnarToRowTransition {
+trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec {
   def query: SparkPlan
 
   def writingTask: GpuWritingSparkTask[_] = GpuDataWritingSparkTask
@@ -83,6 +84,11 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
 
   override def child: SparkPlan = query
   override def output: Seq[Attribute] = Seq.empty
+
+  private lazy val finalQuery: SparkPlan = query match {
+    case GpuColumnarToRowExec(inner, _) => inner
+    case p => p
+  }
 
   protected def writeWithV2(batchWrite: BatchWrite): Seq[InternalRow] = {
     val rdd: RDD[ColumnarBatch] = {

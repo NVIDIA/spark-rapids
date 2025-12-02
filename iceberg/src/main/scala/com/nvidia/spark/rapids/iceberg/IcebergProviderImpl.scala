@@ -242,9 +242,9 @@ class IcebergProviderImpl extends IcebergProvider {
 
   private def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
     var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
-    if (!child.supportsColumnar) {
-      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
-    }
+//    if (!child.supportsColumnar) {
+//      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
+//    }
     GpuAppendDataExec(
       child,
       cpuExec.refreshCache,
