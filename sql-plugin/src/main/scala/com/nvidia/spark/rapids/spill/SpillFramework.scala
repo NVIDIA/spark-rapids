@@ -433,6 +433,7 @@ class SpillableHostBufferHandle private (
       if (thisThreadSpills) {
         inCaseSpillingFailed { () =>
           withResource(host.get) { buf =>
+            var staging: Option[DiskHandle] = None
             withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
               val outputChannel = diskHandleBuilder.getChannel
               // the spill IO is non-blocking as it won't impact dev or host directly
@@ -450,19 +451,20 @@ class SpillableHostBufferHandle private (
                 }
               }
               TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
-              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
-              synchronized {
-                spilling = false
-                if (closed) {
-                  staging.foreach(_.close())
-                  staging = None
-                  doClose()
-                } else {
-                  disk = staging
-                }
-              }
-              releaseHostResource()
+              staging = Some(diskHandleBuilder.build(taskPriority))
             }
+            // diskHandleBuilder is now closed, safe to expose disk handle to other threads
+            synchronized {
+              spilling = false
+              if (closed) {
+                staging.foreach(_.close())
+                staging = None
+                doClose()
+              } else {
+                disk = staging
+              }
+            }
+            releaseHostResource()
           }
           sizeInBytes
         }
