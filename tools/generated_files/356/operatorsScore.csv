@@ -1,5 +1,4 @@
 CPUOperator,Score
-RapidsTableWriteExec,3.0
 CoalesceExec,3.0
 CollectLimitExec,3.0
 ExpandExec,3.0

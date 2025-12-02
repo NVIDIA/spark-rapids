@@ -36,7 +36,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, PythonUDAF, ToPrettyString}
 import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Discard, Keep, Split}
-import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, MergeRowsExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec, WriteDeltaExec}
@@ -226,13 +226,6 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
           TypeSig.all),
         (p, conf, parent, r) => new WriteDeltaExecMeta(p, conf, parent, r))
         .disabledByDefault("Merge on read support for iceberg is experimental"),
-      exec[RapidsTableWriteExec](
-        "Placeholder for rapids table write",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
-          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (p, conf, parent, r) => new RapidsTableWriteExecMeta(p, conf, parent, r)),
       InMemoryTableScanUtils.getTableCacheQueryStageExecRule
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
@@ -245,6 +238,4 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
       case _ => None
     }
   }
-
-  override def getStrategyRules: Seq[SparkStrategy] = Seq(RapidsTableWriteStrategy)
 }
