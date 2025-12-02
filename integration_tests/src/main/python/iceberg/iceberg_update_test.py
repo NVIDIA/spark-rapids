@@ -440,3 +440,41 @@ def test_iceberg_update_fallback_iceberg_disabled(spark_tmp_table_factory, updat
         })
     )
 
+@allow_non_gpu("WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_update_mor_fallback_writedelta_disabled(spark_tmp_table_factory, reader_type):
+    """Test merge-on-read UPDATE falls back when WriteDeltaExec is disabled
+    
+    This test verifies that when WriteDeltaExec is explicitly disabled (it's disabled by default
+    as experimental), merge-on-read UPDATE operations correctly fallback to CPU execution.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    
+    # Phase 1: Initialize tables with data (separate for CPU and GPU)
+    cpu_table_name = f'{base_table_name}_cpu'
+    gpu_table_name = f'{base_table_name}_gpu'
+    create_iceberg_table_with_data(cpu_table_name, update_mode='merge-on-read')
+    create_iceberg_table_with_data(gpu_table_name, update_mode='merge-on-read')
+    
+    # Phase 2: UPDATE operation (to be tested with fallback)
+    def write_func(spark, table_name):
+        spark.sql(f"UPDATE {table_name} SET _c2 = _c2 + 100 WHERE _c2 % 3 = 0")
+    
+    # Read function to verify results
+    def read_func(spark, table_name):
+        return spark.sql(f"SELECT * FROM {table_name}")
+    
+    assert_gpu_fallback_write_sql(
+        write_func,
+        read_func,
+        base_table_name,
+        ['WriteDeltaExec'],
+        conf=copy_and_update(iceberg_update_cow_enabled_conf, {
+            "spark.rapids.sql.exec.WriteDeltaExec": "false",
+            "spark.rapids.sql.format.parquet.reader.type": reader_type
+        })
+    )
+
