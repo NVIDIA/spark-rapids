@@ -24,9 +24,11 @@ nvidia-smi
 WORKSPACE=${WORKSPACE:-`pwd`}
 
 ARTF_ROOT="$WORKSPACE/jars"
-WGET_CMD="wget -q -P $ARTF_ROOT -t 3"
+WGET_CMD=${WGET_CMD:-"wget -q -P $ARTF_ROOT -t 3"}
 
-rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
+[[ ${REMOVE_ARTF_ROOT:-'true'} == 'false' ]] || rm -rf $ARTF_ROOT
+mkdir -p $ARTF_ROOT
+
 $WGET_CMD $PROJECT_TEST_REPO/com/nvidia/rapids-4-spark-integration-tests_$SCALA_BINARY_VER/$PROJECT_TEST_VER/rapids-4-spark-integration-tests_$SCALA_BINARY_VER-$PROJECT_TEST_VER-${SHUFFLE_SPARK_SHIM}.jar
 
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
