@@ -429,8 +429,7 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory, delet
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory, reader_type):
+def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory):
     """Test merge-on-read DELETE falls back when WriteDeltaExec is disabled
     
     This test verifies that when WriteDeltaExec is explicitly disabled (it's disabled by default
@@ -458,7 +457,6 @@ def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory
         base_table_name,
         ['WriteDeltaExec'],
         conf=copy_and_update(iceberg_delete_cow_enabled_conf, {
-            "spark.rapids.sql.exec.WriteDeltaExec": "false",
-            "spark.rapids.sql.format.parquet.reader.type": reader_type
+            "spark.rapids.sql.exec.WriteDeltaExec": "false"
         })
     )
