@@ -88,6 +88,7 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
 
   private lazy val finalQuery: SparkPlan = query match {
       case aqe: AdaptiveSparkPlanExec => aqe.copy(supportsColumnar = true)
+      case GpuColumnarToRowExec(inner, _) => inner
       case p => p
   }
 
@@ -191,12 +192,7 @@ case class GpuOverwritePartitionsDynamicExec(
 
   override def supportsColumnar: Boolean = false
 
-  override def query: SparkPlan = {
-    inner match {
-      case c2r: GpuColumnarToRowExec => c2r.child
-      case _ => inner
-    }
-  }
+  override def query: SparkPlan = inner
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     throw new IllegalStateException(
@@ -222,12 +218,7 @@ case class GpuOverwriteByExpressionExec(
 
   override def supportsColumnar: Boolean = false
 
-  override def query: SparkPlan = {
-    inner match {
-      case c2r: GpuColumnarToRowExec => c2r.child
-      case _ => inner
-    }
-  }
+  override def query: SparkPlan = inner
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     throw new IllegalStateException(
@@ -252,12 +243,7 @@ case class GpuReplaceDataExec(
 
   override def supportsColumnar: Boolean = false
 
-  override def query: SparkPlan = {
-    inner match {
-      case c2r: GpuColumnarToRowExec => c2r.child
-      case _ => inner
-    }
-  }
+  override def query: SparkPlan = inner
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     throw new IllegalStateException(
@@ -283,12 +269,7 @@ case class GpuWriteDeltaExec(
 
   override def supportsColumnar: Boolean = false
 
-  override def query: SparkPlan = {
-    inner match {
-      case c2r: GpuColumnarToRowExec => c2r.child
-      case _ => inner
-    }
-  }
+  override def query: SparkPlan = inner
 
   override lazy val writingTask: GpuWritingSparkTask[_] = {
     // Match the CPU implementation: use DeltaWithMetadataWritingSparkTask if metadata
