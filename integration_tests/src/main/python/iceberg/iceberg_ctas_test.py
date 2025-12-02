@@ -86,15 +86,9 @@ def _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_ctas_unpartitioned_table(spark_tmp_table_factory,
-                                  format_version,
-                                  write_distribution_mode):
+def test_ctas_unpartitioned_table(spark_tmp_table_factory):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode
+        "format-version": "2"
     }
 
     df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -105,10 +99,6 @@ def test_ctas_unpartitioned_table(spark_tmp_table_factory,
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-@pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("bucket(8, _c2)", id="bucket(8, int_column)"),
     pytest.param("year(_c8)", id="year(date_col)"),
@@ -126,14 +116,9 @@ def test_ctas_unpartitioned_table(spark_tmp_table_factory,
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
 def test_ctas_partitioned_table(spark_tmp_table_factory,
-                                format_version,
-                                write_distribution_mode,
-                                fanout,
                                 partition_col_sql):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode,
-        "write.spark.fanout.enabled": str(fanout).lower()
+        "format-version": "2"
     }
 
     df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -147,17 +132,11 @@ def test_ctas_partitioned_table(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 def test_ctas_unsupported_file_format_fallback(spark_tmp_table_factory,
-                                               format_version,
-                                               write_distribution_mode,
                                                file_format):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode,
+        "format-version": "2",
         "write.format.default": file_format
     }
 
@@ -177,19 +156,13 @@ def test_ctas_unsupported_file_format_fallback(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
 def test_ctas_fallback_when_conf_disabled(spark_tmp_table_factory,
-                                          format_version,
-                                          write_distribution_mode,
                                           conf_key):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode
+        "format-version": "2"
     }
 
     def run_ctas(spark):
@@ -209,15 +182,9 @@ def test_ctas_fallback_when_conf_disabled(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec',  'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory,
-                                                     format_version,
-                                                     write_distribution_mode):
+def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode
+        "format-version": "2"
     }
 
     def run_ctas(spark):
@@ -237,15 +204,9 @@ def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
-                                                   format_version,
-                                                   write_distribution_mode):
+def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode
+        "format-version": "2"
     }
 
     def run_ctas(spark):
@@ -266,21 +227,15 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_ctas_partitioned_table_unsupported_partition_fallback(
         spark_tmp_table_factory,
-        format_version,
-        write_distribution_mode,
         partition_col_sql):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode
+        "format-version": "2"
     }
 
     def run_ctas(spark):
@@ -299,17 +254,11 @@ def test_ctas_partitioned_table_unsupported_partition_fallback(
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 def test_ctas_from_values(spark_tmp_table_factory,
-                          format_version,
-                          write_distribution_mode,
                           partition_table):
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode
+        "format-version": "2"
     }
 
     base_name = get_full_table_name(spark_tmp_table_factory)
