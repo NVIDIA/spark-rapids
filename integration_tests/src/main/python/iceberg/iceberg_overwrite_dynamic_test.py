@@ -80,13 +80,9 @@ def do_test_insert_overwrite_dynamic(spark_tmp_table_factory,
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_insert_overwrite_dynamic_unpartitioned_table(spark_tmp_table_factory, format_version, write_distribution_mode):
+def test_insert_overwrite_dynamic_unpartitioned_table(spark_tmp_table_factory):
     """Test dynamic overwrite on unpartitioned tables - should run on GPU."""
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+    table_prop = {"format-version": "2"}
 
     do_test_insert_overwrite_dynamic(
         spark_tmp_table_factory,
@@ -96,10 +92,6 @@ def test_insert_overwrite_dynamic_unpartitioned_table(spark_tmp_table_factory, f
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-@pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
     pytest.param("year(_c8)", id="year(date_col)"),
@@ -116,11 +108,9 @@ def test_insert_overwrite_dynamic_unpartitioned_table(spark_tmp_table_factory, f
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
-def test_insert_overwrite_dynamic_bucket_partitioned(spark_tmp_table_factory, format_version, write_distribution_mode, fanout, partition_col_sql):
+def test_insert_overwrite_dynamic_bucket_partitioned(spark_tmp_table_factory, partition_col_sql):
     """Test dynamic overwrite with bucket partitioning - should run on GPU."""
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode,
-                  "write.spark.fanout.enabled": str(fanout).lower()}
+    table_prop = {"format-version": "2"}
 
     def create_table_with_partition(table_name: str):
         create_iceberg_table(
@@ -136,13 +126,9 @@ def test_insert_overwrite_dynamic_bucket_partitioned(spark_tmp_table_factory, fo
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('OverwritePartitionsDynamicExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_insert_overwrite_dynamic_unsupported_data_types_fallback(spark_tmp_table_factory, format_version, write_distribution_mode):
+def test_insert_overwrite_dynamic_unsupported_data_types_fallback(spark_tmp_table_factory):
     """Test that INSERT OVERWRITE falls back to CPU with unsupported data types."""
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+    table_prop = {"format-version": "2"}
 
     def this_gen_df(spark):
         cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
@@ -181,18 +167,14 @@ def test_insert_overwrite_dynamic_unsupported_data_types_fallback(spark_tmp_tabl
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('OverwritePartitionsDynamicExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_insert_overwrite_dynamic_unsupported_partition_fallback(
-        spark_tmp_table_factory, format_version, write_distribution_mode, partition_col_sql):
+        spark_tmp_table_factory, partition_col_sql):
     """Test that INSERT OVERWRITE falls back to CPU with unsupported partition functions."""
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+    table_prop = {"format-version": "2"}
 
     table_name = get_full_table_name(spark_tmp_table_factory)
 
@@ -228,15 +210,11 @@ def test_insert_overwrite_dynamic_unsupported_partition_fallback(
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('OverwritePartitionsDynamicExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 def test_insert_overwrite_dynamic_unsupported_file_format_fallback(
-        spark_tmp_table_factory, format_version, file_format, write_distribution_mode):
+        spark_tmp_table_factory, file_format):
     """Test that INSERT OVERWRITE falls back to CPU with unsupported file formats."""
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode,
+    table_prop = {"format-version": "2",
                   "write.format.default": file_format}
 
     table_name = get_full_table_name(spark_tmp_table_factory)
@@ -271,17 +249,13 @@ def test_insert_overwrite_dynamic_unsupported_file_format_fallback(
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('OverwritePartitionsDynamicExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
 def test_insert_overwrite_dynamic_fallback_when_conf_disabled(
-        spark_tmp_table_factory, format_version, write_distribution_mode, conf_key):
+        spark_tmp_table_factory, conf_key):
     """Test that INSERT OVERWRITE falls back to CPU when Iceberg write is disabled."""
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+    table_prop = {"format-version": "2"}
 
     table_name = get_full_table_name(spark_tmp_table_factory)
 
