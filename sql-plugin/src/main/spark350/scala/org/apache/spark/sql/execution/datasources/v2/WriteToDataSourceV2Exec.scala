@@ -86,17 +86,9 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
   override def child: SparkPlan = query
   override def output: Seq[Attribute] = Seq.empty
 
-  private lazy val finalQuery: SparkPlan = {
-    val q = query
-    System.err.println(s"Before final query: ${q}")
-    val ret = q match {
+  private lazy val finalQuery: SparkPlan = query match {
       case aqe: AdaptiveSparkPlanExec => aqe.copy(supportsColumnar = true)
-      case GpuColumnarToRowExec(inner, _)  => inner
       case p => p
-    }
-
-    System.err.println(s"After final query: ${ret}")
-    ret
   }
 
   protected def writeWithV2(batchWrite: BatchWrite): Seq[InternalRow] = {

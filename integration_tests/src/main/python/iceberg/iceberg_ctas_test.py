@@ -338,20 +338,13 @@ def test_ctas_from_values(spark_tmp_table_factory,
 
 
 @iceberg
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["hash"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
     pytest.param("year(_c9)", 
                  id="triple_datetime_transforms"),
 ])
-def test_ctas_aqe(spark_tmp_table_factory,
-                                                   format_version,
-                                                   write_distribution_mode,
-                                                   partition_col_sql):
+def test_ctas_aqe(spark_tmp_table_factory, partition_col_sql):
     """
     Test CTAS with multiple partition transforms on the same column with AQE enabled.
     
@@ -364,8 +357,7 @@ def test_ctas_aqe(spark_tmp_table_factory,
     - GpuShuffleCoalesceExec ends up as a child of GpuRowToColumnarExec
     """
     table_prop = {
-        "format-version": format_version,
-        "write.distribution-mode": write_distribution_mode
+        "format-version": "2",
     }
 
     df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
