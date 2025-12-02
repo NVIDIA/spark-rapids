@@ -23,11 +23,10 @@ package org.apache.spark.sql.execution.datasources.v2.rapids
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.GpuExec
-import com.nvidia.spark.rapids.shims.RapidsTableWrite
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec}
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project, TableSpec}
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
@@ -70,7 +69,7 @@ case class GpuAtomicCreateTableAsSelectExec(
     val stagedTable = catalog.stageCreate(
       ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
       partitioning.toArray, properties.asJava)
-    writeToTable(catalog, stagedTable, writeOptions, ident, RapidsTableWrite(query),
+    writeToTable(catalog, stagedTable, writeOptions, ident, Project(query.output, query),
       overwrite = false)
   }
 
