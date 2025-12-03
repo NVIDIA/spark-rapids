@@ -70,7 +70,6 @@ class RapidsDataFrameWindowFunctionsSuite
 
       checkAnswer(windowed, Seq(Row("b", 4), Row(null, null), Row(null, null), Row(null, null)))
 
-      println(s"plan: ${windowed.queryExecution.executedPlan.toString()}")
       val shuffleByRequirement = windowed.queryExecution.executedPlan.exists {
         case w: GpuWindowBaseExec =>
           w.child.exists {
