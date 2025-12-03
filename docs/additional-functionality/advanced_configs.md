@@ -436,6 +436,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.StaticInvoke"></a>spark.rapids.sql.expression.StaticInvoke| |StaticInvoke|true|The supported types are not deterministic since it's a dynamic expression|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero| |Normalize NaN and zero|true|None|
 <a name="sql.expression.ScalarSubquery"></a>spark.rapids.sql.expression.ScalarSubquery| |Subquery that will return only one row and one column|true|None|
+<a name="sql.expression.ScalaUDAF"></a>spark.rapids.sql.expression.ScalaUDAF| |User Defined Aggregate Function, the UDAF can choose to implement a RAPIDS accelerated interface to get better performance.|true|None|
 <a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance|true|None|
 <a name="sql.expression.HiveSimpleUDF"></a>spark.rapids.sql.expression.HiveSimpleUDF| |Hive UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance|true|None|
 
