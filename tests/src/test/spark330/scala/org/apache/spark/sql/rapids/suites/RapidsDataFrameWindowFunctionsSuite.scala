@@ -20,17 +20,17 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
-import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import com.nvidia.spark.rapids.window.GpuWindowBaseExec
 
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.DataFrameWindowFunctionsSuite
-import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS}
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
-import org.apache.spark.sql.Row
 
 class RapidsDataFrameWindowFunctionsSuite
   extends DataFrameWindowFunctionsSuite
@@ -38,7 +38,8 @@ class RapidsDataFrameWindowFunctionsSuite
 
   import testImplicits._
 
-  testRapids("SPARK-38237: require all cluster keys for child required distribution for window query") {
+  testRapids("SPARK-38237: require all cluster " +
+    "keys for child required distribution for window query") {
     def partitionExpressionsColumns(expressions: Seq[Expression]): Seq[String] = {
       expressions.flatMap {
         case ref: AttributeReference => Some(ref.name)
