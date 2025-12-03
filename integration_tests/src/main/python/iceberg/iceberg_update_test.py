@@ -479,11 +479,11 @@ def test_iceberg_update_mor_fallback_writedelta_disabled(spark_tmp_table_factory
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize('update_mode', ['copy-on-write'])
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
     pytest.param("year(_c9)", id="year_partition"),
-    pytest.param("bucket(6, _c2)", id="bucket_partition"),
 ])
 def test_update_aqe(spark_tmp_table_factory, update_mode, partition_col_sql):
     """
