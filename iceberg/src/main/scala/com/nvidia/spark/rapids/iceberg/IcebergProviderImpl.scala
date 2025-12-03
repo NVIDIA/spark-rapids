@@ -20,6 +20,7 @@ import scala.reflect.ClassTag
 import scala.util.Try
 
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, WriteFileOp}
+import com.nvidia.spark.rapids.iceberg.IcebergProviderImpl.checkChildPlan
 import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.functions._
@@ -31,6 +32,7 @@ import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, GpuReplaceDataExec, GpuWriteDeltaExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec, WriteDeltaExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.types.{DateType, TimestampType}
@@ -178,9 +180,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
     GpuSparkWrite.tagForGpuCtas(cpuExec, meta)
 
-    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
-      meta.willNotWorkOnGpu("Because one of child can't run gpu")
-    }
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(
@@ -213,9 +213,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
     GpuSparkWrite.tagForGpuRtas(cpuExec, meta)
 
-    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
-      meta.willNotWorkOnGpu("Because one of child can't run gpu")
-    }
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(
@@ -247,9 +245,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
 
-    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
-      meta.willNotWorkOnGpu("Because one of child can't run gpu")
-    }
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
@@ -275,9 +271,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
 
-    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
-      meta.willNotWorkOnGpu("Because one of child can't run gpu")
-    }
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: OverwritePartitionsDynamicExec,
@@ -304,9 +298,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
 
-    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
-      meta.willNotWorkOnGpu("Because one of child can't run gpu")
-    }
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: OverwriteByExpressionExec,
@@ -375,9 +367,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
 
-    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
-      meta.willNotWorkOnGpu("Because one of child can't run gpu")
-    }
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): GpuExec = {
@@ -404,9 +394,7 @@ class IcebergProviderImpl extends IcebergProvider {
 
     GpuSparkPositionDeltaWrite.tagForGpu(cpuExec.write, meta)
 
-    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
-      meta.willNotWorkOnGpu("Because one of child can't run gpu")
-    }
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: WriteDeltaExec, meta: WriteDeltaExecMeta): GpuExec = {
@@ -415,5 +403,18 @@ class IcebergProviderImpl extends IcebergProvider {
       cpuExec.refreshCache,
       cpuExec.projections,
       GpuSparkPositionDeltaWrite.convert(cpuExec.write))
+  }
+}
+
+object IcebergProviderImpl {
+  def checkChildPlan[T <: SparkPlan](meta: SparkPlanMeta[T]): Unit = {
+    var childMata = meta.childPlans.head
+    if (childMata.wrapped.isInstanceOf[AdaptiveSparkPlanExec]) {
+      childMata = childMata.childPlans.head
+    }
+
+    if (!childMata.canThisBeReplaced) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 }
