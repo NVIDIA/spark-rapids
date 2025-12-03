@@ -121,7 +121,7 @@ class GatherMapsResult(private var leftOpt: Option[GatherMap],
   def left: GatherMap = leftOpt.get
   def hasLeft: Boolean = leftOpt.isDefined
   def releaseLeft(): GatherMap = {
-    val ret =  leftOpt.get
+    val ret = leftOpt.get
     leftOpt = None
     ret
   }
@@ -129,18 +129,27 @@ class GatherMapsResult(private var leftOpt: Option[GatherMap],
   def right: GatherMap = rightOpt.get
   def hasRight: Boolean = rightOpt.isDefined
   def releaseRight(): GatherMap = {
-    val ret =  rightOpt.get
+    val ret = rightOpt.get
     rightOpt = None
     ret
   }
 
   override def close(): Unit = {
     leftOpt.foreach(_.close)
-    rightOpt.foreach(_.close())
+    rightOpt.foreach(_.close)
   }
 }
 
 object JoinImpl {
+  /**
+   * Filter the results of an inner join using a compiled AST condition. This requires that the
+   * AST condition is compiled for left table, then right table.
+   * @param inner the results of an inner join
+   * @param leftTable the left table columns used by the AST.
+   * @param rightTable the right table columns used by the AST.
+   * @param compiledCondition the compiled AST predicate
+   * @return the gather maps filtered by teh AST expression.
+   */
   def filterInnerJoinWithAST(inner: GatherMapsResult,
                              leftTable: Table,
                              rightTable: Table,
@@ -150,6 +159,15 @@ object JoinImpl {
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
+  /**
+   * Filter the results of an inner join using a compiled AST condition. This requires that the
+   * AST condition is compiled for right table, then left table (swapped from the expected way).
+   * @param inner the results of an inner join
+   * @param leftTable the left table columns used by the AST.
+   * @param rightTable the right table columns used by the AST.
+   * @param compiledCondition the compiled AST predicate
+   * @return the gather maps filtered by teh AST expression.
+   */
   def filterInnerJoinWithSwappedAST(inner: GatherMapsResult,
                                     leftTable: Table,
                                     rightTable: Table,
@@ -165,7 +183,7 @@ object JoinImpl {
    * Applies the AST filter to the inner gather maps result.
    * Detects how the AST is compiled based on earlier rules.
    * This is fragile and needs to be used with caution. This is
-   * not the same for all paths through join.
+   * not the same for all paths through the join code.
    * @param inner the set of maps to filter
    * @param leftTable the left AST related columns
    * @param rightTable the right AST related columns
@@ -202,7 +220,7 @@ object JoinImpl {
    * Applies the AST filter to the inner gather maps result.
    * Detects how the AST is compiled based on earlier rules.
    * This is fragile and needs to be used with caution. This is
-   * not the same for all paths through join.
+   * not the same for all paths through the join code.
    * @param inner the set of maps to filter
    * @param leftTable the left AST related columns
    * @param rightTable the right AST related columns
@@ -281,6 +299,13 @@ object JoinImpl {
     GatherMapsResult.makeFromLeft(leftRet)
   }
 
+  /**
+   * Do an inner hash join with the build table as the left table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def innerHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
                              compareNullsEqual: Boolean): GatherMapsResult = {
     // The build table is always the right table, so switch the tables passed in
@@ -289,6 +314,17 @@ object JoinImpl {
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
 
+  /**
+   * Do an inner hash join with the build table as the left table. Note that the
+   * AST complied expression must also be compiled for right table then left table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param nullEquality if nulls should eb equal or not
+   * @return the gather maps to use
+   */
   def innerHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
                               leftTable: Table, rightTable: Table,
                               compiledCondition: CompiledExpression,
@@ -303,6 +339,13 @@ object JoinImpl {
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
 
+  /**
+   * Do an inner hash join with the build table as the right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def innerHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                               compareNullsEqual: Boolean): GatherMapsResult = {
     // The build table is always the right table
@@ -310,6 +353,17 @@ object JoinImpl {
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
+  /**
+   * Do an inner hash join with the build table as the right table. Note that the
+   * AST complied expression must also be compiled for left table then right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param nullEquality if nulls should eb equal or not
+   * @return the gather maps to use
+   */
   def innerHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                               leftTable: Table, rightTable: Table,
                               compiledCondition: CompiledExpression,
@@ -319,6 +373,14 @@ object JoinImpl {
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
+  /**
+   * Do an inner hash join and select the build table as the smaller table
+   * (in terms of row count). This can have a big performance improvement.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def innerHashJoinBuildSmallest(leftKeys: Table, rightKeys: Table,
                                  compareNullsEqual: Boolean): GatherMapsResult = {
     if (leftKeys.getRowCount < rightKeys.getRowCount) {
@@ -328,6 +390,13 @@ object JoinImpl {
     }
   }
 
+  /**
+   * Do an inner sort join with the build table as the left table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def innerSortJoinBuildLeft(leftKeys: Table, rightKeys: Table,
                              compareNullsEqual: Boolean): GatherMapsResult = {
     // The build table is always the right table, so switch the tables passed in
@@ -337,6 +406,13 @@ object JoinImpl {
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
 
+  /**
+   * Do an inner sort join with the build table as the right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def innerSortJoinBuildRight(leftKeys: Table, rightKeys: Table,
                               compareNullsEqual: Boolean): GatherMapsResult = {
     // The build table is always the right table
@@ -345,6 +421,15 @@ object JoinImpl {
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
+  /**
+   * Do an inner sort join and select the build table as the smaller table
+   * (in terms of row count). This can have a performance improvement, but
+   * it is not as large as the hash join.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def innerSortJoinBuildSmallest(leftKeys: Table, rightKeys: Table,
                                  compareNullsEqual: Boolean): GatherMapsResult = {
     if (leftKeys.getRowCount < rightKeys.getRowCount) {
@@ -354,12 +439,30 @@ object JoinImpl {
     }
   }
 
+  /**
+   * Do a left outer hash join with the build table as the right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def leftOuterHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                                   compareNullsEqual: Boolean): GatherMapsResult = {
     val arrayRet = leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
+  /**
+   * Do a left outer hash join with the build table as the right table. Note that the
+   * AST complied expression must also be compiled for left table then right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param nullEquality if nulls should eb equal or not
+   * @return the gather maps to use
+   */
   def leftOuterHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                                   leftTable: Table, rightTable: Table,
                                   compiledCondition: CompiledExpression,
@@ -369,6 +472,13 @@ object JoinImpl {
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
+  /**
+   * Do a right outer hash join with the build table as the left table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather maps to use
+   */
   def rightOuterHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
                                   compareNullsEqual: Boolean): GatherMapsResult = {
     // Reverse the input to the join so we can use left outer to computer right outer
@@ -377,6 +487,17 @@ object JoinImpl {
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
 
+  /**
+   * Do a right outer hash join with the build table as the left table. Note that the
+   * AST complied expression must also be compiled for right table then left table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param nullEquality if nulls should eb equal or not
+   * @return the gather maps to use
+   */
   def rightOuterHashJoinBuildLeft(leftKeys: Table, rightKeys: Table,
                                   leftTable: Table, rightTable: Table,
                                   compiledCondition: CompiledExpression,
@@ -388,12 +509,30 @@ object JoinImpl {
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
 
+  /**
+   * Do a left semi hash join with the build table as the right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather map to use for the left table
+   */
   def leftSemiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                                   compareNullsEqual: Boolean): GatherMapsResult = {
     val leftRet = leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual)
     GatherMapsResult.makeFromLeft(leftRet)
   }
 
+  /**
+   * Do a left semi hash join with the build table as the right table. Note that the
+   * AST complied expression must also be compiled for left table then right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param nullEquality if nulls should eb equal or not
+   * @return the gather map to use for the left table
+   */
   def leftSemiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                                  leftTable: Table, rightTable: Table,
                                  compiledCondition: CompiledExpression,
@@ -403,12 +542,30 @@ object JoinImpl {
     GatherMapsResult.makeFromLeft(leftRet)
   }
 
+  /**
+   * Do a left anti hash join with the build table as the right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param compareNullsEqual true if nulls should be compared as equal
+   * @return the gather map to use for the left table
+   */
   def leftAntiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                                  compareNullsEqual: Boolean): GatherMapsResult = {
     val leftRet = leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual)
     GatherMapsResult.makeFromLeft(leftRet)
   }
 
+  /**
+   * Do a left anti hash join with the build table as the right table. Note that the
+   * AST complied expression must also be compiled for left table then right table.
+   * @param leftKeys the left equality join keys
+   * @param rightKeys the right equality join keys
+   * @param leftTable the left AST related columns
+   * @param rightTable the right AST related columns
+   * @param compiledCondition the condition
+   * @param nullEquality if nulls should eb equal or not
+   * @return the gather map to use for the left table
+   */
   def leftAntiHashJoinBuildRight(leftKeys: Table, rightKeys: Table,
                                  leftTable: Table, rightTable: Table,
                                  compiledCondition: CompiledExpression,
@@ -1301,7 +1458,7 @@ class ConditionalHashJoinIterator(
 
     // Filter by AST condition
     val filteredMaps = withResource(innerMaps) { _ =>
-      JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide( innerMaps, leftTable, rightTable,
+      JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide(innerMaps, leftTable, rightTable,
         compiledCondition, joinType, buildSide)
     }
 
@@ -1329,7 +1486,7 @@ class ConditionalHashJoinIterator(
 
     // Filter by AST condition
     val filteredMaps = withResource(innerMaps) { _ =>
-      JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide( innerMaps, leftTable, rightTable,
+      JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide(innerMaps, leftTable, rightTable,
         compiledCondition, joinType, buildSide)
     }
 
