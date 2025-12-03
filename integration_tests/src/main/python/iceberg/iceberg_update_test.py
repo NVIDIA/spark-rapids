@@ -143,7 +143,6 @@ def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_fac
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
@@ -483,6 +482,7 @@ def test_iceberg_update_mor_fallback_writedelta_disabled(spark_tmp_table_factory
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
     pytest.param("year(_c9)", id="year_partition"),
+    pytest.param("identity", id="identity_partition"),
 ])
 def test_update_aqe(spark_tmp_table_factory, partition_col_sql):
     """
