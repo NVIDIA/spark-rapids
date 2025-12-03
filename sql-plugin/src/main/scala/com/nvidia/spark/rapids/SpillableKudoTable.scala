@@ -51,8 +51,7 @@ object SpillableKudoTable {
         buffer.getLength,
         SpillableHostBuffer.apply(
           buffer,
-          buffer.getLength,
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          buffer.getLength)
       )
     }
   }
