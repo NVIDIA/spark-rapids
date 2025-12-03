@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -35,6 +33,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Pa
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
+import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuBaseLimitIterator(
@@ -55,7 +54,7 @@ class GpuBaseLimitIterator(
     }
 
     var batch = input.next()
-    val numCols = batch.numCols()
+    val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
 
     // In each partition, we need to skip `offset` rows
     while (batch != null && remainingOffset >= batch.numRows()) {
@@ -71,7 +70,10 @@ class GpuBaseLimitIterator(
     // If the last batch is null, then we have offset >= numRows in this partition.
     // In such case, we should return an empty batch
     if (batch == null || batch.numRows() == 0) {
-      return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](numCols).toArray, 0)
+      val fields = dataTypes.zipWithIndex.map {
+        case (dt, idx) => StructField(s"_col$idx", dt, nullable = true)
+      }
+      return GpuColumnVector.emptyBatch(StructType(fields))
     }
 
     // Here 0 <= remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
