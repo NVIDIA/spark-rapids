@@ -117,7 +117,6 @@ object GpuDataSourceScanExec {
       str.substring(0, len - abbrevMarker.length()) + abbrevMarker
     }
   }
-  }
 
   /**
    * Equivalent of SparkStringUtils.abbreviate().  Used to reduce dependencies
