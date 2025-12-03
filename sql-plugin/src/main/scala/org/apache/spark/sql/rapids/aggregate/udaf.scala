@@ -217,20 +217,25 @@ trait GpuUserDefinedAggregateFunction extends GpuAggregateFunction
     new UDAFAggregate(aggBufferTypes, function.mergeAggregation())
   }
 
-  // UDAF arguments
-  override final lazy val inputProjection: Seq[Expression] = children
-
-  override final lazy val initialValues: Seq[Expression] = {
+  // similar as "initialValues" in GpuAggregateFunction
+  def defaultValues: Array[GpuScalar] = {
     closeOnExcept(function.getDefaultValue) { udafDefValues =>
       require(udafDefValues.length == aggBufferTypes.length,
         s"The default values number (${udafDefValues.length}) is NOT equal to " +
           s"the aggregation buffers number(${aggBufferTypes.length})")
       udafDefValues.zip(aggBufferTypes).map { case (scalar, dt) =>
-        GpuLiteral(scalar, dt)
+        GpuScalar(scalar, dt)
       }
     }
   }
 
+  // UDAF arguments
+  override final lazy val inputProjection: Seq[Expression] = children
+
+  override final lazy val initialValues: Seq[Expression] = {
+    throw new UnsupportedOperationException("GPU user defined aggregate function" +
+      " does not support 'initialValues', call 'defaultValues' instead.")
+  }
   override final lazy val updateAggregates: Seq[CudfAggregate] = {
     throw new UnsupportedOperationException("GPU user defined aggregate function" +
       " does not support 'updateAggregates', call 'updateAggregate' instead.")

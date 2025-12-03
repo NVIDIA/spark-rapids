@@ -1356,16 +1356,26 @@ class GpuMergeAggregateIterator(
    */
   private def generateEmptyReductionBatch(): ColumnarBatch = {
     val aggregateFunctions = aggregateExpressions.map(_.aggregateFunction)
-    // We have to grab the semaphore in this scenario, since this is a reduction that produces
-    // rows on the GPU out of empty input, meaning that if a batch has 0 rows, a new single
-    // row is getting created with 0 as the count (if count is the operation), and other default
-    // values.
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-    val defaultValues = aggregateFunctions.flatMap(_.initialValues)
-    val vecs = defaultValues.safeMap { case GpuLiteral(litVal, dt) =>
-      withResource(GpuScalar(litVal, dt))(s => GpuColumnVector.from(s, 1, dt))
+    val defaultValues = new ArrayBuffer[GpuScalar]()
+    closeOnExcept(defaultValues) { _ =>
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      // We have to grab the semaphore in this scenario, since this is a reduction that produces
+      // rows on the GPU out of empty input, meaning that if a batch has 0 rows, a new single
+      // row is getting created with 0 as the count (if count is the operation), and other default
+      // values.
+      aggregateFunctions.foreach {
+        case udaf: GpuUserDefinedAggregateFunction =>
+          defaultValues ++= udaf.defaultValues
+        case aggFunc =>
+          defaultValues ++= aggFunc.initialValues.safeMap { case GpuLiteral(any, dt) =>
+            GpuScalar(any, dt)
+          }
+      }
     }
-    new ColumnarBatch(vecs.toArray, 1)
+    withResource(defaultValues) { _ =>
+      val vecs = defaultValues.toSeq.safeMap(s => GpuColumnVector.from(s, 1, s.dataType))
+      new ColumnarBatch(vecs.toArray, 1)
+    }
   }
 }
 
