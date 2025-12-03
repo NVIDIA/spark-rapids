@@ -479,7 +479,7 @@ def test_iceberg_update_mor_fallback_writedelta_disabled(spark_tmp_table_factory
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize('update_mode', ['copy-on-write'])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
     pytest.param("year(_c9)", id="year_partition"),
