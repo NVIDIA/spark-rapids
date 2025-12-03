@@ -177,6 +177,10 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpuCtas(cpuExec, meta)
+
+    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 
   private def convertToGpu(
@@ -208,6 +212,10 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpuRtas(cpuExec, meta)
+
+    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 
   private def convertToGpu(
@@ -238,6 +246,10 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 
   private def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
@@ -262,6 +274,10 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 
   private def convertToGpu(cpuExec: OverwritePartitionsDynamicExec,
@@ -287,6 +303,10 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 
   private def convertToGpu(cpuExec: OverwriteByExpressionExec,
@@ -354,6 +374,10 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 
   private def convertToGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): GpuExec = {
@@ -379,6 +403,10 @@ class IcebergProviderImpl extends IcebergProvider {
       IcebergFormatType, WriteFileOp)
 
     GpuSparkPositionDeltaWrite.tagForGpu(cpuExec.write, meta)
+
+    if (meta.childPlans.exists(!_.canThisBeReplaced)) {
+      meta.willNotWorkOnGpu("Because one of child can't run gpu")
+    }
   }
 
   private def convertToGpu(cpuExec: WriteDeltaExec, meta: WriteDeltaExecMeta): GpuExec = {
