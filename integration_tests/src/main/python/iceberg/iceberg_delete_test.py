@@ -462,18 +462,21 @@ def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory
     )
 
 
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
     pytest.param("year(_c9)", id="year_partition"),
 ])
-def test_delete_aqe(spark_tmp_table_factory, partition_col_sql):
+def test_delete_aqe(spark_tmp_table_factory, update_mode, partition_col_sql):
     """
     Test DELETE with AQE enabled.
     """
     table_prop = {
         'format-version': '2',
+        'write.delete.mode': update_mode
     }
 
     # Configuration with AQE enabled

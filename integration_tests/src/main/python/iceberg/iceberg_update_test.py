@@ -176,7 +176,7 @@ def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_facto
     do_update_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100, _c6 = 'updated' WHERE _c2 % 3 = 0"),
-        partition_col_sql="bucket(16, _c2)",
+        partition_col_sql="year(_c8)",
         update_mode=update_mode
     )
 
