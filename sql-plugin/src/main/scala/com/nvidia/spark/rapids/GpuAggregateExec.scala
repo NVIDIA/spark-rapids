@@ -691,7 +691,7 @@ class AggHelper(
         withResource(aggTbl) { _ =>
           // The output types of UDAF aggs can not be predicated, so need to infer
           // them from the output columns.
-          val udafTypes = (udafAggsStart until aggTbl.getNumberOfColumns).map {
+          val udafTypes = (postStepDataTypes.length until aggTbl.getNumberOfColumns).map {
             udafColIx => GpuUDAFUtils.infer(aggTbl.getColumn(udafColIx))
           }
           GpuColumnVector.from(aggTbl, (postStepDataTypes ++ udafTypes).toArray)
