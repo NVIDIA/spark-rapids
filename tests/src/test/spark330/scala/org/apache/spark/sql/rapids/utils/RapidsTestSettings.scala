@@ -51,7 +51,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsDataFrameWindowFunctionsSuite]
     .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13763"))
     .exclude("SPARK-21258: complex object in combination with spilling", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13764"))
-    .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13765"))
+    .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", ADJUST_UT("Replaced by testRapids version for GPU execution"))
   enableSuite[RapidsDateExpressionsSuite]
     .exclude("unsupported fmt fields for trunc/date_trunc results null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13757"))
     .exclude("SPARK-31896: Handle am-pm timestamp parsing when hour is missing", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13758"))
