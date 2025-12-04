@@ -408,9 +408,11 @@ class IcebergProviderImpl extends IcebergProvider {
 
 object IcebergProviderImpl {
   def checkChildPlan[T <: SparkPlan](meta: SparkPlanMeta[T]): Unit = {
-    val childMata = meta.childPlans.head
-    if (!childMata.wrapped.isInstanceOf[AdaptiveSparkPlanExec] && !childMata.canThisBeReplaced) {
-      meta.willNotWorkOnGpu("Because child can't run gpu")
+    if (meta.childPlans.nonEmpty) {
+      val childMata = meta.childPlans.head
+      if (!childMata.wrapped.isInstanceOf[AdaptiveSparkPlanExec] && !childMata.canThisBeReplaced) {
+        meta.willNotWorkOnGpu("Because child can't run gpu")
+      }
     }
   }
 }
