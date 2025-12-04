@@ -36,6 +36,7 @@ import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
+import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonToStructsReaderType
@@ -925,7 +926,8 @@ object GpuOverrides extends Logging {
     (IcebergFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.BINARY +
           TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
-      cudfWrite = TypeSig.none,
+      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+        GpuTypeShims.additionalParquetSupportedTypes,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.BINARY + TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
 
@@ -2722,6 +2724,29 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMapEntries(child)
       }),
+    expr[MapFromEntries](
+      "Creates a map from an array of entries (structs of key-value pairs)",
+      ExprChecks.unaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY),
+        TypeSig.MAP.nested(TypeSig.all),
+        // Input is an array of struct<key, value>
+        // The struct fields can contain the supported types
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      (in, conf, p, r) => new UnaryExprMeta[MapFromEntries](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
+            case "EXCEPTION" | "LAST_WIN" => // Good we can support this
+            case other =>
+              willNotWorkOnGpu(s"$other is not supported for config setting" +
+                  s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
+          }
+        }
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMapFromEntries(child)
+      }),
     expr[StringToMap](
       "Creates a map after splitting the input string into pairs of key-value strings",
       // Java's split API produces different behaviors than cudf when splitting with empty pattern
@@ -3138,6 +3163,30 @@ object GpuOverrides extends Logging {
           GpuTransformValues(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
+    expr[MapZipWith](
+      "Filters entries in a map using the function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument1",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("argument2",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            TypeSig.all))),
+      (in, conf, p, r) => new ExprMeta[MapZipWith](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuMapZipWith(childExprs.head.convertToGpu(), 
+          childExprs(1).convertToGpu(), childExprs(2).convertToGpu())
+        }
+      }),
     expr[MapFilter](
       "Filters entries in a map using the function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3424,61 +3473,14 @@ object GpuOverrides extends Logging {
         override final def convertToGpu(): GpuExpression =
           GpuConcatWs(childExprs.map(_.convertToGpu()))
       }),
-    expr[Murmur3Hash] (
+    expr[Murmur3Hash](
       "Murmur3 hash operator",
-      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
-        repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-              TypeSig.STRUCT + TypeSig.ARRAY).nested() +
-              TypeSig.psNote(TypeEnum.ARRAY, "Arrays of structs are not supported"),
-          TypeSig.all))),
-      (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
-        override val childExprs: Seq[BaseExprMeta[_]] = a.children
-          .map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-
-        override def tagExprForGpu(): Unit = {
-          val arrayWithStructsHashing = a.children.exists(e =>
-            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-              {
-                case ArrayType(_: StructType, _) => true
-                case _ => false
-              })
-          )
-          if (arrayWithStructsHashing) {
-            willNotWorkOnGpu("hashing arrays with structs is not supported")
-          }
-        }
-
-        def convertToGpu(): GpuExpression =
-          GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
-      }),
+      HashExprChecks.murmur3ProjectChecks,
+      Murmur3HashExprMeta.apply),
     expr[XxHash64](
       "xxhash64 hash operator",
-      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG,
-        repeatingParamCheck = Some(RepeatingParamCheck("input",
-          XxHash64Shims.supportedTypes, TypeSig.all))),
-      (a, conf, p, r) => new ExprMeta[XxHash64](a, conf, p, r) {
-        override val childExprs: Seq[BaseExprMeta[_]] = a.children
-          .map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-
-        override def tagExprForGpu(): Unit = {
-          val maxDepth = a.children.map(
-            c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
-          if (maxDepth > Hash.MAX_STACK_DEPTH) {
-            willNotWorkOnGpu(s"The data type requires a stack depth of $maxDepth, " +
-              s"which exceeds the GPU limit of ${Hash.MAX_STACK_DEPTH}. " +
-              "The algorithm to calculate stack depth: " +
-              "1: Primitive type counts 1 depth; " +
-              "2: Array of Structure counts:  1  + depthOf(Structure); " +
-              "3: Array of Other counts: depthOf(Other); " +
-              "4: Structure counts: 1 + max of depthOf(child); " +
-              "5: Map counts: 2 + max(depthOf(key), depthOf(value)); "
-            )
-          }
-        }
-        def convertToGpu(): GpuExpression =
-          GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
-      }),
+      HashExprChecks.xxhash64ProjectChecks,
+      XxHash64ExprMeta.apply),
     expr[HiveHash](
       "hive hash operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
@@ -3569,9 +3571,6 @@ object GpuOverrides extends Logging {
           Some(RepeatingParamCheck("key", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (a.failOnError) {
-            willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
-          }
 
           extractStringLit(a.children(1)) match {
             // In Spark, the key in parse_url could act like a regex, but GPU will match the key
@@ -3599,7 +3598,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(): GpuExpression = {
-          GpuParseUrl(childExprs.map(_.convertToGpu()))
+          GpuParseUrl(childExprs.map(_.convertToGpu()), a.failOnError)
         }
       }),
     expr[Length](
@@ -4161,6 +4160,16 @@ object GpuOverrides extends Logging {
         }
       }
     ),
+    expr[Uuid](
+      desc = "Uuid",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING),
+      (a, conf, p, r) => new GpuUuidMeta(a, conf, p, r)
+    ),
+    expr[StaticInvoke](
+      desc = "StaticInvoke",
+      StaticInvokeCheck,
+      (a, conf, p, r) => new StaticInvokeMeta(a, conf, p, r)
+    ).note("The supported types are not deterministic since it's a dynamic expression"),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
@@ -4169,7 +4178,7 @@ object GpuOverrides extends Logging {
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
         ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
         BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ RaiseErrorShim.exprs ++
-        SparkShimImpl.getExprs
+        ExternalSource.exprRules ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,

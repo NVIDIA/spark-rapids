@@ -26,6 +26,8 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
+import com.nvidia.spark.rapids.GpuMetric.{OP_TIME_NEW_SHUFFLE_READ, OP_TIME_NEW_SHUFFLE_WRITE}
+import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
@@ -84,12 +86,18 @@ case class GpuOptimizeWriteExchangeExec(
 
   override lazy val allMetrics: Map[String, GpuMetric] = {
     Map(
+      OP_TIME_NEW_SHUFFLE_WRITE ->
+        createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE),
+      OP_TIME_NEW_SHUFFLE_READ ->
+        createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ),
       PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
       NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
       NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
       NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
     ) ++ additionalMetrics
   }
+
+  override def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW_SHUFFLE_READ)
 
   private lazy val serializer: Serializer =
     new GpuColumnarBatchSerializer(allMetrics,
@@ -100,27 +108,31 @@ case class GpuOptimizeWriteExchangeExec(
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
+  @transient private lazy val childNumPartitions = inputRDD.getNumPartitions
+
   @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
-    if (inputRDD.getNumPartitions == 0) {
+    if (childNumPartitions == 0) {
       Future.successful(null)
     } else {
       sparkContext.submitMapStage(shuffleDependency)
     }
   }
 
-  private lazy val childNumPartitions = inputRDD.getNumPartitions
-
-  private lazy val actualNumPartitions: Int = {
-    val targetShuffleBlocks = conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_SHUFFLE_BLOCKS)
-    math.min(
-      math.max(targetShuffleBlocks / childNumPartitions, 1),
-      conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_MAX_SHUFFLE_PARTITIONS))
+  @transient private lazy val actualNumPartitions: Int = {
+    if (childNumPartitions == 0) {
+      0
+    } else {
+      val targetShuffleBlocks = conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_SHUFFLE_BLOCKS)
+      math.min(
+        math.max(targetShuffleBlocks / childNumPartitions, 1),
+        conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_MAX_SHUFFLE_PARTITIONS))
+    }
   }
 
   // The actual partitioning to use for the shuffle exchange. The input partition count can be
   // adjusted based on the number of partitions in the input RDD and the target number of shuffle
   // blocks.
-  private lazy val actualPartitioning: GpuPartitioning = partitioning match {
+  @transient private lazy val actualPartitioning: GpuPartitioning = partitioning match {
     // Currently only hash and round-robin partitioning are supported.
     // See DeltaShufflePartitionsUtil.partitioningForRebalance() for more details.
     case p: GpuHashPartitioning => p.copy(numPartitions = actualNumPartitions)
@@ -128,6 +140,10 @@ case class GpuOptimizeWriteExchangeExec(
   }
 
   @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+    // Get OP_TIME_NEW metrics from all descendants for exclusion (with deduplication)
+    val descendantOpTimeMetrics = getDescendantOpTimeMetrics
+    val opTimeNewShuffleWriteMetric = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
+    
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
       child.output,
@@ -138,7 +154,9 @@ case class GpuOptimizeWriteExchangeExec(
       useMultiThreadedShuffle=actualPartitioning.usesMultiThreadedShuffle,
       metrics=allMetrics,
       writeMetrics=writeMetrics,
-      additionalMetrics=additionalMetrics)
+      additionalMetrics=additionalMetrics,
+      opTimeNewShuffleWrite=opTimeNewShuffleWriteMetric,
+      descendantOpTimeMetrics=descendantOpTimeMetrics)
     metrics("numPartitions").set(dep.partitioner.numPartitions)
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(

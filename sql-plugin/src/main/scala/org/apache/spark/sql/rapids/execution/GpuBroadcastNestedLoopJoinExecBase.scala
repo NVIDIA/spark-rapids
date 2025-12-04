@@ -458,7 +458,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
@@ -608,7 +608,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
       val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
       val buildTime = gpuLongMetric(BUILD_TIME)
-      val opTime = gpuLongMetric(OP_TIME)
+      val opTime = gpuLongMetric(OP_TIME_LEGACY)
       val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
       val localJoinType = joinType
 
@@ -777,7 +777,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val streamAttributes = streamed.output
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val nestedLoopJoinType = joinType
     val buildSide = gpuBuildSide

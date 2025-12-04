@@ -23,10 +23,12 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "400"}
+{"spark": "401"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuOverrides.exec
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
@@ -35,6 +37,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
 import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.{StringType, StructType}
@@ -153,8 +156,16 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all),
         (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r)),
+      exec[AppendDataExec](
+        "Append data into a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r)),
       InMemoryTableScanUtils.getTableCacheQueryStageExecRule
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
     super.getExecs ++ shimExecs
   }
 

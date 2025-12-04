@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>25.08.0-SNAPSHOT</version>
+    <version>25.10.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -772,6 +772,26 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release401</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>401</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>401</buildver>
+                <spark.version>${spark401.version}</spark.version>
+                <spark.test.version>${spark401.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #endif scala-2.13 -->
         <profile>
             <id>source-javadoc</id>
@@ -887,9 +907,9 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>25.08.0</spark-rapids-jni.version>
-        <spark-rapids-private.version>25.08.0</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>25.08.0</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>25.10.0</spark-rapids-jni.version>
+        <spark-rapids-private.version>25.10.0</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>25.10.0</spark-rapids-hybrid.version>
         <scala.binary.version>2.13</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.13.14</scala.version>
@@ -965,6 +985,7 @@
         <spark355.version>3.5.5</spark355.version>
         <spark356.version>3.5.6</spark356.version>
         <spark400.version>4.0.0</spark400.version>
+        <spark401.version>4.0.1</spark401.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
         <scala.plugin.version>4.9.2</scala.plugin.version>
@@ -1036,7 +1057,8 @@
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
             330,
-            400
+            400,
+            401
         </jdk17.scala213.buildvers>
         <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>
@@ -1066,6 +1088,7 @@
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
         <nonfail.errors.quiet>false</nonfail.errors.quiet>
         <rapids.source.jar.phase>package</rapids.source.jar.phase>
+        <ap.loader.version>3.0-9</ap.loader.version>
     </properties>
 
     <dependencyManagement>
@@ -1653,8 +1676,8 @@ This will force full Scala code rebuild in downstream modules.
                         </requireJavaVersion>
                         <requireProperty>
                           <property>buildver</property>
-                          <regex>^(?!400).*$</regex>
-                          <regexMessage>Spark 4.0.0 is only supported for Scala 2.13</regexMessage>
+                          <regex>^(?!4[0-9]{2}).*$</regex>
+                          <regexMessage>Spark 4.x is only supported for Scala 2.13</regexMessage>
                         </requireProperty>
                         --><!-- #endif scala-2.12 -->
                         <!-- #if scala-2.13 -->

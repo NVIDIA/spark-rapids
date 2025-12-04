@@ -487,11 +487,7 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, enable_deletion_ve
             gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -499,11 +495,7 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, enable_deletion_ve
             gen_df(spark, gen_list).coalesce(1).write.format("delta"), enable_deletion_vectors)
             .mode("overwrite")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
 
@@ -528,22 +520,14 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
             .mode("append")
             .option("delta.enableChangeDataFeed", "true")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
             .mode("overwrite")
             .save(path),
-        lambda spark, path: spark.read.format("delta")
-            .option("readChangeDataFeed", "true")
-            .option("startingVersion", 0)
-            .load(path)
-            .drop("_commit_timestamp"),
+        read_delta_path_with_cdf,
         data_path,
         conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
@@ -1027,6 +1011,27 @@ def test_delta_write_optimized_table_props_aqe(spark_tmp_path, confkey, aqe_enab
             data_path,
             conf=conf)
     do_test_optimize_write(spark_tmp_path, aqe_enabled, do_write, num_chunks)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_353(), reason="Delta Lake optimized writes are not supported before Spark 3.5.3 on Apache Spark")
+def test_delta_write_optimized_empty_output(spark_tmp_path):
+    num_chunks = 20
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    gen = IntegerGen(nullable=False)
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.optimizeWrite.enabled" : "true"
+    })
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        # filter everything out in the generated data
+        lambda spark, path: unary_op_df(spark, gen) \
+            .filter("a is null") \
+            .repartition(num_chunks).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

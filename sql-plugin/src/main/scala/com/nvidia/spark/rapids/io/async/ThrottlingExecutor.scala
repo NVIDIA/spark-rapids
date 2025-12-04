@@ -20,28 +20,50 @@ import java.util.concurrent.{Callable, ExecutorService, Future, TimeUnit}
 
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 
+
+/**
+ * Stats related classes used by ThrottlingExecutor
+ */
+case class ThrottlingExecutorStats (
+    var numTasksScheduled: Int,
+    var accumulatedThrottleTimeNs: Long,
+    var minThrottleTimeNs: Long,
+    var maxThrottleTimeNs: Long)
+
+/**
+ * Only for GpuWriteTaskStatsTracker cases
+ */
+class StatsUpdaterForWriteFunc(val statsTrackers: Seq[ColumnarWriteTaskStatsTracker]) {
+  def func(stats: ThrottlingExecutorStats): Unit = {
+    statsTrackers.foreach {
+      case gpuStatsTracker: GpuWriteTaskStatsTracker =>
+        gpuStatsTracker.setAsyncWriteThrottleTimes(
+          stats.numTasksScheduled,
+          stats.accumulatedThrottleTimeNs, stats.minThrottleTimeNs, stats.maxThrottleTimeNs)
+      case _ =>
+    }
+  }
+}
+
 /**
  * Thin wrapper around an ExecutorService that adds throttling.
  *
  * The given executor is owned by this class and will be shutdown when this class is shutdown.
  */
 class ThrottlingExecutor(executor: ExecutorService, throttler: TrafficController,
-    statsTrackers: Seq[ColumnarWriteTaskStatsTracker]) {
+    updateStats : ThrottlingExecutorStats => Unit) {
 
-  private var numTasksScheduled = 0
-  private var accumulatedThrottleTimeNs = 0L
-  private var minThrottleTimeNs = Long.MaxValue
-  private var maxThrottleTimeNs = 0L
+  val stats: ThrottlingExecutorStats = ThrottlingExecutorStats(0, 0L, Long.MaxValue, 0L)
 
   private def blockUntilTaskRunnable(task: Task[_]): Unit = {
     val blockStart = System.nanoTime()
     throttler.blockUntilRunnable(task)
     val blockTimeNs = System.nanoTime() - blockStart
-    accumulatedThrottleTimeNs += blockTimeNs
-    minThrottleTimeNs = Math.min(minThrottleTimeNs, blockTimeNs)
-    maxThrottleTimeNs = Math.max(maxThrottleTimeNs, blockTimeNs)
-    numTasksScheduled += 1
-    updateMetrics()
+    stats.accumulatedThrottleTimeNs += blockTimeNs
+    stats.minThrottleTimeNs = Math.min(stats.minThrottleTimeNs, blockTimeNs)
+    stats.maxThrottleTimeNs = Math.max(stats.maxThrottleTimeNs, blockTimeNs)
+    stats.numTasksScheduled += 1
+    updateStats(stats)
   }
 
   def submit[T](callable: Callable[T], hostMemoryBytes: Long): Future[T] = {
@@ -57,16 +79,8 @@ class ThrottlingExecutor(executor: ExecutorService, throttler: TrafficController
     })
   }
 
-  def updateMetrics(): Unit = {
-    statsTrackers.foreach {
-      case gpuStatsTracker: GpuWriteTaskStatsTracker => gpuStatsTracker.setAsyncWriteThrottleTimes(
-        numTasksScheduled, accumulatedThrottleTimeNs, minThrottleTimeNs, maxThrottleTimeNs)
-      case _ =>
-    }
-  }
-
   def shutdownNow(timeout: Long, timeUnit: TimeUnit): Unit = {
-    updateMetrics()
+    updateStats(stats)
     executor.shutdownNow()
     executor.awaitTermination(timeout, timeUnit)
   }
