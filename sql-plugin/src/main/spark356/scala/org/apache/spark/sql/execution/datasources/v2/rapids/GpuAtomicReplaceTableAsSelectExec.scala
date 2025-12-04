@@ -82,8 +82,7 @@ case class GpuAtomicReplaceTableAsSelectExec(
     } else {
       throw QueryCompilationErrors.cannotReplaceMissingTableError(ident)
     }
-    writeToTable(catalog, staged, writeOptions, ident, query,
-      overwrite = true)
+    writeToTable(catalog, staged, writeOptions, ident, query, overwrite = true)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =

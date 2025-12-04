@@ -69,12 +69,9 @@ case class GpuAtomicCreateTableAsSelectExec(
     val stagedTable = catalog.stageCreate(
       ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
       partitioning.toArray, properties.asJava)
-    writeToTable(catalog, stagedTable, writeOptions, ident, query,
-      overwrite = false)
+    writeToTable(catalog, stagedTable, writeOptions, ident, query, overwrite = false)
   }
 
-  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException("GpuAtomicCreateTableAsSelectExec only supports row command.")
-  }
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =
+    throw new IllegalStateException("Columnar execution not supported")
 }
-
