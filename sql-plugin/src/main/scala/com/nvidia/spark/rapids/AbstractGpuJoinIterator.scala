@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{GatherMap, OutOfBoundsPolicy}
+import ai.rapids.cudf.OutOfBoundsPolicy
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu, withRestoreOnRetry, withRetry}
@@ -26,6 +26,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
+import org.apache.spark.sql.rapids.execution.GatherMapsResult
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait TaskAutoCloseableResource extends AutoCloseable {
@@ -325,22 +326,21 @@ abstract class SplittableJoinIterator(
    * @param maps gather maps produced from a cudf join
    * @param leftData batch corresponding to the left table in the join
    * @param rightData batch corresponding to the right table in the join
-   * @return some gatherer or None if the are no rows to gather in this join batch
+   * @return some gatherer or None if there are no rows to gather in this join batch
    */
   protected def makeGatherer(
-      maps: Array[GatherMap],
+      maps: GatherMapsResult,
       leftData: LazySpillableColumnarBatch,
       rightData: LazySpillableColumnarBatch,
       joinType: JoinType): Option[JoinGatherer] = {
-    assert(maps.length > 0 && maps.length <= 2)
-    try {
+    withResource(maps) { _ =>
       val leftGatherer = joinType match {
-        case LeftOuter if maps.length == 1 =>
+        case LeftOuter if !maps.hasLeft =>
           // Distinct left outer joins only produce a single gather map since left table rows
           // are not rearranged by the join.
           new JoinGathererSameTable(leftData)
         case _ =>
-          val lazyLeftMap = LazySpillableGatherMap(maps.head, "left_map")
+          val lazyLeftMap = LazySpillableGatherMap(maps.left, "left_map")
           // Inner joins -- manifest the intersection of both left and right sides. The gather maps
           //   contain the number of rows that must be manifested, and every index
           //   must be within bounds, so we can skip the bounds checking.
@@ -353,14 +353,10 @@ abstract class SplittableJoinIterator(
           }
           JoinGatherer(lazyLeftMap, leftData, leftOutOfBoundsPolicy)
       }
-      val rightMap = joinType match {
-        case _ if rightData.numCols == 0 => None
-        case LeftOuter if maps.length == 1 =>
-          // Distinct left outer joins only produce a single gather map since left table rows
-          // are not rearranged by the join.
-          Some(maps.head)
-        case _ if maps.length == 1 => None
-        case _ => Some(maps(1))
+      val rightMap = if (rightData.numCols == 0 || !maps.hasRight) {
+        None
+      } else {
+        Some(maps.right)
       }
       val gatherer = rightMap match {
         case None if joinType == RightOuter && rightData.numCols > 0 =>
@@ -394,8 +390,6 @@ abstract class SplittableJoinIterator(
       } else {
         Some(gatherer)
       }
-    } finally {
-      maps.foreach(_.close())
     }
   }
 }
