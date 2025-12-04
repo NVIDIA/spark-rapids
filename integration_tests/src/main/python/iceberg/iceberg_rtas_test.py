@@ -315,6 +315,7 @@ def test_rtas_partitioned_table_unsupported_partition_fallback(
 
 @iceberg
 @ignore_order(local=True)
+@allow_non_gpu('AppendDataExec')
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 def test_rtas_from_values(spark_tmp_table_factory,
                           partition_table):

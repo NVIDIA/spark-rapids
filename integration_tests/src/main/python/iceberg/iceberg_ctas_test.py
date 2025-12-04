@@ -255,6 +255,7 @@ def test_ctas_partitioned_table_unsupported_partition_fallback(
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
+@allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
 def test_ctas_from_values(spark_tmp_table_factory,
                           partition_table):
     table_prop = {
@@ -290,8 +291,7 @@ def test_ctas_from_values(spark_tmp_table_factory,
 @ignore_order(local=True)
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
-    pytest.param("year(_c9)", 
-                 id="triple_datetime_transforms"),
+    pytest.param("year(_c9)", id="triple_datetime_transforms"),
 ])
 def test_ctas_aqe(spark_tmp_table_factory, partition_col_sql):
     """
