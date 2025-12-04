@@ -90,7 +90,7 @@ def test_insert_overwrite_unpartitioned_table(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu('AppendDataExec')
+@allow_non_gpu('OverwriteByExpressionExec')
 def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory):
     """Test INSERT OVERWRITE on unpartitioned tables with VALUES syntax."""
     base_table_name = get_full_table_name(spark_tmp_table_factory)

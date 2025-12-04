@@ -30,7 +30,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar => CudfScalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnarToRowExec, GpuDeltaWrite, GpuExec, GpuMetric, GpuWrite}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuColumnVector, GpuDeltaWrite, GpuExec, GpuMetric, GpuWrite}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
