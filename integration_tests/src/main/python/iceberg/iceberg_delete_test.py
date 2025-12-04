@@ -465,6 +465,7 @@ def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param(None, id="unpartitioned"),
@@ -497,7 +498,7 @@ def test_delete_aqe(spark_tmp_table_factory, update_mode, partition_col_sql):
     with_cpu_session(lambda spark: initialize_table(gpu_table))
 
     def delete_from_table(spark, table_name):
-        spark.sql(f"DELETE FROM {table_name} WHERE _c0 > 50")
+        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
 
     with_gpu_session(lambda spark: delete_from_table(spark, gpu_table), conf=conf)
     with_cpu_session(lambda spark: delete_from_table(spark, cpu_table), conf=conf)

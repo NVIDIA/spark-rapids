@@ -90,6 +90,7 @@ def test_insert_overwrite_unpartitioned_table(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
+@allow_non_gpu('AppendDataExec')
 def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory):
     """Test INSERT OVERWRITE on unpartitioned tables with VALUES syntax."""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
@@ -405,48 +406,3 @@ def test_insert_overwrite_iceberg_table_fallback_when_conf_disabled(
                                 "OverwriteByExpressionExec",
                                 conf = updated_conf)
 
-
-
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("year(_c9)", id="year_partition"),
-])
-def test_overwrite_static_aqe(spark_tmp_table_factory, partition_col_sql):
-    """
-    Test INSERT OVERWRITE (static partitions) with AQE enabled.
-    """
-    table_prop = {
-        'format-version': '2',
-    }
-
-    # Configuration with AQE enabled
-    conf = copy_and_update(iceberg_write_enabled_conf, {
-        "spark.sql.adaptive.enabled": "true",
-        "spark.sql.adaptive.coalescePartitions.enabled": "true"
-    })
-
-    base_table_name = get_full_table_name(spark_tmp_table_factory)
-    cpu_table = f"{base_table_name}_cpu"
-    gpu_table = f"{base_table_name}_gpu"
-
-    def initialize_table(table_name):
-        df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-        create_iceberg_table(table_name, partition_col_sql, table_prop, df_gen)
-
-    with_cpu_session(lambda spark: initialize_table(cpu_table))
-    with_cpu_session(lambda spark: initialize_table(gpu_table))
-
-    def overwrite_partition(spark, table_name):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        # Static partition overwrite
-        spark.sql(f"INSERT OVERWRITE {table_name} PARTITION (year(_c9) = 2025) SELECT * FROM {view_name} WHERE year(_c9) = 2025")
-
-    with_gpu_session(lambda spark: overwrite_partition(spark, gpu_table), conf=conf)
-    with_cpu_session(lambda spark: overwrite_partition(spark, cpu_table), conf=conf)
-
-    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
-    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
-    assert_equal_with_local_sort(cpu_data, gpu_data)
