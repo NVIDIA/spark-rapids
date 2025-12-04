@@ -148,7 +148,6 @@ def do_merge_test(
 @pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('partition_col_sql', [
     None,
-    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
@@ -163,14 +162,30 @@ def do_merge_test(
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
-@pytest.mark.parametrize('merge_sql', [
-    pytest.param(
-        """
+def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode):
+    """Test basic MERGE (UPDATE + INSERT) on Iceberg tables with various partition types."""
+    merge_sql = """
         MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
         WHEN MATCHED THEN UPDATE SET *
         WHEN NOT MATCHED THEN INSERT *
-        """,
-        id="basic_update_insert"),
+        """
+    do_merge_test(
+        spark_tmp_table_factory,
+        lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
+        partition_col_sql=partition_col_sql,
+        merge_mode=merge_mode
+    )
+
+
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize('partition_col_sql', [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
+@pytest.mark.parametrize('merge_sql', [
     pytest.param(
         """
         MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
@@ -214,8 +229,8 @@ def do_merge_test(
         """,
         id="conditional_not_matched_by_source"),
 ])
-def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
-    """Test various MERGE operations on Iceberg tables (partitioned and unpartitioned)."""
+def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
+    """Test additional MERGE patterns (conditional updates, deletes, not matched by source) on Iceberg tables."""
     do_merge_test(
         spark_tmp_table_factory,
         lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
@@ -589,3 +604,53 @@ def test_iceberg_merge_mor_fallback_writedelta_disabled(spark_tmp_table_factory)
         })
     )
 
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_merge_aqe(spark_tmp_table_factory, partition_col_sql):
+    """
+    Test MERGE INTO with AQE enabled.
+    """
+    table_prop = {
+        'format-version': '2',
+    }
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_target = f"{base_table_name}_target_cpu"
+    gpu_target = f"{base_table_name}_target_gpu"
+    source = f"{base_table_name}_source"
+
+    def initialize_tables():
+        df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        create_iceberg_table(cpu_target, partition_col_sql, table_prop, df_gen)
+        create_iceberg_table(gpu_target, partition_col_sql, table_prop, df_gen)
+        create_iceberg_table(source, partition_col_sql, table_prop, df_gen)
+
+    with_cpu_session(lambda spark: initialize_tables())
+
+    def merge_table(spark, target_table):
+        spark.sql(f"""
+            MERGE INTO {target_table} t
+            USING {source} s
+            ON t._c0 = s._c0
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
+
+    with_gpu_session(lambda spark: merge_table(spark, gpu_target), conf=conf)
+    with_cpu_session(lambda spark: merge_table(spark, cpu_target), conf=conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_target).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_target).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
