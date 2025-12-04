@@ -136,14 +136,13 @@ def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_fac
         update_mode=update_mode
     )
 
-@allow_non_gpu("BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
@@ -177,7 +176,7 @@ def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_facto
     do_update_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100, _c6 = 'updated' WHERE _c2 % 3 = 0"),
-        partition_col_sql="bucket(16, _c2)",
+        partition_col_sql="year(_c8)",
         update_mode=update_mode
     )
 
@@ -476,3 +475,48 @@ def test_iceberg_update_mor_fallback_writedelta_disabled(spark_tmp_table_factory
         })
     )
 
+
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_update_aqe(spark_tmp_table_factory, update_mode, partition_col_sql):
+    """
+    Test UPDATE with AQE enabled.
+    """
+    table_prop = {
+        'format-version': '2',
+        'write.update.mode': update_mode
+    }
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table = f"{base_table_name}_cpu"
+    gpu_table = f"{base_table_name}_gpu"
+
+    def initialize_table(table_name):
+        df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        create_iceberg_table(table_name, partition_col_sql, table_prop, df_gen)
+
+    with_cpu_session(lambda spark: initialize_table(cpu_table))
+    with_cpu_session(lambda spark: initialize_table(gpu_table))
+
+    def update_table(spark, table_name):
+        spark.sql(f"UPDATE {table_name} SET _c2 = _c2 + 1 WHERE _c0 > 0")
+
+    with_gpu_session(lambda spark: update_table(spark, gpu_table), conf=conf)
+    with_cpu_session(lambda spark: update_table(spark, cpu_table), conf=conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)

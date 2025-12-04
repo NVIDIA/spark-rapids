@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.Try
 
-import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuRowToColumnarExec, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, TargetSize, WriteFileOp}
+import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, WriteFileOp}
+import com.nvidia.spark.rapids.iceberg.IcebergProviderImpl.checkChildPlan
 import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.functions._
@@ -31,6 +32,7 @@ import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.connector.write.Write
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, GpuAppendDataExec, GpuOverwriteByExpressionExec, GpuOverwritePartitionsDynamicExec, GpuReplaceDataExec, GpuWriteDeltaExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec, WriteDeltaExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.types.{DateType, TimestampType}
@@ -177,6 +179,8 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpuCtas(cpuExec, meta)
+
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(
@@ -208,6 +212,8 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpuRtas(cpuExec, meta)
+
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(
@@ -238,15 +244,13 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: AppendDataExec, meta: AppendDataExecMeta): GpuExec = {
-    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
-    if (!child.supportsColumnar) {
-      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
-    }
     GpuAppendDataExec(
-      child,
+      meta.childPlans.head.convertIfNeeded(),
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
   }
@@ -266,16 +270,14 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: OverwritePartitionsDynamicExec,
                             meta: OverwritePartitionsDynamicExecMeta): GpuExec = {
-    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
-    if (!child.supportsColumnar) {
-      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
-    }
     GpuOverwritePartitionsDynamicExec(
-      child,
+      meta.childPlans.head.convertIfNeeded(),
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
   }
@@ -295,16 +297,14 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: OverwriteByExpressionExec,
                             meta: OverwriteByExpressionExecMeta): GpuExec = {
-    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
-    if (!child.supportsColumnar) {
-      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
-    }
     GpuOverwriteByExpressionExec(
-      child,
+      meta.childPlans.head.convertIfNeeded(),
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
   }
@@ -366,15 +366,13 @@ class IcebergProviderImpl extends IcebergProvider {
     FileFormatChecks.tag(meta, cpuExec.query.schema, IcebergFormatType, WriteFileOp)
 
     GpuSparkWrite.tagForGpu(cpuExec.write, meta)
+
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: ReplaceDataExec, meta: ReplaceDataExecMeta): GpuExec = {
-    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
-    if (!child.supportsColumnar) {
-      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
-    }
     GpuReplaceDataExec(
-      child,
+      meta.childPlans.head.convertIfNeeded(),
       cpuExec.refreshCache,
       GpuSparkWrite.convert(cpuExec.write))
   }
@@ -395,17 +393,26 @@ class IcebergProviderImpl extends IcebergProvider {
       IcebergFormatType, WriteFileOp)
 
     GpuSparkPositionDeltaWrite.tagForGpu(cpuExec.write, meta)
+
+    checkChildPlan(meta)
   }
 
   private def convertToGpu(cpuExec: WriteDeltaExec, meta: WriteDeltaExecMeta): GpuExec = {
-    var child: SparkPlan = meta.childPlans.head.convertIfNeeded()
-    if (!child.supportsColumnar) {
-      child = GpuRowToColumnarExec(child, TargetSize(meta.conf.gpuTargetBatchSizeBytes))
-    }
     GpuWriteDeltaExec(
-      child,
+      meta.childPlans.head.convertIfNeeded(),
       cpuExec.refreshCache,
       cpuExec.projections,
       GpuSparkPositionDeltaWrite.convert(cpuExec.write))
+  }
+}
+
+object IcebergProviderImpl {
+  def checkChildPlan[T <: SparkPlan](meta: SparkPlanMeta[T]): Unit = {
+    if (meta.childPlans.nonEmpty) {
+      val childMeta = meta.childPlans.head
+      if (!childMeta.wrapped.isInstanceOf[AdaptiveSparkPlanExec] && !childMeta.canThisBeReplaced) {
+        meta.willNotWorkOnGpu("Because child can't run gpu")
+      }
+    }
   }
 }
