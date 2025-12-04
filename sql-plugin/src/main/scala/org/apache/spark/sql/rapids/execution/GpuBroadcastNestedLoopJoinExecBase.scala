@@ -358,16 +358,117 @@ object GpuBroadcastNestedLoopJoinExecBase {
             builtBatch, stream, compiledAst, opTime, joinTime)
         }
       } else {
-        val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
-        new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
-          stream, streamAttributes, targetSize, sizeEstimateThreshold, compiledAst,
-          opTime = opTime, joinTime = joinTime)
+        if (isDegenerateLeftOuterJoin(joinType, buildSide, builtBatch, streamAttributes)) {
+          degenerateLeftOuterJoinIterator(stream, streamAttributes, builtBatch,
+            boundCondition.get)
+        } else {
+          val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
+          new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
+            stream, streamAttributes, targetSize, sizeEstimateThreshold, compiledAst,
+            opTime = opTime, joinTime = joinTime)
+        }
       }
     }
     joinIterator.map { cb =>
         numOutputRows += cb.numRows()
         numOutputBatches += 1
         cb
+    }
+  }
+
+  // A degenerate left-outer join means either the build or stream side has no columns.
+  // There are degenerate cases already found for the left-outer join with BuildRight.
+  // So now it just takes care of the left-outer join here.
+  private def isDegenerateLeftOuterJoin(joinType: JoinType, side: GpuBuildSide,
+      builtBatch: LazySpillableColumnarBatch, streamAtts: Seq[Attribute]): Boolean = {
+    joinType match {
+      case LeftOuter if side == GpuBuildRight =>  // now only support BuildRight
+        // build or stream has no columns
+        builtBatch.numCols == 0 || streamAtts.isEmpty
+      case _ => false
+    }
+  }
+
+  private def degenerateLeftOuterJoinIterator(
+      stream: Iterator[LazySpillableColumnarBatch],
+      streamAttrs: Seq[Attribute],
+      builtBatch: LazySpillableColumnarBatch,
+      boundCondition: GpuExpression): Iterator[ColumnarBatch] = {
+    // Now only support BuildRight so the stream is left side.
+    if (streamAttrs.isEmpty) { // Stream has no columns
+      new Iterator[ColumnarBatch] with TaskAutoCloseableResource {
+        override def hasNext: Boolean = stream.hasNext
+
+        override def next(): ColumnarBatch = {
+          withResource(stream.next()) { streamSpill =>
+            repeat(streamSpill.numRows)
+          }
+        }
+
+        // Since the stream has no columns, so the matched rows from the build side
+        // are always the same for all the stream rows. Cache it.
+        private val rightMatchedCb: LazySpillableColumnarBatch = use({
+          val filteredBatch = withRetryNoSplit(builtBatch) { _ =>
+            GpuFilter(builtBatch.getBatch, boundCondition, NoopMetric, NoopMetric, NoopMetric)
+          }
+          val matchedBatch = if (filteredBatch.numRows() <= 0) {
+            // no match rows, return one null row
+            filteredBatch.close()
+            val oneNullCols = builtBatch.dataTypes.safeMap { tp =>
+              GpuColumnVector.fromNull(1, tp)
+            }
+            new ColumnarBatch(oneNullCols.asInstanceOf[Array[ColumnVector]], 1)
+          } else {
+            filteredBatch
+          }
+          withResource(matchedBatch) { _ =>
+            LazySpillableColumnarBatch(matchedBatch, "degen nested-loop matched batch")
+          }
+        })
+
+        private val repeat: Int => ColumnarBatch = {
+          if (rightMatchedCb.numCols > 0) {
+            (numRows) => withRetryNoSplit[ColumnarBatch] {
+              withResource(GpuColumnVector.from(rightMatchedCb.getBatch)) { matchedTbl =>
+                // no columns in stream, so the output is equal to repeating the matched
+                // built table "numRows" (the rows number of a stream batch) times.
+                withResource(matchedTbl.repeat(numRows)) { tbl =>
+                  rightMatchedCb.allowSpilling()
+                  GpuColumnVector.from(tbl, rightMatchedCb.dataTypes)
+                }
+              }
+            }
+          } else { // no columns
+            (numRows) => new ColumnarBatch(Array(), (numRows * rightMatchedCb.numRows))
+          }
+        }
+      }
+    } else { // (streamAttrs.nonEmpty && builtBatch.numCols == 0), aka build has no columns.
+      stream.map { scb =>
+        withRetryNoSplit(scb) { _ =>
+          // Build has no columns (but may have rows), so each matched stream row will
+          // match "builtBatch.numRows" times. And keep the notmatched rows unchanged,
+          // aka 1 for the repeat count.
+          val repeatCnts = if (builtBatch.numRows == 0) {
+            // Build side has no rows, so all stream rows should appear once (unmatched)
+            withResource(Scalar.fromInt(1)) { oneScalar =>
+              cudf.ColumnVector.fromScalar(oneScalar, scb.numRows)
+            }
+          } else {
+            withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
+              withResource(Scalar.fromInt(builtBatch.numRows)) { matchedRowsCnt =>
+                withResource(Scalar.fromInt(1)) { notmatchedRowsCnt =>
+                  matched.getBase.ifElse(matchedRowsCnt, notmatchedRowsCnt)
+                }
+              }
+            }
+          }
+          val retTbl = withResource(repeatCnts) { _ =>
+            withResource(GpuColumnVector.from(scb.getBatch))(_.repeat(repeatCnts))
+          }
+          withResource(retTbl)(_ => GpuColumnVector.from(retTbl, scb.dataTypes))
+        }
+      }
     }
   }
 
