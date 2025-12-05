@@ -206,6 +206,7 @@ def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_facto
 
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 def test_iceberg_update_mor_then_select_count(spark_tmp_table_factory):
     """Test UPDATE with merge-on-read mode, then select count with the same update filter.
