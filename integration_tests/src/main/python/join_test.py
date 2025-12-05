@@ -476,6 +476,15 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type, kudo_ena
     conf = {kudo_enabled_conf_key: kudo_enabled}
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
+# because this infers the schema for CSV we need to allow some ops to be on the CPU
+@allow_non_gpu("CollectLimitExec", "FileSourceScanExec", "DeserializeToObjectExec")
+def test_empty_cross_side_with_limit(std_input_path):
+    def do_join(spark):
+        t0 = spark.read.csv(std_input_path + '/t0.csv', header=True, inferSchema=True)
+        t1 = spark.read.csv(std_input_path + '/t1.csv', header=True, inferSchema=True)
+        return t0.crossJoin(t1).limit(21)
+    assert_gpu_and_cpu_are_equal_collect(do_join)
+
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
