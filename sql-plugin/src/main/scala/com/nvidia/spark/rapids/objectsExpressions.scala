@@ -34,7 +34,7 @@ class StaticInvokeMeta(expr: StaticInvoke,
     ExternalSource.tagForGpu(expr, this)
   }
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     ExternalSource.convertToGpu(expr, this)
   }
 }

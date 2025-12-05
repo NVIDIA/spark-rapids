@@ -22,7 +22,7 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 import scala.annotation.tailrec
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable, RapidsConf}
+import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuCpuBridgeExpression, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable, RapidsConf}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, LeafExpression, PlanExpression}
@@ -125,6 +125,9 @@ class GpuEquivalentExpressions {
    */
   private def childrenToRecurse(expr: Expression): Seq[Expression] = expr match {
     case _: CodegenFallback => Nil
+    case bridge: GpuCpuBridgeExpression =>
+      // Skip the CPU expressions we don't want to try and combine them
+      bridge.gpuInputs
     case i: GpuIf =>
       if (hasSideEffects(i.trueExpr) || hasSideEffects(i.falseExpr)) {
         i.predicateExpr :: Nil

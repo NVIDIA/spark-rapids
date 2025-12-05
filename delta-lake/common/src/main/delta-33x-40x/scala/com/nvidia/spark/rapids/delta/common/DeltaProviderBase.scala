@@ -44,7 +44,7 @@ case class GpuIncrementMetricMeta(
   override val conf: RapidsConf,
   p: Option[RapidsMeta[_, _, _]],
   r: DataFromReplacementRule) extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) {
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val gpuChild = childExprs.head.convertToGpu()
     GpuIncrementMetric(cpuInc, gpuChild)
   }

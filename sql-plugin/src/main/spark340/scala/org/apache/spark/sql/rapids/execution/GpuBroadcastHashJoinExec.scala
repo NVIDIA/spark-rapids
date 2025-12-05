@@ -48,7 +48,8 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
+    val allCanBeAst = conditionMeta.forall(_.canThisBeAst)
+    val (joinCondition, filterCondition) = if (allCanBeAst) {
       (condition, None)
     } else {
       (None, condition)

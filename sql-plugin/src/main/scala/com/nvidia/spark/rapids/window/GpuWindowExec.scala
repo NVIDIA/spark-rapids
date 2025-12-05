@@ -61,7 +61,11 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
+    CPU_BRIDGE_PROCESSING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME),
+    CPU_BRIDGE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_WAIT_TIME))
 
   override def output: Seq[Attribute] = windowOps.map(_.toAttribute)
 
@@ -165,9 +169,12 @@ case class GpuWindowExec(
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val opTime = gpuLongMetric(GpuMetric.OP_TIME_LEGACY)
 
-    val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
+    val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output,
+      allMetrics)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec,
+      child.output, allMetrics)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output,
+      allMetrics)
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,

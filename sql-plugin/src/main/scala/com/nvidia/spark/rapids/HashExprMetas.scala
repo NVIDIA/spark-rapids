@@ -43,7 +43,7 @@ case class Murmur3HashExprMeta[HEINT <: HashExpression[Int]](
       willNotWorkOnGpu("hashing arrays with structs is not supported")
     }
   }
-  override def convertToGpu(): GpuExpression =
+  override def convertToGpuImpl(): GpuExpression =
     GpuMurmur3Hash(childExprs.map(_.convertToGpu()), expr.seed)
 }
 
@@ -70,7 +70,7 @@ case class XxHash64ExprMeta[HE <: HashExpression[Long]](
     }
   }
 
-  override def convertToGpu(): GpuExpression =
+  override def convertToGpuImpl(): GpuExpression =
     GpuXxHash64(childExprs.map(_.convertToGpu()), expr.seed)
 }
 

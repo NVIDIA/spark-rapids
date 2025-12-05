@@ -32,7 +32,26 @@ delta_meta_allow = [
     "ObjectHashAggregateExec",
     "ProjectExec",
     "SerializeFromObjectExec",
-    "SortExec"
+    "SortExec",
+    "Add",
+    "ScalaUDF",
+    "And",
+    "Subtract",
+    "GetStructField",
+    "Coalesce",
+    "AssertNotNull",
+    "Divide",
+    "Cast",
+    "CaseWhen",
+    "GreaterThan",
+    "LessThan",
+    "KnownNotNull",
+    "Or",
+    "IsNull",
+    "Not",
+    "EqualTo",
+    "CheckOverflowInTableWrite",
+    "JsonToStructs"
 ]
 
 delta_write = ["RapidsDeltaWrite"]
