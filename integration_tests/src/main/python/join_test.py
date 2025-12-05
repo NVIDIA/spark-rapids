@@ -1693,3 +1693,36 @@ def test_join_gatherer_size_estimate_threshold(join_type, threshold, batch_size)
             ("b", RepeatSeqGen(StringGen(pattern="[abc]{1,5}"), length = 5))], nullable=False), 1024, 1024)
         return left_df.join(right_df, left_df.a == right_df.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["LeftOuter", "RightOuter"], ids=idfn)
+def test_join_degenerate_outer(join_type):
+    # A degenerate join shows up with one side of the join (build or probe) has no columns
+    # This can happen when a condition only deals with a single side of the join.
+    # and the other side has no columns (only rows), because none of the columns
+    # are output. The empty side must be the oposite of the condition side, or there
+    # would be at least one column output by the join (the condition column).
+    if join_type == "LeftOuter":
+        empty_side = "right"
+        condition_side = "left"
+    else:
+        # RightOuter
+        empty_side = "left"
+        condition_side = "right"
+    left_size, right_size = (100, 100)
+    def do_join(spark):
+        left_df = gen_df(spark, [("l_key", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())), 
+          ("l_value", IntegerGen())], left_size)
+        right_df = gen_df(spark, [("r_key", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+          ("r_value", IntegerGen())], right_size)
+        if condition_side == "left":
+            cond = [left_df.l_key.cast("boolean")]
+        else:
+            cond = [right_df.r_key.cast("boolean")]
+        temp_df = left_df.join(right_df, cond, join_type)
+        if empty_side == "right":
+            return temp_df.selectExpr("l_key", "l_value")
+        else:
+            return temp_df.selectExpr("r_key", "r_value")
+    assert_gpu_and_cpu_are_equal_collect(do_join)
