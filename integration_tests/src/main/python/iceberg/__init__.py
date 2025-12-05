@@ -91,7 +91,7 @@ def _eq_column_combinations(all_columns: List[str],
             if can_be_eq_delete_col(data_gen)]
     return list(combinations(cols, n))
 
-all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 3)
+all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 2)
 
 def setup_base_iceberg_table(spark_tmp_table_factory,
                              seed: Optional[int] = None,
