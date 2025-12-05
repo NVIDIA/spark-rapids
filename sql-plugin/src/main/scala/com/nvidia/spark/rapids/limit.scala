@@ -33,13 +33,14 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Pa
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
-import org.apache.spark.sql.types.{StructField, StructType}
+import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuBaseLimitIterator(
     input: Iterator[ColumnarBatch],
     limit: Int,
     offset: Int,
+    dataTypes : Array[DataType],
     opTime: GpuMetric,
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric) extends Iterator[ColumnarBatch] {
@@ -54,7 +55,6 @@ class GpuBaseLimitIterator(
     }
 
     var batch = input.next()
-    val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
 
     // In each partition, we need to skip `offset` rows
     while (batch != null && remainingOffset >= batch.numRows()) {
@@ -158,7 +158,8 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     rdd.mapPartitions { iter =>
-      new GpuBaseLimitIterator(iter, limit, offset, opTime, numOutputBatches, numOutputRows)
+      new GpuBaseLimitIterator(iter, limit, offset, output.map(_.dataType).toArray,
+        opTime, numOutputBatches, numOutputRows)
     }
   }
 
