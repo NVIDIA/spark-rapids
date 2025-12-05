@@ -203,6 +203,49 @@ def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_facto
     )
 
 
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+def test_iceberg_update_mor_then_select_count(spark_tmp_table_factory):
+    """Test UPDATE with merge-on-read mode, then select count with the same update filter.
+
+    This test verifies that after a merge-on-read UPDATE operation, subsequent COUNT(*)
+    queries with the same filter return correct results on both CPU and GPU.
+    Filter is `int_column >= Int.MinValue` to ensure some rows are updated.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+
+    # Phase 1: Initialize tables with data (separate for CPU and GPU)
+    cpu_table_name = f'{base_table_name}_cpu'
+    gpu_table_name = f'{base_table_name}_gpu'
+    create_iceberg_table_with_data(cpu_table_name, update_mode='merge-on-read', partition_col_sql="hour(_c9)")
+    create_iceberg_table_with_data(gpu_table_name, update_mode='merge-on-read', partition_col_sql="hour(_c9)")
+
+    # Phase 2: Execute UPDATE on both CPU and GPU tables
+    def _do_update(spark, table_name):
+        spark.sql(f"UPDATE {table_name} SET _c2 = _c2 + 1, _c3 = _c3 + 1 WHERE _c2 >= -2147483648")
+
+    # UPDATE on CPU
+    with_cpu_session(lambda spark: _do_update(spark, cpu_table_name))
+
+    # UPDATE on GPU
+    with_gpu_session(lambda spark: _do_update(spark, gpu_table_name), conf=iceberg_update_cow_enabled_conf)
+
+    # Phase 3: Query COUNT(*) with the same filter and compare results
+    def _query_count(spark, table_name):
+        return spark.sql(f"SELECT COUNT(*) as cnt FROM {table_name} WHERE _c2 >= -2147483648").collect()[0]['cnt']
+
+    # Query count on CPU
+    cpu_count = with_cpu_session(lambda spark: _query_count(spark, cpu_table_name))
+
+    # Query count on GPU
+    gpu_count = with_gpu_session(lambda spark: _query_count(spark, gpu_table_name))
+
+    # Phase 4: Compare CPU and GPU counts
+    assert cpu_count == gpu_count, f"Count mismatch: CPU={cpu_count}, GPU={gpu_count}"
+
+
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
