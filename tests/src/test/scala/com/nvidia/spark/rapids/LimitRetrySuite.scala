@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
-import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class LimitRetrySuite extends RmmSparkRetrySuiteBase {
@@ -79,7 +79,8 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       val limitIter = new GpuBaseLimitIterator(
         // 3 batches as input, and each has 8 rows
         (0 until totalRows).grouped(8).map(buildBatch(_)).toList.toIterator,
-        limit, offset, NoopMetric, NoopMetric, NoopMetric)
+        limit, offset, Array[DataType](IntegerType),
+        NoopMetric, NoopMetric, NoopMetric)
       var leftRows = if (limit > totalRows) totalRows - offset else limit - offset
       var curValue = offset
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
