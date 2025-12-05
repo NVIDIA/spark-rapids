@@ -30,4 +30,18 @@ trait RapidsTestsBaseTrait {
   def shouldRun(testName: String): Boolean = {
     BackendTestSettings.shouldRun(getClass.getCanonicalName, testName)
   }
+
+  protected def getJavaMajorVersion(): Int = {
+    val version = System.getProperty("java.version")
+    // Allow these formats:
+    // 1.8.0_72-ea
+    // 9-ea
+    // 9
+    // 11.0.1
+    val versionRegex = """(1\.)?(\d+)([._].+)?""".r
+    version match {
+      case versionRegex(_, major, _) => major.toInt
+      case _ => throw new IllegalStateException(s"Cannot parse java version: $version")
+    }
+  }
 }
