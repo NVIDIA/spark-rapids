@@ -129,7 +129,12 @@ case class GpuCheckDeltaInvariant(
 object GpuCheckDeltaInvariant extends Logging {
   private val exprRule = GpuOverrides.expr[CheckDeltaInvariant](
     "checks a Delta Lake invariant expression",
-    ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.all, TypeSig.all),
+    ExprChecks.projectOnly(
+      TypeSig.all,
+      TypeSig.all,
+      paramCheck = Seq(ParamCheck("input", TypeSig.all, TypeSig.all)),
+      repeatingParamCheck = Some(RepeatingParamCheck("extra", TypeSig.all, TypeSig.all))
+    ),
     (c, conf, p, r) => new GpuCheckDeltaInvariantMeta(c, conf, p, r))
 
   def maybeConvertToGpu(
@@ -162,7 +167,7 @@ class GpuCheckDeltaInvariantMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends UnaryExprMeta[CheckDeltaInvariant](check, conf, parent, rule) {
+    extends ExprMeta[CheckDeltaInvariant](check, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
     wrapped.constraint match {
@@ -171,10 +176,14 @@ class GpuCheckDeltaInvariantMeta(
     }
   }
 
-  override def convertToGpu(child: Expression): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
+    val child = childExprs.head.convertToGpu()
+    // Delta 4.0 provides columnExtractors as Seq[(String, Expression)] while older
+    // versions provide Map[String, Expression]. Normalize to Map for GPU version.
+    val colExtractorsAsMap: Map[String, Expression] = wrapped.columnExtractors.toMap
     GpuCheckDeltaInvariant(
       child,
-      wrapped.columnExtractors,  // leave these on CPU
+      colExtractorsAsMap,
       wrapped.constraint)
   }
 }

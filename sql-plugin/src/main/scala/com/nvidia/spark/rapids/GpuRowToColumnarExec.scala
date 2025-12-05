@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
@@ -599,7 +598,7 @@ class RowToColumnarIterator(
   }
 
   private def buildBatch(): ColumnarBatch = {
-    withResource(new NvtxRange("RowToColumnar", NvtxColor.CYAN)) { _ =>
+    NvtxRegistry.ROW_TO_COLUMNAR {
       val streamStart = System.nanoTime()
       // estimate the size of the first batch based on the schema
       if (targetRows == 0) {
@@ -643,8 +642,7 @@ class RowToColumnarIterator(
         Option(TaskContext.get())
             .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
-        val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
-            opTime)) { _ =>
+        val ret = NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
           RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
             builders.tryBuild(rowCount)
           }

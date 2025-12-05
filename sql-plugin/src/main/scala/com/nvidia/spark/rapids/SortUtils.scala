@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, OrderByArg, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
@@ -211,7 +211,7 @@ class GpuSorter(
    * @return a sorted table.
    */
   final def sort(inputBatch: ColumnarBatch, sortTime: GpuMetric): Table = {
-    withResource(new NvtxWithMetrics("sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.SORT, sortTime) {
       withResource(GpuColumnVector.from(inputBatch)) { toSortTbl =>
         toSortTbl.orderBy(cudfOrdering: _*)
       }
@@ -253,7 +253,7 @@ class GpuSorter(
     closeOnExcept(spillableBatches.toSeq) { _ =>
       assert(spillableBatches.nonEmpty)
     }
-    withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.MERGE_SORT, sortTime) {
       if (spillableBatches.size == 1) {
         // Single batch no need for a merge sort
         spillableBatches.pop()
@@ -335,7 +335,7 @@ class GpuSorter(
    * @return a gather map column
    */
   final def computeSortOrder(inputBatch: ColumnarBatch, sortTime: GpuMetric): ColumnVector = {
-    withResource(new NvtxWithMetrics("sort_order", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.SORT_ORDER, sortTime) {
       withResource(GpuColumnVector.from(inputBatch)) { toSortTbl =>
         toSortTbl.sortOrder(cudfOrdering: _*)
       }
@@ -384,7 +384,7 @@ class GpuSorter(
       // In cases where we don't need the computed columns again this can save some time
       withResource(computeSortOrder(toSort, sortTime)) { gatherMap =>
         withResource(GpuColumnVector.from(inputBatch)) { inputTable =>
-          withResource(new NvtxWithMetrics("gather", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.GATHER_SORT, sortTime) {
             inputTable.gather(gatherMap)
           }
         }
@@ -405,7 +405,7 @@ class GpuSorter(
       sortTime: GpuMetric,
       opTime: GpuMetric): ColumnarBatch = {
     RmmRapidsRetryIterator.withRetryNoSplit(inputSbBatch) { _ =>
-      withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.SORT_OP, opTime) {
         withResource(inputSbBatch.getColumnarBatch()) { inputBatch =>
           fullySortBatch(inputBatch, sortTime)
         }

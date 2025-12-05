@@ -95,7 +95,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration. Array/Struct/Map columns are unsupported for write acceleration.|true|Runtime
 <a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to false disables all Iceberg acceleration|true|Runtime
 <a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to false disables Iceberg input acceleration|true|Runtime
-<a name="sql.format.iceberg.write.enabled"></a>spark.rapids.sql.format.iceberg.write.enabled|When set to false disables Iceberg write acceleration|false|Runtime
+<a name="sql.format.iceberg.write.enabled"></a>spark.rapids.sql.format.iceberg.write.enabled|When set to false disables Iceberg write acceleration|true|Runtime
 <a name="sql.format.json.enabled"></a>spark.rapids.sql.format.json.enabled|When set to true enables all json input and output acceleration. (only input is currently supported anyways)|true|Runtime
 <a name="sql.format.json.read.enabled"></a>spark.rapids.sql.format.json.read.enabled|When set to true enables json input acceleration|true|Runtime
 <a name="sql.format.orc.enabled"></a>spark.rapids.sql.format.orc.enabled|When set to false disables all orc input and output acceleration|true|Runtime
@@ -310,6 +310,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.MapEntries"></a>spark.rapids.sql.expression.MapEntries|`map_entries`|Returns an unordered array of all entries in the given map|true|None|
 <a name="sql.expression.MapFilter"></a>spark.rapids.sql.expression.MapFilter|`map_filter`|Filters entries in a map using the function|true|None|
 <a name="sql.expression.MapFromArrays"></a>spark.rapids.sql.expression.MapFromArrays|`map_from_arrays`|Creates a new map from two arrays|true|None|
+<a name="sql.expression.MapFromEntries"></a>spark.rapids.sql.expression.MapFromEntries|`map_from_entries`|Creates a map from an array of entries (structs of key-value pairs)|true|None|
 <a name="sql.expression.MapKeys"></a>spark.rapids.sql.expression.MapKeys|`map_keys`|Returns an unordered array containing the keys of the map|true|None|
 <a name="sql.expression.MapValues"></a>spark.rapids.sql.expression.MapValues|`map_values`|Returns an unordered array containing the values of the map|true|None|
 <a name="sql.expression.MapZipWith"></a>spark.rapids.sql.expression.MapZipWith|`map_zip_with`|Filters entries in a map using the function|true|None|

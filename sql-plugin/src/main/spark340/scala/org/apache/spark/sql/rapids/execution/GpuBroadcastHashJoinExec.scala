@@ -27,6 +27,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -66,7 +67,8 @@ class GpuBroadcastHashJoinMeta(
       join.joinType,
       buildSide,
       joinCondition,
-      left, right)
+      left, right,
+      join.isNullAwareAntiJoin)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
     filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
@@ -80,5 +82,6 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right)
+    right: SparkPlan,
+    isNullAwareAntiJoin: Boolean) extends GpuBroadcastHashJoinExecBase(
+      leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin)

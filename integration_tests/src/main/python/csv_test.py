@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import get_non_gpu_allowed, is_not_utc
+from conftest import get_non_gpu_allowed, is_not_utc, is_gbk_supported
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -701,3 +701,22 @@ def test_read_case_col_name(spark_tmp_path, spark_tmp_table_factory, read_func, 
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : reader(spark).selectExpr(col_name),
             conf=all_confs)
+
+@ignore_order(local=True)
+@allow_non_gpu('CollectLimitExec')
+@pytest.mark.skipif(not is_gbk_supported(), reason="GBK is not supported")
+def test_csv_read_gbk_encoded_data(std_input_path):
+    # Conf does not work before 4.0.0, so verify even setting to false it should still work.
+    legacy_charset = "false"
+    if is_spark_400_or_later() or is_databricks143_or_later():
+        # true from Spark 4.0.0 or DB 143 to pass the test for GBK.
+        # We can not test the "GBK-with-false" case because Spark will fail the
+        # current app before running into the GPU world.
+        legacy_charset = "true"
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read
+            .option("charset", "GBK")
+            .option("header", "true")
+            .schema("name string, age int, city string, job string")
+            .csv(std_input_path + "/test_gbk.csv"),
+        conf={"spark.sql.legacy.javaCharsets": legacy_charset})

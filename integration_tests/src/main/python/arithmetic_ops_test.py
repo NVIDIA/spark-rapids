@@ -1011,7 +1011,6 @@ def test_log10(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('log10(a)'))
 
 @approximate_float
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/89')
 def test_logarithm():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a log
     data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]

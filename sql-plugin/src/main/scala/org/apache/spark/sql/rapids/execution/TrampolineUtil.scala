@@ -37,6 +37,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
@@ -115,7 +116,10 @@ object TrampolineUtil {
    * @param amountSpilled amount of memory spilled in bytes
    */
   def incTaskMetricsMemoryBytesSpilled(amountSpilled: Long): Unit = {
-    Option(TaskContext.get).foreach(_.taskMetrics().incMemoryBytesSpilled(amountSpilled))
+    Option(TaskContext.get).foreach { tc =>
+      tc.taskMetrics().incMemoryBytesSpilled(amountSpilled)
+      GpuTaskMetrics.get.recordSpillToHost(amountSpilled)
+    }
   }
 
   /**
@@ -129,6 +133,7 @@ object TrampolineUtil {
       if (metrics != null) {
         metrics.incDiskBytesSpilled(amountSpilled)
       }
+      GpuTaskMetrics.get.recordSpillToDisk(amountSpilled)
     })
   }
 
@@ -245,6 +250,9 @@ object TrampolineUtil {
 
   def getSparkHadoopUtilConf: Configuration = SparkHadoopUtil.get.conf
 
+  def markTaskFailed(ctx: TaskContext, error: Throwable): Unit = {
+    ctx.markTaskFailed(error)
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,19 @@
 package com.nvidia.spark.rapids
 
 import java.io.IOException
-import java.nio.charset.StandardCharsets
+import java.nio.charset.{Charset, StandardCharsets}
 
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
@@ -51,7 +52,56 @@ trait ScanWithMetrics {
   var metrics : Map[String, GpuMetric] = Map.empty
 }
 
-object GpuCSVScan {
+object GpuCSVScan extends Logging {
+  private def tryLoadCharset(name: String): Option[Charset] = {
+    try {
+      Some(Charset.forName(name))
+    } catch {
+      case _: IllegalArgumentException =>
+        logWarning(s"Failed to load charset for '$name'")
+        None
+    }
+  }
+
+  private def legacyCharsetEnabled(): Boolean = {
+    try {
+      // Use reflection to determine if this conf is defined to avoid the
+      // complicated shim things due to only a boolean diff in CSV read.
+      SQLConf.getClass.getMethod("LEGACY_JAVA_CHARSETS")
+      // Spark 4.0.0 or later, since this conf is defined, so get the value from it.
+      SQLConf.get.getConfString("spark.sql.legacy.javaCharsets", "false").toBoolean
+    } catch {
+      case _: NoSuchMethodException =>
+        // Spark before 4.0.0, no this conf, so always returns true
+        true
+    }
+  }
+
+  private val utf8Charsets: Set[Charset] = Set(
+    StandardCharsets.UTF_8,
+    StandardCharsets.US_ASCII)
+
+  // May have more in the future
+  private def supportedCharsets(): Set[Charset] = {
+    // Spark restricts charsets in CSV from 4.0.0.
+    // See https://issues.apache.org/jira/browse/SPARK-48857
+    if (legacyCharsetEnabled()) {
+      utf8Charsets ++ tryLoadCharset("GBK")
+    } else {
+      utf8Charsets
+    }
+  }
+
+  private def isSupportedCharset(name: String): Boolean = {
+    try {
+      name != null && supportedCharsets().contains(Charset.forName(name))
+    } catch {
+      case _: IllegalArgumentException => false
+    }
+  }
+
+  def isUTF8Charset(charset: Charset): Boolean = utf8Charsets.contains(charset)
+
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
     tagSupport(
@@ -116,9 +166,9 @@ object GpuCSVScan {
       meta.willNotWorkOnGpu("GPU CSV Parsing does not support charToEscapeQuoteEscaping")
     }
 
-    if (StandardCharsets.UTF_8.name() != parsedOptions.charset &&
-        StandardCharsets.US_ASCII.name() != parsedOptions.charset) {
-      meta.willNotWorkOnGpu("GpuCSVScan only supports UTF8 encoded data")
+    if (!isSupportedCharset(parsedOptions.charset)) {
+      meta.willNotWorkOnGpu(s"GpuCSVScan only supports " +
+        s"${supportedCharsets().mkString("[", ", ", "]")} encoded data")
     }
 
     // TODO parsedOptions.ignoreLeadingWhiteSpaceInRead cudf always does this, but not for strings
@@ -323,7 +373,7 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
     bufferFactory: FACT) extends
     GpuTextBasedPartitionReader[BUFF, FACT](conf, partFile,
       dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
-      maxBytesPerChunk, execMetrics, bufferFactory) {
+      maxBytesPerChunk, execMetrics, bufferFactory, Charset.forName(parsedOptions.charset)) {
 
   /**
    * File format short name used for logging and other things to uniquely identity
@@ -375,8 +425,7 @@ object CSVPartitionReader {
     val dataSize = dataBufferer.getLength
     try {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        withResource(new NvtxWithMetrics(formatName + " decode", NvtxColor.DARK_GREEN,
-          decodeTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.CSV_DECODE, decodeTime) {
           Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
         }
       }

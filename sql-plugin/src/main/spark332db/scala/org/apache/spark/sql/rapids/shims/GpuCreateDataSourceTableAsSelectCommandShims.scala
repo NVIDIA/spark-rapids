@@ -30,6 +30,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -37,6 +38,7 @@ package org.apache.spark.sql.rapids.shims
 
 import java.net.URI
 
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.GpuDataWritingCommand
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
@@ -56,12 +58,12 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     outputColumnNames: Seq[String],
     origProvider: Class[_])
   extends LeafRunnableCommand {
-  assert(query.resolved)
+  assertInTests(query.resolved)
   override def innerChildren: Seq[LogicalPlan] = query :: Nil
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
-    assert(table.tableType != CatalogTableType.VIEW)
-    assert(table.provider.isDefined)
+    assertInTests(table.tableType != CatalogTableType.VIEW)
+    assertInTests(table.provider.isDefined)
 
     val sessionState = sparkSession.sessionState
     val db = table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase)

@@ -180,11 +180,12 @@ export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
 run_delta_lake_tests() {
-  echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
+  echo "run_delta_lake_tests SPARK_VER = $SPARK_VER, SCALA_BINARY_VER = $SCALA_BINARY_VER"
   SPARK_32X_PATTERN="(3\.2\.[0-9])"
   SPARK_33X_PATTERN="(3\.3\.[0-9])"
   SPARK_34X_PATTERN="(3\.4\.[0-9])"
   SPARK_35X_PATTERN="(3\.5\.[3-9])"
+  SPARK_40X_PATTERN="(4\.0\.[0-9])"
 
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
@@ -204,12 +205,21 @@ run_delta_lake_tests() {
     DELTA_LAKE_VERSIONS="3.3.0"
   fi
 
+  if [[ $SPARK_VER =~ $SPARK_40X_PATTERN ]]; then
+    # Delta 4.0.x only supports Scala 2.13 (Spark 4.0 requirement)
+    if [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
+      DELTA_LAKE_VERSIONS="4.0.0"
+    else
+      echo "Skipping Delta Lake 4.0.x tests for Scala $SCALA_BINARY_VER (requires Scala 2.13)"
+    fi
+  fi
+
   if [ -z "$DELTA_LAKE_VERSIONS" ]; then
     echo "Skipping Delta Lake tests. $SPARK_VER"
   else
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
-      if [[ "$v" == "3.3.0" ]]; then
+      if [[ "$v" == "3.3.0" || "$v" == "4.0.0" ]]; then
         DELTA_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
       else 
         DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
@@ -335,6 +345,18 @@ run_pyarrow_tests() {
   ./run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test
 }
 
+run_other_join_modes_tests() {
+  echo "HASH WITH POST JOIN TESTS"
+  export PYSP_TEST_spark_rapids_sql_join_strategy=INNER_HASH_WITH_POST
+  ./run_pyspark_from_build.sh -k 'join'
+
+  echo "SORT MERGE JOIN TESTS"
+  export PYSP_TEST_spark_rapids_sql_join_strategy=INNER_SORT_WITH_POST
+  ./run_pyspark_from_build.sh -k 'join'
+  # reset the config to the default in case other tests run with a join
+  export PYSP_TEST_spark_rapids_sql_join_strategy=AUTO
+}
+
 run_non_utc_time_zone_tests() {
   # select one time zone according to current day of week
   source "${WORKSPACE}/jenkins/test-timezones.sh"
@@ -400,7 +422,8 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
 fi
 
 # Iceberg tests
-if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/13885
+if [[ "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
 fi
 
@@ -440,6 +463,11 @@ fi
 # Pyarrow tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
   run_pyarrow_tests
+fi
+
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/13854
+if [[ "$TEST_MODE" == "EXTRA_JOIN_ONLY" ]]; then
+  run_other_join_modes_tests
 fi
 
 # Non-UTC time zone tests

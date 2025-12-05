@@ -20,7 +20,7 @@ from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, deletion_
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
-    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors
+    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors, is_spark_401_or_later
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
@@ -87,7 +87,7 @@ def test_delta_scan_read(spark_tmp_path):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_read_fallback(spark_tmp_path, use_cdf):
+def test_delta_deletion_vector_read(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true"}
     def setup_tables(spark):
@@ -97,9 +97,8 @@ def test_delta_deletion_vector_read_fallback(spark_tmp_path, use_cdf):
         spark.sql("INSERT INTO delta.`{}` VALUES(1)".format(data_path))
         spark.sql("DELETE FROM delta.`{}` WHERE a = 1".format(data_path))
     with_cpu_session(setup_tables, conf=conf)
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),
-        "FileSourceScanExec",
         conf=conf)
 
 # ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish
@@ -138,33 +137,12 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path),
                                          conf=confs)
 
-# We are adding this test to make sure we fallback to the CPU when deletion vectors are enabled
-# even if we have set the spark.rapids.sql.detectDeltaLogQueries to false which will force the delta
-# queries on to the GPU
-@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec', *delta_meta_allow)
-@delta_lake
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
-                    reason="Delta Lake deletion vector support is required")
-def test_delta_read_with_deletion_vectors_enabled_with_fallback(spark_tmp_path):
-    data_path = spark_tmp_path + "/DELTA_DATA" 
-    gen_list = [("a", int_gen), ("b", string_gen), ("c", long_gen)]
-    delta_conf = {"spark.rapids.sql.detectDeltaLogQueries": "false"}
-    def create_delta(spark):
-        df = gen_df(spark, gen_list).write.format("delta")
-        df.option("delta.enableDeletionVectors", "true")
-        df.save(data_path)
-        spark.sql("DELETE FROM delta.`{}` WHERE a = 1".format(data_path))
-
-    def read_delta_sql(data_path):
-        return lambda spark : spark.sql('select * from delta.`{}` where a > 3'.format(data_path))
-
-    with_cpu_session(create_delta)
-    assert_gpu_fallback_collect(read_delta_sql(data_path), "FileSourceScanExec", conf=delta_conf)
-
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.skipif(is_spark_401_or_later(), \
+    reason="Delta Lake 4.0.0 incompatible with Spark 4.0.1 - ParquetToSparkSchemaConverter API changed")
 @pytest.mark.skipif(not (is_databricks_runtime() or is_spark_340_or_later()), \
                     reason="ParquetToSparkSchemaConverter changes not compatible with Delta Lake")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(

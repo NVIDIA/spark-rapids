@@ -43,7 +43,6 @@ import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonToStructsReader
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
@@ -2082,16 +2081,6 @@ object GpuOverrides extends Logging {
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128).withAllLit(),
           TypeSig.comparable))),
       (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          val unaliased = in.list.map(extractLit)
-          val hasNullLiteral = unaliased.exists {
-            case Some(l) => l.value == null
-            case _ => false
-          }
-          if (hasNullLiteral) {
-            willNotWorkOnGpu("nulls are not supported")
-          }
-        }
         override def convertToGpuImpl(): GpuExpression =
           GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]].map(_.value))
       }),
@@ -2100,11 +2089,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128, TypeSig.comparable),
       (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (in.hset.contains(null)) {
-            willNotWorkOnGpu("nulls are not supported")
-          }
-        }
         override def convertToGpuImpl(): GpuExpression =
           GpuInSet(childExprs.head.convertToGpu(), in.hset.toSeq)
       }),
@@ -2731,6 +2715,29 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new UnaryExprMeta[MapEntries](in, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMapEntries(child)
+      }),
+    expr[MapFromEntries](
+      "Creates a map from an array of entries (structs of key-value pairs)",
+      ExprChecks.unaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY),
+        TypeSig.MAP.nested(TypeSig.all),
+        // Input is an array of struct<key, value>
+        // The struct fields can contain the supported types
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      (in, conf, p, r) => new UnaryExprMeta[MapFromEntries](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
+            case "EXCEPTION" | "LAST_WIN" => // Good we can support this
+            case other =>
+              willNotWorkOnGpu(s"$other is not supported for config setting" +
+                  s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
+          }
+        }
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMapFromEntries(child)
       }),
     expr[StringToMap](
       "Creates a map after splitting the input string into pairs of key-value strings",
@@ -4718,11 +4725,6 @@ object GpuOverrides extends Logging {
       case "CORRECTED" => CorrectedTimeParserPolicy
     }
   }
-
-  val preRowToColProjection = TreeNodeTag[Seq[NamedExpression]]("rapids.gpu.preRowToColProcessing")
-
-  val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
-    "rapids.gpu.postColToRowProcessing")
 
   def wrapAndTagPlan(plan: SparkPlan, conf: RapidsConf): SparkPlanMeta[SparkPlan] = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)

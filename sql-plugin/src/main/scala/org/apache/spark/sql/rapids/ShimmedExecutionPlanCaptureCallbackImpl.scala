@@ -216,6 +216,10 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
         executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
+  override def contains(gpuPlan: SparkPlan, className: String): Boolean = {
+    containsPlan(gpuPlan, className)
+  }
+
   private def containsExpression(exp: Expression, className: String,
       regexMap: MutableMap[String, Regex] // regex memoization
   ): Boolean = exp.find {
@@ -268,6 +272,5 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     case p =>
       p.children.exists(plan => containsPlanMatching(plan, f))
   }.nonEmpty
-
 }
 

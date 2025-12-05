@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{ColumnVector, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -124,7 +124,7 @@ class GpuKeyBatchingIterator(
     pendingSize = 0
     spillableBuffers.appendAll(last)
     RmmRapidsRetryIterator.withRetryNoSplit(spillableBuffers.toSeq) { attempt =>
-      withResource(new NvtxWithMetrics("concat pending", NvtxColor.CYAN, concatTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.CONCAT_PENDING, concatTime) {
         withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
           attempt.foreach { spillable =>
             withResource(spillable.getColumnarBatch()) { cb =>

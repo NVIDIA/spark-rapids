@@ -171,7 +171,7 @@ class GpuCheckDeltaInvariantMeta(
     }
   }
 
-  override def convertToGpu(child: Expression): GpuExpression = {
+  override def convertToGpuImpl(child: Expression): GpuExpression = {
     GpuCheckDeltaInvariant(
       child,
       wrapped.columnExtractors,  // leave these on CPU

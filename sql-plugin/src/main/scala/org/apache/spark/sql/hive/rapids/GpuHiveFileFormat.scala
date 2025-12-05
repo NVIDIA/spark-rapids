@@ -232,8 +232,8 @@ class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugOutputPath: Option[String],
     fileIO: RapidsFileIO)
-  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true, statsTrackers,
-    debugOutputPath, false, false, fileIO) {
+  extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
+    statsTrackers, debugOutputPath, false, false, fileIO) {
 
   override protected val tableWriter: CudfTableWriter = {
     val optionsBuilder = SchemaUtils
@@ -277,8 +277,8 @@ class GpuHiveTextWriter(override val path: String,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
                         debugOutputPath: Option[String],
     fileIO: RapidsFileIO)
-  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false, statsTrackers,
-    debugOutputPath, false, false, fileIO) {
+  extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, false,
+    statsTrackers, debugOutputPath, false, false, fileIO) {
 
   /**
    * This reformats columns, to iron out inconsistencies between

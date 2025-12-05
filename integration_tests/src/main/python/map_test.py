@@ -91,6 +91,74 @@ def test_map_entries(data_gen):
                 'map_entries(a)'))
 
 
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
+def test_map_from_entries(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'map_from_entries(map_entries(a))'),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+
+@pytest.mark.parametrize('key_gen,value_gen', [
+    (IntegerGen(nullable=False), IntegerGen()),
+    (StringGen(nullable=False), StringGen()),
+    (LongGen(nullable=False), DoubleGen()),
+    (IntegerGen(nullable=False), ArrayGen(IntegerGen())),
+    (StringGen(nullable=False), StructGen([['child', IntegerGen()]])),
+], ids=idfn)
+def test_map_from_entries_basic(key_gen, value_gen):
+    # Create an array of struct<key, value> and convert to map
+    struct_gen = StructGen([
+        ('key', key_gen),
+        ('value', value_gen)
+    ], nullable=False)
+    array_gen = ArrayGen(struct_gen, max_length=10)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, array_gen).selectExpr(
+                'map_from_entries(a)'),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+
+@pytest.mark.parametrize('key_gen,value_gen', [
+    (IntegerGen(nullable=True), IntegerGen()),
+    (StringGen(nullable=True), StringGen()),
+    (LongGen(nullable=True), DoubleGen()),
+    (IntegerGen(nullable=True), ArrayGen(IntegerGen())),
+    (StringGen(nullable=True), StructGen([['child', IntegerGen()]])),
+], ids=idfn)
+def test_map_from_entries_null_keys(key_gen, value_gen):
+    # Create an array of struct<key, value> and convert to map
+    struct_gen = StructGen([
+        ('key', key_gen),
+        ('value', value_gen)
+    ], nullable=False)
+    array_gen = ArrayGen(struct_gen, max_length=10)
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, array_gen).selectExpr(
+                'map_from_entries(a)').collect(),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'},
+            error_message='Cannot use null as map key')
+
+
+def test_map_from_entries_dup_exception():
+    # Test that duplicate keys throw an exception with EXCEPTION policy
+    struct_gen = RepeatSeqGen(StructGen([
+        ('key', IntegerGen(nullable=False)),
+        ('value', IntegerGen())
+    ], nullable=False), length=2)
+    array_gen = ArrayGen(struct_gen, min_length=2, max_length=10)
+    def do_it(spark):
+        df = unary_op_df(spark, array_gen)
+        result = df.selectExpr(
+                'map_from_entries(a)').collect()
+        return result
+
+    assert_gpu_and_cpu_error(
+            do_it,
+            conf={'spark.sql.mapKeyDedupPolicy': 'EXCEPTION'},
+            error_message='Duplicate map key')
+
+
 def get_map_value_gens(precision=18, scale=0):
     def simple_struct_value_gen():
         return StructGen([["child", IntegerGen()]])

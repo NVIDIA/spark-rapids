@@ -40,11 +40,43 @@ case class GpuBucket(bucket: Int) extends GpuTransform {
   }
 }
 
+case object GpuYears extends GpuTransform {
+  def support(inputType: DataType, nullable: Boolean) = true
+}
+
+case object GpuMonths extends GpuTransform {
+  def support(inputType: DataType, nullable: Boolean) = true
+}
+
+case object GpuDays extends GpuTransform {
+  def support(inputType: DataType, nullable: Boolean) = true
+}
+
+case object GpuHours extends GpuTransform {
+  def support(inputType: DataType, nullable: Boolean) = true
+}
+
+case class GpuTruncate(width: Int) extends GpuTransform {
+  override def support(inputType: DataType, nullable: Boolean): Boolean =
+    GpuTruncateExpression.isSupportedValueType(inputType)
+}
+
 object GpuTransform {
   def apply(transform: String): GpuTransform = {
     if (transform.startsWith("bucket")) {
       val bucket = transform.substring("bucket[".length, transform.length - 1).toInt
       GpuBucket(bucket)
+    } else if (transform.startsWith("year")) {
+      GpuYears
+    } else if (transform.startsWith("month")) {
+      GpuMonths
+    } else if (transform.startsWith("day")) {
+      GpuDays
+    } else if (transform.startsWith("hour")) {
+      GpuHours
+    } else if (transform.startsWith("truncate")) {
+      val width = transform.substring("truncate[".length, transform.length - 1).toInt
+      GpuTruncate(width)
     } else {
       throw new IllegalArgumentException(s"Unsupported transform: $transform")
     }

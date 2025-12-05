@@ -22,6 +22,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -34,10 +35,11 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, PythonUDAF, ToPrettyString}
+import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Discard, Keep, Split}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.v2.AppendDataExec
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, MergeRowsExec, OverwriteByExpressionExec, OverwritePartitionsDynamicExec, ReplaceDataExec, WriteDeltaExec}
 import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.{StringType, StructType}
@@ -139,7 +141,31 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
             GpuPythonUDAF(a.name, a.func, a.dataType,
               childExprs.map(_.convertToGpu()),
               a.evalType, a.udfDeterministic, a.resultId)
-        })
+        }),
+      GpuOverrides.expr[Keep](
+        "Keep instruction for MERGE operations - keeps/updates rows based on condition",
+        ExprChecks.projectOnly(
+          TypeSig.all,
+          TypeSig.all,
+          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all)),
+          Some(RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))
+        ),
+        (keep, conf, p, r) => new GpuKeepInstructionMeta(keep, conf, p, r)),
+      GpuOverrides.expr[Discard](
+        "Discard instruction for MERGE operations - discards rows based on condition",
+        ExprChecks.projectOnly(
+          TypeSig.all,
+          TypeSig.all,
+          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all))),
+        (discard, conf, p, r) => new GpuDiscardInstructionMeta(discard, conf, p, r)),
+      GpuOverrides.expr[Split](
+        "Split instruction for MERGE operations - splits rows into multiple outputs",
+        ExprChecks.projectOnly(
+          TypeSig.all,
+          TypeSig.all,
+          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all)),
+          Some(RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))),
+        (split, conf, p, r) => new GpuSplitInstructionMeta(split, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
   }
@@ -163,6 +189,43 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new AppendDataExecMeta(p, conf, parent, r)),
+      exec[OverwritePartitionsDynamicExec](
+        "Overwrite partitions dynamically in a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new OverwritePartitionsDynamicExecMeta(p, conf, parent, r)),
+      exec[OverwriteByExpressionExec](
+        "Overwrite data in a datasource V2 table",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new OverwriteByExpressionExecMeta(p, conf, parent, r)),
+      exec[ReplaceDataExec](
+        "Replace data in a datasource V2 table (for copy-on-write DELETE operations)",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new ReplaceDataExecMeta(p, conf, parent, r)),
+      exec[MergeRowsExec](
+        "Process merge rows for copy-on-write MERGE operations",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new GpuMergeRowsExecMeta(p, conf, parent, r)),
+      exec[WriteDeltaExec](
+        "Write delta (position deletes) in a datasource V2 table " +
+          "(for merge-on-read DELETE operations)",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new WriteDeltaExecMeta(p, conf, parent, r))
+        .disabledByDefault("Merge on read support for iceberg is experimental"),
       InMemoryTableScanUtils.getTableCacheQueryStageExecRule
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 

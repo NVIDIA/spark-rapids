@@ -27,6 +27,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -168,6 +169,8 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
       DataWritingCommandRule[_ <: DataWritingCommand]] = {
     Map.empty
   }
+
+  override def hasGpuWriteFiles: Boolean = true
 
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
