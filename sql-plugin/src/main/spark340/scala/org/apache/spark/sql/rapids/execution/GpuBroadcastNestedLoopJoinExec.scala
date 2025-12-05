@@ -62,8 +62,8 @@ class GpuBroadcastNestedLoopJoinMeta(
 
     if (isAstCondition) {
       // Try to extract non-ast-able conditions from join conditions
-      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta,
-        left.output, right.output, true)
+      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.output, right.output)
 
       // Reconstruct the child with wrapped project node if needed.
       val leftChild =
