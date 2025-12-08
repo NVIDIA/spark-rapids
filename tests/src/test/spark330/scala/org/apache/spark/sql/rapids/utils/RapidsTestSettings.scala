@@ -42,7 +42,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("collect functions should be able to cast to array type with no null values", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("SPARK-17641: collect functions should not collect null values", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", WONT_FIX_ISSUE("Codegen related UT, not applicable for GPU"))
-    .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"), (getJavaMajorVersion() >= 17))
+    .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", ADJUST_UT("Replaced by testRapids version that considers the difference of JDK version"))
   enableSuite[RapidsDataFrameComplexTypeSuite]
   enableSuite[RapidsDataFrameNaFunctionsSuite]
   enableSuite[RapidsDataFramePivotSuite]
