@@ -233,18 +233,25 @@ run_delta_lake_tests() {
 }
 
 run_iceberg_tests() {
-  # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
-  ICEBERG_VERSION=1.6.1
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
-  IS_SPARK_35X=0
-  # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
-  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
-    IS_SPARK_35X=1
-  fi
+  # get the patch version of Spark
+  SPARK_PATCH_VER=$(echo "$SPARK_VER" | cut -d. -f3)
 
-  # RAPIDS-iceberg only supports Spark 3.5.x yet
-  if [[ "$IS_SPARK_35X" -ne "1" ]]; then
+  # Determine Iceberg version based on Spark version
+  # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
+  # Spark 3.5.4-3.5.7 -> Iceberg 1.9.2
+  # Otherwise -> skip
+  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
+    if [[ "$SPARK_PATCH_VER" -ge 0 && "$SPARK_PATCH_VER" -le 3 ]]; then
+      ICEBERG_VERSION=1.6.1
+    elif [[ "$SPARK_PATCH_VER" -ge 4 && "$SPARK_PATCH_VER" -le 7 ]]; then
+      ICEBERG_VERSION=1.9.2
+    else
+      echo "!!!! Skipping Iceberg tests. Spark patch version $SPARK_PATCH_VER is not supported"
+      return 0
+    fi
+  else
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
   fi
