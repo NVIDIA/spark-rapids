@@ -145,8 +145,13 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     // Only clear validity bits if the valid buffer existed at snapshot time.
     // If it was allocated after the snapshot, we don't need to clear anything
     // since we're rolling back to a state before any rows were added.
+    // Also clamp to validCapacity to avoid accessing indices beyond buffer bounds
+    // (can happen if OOM occurred during growValidBuffer).
     if (snapshot.hadValidBuffer && valid != null && currentIndex > snapshot.currentIndex) {
-      setValidRange(snapshot.currentIndex, currentIndex);
+      long safeEndIndex = Math.min(currentIndex, validCapacity);
+      if (safeEndIndex > snapshot.currentIndex) {
+        setValidRange(snapshot.currentIndex, safeEndIndex);
+      }
     }
     this.rows = snapshot.rows;
     this.currentIndex = snapshot.currentIndex;
@@ -164,12 +169,16 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     // Only restore offsets if the offsets buffer existed at snapshot time.
     // If it was allocated after the snapshot, we don't need to set anything
     // since currentIndex is being reset to the snapshot value.
+    // Also check bounds to avoid accessing beyond buffer capacity
+    // (can happen if OOM occurred during buffer growth).
     if (snapshot.hadOffsetsBuffer && offsets != null) {
-      if (type.equals(DType.STRING)) {
+      if (type.equals(DType.STRING) && snapshot.currentIndex <= rowCapacity) {
         offsets.setInt(
             Math.toIntExact(snapshot.currentIndex << bitShiftByOffset),
             Math.toIntExact(snapshot.currentStringByteIndex));
-      } else if (type.equals(DType.LIST) && !childBuilders.isEmpty()) {
+      } else if (type.equals(DType.LIST) && !childBuilders.isEmpty()
+          && snapshot.currentIndex < rowCapacity) {
+        // For LIST, we access index (currentIndex + 1), so need currentIndex + 1 <= rowCapacity
         offsets.setInt(
             Math.toIntExact((snapshot.currentIndex + 1) << bitShiftByOffset),
             childBuilders.get(0).getCurrentIndex());
