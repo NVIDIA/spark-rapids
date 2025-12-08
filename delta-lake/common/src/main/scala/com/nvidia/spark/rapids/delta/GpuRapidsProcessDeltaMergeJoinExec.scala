@@ -178,7 +178,7 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
   }
 
   private def bindForGpu(e: Expression): GpuExpression = {
-    GpuBindReferences.bindGpuReference(e, child.output)
+    GpuBindReferences.bindGpuReference(e, child.output, allMetrics)
   }
 
   override protected def doExecute(): RDD[InternalRow] = {

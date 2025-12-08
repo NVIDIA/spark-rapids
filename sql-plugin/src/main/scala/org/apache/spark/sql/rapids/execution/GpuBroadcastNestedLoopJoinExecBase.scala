@@ -651,7 +651,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
     val numFirstTableColumns = firstTable.output.size
     val boundCondition = condition.map {
-      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output)
+      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output, allMetrics)
     }
 
     val broadcastRelation = getBroadcastRelation()
@@ -702,7 +702,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
         // batch.
         val proj = GpuBindReferences.bindGpuReferencesTiered(
-          postBuildCondition, p.child.output, conf)
+          postBuildCondition, p.child.output, conf, allMetrics)
         val fn = (batch: ColumnarBatch) => {
           withResource(batch)(proj.project)
         }

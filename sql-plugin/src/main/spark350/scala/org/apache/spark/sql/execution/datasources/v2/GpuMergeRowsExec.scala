@@ -109,15 +109,18 @@ case class GpuMergeRowsExec(
 
     val dataTypes = GpuColumnVector.extractTypes(child.schema)
 
-    val boundTargetRowPresent = GpuBindReferences.bindGpuReference(isTargetRowPresent, child.output)
-    val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent, child.output)
+    val boundTargetRowPresent = GpuBindReferences.bindGpuReference(isTargetRowPresent,
+      child.output, allMetrics)
+    val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent,
+      child.output, allMetrics)
 
-    val boundMatchedInsts = GpuBindReferences.bindGpuReferences(matchedInstructions, child.output)
+    val boundMatchedInsts = GpuBindReferences.bindGpuReferences(matchedInstructions,
+        child.output, allMetrics)
       .asInstanceOf[Seq[GpuInstruction]]
     val boundNotMatchedInsts = GpuBindReferences.bindGpuReferences(notMatchedInstructions,
-      child.output).asInstanceOf[Seq[GpuInstruction]]
+      child.output, allMetrics).asInstanceOf[Seq[GpuInstruction]]
     val boundMatchedBySourceInsts = GpuBindReferences.bindGpuReferences(
-      notMatchedBySourceInstructions, child.output)
+      notMatchedBySourceInstructions, child.output, allMetrics)
       .asInstanceOf[Seq[GpuInstruction]]
 
     child.executeColumnar().mapPartitions { iter =>

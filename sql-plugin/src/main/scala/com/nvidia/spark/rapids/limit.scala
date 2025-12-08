@@ -376,8 +376,9 @@ case class GpuTopN(
   )
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sorter = new GpuSorter(gpuSortOrder, child.output)
-    val boundProjectExprs = GpuBindReferences.bindGpuReferences(projectList, child.output)
+    val sorter = new GpuSorter(gpuSortOrder, child.output, Some(allMetrics))
+    val boundProjectExprs = GpuBindReferences.bindGpuReferences(projectList, child.output,
+      allMetrics)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val inputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val inputRows = gpuLongMetric(NUM_INPUT_ROWS)
