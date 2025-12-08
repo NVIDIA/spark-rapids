@@ -80,10 +80,18 @@ def reset_spark_session_conf():
         if key not in _orig_conf_keys:
             _spark.conf.unset(key)
 
-def _check_for_proper_return_values(something):
+def _check_for_discouraged_return_values(something, raise_error=True):
     """We don't want to return an DataFrame or Dataset from a with_spark_session. You will not get what you expect"""
     if (isinstance(something, DataFrame)):
-        raise RuntimeError("You should never return a DataFrame from a with_*_session, you will not get the results that you expect")
+        error_msg = """
+        You are returning a DataFrame from a with_*_session. 
+        This is discouraged because the dataframe is processed lazily, 
+        leading to discrepancies between the actual behavior and what you might expect.
+        """
+        if raise_error:
+            raise RuntimeError(error_msg)
+        else:
+            print(f"\nWARNING!!!!! {error_msg}")
 
 @contextmanager
 def pyspark_compatibility_fixes():
@@ -122,7 +130,7 @@ def pyspark_compatibility_fixes():
         yield
 
 @pyspark_compatibility_fixes()
-def with_spark_session(func, conf={}):
+def with_spark_session(func, conf={}, raise_error_on_discouraged_return=True):
     """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()
     _add_job_description(conf)
@@ -131,7 +139,7 @@ def with_spark_session(func, conf={}):
         conf["spark.sql.ansi.enabled"] = is_per_test_ansi_mode_enabled()
     _set_all_confs(conf)
     ret = func(_spark)
-    _check_for_proper_return_values(ret)
+    _check_for_discouraged_return_values(ret, raise_error=raise_error_on_discouraged_return)
     return ret
 
 
@@ -142,13 +150,13 @@ def _add_job_description(conf):
     _spark.sparkContext.setJobDescription(job_desc)
 
 
-def with_cpu_session(func, conf={}):
+def with_cpu_session(func, conf={}, raise_error_on_discouraged_return=True):
     """Run func that takes a spark session as input with the given configs set on the CPU."""
     copy = dict(conf)
     copy['spark.rapids.sql.enabled'] = 'false'
-    return with_spark_session(func, conf=copy)
+    return with_spark_session(func, conf=copy, raise_error_on_discouraged_return=raise_error_on_discouraged_return)
 
-def with_gpu_session(func, conf={}):
+def with_gpu_session(func, conf={}, raise_error_on_discouraged_return=True):
     """
     Run func that takes a spark session as input with the given configs set on the GPU.
     Note that this forces you into test mode unless.  It is not a requirement, but is
@@ -163,7 +171,7 @@ def with_gpu_session(func, conf={}):
         copy['spark.rapids.sql.test.allowedNonGpu'] = ','.join(get_non_gpu_allowed())
 
     copy['spark.rapids.sql.test.validateExecsInGpuPlan'] = ','.join(get_validate_execs_in_gpu_plan())
-    return with_spark_session(func, conf=copy)
+    return with_spark_session(func, conf=copy, raise_error_on_discouraged_return=raise_error_on_discouraged_return)
 
 def is_before_spark_312():
     return spark_version() < "3.1.2"

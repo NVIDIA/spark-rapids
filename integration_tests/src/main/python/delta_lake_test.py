@@ -81,6 +81,7 @@ def test_delta_scan_read(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)))
 
+
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -100,6 +101,56 @@ def test_delta_deletion_vector_read(spark_tmp_path, use_cdf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),
         conf=conf)
+
+
+def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions):
+    import os
+    import math
+
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 2048
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: unary_op_df(spark, int_gen, length=num_rows, num_slices=1),
+                               use_cdf=False, enable_deletion_vectors=enable_deletion_vectors)
+    target_num_row_groups = 2
+    row_group_size = int(num_rows * 4 / target_num_row_groups) # num_rows * 4 bytes per int / target_num_row_groups
+    conf = {"parquet.block.size": str(row_group_size)}
+    with_cpu_session(setup_tables, conf)
+    # Verify that we have 1 file with 2 row groups
+    def verify_files_and_row_groups():
+        # list files in data_path
+        files = [f for f in os.listdir(data_path) if f.endswith(".parquet")]
+        assert len(files) == 1, "Expected 1 parquet file in the delta table"
+        parquet_file = f"{data_path}/{files[0]}"
+
+        import pyarrow.parquet as pq
+        metadata = pq.read_metadata(parquet_file)
+        assert metadata.num_row_groups == target_num_row_groups, f"Expected {target_num_row_groups} row groups in the parquet"
+        return parquet_file
+    data_file = verify_files_and_row_groups()
+    file_size = os.path.getsize(data_file)
+
+    conf = {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))}
+    df = with_gpu_session(lambda spark: spark.sql("SELECT * from delta.`{}`".format(data_path)), conf=conf,
+                          raise_error_on_discouraged_return=False)
+    num_partitions = df.rdd.getNumPartitions()
+    assert num_partitions == expected_num_partitions, f"Expected {expected_num_partitions} partitions for split read"
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+def test_delta_scan_split(spark_tmp_path):
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=False, expected_num_partitions=2)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_scan_split_with_deletion_vector_enabled(spark_tmp_path):
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1)
+
 
 # ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish
 # Delta Lake 2.1 from 2.2 in tests. https://github.com/NVIDIA/spark-rapids/issues/9276
