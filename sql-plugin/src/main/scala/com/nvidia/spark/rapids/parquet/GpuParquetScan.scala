@@ -1780,7 +1780,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       blocks: Seq[BlockMetaData],
       realStartOffset: Long,
       metrics: Map[String, GpuMetric],
-      compressCfg: CpuCompressionConfig): Seq[BlockMetaData] = {
+      compressCfg: CpuCompressionConfig,
+      allocator: HostMemoryAllocator): Seq[BlockMetaData] = {
     val outStartPos = out.getPos
     val writeTime = metrics.getOrElse(WRITE_BUFFER_TIME, NoopMetric)
     withResource(new BufferedFileInput(fileIO, filePath, blocks, metrics)) { in =>
@@ -1990,26 +1991,26 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
   protected def readPartFile(
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
-      filePath: Path): (SpillableHostBuffer, Seq[BlockMetaData]) = {
-    NvtxRegistry.PARQUET_BUFFER_FILE_SPLIT {
-      // Track the actual read buffer size, since some columns or partitions may be pruned
-      execMetrics.get("readBufferSize").foreach { metric =>
-        blocks.foreach { block =>
-          block.getColumns.asScala.foreach { column =>
-            metric += column.getTotalSize
-          }
-        }
+      filePath: Path,
+      customAllocator: Option[HostMemoryAllocator] = None
+  ): (SpillableHostBuffer, Seq[BlockMetaData]) = {
+    val allocator = customAllocator.getOrElse(DefaultHostMemoryAllocator.get())
+    withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
+      val estTotalSize = {
+        val sz = calculateParquetOutputSize(blocks, clippedSchema)
+        // Track the actual read buffer size, since some columns or partitions may be pruned
+        execMetrics.get("readBufferSize").foreach(_ += sz)
+        sz
       }
-
-      val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema)
       val outHostBuf = withRetryNoSplit[HostMemoryBuffer] {
-        HostMemoryBuffer.allocate(estTotalSize)
+        allocator.allocate(estTotalSize)
       }
       closeOnExcept(outHostBuf) { hmb =>
         val out = new HostMemoryOutputStream(hmb)
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         val outputBlocks = if (compressCfg.decompressAnyCpu) {
-          copyAndUncompressBlocksData(filePath, out, blocks, out.getPos, metrics, compressCfg)
+          copyAndUncompressBlocksData(filePath,
+            out, blocks, out.getPos, metrics, compressCfg, allocator)
         } else {
           copyBlocksData(filePath, out, blocks, out.getPos, metrics)
         }
@@ -2266,7 +2267,8 @@ class MultiFileParquetPartitionReader(
         val outputBlocks = withResource(outhmb) { _ =>
           withResource(new HostMemoryOutputStream(outhmb)) { out =>
             if (compressCfg.decompressAnyCpu) {
-              copyAndUncompressBlocksData(file, out, blocks.toSeq, offset, metrics, compressCfg)
+              copyAndUncompressBlocksData(file, out, blocks.toSeq, offset, metrics, compressCfg,
+                DefaultHostMemoryAllocator.get())
             } else {
               copyBlocksData(file, out, blocks.toSeq, offset, metrics)
             }
@@ -2522,8 +2524,8 @@ class MultiFileCloudParquetPartitionReader(
             }
             val sliceOffset = if (buffers.isEmpty) 0 else PARQUET_MAGIC.size
             require(hmbInfo.hmbs.length == 1)
-            buffers += SpillableHostBuffer.sliceWithRetry(hmbInfo.hmbs.head, sliceOffset,
-              bytesToSlice)
+            buffers += SpillableHostBuffer.sliceWithRetry(hmbInfo.hmbs.head,
+              sliceOffset, bytesToSlice)
           }
           val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset)
           allOutputBlocks ++= outputBlocks
@@ -2568,10 +2570,6 @@ class MultiFileCloudParquetPartitionReader(
       newHmbMeta.setExecutionTime(filterTime, bufferTime)
       val scheduleTime = combinedMeta.toCombine.map(_.getScheduleTime).sum
       newHmbMeta.setScheduleTime(scheduleTime)
-      // Combine the release callbacks from all the parts
-      combinedMeta.toCombine.foreach { hmb =>
-        hmb.combineReleaseCallbacks(newHmbMeta)
-      }
       newHmbMeta
     }
     logDebug(s"Took ${(System.currentTimeMillis() - startCombineTime)} " +
@@ -2716,18 +2714,12 @@ class MultiFileCloudParquetPartitionReader(
     // before reading, so we just use the raw size as the resource requirement.
     override val requiredMemoryBytes: Long = file.length
 
-    // BufferInfo will not be closed until it is transferred onto device side. So, builds
-    // DecayReleaseResult with a release callback rather than FastReleaseResult.
-    override protected def buildResult(resultData: BufferInfo,
-        metrics: AsyncMetrics): RunnerResult = {
-      val releaseCallback: () => Unit = () => {
-        if (this.isHoldingResource) {
-          this.withStateLock { _ =>
-            this.releaseResourceCallback()
-          }
-        }
-      }
-      new DecayReleaseResult[BufferInfo](resultData, metrics, releaseCallback)
+    override val baseMemoryAllocator: HostMemoryAllocator = DefaultHostMemoryAllocator.get()
+
+    // Only enable `MemoryBoundedAsyncRunner.allocate` if MemoryBoundedReading enabled
+    private lazy val customAllocator: Option[HostMemoryAllocator] = poolConf match {
+      case _: MemoryBoundedPoolConf => Some(this)
+      case _  => None
     }
 
     private var blockChunkIter: BufferedIterator[BlockMetaData] = null
@@ -2804,7 +2796,8 @@ class MultiFileCloudParquetPartitionReader(
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter,
                   maxReadBatchSizeRows, maxReadBatchSizeBytes, fileBlockMeta.readSchema)
                 val (dataBuffer, blockMeta) =
-                  readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
+                  readPartFile(blocksToRead, fileBlockMeta.schema, filePath,
+                    customAllocator = customAllocator)
                 val numRows = blocksToRead.map(_.getRowCount).sum.toInt
                 hostBuffers += SingleHMBAndMeta(Array(dataBuffer), dataBuffer.length,
                   numRows, blockMeta)
@@ -2899,22 +2892,12 @@ class MultiFileCloudParquetPartitionReader(
     case buffer: HostMemoryBuffersWithMetaData =>
       val memBuffersAndSize = buffer.memBuffersAndSizes
       val hmbAndInfo = memBuffersAndSize.head
-      val batchIter = try {
-        readBufferToBatches(buffer.dateRebaseMode,
-          buffer.timestampRebaseMode, buffer.hasInt96Timestamps, buffer.clippedSchema,
-          buffer.readSchema, buffer.partitionedFile, hmbAndInfo.hmbs, buffer.allPartValues)
-      } finally {
-        // If there are more buffers, we will release the resource after reading all batches,
-        // in case of releasing the resource too early.
-        if (memBuffersAndSize.length == 1) {
-          // Release the virtual budget as closing the entire structure
-          buffer.close()
-        }
-      }
+      val batchIter = readBufferToBatches(buffer.dateRebaseMode,
+        buffer.timestampRebaseMode, buffer.hasInt96Timestamps, buffer.clippedSchema,
+        buffer.readSchema, buffer.partitionedFile, hmbAndInfo.hmbs, buffer.allPartValues)
       if (memBuffersAndSize.length > 1) {
         val updatedBuffers = memBuffersAndSize.drop(1)
         currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
-        buffer.combineReleaseCallbacks(currentFileHostBuffers.get)
       } else {
         currentFileHostBuffers = None
       }
