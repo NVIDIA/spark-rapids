@@ -21,7 +21,10 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE_LEVEL}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -399,7 +402,9 @@ object GpuShuffleExchangeExecBase {
       newRdd.mapPartitions { iter =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
-          private var partitioned : Array[(ColumnarBatch, Int)] = _
+          private var partitionedIter: Iterator[Array[(ColumnarBatch, Int)]] =
+            Iterator.empty
+          private var partitioned: Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private def partNextBatch(): Unit = {
@@ -408,7 +413,15 @@ object GpuShuffleExchangeExecBase {
               partitioned = null
               at = 0
             }
-            if (iter.hasNext) {
+            // Try to get next partitioned array from the iterator
+            if (partitionedIter.hasNext) {
+              partitioned = partitionedIter.next()
+              partitioned.foreach(batches => {
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+              })
+              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+              at = 0
+            } else if (iter.hasNext) {
               var batch = iter.next()
               while (batch.numRows == 0 && iter.hasNext) {
                 batch.close()
@@ -417,12 +430,22 @@ object GpuShuffleExchangeExecBase {
               // Get a non-empty batch or the last batch. So still need to
               // check if it is empty for the later case.
               if (batch.numRows > 0) {
-                partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-                partitioned.foreach(batches => {
-                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                })
-                metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-                at = 0
+                val spillableBatch = SpillableColumnarBatch(batch,
+                    ACTIVE_ON_DECK_PRIORITY)
+                partitionedIter = withRetry(spillableBatch,
+                    splitSpillableInHalfByRows) { spillable =>
+                  closeOnExcept(spillable.getColumnarBatch()) { cb =>
+                    getParts(cb).asInstanceOf[Array[(ColumnarBatch, Int)]]
+                  }
+                }
+                if (partitionedIter.hasNext) {
+                  partitioned = partitionedIter.next()
+                  partitioned.foreach(batches => {
+                    metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+                  })
+                  metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+                  at = 0
+                }
               } else {
                 batch.close()
               }
