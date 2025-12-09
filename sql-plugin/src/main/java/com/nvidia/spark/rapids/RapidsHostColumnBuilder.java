@@ -89,18 +89,15 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     private final long rows;
     private final long currentIndex;
     private final long currentStringByteIndex;
-    private final long nullCount;
     private final BuilderSnapshot[] childStates;
 
     private BuilderSnapshot(long rows,
         long currentIndex,
         long currentStringByteIndex,
-        long nullCount,
         BuilderSnapshot[] childStates) {
       this.rows = rows;
       this.currentIndex = currentIndex;
       this.currentStringByteIndex = currentStringByteIndex;
-      this.nullCount = nullCount;
       this.childStates = childStates;
     }
   }
@@ -122,8 +119,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
    * while materializing the row.
    */
   public BuilderSnapshot captureState() {
-    return new BuilderSnapshot(rows, currentIndex, currentStringByteIndex, nullCount,
-        captureChildStates());
+    return new BuilderSnapshot(rows, currentIndex, currentStringByteIndex, captureChildStates());
   }
 
   /**
@@ -139,7 +135,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     this.rows = snapshot.rows;
     this.currentIndex = snapshot.currentIndex;
     this.currentStringByteIndex = Math.toIntExact(snapshot.currentStringByteIndex);
-    this.nullCount = snapshot.nullCount;
+    // Note: nullCount is intentionally NOT restored. See BuilderSnapshot javadoc for details.
     if (snapshot.childStates != null) {
       if (snapshot.childStates.length != childBuilders.size()) {
         throw new IllegalStateException(
