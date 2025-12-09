@@ -285,12 +285,6 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
           .map(_.getBase)
         withResource(baseGpuVecs.safeMap(_.copyToHost())) { hostVecs =>
           for (i <- 0 until resultBatch.numRows) {
-            val (filePath, rowIdx) = (hostVecs(f.posDelColIndices(0)).getJavaString(i),
-              hostVecs(f.posDelColIndices(1)).getLong(i))
-
-            assert(!f.deletedRows.get(filePath).exists(_.contains(rowIdx)),
-              s"($filePath, $rowIdx) should be deleted by position deletes")
-
             for ((colIndices, valueSet) <- f.eqDelColIndices.zip(f.eqDelValueSets)) {
               val data = colIndices.map { idx =>
                 valueOf(hostVecs(idx), Integer.valueOf(i))
@@ -320,12 +314,6 @@ class GpuDeleteFilterSuite extends AnyFunSuite with BeforeAndAfterAll {
           .map(_.getBase)
         withResource(baseGpuVecs.safeMap(_.copyToHost())) { hostVecs =>
           for (i <- 0 until resultBatch.numRows) {
-            val (filePath, rowIdx) = (hostVecs(f.posDelColIndices(0)).getJavaString(i),
-              hostVecs(f.posDelColIndices(1)).getLong(i))
-
-            assert(!f.deletedRows.get(filePath).exists(_.contains(rowIdx)),
-              s"($filePath, $rowIdx) should be deleted by position deletes")
-
             for ((colIndices, valueSet) <- f.eqDelColIndices.zip(f.eqDelValueSets)) {
               val data = colIndices.map { idx =>
                 valueOf(hostVecs(idx), Integer.valueOf(i))

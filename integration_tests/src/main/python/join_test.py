@@ -18,7 +18,7 @@ from pyspark.sql.functions import array_contains, broadcast, col, lit
 from pyspark.sql.types import *
 from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,
                      assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture,
-                     assert_cpu_and_gpu_are_equal_sql_with_capture)
+                     assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_sql)
 from conftest import is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
@@ -415,6 +415,35 @@ def test_broadcast_join_null_aware_anti(rows):
         conf={'spark.sql.optimizeNullAwareAntiJoin': 'true'})
 
 @ignore_order(local=True)
+def test_broadcast_nested_loop_join_degen_left_outer_build_no_columns():
+    def gen_df_func(spark):
+        spark.sql("create or replace temp view right_tbl(r1) as values (22),(33);")
+        return unary_op_df(spark, int_gen, length=300)
+
+    # The sql is from https://github.com/NVIDIA/spark-rapids/issues/13731.
+    # The degenerate left-outer join (no columns in the build side) only appears
+    # from Spark 4.0.0, but ok to test against all the Spark versions.
+    assert_gpu_and_cpu_are_equal_sql(gen_df_func,
+        sql="SELECT * FROM left_tbl WHERE EXISTS "
+            "(SELECT COUNT(*) FROM right_tbl WHERE left_tbl.a = 1);",
+        table_name='left_tbl')
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_330() or is_databricks_runtime(),
+                    reason="GPU does not support InSubqueryExec before 330 and on DBs")
+@pytest.mark.parametrize('a_val', ['1', '10'], ids=idfn)  # 1: in t1, 10: not in t1
+def test_broadcast_nested_loop_join_degen_left_outer_stream_no_columns(a_val):
+    def degen_join_func(spark):
+        # This repro case is from https://github.com/NVIDIA/spark-rapids/issues/13708.
+        # And here does some change to cover more cases.
+        spark.sql(f"create or replace temp view t0 as select {a_val} as a;")
+        spark.sql("create or replace temp view t1(b) as values (1),(2);")
+        spark.sql("create or replace temp view t2(c) as values (22),(33),(44);")
+        return spark.sql("select a, cast(c as string) from t0 left join t2 on (a in (select b from t1));")
+
+    assert_gpu_and_cpu_are_equal_collect(degen_join_func)
+
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
@@ -446,6 +475,15 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type, kudo_ena
 
     conf = {kudo_enabled_conf_key: kudo_enabled}
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+
+# because this infers the schema for CSV we need to allow some ops to be on the CPU
+@allow_non_gpu("CollectLimitExec", "FileSourceScanExec", "DeserializeToObjectExec")
+def test_empty_cross_side_with_limit(std_input_path):
+    def do_join(spark):
+        t0 = spark.read.csv(std_input_path + '/t0.csv', header=True, inferSchema=True)
+        t1 = spark.read.csv(std_input_path + '/t1.csv', header=True, inferSchema=True)
+        return t0.crossJoin(t1).limit(21)
+    assert_gpu_and_cpu_are_equal_collect(do_join)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
