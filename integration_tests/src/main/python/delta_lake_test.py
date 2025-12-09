@@ -132,9 +132,11 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
     file_size = os.path.getsize(data_file)
 
     conf = copy_and_update(scan_conf, {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))})
-    df = with_gpu_session(lambda spark: spark.sql("SELECT * from delta.`{}`".format(data_path)), conf=conf,
-                          raise_error_on_discouraged_return=False)
-    num_partitions = df.rdd.getNumPartitions()
+
+    def get_num_partitions(spark):
+        df = spark.sql("SELECT * from delta.`{}`".format(data_path))
+        return df.rdd.getNumPartitions()
+    num_partitions = with_gpu_session(get_num_partitions, conf=conf)
     assert num_partitions == expected_num_partitions, f"Expected {expected_num_partitions} partitions for split read"
 
 
