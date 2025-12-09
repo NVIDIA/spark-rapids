@@ -90,23 +90,17 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     private final long currentIndex;
     private final long currentStringByteIndex;
     private final long nullCount;
-    private final boolean hadValidBuffer;
-    private final boolean hadOffsetsBuffer;
     private final BuilderSnapshot[] childStates;
 
     private BuilderSnapshot(long rows,
         long currentIndex,
         long currentStringByteIndex,
         long nullCount,
-        boolean hadValidBuffer,
-        boolean hadOffsetsBuffer,
         BuilderSnapshot[] childStates) {
       this.rows = rows;
       this.currentIndex = currentIndex;
       this.currentStringByteIndex = currentStringByteIndex;
       this.nullCount = nullCount;
-      this.hadValidBuffer = hadValidBuffer;
-      this.hadOffsetsBuffer = hadOffsetsBuffer;
       this.childStates = childStates;
     }
   }
@@ -129,7 +123,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
    */
   public BuilderSnapshot captureState() {
     return new BuilderSnapshot(rows, currentIndex, currentStringByteIndex, nullCount,
-        valid != null, offsets != null, captureChildStates());
+        captureChildStates());
   }
 
   /**
@@ -142,17 +136,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     if (snapshot == null) {
       throw new IllegalArgumentException("snapshot cannot be null");
     }
-    // Only clear validity bits if the valid buffer existed at snapshot time.
-    // If it was allocated after the snapshot, we don't need to clear anything
-    // since we're rolling back to a state before any rows were added.
-    // Also clamp to validCapacity to avoid accessing indices beyond buffer bounds
-    // (can happen if OOM occurred during growValidBuffer).
-    if (snapshot.hadValidBuffer && valid != null && currentIndex > snapshot.currentIndex) {
-      long safeEndIndex = Math.min(currentIndex, validCapacity);
-      if (safeEndIndex > snapshot.currentIndex) {
-        setValidRange(snapshot.currentIndex, safeEndIndex);
-      }
-    }
     this.rows = snapshot.rows;
     this.currentIndex = snapshot.currentIndex;
     this.currentStringByteIndex = Math.toIntExact(snapshot.currentStringByteIndex);
@@ -164,24 +147,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
       }
       for (int i = 0; i < snapshot.childStates.length; i++) {
         childBuilders.get(i).restoreState(snapshot.childStates[i]);
-      }
-    }
-    // Only restore offsets if the offsets buffer existed at snapshot time.
-    // If it was allocated after the snapshot, we don't need to set anything
-    // since currentIndex is being reset to the snapshot value.
-    // Also check bounds to avoid accessing beyond buffer capacity
-    // (can happen if OOM occurred during buffer growth).
-    if (snapshot.hadOffsetsBuffer && offsets != null) {
-      if (type.equals(DType.STRING) && snapshot.currentIndex <= rowCapacity) {
-        offsets.setInt(
-            Math.toIntExact(snapshot.currentIndex << bitShiftByOffset),
-            Math.toIntExact(snapshot.currentStringByteIndex));
-      } else if (type.equals(DType.LIST) && !childBuilders.isEmpty()
-          && snapshot.currentIndex < rowCapacity) {
-        // For LIST, we access index (currentIndex + 1), so need currentIndex + 1 <= rowCapacity
-        offsets.setInt(
-            Math.toIntExact((snapshot.currentIndex + 1) << bitShiftByOffset),
-            childBuilders.get(0).getCurrentIndex());
       }
     }
   }
@@ -493,30 +458,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     currentByte &= bitmask;
     valid.setByte(bucket, currentByte);
     return ret;
-  }
-
-  /**
-   * Sets the validity bit to non-null for the given index.
-   */
-  static int setValidAt(HostMemoryBuffer valid, long index) {
-    long bucket = index / 8;
-    byte currentByte = valid.getByte(bucket);
-    int bitmask = 1 << (index % 8);
-    if ((currentByte & bitmask) != 0) {
-      return 0;
-    }
-    currentByte |= bitmask;
-    valid.setByte(bucket, currentByte);
-    return 1;
-  }
-
-  private void setValidRange(long startInclusive, long endExclusive) {
-    if (valid == null || endExclusive <= startInclusive) {
-      return;
-    }
-    for (long idx = startInclusive; idx < endExclusive; idx++) {
-      setValidAt(valid, idx);
-    }
   }
 
   /**

@@ -637,13 +637,14 @@ class RowToColumnarIterator(
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
+        val converter = new RetryableRowConverter(builders, rowCopyProjection)
         // read at least one row
         while (rowIter.hasNext &&
             (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
-          val attempt = new RowConvertAttempt(rowIter.next(), builders, rowCopyProjection)
-          val bytesWritten = withRetryNoSplit(attempt) { att =>
-            withRestoreOnRetry(att) {
-              converters.convert(att.currentRow, builders)
+          converter.attempt(rowIter.next())
+          val bytesWritten = withRetryNoSplit(converter) { _ =>
+            withRestoreOnRetry(converter) {
+              converters.convert(converter.currentRow, builders)
             }
           }
           byteCount += bytesWritten
@@ -690,23 +691,26 @@ class RowToColumnarIterator(
 }
 
 /**
- * Encapsulates the state needed to retry a single row conversion.
+ * A retryable row converter that integrates with the retry framework via `withRestoreOnRetry`.
  *
- * This class implements `Retryable` to integrate with the retry framework via
- * `withRestoreOnRetry`. The design defers expensive operations to when OOM actually occurs:
- *
+ * The design defers expensive operations to when OOM actually occurs:
  * - Builder state is captured lazily on first `currentRow` access (before convert runs)
  * - Row copying is deferred to `restore()` - only happens if OOM occurs
  * - `checkpoint()` is a no-op since we capture state lazily
  *
+ * This class is designed to be reused across multiple rows to minimize object allocation
+ * overhead. Call `attempt()` with a new row before each conversion attempt.
+ *
  * This minimizes overhead in the common case (no OOM) while still enabling proper
  * rollback when OOM does occur.
  */
-private class RowConvertAttempt(
-    initialRow: InternalRow,
+private class RetryableRowConverter(
     builders: GpuColumnarBatchBuilder,
     projection: UnsafeProjection)
   extends AutoCloseable with Retryable {
+
+  // The current row being converted - set via attempt()
+  private var initialRow: InternalRow = _
 
   // Builder state - captured once on first call to ensureSnapshotCaptured()
   private var builderSnapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot] = _
@@ -714,6 +718,15 @@ private class RowConvertAttempt(
 
   // Row snapshot - only created when restore() is called (i.e., OOM happened)
   private var rowSnapshot: Option[UnsafeRow] = None
+
+  /**
+   * Attempt the conversion for a new row. This must be called before each row conversion.
+   */
+  def attempt(row: InternalRow): Unit = {
+    initialRow = row
+    snapshotCaptured = false
+    rowSnapshot = None
+  }
 
   /**
    * Ensures builder state is captured exactly once, before conversion starts.
