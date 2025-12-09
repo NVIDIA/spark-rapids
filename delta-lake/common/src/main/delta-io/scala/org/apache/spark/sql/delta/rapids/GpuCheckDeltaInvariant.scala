@@ -54,11 +54,12 @@ case class GpuCheckDeltaInvariant(
   override def foldable: Boolean = false
   override def nullable: Boolean = true
 
-  def withBoundReferences(input: AttributeSeq): GpuCheckDeltaInvariant = {
+  def withBoundReferences(input: AttributeSeq, 
+    metrics: Map[String, GpuMetric]): GpuCheckDeltaInvariant = {
     GpuCheckDeltaInvariant(
-      GpuBindReferences.bindReference(child, input),
-      columnExtractors.map { case (column, extractor) =>
-        column -> BindReferences.bindReference(extractor, input)
+      GpuBindReferences.bindReference(child, input, metrics),
+      columnExtractors.map {
+        case (column, extractor) => column -> BindReferences.bindReference(extractor, input)
       },
       constraint)
   }

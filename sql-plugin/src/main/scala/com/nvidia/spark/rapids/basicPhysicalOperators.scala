@@ -684,7 +684,7 @@ case class GpuProjectExec(
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
-      conf)
+      conf, allMetrics)
     val localEnablePreSplit = enablePreSplit
 
     val rdd = child.executeColumnar()
@@ -737,7 +737,8 @@ case class GpuProjectAstExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
-    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
+    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output,
+      allMetrics)
     val outputTypes = output.map(_.dataType).toArray
     new GpuColumnarBatchIterator(true) {
       private[this] var maybeSplittedItr: Iterator[ColumnarBatch] = Iterator.empty
@@ -825,6 +826,17 @@ case class GpuProjectAstExec(
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
  case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
+
+  /**
+   * Inject metrics into all expressions across all tiers.
+   * @param metrics Map of metric names to GpuMetric instances
+   */
+  def injectMetrics(metrics: Map[String, GpuMetric]): Unit = {
+    exprTiers.foreach { tier =>
+      GpuMetric.injectMetrics(tier, metrics)
+    }
+  }
+
   /**
    * Is everything retryable. This can help with reliability in the common case.
    */
@@ -1169,7 +1181,7 @@ case class GpuFilterExec(
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
-      conf)
+      conf, allMetrics)
     rdd.flatMap { batch =>
       GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
         numOutputBatches, opTime)

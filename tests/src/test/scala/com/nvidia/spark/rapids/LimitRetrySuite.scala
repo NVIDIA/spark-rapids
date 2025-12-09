@@ -28,7 +28,8 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
 
   private val ref = GpuBoundReference(0, IntegerType, nullable = false)(ExprId(0), "a")
   private val attrs = AttributeReference(ref.name, ref.dataType, ref.nullable)()
-  private val gpuSorter = new GpuSorter(Seq(SortOrder(ref, Ascending)), Array(attrs))
+  private val gpuSorter = new GpuSorter(Seq(SortOrder(ref, Ascending)), Array(attrs),
+    Map.empty[String, GpuMetric])
   private val NUM_ROWS = 100
 
   private def buildBatch(ints: Seq[Int]): ColumnarBatch = {

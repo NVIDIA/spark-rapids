@@ -63,20 +63,25 @@ object SortUtils {
  * you don't want to have to sort the temp columns too, and this provide that.
  * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
  * @param inputSchema The schema of the input data
+ * @param metrics Metrics to inject into bound expressions
  */
 class GpuSorter(
     val sortOrder: Seq[SortOrder],
-    inputSchema: Array[Attribute]) extends Serializable {
+    inputSchema: Array[Attribute],
+    metrics: Map[String, GpuMetric]) extends Serializable {
 
   /**
    * A class that provides convenience methods for sorting batches of data
    * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
    * @param inputSchema The schema of the input data
+   * @param metrics Metrics to inject into bound expressions
    */
-  def this(sortOrder: Seq[SortOrder], inputSchema: Seq[Attribute]) =
-    this(sortOrder, inputSchema.toArray)
+  def this(sortOrder: Seq[SortOrder], inputSchema: Seq[Attribute],
+      metrics: Map[String, GpuMetric]) =
+    this(sortOrder, inputSchema.toArray, metrics)
 
-  private[this] val boundSortOrder = GpuBindReferences.bindReferences(sortOrder, inputSchema.toSeq)
+  private[this] val boundSortOrder =
+    GpuBindReferences.bindReferences(sortOrder, inputSchema.toSeq, metrics)
 
   private[this] val numInputColumns = inputSchema.length
 
