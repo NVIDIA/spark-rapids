@@ -385,7 +385,7 @@ class GpuDynamicPartitionDataSingleWriter(
   private lazy val getPartitionColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
     // Using Internal method: this is a simple column projection in data writer context
     // where metrics are not available (runs on executors after serialization).
-    val expressions = GpuBindReferences.bindGpuReferencesInternal(
+    val expressions = GpuBindReferences.bindGpuReferencesNoMetrics(
       description.partitionColumns,
       description.allColumns)
     cb => {
@@ -396,7 +396,7 @@ class GpuDynamicPartitionDataSingleWriter(
   private lazy val getBucketIdColumnAsBatch: ColumnarBatch => ColumnarBatch = {
     // Using Internal method: this is a simple projection in data writer context
     // where metrics are not available (runs on executors after serialization).
-    val expressions = GpuBindReferences.bindGpuReferencesInternal(
+    val expressions = GpuBindReferences.bindGpuReferencesNoMetrics(
       Seq(description.bucketSpec.get.bucketIdExpression),
       description.allColumns)
     cb => {
@@ -429,7 +429,7 @@ class GpuDynamicPartitionDataSingleWriter(
   protected lazy val getDataColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
     // Using Internal method: this is a simple column projection in data writer context
     // where metrics are not available (runs on executors after serialization).
-    val expressions = GpuBindReferences.bindGpuReferencesInternal(
+    val expressions = GpuBindReferences.bindGpuReferencesNoMetrics(
       description.dataColumns,
       description.allColumns)
     cb => {
@@ -788,7 +788,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
         }.getOrElse((NoopMetric, NoopMetric))
 
       val sortIter = GpuOutOfCoreSortIterator(pendingCbsIter ++ iterator,
-        new GpuSorter(spec.sortOrder, spec.output, None), GpuSortExec.targetSize(spec.batchSize),
+        new GpuSorter(spec.sortOrder, spec.output, Map.empty[String, GpuMetric]),
+        GpuSortExec.targetSize(spec.batchSize),
         sortOpTime, sortMetric, NoopMetric, NoopMetric)
       while (sortIter.hasNext) {
         // write with sort-based sequential writer

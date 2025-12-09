@@ -128,7 +128,7 @@ case class GpuSortExec(
   private lazy val targetSize = GpuSortExec.targetSize(conf)
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sorter = new GpuSorter(gpuSortOrder, output, Some(allMetrics))
+    val sorter = new GpuSorter(gpuSortOrder, output, allMetrics)
 
     val sortTime = gpuLongMetric(SORT_TIME)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)

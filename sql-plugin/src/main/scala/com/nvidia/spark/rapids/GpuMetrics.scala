@@ -31,10 +31,16 @@ import org.apache.spark.sql.rapids.GpuTaskMetrics
  * Trait for expressions that can have metrics injected after binding.
  * This allows execution nodes to inject their metrics into expressions
  * without coupling the expression construction to metric availability.
+ * Generally this should happen when a expression is bound, and will
+ * not be modified after that.
  */
 trait GpuMetricsInjectable {
   /**
    * Inject metrics into this expression. Called after binding but before execution.
+   * Metrics injection is not always guaranteed to happen, also the node in the
+   * plan may not have added the metric that this expression expects. Generally if this
+   * method is not called or the metric this expression wants is not available, then
+   * the issue should be logged, but no exception should be thrown.
    * @param metrics Map of metric names to GpuMetric instances
    */
   def injectMetrics(metrics: Map[String, GpuMetric]): Unit

@@ -375,7 +375,7 @@ object GpuShuffleExchangeExecBase {
           attr.nullable)(attr.exprId, attr.name), Ascending)
         // Force the sequence to materialize so we don't have issues with serializing too much
       }.toArray.toSeq
-      val sorter = new GpuSorter(boundReferences, outputAttributes, Some(metrics))
+      val sorter = new GpuSorter(boundReferences, outputAttributes, metrics)
       rdd.mapPartitions { cbIter =>
         GpuSortEachBatchIterator(cbIter, sorter, false)
       }
@@ -490,7 +490,7 @@ object GpuShuffleExchangeExecBase {
       case h: GpuHashPartitioning =>
         GpuBindReferences.bindReference(h, outputAttributes, metrics)
       case r: GpuRangePartitioning =>
-        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes, Some(metrics))
+        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes, metrics)
         val bounds = GpuRangePartitioner.createRangeBounds(r.numPartitions, sorter,
           rdd, SQLConf.get.rangeExchangeSampleSizePerPartition)
         // No need to bind arguments for the GpuRangePartitioner. The Sorter has already done it

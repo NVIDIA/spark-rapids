@@ -78,59 +78,58 @@ object GpuBindReferences extends Logging {
     transformNoRecursionOnReplacement(expression)(matchFunc).asInstanceOf[R]
   }
 
-  // ========== Internal APIs (for use by GpuBind implementations and recursive calls) ==========
-  // These methods do NOT inject metrics and should be used when implementing GpuBind.bind()
 
   /**
-   * Internal binding method for a single GPU expression without metric injection.
+   * Binding method for a single GPU expression without metric injection.
    * This is for use by GpuBind implementations and should not be called directly
    * from SparkPlan nodes. Use the public API that requires metrics instead.
    */
-  def bindGpuReferenceInternal[A <: Expression](
+  def bindGpuReferenceNoMetrics[A <: Expression](
       expression: A,
       input: AttributeSeq): GpuExpression =
     bindRefInternal(expression, input)
 
   /**
-   * Internal binding method for multiple GPU expressions without metric injection.
+   * Binding method for multiple GPU expressions without metric injection.
    * This is for use by GpuBind implementations and should not be called directly
    * from SparkPlan nodes. Use the public API that requires metrics instead.
    */
-  def bindGpuReferencesInternal[A <: Expression](
+  def bindGpuReferencesNoMetrics[A <: Expression](
       expressions: Seq[A],
       input: AttributeSeq): Seq[GpuExpression] = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
-    expressions.map(GpuBindReferences.bindGpuReferenceInternal(_, input)).toList
+    expressions.map(GpuBindReferences.bindGpuReferenceNoMetrics(_, input)).toList
   }
 
   /**
-   * Internal binding method for expressions without metric injection.
+   * Binding method for expressions without metric injection.
    * This is for use by GpuBind implementations and should not be called directly
    * from SparkPlan nodes.
    */
-  def bindReferenceInternal[A <: Expression](
+  def bindReferenceNoMetrics[A <: Expression](
       expression: A,
       input: AttributeSeq): A =
     bindRefInternal(expression, input)
 
   /**
-   * Internal binding method for multiple expressions without metric injection.
+   * Binding method for multiple expressions without metric injection.
    * This is for use by GpuBind implementations and should not be called directly
    * from SparkPlan nodes.
    */
-  def bindReferencesInternal[A <: Expression](
+  def bindReferencesNoMetrics[A <: Expression](
       expressions: Seq[A],
       input: AttributeSeq): Seq[A] = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
-    expressions.map(GpuBindReferences.bindReferenceInternal(_, input)).toList
+    expressions.map(GpuBindReferences.bindReferenceNoMetrics(_, input)).toList
   }
 
   /**
-   * Internal binding method for tiered expressions without metric injection.
+   * Binding method for tiered expressions without metric injection.
    * This is for use by GpuBind implementations and should not be called directly
-   * from SparkPlan nodes. Use the public API that requires metrics instead.
+   * from SparkPlan nodes. Use the public API that requires metrics instead, except
+   * when absolutely needed.
    */
-  def bindGpuReferencesTieredInternal[A <: Expression](
+  def bindGpuReferencesTieredNoMetrics[A <: Expression](
       expressions: Seq[A],
       input: AttributeSeq,
       conf: SQLConf): GpuTieredProject = {
@@ -160,7 +159,7 @@ object GpuBindReferences extends Logging {
       }
       val tiered = newExprTiers.zip(inputTiers).map {
         case (es: Seq[Expression], is: AttributeSeq) =>
-          es.map(GpuBindReferences.bindGpuReferenceInternal(_, is)).toList
+          es.map(GpuBindReferences.bindGpuReferenceNoMetrics(_, is)).toList
       }
       logTrace {
         "INPUT:\n" +
@@ -180,7 +179,7 @@ object GpuBindReferences extends Logging {
       }
       GpuTieredProject(tiered)
     } else {
-      GpuTieredProject(Seq(GpuBindReferences.bindGpuReferencesInternal(expressions, input)))
+      GpuTieredProject(Seq(GpuBindReferences.bindGpuReferencesNoMetrics(expressions, input)))
     }
   }
 
@@ -197,7 +196,7 @@ object GpuBindReferences extends Logging {
       expression: A,
       input: AttributeSeq,
       metrics: Map[String, GpuMetric]): GpuExpression = {
-    val bound = bindGpuReferenceInternal(expression, input)
+    val bound = bindGpuReferenceNoMetrics(expression, input)
     GpuMetric.injectMetrics(Seq(bound), metrics)
     bound
   }
@@ -212,7 +211,7 @@ object GpuBindReferences extends Logging {
       expressions: Seq[A],
       input: AttributeSeq,
       metrics: Map[String, GpuMetric]): Seq[GpuExpression] = {
-    val bound = bindGpuReferencesInternal(expressions, input)
+    val bound = bindGpuReferencesNoMetrics(expressions, input)
     GpuMetric.injectMetrics(bound, metrics)
     bound
   }
@@ -227,7 +226,7 @@ object GpuBindReferences extends Logging {
       expression: A,
       input: AttributeSeq,
       metrics: Map[String, GpuMetric]): A = {
-    val bound = bindReferenceInternal(expression, input)
+    val bound = bindReferenceNoMetrics(expression, input)
     GpuMetric.injectMetrics(Seq(bound), metrics)
     bound
   }
@@ -242,7 +241,7 @@ object GpuBindReferences extends Logging {
       expressions: Seq[A],
       input: AttributeSeq,
       metrics: Map[String, GpuMetric]): Seq[A] = {
-    val bound = bindReferencesInternal(expressions, input)
+    val bound = bindReferencesNoMetrics(expressions, input)
     GpuMetric.injectMetrics(bound, metrics)
     bound
   }
@@ -259,7 +258,7 @@ object GpuBindReferences extends Logging {
       input: AttributeSeq,
       conf: SQLConf,
       metrics: Map[String, GpuMetric]): GpuTieredProject = {
-    val bound = bindGpuReferencesTieredInternal(expressions, input, conf)
+    val bound = bindGpuReferencesTieredNoMetrics(expressions, input, conf)
     bound.injectMetrics(metrics)
     bound
   }

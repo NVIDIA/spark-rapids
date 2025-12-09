@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.zorder
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuRangePartitioner, GpuSorter, RepeatingParamCheck, ShimReflectionUtils, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuMetric, GpuRangePartitioner, GpuSorter, RepeatingParamCheck, ShimReflectionUtils, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.GpuOverrides.{expr, pluginSupportedOrderableSig}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -79,7 +79,8 @@ object ZOrderRules {
           val sortCol = AttributeReference("sort_col", child.dataType, child.nullable)()
           val ourSortOrder =
             SortOrder(sortCol, singleOrder.direction, singleOrder.nullOrdering, Seq.empty)
-          val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol), None)
+          val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol),
+            Map.empty[String, GpuMetric])
           val gpuPart = new GpuRangePartitioner(rangeBounds, sorter)
           GpuPartitionerExpr(child, gpuPart)
         }

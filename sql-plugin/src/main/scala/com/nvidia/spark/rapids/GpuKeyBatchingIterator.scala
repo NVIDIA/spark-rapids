@@ -237,7 +237,7 @@ object GpuKeyBatchingIterator {
       concatTime: GpuMetric,
       opTime: GpuMetric,
       metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] => GpuKeyBatchingIterator = {
-    val sorter = new GpuSorter(unboundOrderSpec, schema, Some(metrics))
+    val sorter = new GpuSorter(unboundOrderSpec, schema, metrics)
     val types = schema.map(_.dataType)
     def makeIter(iter: Iterator[ColumnarBatch]): GpuKeyBatchingIterator = {
       new GpuKeyBatchingIterator(iter, sorter, types, targetSizeBytes,

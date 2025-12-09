@@ -585,7 +585,7 @@ class CoGroupedIterator(
     // Using Internal method: groupAttrs are simple attribute selections by index
     val groupAttrs = groupKeys.map(schema(_))
     // No metrics are injected here because the keys are simple attribute references
-    val keyRefs = GpuBindReferences.bindGpuReferencesInternal(groupAttrs, schema)
+    val keyRefs = GpuBindReferences.bindGpuReferencesNoMetrics(groupAttrs, schema)
     val oneRowKeyTable = withResource(GpuProjectExec.project(batch, keyRefs)) { keyBatch =>
       withResource(GpuColumnVector.from(keyBatch)) { keyTable =>
         // The group batch will not be empty, since an empty group will be skipped when
