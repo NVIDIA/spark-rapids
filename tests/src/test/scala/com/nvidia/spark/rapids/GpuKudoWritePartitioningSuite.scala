@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable
-
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
+
+import scala.collection.mutable
 
 import ai.rapids.cudf.{HostColumnVector, Table}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.jni.kudo.DumpOption
+import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -37,7 +38,6 @@ import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, Trampo
 import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
 object GpuKudoWritePartitioningSuite {
   /**
@@ -407,7 +407,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       RmmSpark.removeAllCurrentThreadAssociation()
 
       // Verify that a retry occurred
-      val retryCount = RmmSpark.getAndResetNumRetryThrow(1)
+      val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
       assert(retryCount > 0,
         s"Expected at least one split retry, but saw $retryCount retries")
 

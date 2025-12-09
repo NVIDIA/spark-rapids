@@ -20,7 +20,6 @@ import scala.collection.AbstractIterator
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
@@ -434,9 +433,8 @@ object GpuShuffleExchangeExecBase {
                     ACTIVE_ON_DECK_PRIORITY)
                 partitionedIter = withRetry(spillableBatch,
                     splitSpillableInHalfByRows) { spillable =>
-                  closeOnExcept(spillable.getColumnarBatch()) { cb =>
-                    getParts(cb).asInstanceOf[Array[(ColumnarBatch, Int)]]
-                  }
+                  val cb = spillable.getColumnarBatch()
+                  getParts(cb).asInstanceOf[Array[(ColumnarBatch, Int)]]
                 }
                 if (partitionedIter.hasNext) {
                   partitioned = partitionedIter.next()
