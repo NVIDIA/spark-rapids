@@ -1312,8 +1312,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
   /**
    * Converts a CPU expression to a GPU expression. Subclasses should
    * implement convertToGpuImpl() to provide custom logic for the conversion.
-   * Anyone who what to get the converted expression should call `convertToGpu`
-   * directly, as it porovides a layer of indirection for expression level 
+   * Anyone who wants to get the converted expression should call `convertToGpu`
+   * directly, as it provides a layer of indirection for expression level
    * optimizations.
    */
   def convertToGpuImpl(): Expression
