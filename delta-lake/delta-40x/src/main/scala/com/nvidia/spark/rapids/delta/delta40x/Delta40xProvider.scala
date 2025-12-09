@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.catalog.SupportsWrite
-import org.apache.spark.sql.delta.{DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat}
+import org.apache.spark.sql.delta.{DeltaConfigs, DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.catalog.DeltaTableV2
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
 import org.apache.spark.sql.execution.command.RunnableCommand
