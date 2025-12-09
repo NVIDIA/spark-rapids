@@ -643,7 +643,14 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     //  val cols = (0 until  table.getNumberOfColumns).map(i => table.getColumn(i))
     //  Some(new Table(cols: _*))
     // }
-    Some(table)
+    if (table.getRowCount == 0) {
+      // CSV reader can return empty table, close it and return None
+      // E.g.: CSV file with only header and no data rows, empty table will be returned
+      table.close()
+      None
+    } else {
+      Some(table)
+    }
   }
 
   override def next(): Boolean = {
