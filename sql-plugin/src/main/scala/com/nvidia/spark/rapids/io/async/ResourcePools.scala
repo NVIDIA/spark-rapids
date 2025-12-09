@@ -192,8 +192,9 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
     }
   }
 
-  // NOTE: this method should be called within the state lock of the runner
   override protected[async] def release[T](rr: AsyncRunner[T], forcefully: Boolean): Unit = {
+    // NOTE: this method should be called within the state lock of the runner. No need to check
+    // because it is verified by the tryFree() call below.
     if (rr.getState == Running) {
       throw new IllegalStateException(s"Cannot release resources from a running runner: $rr")
     }

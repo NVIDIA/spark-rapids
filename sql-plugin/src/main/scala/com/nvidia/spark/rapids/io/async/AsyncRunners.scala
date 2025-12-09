@@ -317,7 +317,7 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] with AutoCloseable {
     }
   }
 
-  private val stateLock = new ReentrantLock()
+  protected val stateLock = new ReentrantLock()
 
   // Unique ID for the runner, mainly for logging and tracking purpose.
   private[async] val runnerId: Long = AsyncRunner.nextRunnerId()
@@ -411,17 +411,15 @@ abstract class MemoryBoundedAsyncRunner[T] extends AsyncRunner[T]
   // Also, we cannot close host buffers explicitly here as this would cause double-free errors,
   // so we have no choice but waiting for all allocated buffers being closed.
   override protected[async] def onClose(): Unit = {
+    require(isHoldingStateLock, s"The caller must hold the state lock: $this")
     // wait until all allocated host memory buffers are actually closed
-    bufCloseLock.lockInterruptibly()
-    try {
-      while (usedMem.get() > 0L) {
-        bufCloseCond.await(30, TimeUnit.SECONDS)
-        if (usedMem.get() > 0L) {
-          logWarning(s"$this is blocking on waiting buffers to be closed for > 30s")
-        }
+    while (usedMem.get() > 0L) {
+      // Wait for buffer close signal. Here we use a timeout wait to enable logging if the
+      // runner is blocked for too long.
+      bufCloseCond.await(30, TimeUnit.SECONDS)
+      if (usedMem.get() > 0L) {
+        logWarning(s"$this is blocking on waiting buffers to be closed for > 30s")
       }
-    } finally {
-      bufCloseLock.unlock()
     }
     super.onClose()
   }
@@ -495,18 +493,15 @@ abstract class MemoryBoundedAsyncRunner[T] extends AsyncRunner[T]
 
     def onClosed(refCount: Int): Unit = if (refCount == 0) {
       // Return the memory back to the local pool and signal waiting onClose thread if exists
-      bufCloseLock.lockInterruptibly()
-      try {
+      r.withStateLock[Unit]() { _ =>
         usedMem.addAndGet(-bufferSize)
-        bufCloseCond.signal()
-      } finally {
-        bufCloseLock.unlock()
-      }
-      logDebug(s"[OnCloseHandler Closed] bufferSize=${bToStr(bufferSize)} for $r")
-      // Instantly release memory back to the global pool if the runner is no longer running
-      if (getState != Running && !closeStarted.get()) {
-        r.withStateLock[Unit]() { rr =>
-          poolPtr.release(rr, forcefully = false)
+        bufCloseCond.signal() // awaken onClose waiting thread if exists
+        logDebug(s"[OnCloseHandler Closed] bufferSize=${bToStr(bufferSize)} for $r")
+        // Instantly release memory back to the global pool unless:
+        // 1. the runner is still running
+        // 2. there is a close operation ongoing (highly likely waiting for the bufCloseCond)
+        if (getState != Running && !closeStarted.get()) {
+          poolPtr.release(r, forcefully = false)
         }
       }
     }
@@ -522,8 +517,8 @@ abstract class MemoryBoundedAsyncRunner[T] extends AsyncRunner[T]
   // peak memory allocated from the runner
   private var peakUsedMem: Long = 0L
 
-  private val bufCloseLock = new ReentrantLock()
-  private val bufCloseCond = bufCloseLock.newCondition()
+  // condition variable to signal HostMemoryBuffer close events
+  private val bufCloseCond = stateLock.newCondition()
 }
 
 /**
