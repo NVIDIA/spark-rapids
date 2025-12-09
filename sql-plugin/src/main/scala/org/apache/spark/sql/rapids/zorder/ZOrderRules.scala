@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,7 +79,7 @@ object ZOrderRules {
           val sortCol = AttributeReference("sort_col", child.dataType, child.nullable)()
           val ourSortOrder =
             SortOrder(sortCol, singleOrder.direction, singleOrder.nullOrdering, Seq.empty)
-          val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol))
+          val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol), None)
           val gpuPart = new GpuRangePartitioner(rangeBounds, sorter)
           GpuPartitionerExpr(child, gpuPart)
         }
@@ -100,7 +100,7 @@ object ZOrderRules {
               TypeSig.INT,
               TypeSig.INT))),
         (a, conf, p, r) => new ExprMeta[Expression](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression =
+          override def convertToGpuImpl(): GpuExpression =
             GpuInterleaveBits(childExprs.map(_.convertToGpu()))
         })
 
@@ -132,7 +132,7 @@ object ZOrderRules {
               TypeSig.INT,
               TypeSig.INT))),
         (a, conf, p, r) => new ExprMeta[Expression](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression = {
+          override def convertToGpuImpl(): GpuExpression = {
             val numBitsField = hilbertClazz.getDeclaredField("numBits")
             numBitsField.setAccessible(true)
             val numBits = numBitsField.get(a).asInstanceOf[java.lang.Integer]

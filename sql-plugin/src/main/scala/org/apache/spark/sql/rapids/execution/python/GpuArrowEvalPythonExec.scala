@@ -398,6 +398,7 @@ case class GpuArrowEvalPythonExec(
     val targetBatchSize = batchSize
     val runnerConf = pythonRunnerConf
     val timeZone = sessionLocalTimeZone
+    val localMetrics = allMetrics
 
     val inputRDD = child.executeColumnar()
     inputRDD.mapPartitions { iter =>
@@ -411,7 +412,8 @@ case class GpuArrowEvalPythonExec(
         udfArgs.flattenedTypes.zipWithIndex.map { case (dt, i) => StructField(s"_$i", dt)
       }.toArray)
 
-      val boundReferences = GpuBindReferences.bindReferences(udfArgs.flattenedArgs, childOutput)
+      val boundReferences = GpuBindReferences.bindReferences(udfArgs.flattenedArgs,
+        childOutput, localMetrics)
       val batchProducer = new BatchProducer(
         new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize, numInputRows,
           numInputBatches))

@@ -577,7 +577,11 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    CPU_BRIDGE_PROCESSING_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME),
+    CPU_BRIDGE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, 
+      DESCRIPTION_CPU_BRIDGE_WAIT_TIME))
 
   /** BuildRight means the right relation <=> the broadcast relation. */
   val (streamed, buildPlan) = gpuBuildSide match {
@@ -655,8 +659,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       case _ => (left, right)
     }
     val numFirstTableColumns = firstTable.output.size
-    val boundCondition = condition.map {
-      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output)
+    val boundCondition = condition.map { c =>
+      GpuBindReferences.bindGpuReference(c, firstTable.output ++ secondTable.output, allMetrics)
     }
 
     val broadcastRelation = getBroadcastRelation()
@@ -707,7 +711,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
         // batch.
         val proj = GpuBindReferences.bindGpuReferencesTiered(
-          postBuildCondition, p.child.output, conf)
+          postBuildCondition, p.child.output, conf, allMetrics)
         val fn = (batch: ColumnarBatch) => {
           withResource(batch)(proj.project)
         }

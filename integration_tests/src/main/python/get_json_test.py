@@ -311,7 +311,7 @@ def test_get_json_object_deep_nested_json():
             f.get_json_object('jsonStr', '$.a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p').alias('p')
             ))
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec','GetJsonObject')
 def test_get_json_object_deep_nested_json_fallback():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":{"k":{"l":{"m":{"n":{"o":{"p":{"q":{"r":{"s":{"t":{"u":{"v":{"w":{"x":{"y":{"z":"A"}}'
@@ -321,7 +321,7 @@ def test_get_json_object_deep_nested_json_fallback():
             f.get_json_object('jsonStr', '$.a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z').alias('z')),
         'GetJsonObject')
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec','GetJsonObject')
 @pytest.mark.parametrize('json_str_pattern', [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
                    r'"bicycle":\{"price":[1-9]\d\.\d\d,"color":"[a-z]{0,4}"\}\},' \
                    r'"email":"[a-z]{1,5}\@[a-z]{3,10}\.com","owner":"[a-z]{3,8}"\}',

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -231,7 +231,13 @@ trait GpuExpression extends Expression {
    *   - when being non-deterministic, it is a Retryable and its children are all retryable.
    */
   lazy val retryable: Boolean = deterministic || {
-    val childrenAllRetryable = children.forall(_.asInstanceOf[GpuExpression].retryable)
+    val childrenAllRetryable = children.forall {
+      case c: GpuExpression => c.retryable
+      // A CPU expression is retryable if it is deterministic
+      // For now we can only run these through the GpuCpuBridge, and it only
+      // allows deterministic expressions, but this is being defensive.
+      case other => other.deterministic
+    }
     if (selfNonDeterministic || children.forall(_.deterministic)) {
       // self is non-deterministic, so need to check if it is a Retryable.
       //

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * This file was derived from CheckDeltaInvariant.scala in the
  * Delta Lake project at https://github.com/delta-io/delta.
@@ -24,7 +24,7 @@ package com.databricks.sql.transaction.tahoe.rapids
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.databricks.sql.transaction.tahoe.constraints.{CheckDeltaInvariant, Constraint}
 import com.databricks.sql.transaction.tahoe.constraints.Constraints.{Check, NotNull}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, GpuBindReferences, GpuColumnVector, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, GpuBindReferences, GpuColumnVector, GpuExpression, GpuMetric, GpuOverrides, RapidsConf, RapidsMeta, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.shims.InvariantViolationExceptionShim
@@ -54,9 +54,10 @@ case class GpuCheckDeltaInvariant(
   override def foldable: Boolean = false
   override def nullable: Boolean = true
 
-  def withBoundReferences(input: AttributeSeq): GpuCheckDeltaInvariant = {
+  def withBoundReferences(input: AttributeSeq,
+    metrics: Map[String, GpuMetric]): GpuCheckDeltaInvariant = {
     GpuCheckDeltaInvariant(
-      GpuBindReferences.bindReference(child, input),
+      GpuBindReferences.bindReference(child, input, metrics),
       columnExtractors.map {
         case (column, extractor) => column -> BindReferences.bindReference(extractor, input)
       },
@@ -170,7 +171,7 @@ class GpuCheckDeltaInvariantMeta(
     }
   }
 
-  override def convertToGpu(child: Expression): GpuExpression = {
+  override def convertToGpuImpl(child: Expression): GpuExpression = {
     GpuCheckDeltaInvariant(
       child,
       wrapped.columnExtractors,  // leave these on CPU
