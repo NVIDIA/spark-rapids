@@ -103,7 +103,7 @@ def test_delta_deletion_vector_read(spark_tmp_path, use_cdf):
         conf=conf)
 
 
-def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions):
+def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions, scan_conf={}):
     import os
     import math
 
@@ -131,7 +131,7 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
     data_file = verify_files_and_row_groups()
     file_size = os.path.getsize(data_file)
 
-    conf = {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))}
+    conf = copy_and_update(scan_conf, {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))})
     df = with_gpu_session(lambda spark: spark.sql("SELECT * from delta.`{}`".format(data_path)), conf=conf,
                           raise_error_on_discouraged_return=False)
     num_partitions = df.rdd.getNumPartitions()
@@ -149,7 +149,12 @@ def test_delta_scan_split(spark_tmp_path):
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
 def test_delta_scan_split_with_deletion_vector_enabled(spark_tmp_path):
-    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1)
+    if is_databricks_runtime():
+        # We support only perfile reader type on Databricks with deletion vectors
+        conf = {"spark.rapids.sql.format.parquet.reader.type": "PERFILE"}
+    else:
+        conf = {}
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1, scan_conf=conf)
 
 
 # ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish
