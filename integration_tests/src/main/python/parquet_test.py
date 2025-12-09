@@ -388,18 +388,18 @@ def test_parquet_read_mixed_dictionary_plain_encoding(spark_tmp_path, reader_con
     """
     Test reading a Parquet file with mixed dictionary and plain encoded string columns.
     
-    This test uses cuDF parquet writer to generate a file with mixed encodings. 
-    The cuDF writer makes encoding decisions at the row group level based on data characteristics.
+    This test generates files with mixed encodings using both GPU and CPU parquet writers.
+    The writers make encoding decisions at the row group level based on data characteristics.
     
-    We write data with two different patterns that will be in separate row groups:
+    We write data with two different patterns:
     - Repeated strings -> should result in dictionary encoding
     - Unique long strings -> should result in plain encoding (dictionary too large)
     
-    The key is to control row group size so each pattern ends up in its own row group.
+    The gpu writer will put the different encodings in different row groups. 
+    The cpu writer will put the different encodings in the same row group (but different pages). 
     """
-    data_path = spark_tmp_path + '/MIXED_ENCODING_DATA'
     
-    def write_mixed_encoding(spark):
+    def write_mixed_encoding(spark, path):
         # Create two DataFrames with different characteristics
         # DataFrame 1: Repeated strings (should be dictionary encoded)
         dict_data = [('val' + str(i % 10),) for i in range(20000)]
@@ -415,16 +415,27 @@ def test_parquet_read_mixed_dictionary_plain_encoding(spark_tmp_path, reader_con
         df_combined = df_dict.union(df_plain)
         df_combined.coalesce(1).write \
             .option('parquet.block.size', 1024 * 1024) \
-            .parquet(data_path)
+            .parquet(path)
     
-    # Write the file once using GPU writer (to get mixed encodings from cuDF)
-    with_gpu_session(write_mixed_encoding, conf=rebase_write_corrected_conf)
-    
-    # Now test reading with both CPU and GPU readers
     all_confs = copy_and_update(reader_confs, rebase_write_corrected_conf)
     
+    # Part 1: Test with GPU-written file (cuDF writer)
+    gpu_data_path = spark_tmp_path + '/MIXED_ENCODING_DATA_GPU'
+    with_gpu_session(lambda spark: write_mixed_encoding(spark, gpu_data_path), 
+                     conf=rebase_write_corrected_conf)
+    
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path),
+        lambda spark: spark.read.parquet(gpu_data_path),
+        conf=all_confs
+    )
+    
+    # Part 2: Test with CPU-written file (Spark's built-in parquet writer)
+    cpu_data_path = spark_tmp_path + '/MIXED_ENCODING_DATA_CPU'
+    with_cpu_session(lambda spark: write_mixed_encoding(spark, cpu_data_path),
+                     conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(cpu_data_path),
         conf=all_confs
     )
 
