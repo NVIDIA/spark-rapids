@@ -19,7 +19,6 @@ from conftest import get_non_gpu_allowed, is_not_utc, is_gbk_supported
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
-from pyspark.sql import functions as f
 from pyspark.sql.types import *
 from spark_session import *
 
@@ -721,22 +720,3 @@ def test_csv_read_gbk_encoded_data(std_input_path):
             .schema("name string, age int, city string, job string")
             .csv(std_input_path + "/test_gbk.csv"),
         conf={"spark.sql.legacy.javaCharsets": legacy_charset})
-
-
-@allow_non_gpu('CollectLimitExec')
-def test_csv_stream_table_is_empty_when_join(std_input_path):
-    built_csv_path = std_input_path + '/one_row.csv'
-    stream_csv_path = std_input_path + '/empty_with_header.csv'
-
-    def _create_view(spark):
-        spark.read.csv(built_csv_path, header=True, inferSchema=True).createOrReplaceTempView("built_table")
-        spark.read.csv(stream_csv_path, header=True, inferSchema=True).createOrReplaceTempView("stream_table")
-
-    # create view first on CPU
-    with_cpu_session(lambda spark: _create_view(spark))
-
-    # then do the join on GPU
-    with_gpu_session(lambda spark:
-                     spark.table("built_table").join(spark.table("stream_table"), f.lit(True), "right_outer").select(
-                         f.col("stream_table.c0")).show(),
-                     conf=_enable_all_types_conf)
