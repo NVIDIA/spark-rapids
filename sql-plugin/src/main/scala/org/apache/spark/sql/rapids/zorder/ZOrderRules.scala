@@ -101,7 +101,7 @@ object ZOrderRules {
               TypeSig.INT,
               TypeSig.INT))),
         (a, conf, p, r) => new ExprMeta[Expression](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression =
+          override def convertToGpuImpl(): GpuExpression =
             GpuInterleaveBits(childExprs.map(_.convertToGpu()))
         })
 
@@ -133,7 +133,7 @@ object ZOrderRules {
               TypeSig.INT,
               TypeSig.INT))),
         (a, conf, p, r) => new ExprMeta[Expression](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression = {
+          override def convertToGpuImpl(): GpuExpression = {
             val numBitsField = hilbertClazz.getDeclaredField("numBits")
             numBitsField.setAccessible(true)
             val numBits = numBitsField.get(a).asInstanceOf[java.lang.Integer]
