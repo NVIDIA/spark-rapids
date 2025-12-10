@@ -694,13 +694,24 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <!-- #if scala-2.12 --><!--
+                <iceberg.version>1.6.1</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <!-- #endif scala-2.13 -->
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
+                <!-- #if scala-2.12 --><!--
+                <module>iceberg/iceberg-1-6-x</module>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <module>iceberg/iceberg-1-9-x</module>
+                <!-- #endif scala-2.13 -->
             </modules>
         </profile>
         <profile>
@@ -718,13 +729,24 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <!-- #if scala-2.12 --><!--
+                <iceberg.version>1.6.1</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <!-- #endif scala-2.13 -->
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
+                <!-- #if scala-2.12 --><!--
+                <module>iceberg/iceberg-1-6-x</module>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <module>iceberg/iceberg-1-9-x</module>
+                <!-- #endif scala-2.13 -->
             </modules>
         </profile>
         <profile>
@@ -742,13 +764,24 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <!-- #if scala-2.12 --><!--
+                <iceberg.version>1.6.1</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <!-- #endif scala-2.13 -->
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
+                <!-- #if scala-2.12 --><!--
+                <module>iceberg/iceberg-1-6-x</module>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <module>iceberg/iceberg-1-9-x</module>
+                <!-- #endif scala-2.13 -->
             </modules>
         </profile>
         <profile>
@@ -766,13 +799,24 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <!-- #if scala-2.12 --><!--
+                <iceberg.version>1.6.1</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <!-- #endif scala-2.13 -->
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
+                <!-- #if scala-2.12 --><!--
+                <module>iceberg/iceberg-1-6-x</module>
+                --><!-- #endif scala-2.12 -->
+                <!-- #if scala-2.13 -->
                 <module>iceberg/iceberg-1-9-x</module>
+                <!-- #endif scala-2.13 -->
             </modules>
         </profile>
 	<!-- #if scala-2.13 -->
