@@ -74,9 +74,7 @@ object Delta33xProvider extends DeltaProviderBase with Logging {
   }
 
   override protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat = {
-    val enableDVConfig = DeltaConfigs.ENABLE_DELETION_VECTORS_CREATION
-    val isDVEnabled = fmt.metadata.configuration.getOrElse(
-      enableDVConfig.key, enableDVConfig.defaultValue).toBoolean
+    val isDVEnabled = DeltaConfigs.ENABLE_DELETION_VECTORS_CREATION.fromMetaData(fmt.metadata)
     val optimizationsEnabled = if (isDVEnabled) {
       logWarning(s"Input Delta table has deletion vectors enabled. " +
         s"Optimizations such as file splitting and predicate pushdown are currently not " +
