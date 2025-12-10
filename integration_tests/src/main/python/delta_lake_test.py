@@ -142,6 +142,8 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Scan split works differently on Databricks")
 def test_delta_scan_split(spark_tmp_path):
     do_test_scan_split(spark_tmp_path, enable_deletion_vectors=False, expected_num_partitions=2)
 
