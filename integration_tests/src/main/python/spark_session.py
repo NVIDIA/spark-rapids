@@ -83,12 +83,7 @@ def reset_spark_session_conf():
 def _check_for_proper_return_values(something):
     """We don't want to return an DataFrame or Dataset from a with_spark_session. You will not get what you expect"""
     if (isinstance(something, DataFrame)):
-        error_msg = """
-        You are trying to return a DataFrame from a with_*_session.
-        This is not allowed because the dataframe is processed lazily,
-        leading to discrepancies between the actual behavior and what you might expect.
-        """
-        raise RuntimeError(error_msg)
+        raise RuntimeError("You should never return a DataFrame from a with_*_session, you will not get the results that you expect")
 
 @contextmanager
 def pyspark_compatibility_fixes():
