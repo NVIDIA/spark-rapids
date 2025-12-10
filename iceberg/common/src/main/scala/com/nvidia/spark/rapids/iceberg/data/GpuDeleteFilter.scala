@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.iceberg.fieldIndex
 import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetReaderConf
 import org.apache.iceberg.{DeleteFile, FileContent, MetadataColumns, Schema}
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
-import org.apache.iceberg.types.{Types, TypeUtil}
 import org.apache.iceberg.types.Types.NestedField
 import org.apache.iceberg.types.TypeUtil.getProjectedIds
 
