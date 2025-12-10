@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.util.Random
 
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.TaskContext
@@ -56,20 +55,17 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
         }
       }
     } else {
-      withRetryNoSplit(
-        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
-        withResource(sb.getColumnarBatch()) { b =>
-          withResource(GpuColumnVector.from(b)) { table =>
-            withResource(table.
-              roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
-              val parts = partedTable.getPartitions
-              val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
-                case (idx, sparkType) =>
-                  GpuColumnVector
-                    .from(partedTable.getColumn(idx).incRefCount(), sparkType)
-              }.toArray
-              (parts, columns)
-            }
+      withResource(batch) { b =>
+        withResource(GpuColumnVector.from(b)) { table =>
+          withResource(table.
+            roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
+            val parts = partedTable.getPartitions
+            val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
+              case (idx, sparkType) =>
+                GpuColumnVector
+                  .from(partedTable.getColumn(idx).incRefCount(), sparkType)
+            }.toArray
+            (parts, columns)
           }
         }
       }
