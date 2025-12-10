@@ -135,7 +135,11 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     this.rows = snapshot.rows;
     this.currentIndex = snapshot.currentIndex;
     this.currentStringByteIndex = Math.toIntExact(snapshot.currentStringByteIndex);
-    // Note: nullCount is intentionally NOT restored. See BuilderSnapshot javadoc for details.
+    // Note: nullCount is intentionally NOT restored because setNullAt() is idempotent.
+    // It only increments nullCount if the validity bit was previously valid (1).
+    // Since we restore currentIndex and replay the same row, setNullAt will be called
+    // at the same index with the bit already set to null (0), so it returns 0 and
+    // nullCount isn't double-incremented.
     if (snapshot.childStates != null) {
       if (snapshot.childStates.length != childBuilders.size()) {
         throw new IllegalStateException(

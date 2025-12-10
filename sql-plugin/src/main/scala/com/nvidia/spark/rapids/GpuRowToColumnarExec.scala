@@ -642,7 +642,7 @@ class RowToColumnarIterator(
         while (rowIter.hasNext &&
             (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
           converter.attempt(rowIter.next())
-          val bytesWritten = withRetryNoSplit(converter) { _ =>
+          val bytesWritten = withRetryNoSplit {
             withRestoreOnRetry(converter) {
               converters.convert(converter.currentRow, builders)
             }
@@ -707,7 +707,7 @@ class RowToColumnarIterator(
 private class RetryableRowConverter(
     builders: GpuColumnarBatchBuilder,
     projection: UnsafeProjection)
-  extends AutoCloseable with Retryable {
+  extends Retryable {
 
   // The current row being converted - set via attempt()
   private var initialRow: InternalRow = _
@@ -766,7 +766,6 @@ private class RetryableRowConverter(
     builders.restoreState(builderSnapshots)
   }
 
-  override def close(): Unit = ()
 }
 
 object GeneratedInternalRowToCudfRowIterator extends Logging {
