@@ -16,12 +16,13 @@
 
 package org.apache.iceberg.spark.functions
 
+import scala.util.Try
+
 import com.nvidia.spark.rapids.iceberg.fieldIndex
 import org.apache.iceberg.Schema
 import org.apache.iceberg.transforms.Transform
-import org.apache.spark.sql.types.{DataType, IntegerType, StructType}
 
-import scala.util.Try
+import org.apache.spark.sql.types.{DataType, IntegerType, StructType}
 
 
 /**

@@ -17,16 +17,18 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
+import java.util.{List => JList}
+
+import scala.annotation.nowarn
+
 import org.apache.iceberg.parquet.TypeWithSchemaVisitor
 import org.apache.iceberg.relocated.com.google.common.collect.Lists
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{GroupType, MessageType, PrimitiveType, Type => ParquetType}
 import org.apache.iceberg.spark.SparkSchemaUtil
-import org.apache.iceberg.types.Type.TypeID
 import org.apache.iceberg.types.{Type, Types}
-import org.apache.spark.sql.types._
+import org.apache.iceberg.types.Type.TypeID
 
-import java.util.{List => JList}
-import scala.annotation.nowarn
+import org.apache.spark.sql.types._
 
 
 /** Generate the Spark schema corresponding to a Parquet schema and expected Iceberg schema */

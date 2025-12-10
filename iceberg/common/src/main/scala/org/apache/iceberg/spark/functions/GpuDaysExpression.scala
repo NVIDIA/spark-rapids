@@ -17,8 +17,9 @@
 package org.apache.iceberg.spark.functions
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.jni.iceberg.IcebergDateTimeUtil
 import com.nvidia.spark.rapids.{ExprMeta, GpuColumnVector, GpuUnaryExpression}
+import com.nvidia.spark.rapids.jni.iceberg.IcebergDateTimeUtil
+
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.types.{DataType, DateType}

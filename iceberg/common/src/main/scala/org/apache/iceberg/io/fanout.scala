@@ -18,10 +18,10 @@
 package org.apache.iceberg.io
 
 import com.nvidia.spark.rapids.SpillableColumnarBatch
+import org.apache.iceberg.{DataFile, DeleteFile, PartitionSpec, StructLike}
 import org.apache.iceberg.relocated.com.google.common.collect.Lists
 import org.apache.iceberg.spark.source.GpuSparkFileWriterFactory
 import org.apache.iceberg.util.CharSequenceSet
-import org.apache.iceberg.{DataFile, DeleteFile, PartitionSpec, StructLike}
 
 class GpuFanoutDataWriter(
   writerFactory: GpuSparkFileWriterFactory,

@@ -16,18 +16,22 @@
 
 package org.apache.iceberg.spark.source
 
+import scala.collection.JavaConverters._
+import scala.collection.mutable
+
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar, Table => CudfTable}
 import ai.rapids.cudf.Table.DuplicateKeepOption
-import ai.rapids.cudf.{Scalar, ColumnVector => CudfColumnVector, Table => CudfTable}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray, AutoCloseableSeq}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
-import com.nvidia.spark.rapids.iceberg.utils.GpuStructProjection
 import com.nvidia.spark.rapids.iceberg.{ColumnarBatchWithPartition, GpuIcebergPartitioner, GpuIcebergSpecPartitioner}
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.iceberg.utils.GpuStructProjection
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
+import org.apache.iceberg._
 import org.apache.iceberg.deletes.DeleteGranularity
 import org.apache.iceberg.io._
 import org.apache.iceberg.spark.GpuTypeToSparkType
@@ -35,23 +39,20 @@ import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.source.GpuSparkWrite.supports
 import org.apache.iceberg.spark.source.GpuWriteContext.{emptyPartitionData, positionDeleteDataTypes, positionDeleteSparkType}
 import org.apache.iceberg.types.{Types => IcebergTypes}
-import org.apache.iceberg._
+
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
+import org.apache.spark.sql.connector.write._
 import org.apache.spark.sql.connector.write.RowLevelOperation.Command
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
-import org.apache.spark.sql.connector.write._
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.{DataType, IntegerType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.util.SerializableConfiguration
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 
 

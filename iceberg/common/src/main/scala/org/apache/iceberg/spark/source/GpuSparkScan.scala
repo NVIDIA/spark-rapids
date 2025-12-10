@@ -16,18 +16,19 @@
 
 package org.apache.iceberg.spark.source
 
-import com.nvidia.spark.rapids._
-import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
-import org.apache.iceberg.spark.{GpuSparkReadConf, SparkReadConf}
-import org.apache.iceberg.types.Types
-import org.apache.iceberg.{BaseMetadataTable, ScanTaskGroup}
-import org.apache.spark.sql.connector.metric.{CustomMetric, CustomTaskMetric}
-import org.apache.spark.sql.connector.read.streaming.MicroBatchStream
-import org.apache.spark.sql.connector.read.{Batch, Scan, Statistics, SupportsReportStatistics}
-import org.apache.spark.sql.types.StructType
-
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
+
+import com.nvidia.spark.rapids._
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
+import org.apache.iceberg.{BaseMetadataTable, ScanTaskGroup}
+import org.apache.iceberg.spark.{GpuSparkReadConf, SparkReadConf}
+import org.apache.iceberg.types.Types
+
+import org.apache.spark.sql.connector.metric.{CustomMetric, CustomTaskMetric}
+import org.apache.spark.sql.connector.read.{Batch, Scan, Statistics, SupportsReportStatistics}
+import org.apache.spark.sql.connector.read.streaming.MicroBatchStream
+import org.apache.spark.sql.types.StructType
 
 
 abstract class GpuSparkScan(val cpuScan: SparkScan,

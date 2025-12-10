@@ -16,12 +16,18 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
+import java.io.{IOException, UncheckedIOException}
+import java.net.URI
+import java.util.Objects
+
+import scala.collection.JavaConverters._
+
+import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
 import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
-import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.Schema
@@ -30,21 +36,17 @@ import org.apache.iceberg.hadoop.HadoopInputFile
 import org.apache.iceberg.io.InputFile
 import org.apache.iceberg.mapping.NameMapping
 import org.apache.iceberg.parquet._
+import org.apache.iceberg.shaded.org.apache.parquet.{HadoopReadOptions, ParquetReadOptions}
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
-import org.apache.iceberg.shaded.org.apache.parquet.{HadoopReadOptions, ParquetReadOptions}
 import org.apache.parquet.hadoop.metadata.BlockMetaData
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import java.io.{IOException, UncheckedIOException}
-import java.net.URI
-import java.util.Objects
-import scala.collection.JavaConverters._
 
 case class IcebergPartitionedFile(
     file: IcebergInputFile,

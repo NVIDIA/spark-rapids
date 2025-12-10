@@ -16,14 +16,15 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
+import java.util.{Map => JMap}
+
+import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, GpuColumnVector, SingleDataBlockInfo}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.parquet._
-import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, GpuColumnVector, SingleDataBlockInfo}
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import java.util.{Map => JMap}
 
 class GpuCoalescingIcebergParquetReader(
     val rapidsFileIO: IcebergFileIO,

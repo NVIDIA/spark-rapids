@@ -16,16 +16,17 @@
 
 package org.apache.iceberg.spark.functions
 
-import ai.rapids.cudf.{DType, Scalar, ColumnVector => CudfColumnVector}
+import scala.util.{Success, Try}
+
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, Scalar}
+import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.Hash
-import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 import org.apache.iceberg.spark.functions.GpuBucketExpression.cast
+
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.types._
-
-import scala.util.{Success, Try}
 
 case class GpuBucketExpression(numBuckets: Expression, value: Expression)
   extends GpuBinaryExpression {

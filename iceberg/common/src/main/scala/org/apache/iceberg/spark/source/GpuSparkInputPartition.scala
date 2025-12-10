@@ -18,6 +18,7 @@ package org.apache.iceberg.spark.source
 
 import com.nvidia.spark.rapids.RapidsConf
 import org.apache.iceberg.{Schema, SchemaParser}
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}

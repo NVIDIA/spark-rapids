@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.iceberg.Schema
-
 import scala.collection.JavaConverters._
+
+import org.apache.iceberg.Schema
 
 package object iceberg {
   def fieldIndex(schema: Schema, fieldId: Int): Int = {

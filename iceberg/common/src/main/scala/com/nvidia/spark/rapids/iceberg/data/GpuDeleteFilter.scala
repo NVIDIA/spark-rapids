@@ -16,26 +16,27 @@
 
 package com.nvidia.spark.rapids.iceberg.data
 
+import scala.collection.JavaConverters._
+import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
 import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter2._
 import com.nvidia.spark.rapids.iceberg.fieldIndex
 import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetReaderConf
-import com.nvidia.spark.rapids._
-import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
-import org.apache.iceberg.types.TypeUtil.getProjectedIds
-import org.apache.iceberg.types.Types
-import org.apache.iceberg.types.Types.NestedField
 import org.apache.iceberg.{DeleteFile, FileContent, MetadataColumns, Schema}
+import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
+import org.apache.iceberg.types.{Types, TypeUtil}
+import org.apache.iceberg.types.Types.NestedField
+import org.apache.iceberg.types.TypeUtil.getProjectedIds
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.ExprId
 import org.apache.spark.sql.rapids.execution.HashedExistenceJoinIterator
 import org.apache.spark.sql.types.{BooleanType, DataType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuDeleteFilter(
     private val rapidsFileIO: IcebergFileIO,

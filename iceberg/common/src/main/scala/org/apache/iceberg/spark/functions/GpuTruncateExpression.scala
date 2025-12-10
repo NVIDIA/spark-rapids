@@ -16,9 +16,10 @@
 
 package org.apache.iceberg.spark.functions
 
-import ai.rapids.cudf.{DType, ColumnVector => CudfColumnVector}
-import com.nvidia.spark.rapids.jni.iceberg.IcebergTruncate
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType}
 import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuScalar}
+import com.nvidia.spark.rapids.jni.iceberg.IcebergTruncate
+
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.types._

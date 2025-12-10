@@ -16,13 +16,14 @@
 
 package org.apache.iceberg.spark.source
 
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.RapidsConf
-import org.apache.iceberg.types.Types
 import org.apache.iceberg.{PartitionScanTask, ScanTaskGroup}
+import org.apache.iceberg.types.Types
+
 import org.apache.spark.sql.connector.read.SupportsReportPartitioning
 import org.apache.spark.sql.connector.read.partitioning.Partitioning
-
-import scala.collection.JavaConverters._
 
 abstract class GpuSparkPartitioningAwareScan[T <: PartitionScanTask](
     override val cpuScan: SparkPartitioningAwareScan[T],

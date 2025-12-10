@@ -16,12 +16,13 @@
 
 package com.nvidia.spark.rapids.iceberg.utils
 
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.GpuColumnVector
 import org.apache.iceberg.types.Types.StructType
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
-import scala.collection.JavaConverters._
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
  * Gpu version of {@link org.apache.iceberg.util.StructProjection}

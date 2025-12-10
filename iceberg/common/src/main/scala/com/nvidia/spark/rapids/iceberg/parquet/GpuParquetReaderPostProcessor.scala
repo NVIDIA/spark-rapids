@@ -16,24 +16,26 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
+import java.util
+import java.util.{Map => JMap}
+
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
-import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{HandlerResult, doUpCastIfNeeded}
+import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
-import com.nvidia.spark.rapids._
-import org.apache.iceberg.spark.SparkSchemaUtil
-import org.apache.iceberg.types.Types.NestedField
-import org.apache.iceberg.types.{Type, TypeUtil, Types}
 import org.apache.iceberg.{MetadataColumns, Schema}
+import org.apache.iceberg.spark.SparkSchemaUtil
+import org.apache.iceberg.types.{Type, Types, TypeUtil}
+import org.apache.iceberg.types.Types.NestedField
 import org.apache.parquet.schema.MessageType
-import org.apache.spark.sql.types.{DataType, LongType, StringType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
-import java.util
-import java.util.{Map => JMap}
-import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.sql.types.{DataType, LongType, StringType}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /** Processes columnar batch after reading from parquet file.
  *

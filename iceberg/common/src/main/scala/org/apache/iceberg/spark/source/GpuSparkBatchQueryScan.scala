@@ -16,16 +16,18 @@
 
 package org.apache.iceberg.spark.source
 
+import java.util.Objects
+
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
 import org.apache.iceberg.PartitionScanTask
 import org.apache.iceberg.expressions.Expression
+
 import org.apache.spark.sql.connector.expressions.NamedReference
 import org.apache.spark.sql.connector.expressions.filter.Predicate
 import org.apache.spark.sql.connector.read.{Statistics, SupportsRuntimeV2Filtering}
-
-import java.util.Objects
-import scala.collection.JavaConverters._
 
 class GpuSparkBatchQueryScan(
     override val cpuScan: SparkBatchQueryScan,

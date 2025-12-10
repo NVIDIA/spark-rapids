@@ -16,13 +16,14 @@
 
 package org.apache.iceberg.spark.source
 
+import java.util.Objects
+
 import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
 import org.apache.iceberg.FileScanTask
+
 import org.apache.spark.sql.connector.expressions.NamedReference
 import org.apache.spark.sql.connector.read.{Statistics, SupportsRuntimeFiltering}
 import org.apache.spark.sql.sources.Filter
-
-import java.util.Objects
 
 class GpuSparkCopyOnWriteScan(
     override val cpuScan: SparkCopyOnWriteScan,

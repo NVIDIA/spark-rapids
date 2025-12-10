@@ -16,17 +16,17 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
+import java.lang.{Long => JLong}
+import java.util.{List => JList}
+import java.util.stream.{Stream => JStream}
+
+import com.nvidia.spark.rapids.{GpuParquetWriter, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
-import com.nvidia.spark.rapids.{GpuParquetWriter, SpillableColumnarBatch}
+import org.apache.iceberg.{FieldMetrics, Metrics, MetricsConfig}
 import org.apache.iceberg.io.FileAppender
 import org.apache.iceberg.parquet.ParquetUtil
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.ParquetMetadata
-import org.apache.iceberg.{FieldMetrics, Metrics, MetricsConfig}
-
-import java.lang.{Long => JLong}
-import java.util.stream.{Stream => JStream}
-import java.util.{List => JList}
 
 
 /**

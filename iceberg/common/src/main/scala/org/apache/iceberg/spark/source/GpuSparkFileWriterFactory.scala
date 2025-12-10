@@ -16,15 +16,16 @@
 
 package org.apache.iceberg.spark.source
 
+import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetWriter, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.parquet.GpuIcebergParquetAppender
-import com.nvidia.spark.rapids.{ColumnarOutputWriterFactory, GpuParquetWriter, SpillableColumnarBatch}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
-import org.apache.spark.sql.execution.datasources.GpuWriteFiles
+import org.apache.iceberg._
 import org.apache.iceberg.deletes.{EqualityDeleteWriter, PositionDeleteWriter}
 import org.apache.iceberg.encryption.EncryptedOutputFile
 import org.apache.iceberg.io.{DataWriter, FileWriterFactory, GpuPositionDeleteFileWriter}
-import org.apache.iceberg._
+
+import org.apache.spark.sql.execution.datasources.GpuWriteFiles
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration

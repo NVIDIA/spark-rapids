@@ -16,13 +16,14 @@
 
 package org.apache.iceberg.spark.source
 
+import java.util.Objects
+
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
 import org.apache.iceberg.{Schema, SchemaParser}
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReaderFactory}
 import org.apache.spark.util.SerializableConfiguration
-
-import java.util.Objects
 
 class GpuSparkBatch(
     val cpuBatch: SparkBatch,

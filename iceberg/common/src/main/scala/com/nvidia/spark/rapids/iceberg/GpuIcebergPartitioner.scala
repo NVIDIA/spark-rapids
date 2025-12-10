@@ -16,21 +16,23 @@
 
 package com.nvidia.spark.rapids.iceberg
 
+import java.lang.Math.toIntExact
+
+import scala.collection.JavaConverters._
+
 import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
-import com.nvidia.spark.rapids._
-import org.apache.iceberg.spark.functions._
-import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
-import org.apache.iceberg.types.Types
 import org.apache.iceberg.{PartitionField, PartitionSpec, Schema, StructLike}
+import org.apache.iceberg.spark.{GpuTypeToSparkType, SparkStructLike}
+import org.apache.iceberg.spark.functions._
+import org.apache.iceberg.types.Types
+
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.catalyst.expressions.NamedExpression.newExprId
 import org.apache.spark.sql.types.{DataType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
-
-import java.lang.Math.toIntExact
-import scala.collection.JavaConverters._
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
  * A GPU based Iceberg partitioner that partitions columnar batches by key.

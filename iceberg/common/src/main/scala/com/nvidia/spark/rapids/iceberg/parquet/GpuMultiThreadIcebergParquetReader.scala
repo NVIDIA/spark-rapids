@@ -16,19 +16,20 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
+import java.util.{Map => JMap}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.CombineConf
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, MultiFileCloudParquetPartitionReader}
+
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
-import java.util.{Map => JMap}
 
 class GpuMultiThreadIcebergParquetReader(
     val rapidsFileIO: IcebergFileIO,

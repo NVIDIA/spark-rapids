@@ -16,19 +16,20 @@
 
 package org.apache.iceberg.io
 
-import com.nvidia.spark.rapids.Arm.withResource
+import java.nio.ByteBuffer
+import java.util.{List => JList}
+
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.{GpuColumnVector, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.Arm.withResource
+import org.apache.iceberg._
 import org.apache.iceberg.MetadataColumns.{DELETE_FILE_PATH, DELETE_FILE_POS}
 import org.apache.iceberg.encryption.EncryptedOutputFile
 import org.apache.iceberg.io.GpuPositionDeleteFileWriter.FILE_AND_POS_FIELD_IDS
 import org.apache.iceberg.relocated.com.google.common.collect.Lists
 import org.apache.iceberg.spark.source.GpuSparkFileWriterFactory
 import org.apache.iceberg.util.CharSequenceSet
-import org.apache.iceberg._
-
-import java.nio.ByteBuffer
-import java.util.{List => JList}
-import scala.collection.JavaConverters._
 
 
 

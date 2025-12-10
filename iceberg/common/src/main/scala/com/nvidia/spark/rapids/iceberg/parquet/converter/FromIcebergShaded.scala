@@ -16,23 +16,24 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet.converter
 
-import org.apache.iceberg.shaded.org.apache.parquet.column.statistics.{Statistics => ShadedStatistics}
+import java.util.Optional
+
+import scala.collection.JavaConverters._
+
 import org.apache.iceberg.shaded.org.apache.parquet.column.{Encoding => ShadedEncoding, EncodingStats => ShadedEncodingStats}
+import org.apache.iceberg.shaded.org.apache.parquet.column.statistics.{Statistics => ShadedStatistics}
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData, ColumnChunkMetaData => ShadedColumnChunkMetaData, ColumnChunkProperties => ShadedColumnChunkProperties, ColumnPath => ShadedColumnPath, CompressionCodecName => ShadedCompressionCodecName}
 import org.apache.iceberg.shaded.org.apache.parquet.internal.hadoop.metadata.{IndexReference => ShadedIndexReference}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.{ColumnOrder => ShadedColumnOrder, GroupType => ShadedGroupType, LogicalTypeAnnotation => ShadedLogicalTypeAnnotation, MessageType => ShadedMessageType, PrimitiveType => ShadedPrimitiveType, Type => ShadedType}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.LogicalTypeAnnotation.{LogicalTypeAnnotationVisitor => ShadedLogicalTypeAnnotationVisitor, TimeUnit => ShadedTimeUnit}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType.{PrimitiveTypeName => ShadedPrimitiveTypeName}
-import org.apache.iceberg.shaded.org.apache.parquet.schema.{ColumnOrder => ShadedColumnOrder, GroupType => ShadedGroupType, LogicalTypeAnnotation => ShadedLogicalTypeAnnotation, MessageType => ShadedMessageType, PrimitiveType => ShadedPrimitiveType, Type => ShadedType}
-import org.apache.parquet.column.statistics.Statistics
 import org.apache.parquet.column.{Encoding, EncodingStats}
+import org.apache.parquet.column.statistics.Statistics
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.internal.hadoop.metadata.IndexReference
+import org.apache.parquet.schema._
 import org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
-import org.apache.parquet.schema._
-
-import java.util.Optional
-import scala.collection.JavaConverters._
 
 
 object FromIcebergShaded {

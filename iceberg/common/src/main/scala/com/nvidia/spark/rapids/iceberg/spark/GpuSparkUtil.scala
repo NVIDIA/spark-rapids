@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.iceberg.spark
 
 import org.apache.iceberg.Schema
-import org.apache.iceberg.types.{TypeUtil, Types}
+import org.apache.iceberg.types.{Types, TypeUtil}
 
 
 object GpuSparkUtil {

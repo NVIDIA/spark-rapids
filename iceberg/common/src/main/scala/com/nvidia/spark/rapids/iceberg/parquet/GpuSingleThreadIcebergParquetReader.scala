@@ -16,17 +16,19 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
+import java.util.{Map => JMap}
+
+import scala.annotation.tailrec
+
+import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, PartitionReaderWithBytesRead}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
 import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, ParquetPartitionReader}
-import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, PartitionReaderWithBytesRead}
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import java.util.{Map => JMap}
-import scala.annotation.tailrec
 
 class GpuSingleThreadIcebergParquetReader(
     val rapidsFileIO: IcebergFileIO,
