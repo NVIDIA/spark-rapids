@@ -391,16 +391,21 @@ case class DefaultThreadPoolConf(
 case class MemoryBoundedPoolConf(
     maxThreadNumber: Int,
     stageLevelPool: Boolean,
-    memoryCapacity: Long, // The maximum host memory being used in bytes, must be > 0
-    waitMemTimeoutMs: Long // The timeout for acquiring host memory in milliseconds
-) extends ThreadPoolConf
+    // The maximum host memory being used in bytes, must be > 0
+    memoryCapacity: Long,
+    // The timeout for acquiring host memory in milliseconds
+    waitMemTimeoutMs: Long,
+    // When closing a MemoryBoundedAsyncRunner, the maximum retry attempts waiting for all
+    // allocated host memory buffers to be closed
+    maxRetriesOnClose: Int) extends ThreadPoolConf
 
 class ThreadPoolConfBuilder(
     private val maxThreadNumber: Int,
     private val isMemoryBounded: Boolean,
     private val memoryCapacityFromDriver: Long,
     private val timeoutMs: Long,
-    private val stageLevelPool: Boolean
+    private val stageLevelPool: Boolean,
+    private val maxRetriesOnClose: Int
 ) extends Logging with Serializable {
 
   // Finalize the ThreadPoolConf, which mainly determines the memory capacity of the
@@ -433,7 +438,8 @@ class ThreadPoolConfBuilder(
         maxThreadNumber = maxThreadNumber,
         stageLevelPool = stageLevelPool,
         memoryCapacity = memCap,
-        waitMemTimeoutMs = timeoutMs)
+        waitMemTimeoutMs = timeoutMs,
+        maxRetriesOnClose = maxRetriesOnClose)
     }
   }
 }
@@ -446,7 +452,8 @@ object ThreadPoolConfBuilder {
       conf.enableMultiThreadReadMemoryLimit,
       conf.multiThreadReadMemoryLimit,
       conf.multiThreadReadMemoryAcquireTimeout,
-      conf.multiThreadReadStageLevelPool)
+      conf.multiThreadReadStageLevelPool,
+      conf.multiThreadReadMaxBufferCloseWaitRetries)
   }
 
   // Set an extremely large memory capacity by default, so that the thread pool can be used

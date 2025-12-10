@@ -2716,6 +2716,13 @@ class MultiFileCloudParquetPartitionReader(
 
     override val baseMemoryAllocator: HostMemoryAllocator = DefaultHostMemoryAllocator.get()
 
+    // The config only applies when `AsyncRunner.onClose` is called by the HostMemoryPool,
+    // which means that ResourceBoundedThreadPool is enabled.
+    override protected val maxRetriesOnClose: Int = poolConf match {
+      case p: MemoryBoundedPoolConf => p.maxRetriesOnClose
+      case _ => 1
+    }
+
     // Only enable `MemoryBoundedAsyncRunner.allocate` if MemoryBoundedReading enabled
     private lazy val customAllocator: Option[HostMemoryAllocator] = poolConf match {
       case _: MemoryBoundedPoolConf => Some(this)

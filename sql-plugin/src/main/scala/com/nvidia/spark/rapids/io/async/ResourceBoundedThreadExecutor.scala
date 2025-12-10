@@ -289,7 +289,12 @@ class ResourceBoundedThreadExecutor(mgr: ResourcePool,
           Option(rr.result) match {
             case None => // Fatal error
               throw new IllegalStateException(s"In Completed State but NO Result: $rr")
-            case _ => // try to release unused resource as eagerly as possible
+            case _ if rr.closeStarted.get() =>
+              // close has already started, do nothing
+              // This is a rare case when the runner is closed between execution and afterExecute
+              // by other threads explicitly.
+            case _ =>
+              // try to release unused resource as eagerly as possible
               mgr.release(rr, forcefully = false)
           }
 

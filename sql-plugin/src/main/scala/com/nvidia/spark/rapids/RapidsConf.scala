@@ -1246,6 +1246,19 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         .createWithDefault(false)
   }
 
+  val MULTITHREAD_READ_MAX_BUFFER_CLOSE_WAIT_RETRIES = {
+    conf("spark.rapids.sql.multiThreadedRead.maxBufferCloseWaitRetries")
+        .doc("The maximum number of retry attempts (each waiting 30 seconds) for all host " +
+            "memory buffers to be closed when closing a MemoryBoundedAsyncRunner. If the " +
+            "retry count exceeds this threshold, an exception will be thrown to prevent " +
+            "indefinite hangs caused by leaked buffer references. This helps detect resource " +
+            "management bugs early.")
+        .internal()
+        .integerConf
+        .checkValue(v => v > 0, "The max retry attempts must be greater than zero")
+        .createWithDefault(4)
+  } // 4 retries * 30s = 120 seconds max wait
+
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
     .booleanConf
@@ -3424,6 +3437,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val multiThreadReadStageLevelPool: Boolean =
     get(MULTITHREAD_READ_MEMORY_LIMIT_TEST_PER_STAGE_POOL)
+
+  lazy val multiThreadReadMaxBufferCloseWaitRetries: Int =
+    get(MULTITHREAD_READ_MAX_BUFFER_CLOSE_WAIT_RETRIES)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 

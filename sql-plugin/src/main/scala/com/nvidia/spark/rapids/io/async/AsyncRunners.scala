@@ -24,7 +24,7 @@ import java.util.function.LongUnaryOperator
 import scala.collection.mutable
 
 import ai.rapids.cudf.{HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.HostAlloc
+import com.nvidia.spark.rapids.{HostAlloc, RapidsConf}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.TaskPriority
 
@@ -363,6 +363,9 @@ abstract class MemoryBoundedAsyncRunner[T] extends AsyncRunner[T]
   // The base memory allocator from which the runner actually allocates memory.
   val baseMemoryAllocator: HostMemoryAllocator
 
+  // The maximum retry attempts waiting for all allocated host memory buffers to be closed
+  protected val maxRetriesOnClose: Int
+
   final override def resource: AsyncRunResource = {
     require(isHoldingStateLock, s"The caller must hold the state lock: $this")
     if (localPool < 0) {
@@ -412,13 +415,29 @@ abstract class MemoryBoundedAsyncRunner[T] extends AsyncRunner[T]
   // so we have no choice but waiting for all allocated buffers being closed.
   override protected[async] def onClose(): Unit = {
     require(isHoldingStateLock, s"The caller must hold the state lock: $this")
+    // Get the maximum retry attempts from configuration, default to 4 (4 * 30s = 120s)
+    val waitIntervalSeconds = 30L // fixed wait interval
+    var retryCount = 0
+
     // wait until all allocated host memory buffers are actually closed
     while (usedMem.get() > 0L) {
       // Wait for buffer close signal. Here we use a timeout wait to enable logging if the
       // runner is blocked for too long.
-      bufCloseCond.await(30, TimeUnit.SECONDS)
+      bufCloseCond.await(waitIntervalSeconds, TimeUnit.SECONDS)
+      retryCount += 1
+      val maxRetries = maxRetriesOnClose
       if (usedMem.get() > 0L) {
-        logWarning(s"$this is blocking on waiting buffers to be closed for > 30s")
+        if (retryCount >= maxRetries) {
+          val usedBytes = usedMem.get()
+          throw new IllegalStateException(
+            s"Exceeded max retry attempts ($maxRetries) waiting for host memory buffers " +
+                s"to be closed for $this. Still holding ${bToStr(usedBytes)} of unreleased " +
+                s"memory. This likely indicates leaked buffer references. " +
+                s"Adjust ${RapidsConf.MULTITHREAD_READ_MAX_BUFFER_CLOSE_WAIT_RETRIES.key} to " +
+                s"change the retry threshold.")
+        }
+        logWarning(s"$this is blocking on waiting buffers to be closed, " +
+            s"retry $retryCount/$maxRetries (interval: ${waitIntervalSeconds}s)")
       }
     }
     super.onClose()
