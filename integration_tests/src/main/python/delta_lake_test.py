@@ -148,7 +148,7 @@ def test_delta_scan_split(spark_tmp_path):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
-@pytest.mark.skipif(not is_databricks_runtime(),
+@pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
 def test_delta_scan_split_with_deletion_vector_enabled(spark_tmp_path):
     do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1)
