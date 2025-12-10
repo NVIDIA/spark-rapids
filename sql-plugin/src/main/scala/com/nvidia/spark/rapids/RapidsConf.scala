@@ -1875,6 +1875,25 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val TEST_RETRY_COVERAGE_TRACKING_ENABLED =
+    conf("spark.rapids.sql.test.retryCoverageTracking.enabled")
+    .doc("When set to true, track memory allocations that are not covered by retry methods. " +
+      "If an allocation happens without withRetry/withRetryNoSplit in the call stack, " +
+      "the allocation info (kind and call stack) will be logged to a CSV file. " +
+      "This is intended for debugging and ensuring all allocations are retry-safe.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val TEST_RETRY_COVERAGE_TRACKING_OUTPUT =
+    conf("spark.rapids.sql.test.retryCoverageTracking.outputPath")
+    .doc("Path to the CSV file where uncovered allocations will be logged. " +
+      "Only used when spark.rapids.sql.test.retryCoverageTracking.enabled is true. " +
+      "Default is 'uncovered_allocations.csv' in the current working directory.")
+    .internal()
+    .stringConf
+    .createWithDefault("uncovered_allocations.csv")
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -3210,6 +3229,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val isRetryContextCheckEnabled: Boolean = get(TEST_RETRY_CONTEXT_CHECK_ENABLED)
+
+  lazy val isRetryCoverageTrackingEnabled: Boolean = get(TEST_RETRY_COVERAGE_TRACKING_ENABLED)
+
+  lazy val retryCoverageTrackingOutputPath: String = get(TEST_RETRY_COVERAGE_TRACKING_OUTPUT)
 
   lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
 
