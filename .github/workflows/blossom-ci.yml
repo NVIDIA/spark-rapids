@@ -33,7 +33,7 @@ jobs:
       args: ${{ env.args }}
 
     # This job only runs for pull request comments
-    if: |
+    if: | 
       github.event.comment.body == 'build' &&
       (
         github.actor == 'abellina' ||
