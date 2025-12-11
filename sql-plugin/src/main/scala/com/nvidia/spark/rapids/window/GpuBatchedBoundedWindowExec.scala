@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.window
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Table => CudfTable}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
@@ -180,12 +181,15 @@ class GpuBatchedBoundedWindowIterator(
             // No point calling windowing kernel: the results will simply be ignored.
             logWarning("Not enough rows! Cannot output a batch.")
           } else {
-            NvtxIdWithMetrics(NvtxRegistry.WINDOW_EXEC, opTime) {
-              withResource(computeBasicWindow(inputCB)) { outputCols =>
-                outputBatch =  withResource(
-                                  trim(outputCols,
-                                    numPrecedingRowsAdded, numUnprocessedInCache)) { trimmed =>
-                                  convertToBatch(outputTypes, trimmed)
+            // Wrap the window computation with retry logic to handle OOM.
+            outputBatch = withRetryNoSplit {
+              NvtxIdWithMetrics(NvtxRegistry.WINDOW_EXEC, opTime) {
+                withResource(computeBasicWindow(inputCB)) { outputCols =>
+                  withResource(
+                    trim(outputCols,
+                      numPrecedingRowsAdded, numUnprocessedInCache)) { trimmed =>
+                    convertToBatch(outputTypes, trimmed)
+                  }
                 }
               }
             }

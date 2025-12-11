@@ -22,7 +22,7 @@ import ai.rapids.cudf.{ColumnVector, DType, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.extractLit
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, splitTargetSizeInHalfGpu, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
@@ -912,12 +912,23 @@ case class GpuGenerateExec(
   private def getSplits(cb: ColumnarBatch,
       othersProjectList: Seq[GpuExpression],
       targetSize: Long): Seq[SpillableColumnarBatch] = {
-    withResource(cb) { _ =>
-      // compute split indices of input batch
-      val splitIndices = generator.inputSplitIndices(
-      cb, othersProjectList.length, outer, targetSize)
-      // split up input batch with indices
-      makeSplits(cb, splitIndices)
+    val spillableBatch = SpillableColumnarBatch(cb,
+      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    withResource(spillableBatch) { _ =>
+      // Use a minimum target size to prevent infinite splitting
+      val minTargetSize = Math.min(targetSize, 64L * 1024 * 1024)
+      val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
+      // Wrap the split computation in withRetry to handle OOM.
+      // On OOM, the target size is halved, producing more (smaller) splits.
+      withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
+        withResource(spillableBatch.getColumnarBatch()) { cb =>
+          // compute split indices of input batch
+          val splitIndices = generator.inputSplitIndices(
+            cb, othersProjectList.length, outer, attempt.targetSize)
+          // split up input batch with indices
+          makeSplits(cb, splitIndices)
+        }
+      }.toSeq.head
     }
   }
 
