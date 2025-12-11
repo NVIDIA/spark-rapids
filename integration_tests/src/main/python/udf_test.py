@@ -333,7 +333,7 @@ def test_pandas_map_udf_nested_type(data_gen):
             })
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen, num_slices=4)\
+        lambda spark: unary_op_df(spark, data_gen, length=800, num_slices=4)\
             .mapInPandas(col_types_udf, schema=udf_out_schema),
         conf=arrow_udf_conf)
 
