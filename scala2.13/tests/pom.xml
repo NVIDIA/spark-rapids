@@ -130,10 +130,8 @@
         <profile>
             <id>release330</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
                 <property>
-                    <name>buildver</name>
-                    <value>330</value>
+                    <name>!databricks</name>
                 </property>
             </activation>
             <dependencies>
