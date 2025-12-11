@@ -22,16 +22,18 @@ import java.util.concurrent.{Future, TimeUnit}
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, JCudfSerialization, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, JCudfSerialization,
+  MemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
 import com.nvidia.spark.rapids.GpuMetric.{ASYNC_READ_TIME, SYNC_READ_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
-import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoGpuSerializer, KudoHostMergeResultWrapper, KudoSerializer, MergeOptions}
+import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoGpuSerializer,
+  KudoHostMergeResultWrapper, KudoSerializer, MergeOptions}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.conf.Configuration
 
@@ -148,6 +150,27 @@ object CoalesceReadOption extends Logging {
 }
 
 object GpuShuffleCoalesceUtils {
+  /**
+   * Split policy that divides a sequence of tables in half by number of elements.
+   */
+  def splitTableSeqInHalf[T <: AutoCloseable](
+      wrapper: SpillableTableSeqWrapper[T]): Seq[SpillableTableSeqWrapper[T]] = {
+    withResource(wrapper) { _ =>
+      val tables = wrapper.tables
+      if (tables.length <= 1) {
+        throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
+          s"GPU OutOfMemory: a sequence of ${tables.length} tables cannot be split!")
+      }
+      val mid = tables.length / 2
+      val firstHalfTables = tables.take(mid)
+      val secondHalfTables = tables.drop(mid)
+      Seq(
+        SpillableTableSeqWrapper(firstHalfTables),
+        SpillableTableSeqWrapper(secondHalfTables)
+      )
+    }
+  }
+
   /**
    * Return an iterator that will pull in batches from the input iterator,
    * concatenate them up to the "targetSize" and move the concatenated result
@@ -395,6 +418,19 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
 }
 
 /**
+ * A wrapper for a sequence of tables that allows splitting the sequence
+ * when OOM occurs. Needed because withRetry expects a single AutoCloseable,
+ * but we want to split a sequence of tables.
+ */
+case class SpillableTableSeqWrapper[T <: AutoCloseable](
+    tables: Seq[T]) extends AutoCloseable {
+  override def close(): Unit = {
+    tables.foreach(_.safeClose())
+  }
+}
+
+
+/**
  * Common base class for coalescing iterators that handles the core logic of
  * collecting serialized tables and managing batch sizes. Subclasses handle
  * the specific concatenation logic (host vs GPU) and async behavior.
@@ -406,12 +442,15 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
-    useAsync: Boolean = false
+    useAsync: Boolean = false,
+    splitPolicy: Option[SpillableTableSeqWrapper[T] =>
+        Seq[SpillableTableSeqWrapper[T]]] = None
 ) extends Iterator[R] with AutoCloseable {
   protected[this] val serializedTables = new util.ArrayDeque[T]
   @volatile protected[this] var numTablesInBatch: Int = 0
   @volatile protected[this] var numRowsInBatch: Int = 0
   @volatile protected[this] var batchByteSize: Long = 0L
+  @volatile protected[this] var pendingResultIter: Option[Iterator[R]] = None
 
   protected val tableOperator: SerializedTableOperator[T, R]
 
@@ -423,12 +462,53 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
   override def close(): Unit = {
     serializedTables.forEach(_.close())
     serializedTables.clear()
+    pendingResultIter.foreach(_.foreach {
+      case ac: AutoCloseable => ac.safeClose()
+      case _ => // non-closeable result
+    })
+    pendingResultIter = None
+  }
+
+  /**
+   * Get the next result, checking for pending results from splits first.
+   * Returns Some(result) if there's a result available, None if we need
+   * to concatenate a new batch.
+   */
+  protected def getNextResult(): Option[R] = {
+    pendingResultIter.flatMap { iter =>
+      if (iter.hasNext) {
+        Some(iter.next())
+      } else {
+        pendingResultIter = None
+        None
+      }
+    }
   }
 
   protected def concatenateTables(tables: ArrayBuffer[T]): R = {
     withResource(new MetricRange(concatTimeMetric)) { _ =>
-      withRetryNoSplit(tables.toSeq) { tablesSeq =>
-        tableOperator.concat(tablesSeq.toArray)
+      val tablesSeq = tables.toSeq
+      splitPolicy match {
+        case Some(policy) =>
+          val wrapper = SpillableTableSeqWrapper(tablesSeq)
+          val resultIter = withRetry(wrapper, policy) { wrappedSeq =>
+            tableOperator.concat(wrappedSeq.tables.toArray)
+          }
+          // Store the iterator so we can yield results one by one if splits occurred
+          if (resultIter.hasNext) {
+            val firstResult = resultIter.next()
+            // If there are more results, store the iterator for subsequent calls
+            if (resultIter.hasNext) {
+              pendingResultIter = Some(resultIter)
+            }
+            firstResult
+          } else {
+            throw new IllegalStateException("withRetry returned empty iterator")
+          }
+        case None =>
+          withRetryNoSplit(tablesSeq) { tablesSeq =>
+            tableOperator.concat(tablesSeq.toArray)
+          }
       }
     }
   }
@@ -508,10 +588,12 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
-    useAsync: Boolean = false
+    useAsync: Boolean = false,
+    splitPolicy: Option[SpillableTableSeqWrapper[T] =>
+        Seq[SpillableTableSeqWrapper[T]]] = None
 ) extends CoalesceIteratorBase[T, CoalescedHostResult](
     iter, targetBatchByteSize, concatTimeMetric, inputBatchesMetric,
-    inputRowsMetric, readThrottlingMetric, useAsync) {
+    inputRowsMetric, readThrottlingMetric, useAsync, splitPolicy) {
 
   private var executor: Option[ThrottlingExecutor] = None
 
@@ -560,6 +642,10 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   }
 
   override def hasNext(): Boolean = {
+    // Check for pending results from splits first
+    if (pendingResultIter.exists(_.hasNext)) {
+      return true
+    }
     // Don't do any heavy things here to support the async read by
     // GpuShuffleAsyncCoalesceIterator.
     // Suppose "iter.hasNext" reads in only a header which should be small
@@ -571,6 +657,15 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     if (!hasNext()) {
       throw new NoSuchElementException("No more host batches to concatenate")
     }
+
+    // Check for pending results from splits first
+    getNextResult() match {
+      case Some(result) =>
+        return result
+      case None =>
+        // No pending results, proceed with normal concatenation
+    }
+
     bufferingFuture.map(f => {
       NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
         f.get()
@@ -602,10 +697,12 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
-    useAsync: Boolean = false
+    useAsync: Boolean = false,
+    splitPolicy: Option[SpillableTableSeqWrapper[T] =>
+        Seq[SpillableTableSeqWrapper[T]]] = None
 ) extends CoalesceIteratorBase[T, ColumnarBatch](
     iter, targetBatchByteSize, concatTimeMetric, inputBatchesMetric,
-    inputRowsMetric, readThrottlingMetric, useAsync) {
+    inputRowsMetric, readThrottlingMetric, useAsync, splitPolicy) {
 
   protected val tableOperator: SerializedTableOperator[T, ColumnarBatch]
 
@@ -615,12 +712,24 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   }
 
   override def hasNext(): Boolean = {
+    // Check for pending results from splits first
+    if (pendingResultIter.exists(_.hasNext)) {
+      return true
+    }
     !serializedTables.isEmpty || iter.hasNext
   }
 
   override def next(): ColumnarBatch = {
     if (!hasNext()) {
       throw new NoSuchElementException("No more host batches to concatenate")
+    }
+
+    // Check for pending results from splits first
+    getNextResult() match {
+      case Some(result) =>
+        return result
+      case None =>
+        // No pending results, proceed with normal concatenation
     }
 
     withResource(new NvtxRange("BufferNextBatch", NvtxColor.ORANGE)) { _ =>
@@ -656,9 +765,10 @@ class KudoHostShuffleCoalesceIterator(
     readThrottlingMetric: GpuMetric = NoopMetric,
     readOption: CoalesceReadOption
     )
-  extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize,
-    concatTimeMetric, inputBatchesMetric, inputRowsMetric, readThrottlingMetric,
-    readOption.useAsync) {
+  extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter,
+    targetBatchSize, concatTimeMetric, inputBatchesMetric, inputRowsMetric,
+    readThrottlingMetric, readOption.useAsync,
+    Some(GpuShuffleCoalesceUtils.splitTableSeqInHalf[KudoSerializedTableColumn])) {
 
   // Capture TaskContext info during RDD execution when it's available
   private val taskIdentifier = Option(TaskContext.get()) match {
@@ -686,9 +796,10 @@ class KudoGpuShuffleCoalesceIterator(
     readThrottlingMetric: GpuMetric = NoopMetric,
     readOption: CoalesceReadOption
     )
-  extends GpuCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize,
-    concatTimeMetric, inputBatchesMetric, inputRowsMetric, readThrottlingMetric,
-    readOption.useAsync) {
+  extends GpuCoalesceIteratorBase[KudoSerializedTableColumn](iter,
+    targetBatchSize, concatTimeMetric, inputBatchesMetric, inputRowsMetric,
+    readThrottlingMetric, readOption.useAsync,
+    Some(GpuShuffleCoalesceUtils.splitTableSeqInHalf[KudoSerializedTableColumn])) {
 
   override protected val tableOperator:
     SerializedTableOperator[KudoSerializedTableColumn, ColumnarBatch] =
