@@ -60,5 +60,4 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       row2ColIter.next()
     }
   }
-
 }

@@ -329,6 +329,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
   private void growFixedWidthBuffersAndRows(int numRows) {
     assert rows + numRows <= Integer.MAX_VALUE : "Row count cannot go over Integer.MAX_VALUE";
     rows += numRows;
+
     if (data == null) {
       long neededSize = Math.max(rows, estimatedRows);
       data = HostMemoryBuffer.allocate(neededSize << bitShiftBySize);
@@ -348,14 +349,14 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
   private void growListBuffersAndRows() {
     assert rows + 2 <= Integer.MAX_VALUE : "Row count cannot go over Integer.MAX_VALUE";
     rows++;
+
     if (offsets == null) {
       offsets = HostMemoryBuffer.allocate((estimatedRows + 1) << bitShiftByOffset);
       offsets.setInt(0, 0);
       rowCapacity = estimatedRows;
     } else if (rows > rowCapacity) {
       long newCap = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 2);
-      offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset),
-          offsets);
+      offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset), offsets);
       rowCapacity = newCap;
     }
   }
