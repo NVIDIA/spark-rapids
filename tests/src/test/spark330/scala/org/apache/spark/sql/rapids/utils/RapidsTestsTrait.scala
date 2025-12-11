@@ -321,7 +321,8 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       try {
         result = resultDF.collect()
       } catch {
-        case _ : Exception =>
+        case e : Exception =>
+          logWarning(s"Exception during resultDF.collect() for $expression: ${e.getMessage}", e)
           isComparedByString = true
           result = resultDF.select(Column(resultDF.columns(0)).cast("string")).collect()
       }
