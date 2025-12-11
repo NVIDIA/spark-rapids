@@ -34,7 +34,7 @@ trap "trap_func" EXIT
 
 VALID_VERSIONS=( 2.13 )
 declare -A DEFAULT_SPARK
-DEFAULT_SPARK[2.12]="spark320"
+DEFAULT_SPARK[2.12]="spark330"
 DEFAULT_SPARK[2.13]="spark350"
 
 usage() {

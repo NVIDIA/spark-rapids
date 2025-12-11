@@ -81,29 +81,26 @@
         <module>jdk-profiles</module>
     </modules>
     <profiles>
-        <!-- #if scala-2.12 -->
-        <profile>
-            <id>release320</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-                <property>
-                    <name>buildver</name>
-                    <value>320</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>320</buildver>
-                <spark.version>${spark320.version}</spark.version>
-                <spark.test.version>${spark320.version}</spark.test.version>
-                <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-20x</module>
-            </modules>
-        </profile>
-        <!-- #endif scala-2.12 -->
-        <!-- #if scala-2.12 -->
+<!--        <profile>-->
+<!--            <id>release320</id>-->
+<!--            <activation>-->
+<!--                <activeByDefault>true</activeByDefault>-->
+<!--                <property>-->
+<!--                    <name>buildver</name>-->
+<!--                    <value>320</value>-->
+<!--                </property>-->
+<!--            </activation>-->
+<!--            <properties>-->
+<!--                <buildver>320</buildver>-->
+<!--                <spark.version>${spark320.version}</spark.version>-->
+<!--                <spark.test.version>${spark320.version}</spark.test.version>-->
+<!--                <parquet.hadoop.version>1.12.1</parquet.hadoop.version>-->
+<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
+<!--            </properties>-->
+<!--            <modules>-->
+<!--                <module>delta-lake/delta-20x</module>-->
+<!--            </modules>-->
+<!--        </profile>-->
         <profile>
             <id>release321</id>
             <activation>
@@ -123,74 +120,68 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
-        <!-- #endif scala-2.12 -->
-        <!-- #if scala-2.12 -->
-        <profile>
-            <id>release322</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>322</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>322</buildver>
-                <spark.version>${spark322.version}</spark.version>
-                <spark.test.version>${spark322.version}</spark.test.version>
-                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-20x</module>
-            </modules>
-        </profile>
-        <!-- #endif scala-2.12 -->
-        <!-- #if scala-2.12 -->
-        <profile>
-            <id>release323</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>323</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>323</buildver>
-                <spark.version>${spark323.version}</spark.version>
-                <spark.test.version>${spark323.version}</spark.test.version>
-                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-20x</module>
-            </modules>
-        </profile>
-        <!-- #endif scala-2.12 -->
-        <!-- #if scala-2.12 -->
-        <profile>
-            <id>release324</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>324</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>324</buildver>
-                <spark.version>${spark324.version}</spark.version>
-                <spark.test.version>${spark324.version}</spark.test.version>
-                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-20x</module>
-            </modules>
-        </profile>
-        <!-- #endif scala-2.12 -->
+<!--        <profile>-->
+<!--            <id>release322</id>-->
+<!--            <activation>-->
+<!--                <property>-->
+<!--                    <name>buildver</name>-->
+<!--                    <value>322</value>-->
+<!--                </property>-->
+<!--            </activation>-->
+<!--            <properties>-->
+<!--                <buildver>322</buildver>-->
+<!--                <spark.version>${spark322.version}</spark.version>-->
+<!--                <spark.test.version>${spark322.version}</spark.test.version>-->
+<!--                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>-->
+<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
+<!--            </properties>-->
+<!--            <modules>-->
+<!--                <module>delta-lake/delta-20x</module>-->
+<!--            </modules>-->
+<!--        </profile>-->
+<!--        <profile>-->
+<!--            <id>release323</id>-->
+<!--            <activation>-->
+<!--                <property>-->
+<!--                    <name>buildver</name>-->
+<!--                    <value>323</value>-->
+<!--                </property>-->
+<!--            </activation>-->
+<!--            <properties>-->
+<!--                <buildver>323</buildver>-->
+<!--                <spark.version>${spark323.version}</spark.version>-->
+<!--                <spark.test.version>${spark323.version}</spark.test.version>-->
+<!--                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>-->
+<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
+<!--            </properties>-->
+<!--            <modules>-->
+<!--                <module>delta-lake/delta-20x</module>-->
+<!--            </modules>-->
+<!--        </profile>-->
+<!--        <profile>-->
+<!--            <id>release324</id>-->
+<!--            <activation>-->
+<!--                <property>-->
+<!--                    <name>buildver</name>-->
+<!--                    <value>324</value>-->
+<!--                </property>-->
+<!--            </activation>-->
+<!--            <properties>-->
+<!--                <buildver>324</buildver>-->
+<!--                <spark.version>${spark324.version}</spark.version>-->
+<!--                <spark.test.version>${spark324.version}</spark.test.version>-->
+<!--                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>-->
+<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
+<!--            </properties>-->
+<!--            <modules>-->
+<!--                <module>delta-lake/delta-20x</module>-->
+<!--            </modules>-->
+<!--        </profile>-->
         <!-- #if scala-2.12 -->
         <profile>
             <id>release330</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>330</value>
@@ -834,17 +825,21 @@
         <delta33x.version>3.3.0</delta33x.version>
         <delta40x.version>4.0.0</delta40x.version>
         <!-- start dyn.shim properties -->
-        <!--  TODO: Will remove 330db from the execluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
-	<dyn.shim.excluded.releases>330db</dyn.shim.excluded.releases>
+        <!--  TODO: Will remove 330db from the excluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
+        <!--  TODO: Will remove 321 from the excluding list after no need to support some legacy scenario -->
+        <dyn.shim.excluded.releases>
+            330db,
+            321
+        </dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>
         <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
         <allowConventionalDistJar>false</allowConventionalDistJar>
-        <buildver>320</buildver>
+        <buildver>330</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <java.major.version>8</java.major.version>
-        <spark.version>${spark320.version}</spark.version>
+        <spark.version>${spark330.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
@@ -976,20 +971,19 @@
           and premergeUT2(1 shim's UT + 2/3 of the integration tests), for balancing the duration
         -->
         <premergeUT1.buildvers>
-            320,
-            330
+            330,
+            340
         </premergeUT1.buildvers>
         <premergeUT2.buildvers>
             356
         </premergeUT2.buildvers>
         <premergeUTF8.buildvers>
-            320
+            330
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
             350
         </premergeScala213.buildvers>
         <jdk11.buildvers>
-            321,
             331,
             340
         </jdk11.buildvers>
