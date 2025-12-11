@@ -324,14 +324,10 @@ object GpuDeviceManager extends Logging {
   private def initializeSpillAndMemoryEvents(conf: RapidsConf): Unit = {
     SpillFramework.initialize(conf)
 
-    // Initialize the retry coverage tracker with configuration
-    AllocationRetryCoverageTracker.initialize(conf)
-
     memoryEventHandler = new DeviceMemoryEventHandler(
       SpillFramework.stores.deviceStore,
       conf.gpuOomDumpDir,
-      conf.gpuOomMaxRetries,
-      conf.isRetryCoverageTrackingEnabled)
+      conf.gpuOomMaxRetries)
 
     if (conf.sparkRmmStateEnable) {
       val debugLoc = if (conf.sparkRmmDebugLocation.isEmpty) {
@@ -339,10 +335,13 @@ object GpuDeviceManager extends Logging {
       } else {
         conf.sparkRmmDebugLocation
       }
-      RmmSpark.setEventHandler(memoryEventHandler, debugLoc)
+      // Enable RMM debug mode if retry coverage tracking is enabled, to get onAllocated callbacks
+      val enableDebug = AllocationRetryCoverageTracker.ENABLED
+      RmmSpark.setEventHandler(memoryEventHandler, debugLoc, enableDebug)
     } else {
       logWarning("SparkRMM retry has been disabled")
-      Rmm.setEventHandler(memoryEventHandler)
+      // Enable RMM debug mode if retry coverage tracking is enabled, to get onAllocated callbacks
+      Rmm.setEventHandler(memoryEventHandler, AllocationRetryCoverageTracker.ENABLED)
     }
   }
 

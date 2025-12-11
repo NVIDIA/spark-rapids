@@ -224,7 +224,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
             HostAlloc.bookkeepHostMemoryAlloc(buffer.getAddress, amount)
           }
           // Check retry coverage for host memory allocation
-          AllocationRetryCoverageTracker.checkAllocation(HOST)
+          if (AllocationRetryCoverageTracker.ENABLED) {
+            AllocationRetryCoverageTracker.checkAllocation(HOST)
+          }
           logTrace(getHostAllocMetricsLogStr(metrics))
           RmmSpark.postCpuAllocSuccess(buffer.getAddress, amount, blocking, isRecursive)
         case None =>

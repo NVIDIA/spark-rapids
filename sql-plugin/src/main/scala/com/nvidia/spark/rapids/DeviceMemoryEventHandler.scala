@@ -33,14 +33,11 @@ import org.apache.spark.internal.Logging
  * @param oomDumpDir local directory to create heap dumps on GPU OOM
  * @param maxFailedOOMRetries maximum number of retries for OOMs after
  *                            depleting the device store
- * @param retryCoverageTrackingEnabled when true, track device memory allocations
- *                                     that are not covered by retry methods
  */
 class DeviceMemoryEventHandler(
     store: SpillableDeviceStore,
     oomDumpDir: Option[String],
-    maxFailedOOMRetries: Int,
-    retryCoverageTrackingEnabled: Boolean = false) extends RmmEventHandler with Logging {
+    maxFailedOOMRetries: Int) extends RmmEventHandler with Logging {
 
   // Flag that ensures we dump stack traces once and not for every allocation
   // failure. The assumption is that unhandled allocations will be fatal
@@ -159,22 +156,19 @@ class DeviceMemoryEventHandler(
     }
   }
 
-  // When retry coverage tracking is enabled, we use a threshold of 0 to get 
-  // callbacks on every allocation so we can check if allocations are covered by retry methods
-  override def getAllocThresholds: Array[Long] = {
-    if (retryCoverageTrackingEnabled) {
-      Array(0L)
-    } else {
-      null
-    }
-  }
+  override def getAllocThresholds: Array[Long] = null
 
   override def getDeallocThresholds: Array[Long] = null
 
   override def onAllocThreshold(totalAllocated: Long): Unit = {
-    // When retry coverage tracking is enabled, check if this allocation
-    // is covered by retry methods in the call stack
-    if (retryCoverageTrackingEnabled) {
+  }
+
+  /**
+   * Called after every device memory allocation when RMM debug mode is enabled.
+   * Used for retry coverage tracking.
+   */
+  override def onAllocated(size: Long): Unit = {
+    if (AllocationRetryCoverageTracker.ENABLED) {
       AllocationRetryCoverageTracker.checkAllocation(DEVICE)
     }
   }

@@ -36,10 +36,23 @@ object AllocationKind extends Enumeration {
  * protected by withRetry/withRetryNoSplit blocks, as required by the retry-OOM
  * handling mechanism in spark-rapids.
  * 
- * When enabled via spark.rapids.sql.test.retryCoverageTracking.enabled, this tracker
- * will check every memory allocation's call stack for retry-related methods. If an
- * allocation happens without any retry method in the call stack, it logs the allocation
- * info (kind and call stack) to a CSV file.
+ * Tracking support:
+ * - HOST memory: via HostAlloc hooks
+ * - DEVICE memory: via RMM debug mode (onAllocated callback)
+ * 
+ * This feature is DISABLED by default. To enable, set environment variable:
+ *   export SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true
+ * 
+ * For integration tests:
+ *   SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true ./integration_tests/run_pyspark_from_build.sh
+ * 
+ * When enabled:
+ * - Checks memory allocations' call stacks for retry-related methods
+ * - Logs uncovered allocations to /tmp/uncovered_allocations.csv
+ * - Also logs warnings via Spark logging
+ * 
+ * Note: Enabling this feature turns on RMM debug mode which may impact performance.
+ * Only use for debugging/testing purposes.
  * 
  * See: https://github.com/NVIDIA/spark-rapids/issues/13672
  */
@@ -60,10 +73,19 @@ object AllocationRetryCoverageTracker extends Logging {
     "com.nvidia.spark.rapids.RmmRapidsRetryIterator$"
   )
 
-  // Track whether tracking is enabled (set on first use from config)
-  @volatile private var enabled: Boolean = false
-  @volatile private var outputPath: String = "uncovered_allocations.csv"
-  @volatile private var initialized: Boolean = false
+  // Default output file path for uncovered allocations - use /tmp for easy access
+  private val DEFAULT_OUTPUT_PATH = "/tmp/uncovered_allocations.csv"
+
+  // Environment variable to enable tracking
+  private val ENV_VAR_NAME = "SPARK_RAPIDS_RETRY_COVERAGE_TRACKING"
+
+  // Check environment variable - this works reliably across all processes
+  val ENABLED: Boolean = {
+    val envValue = System.getenv(ENV_VAR_NAME)
+    envValue != null && envValue.equalsIgnoreCase("true")
+  }
+
+  @volatile private var headerWritten: Boolean = false
 
   // Track unique call stacks we've already logged to avoid duplicates
   private val loggedStacks = ConcurrentHashMap.newKeySet[String]()
@@ -72,19 +94,16 @@ object AllocationRetryCoverageTracker extends Logging {
   private val writeLock = new Object()
 
   /**
-   * Initialize the tracker with configuration.
-   * Should be called during plugin initialization.
+   * Ensure header is written (thread-safe, lazy initialization).
    */
-  def initialize(conf: RapidsConf): Unit = synchronized {
-    if (!initialized) {
-      enabled = conf.isRetryCoverageTrackingEnabled
-      outputPath = conf.retryCoverageTrackingOutputPath
-      initialized = true
-      if (enabled) {
-        logInfo(s"Retry coverage tracking enabled. Uncovered allocations will be logged to: " +
-          s"$outputPath")
-        // Write CSV header
-        writeToFile("kind,call_stack", append = false)
+  private def ensureHeaderWritten(): Unit = {
+    if (!headerWritten) {
+      writeLock.synchronized {
+        if (!headerWritten) {
+          logWarning(s"Retry coverage tracking ACTIVE. Output: $DEFAULT_OUTPUT_PATH")
+          writeToFileInternal("kind,call_stack", append = false)
+          headerWritten = true
+        }
       }
     }
   }
@@ -96,9 +115,12 @@ object AllocationRetryCoverageTracker extends Logging {
    * @param kind The kind of memory allocation (HOST or DEVICE)
    */
   def checkAllocation(kind: AllocationKind): Unit = {
-    if (!enabled) {
+    if (!ENABLED) {
       return
     }
+
+    // Ensure header is written on first check
+    ensureHeaderWritten()
 
     val stackTrace = Thread.currentThread().getStackTrace
     
@@ -133,7 +155,7 @@ object AllocationRetryCoverageTracker extends Logging {
           // Escape the stack trace for CSV (replace quotes and wrap in quotes)
           val escapedStack = "\"" + relevantStack.replace("\"", "\"\"") + "\""
           writeToFile(s"$kind,$escapedStack", append = true)
-          logWarning(s"Uncovered $kind memory allocation detected. Call stack: $relevantStack")
+          logWarning(s"Uncovered $kind allocation #${loggedStacks.size()}. Stack: $relevantStack")
         }
       }
     }
@@ -154,22 +176,29 @@ object AllocationRetryCoverageTracker extends Logging {
   }
 
   /**
-   * Write a line to the output CSV file.
+   * Write a line to the output CSV file (internal, assumes lock is NOT held).
+   */
+  private def writeToFileInternal(line: String, append: Boolean): Unit = {
+    var writer: PrintWriter = null
+    try {
+      writer = new PrintWriter(new BufferedWriter(new FileWriter(DEFAULT_OUTPUT_PATH, append)))
+      writer.println(line)
+    } catch {
+      case e: Exception =>
+        logError(s"Failed to write to retry coverage tracking file: $DEFAULT_OUTPUT_PATH", e)
+    } finally {
+      if (writer != null) {
+        writer.close()
+      }
+    }
+  }
+
+  /**
+   * Write a line to the output CSV file (thread-safe).
    */
   private def writeToFile(line: String, append: Boolean): Unit = {
     writeLock.synchronized {
-      var writer: PrintWriter = null
-      try {
-        writer = new PrintWriter(new BufferedWriter(new FileWriter(outputPath, append)))
-        writer.println(line)
-      } catch {
-        case e: Exception =>
-          logError(s"Failed to write to retry coverage tracking file: $outputPath", e)
-      } finally {
-        if (writer != null) {
-          writer.close()
-        }
-      }
+      writeToFileInternal(line, append)
     }
   }
 
@@ -188,15 +217,14 @@ object AllocationRetryCoverageTracker extends Logging {
   /**
    * Check if tracking is currently enabled.
    */
-  def isEnabled: Boolean = enabled
+  def isEnabled: Boolean = ENABLED
 
   /**
-   * Reset the tracker (useful for testing).
+   * Reset the tracker state (useful for testing).
+   * Note: Cannot change ENABLED as it's read from env var at class load time.
    */
   def reset(): Unit = synchronized {
-    enabled = false
-    outputPath = "uncovered_allocations.csv"
-    initialized = false
+    headerWritten = false
     loggedStacks.clear()
   }
 }
