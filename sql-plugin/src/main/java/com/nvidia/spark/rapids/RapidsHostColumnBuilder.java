@@ -328,22 +328,16 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
    */
   private void growFixedWidthBuffersAndRows(int numRows) {
     assert rows + numRows <= Integer.MAX_VALUE : "Row count cannot go over Integer.MAX_VALUE";
-    long previousRows = rows;
     rows += numRows;
-    try {
-      if (data == null) {
-        long neededSize = Math.max(rows, estimatedRows);
-        data = HostMemoryBuffer.allocate(neededSize << bitShiftBySize);
-        rowCapacity = neededSize;
-      } else if (rows > rowCapacity) {
-        long neededSize = Math.max(rows, rowCapacity * 2);
-        long newCap = Math.min(neededSize, Integer.MAX_VALUE - 1);
-        data = copyBuffer(HostMemoryBuffer.allocate(newCap << bitShiftBySize), data);
-        rowCapacity = newCap;
-      }
-    } catch (Throwable t) {
-      rows = previousRows;
-      throw t;
+    if (data == null) {
+      long neededSize = Math.max(rows, estimatedRows);
+      data = HostMemoryBuffer.allocate(neededSize << bitShiftBySize);
+      rowCapacity = neededSize;
+    } else if (rows > rowCapacity) {
+      long neededSize = Math.max(rows, rowCapacity * 2);
+      long newCap = Math.min(neededSize, Integer.MAX_VALUE - 1);
+      data = copyBuffer(HostMemoryBuffer.allocate(newCap << bitShiftBySize), data);
+      rowCapacity = newCap;
     }
   }
 
@@ -353,22 +347,16 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
    */
   private void growListBuffersAndRows() {
     assert rows + 2 <= Integer.MAX_VALUE : "Row count cannot go over Integer.MAX_VALUE";
-    long previousRows = rows;
     rows++;
-    try {
-      if (offsets == null) {
-        offsets = HostMemoryBuffer.allocate((estimatedRows + 1) << bitShiftByOffset);
-        offsets.setInt(0, 0);
-        rowCapacity = estimatedRows;
-      } else if (rows > rowCapacity) {
-        long newCap = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 2);
-        offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset),
-            offsets);
-        rowCapacity = newCap;
-      }
-    } catch (Throwable t) {
-      rows = previousRows;
-      throw t;
+    if (offsets == null) {
+      offsets = HostMemoryBuffer.allocate((estimatedRows + 1) << bitShiftByOffset);
+      offsets.setInt(0, 0);
+      rowCapacity = estimatedRows;
+    } else if (rows > rowCapacity) {
+      long newCap = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 2);
+      offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset),
+          offsets);
+      rowCapacity = newCap;
     }
   }
 
@@ -380,36 +368,30 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
    */
   private void growStringBuffersAndRows(int stringLength) {
     assert rows + 2 <= Integer.MAX_VALUE : "Row count cannot go over Integer.MAX_VALUE";
-    long previousRows = rows;
     rows++;
 
-    try {
-      if (offsets == null) {
-        // Initialize data buffer with at least 1 byte in case the first appended value is null.
-        data = HostMemoryBuffer.allocate(Math.max(1, stringLength));
-        offsets = HostMemoryBuffer.allocate((estimatedRows + 1) << bitShiftByOffset);
-        offsets.setInt(0, 0);
-        rowCapacity = estimatedRows;
-        return;
-      }
+    if (offsets == null) {
+      // Initialize data buffer with at least 1 byte in case the first appended value is null.
+      data = HostMemoryBuffer.allocate(Math.max(1, stringLength));
+      offsets = HostMemoryBuffer.allocate((estimatedRows + 1) << bitShiftByOffset);
+      offsets.setInt(0, 0);
+      rowCapacity = estimatedRows;
+      return;
+    }
 
-      if (rows > rowCapacity) {
-        long newCap = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 2);
-        offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset), offsets);
-        rowCapacity = newCap;
-      }
+    if (rows > rowCapacity) {
+      long newCap = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 2);
+      offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset), offsets);
+      rowCapacity = newCap;
+    }
 
-      long currentLength = currentStringByteIndex + stringLength;
-      if (currentLength > data.getLength()) {
-        long requiredLength = data.getLength();
-        do {
-          requiredLength = requiredLength * 2;
-        } while (currentLength > requiredLength);
-        data = copyBuffer(HostMemoryBuffer.allocate(requiredLength), data);
-      }
-    } catch (Throwable t) {
-      rows = previousRows;
-      throw t;
+    long currentLength = currentStringByteIndex + stringLength;
+    if (currentLength > data.getLength()) {
+      long requiredLength = data.getLength();
+      do {
+        requiredLength = requiredLength * 2;
+      } while (currentLength > requiredLength);
+      data = copyBuffer(HostMemoryBuffer.allocate(requiredLength), data);
     }
   }
 
