@@ -161,7 +161,6 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
     with_cpu_session(convert_and_setup_name_mapping, conf={"spark.databricks.delta.properties.defaults.enableDeletionVectors": "false"})
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path))
 
-#@allow_non_gpu("BroadcastExchangeExec", "BroadcastHashJoinExec", "ExecutedCommandExec", *delta_meta_allow)
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
