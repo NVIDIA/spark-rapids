@@ -106,7 +106,8 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
     }
   }
 
-  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+  override def getReadFileFormat(relation: HadoopFsRelation,
+      disableOptimizations: Boolean): FileFormat = {
     GpuDeltaParquetFileFormat.convertToGpu(relation)
   }
 

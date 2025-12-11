@@ -30,7 +30,7 @@ import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
+import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExec, OverwriteByExpressionExecV1, OverwritePartitionsDynamicExec}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
@@ -109,12 +109,13 @@ trait ExternalSourceBase extends Logging {
    * Get a read file format for the input format.
    * Better to check if the format is supported first by calling 'isSupportedFormat'
    */
-  def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
-    val format = relation.fileFormat
+  def getReadFileFormat(scanExec: FileSourceScanExec): FileFormat = {
+    val format = scanExec.relation.fileFormat
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.getReadFileFormat(format)
     } else if (deltaProvider.isSupportedFormat(format.getClass)) {
-      deltaProvider.getReadFileFormat(relation)
+      deltaProvider.getReadFileFormat(scanExec.relation,
+        DeltaProvider.isOptimizationsDisabled(scanExec))
     } else {
       throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }

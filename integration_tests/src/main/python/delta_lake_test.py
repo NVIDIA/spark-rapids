@@ -103,7 +103,7 @@ def test_delta_deletion_vector_read(spark_tmp_path, use_cdf):
         conf=conf)
 
 
-def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions):
+def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions, post_setup_table_func=None):
     import os
     import math
 
@@ -113,6 +113,8 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
         setup_delta_dest_table(spark, data_path,
                                dest_table_func=lambda spark: unary_op_df(spark, int_gen, length=num_rows, num_slices=1),
                                use_cdf=False, enable_deletion_vectors=enable_deletion_vectors)
+        if post_setup_table_func:
+            post_setup_table_func(spark, data_path)
     target_num_row_groups = 2
     row_group_size = int(num_rows * 4 / target_num_row_groups) # num_rows * 4 bytes per int / target_num_row_groups
     conf = {"parquet.block.size": str(row_group_size)}
@@ -121,8 +123,10 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
     def verify_files_and_row_groups():
         # list files in data_path
         files = [f for f in os.listdir(data_path) if f.endswith(".parquet")]
-        assert len(files) == 1, "Expected 1 parquet file in the delta table"
-        parquet_file = f"{data_path}/{files[0]}"
+        files = [f"{data_path}/{f}" for f in files]
+        # find the most recently modified parquet file
+        most_recent_file = max(files, key=os.path.getmtime)
+        parquet_file = most_recent_file
 
         import pyarrow.parquet as pq
         metadata = pq.read_metadata(parquet_file)
@@ -144,7 +148,7 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Scan split works differently on Databricks")
-def test_delta_scan_split(spark_tmp_path):
+def test_delta_scan_split_with_no_dv(spark_tmp_path):
     do_test_scan_split(spark_tmp_path, enable_deletion_vectors=False, expected_num_partitions=2)
 
 
@@ -152,8 +156,44 @@ def test_delta_scan_split(spark_tmp_path):
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
-def test_delta_scan_split_with_deletion_vector_enabled(spark_tmp_path):
-    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1)
+def test_delta_scan_split_with_DV_enabled_with_no_DV(spark_tmp_path):
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=2)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+def test_delta_scan_split_with_DV_enabled_with_DVs(spark_tmp_path):
+    def do_delete(spark, data_path):
+        num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
+        assert num_deleted > 0, "Expected some rows to be deleted"
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1, post_setup_table_func=do_delete)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path):
+    def do_delete_and_disable_DV(spark, data_path):
+        num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
+        assert num_deleted > 0, "Expected some rows to be deleted"
+        spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES " +
+                  "('delta.enableDeletionVectors' = 'false')")
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1, post_setup_table_func=do_delete_and_disable_DV)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+def test_delta_scan_split_with_DV_enabled_after_DVs_materialized(spark_tmp_path):
+    def do_delete_and_reorg(spark, data_path):
+        num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
+        assert num_deleted > 0, "Expected some rows to be deleted"
+        spark.sql(f"REORG table delta.`{data_path}` APPLY (PURGE)") # will rewrite files to purge soft-deleted data
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=2, post_setup_table_func=do_delete_and_reorg)
 
 
 # ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish

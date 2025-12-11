@@ -58,7 +58,8 @@ object Delta22xProvider extends Delta2xProviderBase {
     }
   }
 
-  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+  override def getReadFileFormat(relation: HadoopFsRelation,
+      disableOptimizations: Boolean): FileFormat = {
     val cpuFormat = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     GpuDelta22xParquetFileFormat(cpuFormat.columnMappingMode, cpuFormat.referenceSchema)
   }
