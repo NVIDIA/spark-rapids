@@ -470,6 +470,7 @@ class SpillablePartialFileHandle private (
         }
 
         spilledToDisk = true
+        SpillFramework.removeFromHostStore(this)
         buffer.close()
         host = None
 
