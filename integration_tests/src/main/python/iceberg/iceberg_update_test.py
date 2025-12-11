@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
+from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list)
@@ -127,6 +128,7 @@ def test_iceberg_update_unpartitioned_table_single_column(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_factory, update_mode):
     """Test UPDATE on unpartitioned table with multiple column updates"""
@@ -136,6 +138,16 @@ def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_fac
         update_mode=update_mode
     )
 
+def _do_test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, update_mode, partition_col_sql):
+    """Helper function for partitioned table UPDATE tests."""
+    do_update_test(
+        spark_tmp_table_factory,
+        lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100 WHERE _c2 % 3 = 0"),
+        partition_col_sql=partition_col_sql,
+        update_mode=update_mode
+    )
+
+
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
@@ -143,10 +155,24 @@ def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_fac
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
+def test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, update_mode, partition_col_sql):
+    """Basic partition test - runs for all catalogs including remote."""
+    _do_test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, update_mode, partition_col_sql)
+
+
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize("partition_col_sql", [
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
-    pytest.param("year(_c9)", id="year(timestamp_col)"),
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
@@ -157,19 +183,15 @@ def test_iceberg_update_unpartitioned_table_multiple_columns(spark_tmp_table_fac
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
-def test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, update_mode, partition_col_sql):
-    """Test UPDATE on bucket-partitioned table with single column update"""
-    do_update_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"UPDATE {table} SET _c2 = _c2 + 100 WHERE _c2 % 3 = 0"),
-        partition_col_sql=partition_col_sql,
-        update_mode=update_mode
-    )
+def test_iceberg_update_partitioned_table_single_column_full_coverage(spark_tmp_table_factory, update_mode, partition_col_sql):
+    """Full partition coverage test - skipped for remote catalogs."""
+    _do_test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory, update_mode, partition_col_sql)
 
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
 def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_factory, update_mode):
     """Test UPDATE on bucket-partitioned table with multiple column updates"""
@@ -181,10 +203,55 @@ def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_facto
     )
 
 
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+def test_iceberg_update_mor_then_select_count(spark_tmp_table_factory):
+    """Test UPDATE with merge-on-read mode, then select count with the same update filter.
+
+    This test verifies that after a merge-on-read UPDATE operation, subsequent COUNT(*)
+    queries with the same filter return correct results on both CPU and GPU.
+    Filter is `int_column >= Int.MinValue` to ensure some rows are updated.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+
+    # Phase 1: Initialize tables with data (separate for CPU and GPU)
+    cpu_table_name = f'{base_table_name}_cpu'
+    gpu_table_name = f'{base_table_name}_gpu'
+    create_iceberg_table_with_data(cpu_table_name, update_mode='merge-on-read', partition_col_sql="hour(_c9)")
+    create_iceberg_table_with_data(gpu_table_name, update_mode='merge-on-read', partition_col_sql="hour(_c9)")
+
+    # Phase 2: Execute UPDATE on both CPU and GPU tables
+    def _do_update(spark, table_name):
+        spark.sql(f"UPDATE {table_name} SET _c2 = _c2 + 1, _c3 = _c3 + 1 WHERE _c2 >= -2147483648")
+
+    # UPDATE on CPU
+    with_cpu_session(lambda spark: _do_update(spark, cpu_table_name))
+
+    # UPDATE on GPU
+    with_gpu_session(lambda spark: _do_update(spark, gpu_table_name), conf=iceberg_update_cow_enabled_conf)
+
+    # Phase 3: Query COUNT(*) with the same filter and compare results
+    def _query_count(spark, table_name):
+        return spark.sql(f"SELECT COUNT(*) as cnt FROM {table_name} WHERE _c2 >= -2147483648").collect()[0]['cnt']
+
+    # Query count on CPU
+    cpu_count = with_cpu_session(lambda spark: _query_count(spark, cpu_table_name))
+
+    # Query count on GPU
+    gpu_count = with_gpu_session(lambda spark: _query_count(spark, gpu_table_name))
+
+    # Phase 4: Compare CPU and GPU counts
+    assert cpu_count == gpu_count, f"Count mismatch: CPU={cpu_count}, GPU={gpu_count}"
+
+
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('update_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -221,6 +288,7 @@ def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, update_
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('update_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -280,6 +348,7 @@ def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('update_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -350,6 +419,7 @@ def test_iceberg_update_fallback_unsupported_file_format(spark_tmp_table_factory
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('update_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -407,6 +477,7 @@ def test_iceberg_update_fallback_nested_types(spark_tmp_table_factory, update_mo
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('update_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -443,6 +514,7 @@ def test_iceberg_update_fallback_iceberg_disabled(spark_tmp_table_factory, updat
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_iceberg_update_mor_fallback_writedelta_disabled(spark_tmp_table_factory):
     """Test merge-on-read UPDATE falls back when WriteDeltaExec is disabled
     

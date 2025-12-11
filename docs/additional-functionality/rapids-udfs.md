@@ -130,7 +130,8 @@ of the decimal.
 --------------------------------- | ----------------
 precision <= 9 digits             | `DECIMAL32`
 9 digits < precision <= 18 digits | `DECIMAL64`
-18 digits < precision             | Unsupported
+18 digits < precision <= 38 digits| `DECIMAL128`
+38 digits < precision             | Unsupported
 
 Note that RAPIDS cudf decimals use a negative scale relative to Spark `DecimalType`.
 For example, Spark `DecimalType(precision=11, scale=2)` would translate to RAPIDS cudf

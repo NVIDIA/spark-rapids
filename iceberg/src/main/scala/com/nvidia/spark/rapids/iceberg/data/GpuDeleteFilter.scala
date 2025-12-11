@@ -112,12 +112,25 @@ class GpuDeleteFilter(
    * input schema.
    * 2. This method will delete the rows that are marked as deleted.
    *
+   * Note: This method drops the extra columns that were added for delete matching
+   * (FILE_PATH and ROW_POSITION columns for position deletes, and equality delete fields),
+   * so the output schema matches the original expectedSchema.
+   *
    * @param input Input column batches, which will be closed after this method returns.
    * @return Output column batches with rows deleted based on the filter result.
    */
   def filterAndDelete(input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
-    val dropMask = Array.fill[Boolean](filterOutputSparkDataTypes.length)(false)
-    dropMask(filterOutputSparkDataTypes.length - 1) = true
+    // Compute which columns to keep (only those in the original expectedSchema)
+    val expectedFieldIds = parquetConf.expectedSchema.columns().asScala.map(_.fieldId()).toSet
+
+    val dropMask = Array.tabulate[Boolean](filterOutputSparkDataTypes.length) { i =>
+      if (i < requiredSchema.columns().size()) {
+        val fieldId = requiredSchema.columns().get(i).fieldId()
+        !expectedFieldIds.contains(fieldId)  // Drop if not in expected schema
+      } else {
+        true  // Drop IS_DELETED column (if appended)
+      }
+    }
 
     filter(input).map(cb => {
       isDeleteColIdx match {
@@ -403,3 +416,4 @@ private case class DeleteFilterContext(
       joinTime)
   }
 }
+

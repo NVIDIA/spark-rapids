@@ -246,7 +246,8 @@ case class GpuCartesianProductExec(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
 
-    val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
+    val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output,
+      allMetrics))
 
     if (output.isEmpty && boundCondition.isEmpty) {
       // special case for crossJoin.count.  Doing it this way
