@@ -542,11 +542,8 @@ class SpillablePartialFileHandle private (
     }
     fileInputStream = None
 
-    // Close host buffer
-    host.foreach { buffer =>
-      try { buffer.close() } catch { case _: Exception => }
-    }
-    host = None
+    // Release host buffer (removes from SpillFramework tracking and closes buffer)
+    releaseHostResource()
 
     // Delete file if it exists
     if (file != null && file.exists()) {

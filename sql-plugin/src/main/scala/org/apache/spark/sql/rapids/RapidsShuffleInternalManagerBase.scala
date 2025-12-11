@@ -496,14 +496,19 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
   /**
    * Unified write path that handles both single batch and multi-batch tasks.
-   * Leverages streaming parallel processing with pipelined partition writing.
+   * Uses streaming parallel processing with pipelined partition writing.
    *
-   * For single batch: Main thread processes all records without blocking, while a dedicated
-   * background writer thread waits for each partition to complete and writes them in order.
+   * Threading model (same for both scenarios):
+   * - Main thread: Processes all records without blocking, queues compression tasks
+   * - Background merger thread(s): Wait for compression tasks to complete and write
+   *   partitions to disk in order
+   * - Worker threads: Execute compression tasks in parallel
    *
-   * For multi-batch: Detects partition ID decreasing (indicates new batch), creates
-   * partial sorted files for each batch, then merges them in the final output.
-   * Each batch has independent state for true pipeline processing.
+   * Single batch: One merger thread writes directly to final output file
+   *
+   * Multi-batch: Detects partition ID decreasing (indicates new batch), creates
+   * independent state for each batch (each with its own merger thread running in parallel),
+   * then merges all batch outputs into final file.
    */
   private def writePartitionedGpuBatches(
       records: Iterator[Product2[Any, Any]],
@@ -589,12 +594,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // all tasks for the same partition run serially in the same slot
         val slotNum = partitionSlots.computeIfAbsent(reducePartitionId,
           _ => RapidsShuffleInternalManagerBase.getNextWriterSlot)
-        val finalCurrentBatch = currentBatch
+        val currentBatchFinalRef = currentBatch
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           try {
             withResource(cb) { _ =>
               // Get or create buffer for this partition in current batch
-              val buffer = finalCurrentBatch.partitionBuffers.computeIfAbsent(
+              val buffer = currentBatchFinalRef.partitionBuffers.computeIfAbsent(
                 reducePartitionId, _ => new OpenByteArrayOutputStream())
               val originLength = buffer.getCount
 
