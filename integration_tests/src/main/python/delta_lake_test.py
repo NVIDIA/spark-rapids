@@ -173,7 +173,8 @@ def test_delta_filter_out_metadata_col(spark_tmp_path):
             .option("delta.enableDeletionVectors", "true") \
             .partitionBy("a").save(data_path)
 
-        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0")
+        count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0").collect()[0][0]
+        assert(count > 0)
 
     def read_table(spark): 
        return spark.sql(f"SELECT * FROM delta.`{data_path}` ")
