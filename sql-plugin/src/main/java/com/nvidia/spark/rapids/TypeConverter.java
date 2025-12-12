@@ -20,7 +20,7 @@ import java.io.Serializable;
 
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters;
 
-public abstract class TypeConverter implements Serializable  {
+public abstract class TypeConverter implements Serializable {
   /**
    * Append row value to the column builder and return the number of data bytes written
    */

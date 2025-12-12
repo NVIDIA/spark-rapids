@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.internal.Logging
@@ -108,9 +109,21 @@ case class GpuCpuBridgeExpression(
   
   // Thread-local projection for code generation path
   // Each thread gets its own projection to avoid internal memory reuse conflicts
-  // while allowing reuse across batches within a thread
+  // while allowing reuse across batches within a thread.
+  // Cleanup is registered on first access per task to prevent memory leaks in thread pools.
+  // Cleanup is probably unnecessary, as the expression should be collected, but
+  // it's good practice.
   @transient private lazy val threadLocalProjection: ThreadLocal[BridgeUnsafeProjection] =
-    ThreadLocal.withInitial(() => createCodeGeneratedProjection())
+    ThreadLocal.withInitial(() => {
+      // Register cleanup when this thread first accesses the ThreadLocal in this task
+      // Only register if we're actually in a Spark task (not in tests)
+      Option(org.apache.spark.TaskContext.get()).foreach { _ =>
+        onTaskCompletion {
+          threadLocalProjection.remove()
+        }
+      }
+      createCodeGeneratedProjection()
+    })
   
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
     createEvaluationFunction()

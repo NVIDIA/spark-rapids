@@ -381,7 +381,7 @@ object BridgeGenerateUnsafeProjection extends
         // But if it is, throw an exception that will trigger interpreted fallback
         throw new UnsupportedOperationException(
           s"Cannot generate direct append code for unsupported type: $dataType. " +
-          s"Layer 2 check should have prevented this.")
+          s"`canSupportDirectCodegen` check should have prevented this.")
     }
   }
   

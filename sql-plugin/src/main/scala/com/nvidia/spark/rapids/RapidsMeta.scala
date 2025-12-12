@@ -1514,7 +1514,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
       throw new IllegalStateException(s"$this is NOT deterministic!!!")
     }
     // Separate literals and ScalarSubQueries from GPU-convertible expressions to optimize
-    // data movement, and work around bugs in spark were only a Scala value is supported as input.
+    // data movement, and work around bugs in Spark where only a Scala value is supported as input.
     val gpuInputsWithIndex = scala.collection.mutable.ListBuffer[(Expression, Int)]()
 
     // Build GPU inputs and track their original positions
