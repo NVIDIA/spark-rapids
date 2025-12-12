@@ -165,32 +165,17 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(not is_spark_340_or_later(), reason="Deletion Vectors only supported on Spark 3.4.0+")
-def test_delta_partition_col_pruning(spark_tmp_path):
+def test_delta_filter_out_metadata_col(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
-    from delta import DeltaTable
-    table_name = "pruning_test"
-    def setup_table(spark):
-        spark.sql(f"""
-        CREATE TABLE {table_name}
-        USING DELTA
-        LOCATION '{data_path}'
-        PARTITIONED BY (region)
-        TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')
-        AS SELECT id, city, temperature, region FROM VALUES
-        (1L, 'New York', 25.5D, 'AMER'),
-        (2L, 'Los Angeles', 28.0D, 'AMER'),
-        (3L, 'Chicago', 22.3D, 'AMER'),
-        (4L, 'Tokyo', 18.2D, 'APAC'),
-        (5L, 'Sydney', 24.1D, 'APAC'),
-        (6L, 'Seoul', 15.8D, 'APAC'),
-        (7L, 'Berlin', 12.8D, 'EMEA'),
-        (8L, 'Paris', 14.5D, 'EMEA'),
-        (9L, 'London', 11.2D, 'EMEA')
-        AS t(id, city, temperature, region)
-        """)
-        spark.sql(f"DELETE FROM {table_name} WHERE city IN ('Los Angeles', 'Sydney', 'Paris')")
+
+    def create_delta(spark):
+        two_col_df(spark, int_gen, int_gen).coalesce(1).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true") \
+            .partitionBy("a").save(data_path)
+
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0")
 
     def read_table(spark): 
-       return spark.sql(f"SELECT * FROM {table_name} ORDER BY region, id") 
-    with_cpu_session(setup_table)
+       return spark.sql(f"SELECT * FROM delta.`{data_path}` ")
+    with_cpu_session(create_delta)
     assert_gpu_and_cpu_are_equal_collect(read_table)
