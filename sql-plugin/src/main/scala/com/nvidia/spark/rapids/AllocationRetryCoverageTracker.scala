@@ -116,14 +116,19 @@ object AllocationRetryCoverageTracker extends Logging {
 
     val stackTrace = Thread.currentThread().getStackTrace
     
-    // Check if any retry-related method is in the call stack.
-    // We look for any method containing "Retry" in its name within spark-rapids packages.
-    // This catches: withRetry, withRetryNoSplit, withRestoreOnRetry, and wrapper functions
-    // like concatenateAndMergeWithRetry, projectAndCloseWithRetrySingleBatch, etc.
+    // Check if any retry-related code is in the call stack.
+    // We look for any class or method containing "Retry" in its name within spark-rapids packages.
+    // This catches:
+    // - Core retry methods: withRetry, withRetryNoSplit, withRestoreOnRetry
+    // - Wrapper functions: concatenateAndMergeWithRetry, projectAndCloseWithRetrySingleBatch, etc.
+    // - Retry framework internals: RmmRapidsRetryIterator$AutoCloseableAttemptSpliterator.next
+    // Note: We exclude AllocationRetryCoverageTracker itself since it's always in the stack
     val hasCoverage = stackTrace.exists { element =>
       val className = element.getClassName
       val methodName = element.getMethodName
-      SPARK_RAPIDS_PACKAGE_PREFIXES.exists(className.startsWith) && methodName.contains("Retry")
+      SPARK_RAPIDS_PACKAGE_PREFIXES.exists(className.startsWith) && 
+        !className.contains("AllocationRetryCoverageTracker") &&
+        (className.contains("Retry") || methodName.contains("Retry"))
     }
 
     if (!hasCoverage) {
