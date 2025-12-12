@@ -29,7 +29,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
 import com.nvidia.spark.rapids.GpuMetric.{ASYNC_READ_TIME, SYNC_READ_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.io.async.{ThrottlingExecutor, TrafficController}
 import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoGpuSerializer,
@@ -151,23 +151,64 @@ object CoalesceReadOption extends Logging {
 
 object GpuShuffleCoalesceUtils {
   /**
-   * Split policy that divides a sequence of tables in half by number of elements.
+   * Creates a split policy that divides a sequence of tables based on target byte size.
+   * Uses splitTargetSizeInHalfGpu to split the target size, then splits the tables
+   * sequence to match the new target size based on byte size.
    */
-  def splitTableSeqInHalf[T <: AutoCloseable](
-      wrapper: SpillableTableSeqWrapper[T]): Seq[SpillableTableSeqWrapper[T]] = {
-    withResource(wrapper) { _ =>
-      val tables = wrapper.tables
-      if (tables.length <= 1) {
-        throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
-          s"GPU OutOfMemory: a sequence of ${tables.length} tables cannot be split!")
+  def createSplitPolicyByTargetSize[T <: AutoCloseable](
+      tableOperator: SerializedTableOperator[T, _],
+      minSize: Long): SpillableTableSeqWithTargetSize[T] =>
+      Seq[SpillableTableSeqWithTargetSize[T]] = {
+    (wrapper: SpillableTableSeqWithTargetSize[T]) => {
+      withResource(wrapper: AutoCloseable) { _ =>
+        // First split the target size
+        val splitTargetSizes = splitTargetSizeInHalfGpu(wrapper.targetSize)
+        if (splitTargetSizes.isEmpty) {
+          throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
+            s"GPU OutOfMemory: target size ${wrapper.targetSize.targetSize} " +
+                s"cannot be split further!")
+        }
+        val newTargetSize = splitTargetSizes.head
+        val targetByteSize = newTargetSize.targetSize
+
+        val tables = wrapper
+        if (tables.isEmpty) {
+          throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
+            s"GPU OutOfMemory: empty table sequence cannot be split!")
+        }
+
+        // Split tables based on byte size to match the new target
+        var currentSize = 0L
+        var splitIndex = 0
+        var foundSplit = false
+
+        for (i <- tables.indices if !foundSplit) {
+          val tableSize = tableOperator.getDataLen(tables(i))
+          if (currentSize + tableSize > targetByteSize && i > 0) {
+            splitIndex = i
+            foundSplit = true
+          } else {
+            currentSize += tableSize
+          }
+        }
+
+        if (!foundSplit) {
+          // If we can't split, check if we have at least 2 tables to split by count
+          if (tables.length <= 1) {
+            throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
+              s"GPU OutOfMemory: a sequence of ${tables.length} tables cannot be split!")
+          }
+          splitIndex = tables.length / 2
+        }
+
+        val firstHalfTables = tables.take(splitIndex)
+        val secondHalfTables = tables.drop(splitIndex)
+
+        Seq(
+          SpillableTableSeqWithTargetSize(firstHalfTables, newTargetSize),
+          SpillableTableSeqWithTargetSize(secondHalfTables, newTargetSize)
+        )
       }
-      val mid = tables.length / 2
-      val firstHalfTables = tables.take(mid)
-      val secondHalfTables = tables.drop(mid)
-      Seq(
-        SpillableTableSeqWrapper(firstHalfTables),
-        SpillableTableSeqWrapper(secondHalfTables)
-      )
     }
   }
 
@@ -429,6 +470,25 @@ case class SpillableTableSeqWrapper[T <: AutoCloseable](
   }
 }
 
+/**
+ * A wrapper for a sequence of tables with target size information that allows
+ * splitting based on byte size when OOM occurs. Extends Seq[T] so it can be
+ * used directly as a sequence.
+ */
+case class SpillableTableSeqWithTargetSize[T <: AutoCloseable](
+    tables: Seq[T],
+    targetSize: AutoCloseableTargetSize) extends Seq[T] with AutoCloseable {
+  override def close(): Unit = {
+    tables.foreach(_.safeClose())
+    targetSize.close()
+  }
+
+  // Seq implementation
+  override def length: Int = tables.length
+  override def iterator: Iterator[T] = tables.iterator
+  override def apply(idx: Int): T = tables.apply(idx)
+}
+
 
 /**
  * Common base class for coalescing iterators that handles the core logic of
@@ -442,9 +502,7 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
-    useAsync: Boolean = false,
-    splitPolicy: Option[SpillableTableSeqWrapper[T] =>
-        Seq[SpillableTableSeqWrapper[T]]] = None
+    useAsync: Boolean = false
 ) extends Iterator[R] with AutoCloseable {
   protected[this] val serializedTables = new util.ArrayDeque[T]
   @volatile protected[this] var numTablesInBatch: Int = 0
@@ -453,6 +511,8 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
   @volatile protected[this] var pendingResultIter: Option[Iterator[R]] = None
 
   protected val tableOperator: SerializedTableOperator[T, R]
+  protected val splitPolicy: Option[SpillableTableSeqWithTargetSize[T] =>
+      Seq[SpillableTableSeqWithTargetSize[T]]] = None
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
@@ -490,9 +550,12 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
       val tablesSeq = tables.toSeq
       splitPolicy match {
         case Some(policy) =>
-          val wrapper = SpillableTableSeqWrapper(tablesSeq)
+          // Create AutoCloseableTargetSize with targetBatchByteSize and 10 MB minSize
+          val minSize = 10L * 1024 * 1024 // 10 MB
+          val targetSizeWrapper = AutoCloseableTargetSize(targetBatchByteSize, minSize)
+          val wrapper = SpillableTableSeqWithTargetSize(tablesSeq, targetSizeWrapper)
           val resultIter = withRetry(wrapper, policy) { wrappedSeq =>
-            tableOperator.concat(wrappedSeq.tables.toArray)
+            tableOperator.concat(wrappedSeq.toArray)
           }
           // Store the iterator so we can yield results one by one if splits occurred
           if (resultIter.hasNext) {
@@ -588,12 +651,10 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
-    useAsync: Boolean = false,
-    splitPolicy: Option[SpillableTableSeqWrapper[T] =>
-        Seq[SpillableTableSeqWrapper[T]]] = None
+    useAsync: Boolean = false
 ) extends CoalesceIteratorBase[T, CoalescedHostResult](
     iter, targetBatchByteSize, concatTimeMetric, inputBatchesMetric,
-    inputRowsMetric, readThrottlingMetric, useAsync, splitPolicy) {
+    inputRowsMetric, readThrottlingMetric, useAsync) {
 
   private var executor: Option[ThrottlingExecutor] = None
 
@@ -697,12 +758,10 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     inputBatchesMetric: GpuMetric,
     inputRowsMetric: GpuMetric,
     readThrottlingMetric: GpuMetric,
-    useAsync: Boolean = false,
-    splitPolicy: Option[SpillableTableSeqWrapper[T] =>
-        Seq[SpillableTableSeqWrapper[T]]] = None
+    useAsync: Boolean = false
 ) extends CoalesceIteratorBase[T, ColumnarBatch](
     iter, targetBatchByteSize, concatTimeMetric, inputBatchesMetric,
-    inputRowsMetric, readThrottlingMetric, useAsync, splitPolicy) {
+    inputRowsMetric, readThrottlingMetric, useAsync) {
 
   protected val tableOperator: SerializedTableOperator[T, ColumnarBatch]
 
@@ -767,8 +826,7 @@ class KudoHostShuffleCoalesceIterator(
     )
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter,
     targetBatchSize, concatTimeMetric, inputBatchesMetric, inputRowsMetric,
-    readThrottlingMetric, readOption.useAsync,
-    Some(GpuShuffleCoalesceUtils.splitTableSeqInHalf[KudoSerializedTableColumn])) {
+    readThrottlingMetric, readOption.useAsync) {
 
   // Capture TaskContext info during RDD execution when it's available
   private val taskIdentifier = Option(TaskContext.get()) match {
@@ -784,6 +842,14 @@ class KudoHostShuffleCoalesceIterator(
     }
     new KudoTableOperator(kudoSer, readOption, taskIdentifier)
   }
+
+  // Create the byte-size-based split policy after tableOperator is initialized
+  override protected val splitPolicy: Option[
+      SpillableTableSeqWithTargetSize[KudoSerializedTableColumn] =>
+      Seq[SpillableTableSeqWithTargetSize[KudoSerializedTableColumn]]] = {
+    val minSize = 10L * 1024 * 1024 // 10 MB
+    Some(GpuShuffleCoalesceUtils.createSplitPolicyByTargetSize(tableOperator, minSize))
+  }
 }
 
 class KudoGpuShuffleCoalesceIterator(
@@ -798,12 +864,19 @@ class KudoGpuShuffleCoalesceIterator(
     )
   extends GpuCoalesceIteratorBase[KudoSerializedTableColumn](iter,
     targetBatchSize, concatTimeMetric, inputBatchesMetric, inputRowsMetric,
-    readThrottlingMetric, readOption.useAsync,
-    Some(GpuShuffleCoalesceUtils.splitTableSeqInHalf[KudoSerializedTableColumn])) {
+    readThrottlingMetric, readOption.useAsync) {
 
   override protected val tableOperator:
     SerializedTableOperator[KudoSerializedTableColumn, ColumnarBatch] =
     new KudoGpuTableOperator(dataTypes)
+
+  // Create the byte-size-based split policy after tableOperator is initialized
+  override protected val splitPolicy: Option[
+      SpillableTableSeqWithTargetSize[KudoSerializedTableColumn] =>
+      Seq[SpillableTableSeqWithTargetSize[KudoSerializedTableColumn]]] = {
+    val minSize = 10L * 1024 * 1024 // 10 MB
+    Some(GpuShuffleCoalesceUtils.createSplitPolicyByTargetSize(tableOperator, minSize))
+  }
 }
 
 
