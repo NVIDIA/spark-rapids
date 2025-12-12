@@ -176,7 +176,10 @@ def test_delta_filter_out_metadata_col(spark_tmp_path):
         count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0").collect()[0][0]
         assert(count > 0)
 
-    def read_table(spark): 
-       return spark.sql(f"SELECT * FROM delta.`{data_path}` ")
+    def read_table(spark):
+        df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
+        assert "__delta_internal_is_row_deleted" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
+        return df
+
     with_cpu_session(create_delta)
     assert_gpu_and_cpu_are_equal_collect(read_table)
