@@ -167,6 +167,7 @@ dv:|   true, true,....|...false, false,....|... false, false |
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(), \
                     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
 @pytest.mark.parametrize("reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"])
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/14004")
 def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
