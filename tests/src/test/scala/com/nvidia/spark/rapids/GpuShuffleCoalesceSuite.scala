@@ -102,18 +102,105 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
     }
   }
 
-  test("GPU kudo partitioning with deserialization") {
-    TrampolineUtil.cleanupAnyExistingSession()
-    val conf = new SparkConf()
+  private def createSparkConf(): SparkConf = {
+    new SparkConf()
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
         .set(RapidsConf.SHUFFLE_KUDO_WRITE_MODE.key, "GPU")
         .set(RapidsConf.SHUFFLE_KUDO_READ_MODE.key, "GPU")
+  }
+
+  private def createGpuPartitioning(partitionIndices: Array[Int]): GpuPartitioning = {
+    new GpuPartitioning {
+      override val numPartitions: Int = partitionIndices.length
+    }
+  }
+
+  private def serializeBatchesToStream(
+      serializedPartitions: Array[ColumnarBatch],
+      dataTypes: Array[org.apache.spark.sql.types.DataType]): Array[Byte] = {
+    val byteOutputStream = new java.io.ByteArrayOutputStream()
+    val serializerMetrics = Map(
+      "dataSize" -> com.nvidia.spark.rapids.NoopMetric,
+      "shuffleSerTime" -> com.nvidia.spark.rapids.NoopMetric,
+      "shuffleSerCopyBufferTime" -> com.nvidia.spark.rapids.NoopMetric
+    ).withDefaultValue(com.nvidia.spark.rapids.NoopMetric)
+    val serializer = new GpuColumnarBatchSerializer(serializerMetrics, dataTypes,
+      RapidsConf.ShuffleKudoMode.GPU, true, false)
+    withResource(serializer.newInstance().serializeStream(byteOutputStream)) {
+      serializationStream =>
+        serializedPartitions.foreach { batch =>
+          serializationStream.writeKey(0)
+          serializationStream.writeValue(batch)
+        }
+    }
+    byteOutputStream.toByteArray
+  }
+
+  private def deserializeStreamToIterator(
+      serializedData: Array[Byte],
+      dataTypes: Array[org.apache.spark.sql.types.DataType]):
+      Iterator[ColumnarBatch] = {
+    val serializerMetrics = Map(
+      "dataSize" -> com.nvidia.spark.rapids.NoopMetric,
+      "shuffleSerTime" -> com.nvidia.spark.rapids.NoopMetric,
+      "shuffleSerCopyBufferTime" -> com.nvidia.spark.rapids.NoopMetric
+    ).withDefaultValue(com.nvidia.spark.rapids.NoopMetric)
+    val serializer = new GpuColumnarBatchSerializer(serializerMetrics, dataTypes,
+      RapidsConf.ShuffleKudoMode.GPU, true, false)
+    val byteInputStream = new java.io.ByteArrayInputStream(serializedData)
+    val deserializationStream = serializer.newInstance().deserializeStream(byteInputStream)
+    deserializationStream.asKeyValueIterator.map(_._2).asInstanceOf[Iterator[ColumnarBatch]]
+  }
+
+  private def createMetricsMap(): Map[String, GpuMetric] = {
+    Map(
+      GpuMetric.CONCAT_TIME -> com.nvidia.spark.rapids.NoopMetric,
+      GpuMetric.NUM_INPUT_BATCHES -> com.nvidia.spark.rapids.NoopMetric,
+      GpuMetric.NUM_INPUT_ROWS -> com.nvidia.spark.rapids.NoopMetric,
+      GpuMetric.NUM_OUTPUT_BATCHES -> com.nvidia.spark.rapids.NoopMetric,
+      GpuMetric.NUM_OUTPUT_ROWS -> com.nvidia.spark.rapids.NoopMetric,
+      GpuMetric.OP_TIME_LEGACY -> com.nvidia.spark.rapids.NoopMetric,
+      GpuMetric.READ_THROTTLING_TIME -> com.nvidia.spark.rapids.NoopMetric,
+      GpuMetric.SYNC_READ_TIME -> com.nvidia.spark.rapids.NoopMetric
+    )
+  }
+
+  private def createReadOption(): CoalesceReadOption = {
+    CoalesceReadOption(
+      kudoEnabled = true,
+      kudoMode = RapidsConf.ShuffleKudoMode.GPU,
+      kudoDebugMode = DumpOption.Never,
+      kudoDebugDumpPrefix = None,
+      useAsync = false
+    )
+  }
+
+  private def verifyAndCompareResults(
+      deserializedBatches: Array[ColumnarBatch],
+      originalBatch: ColumnarBatch,
+      dataTypes: Array[org.apache.spark.sql.types.DataType],
+      minBatchesExpected: Int = 1): Unit = {
+    val totalDeserializedRows = deserializedBatches.map(_.numRows).sum
+    assertResult(originalBatch.numRows)(totalDeserializedRows)
+    assert(deserializedBatches.length >= minBatchesExpected,
+      s"Should have at least $minBatchesExpected deserialized batch(es)")
+    val concatenatedBatch = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(
+      deserializedBatches, dataTypes)
+    withResource(concatenatedBatch) { _ =>
+      compareBatches(originalBatch, concatenatedBatch)
+    }
+  }
+
+  private def runKudoShuffleTest(
+      targetBatchSize: Long,
+      minSplitSize: Option[Long] = None,
+      forceSplitRetry: Boolean = false): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+    val conf = createSparkConf()
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf))
       val partitionIndices = Array(0, 2, 2)
-      val gp = new GpuPartitioning {
-        override val numPartitions: Int = partitionIndices.length
-      }
+      val gp = createGpuPartitioning(partitionIndices)
       withResource(buildBatch()) { originalBatch =>
         GpuColumnVector.incRefCounts(originalBatch)
         val columns = GpuColumnVector.extractColumns(originalBatch)
@@ -121,184 +208,58 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
         val dataTypes = GpuColumnVector.extractTypes(originalBatch)
 
         // Get serialized batches from the partitioning operation
-        // The method returns Array[(ColumnarBatch, Int)], we need to manage the entire result
         withResource(gp.sliceInternalGpuOrCpuAndClose(
           numRows, partitionIndices, columns).map(_._1)) { serializedPartitions =>
 
           // Simulate the full shuffle round-trip: serialize to stream, then deserialize back
-          val byteOutputStream = new java.io.ByteArrayOutputStream()
-          val serializerMetrics = Map(
-            "dataSize" -> com.nvidia.spark.rapids.NoopMetric,
-            "shuffleSerTime" -> com.nvidia.spark.rapids.NoopMetric,
-            "shuffleSerCopyBufferTime" -> com.nvidia.spark.rapids.NoopMetric
-          ).withDefaultValue(com.nvidia.spark.rapids.NoopMetric)
-          val serializer = new GpuColumnarBatchSerializer(serializerMetrics, dataTypes,
-            RapidsConf.ShuffleKudoMode.GPU, true, false)
-          withResource(serializer.newInstance().
-            serializeStream(byteOutputStream)) { serializationStream =>
-            // Write the serialized batches to the stream
-            serializedPartitions.foreach { batch =>
-              serializationStream.writeKey(0)
-              serializationStream.writeValue(batch)
-            }
+          val serializedData = serializeBatchesToStream(serializedPartitions, dataTypes)
+          val kudoBatchesIter = deserializeStreamToIterator(serializedData, dataTypes)
+
+          // Set up metrics and read options
+          val metricsMap = createMetricsMap()
+          val readOption = createReadOption()
+
+          // Get the coalescing iterator
+          val coalesceIter = minSplitSize match {
+            case Some(minSize) =>
+              GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
+                kudoBatchesIter, targetBatchSize, dataTypes, readOption, metricsMap,
+                prefetchFirstBatch = false, minSplitSize = minSize)
+            case None =>
+              GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
+                kudoBatchesIter, targetBatchSize, dataTypes, readOption, metricsMap)
           }
 
-          // Now deserialize the stream back to get KudoSerializedTableColumn batches
-          val byteInputStream = new java.io.ByteArrayInputStream(byteOutputStream.toByteArray)
-          val deserializationStream = serializer.newInstance().deserializeStream(byteInputStream)
-          val kudoBatchesIter =
-            deserializationStream.asKeyValueIterator.map(_._2).asInstanceOf[Iterator[ColumnarBatch]]
-
-          // Set up metrics for the coalescing operation
-          val metricsMap = Map(
-            GpuMetric.CONCAT_TIME -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_INPUT_BATCHES -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_INPUT_ROWS -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_OUTPUT_BATCHES -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_OUTPUT_ROWS -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.OP_TIME_LEGACY -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.READ_THROTTLING_TIME -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.SYNC_READ_TIME -> com.nvidia.spark.rapids.NoopMetric
-          )
-
-          // Create coalesce read option for kudo GPU mode
-          val readOption = com.nvidia.spark.rapids.CoalesceReadOption(
-            kudoEnabled = true,
-            kudoMode = com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode.GPU,
-            kudoDebugMode = DumpOption.Never,
-            kudoDebugDumpPrefix = None,
-            useAsync = false
-          )
-
-          // Get the coalescing iterator that will deserialize the batches
-          // Use a small target size to prevent coalescing from combining partitions
-          val coalesceIter = GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
-            kudoBatchesIter, 1000, dataTypes, readOption, metricsMap)
+          // Force split retry if requested
+          if (forceSplitRetry) {
+            RmmSpark.currentThreadIsDedicatedToTask(1)
+            RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+              RmmSpark.OomInjectionType.GPU.ordinal, 0)
+          }
 
           // Collect all deserialized batches
           val deserializedBatches = coalesceIter.toArray
 
-          val totalDeserializedRows = deserializedBatches.map(_.numRows).sum
-          assertResult(originalBatch.numRows)(totalDeserializedRows)
-
-          // Since coalescing may combine batches, we focus on verifying that
-          // the deserialization process works correctly and preserves all data
-          assert(deserializedBatches.length > 0, "Should have at least one deserialized batch")
-
-          // Concatenate all deserialized batches and compare with original
-          val concatenatedBatch = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(
-            deserializedBatches, dataTypes)
-          withResource(concatenatedBatch) { _ =>
-            compareBatches(originalBatch, concatenatedBatch)
-          }
+          // Verify results
+          verifyAndCompareResults(deserializedBatches, originalBatch, dataTypes)
         }
       }
     }
   }
 
+  test("GPU kudo partitioning with deserialization") {
+    // Use a small target size to prevent coalescing from combining partitions
+    runKudoShuffleTest(targetBatchSize = 1000)
+  }
+
   test("GPU kudo partitioning with deserialization and split retry") {
-    TrampolineUtil.cleanupAnyExistingSession()
-    val conf = new SparkConf()
-        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
-        .set(RapidsConf.SHUFFLE_KUDO_WRITE_MODE.key, "GPU")
-        .set(RapidsConf.SHUFFLE_KUDO_READ_MODE.key, "GPU")
-    TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf))
-      val partitionIndices = Array(0, 2, 2)
-      val gp = new GpuPartitioning {
-        override val numPartitions: Int = partitionIndices.length
-      }
-      withResource(buildBatch()) { originalBatch =>
-        GpuColumnVector.incRefCounts(originalBatch)
-        val columns = GpuColumnVector.extractColumns(originalBatch)
-        val numRows = originalBatch.numRows
-        val dataTypes = GpuColumnVector.extractTypes(originalBatch)
-
-        // Get serialized batches from the partitioning operation
-        // The method returns Array[(ColumnarBatch, Int)], we need to manage the entire result
-        withResource(gp.sliceInternalGpuOrCpuAndClose(
-          numRows, partitionIndices, columns).map(_._1)) { serializedPartitions =>
-
-          // Simulate the full shuffle round-trip: serialize to stream, then deserialize back
-          val byteOutputStream = new java.io.ByteArrayOutputStream()
-          val serializerMetrics = Map(
-            "dataSize" -> com.nvidia.spark.rapids.NoopMetric,
-            "shuffleSerTime" -> com.nvidia.spark.rapids.NoopMetric,
-            "shuffleSerCopyBufferTime" -> com.nvidia.spark.rapids.NoopMetric
-          ).withDefaultValue(com.nvidia.spark.rapids.NoopMetric)
-          val serializer = new GpuColumnarBatchSerializer(serializerMetrics, dataTypes,
-            RapidsConf.ShuffleKudoMode.GPU, true, false)
-          withResource(serializer.newInstance().
-            serializeStream(byteOutputStream)) { serializationStream =>
-            // Write the serialized batches to the stream
-            serializedPartitions.foreach { batch =>
-              serializationStream.writeKey(0)
-              serializationStream.writeValue(batch)
-            }
-          }
-
-          // Now deserialize the stream back to get KudoSerializedTableColumn batches
-          val byteInputStream = new java.io.ByteArrayInputStream(byteOutputStream.toByteArray)
-          val deserializationStream = serializer.newInstance().deserializeStream(byteInputStream)
-          val kudoBatchesIter =
-            deserializationStream.asKeyValueIterator.map(_._2).asInstanceOf[Iterator[ColumnarBatch]]
-
-          // Set up metrics for the coalescing operation
-          val metricsMap = Map(
-            GpuMetric.CONCAT_TIME -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_INPUT_BATCHES -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_INPUT_ROWS -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_OUTPUT_BATCHES -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.NUM_OUTPUT_ROWS -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.OP_TIME_LEGACY -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.READ_THROTTLING_TIME -> com.nvidia.spark.rapids.NoopMetric,
-            GpuMetric.SYNC_READ_TIME -> com.nvidia.spark.rapids.NoopMetric
-          )
-
-          // Create coalesce read option for kudo GPU mode
-          val readOption = com.nvidia.spark.rapids.CoalesceReadOption(
-            kudoEnabled = true,
-            kudoMode = com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode.GPU,
-            kudoDebugMode = DumpOption.Never,
-            kudoDebugDumpPrefix = None,
-            useAsync = false
-          )
-
-          // Get the coalescing iterator that will deserialize the batches
-          // Use a larger target size to allow coalescing multiple partitions
-          // This ensures we have enough data to trigger a split when OOM is forced
-          // Use a very small minSplitSize to allow the split retry to work with
-          // the target size of 100000
-          val minSplitSize = 1024L // 1 KB - small enough to allow splitting
-          val coalesceIter = GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
-            kudoBatchesIter, 100000, dataTypes, readOption, metricsMap,
-            prefetchFirstBatch = false, minSplitSize = minSplitSize)
-
-          RmmSpark.currentThreadIsDedicatedToTask(1)
-          // Force a split retry OOM right before we start iterating
-          // This will trigger the split retry path during concatenation
-          RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-            RmmSpark.OomInjectionType.GPU.ordinal, 0)
-
-          // Collect all deserialized batches - this will trigger the concatenation
-          // which will hit the forced OOM and trigger the split retry path
-          val deserializedBatches = coalesceIter.toArray
-
-          val totalDeserializedRows = deserializedBatches.map(_.numRows).sum
-          assertResult(originalBatch.numRows)(totalDeserializedRows)
-
-          // Verify that we got batches back (split retry should have succeeded)
-          assert(deserializedBatches.length > 0,
-            "Should have at least one deserialized batch after split retry")
-
-          // Concatenate all deserialized batches and compare with original
-          val concatenatedBatch = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(
-            deserializedBatches, dataTypes)
-          withResource(concatenatedBatch) { _ =>
-            compareBatches(originalBatch, concatenatedBatch)
-          }
-        }
-      }
-    }
+    // Use a larger target size to allow coalescing multiple partitions.
+    // This ensures we have enough data to trigger a split when OOM is forced.
+    // Use a very small minSplitSize to allow the split retry to work with
+    // the target size of 100000.
+    runKudoShuffleTest(
+      targetBatchSize = 100000,
+      minSplitSize = Some(1024L), // 1 KB - small enough to allow splitting
+      forceSplitRetry = true)
   }
 }
