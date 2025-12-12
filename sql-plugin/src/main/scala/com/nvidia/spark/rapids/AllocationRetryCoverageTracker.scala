@@ -59,18 +59,10 @@ object AllocationKind extends Enumeration {
 object AllocationRetryCoverageTracker extends Logging {
   import AllocationKind._
 
-  // Retry-related method names to look for in the call stack
-  // These methods indicate the allocation is properly covered by retry logic
-  private val RETRY_METHOD_NAMES = Set(
-    "withRetry",
-    "withRetryNoSplit",
-    "withRestoreOnRetry"
-  )
-
-  // Classes that contain retry methods
-  private val RETRY_CLASS_PREFIXES = Seq(
-    "com.nvidia.spark.rapids.RmmRapidsRetryIterator",
-    "com.nvidia.spark.rapids.RmmRapidsRetryIterator$"
+  // Package prefixes for spark-rapids code where we look for "Retry" in method names
+  private val SPARK_RAPIDS_PACKAGE_PREFIXES = Seq(
+    "com.nvidia.spark.rapids",
+    "org.apache.spark.sql.rapids"
   )
 
   // Default output file path for uncovered allocations - use /tmp for easy access
@@ -124,14 +116,14 @@ object AllocationRetryCoverageTracker extends Logging {
 
     val stackTrace = Thread.currentThread().getStackTrace
     
-    // Check if any retry method is in the call stack
+    // Check if any retry-related method is in the call stack.
+    // We look for any method containing "Retry" in its name within spark-rapids packages.
+    // This catches: withRetry, withRetryNoSplit, withRestoreOnRetry, and wrapper functions
+    // like concatenateAndMergeWithRetry, projectAndCloseWithRetrySingleBatch, etc.
     val hasCoverage = stackTrace.exists { element =>
       val className = element.getClassName
       val methodName = element.getMethodName
-      
-      // Check if this is a retry-related method in the retry iterator classes
-      RETRY_CLASS_PREFIXES.exists(prefix => className.startsWith(prefix)) &&
-        RETRY_METHOD_NAMES.contains(methodName)
+      SPARK_RAPIDS_PACKAGE_PREFIXES.exists(className.startsWith) && methodName.contains("Retry")
     }
 
     if (!hasCoverage) {
