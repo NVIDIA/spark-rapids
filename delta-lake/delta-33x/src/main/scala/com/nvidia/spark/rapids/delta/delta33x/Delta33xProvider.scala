@@ -17,21 +17,17 @@
 package com.nvidia.spark.rapids.delta.delta33x
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.catalog.DeltaTableV2
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
-import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.v2.AppendDataExecV1
 
-object Delta33xProvider extends DeltaProviderBase with Logging {
+object Delta33xProvider extends DeltaProviderBase {
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
     write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
@@ -76,38 +72,9 @@ object Delta33xProvider extends DeltaProviderBase with Logging {
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
-  override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    val format = meta.wrapped.relation.fileFormat
-    if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      // Check if the scan is reading row deleted columns or row indices which are used for reading
-      // deletion vectors. If so, we need to disable some optimizations on the GPU side.
-      meta.wrapped.requiredSchema.find(field =>
-        field.name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-        field.name == DeltaParquetFileFormat.ROW_INDEX_COLUMN_NAME ||
-        field.name == ParquetFileFormat.ROW_INDEX_TEMPORARY_COLUMN_NAME
-      ).foreach(_ => {
-        DeltaProvider.tagDisableOptimizations(meta.wrapped)
-      })
-      GpuReadParquetFileFormat.tagSupport(meta)
-    } else {
-      meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
-    }
-  }
-
-  override protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat,
-      disableOptimizations: Boolean): FileFormat = {
-    val optimizationsEnabled = if (disableOptimizations) {
-      logWarning(s"Input Delta table has deletion vectors. " +
-        s"Optimizations such as file splitting and predicate pushdown are currently not " +
-        s"supported for this table")
-      false
-    } else {
-      fmt.optimizationsEnabled
-    }
+  override protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat =
     GpuDelta33xParquetFileFormat(fmt.protocol, fmt.metadata, fmt.nullableRowTrackingFields,
-      optimizationsEnabled,
-      fmt.tablePath, fmt.isCDCRead)
-  }
+      fmt.optimizationsEnabled, fmt.tablePath, fmt.isCDCRead)
 
   override def convertToGpu(
       cpuExec: AppendDataExecV1,

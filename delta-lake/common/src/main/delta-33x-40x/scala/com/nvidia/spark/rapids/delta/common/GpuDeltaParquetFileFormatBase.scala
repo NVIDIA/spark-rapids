@@ -57,6 +57,11 @@ class GpuDeltaParquetFileFormatBase(
     isCDCRead: Boolean = false
   ) extends com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat with Logging {
 
+  if (hasTablePath) {
+    logWarning("Input Delta table has deletion vectors. Optimizations such as file splitting " +
+      "and predicate pushdown are currently not supported for this table.")
+  }
+
   // Validate either we have all arguments for DV enabled read or none of them.
 
   // disable optimizations
@@ -142,7 +147,11 @@ class GpuDeltaParquetFileFormatBase(
 
   override def isSplitable(sparkSession: SparkSession,
      options: Map[String, String],
-     path: Path): Boolean = optimizationsEnabled
+     path: Path): Boolean = {
+    // Disable the optimizations when there are DVs read.
+    // Note that tablePath is set only when DVs are read.
+    !hasTablePath && optimizationsEnabled
+  }
 
   def hasTablePath: Boolean = tablePath.isDefined
 

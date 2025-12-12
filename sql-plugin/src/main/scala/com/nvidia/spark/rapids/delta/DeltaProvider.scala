@@ -31,7 +31,6 @@ import com.nvidia.spark.rapids.{
 }
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -64,7 +63,7 @@ trait DeltaProvider {
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
-  def getReadFileFormat(relation: HadoopFsRelation, disableOptimizations: Boolean): FileFormat
+  def getReadFileFormat(relation: HadoopFsRelation): FileFormat
 
   def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean
 
@@ -105,21 +104,6 @@ object DeltaProvider {
   }
 
   def apply(): DeltaProvider = provider
-
-  /**
-   * Tag to mark a FileSourceScanExec as having scan optimizations, such as file split or
-   * predicate pushdown disabled.
-   */
-  private val disableOptimizations: TreeNodeTag[String] =
-    TreeNodeTag[String]("rapids.delta.disableOptimizations")
-
-  def tagDisableOptimizations(scan: FileSourceScanExec): Unit = {
-    scan.setTagValue(disableOptimizations, "")
-  }
-
-  def isOptimizationsDisabled(scan: FileSourceScanExec): Boolean = {
-    scan.getTagValue(disableOptimizations).isDefined
-  }
 }
 
 object NoDeltaProvider extends DeltaProvider {
@@ -140,8 +124,7 @@ object NoDeltaProvider extends DeltaProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
     throw new IllegalStateException("unsupported format")
 
-  override def getReadFileFormat(relation: HadoopFsRelation,
-      disableOptimizations: Boolean): FileFormat =
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat =
     throw new IllegalStateException("unsupported format")
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = false

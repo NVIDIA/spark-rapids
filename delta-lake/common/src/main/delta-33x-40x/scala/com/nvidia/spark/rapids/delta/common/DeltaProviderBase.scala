@@ -99,14 +99,12 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     }
   }
 
-  override def getReadFileFormat(relation: HadoopFsRelation,
-      disableOptimizations: Boolean): FileFormat = {
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    toGpuParquetFileFormat(fmt, disableOptimizations)
+    toGpuParquetFileFormat(fmt)
   }
 
-  protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat,
-      disableOptimizations: Boolean): FileFormat
+  protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat
 
   override def convertToGpu(
     cpuExec: AtomicCreateTableAsSelectExec,
