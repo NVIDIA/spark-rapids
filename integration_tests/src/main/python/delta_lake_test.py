@@ -178,9 +178,7 @@ def test_delta_filter_out_metadata_col(spark_tmp_path):
 
     def read_table(spark):
         df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
-        explain_string = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
-        assert "__delta_internal_is_row_deleted" in explain_string or \
-            "_databricks_internal_edge_computed_column_skip_row" in explain_string
+        assert "__delta_internal_is_row_deleted" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
         return df
 
     with_cpu_session(create_delta)
