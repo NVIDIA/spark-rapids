@@ -133,6 +133,8 @@ object GpuMetric extends Logging {
   val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
   val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
+  val CPU_BRIDGE_PROCESSING_TIME = "cpuBridgeProcessingTime"
+  val CPU_BRIDGE_WAIT_TIME = "cpuBridgeWaitTime"
   val COPY_TO_HOST_TIME = "d2hMemCopyTime"
   val READ_THROTTLING_TIME = "readThrottlingTime"
   val SMALL_JOIN_COUNT = "sizedSmallJoin"
@@ -186,6 +188,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
   val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
+  val DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME = "CPU bridge processing time"
+  val DESCRIPTION_CPU_BRIDGE_WAIT_TIME = "CPU bridge wait time"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
   val DESCRIPTION_READ_THROTTLING_TIME = "read throttling time"
 

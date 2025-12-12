@@ -461,6 +461,21 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CPU_BRIDGE = conf("spark.rapids.sql.expression.cpuBridge.enabled")
+    .doc("Enable CPU-GPU bridge expressions that allow CPU expression subtrees " +
+      "to run while keeping the overall plan on GPU. When enabled, expressions that have no " +
+      "GPU implementation will automatically be wrapped in bridge expressions instead of " +
+      "causing plan fallbacks.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val BRIDGE_DISALLOW_LIST = conf("spark.rapids.sql.expression.cpuBridge.disallowList")
+    .doc("Comma separated list of expression class names that should not use CPU bridge " +
+      "expressions even when bridge is enabled.")
+    .internal()
+    .stringConf
+    .createWithDefault("")
+
   val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
     .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
       "lz4, lzf, snappy, and zstd.")
@@ -3904,6 +3919,19 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    */
   def isConfExplicitlySet(key: String): Boolean = {
     conf.contains(key)
+  }
+
+  // CPU-GPU Bridge Configuration accessors
+
+  lazy val isCpuBridgeEnabled: Boolean = get(ENABLE_CPU_BRIDGE)
+
+  lazy val bridgeDisallowList: Set[String] = {
+    val listString = get(BRIDGE_DISALLOW_LIST)
+    if (listString.nonEmpty) {
+      listString.split(",").map(_.trim).filter(_.nonEmpty).toSet
+    } else {
+      Set.empty
+    }
   }
 }
 
