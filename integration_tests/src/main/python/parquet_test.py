@@ -383,6 +383,87 @@ def test_parquet_read_round_trip_binary_as_string(std_input_path, read_func, rea
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
 
+def write_mixed_encoding_parquet(spark, path):
+    """
+    Write a Parquet file with mixed dictionary and plain encoded string columns.
+    
+    Creates data with two different patterns:
+    - Repeated strings -> should result in dictionary encoding
+    - Unique long strings -> should result in plain encoding (dictionary too large)
+    
+    The actual encoding used depends on the writer (GPU vs CPU) and row group size.
+    """
+    # Create two DataFrames with different characteristics
+    # DataFrame 1: Repeated strings (should be dictionary encoded)
+    dict_data = [('val' + str(i % 10),) for i in range(20000)]
+    df_dict = spark.createDataFrame(dict_data, ['value'])
+    
+    # DataFrame 2: Unique long strings (should be plain encoded)
+    plain_data = [(f'unique_string_number_{i}_with_lots_of_padding_' + ('x' * 100),) 
+                  for i in range(20000)]
+    df_plain = spark.createDataFrame(plain_data, ['value'])
+    
+    # Union both DataFrames and write to a single file
+    # Set a small row group size to ensure they end up in separate row groups
+    df_combined = df_dict.union(df_plain)
+    df_combined.coalesce(1).write \
+        .option('parquet.block.size', 1024 * 1024) \
+        .parquet(path)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_parquet_read_mixed_dictionary_plain_encoding_gpu_writer(spark_tmp_path, reader_confs):
+    """
+    Test reading a Parquet file with mixed dictionary and plain encoded string columns.
+    
+    This test generates files with mixed encodings using the GPU parquet writer.
+    The writer makes encoding decisions at the row group level based on data characteristics.
+    
+    We write data with two different patterns:
+    - Repeated strings -> should result in dictionary encoding
+    - Unique long strings -> should result in plain encoding (dictionary too large)
+    
+    The gpu writer will put the different encodings in different row groups.
+    """
+    
+    all_confs = copy_and_update(reader_confs, rebase_write_corrected_conf)
+    
+    # Test with GPU-written file (cuDF writer)
+    gpu_data_path = spark_tmp_path + '/MIXED_ENCODING_DATA_GPU'
+    with_gpu_session(lambda spark: write_mixed_encoding_parquet(spark, gpu_data_path), 
+                     conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(gpu_data_path),
+        conf=all_confs
+    )
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_parquet_read_mixed_dictionary_plain_encoding_cpu_writer(spark_tmp_path, reader_confs):
+    """
+    Test reading a Parquet file with mixed dictionary and plain encoded string columns.
+    
+    This test generates files with mixed encodings using the CPU parquet writer.
+    The writer makes encoding decisions at the row group level based on data characteristics.
+    
+    We write data with two different patterns:
+    - Repeated strings -> should result in dictionary encoding
+    - Unique long strings -> should result in plain encoding (dictionary too large)
+    
+    The cpu writer will put the different encodings in the same row group (but different pages).
+    """
+    
+    all_confs = copy_and_update(reader_confs, rebase_write_corrected_conf)
+    
+    # Test with CPU-written file (Spark's built-in parquet writer)
+    cpu_data_path = spark_tmp_path + '/MIXED_ENCODING_DATA_CPU'
+    with_cpu_session(lambda spark: write_mixed_encoding_parquet(spark, cpu_data_path),
+                     conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(cpu_data_path),
+        conf=all_confs
+    )
+
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 # zstd is available in spark 3.2.0 and later.
 if not is_before_spark_320():
