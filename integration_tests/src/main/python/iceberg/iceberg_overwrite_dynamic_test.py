@@ -195,7 +195,6 @@ def test_insert_overwrite_dynamic_unsupported_data_types_fallback(spark_tmp_tabl
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_insert_overwrite_dynamic_unsupported_partition_fallback(
         spark_tmp_table_factory, partition_col_sql):

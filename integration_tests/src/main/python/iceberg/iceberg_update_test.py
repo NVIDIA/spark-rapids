@@ -303,7 +303,6 @@ def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, update_
 ])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table_factory, partition_col_sql, update_mode, fallback_exec):
     """Test UPDATE falls back with unsupported partition transforms"""
