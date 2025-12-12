@@ -1678,6 +1678,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
 
+  val ENABLE_PROTOBUF = conf("spark.rapids.sql.format.protobuf.enabled")
+    .doc("When set to true enables all protobuf input acceleration. " +
+      "GPU-accelerated protobuf parsing supports Hadoop SequenceFile format.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_PROTOBUF_READ = conf("spark.rapids.sql.format.protobuf.read.enabled")
+    .doc("When set to true enables protobuf input acceleration")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
       .doc("When set to false disables Delta Lake output acceleration.")
       .booleanConf
@@ -3547,6 +3558,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val isProtobufEnabled: Boolean = get(ENABLE_PROTOBUF)
+
+  lazy val isProtobufReadEnabled: Boolean = get(ENABLE_PROTOBUF_READ)
 
   lazy val isDeltaWriteEnabled: Boolean = get(ENABLE_DELTA_WRITE)
 
