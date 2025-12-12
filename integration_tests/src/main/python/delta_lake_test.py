@@ -255,3 +255,26 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
     with_cpu_session(setup_parquet_table, {"spark.sql.parquet.fieldId.write.enabled": str(enable_deletion_vectors).lower()})
     with_cpu_session(convert_and_setup_name_mapping, conf={"spark.databricks.delta.properties.defaults.enableDeletionVectors": "false"})
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path))
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_spark_340_or_later(), reason="Deletion Vectors only supported on Spark 3.4.0+")
+def test_delta_filter_out_metadata_col(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+
+    def create_delta(spark):
+        two_col_df(spark, int_gen, int_gen).coalesce(1).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true") \
+            .partitionBy("a").save(data_path)
+
+        count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0").collect()[0][0]
+        assert(count > 0)
+
+    def read_table(spark):
+        df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
+        assert "__delta_internal_is_row_deleted" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
+        return df
+
+    with_cpu_session(create_delta)
+    assert_gpu_and_cpu_are_equal_collect(read_table)

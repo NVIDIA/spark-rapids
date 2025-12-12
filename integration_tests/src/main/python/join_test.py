@@ -476,6 +476,37 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type, kudo_ena
     conf = {kudo_enabled_conf_key: kudo_enabled}
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
+# because this infers the schema for CSV we need to allow some ops to be on the CPU
+@allow_non_gpu("CollectLimitExec", "FileSourceScanExec", "DeserializeToObjectExec")
+def test_empty_cross_side_with_limit(std_input_path):
+    def do_join(spark):
+        t0 = spark.read.csv(std_input_path + '/t0.csv', header=True, inferSchema=True)
+        t1 = spark.read.csv(std_input_path + '/t1.csv', header=True, inferSchema=True)
+        return t0.crossJoin(t1).limit(21)
+    assert_gpu_and_cpu_are_equal_collect(do_join)
+
+@allow_non_gpu('CollectLimitExec')
+def test_empty_right_outer_side_with_limit(std_input_path):
+    built_csv_path = std_input_path + '/t1.csv'
+    stream_csv_path = std_input_path + '/t0.csv'
+
+    def create_views(spark):
+        spark.read.csv(built_csv_path, header=True, inferSchema=True).createOrReplaceTempView("built_table")
+        spark.read.csv(stream_csv_path, header=True, inferSchema=True).createOrReplaceTempView("stream_table")
+
+    # create views first on CPU
+    with_cpu_session(lambda spark: create_views(spark))
+
+    # limit to 10 rows to produce `LocalLimitExec` node
+    def do_join(spark):
+        return spark.sql("""
+            SELECT '1', CAST(CAST(stream_table.c0 AS int) as string)
+            FROM built_table
+            RIGHT OUTER JOIN stream_table
+            ON TRUE limit 10
+        """)
+    assert_gpu_and_cpu_are_equal_collect(do_join)
+
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
