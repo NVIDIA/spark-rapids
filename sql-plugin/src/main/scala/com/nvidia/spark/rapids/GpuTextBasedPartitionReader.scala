@@ -26,6 +26,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
@@ -531,8 +532,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
-        val castTable = withResource(table) { _ =>
-          castTableToDesiredTypes(table, newReadDataSchema)
+        val castTable = withRetryNoSplit(table) { decodedTable =>
+          castTableToDesiredTypes(decodedTable, newReadDataSchema)
         }
 
         handleResult(newReadDataSchema, castTable)
