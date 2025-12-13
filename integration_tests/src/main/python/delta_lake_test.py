@@ -259,7 +259,7 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(not is_spark_340_or_later(), reason="Deletion Vectors only supported on Spark 3.4.0+")
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_databricks_runtime(), reason="We don't support Deletion Vectors on Databricks")
 def test_delta_filter_out_metadata_col(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
 
