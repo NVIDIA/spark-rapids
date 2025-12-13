@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.iceberg.fieldIndex
 import org.apache.iceberg.Schema
 import org.apache.iceberg.transforms.Transform
 
-import org.apache.spark.sql.types.{DataType, IntegerType, StructType}
+import org.apache.spark.sql.types.{DataType, StructType}
 
 
 /**
@@ -35,9 +35,8 @@ sealed trait GpuTransform {
 }
 
 case class GpuBucket(bucket: Int) extends GpuTransform {
-  override def support(inputType: DataType, nullable: Boolean): Boolean = {
-    !nullable && (inputType == IntegerType || inputType == org.apache.spark.sql.types.LongType)
-  }
+  def support(inputType: DataType, nullable: Boolean): Boolean =
+    GpuBucketExpression.isSupportedValueType(inputType)
 }
 
 case object GpuYears extends GpuTransform {
