@@ -35,20 +35,17 @@ trait GpuHashPartitioner extends Serializable {
 
   protected final def hashPartitionAndClose(batch: ColumnarBatch, numPartitions: Int,
       nvtxId: NvtxId): PartitionedTable = {
-    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-    RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
-      withResource(sb.getColumnarBatch()) { cb =>
-        val parts = nvtxId {
-          withResource(hashFunc.columnarEval(cb)) { hash =>
-            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
-              hash.getBase.pmod(partsLit, DType.INT32)
-            }
+    withResource(batch) { cb =>
+      val parts = nvtxId {
+        withResource(hashFunc.columnarEval(cb)) { hash =>
+          withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
+            hash.getBase.pmod(partsLit, DType.INT32)
           }
         }
-        withResource(parts) { parts =>
-          withResource(GpuColumnVector.from(cb)) { table =>
-            table.partition(parts, numPartitions)
-          }
+      }
+      withResource(parts) { parts =>
+        withResource(GpuColumnVector.from(cb)) { table =>
+          table.partition(parts, numPartitions)
         }
       }
     }
