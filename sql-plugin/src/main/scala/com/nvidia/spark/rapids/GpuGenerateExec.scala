@@ -912,6 +912,21 @@ case class GpuGenerateExec(
   private def getSplits(cb: ColumnarBatch,
       othersProjectList: Seq[GpuExpression],
       targetSize: Long): Seq[SpillableColumnarBatch] = {
+    GpuGenerateExec.getSplitsWithRetry(cb, generator, othersProjectList.length, outer, targetSize)
+  }
+}
+
+object GpuGenerateExec {
+  /**
+   * Split up the input batch with retry support for OOM handling.
+   * On OOM, the target size is halved, producing more (smaller) splits.
+   */
+  def getSplitsWithRetry(
+      cb: ColumnarBatch,
+      generator: GpuGenerator,
+      generatorOffset: Int,
+      outer: Boolean,
+      targetSize: Long): Seq[SpillableColumnarBatch] = {
     val spillableBatch = SpillableColumnarBatch(cb,
       SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     withResource(spillableBatch) { _ =>
@@ -924,7 +939,7 @@ case class GpuGenerateExec(
         withResource(spillableBatch.getColumnarBatch()) { cb =>
           // compute split indices of input batch
           val splitIndices = generator.inputSplitIndices(
-            cb, othersProjectList.length, outer, attempt.targetSize)
+            cb, generatorOffset, outer, attempt.targetSize)
           // split up input batch with indices
           makeSplits(cb, splitIndices)
         }

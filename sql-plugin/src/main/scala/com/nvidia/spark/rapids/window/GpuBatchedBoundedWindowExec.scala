@@ -40,14 +40,15 @@ class GpuBatchedBoundedWindowIterator(
   maxFollowing: Int,
   numOutputBatches: GpuMetric,
   numOutputRows: GpuMetric,
-  opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc with Logging {
+  opTime: GpuMetric) extends Iterator[ColumnarBatch]
+    with BasicWindowCalc with AutoCloseable with Logging {
 
   override def isRunningBatched: Boolean = false  // Not "Running Window" optimized.
                                                   // This is strictly for batching.
 
   override def hasNext: Boolean = numUnprocessedInCache > 0 || input.hasNext
 
-  var cached: Option[Array[CudfColumnVector]] = None  // For processing with the next batch.
+  private var cached: Option[Array[CudfColumnVector]] = None  // For processing with the next batch.
 
   private var numUnprocessedInCache: Int = 0  // numRows at the bottom not processed completely.
   private var numPrecedingRowsAdded: Int = 0  // numRows at the top, added for preceding context.
@@ -55,17 +56,21 @@ class GpuBatchedBoundedWindowIterator(
   // Register handler to clean up cache when task completes.
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
-      clearCached()
+      close()
     }
   }
 
   // Caches input column schema on first read.
-  var inputTypes: Option[Array[DataType]] = None
+  private var inputTypes: Option[Array[DataType]] = None
 
   // Clears cached column vectors, after consumption.
   private def clearCached(): Unit = {
     cached.foreach(_.foreach(_.close))
     cached = None
+  }
+
+  override def close(): Unit = {
+    clearCached()
   }
 
   private def getNextInputBatch: SpillableColumnarBatch = {
@@ -181,7 +186,6 @@ class GpuBatchedBoundedWindowIterator(
             // No point calling windowing kernel: the results will simply be ignored.
             logWarning("Not enough rows! Cannot output a batch.")
           } else {
-            // Wrap the window computation with retry logic to handle OOM.
             outputBatch = withRetryNoSplit {
               NvtxIdWithMetrics(NvtxRegistry.WINDOW_EXEC, opTime) {
                 withResource(computeBasicWindow(inputCB)) { outputCols =>
