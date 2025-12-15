@@ -20,7 +20,8 @@ from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, deletion_
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
-    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors, is_spark_401_or_later
+    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors, is_spark_401_or_later, \
+    is_before_spark_353
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
@@ -156,6 +157,8 @@ def test_delta_scan_split_with_no_dv(spark_tmp_path):
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 def test_delta_scan_split_with_DV_enabled_with_no_DV(spark_tmp_path):
     do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=2)
 
@@ -164,6 +167,8 @@ def test_delta_scan_split_with_DV_enabled_with_no_DV(spark_tmp_path):
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 def test_delta_scan_split_with_DV_enabled_with_DVs(spark_tmp_path):
     def do_delete(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
@@ -175,6 +180,8 @@ def test_delta_scan_split_with_DV_enabled_with_DVs(spark_tmp_path):
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path):
     def do_delete_and_disable_DV(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
@@ -188,6 +195,10 @@ def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path):
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_spark_401_or_later(),
+                    reason="REORG is not supported in Spark 4.0.1+ (https://github.com/delta-io/delta/issues/5690)")
 def test_delta_scan_split_with_DV_enabled_after_DVs_materialized(spark_tmp_path):
     def do_delete_and_reorg(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
@@ -259,17 +270,23 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_databricks_runtime(), reason="We don't support Deletion Vectors on Databricks")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 def test_delta_filter_out_metadata_col(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
 
+    col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
+    col_b_gen = IntegerGen(min_val=0, max_val=1, nullable=False, special_cases=[0, 1])
+
     def create_delta(spark):
-        two_col_df(spark, int_gen, int_gen).coalesce(1).write.format("delta") \
+        two_col_df(spark, col_a_gen, col_b_gen, length=4000).coalesce(1).write.format("delta") \
             .option("delta.enableDeletionVectors", "true") \
             .partitionBy("a").save(data_path)
 
         count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0").collect()[0][0]
-        assert(count > 0)
+        assert count > 100, "Expected enough rows to be deleted to create deletion vectors"
 
     def read_table(spark):
         df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
