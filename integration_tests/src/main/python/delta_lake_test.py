@@ -270,7 +270,10 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_databricks_runtime(), reason="We don't support Deletion Vectors on Databricks")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 def test_delta_filter_out_metadata_col(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
 
