@@ -277,13 +277,16 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
 def test_delta_filter_out_metadata_col(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
 
+    col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
+    col_b_gen = IntegerGen(min_val=0, max_val=1, nullable=False, special_cases=[0, 1])
+
     def create_delta(spark):
-        two_col_df(spark, int_gen, int_gen).coalesce(1).write.format("delta") \
+        two_col_df(spark, col_a_gen, col_b_gen, length=4000).coalesce(1).write.format("delta") \
             .option("delta.enableDeletionVectors", "true") \
             .partitionBy("a").save(data_path)
 
         count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0").collect()[0][0]
-        assert(count > 0)
+        assert count > 100, "Expected enough rows to be deleted to create deletion vectors"
 
     def read_table(spark):
         df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
