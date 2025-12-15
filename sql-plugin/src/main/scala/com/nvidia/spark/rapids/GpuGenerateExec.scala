@@ -934,7 +934,7 @@ object GpuGenerateExec {
       val minTargetSize = Math.min(targetSize, 64L * 1024 * 1024)
       val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
       // Wrap the split computation in withRetry to handle OOM.
-      // On OOM, the target size is halved, producing more (smaller) splits.
+      // On OOM, the target size is halved and the split computation is retried with the smaller target size, which may produce more splits.
       withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
         withResource(spillableBatch.getColumnarBatch()) { cb =>
           // compute split indices of input batch
@@ -943,7 +943,7 @@ object GpuGenerateExec {
           // split up input batch with indices
           makeSplits(cb, splitIndices)
         }
-      }.toSeq.head
+      }.next
     }
   }
 
