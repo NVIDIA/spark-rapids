@@ -197,6 +197,8 @@ def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path):
                     reason="Deletion vector scan is not supported on Databricks")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_spark_401_or_later(),
+                    reason="REORG is not supported in Spark 4.0.1+ (https://github.com/delta-io/delta/issues/5690)")
 def test_delta_scan_split_with_DV_enabled_after_DVs_materialized(spark_tmp_path):
     def do_delete_and_reorg(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
