@@ -287,9 +287,7 @@ class WindowRetrySuite
       // Iterator should be exhausted
       assert(!it.hasNext)
     } finally {
-      // Clean up any cached resources in the iterator
-      it.cached.foreach(_.foreach(_.close()))
-      it.cached = None
+      it.close()
     }
   }
 
@@ -324,9 +322,7 @@ class WindowRetrySuite
         it.next()
       }
     } finally {
-      // Clean up any cached resources in the iterator
-      it.cached.foreach(_.foreach(_.close()))
-      it.cached = None
+      it.close()
     }
   }
 }
