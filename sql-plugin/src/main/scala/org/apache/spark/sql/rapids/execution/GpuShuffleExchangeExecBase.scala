@@ -413,15 +413,8 @@ object GpuShuffleExchangeExecBase {
               partitioned = null
               at = 0
             }
-            // Try to get next partitioned array from the iterator
-            if (partitionedIter.hasNext) {
-              partitioned = partitionedIter.next()
-              partitioned.foreach(batches => {
-                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-              })
-              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-              at = 0
-            } else if (iter.hasNext) {
+            // Try to fill partitionedIter from iter if it's empty
+            if (!partitionedIter.hasNext && iter.hasNext) {
               var batch = iter.next()
               while (batch.numRows == 0 && iter.hasNext) {
                 batch.close()
@@ -437,17 +430,18 @@ object GpuShuffleExchangeExecBase {
                   val cb = spillable.getColumnarBatch()
                   getParts(cb).asInstanceOf[Array[(ColumnarBatch, Int)]]
                 }
-                if (partitionedIter.hasNext) {
-                  partitioned = partitionedIter.next()
-                  partitioned.foreach(batches => {
-                    metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                  })
-                  metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-                  at = 0
-                }
               } else {
                 batch.close()
               }
+            }
+            // Process the next partitioned array from the iterator
+            if (partitionedIter.hasNext) {
+              partitioned = partitionedIter.next()
+              partitioned.foreach(batches => {
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+              })
+              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+              at = 0
             }
           }
 
