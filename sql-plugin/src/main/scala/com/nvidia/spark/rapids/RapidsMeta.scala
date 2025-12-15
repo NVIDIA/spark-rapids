@@ -326,6 +326,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childScans.foreach(_.tagForGpu())
     childParts.foreach(_.tagForGpu())
     childExprs.foreach(_.tagForGpu())
+    // Allow subclasses (e.g., SparkPlanMeta) to run expression-tree optimizations once
+    runChildExprBridgeOptimization()
     childDataWriteCmds.foreach(_.tagForGpu())
     childRunnableCmds.foreach(_.tagForGpu())
     childPlans.foreach(_.tagForGpu())
@@ -351,6 +353,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
     tagSelfForGpu()
   }
+
+  // Hook for subclasses to run expression-level optimizations at the appropriate layer.
+  // Default no-op so non-plan metas do not run bridge optimization.
+  protected def runChildExprBridgeOptimization(): Unit = {}
 
   /**
    * Do any extra checks and tag yourself if you are compatible or not.  Be aware that this may
@@ -515,6 +521,10 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
   }
 
   def tagPartForGpu(): Unit = {}
+
+  override protected def runChildExprBridgeOptimization(): Unit = {
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(childExprs)
+  }
 }
 
 /**
@@ -659,6 +669,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       childRunnableCmds.foreach(_.recursiveSparkPlanRemoved())
     }
     childPlans.foreach(_.tagForExplain())
+  }
+
+  override protected def runChildExprBridgeOptimization(): Unit = {
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(childExprs)
   }
 
   def requireAstForGpuOn(exprMeta: BaseExprMeta[_]): Unit = {
@@ -1866,4 +1880,39 @@ final class RuleNotFoundRunnableCommandMeta[INPUT <: RunnableCommand](
 
   override def convertToGpu(): RunnableCommand =
     throw new IllegalStateException("Cannot be converted to GPU")
+}
+
+/**
+ * Simple optimizer for CPU-GPU bridge expressions.
+ * This applies a straightforward rule: if an expression can't run on GPU
+ * but is compatible with the bridge, move it to the bridge.
+ */
+object GpuCpuBridgeOptimizer {
+
+  /**
+   * Check and optimize expression metas by moving expressions to CPU bridge when possible.
+   * This is a simple non-cost-based approach that just enables the bridge for any expression
+   * that can't run on GPU but is bridge-compatible.
+   * 
+   * @param exprs The expression metas to check and potentially optimize
+   */
+  def checkAndOptimizeExpressionMetas(exprs: Seq[BaseExprMeta[_]]): Unit = {
+    if (exprs.nonEmpty && exprs.head.conf.isCpuBridgeEnabled) {
+      exprs.foreach(applySimpleBridgeRule)
+    }
+  }
+
+  /**
+   * Recursively apply the simple bridge rule to an expression and its children.
+   * If an expression can't run on GPU but can use the bridge, move it to the bridge.
+   */
+  private def applySimpleBridgeRule(expr: BaseExprMeta[_]): Unit = {
+    // First recurse to children
+    expr.childExprs.foreach(applySimpleBridgeRule)
+    
+    // Then apply to this expression if it qualifies
+    if (!expr.canThisBeReplaced && expr.canMoveToCpuBridge && !expr.willUseGpuCpuBridge) {
+      expr.moveToCpuBridge()
+    }
+  }
 }
