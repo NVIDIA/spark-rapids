@@ -162,6 +162,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
             dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
               .withNewChildren(Seq(
                 fsse.copy(
+                  originalOutput =
+                    fsse.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
                   requiredSchema = StructType(
                     fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
                   ))(fsse.rapidsConf)))))))
