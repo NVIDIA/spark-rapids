@@ -18,8 +18,9 @@ package com.nvidia.spark.rapids
 
 import java.io.IOException
 
-import ai.rapids.cudf.{DType, HostMemoryBuffer, ProtobufOptions, Table}
+import ai.rapids.cudf.{DType, HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
+// ProtobufOptions and ProtobufUtils are in the same package
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -106,7 +107,8 @@ object GpuProtobufScan extends Logging {
         case MapType(_, _, _) =>
           meta.willNotWorkOnGpu(s"Map type is not yet supported for protobuf field ${field.name}")
         case StructType(_) =>
-          meta.willNotWorkOnGpu(s"Nested struct is not yet supported for protobuf field ${field.name}")
+          val msg = s"Nested struct is not yet supported for protobuf field ${field.name}"
+          meta.willNotWorkOnGpu(msg)
         case dt =>
           meta.willNotWorkOnGpu(s"Data type $dt is not supported for protobuf field ${field.name}")
       }
@@ -144,7 +146,7 @@ object GpuProtobufScan extends Logging {
         }
       }
 
-      // Build protobuf options for cudf
+      // Build protobuf options
       val protobufOptionsBuilder = ProtobufOptions.builder()
       schema.foreach { field =>
         val dtype = sparkTypeToCudfDType(field.dataType)
@@ -152,8 +154,8 @@ object GpuProtobufScan extends Logging {
       }
       protobufOptionsBuilder.withHadoopSequenceFile(options.isHadoopSequenceFile)
 
-      // Read using cudf
-      Table.readProtobuf(protobufOptionsBuilder.build(), hostBuffer, 0, fileLength)
+      // Read using spark-rapids-jni ProtobufUtils
+      ProtobufUtils.readProtobuf(protobufOptionsBuilder.build(), hostBuffer, 0, fileLength)
     }
   }
 
@@ -176,7 +178,7 @@ object GpuProtobufScan extends Logging {
     }
     protobufOptionsBuilder.withHadoopSequenceFile(options.isHadoopSequenceFile)
 
-    Table.readProtobuf(protobufOptionsBuilder.build(), data)
+    ProtobufUtils.readProtobuf(protobufOptionsBuilder.build(), data)
   }
 }
 
@@ -276,8 +278,9 @@ class GpuProtobufPartitionReader(
         }
         protobufOptionsBuilder.withHadoopSequenceFile(options.isHadoopSequenceFile)
 
-        // Read and convert to columnar batch
-        val table = Table.readProtobuf(protobufOptionsBuilder.build(), hostBuffer, 0, actualLength)
+        // Read and convert to columnar batch using ProtobufUtils
+        val protoOpts = protobufOptionsBuilder.build()
+        val table = ProtobufUtils.readProtobuf(protoOpts, hostBuffer, 0, actualLength)
         
         val decodeMetric = metrics.get(GpuMetric.GPU_DECODE_TIME)
         decodeMetric.foreach(_ += System.nanoTime() - decodeStartTime)
@@ -325,7 +328,8 @@ case class GpuProtobufPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    new GpuProtobufPartitionReader(conf, partFile, readDataSchema, protoSchema, protoOptions, metrics)
+    new GpuProtobufPartitionReader(
+      conf, partFile, readDataSchema, protoSchema, protoOptions, metrics)
   }
 }
 

@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{DType, ProtobufOptions}
+import ai.rapids.cudf.DType
+// ProtobufOptions is in the same package
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
@@ -34,7 +35,8 @@ class ProtobufScanSuite extends AnyFunSuite with BeforeAndAfterAll {
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    tempDir = new File(System.getProperty("java.io.tmpdir"), s"protobuf_test_${System.currentTimeMillis()}")
+    val tmpDir = System.getProperty("java.io.tmpdir")
+    tempDir = new File(tmpDir, s"protobuf_test_${System.currentTimeMillis()}")
     tempDir.mkdirs()
   }
 
