@@ -1,5 +1,5 @@
 # Change log
-Generated on 2025-12-15
+Generated on 2025-12-16
 
 ## Release 25.12
 
@@ -47,6 +47,7 @@ Generated on 2025-12-15
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#14009](https://github.com/NVIDIA/spark-rapids/issues/14009)|[BUG] Delta Lake deletion vector tests failing on Spark != 3.5 due to version incompatibilities|
 |[#14004](https://github.com/NVIDIA/spark-rapids/issues/14004)|[BUG] test_delta_deletion_vector_read_drop_row_group fails with https://github.com/NVIDIA/spark-rapids/pull/13980|
 |[#13950](https://github.com/NVIDIA/spark-rapids/issues/13950)|[BUG] Delta parquet files are not split when they can be|
 |[#13873](https://github.com/NVIDIA/spark-rapids/issues/13873)|[BUG]  `join` an empty table brings errors on the GPU engines|
@@ -100,6 +101,8 @@ Generated on 2025-12-15
 ### PRs
 |||
 |:---|:---|
+|[#14011](https://github.com/NVIDIA/spark-rapids/pull/14011)|[DOC] update for download page 2512 release [skip ci]|
+|[#14013](https://github.com/NVIDIA/spark-rapids/pull/14013)|Fixes various issues in 25.12 release branch|
 |[#13988](https://github.com/NVIDIA/spark-rapids/pull/13988)|Update dependency version JNI, private, hybrid to 25.12.0|
 |[#13980](https://github.com/NVIDIA/spark-rapids/pull/13980)|Delta table scan should be optimized when deletion vectors don't exist|
 |[#14002](https://github.com/NVIDIA/spark-rapids/pull/14002)|Skip test_delta_filter_out_metadata_col on|
