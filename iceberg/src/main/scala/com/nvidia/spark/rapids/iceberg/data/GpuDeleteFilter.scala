@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.iceberg.data
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, LazySpillableColumnarBatch}
+import com.nvidia.spark.rapids.{GpuBoundReference, GpuBuildRight, GpuColumnVector, GpuExpression, GpuMetric, LazySpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{JOIN_TIME, OP_TIME_LEGACY}
 import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
@@ -262,7 +262,6 @@ class GpuDeleteFilter(
     Some(DeleteFilterContext(posDeletes,
       buildKeys,
       probeKeys,
-      requiredSchema.columns().size(),
       parquetConf.metrics(OP_TIME_LEGACY),
       parquetConf.metrics(JOIN_TIME)))
   }
@@ -309,7 +308,6 @@ class GpuDeleteFilter(
     DeleteFilterContext(buildSide,
       buildKeys,
       probeKeys,
-      requiredSchema.columns().size(),
       parquetConf.metrics(OP_TIME_LEGACY),
       parquetConf.metrics(JOIN_TIME))
   }
@@ -395,7 +393,6 @@ private case class DeleteFilterContext(
     buildBatch: LazySpillableColumnarBatch,
     buildKeys: Seq[GpuExpression],
     probeKeys: Seq[GpuExpression],
-    numFirstConditionColumns: Int,
     opTime: GpuMetric,
     joinTime: GpuMetric) {
   def filter(input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
@@ -405,12 +402,14 @@ private case class DeleteFilterContext(
       }
     }
 
+    // No condition, so buildSide doesn't affect anything, but GpuBuildRight matches
+    // the join convention used in HashedExistenceJoinIterator (leftSemiHashJoinBuildRight)
     new HashedExistenceJoinIterator(buildBatch,
       buildKeys,
       probeSide,
       probeKeys,
       None,
-      numFirstConditionColumns,
+      GpuBuildRight,
       true,
       opTime,
       joinTime)

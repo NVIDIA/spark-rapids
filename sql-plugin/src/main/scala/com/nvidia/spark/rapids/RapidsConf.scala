@@ -32,7 +32,7 @@ import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
-import org.apache.spark.sql.rapids.execution.{JoinOptions, JoinStrategy}
+import org.apache.spark.sql.rapids.execution.{JoinBuildSideSelection, JoinOptions, JoinStrategy}
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -704,6 +704,19 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(JoinStrategy.values.map(_.toString))
     .createWithDefault(JoinStrategy.AUTO.toString)
+
+  val JOIN_BUILD_SIDE = conf("spark.rapids.sql.join.buildSide")
+    .doc("Specifies the build side selection strategy for GPU joins. Options are: " +
+      "AUTO (default) - automatically determine the best build side using heuristics, " +
+      "currently behaves the same as SMALLEST but may evolve to use additional factors; " +
+      "FIXED - use the build side as specified by the query plan without dynamic selection; " +
+      "SMALLEST - always select the side with the smallest row count as the build side, " +
+      "determined on a batch-by-batch basis at join time.")
+    .internal()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(JoinBuildSideSelection.values.map(_.toString))
+    .createWithDefault(JoinBuildSideSelection.AUTO.toString)
 
   val LOG_JOIN_CARDINALITY = conf("spark.rapids.sql.join.logCardinality")
     .doc("Enable logging of join cardinality statistics to help diagnose performance issues. " +
@@ -3075,9 +3088,11 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       targetSize: Long): JoinOptions = {
     val strategyStr = JOIN_STRATEGY.get(conf)
     val strategy = JoinStrategy.withName(strategyStr)
+    val buildSideStr = JOIN_BUILD_SIDE.get(conf)
+    val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
     val logCardinality = LOG_JOIN_CARDINALITY.get(conf)
     val sizeEstimateThreshold = JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
-    JoinOptions(strategy, targetSize, logCardinality, sizeEstimateThreshold)
+    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
   }
 }
 
@@ -3172,9 +3187,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def getJoinOptions(targetSize: Long): JoinOptions = {
     val strategyStr = get(JOIN_STRATEGY)
     val strategy = JoinStrategy.withName(strategyStr)
+    val buildSideStr = get(JOIN_BUILD_SIDE)
+    val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
     val logCardinality = get(LOG_JOIN_CARDINALITY)
     val sizeEstimateThreshold = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
-    JoinOptions(strategy, targetSize, logCardinality, sizeEstimateThreshold)
+    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
   }
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
