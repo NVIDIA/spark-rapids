@@ -157,13 +157,24 @@ if [[ $PARALLEL_TEST == "true" ]]; then
   export PYSP_TEST_spark_rapids_sql_concurrentGpuTasks=1
   export PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0
 
+  USER_SET_PARALLELISM="false"
+  if [[ -n "${PARALLELISM}" ]]; then
+    USER_SET_PARALLELISM="true"
+  fi
+
   if [[ "${PARALLELISM}" == "" ]]; then
     PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
       awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2 * 1024))}')
   fi
   # parallelism > 5 could slow down the whole process, so we have a limitation for it
   # this is based on our CI gpu types, so we do not put it into the run_pyspark_from_build.sh
-  [[ ${PARALLELISM} -gt 5 ]] && PARALLELISM=5
+  # 1. If TEST_MODE is DEFAULT: Always limit to 5.
+  # 2. If TEST_MODE is NOT DEFAULT:
+  #    a. If user set PARALLELISM: Use it directly (no limit).
+  #    b. If user did NOT set PARALLELISM (calculated): Limit to 5.
+  if [[ "${TEST_MODE:-DEFAULT}" == "DEFAULT" || "${USER_SET_PARALLELISM}" == "false" ]]; then
+    [[ ${PARALLELISM} -gt 5 ]] && PARALLELISM=5
+  fi
   MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
 
   export TEST_PARALLEL=${PARALLELISM}
@@ -180,11 +191,12 @@ export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
 run_delta_lake_tests() {
-  echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
+  echo "run_delta_lake_tests SPARK_VER = $SPARK_VER, SCALA_BINARY_VER = $SCALA_BINARY_VER"
   SPARK_32X_PATTERN="(3\.2\.[0-9])"
   SPARK_33X_PATTERN="(3\.3\.[0-9])"
   SPARK_34X_PATTERN="(3\.4\.[0-9])"
   SPARK_35X_PATTERN="(3\.5\.[3-9])"
+  SPARK_40X_PATTERN="(4\.0\.[0-9])"
 
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
@@ -204,12 +216,21 @@ run_delta_lake_tests() {
     DELTA_LAKE_VERSIONS="3.3.0"
   fi
 
+  if [[ $SPARK_VER =~ $SPARK_40X_PATTERN ]]; then
+    # Delta 4.0.x only supports Scala 2.13 (Spark 4.0 requirement)
+    if [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
+      DELTA_LAKE_VERSIONS="4.0.0"
+    else
+      echo "Skipping Delta Lake 4.0.x tests for Scala $SCALA_BINARY_VER (requires Scala 2.13)"
+    fi
+  fi
+
   if [ -z "$DELTA_LAKE_VERSIONS" ]; then
     echo "Skipping Delta Lake tests. $SPARK_VER"
   else
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
-      if [[ "$v" == "3.3.0" ]]; then
+      if [[ "$v" == "3.3.0" || "$v" == "4.0.0" ]]; then
         DELTA_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
       else 
         DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
@@ -253,18 +274,19 @@ run_iceberg_tests() {
     echo "!!! Running iceberg tests with rest catalog"
     ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
 org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
-        ICEBERG_TEST_REMOTE_CATALOG='1' \
-        PYSP_TEST_spark_driver_memory="6G" \
-        PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
-        PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
+        env \
+          ICEBERG_TEST_REMOTE_CATALOG=1 \
+          PYSP_TEST_spark_driver_memory=6G \
+          PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
+          PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
           PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
           PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-          env 'PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog"' \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_uri="${ICEBERG_REST_CATALOG_URI:-'http://localhost:8181/catalog/'}" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_uri="${ICEBERG_REST_CATALOG_URI:-http://localhost:8181/catalog/}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_credential="${ICEBERG_REST_CREDENTIAL}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri="${ICEBERG_REST_OAUTH2_SERVER_URI:-'http://localhost:8080/realms/iceberg/protocol/openid-connect/token'}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-'lakekeeper'}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-'demo'}" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri="${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-lakekeeper}" \
+          PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-demo}" \
           ./run_pyspark_from_build.sh -m iceberg --iceberg
   elif [[ "$test_type" == "s3tables" ]]; then
     echo "!!! Running iceberg tests with s3tables"
@@ -293,15 +315,16 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
     # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
     # These steps are included in the test pipeline.
     # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
-    ICEBERG_TEST_REMOTE_CATALOG='1' \
-        PYSP_TEST_spark_driver_memory="6G" \
-        PYSP_TEST_spark_jars_packages="$ICEBERG_S3TABLES_JARS" \
-        PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
-        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-        env 'PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog"' \
-        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="$S3TABLES_BUCKET_ARN" \
-        ./run_pyspark_from_build.sh -s -m iceberg --iceberg
+    env \
+      ICEBERG_TEST_REMOTE_CATALOG=1 \
+      PYSP_TEST_spark_driver_memory=6G \
+      PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
+      PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
+      PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${S3TABLES_BUCKET_ARN}" \
+      ./run_pyspark_from_build.sh -s -m iceberg --iceberg
   fi
 }
 
@@ -331,6 +354,18 @@ rapids_shuffle_smoke_test() {
 
 run_pyarrow_tests() {
   ./run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test
+}
+
+run_other_join_modes_tests() {
+  echo "HASH WITH POST JOIN TESTS"
+  export PYSP_TEST_spark_rapids_sql_join_strategy=INNER_HASH_WITH_POST
+  ./run_pyspark_from_build.sh -k 'join'
+
+  echo "SORT MERGE JOIN TESTS"
+  export PYSP_TEST_spark_rapids_sql_join_strategy=INNER_SORT_WITH_POST
+  ./run_pyspark_from_build.sh -k 'join'
+  # reset the config to the default in case other tests run with a join
+  export PYSP_TEST_spark_rapids_sql_join_strategy=AUTO
 }
 
 run_non_utc_time_zone_tests() {
@@ -369,6 +404,12 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
   EXPLAIN_ONLY_CPU_SMOKE_TEST=1 \
     ./run_pyspark_from_build.sh
 
+  # Spark Connect smoke test (available in Spark 3.5.6+)
+  if printf '%s\n' "3.5.6" "$SPARK_VER" | sort -V | head -1 | grep -q "3.5.6"; then
+    SPARK_CONNECT_SMOKE_TEST=1 \
+      ./run_pyspark_from_build.sh
+  fi
+
   # As '--packages' only works on the default cuda12 jar, it does not support classifiers
   # refer to issue : https://issues.apache.org/jira/browse/SPARK-20075
   # "$CLASSIFIER" == ''" is usally for the case running by developers,
@@ -392,7 +433,8 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
 fi
 
 # Iceberg tests
-if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/13885
+if [[ "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
 fi
 
@@ -432,6 +474,11 @@ fi
 # Pyarrow tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
   run_pyarrow_tests
+fi
+
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/13854
+if [[ "$TEST_MODE" == "EXTRA_JOIN_ONLY" ]]; then
+  run_other_join_modes_tests
 fi
 
 # Non-UTC time zone tests

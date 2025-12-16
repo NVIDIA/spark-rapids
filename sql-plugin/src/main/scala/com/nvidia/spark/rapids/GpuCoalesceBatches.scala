@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
@@ -245,6 +245,18 @@ case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
   override def children: Seq[Expression] = gpuOrder
 }
 
+object OpNameNvtxMap {
+  private val map = Map(
+    "GpuCoalesceBatches: collect" -> NvtxRegistry.GPU_COALESCE_BATCHES_COLLECT,
+    "build batch: collect" -> NvtxRegistry.BUILD_BATCH_COLLECT,
+    "GpuCoalesceBatches concat" -> NvtxRegistry.GPU_COALESCE_BATCHES_CONCAT,
+    "single build batch concat" -> NvtxRegistry.SINGLE_BUILD_BATCH_CONCAT,
+    "HostColumnarToGpu concat" -> NvtxRegistry.HOST_COLUMNAR_TO_GPU_CONCAT
+  )
+
+  def get(opName: String): Option[NvtxId] = map.get(opName)
+}
+
 abstract class AbstractGpuCoalesceIterator(
     inputIter: Iterator[ColumnarBatch],
     goal: CoalesceSizeGoal,
@@ -261,7 +273,9 @@ abstract class AbstractGpuCoalesceIterator(
     case NoopMetric => new LocalGpuMetric
     case _ => streamTimeOrNoop
   }
-  private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
+  private val iter = new CollectTimeIterator(
+    OpNameNvtxMap.get(s"$opName: collect").getOrElse(NvtxRegistry.GPU_COALESCE_ITERATOR),
+    inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
 
@@ -625,7 +639,9 @@ abstract class AbstractGpuCoalesceIterator(
           wasLastBatch
         }
 
-        withResource(new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)) { _ =>
+        NvtxIdWithMetrics(
+            OpNameNvtxMap.get(s"$opName concat").getOrElse(NvtxRegistry.CONCAT_PENDING),
+            concatTime) {
           goal match {
             case _: SplittableGoal if supportsRetryIterator =>
               coalesceBatchIterator = getCoalesceRetryIterator
@@ -957,7 +973,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
           val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
             numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-            concatTime, opTime)
+            concatTime, opTime, allMetrics)
           batches.mapPartitions { iter =>
             f(iter)
           }

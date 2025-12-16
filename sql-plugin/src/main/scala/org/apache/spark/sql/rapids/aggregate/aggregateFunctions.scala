@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.aggregate
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
@@ -236,7 +236,7 @@ class CudfM2 extends CudfAggregate {
 class CudfMergeM2 extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      withResource(new NvtxRange("reduction-merge-m2", NvtxColor.ORANGE)) { _ =>
+      NvtxRegistry.REDUCTION_MERGE_M2 {
         withResource(col.copyToHost()) { hcv =>
           withResource(hcv.getChildColumnView(0)) { partialN =>
             withResource(hcv.getChildColumnView(1)) { partialMean =>

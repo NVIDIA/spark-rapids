@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.window
 
-import ai.rapids.cudf.{ColumnVector => CudfColumnVector, NvtxColor, Table => CudfTable}
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Table => CudfTable}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -180,7 +180,7 @@ class GpuBatchedBoundedWindowIterator(
             // No point calling windowing kernel: the results will simply be ignored.
             logWarning("Not enough rows! Cannot output a batch.")
           } else {
-            withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.WINDOW_EXEC, opTime) {
               withResource(computeBasicWindow(inputCB)) { outputCols =>
                 outputBatch =  withResource(
                                   trim(outputCols,
@@ -243,9 +243,12 @@ class GpuBatchedBoundedWindowExec(
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val opTime = gpuLongMetric(GpuMetric.OP_TIME_LEGACY)
 
-    val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
+    val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output,
+      allMetrics)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec,
+      child.output, allMetrics)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output,
+      allMetrics)
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuBatchedBoundedWindowIterator(iter, boundWindowOps, boundPartitionSpec,

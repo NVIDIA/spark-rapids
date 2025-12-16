@@ -173,7 +173,7 @@ abstract class GpuShuffleExchangeExecBase(
   import GpuMetric._
 
   private lazy val kudoMode = RapidsConf.ShuffleKudoMode.withName(
-    RapidsConf.SHUFFLE_KUDO_MODE.get(child.conf))
+    RapidsConf.SHUFFLE_KUDO_WRITE_MODE.get(child.conf))
   private lazy val useKudo = RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf)
   private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
     .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
@@ -375,14 +375,15 @@ object GpuShuffleExchangeExecBase {
           attr.nullable)(attr.exprId, attr.name), Ascending)
         // Force the sequence to materialize so we don't have issues with serializing too much
       }.toArray.toSeq
-      val sorter = new GpuSorter(boundReferences, outputAttributes)
+      val sorter = new GpuSorter(boundReferences, outputAttributes, metrics)
       rdd.mapPartitions { cbIter =>
         GpuSortEachBatchIterator(cbIter, sorter, false)
       }
     } else {
       rdd
     }
-    val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
+    val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes,
+      newPartitioning, metrics)
     // Inject debugging subMetrics, such as D2HTime before SliceOnCpu
     // The injected metrics will be serialized as the members of GpuPartitioning
     partitioner match {
@@ -483,12 +484,13 @@ object GpuShuffleExchangeExecBase {
   private def getPartitioner(
     rdd: RDD[ColumnarBatch],
     outputAttributes: Seq[Attribute],
-    newPartitioning: GpuPartitioning): GpuExpression with GpuPartitioning = {
+    newPartitioning: GpuPartitioning,
+    metrics: Map[String, GpuMetric]): GpuExpression with GpuPartitioning = {
     newPartitioning match {
       case h: GpuHashPartitioning =>
-        GpuBindReferences.bindReference(h, outputAttributes)
+        GpuBindReferences.bindReference(h, outputAttributes, metrics)
       case r: GpuRangePartitioning =>
-        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes)
+        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes, metrics)
         val bounds = GpuRangePartitioner.createRangeBounds(r.numPartitions, sorter,
           rdd, SQLConf.get.rangeExchangeSampleSizePerPartition)
         // No need to bind arguments for the GpuRangePartitioner. The Sorter has already done it
@@ -496,7 +498,7 @@ object GpuShuffleExchangeExecBase {
       case GpuSinglePartitioning =>
         GpuSinglePartitioning
       case rrp: GpuRoundRobinPartitioning =>
-        GpuBindReferences.bindReference(rrp, outputAttributes)
+        GpuBindReferences.bindReference(rrp, outputAttributes, metrics)
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
     }
   }

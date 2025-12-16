@@ -369,6 +369,15 @@ else
     # Set a seed to be used to pick random tests to inject with OOM
     export SPARK_RAPIDS_TEST_INJECT_OOM_SEED=${SPARK_RAPIDS_TEST_INJECT_OOM_SEED:-`date +%s`}
     echo "SPARK_RAPIDS_TEST_INJECT_OOM_SEED used: $SPARK_RAPIDS_TEST_INJECT_OOM_SEED"
+    if [[ -n "${RANDOM_SELECT}" ]]; then
+        if [[ -n "${RANDOM_SELECT_SEED}" ]]; then
+            echo "RANDOM_SELECT configured: value=${RANDOM_SELECT}, seed=${RANDOM_SELECT_SEED}"
+        else
+            echo "RANDOM_SELECT configured: value=${RANDOM_SELECT}, seed=default(0)"
+        fi
+    else
+        echo "RANDOM_SELECT not set"
+    fi
 
     # If you want to change the amount of GPU memory allocated you have to change it here
     # and where TEST_PARALLEL is calculated
@@ -397,6 +406,7 @@ else
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
+    SPARK_CONNECT_SMOKE_TEST="${SPARK_CONNECT_SMOKE_TEST:-0}"
     if [[ "${SPARK_SHELL_SMOKE_TEST}" != "0" ]]; then
         echo "Running spark-shell smoke test..."
         SPARK_SHELL_ARGS_ARR=(
@@ -443,6 +453,135 @@ else
         grep 'WARN RapidsPluginUtils: RAPIDS Accelerator is in explain only mode' <<< "$output"
         grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])' <<< "$output"
         echo "SUCCESS explainOnly mode on CPU smoke test"
+    elif [[ "${SPARK_CONNECT_SMOKE_TEST}" != "0" ]]; then
+        echo "Running Spark Connect smoke test..."
+        # Gate on Spark version (3.5.6+ has Connect support with external jars. Example:plugin jar)
+        # https://github.com/apache/spark/pull/50475
+        # Version-aware compare: skip if VERSION_STRING < 3.5.6
+        if ! printf '%s\n' "$VERSION_STRING" "3.5.6" | sort -V | head -1 | grep -qx "3.5.6"; then
+            echo "SKIPPING Spark Connect smoke test - requires Spark 3.5.6+ but found $VERSION_STRING"
+            exit 0
+        fi
+
+        # Build Connect packages and server-side jars (RAPIDS plugin)
+        CONNECT_PACKAGES="org.apache.spark:spark-connect_${SCALA_VERSION}:${VERSION_STRING}"
+        SERVER_JARS=""
+        if [[ -n "$PYSP_TEST_spark_jars" ]]; then
+            SERVER_JARS="$PYSP_TEST_spark_jars"
+        elif [[ -n "$ALL_JARS" ]]; then
+            SERVER_JARS="${ALL_JARS//:/,}"
+        fi
+
+        # Helper: check if port is listening
+        check_port() {
+            local port=$1
+            if command -v ss >/dev/null 2>&1; then
+                ss -ltn 2>/dev/null | grep -q ":${port} "
+            else
+                netstat -ltn 2>/dev/null | grep -q ":${port} "
+            fi
+        }
+
+        # Pick a free localhost port
+        pick_free_port() {
+            local port
+            for i in $(seq 1 50); do
+                port=$(( (RANDOM % 10000) + 20000 ))
+                if ! check_port "$port"; then
+                    echo "$port"
+                    return 0
+                fi
+            done
+            echo 15002
+        }
+
+        # Prefer default Connect port; if busy, fall back to a free ephemeral port
+        CONNECT_HOST="${CONNECT_HOST:-127.0.0.1}"
+        CONNECT_PORT=15002
+        if check_port "$CONNECT_PORT"; then
+            CONNECT_PORT=$(pick_free_port)
+        fi
+        CONNECT_SERVER_URL="sc://${CONNECT_HOST}:${CONNECT_PORT}"
+
+        cleanup_connect_server() {
+            if [[ -f "${SPARK_HOME}/sbin/stop-connect-server.sh" ]]; then
+                timeout 20 "${SPARK_HOME}/sbin/stop-connect-server.sh" || true
+            fi
+            pkill -f "org.apache.spark.sql.connect.service.SparkConnectServer" || true
+            pkill -f "spark-shell.*--remote" || true
+        }
+        trap cleanup_connect_server EXIT
+
+        if ! start_output=$("${SPARK_HOME}/sbin/start-connect-server.sh" \
+            --master local-cluster[1,2,1024] \
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+            --packages "$CONNECT_PACKAGES" \
+            ${SERVER_JARS:+--jars "$SERVER_JARS"} 2>&1); then
+          echo "ERROR: Spark Connect server failed to launch"
+          printf "%s\n" "$start_output" | tail -n 200
+          exit 1
+        fi
+
+        # Wait for Connect server to listen
+        service_ready=0
+        for i in $(seq 1 60); do
+            if timeout 1 bash -c "</dev/tcp/${CONNECT_HOST}/${CONNECT_PORT}" 2>/dev/null; then
+                service_ready=1
+                break
+            fi
+            sleep 1
+        done
+        if (( service_ready != 1 )); then
+            echo "ERROR: Connect server failed to start on ${CONNECT_HOST}:${CONNECT_PORT}"
+            exit 1
+        fi
+
+        case $VERSION_STRING in
+          3.5.*)
+            CONNECT_PIP_PACKAGE="pyspark[connect]"
+            ;;
+          
+          4.*)
+            # Create a venv and install only pyspark-client to ensure a pure Python client
+            # See: https://spark.apache.org/docs/latest/api/python/getting_started/install.html#python-spark-connect-client
+            CONNECT_PIP_PACKAGE="pyspark-client"
+            ;;
+        esac
+
+        CONNECT_CLIENT_VENV="${RUN_DIR}/connect_client_venv"
+        python -m venv "$CONNECT_CLIENT_VENV"
+        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --upgrade pip >/dev/null
+        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "$CONNECT_PIP_PACKAGE==${VERSION_STRING}" > /dev/null
+
+        # Run a simple query using the Connect client and assert expected result and GPU operator in the plan
+        output=$(CONNECT_URL="$CONNECT_SERVER_URL" \
+            timeout 120s "$CONNECT_CLIENT_VENV/bin/python" - <<'PY'
+import os
+from pyspark.sql import SparkSession
+url = os.environ["CONNECT_URL"]
+spark = SparkSession.builder.remote(url).getOrCreate()
+spark.range(100).explain(True)
+res = spark.range(100).selectExpr('sum(id) as s').collect()[0].s
+print(f'SC_RESULT={res}')
+spark.stop()
+PY
+)
+        client_rc=$?
+        if (( client_rc != 0 )); then
+            # Exit due to client timeout/failure from the 120s timeout wrapper
+            echo "ERROR: Spark Connect client timed out after 120s"
+            exit 1
+        fi
+        # Verify numeric result marker and GPU plan element
+        if ! grep -Fq 'SC_RESULT=4950' <<< "$output"; then
+            echo "ERROR: Expected result SC_RESULT=4950 not found in Connect output"
+            exit 1
+        fi
+        if ! grep -Fq 'GpuRange' <<< "$output"; then
+            echo "ERROR: Connect physical plan does not contain GpuRange"
+            exit 1
+        fi
+        echo "SUCCESS Spark Connect smoke test"
     elif ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
@@ -453,7 +592,7 @@ else
           # command-line using the COVERAGE_SUBMIT_FLAGS which won't be possible if we were to just say
           # export $PYSP_TEST_spark_driver_extraJavaOptions = "$PYSP_TEST_spark_driver_extraJavaOptions $LOG4J_CONF"
           LOG4J_CONF="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log"
-          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS"
+          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS $ENABLE_TEST_FEATURES"
         fi
 
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1

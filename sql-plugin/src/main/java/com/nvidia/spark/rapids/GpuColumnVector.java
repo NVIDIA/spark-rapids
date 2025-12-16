@@ -283,6 +283,37 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return builders[i];
     }
 
+    /**
+     * Capture the current state of all column builders for rollback on OOM.
+     * @return array of snapshots, one per builder
+     */
+    public RapidsHostColumnBuilder.BuilderSnapshot[] captureState() {
+      RapidsHostColumnBuilder.BuilderSnapshot[] snapshots =
+          new RapidsHostColumnBuilder.BuilderSnapshot[builders.length];
+      for (int i = 0; i < builders.length; i++) {
+        if (builders[i] != null) {
+          snapshots[i] = builders[i].captureState();
+        }
+      }
+      return snapshots;
+    }
+
+    /**
+     * Restore all column builders to a previously captured state.
+     * @param snapshots the snapshots captured via {@link #captureState()}
+     */
+    public void restoreState(RapidsHostColumnBuilder.BuilderSnapshot[] snapshots) {
+      if (snapshots == null || snapshots.length != builders.length) {
+        throw new IllegalArgumentException(
+            "Snapshot array must match builders length");
+      }
+      for (int i = 0; i < builders.length; i++) {
+        if (snapshots[i] != null && builders[i] != null) {
+          builders[i].restoreState(snapshots[i]);
+        }
+      }
+    }
+
     @Override
     protected ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
@@ -1056,13 +1087,37 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+    /**
+     * A wrapper method for Table::filter.
+     *
+     * @param batch Input columnar batch to filter. This method will not close it, so it's caller's responsibility to
+     *              close it.
+     * @param mask  A boolean column vector, used to filter rows.
+     * @param dataTypes Data types of `batch`. We add this parameter to avoid repeated allocation of array.
+     * @return Filtered columnar batch.
+     */
+    public static ColumnarBatch filter(ColumnarBatch batch, DataType[] dataTypes, ColumnView mask) {
+        if (dataTypes.length == 0) {
+            try(Scalar s = mask.sum(DType.INT64)) {
+                int numRows = Math.toIntExact(s.getLong());
+                return new ColumnarBatch(new ColumnVector[0], numRows);
+            }
+        } else {
+            try(Table cudfTable = GpuColumnVector.from(batch)) {
+                try(Table filteredTable = cudfTable.filter(mask)) {
+                    return GpuColumnVector.from(filteredTable, dataTypes);
+                }
+            }
+        }
+    }
+
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**
    * Take an INT32 column vector and return a host side int array.  Don't use this for anything
    * too large.  Note that this ignores validity totally.
    */
-  public static int[] toIntArray(ai.rapids.cudf.ColumnVector vec) {
+  public static int[] toIntArray(ai.rapids.cudf.ColumnView vec) {
     assert vec.getType() == DType.INT32;
     int rowCount = (int)vec.getRowCount();
     int[] output = new int[rowCount];
@@ -1155,6 +1210,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
     return sum;
   }
+
 
   public final ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;

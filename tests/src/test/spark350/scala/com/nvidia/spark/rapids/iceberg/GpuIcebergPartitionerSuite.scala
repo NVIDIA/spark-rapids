@@ -22,6 +22,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.iceberg
 
@@ -74,7 +75,7 @@ class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
         .bucket("d", 20)
         .build()
 
-    val partitioner = new GpuIcebergPartitioner(icebergPartitionSpec, sparkType)
+    val partitioner = new GpuIcebergSpecPartitioner(icebergPartitionSpec, icebergSchema.asStruct())
 
     val totalRowCount = 1000
 

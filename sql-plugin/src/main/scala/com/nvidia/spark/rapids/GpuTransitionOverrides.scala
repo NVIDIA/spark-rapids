@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.annotation.tailrec
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.GpuTypedImperativeSupportedAggregateExecMeta.{preRowToColProjection, readBufferConverter}
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
@@ -50,21 +52,20 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
       val optimizedChild = optimizeGpuPlanTransitions(r2c.child)
-      val projectedChild =
-        r2c.child.getTagValue(GpuOverrides.preRowToColProjection).map { preProcessing =>
-          ProjectExec(preProcessing, optimizedChild)
-        }.getOrElse(optimizedChild)
+      val projectedChild = checkInjectedProject(optimizedChild, optimizedChild, isRowToCol = true)
       GpuRowToColumnarExec(projectedChild, goal)
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       GpuColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
-    // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
-    case p if p.getTagValue(GpuOverrides.postColToRowProjection).nonEmpty =>
-      val c2r = p.children.map(optimizeGpuPlanTransitions).head.asInstanceOf[GpuColumnarToRowExec]
-      val newChild = p.getTagValue(GpuOverrides.postColToRowProjection).map { exprs =>
-        ProjectExec(exprs, c2r)
-      }.getOrElse(c2r)
-      p.withNewChildren(Array(newChild))
-    case p =>
+    case p if p.children.size == 1 =>
+      // single child case, need to check over GpuColumnarToRowExec for injected projects
+      val optChild = optimizeGpuPlanTransitions(p.children.head)
+      if (optChild.isInstanceOf[GpuColumnarToRowExec]) {
+        // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
+        p.withNewChildren(Array(checkInjectedProject(p, optChild, isRowToCol = false)))
+      } else {
+        p.withNewChildren(Array(optChild))
+      }
+    case p => // default case
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
   }
 
@@ -74,6 +75,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuCoalesceBatches(plan, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
     } else {
       GpuShuffleCoalesceExec(plan, rapidsConf.gpuTargetBatchSizeBytes)
+    }
+  }
+
+  /**
+   * Apply the potentially injected ProjectExec from TreeNodeTag
+   */
+  private def checkInjectedProject(srcPlan: SparkPlan,
+      dstPlan: SparkPlan,
+      isRowToCol: Boolean): SparkPlan = {
+    readBufferConverter(srcPlan, isRowToCol) match {
+      case Some(expressions) => ProjectExec(expressions, dstPlan)
+      case None => dstPlan
     }
   }
 
@@ -100,19 +113,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           val columnarAdaptivePlan = SparkShimImpl.columnarAdaptivePlan(a, goal)
           optimizeAdaptiveTransitions(columnarAdaptivePlan, None)
         case _ =>
-          val newChild = child.getTagValue(GpuOverrides.preRowToColProjection).map { exprs =>
-            ProjectExec(exprs, child)
-          }.getOrElse(child)
+          val newChild = checkInjectedProject(child, child, isRowToCol = true)
           GpuRowToColumnarExec(newChild, goal)
       }
 
     // adaptive plan final query stage with columnar output
     case r2c @ RowToColumnarExec(child) if parent.isEmpty =>
       val optimizedChild = optimizeAdaptiveTransitions(child, Some(r2c))
-      val projectedChild =
-        optimizedChild.getTagValue(GpuOverrides.preRowToColProjection).map { exprs =>
-          ProjectExec(exprs, optimizedChild)
-        }.getOrElse(optimizedChild)
+      val projectedChild = checkInjectedProject(optimizedChild, optimizedChild, isRowToCol = true)
       GpuRowToColumnarExec(projectedChild, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
@@ -164,8 +172,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             addPostShuffleCoalesce(s)
         }
       } else {
-        s.plan.getTagValue(GpuOverrides.preRowToColProjection).foreach { p =>
-          s.setTagValue(GpuOverrides.preRowToColProjection, p)
+        readBufferConverter(s.plan, isR2C = true).foreach { p =>
+          s.setTagValue(preRowToColProjection, p -> 0)
         }
         s
       }
@@ -173,6 +181,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case e: GpuCustomShuffleReaderExec =>
       // We wrap custom shuffle readers with a coalesce batches operator here.
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
+
+    // Leave TableCacheQueryStage wrapper intact and let shims decide behavior.
+    case p if SparkShimImpl.getTableCacheNonQueryStagePlan(p).nonEmpty =>
+      p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
 
     case c2re: ColumnarToRowExec if
         SparkShimImpl.checkCToRWithExecBroadcastAQECoalPart(c2re, parent) =>
@@ -200,6 +212,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
+    // If Spark wrapped a TableCache query stage with a CPU ColumnarToRow, replace it with
+    // a GPU ColumnarToRow to avoid CPU accessing GPU vectors.
+    case ColumnarToRowExec(e) if SparkShimImpl.getTableCacheNonQueryStagePlan(e).nonEmpty =>
+      GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       // In Spark an AdaptiveSparkPlanExec when doing a broadcast expects to only ever see
       // a BroadcastQueryStageExec as its child. The ColumnarToRowExec can be inserted by Spark
@@ -224,20 +241,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             s"BroadcastQueryStageExec with $other")
       }
 
-    // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
-    case p if p.getTagValue(GpuOverrides.postColToRowProjection).nonEmpty =>
-      val c2r = p.children.map(optimizeAdaptiveTransitions(_, Some(p))).head
-          .asInstanceOf[GpuColumnarToRowExec]
-      val newChild = p.getTagValue(GpuOverrides.postColToRowProjection).map { exprs =>
-        ProjectExec(exprs, c2r)
-      }.getOrElse(c2r)
-      p.withNewChildren(Array(newChild))
-
-    case p =>
-      SparkShimImpl.handleTableCacheInOptimizeAdaptiveTransitions(p, parent) match {
-        case Some(handledPlan) => handledPlan
-        case None => p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
+    case p if p.children.length == 1 => // single child case
+      val optChild = optimizeAdaptiveTransitions(p.children.head, Some(p))
+      if (optChild.isInstanceOf[GpuColumnarToRowExec]) {
+        val projectedChild = checkInjectedProject(p, optChild, isRowToCol = false)
+        p.withNewChildren(Array(projectedChild))
+      } else {
+        p.withNewChildren(Array(optChild))
       }
+
+    case p => // default case
+      p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
   /**
@@ -790,7 +804,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
-        var updatedPlan = insertHashOptimizeSorts(plan)
+        var updatedPlan = DeltaProvider().pruneFileMetadata(plan)
+        updatedPlan = insertHashOptimizeSorts(updatedPlan)
         updatedPlan = updateScansForInputAndOrder(updatedPlan)
         if (rapidsConf.isFileScanPrunePartitionEnabled) {
           updatedPlan = prunePartitionForFileSourceScan(updatedPlan)

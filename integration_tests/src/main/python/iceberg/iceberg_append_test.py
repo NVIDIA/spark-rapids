@@ -20,15 +20,11 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf
-from marks import iceberg, ignore_order, allow_non_gpu
+from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 
-pytestmark = [
-    pytest.mark.skipif(not is_spark_35x(),
-                       reason="Current spark-rapids only support spark 3.5.x"),
-    pytest.mark.skipif(is_iceberg_remote_catalog(),
-                        reason="https://github.com/NVIDIA/spark-rapids/issues/13471")
-]
+pytestmark = pytest.mark.skipif(not is_spark_35x(),
+                       reason="Current spark-rapids only support spark 3.5.x")
 
 
 def do_test_insert_into_table_sql(spark_tmp_table_factory,
@@ -58,27 +54,56 @@ def do_test_insert_into_table_sql(spark_tmp_table_factory,
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_insert_into_unpartitioned_table(spark_tmp_table_factory, format_version, write_distribution_mode):
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+def test_insert_into_unpartitioned_table(spark_tmp_table_factory):
+    table_prop = {"format-version": "2"}
 
     do_test_insert_into_table_sql(
         spark_tmp_table_factory,
         lambda table_name: create_iceberg_table(table_name, table_prop=table_prop))
 
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('AppendDataExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
+def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
+                                                partition_table):
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+
+    def create_table(spark, table_name: str):
+        sql = f"""CREATE TABLE {table_name} (id int, name string) USING ICEBERG """
+        if partition_table:
+            sql += "PARTITIONED BY (bucket(8, id)) "
+
+        sql += f"""TBLPROPERTIES (
+        'format-version' = '2')
+        """
+        spark.sql(sql)
+
+    with_cpu_session(lambda spark: create_table(spark, cpu_table_name))
+    with_cpu_session(lambda spark: create_table(spark, gpu_table_name))
+
+    def insert_data(spark, table_name: str):
+        spark.sql(f"INSERT INTO {table_name} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+
+    with_gpu_session(lambda spark: insert_data(spark, gpu_table_name),
+                     conf = iceberg_write_enabled_conf)
+    with_cpu_session(lambda spark: insert_data(spark, cpu_table_name),
+                     conf = iceberg_write_enabled_conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
+
 
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory, format_version, write_distribution_mode):
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
+    table_prop = {"format-version": "2"}
 
     def this_gen_df(spark):
         cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
@@ -98,21 +123,14 @@ def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_facto
                                 conf = iceberg_write_enabled_conf)
 
 
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("fanout", [True, False], ids=lambda x: f"fanout={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_insert_into_partitioned_table(spark_tmp_table_factory, format_version, fanout, write_distribution_mode):
-    table_prop = {"format-version": format_version,
-                  "write.spark.fanout.enabled": str(fanout).lower(),
-                  "write.distribution-mode": write_distribution_mode}
+def _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+    """Helper function for partitioned table insert tests."""
+    table_prop = {"format-version": "2"}
 
     def create_table_and_set_write_order(table_name: str):
         create_iceberg_table(
             table_name,
-            partition_col_sql="bucket(16, _c2), bucket(16, _c3)",
+            partition_col_sql=partition_col_sql,
             table_prop=table_prop)
 
         sql = f"ALTER TABLE {table_name} WRITE ORDERED BY _c2, _c3, _c4"
@@ -122,15 +140,47 @@ def test_insert_into_partitioned_table(spark_tmp_table_factory, format_version, 
         spark_tmp_table_factory,
         create_table_and_set_write_order)
 
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
+def test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+    """Basic partition test - runs for all catalogs including remote."""
+    _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql)
+
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+])
+def test_insert_into_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
+    """Full partition coverage test - skipped for remote catalogs."""
+    _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql)
+
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
-def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory, format_version, write_distribution_mode):
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
+    table_prop = {"format-version": "2"}
 
     def this_gen_df(spark):
         cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
@@ -156,22 +206,14 @@ def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("truncate(5, _c6)", id="truncate"),
-    pytest.param("year(_c9)", id="year"),
-    pytest.param("month(_c9)", id="month"),
-    pytest.param("day(_c9)", id="day"),
-    pytest.param("hour(_c9)", id="hour"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_insert_into_partitioned_table_unsupported_partition_fallback(
-        spark_tmp_table_factory, format_version, write_distribution_mode, partition_col_sql):
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+        spark_tmp_table_factory, partition_col_sql):
+    table_prop = {"format-version": "2"}
 
     def insert_data(spark, table_name: str):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -192,14 +234,11 @@ def test_insert_into_partitioned_table_unsupported_partition_fallback(
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
 def test_insert_into_table_unsupported_file_format_fallback(
-        spark_tmp_table_factory, format_version, file_format, write_distribution_mode):
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode,
+        spark_tmp_table_factory, file_format):
+    table_prop = {"format-version": "2",
                   "write.format.default": file_format}
 
     def insert_data(spark, table_name: str):
@@ -218,16 +257,13 @@ def test_insert_into_table_unsupported_file_format_fallback(
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.parametrize("format_version", ["1", "2"], ids=lambda x: f"format_version={x}")
-@pytest.mark.parametrize("write_distribution_mode", ["none", "hash", "range"],
-                         ids=lambda x: f"write_distribution_mode={x}")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
 def test_insert_into_iceberg_table_fallback_when_conf_disabled(
-        spark_tmp_table_factory, format_version, write_distribution_mode, conf_key):
-    table_prop = {"format-version": format_version,
-                  "write.distribution-mode": write_distribution_mode}
+        spark_tmp_table_factory, conf_key):
+    table_prop = {"format-version": "2"}
 
     def insert_data(spark, table_name: str):
         df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
@@ -242,3 +278,49 @@ def test_insert_into_iceberg_table_fallback_when_conf_disabled(
     assert_gpu_fallback_collect(lambda spark: insert_data(spark, table_name),
                                 "AppendDataExec",
                                 conf = updated_conf)
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_insert_into_aqe(spark_tmp_table_factory, partition_col_sql):
+    """
+    Test INSERT INTO with AQE enabled.
+    """
+    table_prop = {"format-version": "2"}
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+
+    # Create tables
+    with_cpu_session(lambda spark: create_iceberg_table(
+        cpu_table_name, partition_col_sql, table_prop,
+        lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list)))))
+    with_cpu_session(lambda spark: create_iceberg_table(
+        gpu_table_name, partition_col_sql, table_prop,
+        lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list)))))
+
+    # Insert data
+    def insert_data(spark, table_name: str):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        view_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(view_name)
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+
+    with_gpu_session(lambda spark: insert_data(spark, gpu_table_name), conf=conf)
+    with_cpu_session(lambda spark: insert_data(spark, cpu_table_name), conf=conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
+

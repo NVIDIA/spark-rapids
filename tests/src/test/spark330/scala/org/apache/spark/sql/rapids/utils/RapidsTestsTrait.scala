@@ -223,7 +223,9 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
           ArrayType(vt, vcn),
           exprNullable = false)
       case (result: Double, expected: Double) =>
-        if (
+        if (result.isNaN && expected.isNaN) {
+          true
+        } else if (
           (isNaNOrInf(result) || isNaNOrInf(expected))
             || (result == -0.0) || (expected == -0.0)
         ) {
@@ -306,6 +308,7 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     var result : Array[Row] = null
     var resultDF : DataFrame = null
     var expression = origExpr
+    var isComparedByString = false
 
     if(!isQualifiedForVectorizedParams(origExpr)) {
       logInfo(s"$origExpr is being evaluated with Scalar Parameter")
@@ -315,7 +318,14 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
           Literal(inputRow.asInstanceOf[GenericInternalRow].get(ordinal, dataType), dataType)
       }
       resultDF = _spark.range(0, 1).select(Column(expression))
-      result = resultDF.collect()
+      try {
+        result = resultDF.collect()
+      } catch {
+        case e : Exception =>
+          logWarning(s"Exception during resultDF.collect() for $expression: ${e.getMessage}", e)
+          isComparedByString = true
+          result = resultDF.select(Column(resultDF.columns(0)).cast("string")).collect()
+      }
     } else {
       logInfo(s"$expression is being evaluated with Vectorized Parameter")
       println(s"$expression is being evaluated with Vectorized Parameter")
@@ -355,8 +365,14 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       logInfo("Has unsupported data type, fall back to vanilla spark.\n")
       shouldNotFallback()
     }
-
-    if (
+    if (isComparedByString) {
+      if (!(checkResult(result.head.get(0), expected.toString, StringType, expression.nullable))) {
+        fail(
+          s"Incorrect evaluation: $expression, " +
+            s"actual: ${result.head.get(0)}, " +
+            s"expected: $expected")
+      }
+    } else if (
       !(checkResult(result.head.get(0), expected, expression.dataType, expression.nullable)
         || checkResult(
         CatalystTypeConverters.createToCatalystConverter(expression.dataType)(

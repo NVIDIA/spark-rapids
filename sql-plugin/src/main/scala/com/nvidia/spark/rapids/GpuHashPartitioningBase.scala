@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{DType, NvtxColor, NvtxRange, PartitionedTable}
+import ai.rapids.cudf.{DType, PartitionedTable}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -34,11 +34,11 @@ trait GpuHashPartitioner extends Serializable {
   protected def hashFunc: GpuHashExpression
 
   protected final def hashPartitionAndClose(batch: ColumnarBatch, numPartitions: Int,
-      nvtxName: String): PartitionedTable = {
+      nvtxId: NvtxId): PartitionedTable = {
     val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
       withResource(sb.getColumnarBatch()) { cb =>
-        val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
+        val parts = nvtxId {
           withResource(hashFunc.columnarEval(cb)) { hash =>
             withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
               hash.getBase.pmod(partsLit, DType.INT32)
@@ -68,7 +68,7 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
 
   def partitionInternalAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val types = GpuColumnVector.extractTypes(batch)
-    val partedTable = hashPartitionAndClose(batch, numPartitions, "Calculate part")
+    val partedTable = hashPartitionAndClose(batch, numPartitions, NvtxRegistry.CALCULATE_PART)
     withResource(partedTable) { partedTable =>
       val parts = partedTable.getPartitions
       val tp = partedTable.getTable
@@ -82,10 +82,10 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     //  We are doing this here because the cudf partition command is at this level
-    withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.HASH_PARTITION {
       val numRows = batch.numRows
       val (partitionIndexes, partitionColumns) = {
-        withResource(new NvtxRange("partition", NvtxColor.BLUE)) { _ =>
+        NvtxRegistry.HASH_PARTITION_SLICE {
           partitionInternalAndClose(batch)
         }
       }

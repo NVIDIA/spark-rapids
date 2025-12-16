@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.shims.GpuFileFormatDataWriterShim
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -279,7 +280,8 @@ class GpuSingleDirectoryDataWriter(
       dataSchema = description.dataColumns.toStructType,
       context = taskAttemptContext,
       statsTrackers = statsTrackers,
-      debugOutputPath = debugOutputPath)
+      debugOutputPath = debugOutputPath,
+      fileIO = description.fileIO)
 
     statsTrackers.foreach(_.newFile(currentPath))
   }
@@ -381,7 +383,9 @@ class GpuDynamicPartitionDataSingleWriter(
 
   /** Extracts the partition values out of an input batch. */
   private lazy val getPartitionColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
-    val expressions = GpuBindReferences.bindGpuReferences(
+    // Using Internal method: this is a simple column projection in data writer context
+    // where metrics are not available (runs on executors after serialization).
+    val expressions = GpuBindReferences.bindGpuReferencesNoMetrics(
       description.partitionColumns,
       description.allColumns)
     cb => {
@@ -390,7 +394,9 @@ class GpuDynamicPartitionDataSingleWriter(
   }
 
   private lazy val getBucketIdColumnAsBatch: ColumnarBatch => ColumnarBatch = {
-    val expressions = GpuBindReferences.bindGpuReferences(
+    // Using Internal method: this is a simple projection in data writer context
+    // where metrics are not available (runs on executors after serialization).
+    val expressions = GpuBindReferences.bindGpuReferencesNoMetrics(
       Seq(description.bucketSpec.get.bucketIdExpression),
       description.allColumns)
     cb => {
@@ -421,7 +427,9 @@ class GpuDynamicPartitionDataSingleWriter(
 
   /** Extracts the output values of an input batch. */
   protected lazy val getDataColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
-    val expressions = GpuBindReferences.bindGpuReferences(
+    // Using Internal method: this is a simple column projection in data writer context
+    // where metrics are not available (runs on executors after serialization).
+    val expressions = GpuBindReferences.bindGpuReferencesNoMetrics(
       description.dataColumns,
       description.allColumns)
     cb => {
@@ -623,7 +631,8 @@ class GpuDynamicPartitionDataSingleWriter(
       dataSchema = description.dataColumns.toStructType,
       context = taskAttemptContext,
       statsTrackers = statsTrackers,
-      debugOutputPath = debugOutputPath)
+      debugOutputPath = debugOutputPath,
+      description.fileIO)
 
     statsTrackers.foreach(_.newFile(currentPath))
     outWriter
@@ -779,7 +788,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
         }.getOrElse((NoopMetric, NoopMetric))
 
       val sortIter = GpuOutOfCoreSortIterator(pendingCbsIter ++ iterator,
-        new GpuSorter(spec.sortOrder, spec.output), GpuSortExec.targetSize(spec.batchSize),
+        new GpuSorter(spec.sortOrder, spec.output, Map.empty[String, GpuMetric]),
+        GpuSortExec.targetSize(spec.batchSize),
         sortOpTime, sortMetric, NoopMetric, NoopMetric)
       while (sortIter.hasNext) {
         // write with sort-based sequential writer
@@ -983,6 +993,8 @@ class GpuWriteJobDescription(
     val statsTrackers: Seq[ColumnarWriteJobStatsTracker],
     val concurrentWriterPartitionFlushSize: Long)
   extends Serializable {
+
+  lazy val fileIO: HadoopFileIO = new HadoopFileIO(serializableHadoopConf.value)
 
   assert(AttributeSet(allColumns) == AttributeSet(partitionColumns ++ dataColumns),
     s"""

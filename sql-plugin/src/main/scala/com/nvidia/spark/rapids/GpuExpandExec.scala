@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.util.Random
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -109,7 +107,7 @@ case class GpuExpandExec(
     if (preprojectEnabled) {
       // Tiered projection is enabled, check if pre-projection is needed.
       val boundPreprojections = GpuBindReferences.bindGpuReferencesTiered(
-        preprojectionList, child.output, conf)
+        preprojectionList, child.output, conf, metricsMap)
       if (boundPreprojections.exprTiers.size > 1) {
         logDebug("GPU expanding with pre-projection.")
         // We got some nested expressions, so pre-projection is good to enable.
@@ -127,7 +125,7 @@ case class GpuExpandExec(
     }
 
     val boundProjections = projectionsForBind.map { pl =>
-      GpuBindReferences.bindGpuReferencesTiered(pl, attributesForBind, conf)
+      GpuBindReferences.bindGpuReferencesTiered(pl, attributesForBind, conf, metricsMap)
     }
 
     child.executeColumnar().mapPartitions { it =>
@@ -224,8 +222,7 @@ class GpuExpandIterator(
       sb = Some(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
     }
 
-    val projectedBatch = withResource(new NvtxWithMetrics(
-      "ExpandExec projections", NvtxColor.GREEN, opTime)) { _ =>
+    val projectedBatch = NvtxIdWithMetrics(NvtxRegistry.EXPAND_EXEC_PROJECTIONS, opTime) {
       boundProjections(projectionIndex).projectWithRetrySingleBatch(sb.get)
     }
 

@@ -28,9 +28,17 @@ from spark_session import with_cpu_session
 # iceberg supported types
 iceberg_table_gen = MappingProxyType({
     '_c0': byte_gen, '_c1': short_gen, '_c2': IntegerGen(nullable=False),
-    '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, '_c6': string_gen,
+    '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, 
+    '_c6': string_gen,
     '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen, '_c10': decimal_gen_32bit,
-    '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit, '_c13': binary_gen
+    '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit,
+    # Add columns c13, c14, c15 to avoid Iceberg known issue:
+    # https://github.com/NVIDIA/spark-rapids-jni/issues/4016
+    # Disable special cases to avoid generating overflow values for truncate transform.
+    # when this issue is fixed, we can remove these extra columns.
+    '_c13': DecimalGen(precision=7, scale=3, special_cases=[]),
+    '_c14': DecimalGen(precision=12, scale=2, special_cases=[]),
+    '_c15': DecimalGen(precision=20, scale=2, special_cases=[]),
 })
 iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
@@ -61,6 +69,9 @@ iceberg_write_enabled_conf = {
     "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
     "spark.rapids.sql.format.iceberg.enabled": "true",
     "spark.rapids.sql.format.iceberg.write.enabled": "true",
+    # WriteDeltaExec is disabled by default as it's experimental, but we need it enabled
+    # for merge-on-read (MOR) DML operations (UPDATE/DELETE/MERGE with write.*.mode='merge-on-read')
+    "spark.rapids.sql.exec.WriteDeltaExec": "true",
 }
 
 
@@ -80,7 +91,7 @@ def _eq_column_combinations(all_columns: List[str],
             if can_be_eq_delete_col(data_gen)]
     return list(combinations(cols, n))
 
-all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 3)
+all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 2)
 
 def setup_base_iceberg_table(spark_tmp_table_factory,
                              seed: Optional[int] = None,

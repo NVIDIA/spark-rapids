@@ -23,6 +23,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.DataTypeUtils.hasOffset
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.PreProjectSplitIterator.KEY_NUM_PRE_SPLIT
@@ -82,12 +83,12 @@ class GpuProjectExecMeta(
 object GpuProjectExec {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
       opTime: GpuMetric): ColumnarBatch = {
-    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)
-    try {
-      project(cb, boundExprs)
-    } finally {
-      cb.close()
-      nvtxRange.close()
+    NvtxIdWithMetrics(NvtxRegistry.PROJECT_EXEC, opTime) {
+      try {
+        project(cb, boundExprs)
+      } finally {
+        cb.close()
+      }
     }
   }
 
@@ -683,7 +684,7 @@ case class GpuProjectExec(
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
-      conf)
+      conf, allMetrics)
     val localEnablePreSplit = enablePreSplit
 
     val rdd = child.executeColumnar()
@@ -694,7 +695,7 @@ case class GpuProjectExec(
         iter
       }
       maybeSplitIter.map { split =>
-        val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
+        val ret = NvtxIdWithMetrics(NvtxRegistry.PROJECT_EXEC, opTime) {
           val sb = SpillableColumnarBatch(split, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           // Note if this ever changes to include splitting the output we need to
           // have an option to not do this for window to work properly.
@@ -736,12 +737,13 @@ case class GpuProjectAstExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
-    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
+    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output,
+      allMetrics)
     val outputTypes = output.map(_.dataType).toArray
     new GpuColumnarBatchIterator(true) {
       private[this] var maybeSplittedItr: Iterator[ColumnarBatch] = Iterator.empty
       private[this] var compiledAstExprs =
-        withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.COMPILE_ASTS, opTime) {
           boundProjectList.safeMap { expr =>
             // Use intmax for the left table column count since there's only one input table here.
             expr.convertToAst(Int.MaxValue).compile()
@@ -764,7 +766,7 @@ case class GpuProjectAstExec(
           // AST currently doesn't support non-deterministic expressions so it's not needed
           // to check whether compiled expressions are retryable.
           maybeSplittedItr = withRetry(spillable, splitSpillableInHalfByRows) { spillable =>
-            withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.PROJECT_AST, opTime) {
               withResource(spillable.getColumnarBatch()) { cb =>
                 val projectedTable = withResource(tableFromBatch(cb)) { table =>
                   withResource(
@@ -824,6 +826,17 @@ case class GpuProjectAstExec(
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
  case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
+
+  /**
+   * Inject metrics into all expressions across all tiers.
+   * @param metrics Map of metric names to GpuMetric instances
+   */
+  def injectMetrics(metrics: Map[String, GpuMetric]): Unit = {
+    exprTiers.foreach { tier =>
+      GpuMetric.injectMetrics(tier, metrics)
+    }
+  }
+
   /**
    * Is everything retryable. This can help with reliability in the common case.
    */
@@ -905,7 +918,7 @@ case class GpuProjectAstExec(
           recurseCloseInputBatch: Boolean): SpillableColumnarBatch = boundExprs match {
         case Nil => sb
         case exprSet :: tail =>
-          val projectSb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+          val projectSb = NvtxRegistry.PROJECT_TIER {
             val projectResult = if (recurseCloseInputBatch) {
               GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprSet)
             } else {
@@ -944,7 +957,7 @@ case class GpuProjectAstExec(
         case Nil => cb
         case exprSet :: tail =>
           val projectCb = try {
-            withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+            NvtxRegistry.PROJECT_TIER {
               GpuProjectExec.project(cb, exprSet)
             }
           } finally {
@@ -972,7 +985,7 @@ object GpuFilter {
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       filterTime: GpuMetric): ColumnarBatch = {
-    withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.FILTER_BATCH, filterTime) {
       val filteredBatch = GpuFilter(batch, boundCondition)
       numOutputBatches += 1
       numOutputRows += filteredBatch.numRows()
@@ -999,7 +1012,7 @@ object GpuFilter {
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       filterTime: GpuMetric): Iterator[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.FILTER_BATCH, filterTime) {
       val filteredBatch = withResource(batch) { batch =>
         GpuFilter(batch, boundCondition)
       }
@@ -1018,7 +1031,7 @@ object GpuFilter {
     val ret = withRetry(input, splitSpillableInHalfByRows) { sb =>
       withResource(sb.getColumnarBatch()) { cb =>
         withRestoreOnRetry(boundCondition.retryables) {
-          withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, opTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.FILTER_BATCH, opTime) {
             GpuFilter(cb, boundCondition)
           }
         }
@@ -1168,7 +1181,7 @@ case class GpuFilterExec(
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
-      conf)
+      conf, allMetrics)
     rdd.flatMap { batch =>
       GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
         numOutputBatches, opTime)
@@ -1247,7 +1260,7 @@ case class GpuSampleExec(
           iterator.map[ColumnarBatch] { columnarBatch =>
             // collect sampled row idx
             // samples idx in batch one by one, so it's same as CPU execution
-            withResource(new NvtxWithMetrics("Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.SAMPLE_EXEC, opTime) {
               withResource(columnarBatch) { cb =>
                 // generate sampled row indexes by CPU
                 val sampledRows = new ArrayBuffer[Int]
@@ -1311,7 +1324,7 @@ case class GpuFastSampleExec(
     rdd.mapPartitionsWithIndex(
       (index, iterator) => {
         iterator.map[ColumnarBatch] { columnarBatch =>
-          withResource(new NvtxWithMetrics("Fast Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.FAST_SAMPLE_EXEC, opTime) {
             withResource(columnarBatch) { cb =>
               numOutputBatches += 1
               val numSampleRows = (cb.numRows() * (upperBound - lowerBound)).toLong
@@ -1385,7 +1398,7 @@ private[rapids] class GpuRangeIterator(
       throw new NoSuchElementException()
     }
     GpuSemaphore.acquireIfNecessary(taskContext)
-    withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.GPU_RANGE, opTime) {
       val start = currentPosition
       val remainingRows = (safePartitionEnd - start) / step
       // Start is inclusive so we need to produce at least one row
@@ -1402,14 +1415,14 @@ private[rapids] class GpuRangeIterator(
           }
         }
       }
-      assert(iter.hasNext)
+      assertInTests(iter.hasNext)
       closeOnExcept(iter.next()) { batch =>
         // This "iter" returned from the "withRetry" block above has only one batch,
         // because the split function "reduceRowsNumberByHalf" returns a Seq with a single
         // element inside.
         // By doing this, we can pull out this single batch directly without maintaining
         // this extra `iter` for the next loop.
-        assert(iter.isEmpty)
+        assertInTests(iter.isEmpty)
         val endInclusive = start + ((batch.numRows() - 1) * step)
         currentPosition = endInclusive + step
         if (currentPosition < endInclusive ^ step < 0) {

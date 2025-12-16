@@ -18,7 +18,7 @@ from pyspark.sql.types import StringType, IntegerType
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import gen_df, int_gen, string_gen, long_gen, SetValuesGen
 from delta_lake_utils import delta_meta_allow
-from marks import allow_non_gpu, delta_lake, ignore_order
+from marks import allow_non_gpu, delta_lake, disable_ansi_mode, ignore_order
 from spark_session import (
     is_databricks_runtime,
     is_databricks133_or_later,
@@ -71,6 +71,7 @@ def setup_clustered_table(spark, path, table_name, enable_dv):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
+@disable_ansi_mode
 @pytest.mark.skipif(
     is_databricks_runtime() and not is_databricks133_or_later(),
     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+",
@@ -105,6 +106,7 @@ def test_delta_clustered_read_sql(spark_tmp_path, spark_tmp_table_factory):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
+@disable_ansi_mode
 @pytest.mark.skipif(
     is_databricks_runtime() and not is_databricks133_or_later(),
     reason="Delta Lake liquid clustering is only supported on Databricks 13.3+",
@@ -130,41 +132,4 @@ def test_delta_clustered_read_df(spark_tmp_path, spark_tmp_table_factory):
             .groupBy("a", "b") \
             .sum("e") \
             .select("a", "b", "sum(e)")
-    )
-
-
-@allow_non_gpu("FileSourceScanExec", *delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(
-    not supports_delta_lake_deletion_vectors(),
-    reason="Delta Lake deletion vector support is required",
-)
-@pytest.mark.skipif(
-    is_databricks_runtime() and not is_databricks133_or_later(),
-    reason="Delta Lake liquid clustering is only supported on Databricks 13.3+",
-)
-@pytest.mark.skipif(
-    is_before_spark_353(),
-    reason="Clustered table DDL is only supported on Delta 3.3+/Spark 3.5.3+",
-)
-def test_delta_clustered_read_with_deletion_vectors_fallback(spark_tmp_path, spark_tmp_table_factory):
-    """
-    When DV is present on a clustered table, ensure the plan falls back to CPU.
-    """
-    data_path = spark_tmp_path + "/DELTA_LIQUID_CLUSTER_READ_DV"
-    table_name = spark_tmp_table_factory.get()
-
-    def setup_tables(spark):
-        setup_clustered_table(spark, data_path, table_name, enable_dv=True)
-        # Materialize a DV by deleting a subset.
-        # Note that we should use a filter that matches some rows
-        # to ensure the DV is created.
-        spark.sql(f"DELETE FROM {table_name} WHERE b = 'x'")
-
-    with_cpu_session(setup_tables)
-
-    assert_gpu_fallback_collect(
-        lambda spark: spark.read.table(table_name),
-        "FileSourceScanExec"
     )

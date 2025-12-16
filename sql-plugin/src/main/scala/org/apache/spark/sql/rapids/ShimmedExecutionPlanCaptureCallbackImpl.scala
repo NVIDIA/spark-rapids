@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -205,6 +205,10 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
         executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
+  override def contains(gpuPlan: SparkPlan, className: String): Boolean = {
+    containsPlan(gpuPlan, className)
+  }
+
   private def containsExpression(exp: Expression, className: String,
       regexMap: MutableMap[String, Regex] // regex memoization
   ): Boolean = exp.find {
@@ -249,6 +253,5 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     case p =>
       p.children.exists(plan => containsPlanMatching(plan, f))
   }.nonEmpty
-
 }
 

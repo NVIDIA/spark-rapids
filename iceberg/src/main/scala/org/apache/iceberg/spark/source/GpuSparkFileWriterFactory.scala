@@ -23,7 +23,7 @@ import org.apache.hadoop.mapreduce.TaskAttemptContext
 import org.apache.iceberg.{FileFormat, MetricsConfig, PartitionSpec, SortOrder, StructLike, Table}
 import org.apache.iceberg.deletes.{EqualityDeleteWriter, PositionDeleteWriter}
 import org.apache.iceberg.encryption.EncryptedOutputFile
-import org.apache.iceberg.io.{DataWriter, FileWriterFactory}
+import org.apache.iceberg.io.{DataWriter, FileWriterFactory, GpuPositionDeleteFileWriter}
 
 import org.apache.spark.sql.execution.datasources.GpuWriteFiles
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
@@ -35,9 +35,11 @@ class GpuSparkFileWriterFactory(val table: Table,
   val dataSparkType: StructType,
   val dataSortOrder: SortOrder,
   val deleteFileFormat: FileFormat,
+  val deleteSparkType: StructType,
   val columnarOutputWriterFactory: ColumnarOutputWriterFactory,
   val taskStatsTracker: ColumnarWriteTaskStatsTracker,
   val hadoopConf: SerializableConfiguration,
+  val fileIO: IcebergFileIO
 ) extends FileWriterFactory[SpillableColumnarBatch] {
   require(dataFileFormat == FileFormat.PARQUET,
     s"GpuSparkFileWriterFactory only supports PARQUET file format, but got $dataFileFormat")
@@ -53,7 +55,7 @@ class GpuSparkFileWriterFactory(val table: Table,
     partition: StructLike): DataWriter[SpillableColumnarBatch] = {
     val location = file.encryptingOutputFile().location()
     new DataWriter[SpillableColumnarBatch](
-      createAppender(location),
+      createAppender(location, dataSparkType),
       dataFileFormat,
       location,
       partitionSpec,
@@ -67,19 +69,36 @@ class GpuSparkFileWriterFactory(val table: Table,
   EqualityDeleteWriter[SpillableColumnarBatch] = throw new IllegalStateException(
     "Spark row level deletion should not produce equality delete files")
 
-  override def newPositionDeleteWriter(encryptedOutputFile: EncryptedOutputFile,
-    partitionSpec: PartitionSpec,
-    structLike: StructLike): PositionDeleteWriter[SpillableColumnarBatch] =
-    throw new UnsupportedOperationException("Iceberg delete command is not supported by gpu yet")
+  override def newPositionDeleteWriter(file: EncryptedOutputFile,
+    spec: PartitionSpec,
+    partition: StructLike): PositionDeleteWriter[SpillableColumnarBatch] = {
+    throw new IllegalStateException(
+      "Spark row level deletion should not produce equality delete files")
+  }
 
-  private def createAppender(path: String): GpuIcebergParquetAppender = {
+  def newGpuPositionDeleteWriter(file: EncryptedOutputFile,
+                                 spec: PartitionSpec,
+                                 partition: StructLike): GpuPositionDeleteFileWriter = {
+    val location = file.encryptingOutputFile().location()
+    new GpuPositionDeleteFileWriter(
+      createAppender(location, deleteSparkType),
+      deleteFileFormat,
+      location,
+      spec,
+      partition,
+      Option(file.keyMetadata()).map(_.buffer()).orNull)
+  }
+
+
+
+  private def createAppender(path: String, sparkType: StructType): GpuIcebergParquetAppender = {
     val gpuWriter =  columnarOutputWriterFactory.newInstance(
       path = path,
-      dataSchema = dataSparkType,
+      dataSchema = sparkType,
       context = taskAttemptContext,
       statsTrackers = Seq(taskStatsTracker),
-      debugOutputPath = None
-    ).asInstanceOf[GpuParquetWriter]
+      debugOutputPath = None,
+      fileIO).asInstanceOf[GpuParquetWriter]
 
     new GpuIcebergParquetAppender(
       gpuWriter,

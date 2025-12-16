@@ -33,10 +33,10 @@ GLUTEN_VERSION=${GLUTEN_VERSION:-"1.2.0"}
 SUPPORTED_HYBRID_SHIMS=${SUPPORTED_HYBRID_SHIMS:-"3.2 3.3 3.4"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda12"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
-PROJECT_VER=${PROJECT_VER:-"25.12.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"25.12.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"26.02.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"26.02.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.2.0"}
-SPARK_VER_213=${SPARK_VER_213:-"3.3.0"}
+SPARK_VER_213=${SPARK_VER_213:-"3.5.0"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
 # cloudera, and others) may not be a simple as just the version number, so

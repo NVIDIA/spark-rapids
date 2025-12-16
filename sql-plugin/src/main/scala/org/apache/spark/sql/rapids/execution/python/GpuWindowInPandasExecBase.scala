@@ -22,6 +22,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{GroupByAggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -242,7 +243,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
         ((ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), udf.resultId.id), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
+        assertInTests(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
         ((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id), udf.children)
     }
   }
@@ -492,14 +493,17 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     // UDF contains multiple columns.
     val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
+    val localMetrics = allMetrics
 
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
 
-      val boundDataRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs, childOutput)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs,
+        childOutput, localMetrics)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec,
+        childOutput, localMetrics)
       val batchProducer = new BatchProducer(
         new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
       val pyInputIterator = batchProducer.asIterator.map { batch =>

@@ -18,14 +18,33 @@ package com.nvidia.spark.rapids
 
 import scala.collection.immutable.TreeMap
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuTaskMetrics
+
+/**
+ * Trait for expressions that can have metrics injected after binding.
+ * This allows execution nodes to inject their metrics into expressions
+ * without coupling the expression construction to metric availability.
+ * Generally this should happen when a expression is bound, and will
+ * not be modified after that.
+ */
+trait GpuMetricsInjectable {
+  /**
+   * Inject metrics into this expression. Called after binding but before execution.
+   * Metrics injection is not always guaranteed to happen, also the node in the
+   * plan may not have added the metric that this expression expects. Generally if this
+   * method is not called or the metric this expression wants is not available, then
+   * the issue should be logged, but no exception should be thrown.
+   * @param metrics Map of metric names to GpuMetric instances
+   */
+  def injectMetrics(metrics: Map[String, GpuMetric]): Unit
+}
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
   def >=(other: MetricsLevel): Boolean =
@@ -70,7 +89,7 @@ class GpuMetricFactory(metricsConf: MetricsLevel, context: SparkContext) {
 object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
-  val BUFFER_TIME_WITH_SEM = "bufferTimeWithSem"
+  val BUFFER_TIME_BUBBLE = "bufferTimeBubble"
   val SCAN_TIME = "scanTime"
   val COPY_BUFFER_TIME = "copyBufferTime"
   val GPU_DECODE_TIME = "gpuDecodeTime"
@@ -91,7 +110,9 @@ object GpuMetric extends Logging {
   val AGG_TIME = "computeAggTime"
   val JOIN_TIME = "joinTime"
   val FILTER_TIME = "filterTime"
-  val FILTER_TIME_WITH_SEM = "filterTimeWithSem"
+  val FILTER_TIME_BUBBLE = "filterTimeBubble"
+  val SCHEDULE_TIME = "scheduleTime"
+  val SCHEDULE_TIME_BUBBLE = "scheduleTimeBubble"
   val BUILD_DATA_SIZE = "buildDataSize"
   val BUILD_TIME = "buildTime"
   val STREAM_TIME = "streamTime"
@@ -121,7 +142,7 @@ object GpuMetric extends Logging {
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
-  val DESCRIPTION_BUFFER_TIME_WITH_SEM = "buffer time with Sem."
+  val DESCRIPTION_BUFFER_TIME_BUBBLE = "buffer time (GPU underloaded)"
   val DESCRIPTION_COPY_BUFFER_TIME = "copy buffer time"
   val DESCRIPTION_GPU_DECODE_TIME = "GPU decode time"
   val DESCRIPTION_NUM_INPUT_ROWS = "input rows"
@@ -141,7 +162,9 @@ object GpuMetric extends Logging {
   val DESCRIPTION_AGG_TIME = "aggregation time"
   val DESCRIPTION_JOIN_TIME = "join time"
   val DESCRIPTION_FILTER_TIME = "filter time"
-  val DESCRIPTION_FILTER_TIME_WITH_SEM = "filter time with Sem."
+  val DESCRIPTION_FILTER_TIME_BUBBLE = "filter time (GPU underloaded)"
+  val DESCRIPTION_SCHEDULE_TIME = "I/O schedule time"
+  val DESCRIPTION_SCHEDULE_TIME_BUBBLE = "I/O schedule time (GPU underloaded)"
   val DESCRIPTION_SCAN_TIME = "scan time"
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
@@ -292,9 +315,54 @@ object GpuMetric extends Logging {
     }
   }
 
+  /**
+   * Given a compute block, track its GpuBubbleTime along with the wall time.
+   * GpuBubbleTime is the time when the GPU is NOT fully utilized during the compute block,
+   * which is useful to identify CPU/IO-bound bottlenecks preventing full GPU utilization.
+   */
+  def gpuBubbleTime[T](bubbleTime: GpuMetric,
+      wallTime: Option[GpuMetric] = None)(f: => T): T = {
+    // start a new Timer
+    val timer = GpuBubbleTimerManager.newTimer()
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      val end = System.nanoTime()
+      wallTime.foreach(_.add(end - start))
+      // settle the timer and accumulate the bubble time
+      bubbleTime += timer.close(end)
+    }
+  }
+
   object DEBUG_LEVEL extends MetricsLevel(0)
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
+
+  /**
+   * Inject metrics into expressions that implement GpuMetricsInjectable.
+   * Walks the expression tree and injects metrics into any expressions that support it.
+   * 
+   * @param expressions The expressions to inject metrics into
+   * @param metrics Map of metric names to GpuMetric instances
+   */
+  def injectMetrics(expressions: Seq[Expression], metrics: Map[String, GpuMetric]): Unit = {
+    expressions.foreach(injectMetricsIntoExpression(_, metrics))
+  }
+
+  /**
+   * Inject metrics into a single expression tree.
+   */
+  private def injectMetricsIntoExpression(expr: Expression, 
+      metrics: Map[String, GpuMetric]): Unit = {
+    expr match {
+      case injectable: GpuMetricsInjectable =>
+        injectable.injectMetrics(metrics)
+      case _ => // No metrics to inject
+    }
+    // Recursively inject into children
+    expr.children.foreach(injectMetricsIntoExpression(_, metrics))
+  }
 }
 
 sealed abstract class GpuMetric extends Serializable {
@@ -402,17 +470,17 @@ final class LocalGpuMetric extends GpuMetric {
 }
 
 class CollectTimeIterator[T](
-    nvtxName: String,
+    nvtxId: NvtxId,
     it: Iterator[T],
     collectTime: GpuMetric) extends Iterator[T] {
   override def hasNext: Boolean = {
-    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
+    NvtxIdWithMetrics(nvtxId, collectTime) {
       it.hasNext
     }
   }
 
   override def next(): T = {
-    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
+    NvtxIdWithMetrics(nvtxId, collectTime) {
       it.next
     }
   }

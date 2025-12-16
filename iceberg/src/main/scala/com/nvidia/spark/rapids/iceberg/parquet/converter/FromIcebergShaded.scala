@@ -38,6 +38,9 @@ import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
 object FromIcebergShaded {
   def unshade(columnOrder: ShadedColumnOrder): ColumnOrder = {
+    if (columnOrder == null) {
+      return null
+    }
     columnOrder.getColumnOrderName match {
       case ShadedColumnOrder.ColumnOrderName.UNDEFINED => ColumnOrder.undefined()
       case ShadedColumnOrder.ColumnOrderName.TYPE_DEFINED_ORDER => ColumnOrder.typeDefined()
@@ -46,18 +49,30 @@ object FromIcebergShaded {
   }
 
   def unshade(typeName: ShadedPrimitiveTypeName): PrimitiveTypeName = {
+    if (typeName == null) {
+      return null
+    }
     PrimitiveTypeName.valueOf(typeName.name())
   }
 
   def unshade(repetition: ShadedType.Repetition): Type.Repetition = {
+    if (repetition == null) {
+      return null
+    }
     Type.Repetition.valueOf(repetition.name())
   }
 
   def unshade(inner: ShadedTimeUnit): TimeUnit = {
+    if (inner == null) {
+      return null
+    }
     TimeUnit.valueOf(inner.name())
   }
 
   def unshade(inner: ShadedLogicalTypeAnnotation): LogicalTypeAnnotation = {
+    if (inner == null) {
+      return null
+    }
     inner.accept(new ShadedLogicalTypeAnnotationVisitor[LogicalTypeAnnotation] {
       override def visit(stringLogicalType: ShadedLogicalTypeAnnotation
       .StringLogicalTypeAnnotation): Optional[LogicalTypeAnnotation] = {
@@ -143,6 +158,9 @@ object FromIcebergShaded {
 
 
   def unshade(inner: ShadedType): Type = {
+    if (inner == null) {
+      return null
+    }
     inner match {
       case t: ShadedPrimitiveType => unshade(t)
       case t: ShadedMessageType => unshade(t)
@@ -152,6 +170,9 @@ object FromIcebergShaded {
   }
 
   def unshade(inner: ShadedMessageType): MessageType = {
+    if (inner == null) {
+      return null
+    }
     val builder = Types.buildMessage()
     inner.getFields.forEach { field =>
       builder.addField(unshade(field))
@@ -165,6 +186,9 @@ object FromIcebergShaded {
   }
 
   def unshade(inner: ShadedGroupType): GroupType = {
+    if (inner == null) {
+      return null
+    }
     val builder = Types.buildGroup(unshade(inner.getRepetition))
 
     inner.getFields.forEach { field =>
@@ -180,6 +204,9 @@ object FromIcebergShaded {
 
 
   def unshade(inner: ShadedPrimitiveType): PrimitiveType = {
+    if (inner == null) {
+      return null
+    }
     var builder = Types.primitive(unshade(inner.getPrimitiveTypeName),
         unshade(inner.getRepetition))
       .columnOrder(unshade(inner.columnOrder()))
@@ -197,18 +224,30 @@ object FromIcebergShaded {
   }
 
   def unshade(inner: ShadedEncoding): Encoding = {
+    if (inner == null) {
+      return null
+    }
     Encoding.valueOf(inner.name())
   }
 
   def unshade(inner: ShadedColumnPath): ColumnPath = {
+    if (inner == null) {
+      return null
+    }
     ColumnPath.get(inner.toArray: _*)
   }
 
   def unshade(inner: ShadedCompressionCodecName): CompressionCodecName = {
+    if (inner == null) {
+      return null
+    }
     CompressionCodecName.valueOf(inner.name())
   }
 
   def unshade(inner: ShadedColumnChunkProperties): ColumnChunkProperties = {
+    if (inner == null) {
+      return null
+    }
     ColumnChunkProperties.get(
       unshade(inner.getPath),
       unshade(inner.getPrimitiveType),
@@ -218,6 +257,10 @@ object FromIcebergShaded {
   }
 
   def unshade(inner: ShadedEncodingStats): EncodingStats = {
+    if (inner == null) {
+      return null
+    }
+
     val builder = new EncodingStats.Builder()
 
     if (inner.usesV2Pages()) {
@@ -236,10 +279,16 @@ object FromIcebergShaded {
   }
 
   def unshade(inner: ShadedIndexReference): IndexReference = {
+    if (inner == null) {
+      return null
+    }
     new IndexReference(inner.getOffset, inner.getLength)
   }
 
   def unshade(inner: ShadedStatistics[_]): Statistics[_] = {
+    if (inner == null) {
+      return null
+    }
     Statistics.getBuilderForReading(unshade(inner.`type`()))
       .withMin(inner.getMinBytes)
       .withMax(inner.getMaxBytes)
@@ -248,6 +297,9 @@ object FromIcebergShaded {
   }
 
   def unshade(inner: ShadedColumnChunkMetaData): ColumnChunkMetaData = {
+    if (inner == null) {
+      return null
+    }
     if (inner.isEncrypted) {
       throw new UnsupportedOperationException("Encrypted column chunks are not supported")
     }
@@ -267,6 +319,9 @@ object FromIcebergShaded {
   }
 
     def unshade(inner: ShadedBlockMetaData): BlockMetaData = {
+      if (inner == null) {
+        return null
+      }
       val ret = new BlockMetaData
       ret.setRowCount(inner.getRowCount)
       ret.setTotalByteSize(inner.getTotalByteSize)

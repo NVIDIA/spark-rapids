@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>25.12.0-SNAPSHOT</version>
+    <version>26.02.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -126,34 +126,6 @@
         --><!-- #endif scala-2.12 -->
         <!-- #if scala-2.12 --><!--
         <profile>
-            <id>release321cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321cdh</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>321cdh</buildver>
-                <spark.version>${spark321cdh.version}</spark.version>
-                <spark.test.version>${spark321cdh.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-                <cloudera.repo.enabled>true</cloudera.repo.enabled>
-                --><!-- #endif scala-2.12 -->
-                <!-- Keeping the scala plugin version 4.3.0 for details
-                check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
-                <!-- #if scala-2.12 --><!--
-                <scala.plugin.version>4.3.0</scala.plugin.version>
-            </properties>
-            <modules>
-                <module>shim-deps/cloudera</module>
-                <module>delta-lake/delta-20x</module>
-            </modules>
-        </profile>
-        --><!-- #endif scala-2.12 -->
-        <!-- #if scala-2.12 --><!--
-        <profile>
             <id>release322</id>
             <activation>
                 <property>
@@ -215,12 +187,10 @@
             </modules>
         </profile>
         --><!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 --><!--
         <profile>
             <id>release330</id>
             <activation>
-                <!-- #if scala-2.13 -->
-                <activeByDefault>true</activeByDefault>
-                <!-- #endif scala-2.13 -->
                 <property>
                     <name>buildver</name>
                     <value>330</value>
@@ -433,62 +403,7 @@
                 <module>delta-lake/delta-24x</module>
             </modules>
         </profile>
-        <profile>
-            <id>release330cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>330cdh</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>330cdh</buildver>
-                <spark.version>${spark330cdh.version}</spark.version>
-                <spark.test.version>${spark330cdh.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-21x</rapids.delta.artifactId1>
-                <rapids.delta.artifactId2>rapids-4-spark-delta-22x</rapids.delta.artifactId2>
-                <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
-                <cloudera.repo.enabled>true</cloudera.repo.enabled>
-                <!-- Keeping the scala plugin version 4.3.0 for details
-                check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
-                <scala.plugin.version>4.3.0</scala.plugin.version>
-            </properties>
-            <modules>
-                <module>shim-deps/cloudera</module>
-                <module>delta-lake/delta-21x</module>
-                <module>delta-lake/delta-22x</module>
-                <module>delta-lake/delta-23x</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release332cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>332cdh</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>332cdh</buildver>
-                <spark.version>${spark332cdh.version}</spark.version>
-                <spark.test.version>${spark332cdh.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-21x</rapids.delta.artifactId1>
-                <rapids.delta.artifactId2>rapids-4-spark-delta-22x</rapids.delta.artifactId2>
-                <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
-                <cloudera.repo.enabled>true</cloudera.repo.enabled>
-                <!-- Keeping the scala plugin version 4.3.0 for details
-                check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
-                <scala.plugin.version>4.3.0</scala.plugin.version>
-            </properties>
-            <modules>
-                <module>shim-deps/cloudera</module>
-                <module>delta-lake/delta-21x</module>
-                <module>delta-lake/delta-22x</module>
-                <module>delta-lake/delta-23x</module>
-            </modules>
-        </profile>
+        --><!-- #endif scala-2.12 -->
         <profile>
             <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=330db -->
             <!-- Note that 330db backports many features from Spark3.4.0 -->
@@ -563,6 +478,9 @@
         <profile>
             <id>release350</id>
             <activation>
+                <!-- #if scala-2.13 -->
+                <activeByDefault>true</activeByDefault>
+                <!-- #endif scala-2.13 -->
                 <property>
                     <name>buildver</name>
                     <value>350</value>
@@ -751,6 +669,30 @@
                 <module>iceberg</module>
             </modules>
         </profile>
+        <profile>
+            <id>release357</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>357</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>357</buildver>
+                <spark.version>${spark357.version}</spark.version>
+                <spark.test.version>${spark357.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
+                <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-33x</module>
+                <module>iceberg</module>
+            </modules>
+        </profile>
 	<!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
@@ -765,11 +707,11 @@
                 <spark.version>${spark400.version}</spark.version>
                 <spark.test.version>${spark400.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-40x</module>
             </modules>
         </profile>
         <profile>
@@ -785,11 +727,11 @@
                 <spark.version>${spark401.version}</spark.version>
                 <spark.test.version>${spark401.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-40x</module>
             </modules>
         </profile>
         <!-- #endif scala-2.13 -->
@@ -890,6 +832,7 @@
 
     <properties>
         <delta33x.version>3.3.0</delta33x.version>
+        <delta40x.version>4.0.0</delta40x.version>
         <!-- start dyn.shim properties -->
         <!--  TODO: Will remove 330db from the execluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
 	<dyn.shim.excluded.releases>330db</dyn.shim.excluded.releases>
@@ -901,15 +844,15 @@
         <buildver>320</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <java.major.version>8</java.major.version>
-        <spark.version>${spark330.version}</spark.version>
+        <spark.version>${spark350.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>25.12.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>25.12.0-SNAPSHOT</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>25.12.0-SNAPSHOT</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>26.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>26.02.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>26.02.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.13</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.13.14</scala.version>
@@ -920,7 +863,7 @@
         https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
-        <ucx.baseVersion>1.18.1</ucx.baseVersion>
+        <ucx.baseVersion>1.19.1-rc2</ucx.baseVersion>
         <roaringbitmap.version>1.0.6</roaringbitmap.version>
         <!-- ucx x86 is just the base version (implied), arm is specified under arm64 profile. -->
         <ucx.version>${ucx.baseVersion}</ucx.version>
@@ -957,7 +900,6 @@
          please update the snapshot-shims profile as well so it is accurate -->
         <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1</spark321.version>
-        <spark321cdh.version>3.2.1.3.2.7171000.0-3</spark321cdh.version>
         <spark322.version>3.2.2</spark322.version>
         <spark323.version>3.2.3</spark323.version>
         <spark324.version>3.2.4</spark324.version>
@@ -971,8 +913,6 @@
         <spark342.version>3.4.2</spark342.version>
         <spark343.version>3.4.3</spark343.version>
         <spark344.version>3.4.4</spark344.version>
-        <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
-        <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
@@ -984,6 +924,7 @@
         <spark354.version>3.5.4</spark354.version>
         <spark355.version>3.5.5</spark355.version>
         <spark356.version>3.5.6</spark356.version>
+        <spark357.version>3.5.7</spark357.version>
         <spark400.version>4.0.0</spark400.version>
         <spark401.version>4.0.1</spark401.version>
         <mockito.version>3.12.4</mockito.version>
@@ -1026,7 +967,6 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
-
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
@@ -1046,7 +986,7 @@
             320
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
-            330
+            350
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             321,
@@ -1056,7 +996,7 @@
         <jdk17.buildvers>
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
-            330,
+            350,
             400,
             401
         </jdk17.scala213.buildvers>
@@ -1410,6 +1350,11 @@ This will force full Scala code rebuild in downstream modules.
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>2.12.4</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <com.nvidia.spark.rapids.runningTests>true</com.nvidia.spark.rapids.runningTests>
+                        </systemPropertyVariables>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -1525,6 +1470,7 @@ This will force full Scala code rebuild in downstream modules.
                         <argLine>${argLine} -ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
+                            <com.nvidia.spark.rapids.runningTests>true</com.nvidia.spark.rapids.runningTests>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
                             <ai.rapids.refcount.debug>true</ai.rapids.refcount.debug>
                             <java.awt.headless>true</java.awt.headless>
