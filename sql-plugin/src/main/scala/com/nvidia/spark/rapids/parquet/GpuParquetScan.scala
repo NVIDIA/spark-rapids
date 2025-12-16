@@ -2261,6 +2261,8 @@ class MultiFileParquetPartitionReader(
 
     override def callImpl(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
+      // Mark the async thread as a pool thread within the RetryFramework
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         val startBytesRead = fileSystemBytesRead()
         val outputBlocks = withResource(outhmb) { _ =>
@@ -2287,6 +2289,7 @@ class MultiFileParquetPartitionReader(
           // the corrupted file. But it should be ok since there is no meta pointing to that "hole"
           (Seq.empty, 0)
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }
