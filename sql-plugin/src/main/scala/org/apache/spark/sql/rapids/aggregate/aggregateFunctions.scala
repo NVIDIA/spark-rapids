@@ -1518,12 +1518,21 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
     val castedForSum = GpuCoalesce(Seq(
       GpuCast(child, sumDataType),
       GpuLiteral.default(sumDataType)))
-    val forCount = GpuCast(GpuIsNotNull(child), LongType)
-    Seq(castedForSum, forCount)
+    // Pass through the original child for count - CudfCount with NullPolicy.EXCLUDE
+    // will handle null counting directly, avoiding the overhead of isnotnull + cast
+    Seq(castedForSum, child)
   }
 
   override def filteredInputProjection(filter: Expression): Seq[Expression] = {
-    inputProjection.map(e => GpuIf(filter, e, GpuLiteral.default(e.dataType)))
+    // For sum: if filter is false, use default value (0)
+    // For count: if filter is false, use null so CudfCount will exclude it
+    val castedForSum = GpuCoalesce(Seq(
+      GpuCast(child, sumDataType),
+      GpuLiteral.default(sumDataType)))
+    Seq(
+      GpuIf(filter, castedForSum, GpuLiteral.default(sumDataType)),
+      GpuIf(filter, child, GpuLiteral(null, child.dataType))
+    )
   }
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
@@ -1531,14 +1540,19 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
     GpuLiteral(0L, LongType))
 
   protected lazy val updateSum = new CudfSum(sumDataType)
-  protected lazy val updateCount = new CudfSum(LongType)
+  // Use CudfCount instead of CudfSum - it directly counts non-null values
+  // with NullPolicy.EXCLUDE, avoiding the overhead of isnotnull + cast
+  protected lazy val updateCount = new CudfCount(IntegerType)
 
-  // The count input projection will need to be collected as a sum (of counts) instead of
-  // counts (of counts) as the GpuIsNotNull o/p is casted to count=0 for null and 1 otherwise, and
-  // the total count can be correctly evaluated only by summing them. eg. avg(col(null, 27))
-  // should be 27, with count column projection as (0, 1) and total count for dividing the
-  // average = (0 + 1) and not 2 which is the rowcount of the projected column.
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateSum, updateCount)
+
+  // CudfCount returns IntegerType (cudf limitation), need to cast to LongType for Spark.
+  // This is safe because:
+  // 1. Update phase operates on individual batches/partitions, unlikely to exceed ~2.1B rows
+  // 2. Merge phase uses CudfSum(LongType) to accumulate counts across partitions
+  // This follows the same pattern as GpuCount.
+  override lazy val postUpdate: Seq[Expression] =
+    Seq(updateSum.attr, GpuCast(updateCount.attr, LongType))
 
   protected lazy val sum: AttributeReference = AttributeReference("sum", sumDataType)()
   protected lazy val count: AttributeReference = AttributeReference("count", LongType)()
@@ -1583,9 +1597,10 @@ case class GpuBasicAverage(child: Expression, dt: DataType, failOnError: Boolean
 abstract class GpuDecimalAverageBase(child: Expression, sumDataType: DecimalType,
                                      failOnError: Boolean)
   extends GpuAverage(child, sumDataType, failOnError) {
+  // CudfCount returns IntegerType, cast to LongType (see GpuAverage.postUpdate for details)
   override lazy val postUpdate: Seq[Expression] =
       Seq(GpuCheckOverflow(updateSum.attr, sumDataType, nullOnOverflow = !failOnError),
-        updateCount.attr)
+        GpuCast(updateCount.attr, LongType))
 
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
   // Cudf does not have such an aggregation, so for merge we have to work around that with an extra
@@ -1633,18 +1648,20 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType, failOnError:
     val chunks = (0 until 4).map {
       GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true)
     }
-    val forCount = GpuCast(GpuIsNotNull(child), LongType)
-    chunks :+ forCount
+    // Pass through the original child for count - CudfCount will handle nulls
+    chunks :+ child
   }
 
   private lazy val updateSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
 
   override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateCount
 
+  // CudfCount returns IntegerType, cast to LongType (see GpuAverage.postUpdate for details)
   override lazy val postUpdate: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt,
       nullOnOverflow = !failOnError, None)
-    Seq(GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = !failOnError), updateCount.attr)
+    Seq(GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = !failOnError),
+      GpuCast(updateCount.attr, LongType))
   }
 
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.

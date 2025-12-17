@@ -449,6 +449,16 @@ class AggHelper(
     GpuBindReferences.bindGpuReferencesTiered(preStep.toList, preStepAttributes.toList, 
       conf, metrics)
 
+  // Debug logging for preStep analysis
+  {
+    System.err.println("=" * 80)
+    System.err.println(s"[AggHelper] forceMerge=$forceMerge, preStep has ${preStep.size} exprs")
+    preStep.zipWithIndex.foreach { case (expr, i) =>
+      System.err.println(s"  preStep[$i] ${expr.getClass.getSimpleName}: $expr")
+    }
+    System.err.println("=" * 80)
+  }
+
   // a bound expression that is applied after the cuDF aggregate
   private val postStepBound =
     GpuBindReferences.bindGpuReferencesTiered(postStep.toList, postStepAttr.toList, conf, metrics)
