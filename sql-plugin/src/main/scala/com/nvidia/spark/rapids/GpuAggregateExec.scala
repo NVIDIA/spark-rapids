@@ -449,16 +449,6 @@ class AggHelper(
     GpuBindReferences.bindGpuReferencesTiered(preStep.toList, preStepAttributes.toList, 
       conf, metrics)
 
-  // Debug logging for preStep analysis
-  {
-    System.err.println("=" * 80)
-    System.err.println(s"[AggHelper] forceMerge=$forceMerge, preStep has ${preStep.size} exprs")
-    preStep.zipWithIndex.foreach { case (expr, i) =>
-      System.err.println(s"  preStep[$i] ${expr.getClass.getSimpleName}: $expr")
-    }
-    System.err.println("=" * 80)
-  }
-
   // a bound expression that is applied after the cuDF aggregate
   private val postStepBound =
     GpuBindReferences.bindGpuReferencesTiered(postStep.toList, postStepAttr.toList, conf, metrics)
@@ -476,23 +466,9 @@ class AggHelper(
     val inputBatch = SpillableColumnarBatch(toAggregateBatch,
       SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
 
-    System.err.println(s"[AggHelper.preProcess] START: " +
-      s"inputRows=${toAggregateBatch.numRows()}, " +
-      s"inputCols=${toAggregateBatch.numCols()}, " +
-      s"preStepExprs=${preStepBound.outputExprs.size}, " +
-      s"forceMerge=$forceMerge")
-
-    val startTime = System.nanoTime()
     val projectedCb = NvtxRegistry.AGG_PRE_PROCESS {
       preStepBound.projectAndCloseWithRetrySingleBatch(inputBatch)
     }
-    val elapsedMs = (System.nanoTime() - startTime) / 1e6
-
-    System.err.println(s"[AggHelper.preProcess] END: " +
-      s"outputRows=${projectedCb.numRows()}, " +
-      s"outputCols=${projectedCb.numCols()}, " +
-      s"elapsedMs=${"%.2f".format(elapsedMs)}")
-
     SpillableColumnarBatch(
       projectedCb,
       SpillPriorities.ACTIVE_BATCHING_PRIORITY)
