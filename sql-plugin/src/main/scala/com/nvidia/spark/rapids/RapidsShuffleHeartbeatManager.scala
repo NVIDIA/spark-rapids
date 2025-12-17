@@ -225,7 +225,10 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
             // Already registered, send heartbeat
             logTrace("Performing executor heartbeat to driver")
             ctx.ask(RapidsExecutorHeartbeatMsg(serverId)) match {
-              case RapidsExecutorUpdateMsg(peers) => updatePeers(rapidsShuffleManager, peers)
+              case RapidsExecutorUpdateMsg(peers) =>
+                updatePeers(rapidsShuffleManager, peers)
+              case other =>
+                logWarning(s"Unexpected response from driver: $other")
             }
           }
         }
