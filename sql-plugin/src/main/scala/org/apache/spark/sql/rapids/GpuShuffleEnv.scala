@@ -21,7 +21,7 @@ import java.util.Locale
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShuffleManagerShimUtils
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 
 class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
@@ -30,10 +30,8 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   private lazy val conf = SparkEnv.get.conf
 
-  private lazy val isRapidsShuffleConfigured: Boolean = {
-    conf.contains("spark.shuffle.manager") &&
-      conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
-  }
+  private lazy val isRapidsShuffleConfigured: Boolean =
+    GpuShuffleEnv.isRapidsShuffleConfigured(conf)
 
   lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
     val codecName = rapidsConf.shuffleCompressionCodec.toLowerCase(Locale.ROOT)
@@ -70,6 +68,16 @@ object GpuShuffleEnv extends Logging {
   }
 
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
+
+  /**
+   * Check if the RAPIDS shuffle manager is configured via spark.shuffle.manager
+   * and matches the current shim. This check doesn't require the shuffle manager
+   * to be instantiated yet.
+   */
+  def isRapidsShuffleConfigured(sparkConf: SparkConf): Boolean = {
+    sparkConf.contains("spark.shuffle.manager") &&
+      sparkConf.get("spark.shuffle.manager") == RAPIDS_SHUFFLE_CLASS
+  }
 
   @volatile private var env: GpuShuffleEnv = _
 
@@ -169,10 +177,9 @@ object GpuShuffleEnv extends Logging {
   }
 
   private def validateRapidsShuffleManager(shuffManagerClassName: String): Unit = {
-    val shuffleManagerStr = ShimLoader.getRapidsShuffleManagerClass
-    if (shuffManagerClassName != shuffleManagerStr) {
+    if (shuffManagerClassName != RAPIDS_SHUFFLE_CLASS) {
       throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
-          s"${shuffManagerClassName} != $shuffleManagerStr). " +
+          s"${shuffManagerClassName} != $RAPIDS_SHUFFLE_CLASS). " +
           s"Check that configuration setting spark.shuffle.manager is correct for the Spark " +
           s"version being used.")
     }
