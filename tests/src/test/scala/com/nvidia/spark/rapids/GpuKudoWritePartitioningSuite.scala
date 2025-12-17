@@ -32,7 +32,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId}
-import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, TrampolineUtil}
 import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
@@ -186,12 +186,14 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
   /**
    * Sets up the shuffle dependency for testing
+   * Returns both the dependency and the metrics map for reading metric values
    */
   private def setupShuffleDependency(
       spark: org.apache.spark.sql.SparkSession,
       inputRDD: org.apache.spark.rdd.RDD[ColumnarBatch],
       serializer: GpuColumnarBatchSerializer):
-      org.apache.spark.ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+      (org.apache.spark.ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
+          Map[String, GpuMetric]) = {
     val gpuPartitioning = GpuHashPartitioning(
       Seq(GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "key")),
       numPartitions)
@@ -200,10 +202,18 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       AttributeReference("id", IntegerType, nullable = true)(ExprId(0)),
       AttributeReference("name", StringType, nullable = true)(ExprId(1)))
 
-    val serializerMetrics = Map[String, GpuMetric]().withDefaultValue(NoopMetric)
     val writeMetrics = Map[String, SQLMetric]()
 
-    GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
+    // Create real metrics that we can read back, including required metrics
+    val partitionedArraysMetric = GpuMetric.wrap(
+      SQLMetrics.createMetric(spark.sparkContext,
+        GpuMetric.DESCRIPTION_NUM_PARTITIONED_ARRAYS))
+    val metrics = Map[String, GpuMetric](
+      GpuMetric.NUM_PARTITIONED_ARRAYS -> partitionedArraysMetric,
+      GpuShuffleExchangeExecBase.METRIC_SHUFFLE_PARTITION_TIME -> NoopMetric
+    ).withDefaultValue(NoopMetric)
+
+    val dependency = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
       outputAttributes,
       gpuPartitioning,
@@ -211,12 +221,13 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       serializer,
       useGPUShuffle = false,
       useMultiThreadedShuffle = false,
-      serializerMetrics,
+      metrics,
       writeMetrics,
       Map.empty,
       None,
       Seq.empty,
       enableOpTimeTrackingRdd = false)
+    (dependency, metrics)
   }
 
   /**
@@ -330,10 +341,15 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
       val serializer = createSerializer()
       val inputRDD = createInputRDD(spark)
-      val dependency = setupShuffleDependency(spark, inputRDD, serializer)
+      val (dependency, metrics) = setupShuffleDependency(spark, inputRDD, serializer)
 
       // Collect batches without OOM injection
       val (allPartitionedBatches, totalRowsSeen) = collectBatches(dependency, injectOOM = false)
+
+      // Verify partitioned arrays count equals number of input batches (2)
+      val partitionedArraysCount = metrics(GpuMetric.NUM_PARTITIONED_ARRAYS).value
+      assert(partitionedArraysCount == 2,
+        s"Expected 2 partitioned arrays (one per input batch), but got $partitionedArraysCount")
 
       // Verify batch contents match expected data
       verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer, "")
@@ -351,7 +367,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
       val serializer = createSerializer()
       val inputRDD = createInputRDD(spark)
-      val dependency = setupShuffleDependency(spark, inputRDD, serializer)
+      val (dependency, metrics) = setupShuffleDependency(spark, inputRDD, serializer)
 
       // Collect batches with OOM injection to trigger split retry
       val (allPartitionedBatches, totalRowsSeen) = collectBatches(dependency, injectOOM = true)
@@ -360,6 +376,12 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
       assert(retryCount > 0,
         s"Expected at least one split retry, but saw $retryCount retries")
+
+      // Verify partitioned arrays count: one batch splits (1->2), plus one normal batch = 3
+      val partitionedArraysCount = metrics(GpuMetric.NUM_PARTITIONED_ARRAYS).value
+      assert(partitionedArraysCount == 3,
+        s"Expected 3 partitioned arrays (split first batch produces 2, " +
+        s"second batch produces 1), but got $partitionedArraysCount")
 
       // Verify batch contents match expected data (even after split retry)
       verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer,
