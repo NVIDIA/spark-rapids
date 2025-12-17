@@ -221,7 +221,6 @@ abstract class GpuShuffleExchangeExecBase(
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    NUM_PARTITIONED_ARRAYS -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_PARTITIONED_ARRAYS),
     COPY_TO_HOST_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_TO_HOST_TIME)
   ) ++ additionalMetrics
 
@@ -438,7 +437,6 @@ object GpuShuffleExchangeExecBase {
             // Process the next partitioned array from the iterator
             if (partitionedIter.hasNext) {
               partitioned = partitionedIter.next()
-              metrics(GpuMetric.NUM_PARTITIONED_ARRAYS) += 1
               partitioned.foreach(batches => {
                 metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
               })

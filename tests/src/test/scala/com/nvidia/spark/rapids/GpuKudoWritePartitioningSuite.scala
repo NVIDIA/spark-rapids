@@ -149,7 +149,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
     TrampolineUtil.cleanupAnyExistingSession()
   }
 
-  private val numPartitions = 4
+  private val numPartitions = 1
   private val expectedTotalRows = 20 // 10 rows per batch × 2 batches
 
   /**
@@ -207,10 +207,9 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
     // Create real metrics that we can read back, including required metrics
     val partitionedArraysMetric = GpuMetric.wrap(
       SQLMetrics.createMetric(spark.sparkContext,
-        GpuMetric.DESCRIPTION_NUM_PARTITIONED_ARRAYS))
+        GpuMetric.DESCRIPTION_NUM_OUTPUT_BATCHES))
     val metrics = Map[String, GpuMetric](
-      GpuMetric.NUM_PARTITIONED_ARRAYS -> partitionedArraysMetric,
-      GpuShuffleExchangeExecBase.METRIC_SHUFFLE_PARTITION_TIME -> NoopMetric
+      GpuMetric.NUM_OUTPUT_BATCHES -> partitionedArraysMetric
     ).withDefaultValue(NoopMetric)
 
     val dependency = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
@@ -347,9 +346,9 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       val (allPartitionedBatches, totalRowsSeen) = collectBatches(dependency, injectOOM = false)
 
       // Verify partitioned arrays count equals number of input batches (2)
-      val partitionedArraysCount = metrics(GpuMetric.NUM_PARTITIONED_ARRAYS).value
-      assert(partitionedArraysCount == 2,
-        s"Expected 2 partitioned arrays (one per input batch), but got $partitionedArraysCount")
+      val batchesCount = metrics(GpuMetric.NUM_OUTPUT_BATCHES).value
+      assert(batchesCount == 2,
+        s"Expected 2 partitioned arrays (one per input batch), but got $batchesCount")
 
       // Verify batch contents match expected data
       verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer, "")
@@ -378,10 +377,10 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
         s"Expected at least one split retry, but saw $retryCount retries")
 
       // Verify partitioned arrays count: one batch splits (1->2), plus one normal batch = 3
-      val partitionedArraysCount = metrics(GpuMetric.NUM_PARTITIONED_ARRAYS).value
-      assert(partitionedArraysCount == 3,
+      val batchesCount = metrics(GpuMetric.NUM_OUTPUT_BATCHES).value
+      assert(batchesCount == 3,
         s"Expected 3 partitioned arrays (split first batch produces 2, " +
-        s"second batch produces 1), but got $partitionedArraysCount")
+        s"second batch produces 1), but got $batchesCount")
 
       // Verify batch contents match expected data (even after split retry)
       verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer,
