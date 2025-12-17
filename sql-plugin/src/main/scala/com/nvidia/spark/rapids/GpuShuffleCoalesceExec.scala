@@ -157,9 +157,9 @@ object GpuShuffleCoalesceUtils {
    */
   def createSplitPolicyByTargetSize[T <: AutoCloseable](
       tableOperator: SerializedTableOperator[T, _],
-      minSize: Long): SpillableTableSeqWithTargetSize[T] =>
-      Seq[SpillableTableSeqWithTargetSize[T]] = {
-    (wrapper: SpillableTableSeqWithTargetSize[T]) => {
+      minSize: Long): CloseableTableSeqWithTargetSize[T] =>
+      Seq[CloseableTableSeqWithTargetSize[T]] = {
+    (wrapper: CloseableTableSeqWithTargetSize[T]) => {
       // Don't close the wrapper here - withRetry will handle closing it.
       // The split sequences need to reference the same table objects.
       // First split the target size
@@ -209,8 +209,8 @@ object GpuShuffleCoalesceUtils {
       // withRetry will handle closing the wrapper and the split sequences
       // appropriately when each split sequence is processed.
       Seq(
-        SpillableTableSeqWithTargetSize(firstHalfTables, newTargetSize),
-        SpillableTableSeqWithTargetSize(secondHalfTables, newTargetSize)
+        CloseableTableSeqWithTargetSize(firstHalfTables, newTargetSize),
+        CloseableTableSeqWithTargetSize(secondHalfTables, newTargetSize)
       )
     }
   }
@@ -463,23 +463,11 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
 }
 
 /**
- * A wrapper for a sequence of tables that allows splitting the sequence
- * when OOM occurs. Needed because withRetry expects a single AutoCloseable,
- * but we want to split a sequence of tables.
- */
-case class SpillableTableSeqWrapper[T <: AutoCloseable](
-    tables: Seq[T]) extends AutoCloseable {
-  override def close(): Unit = {
-    tables.foreach(_.safeClose())
-  }
-}
-
-/**
  * A wrapper for a sequence of tables with target size information that allows
  * splitting based on byte size when OOM occurs. Extends Seq[T] so it can be
  * used directly as a sequence.
  */
-case class SpillableTableSeqWithTargetSize[T <: AutoCloseable](
+case class CloseableTableSeqWithTargetSize[T <: AutoCloseable](
     tables: Seq[T],
     targetSize: AutoCloseableTargetSize) extends Seq[T] with AutoCloseable {
   override def close(): Unit = {
@@ -516,8 +504,8 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
   @volatile protected[this] var pendingResultIter: Option[Iterator[R]] = None
 
   protected val tableOperator: SerializedTableOperator[T, R]
-  protected val splitPolicy: Option[SpillableTableSeqWithTargetSize[T] =>
-      Seq[SpillableTableSeqWithTargetSize[T]]] = None
+  protected val splitPolicy: Option[CloseableTableSeqWithTargetSize[T] =>
+      Seq[CloseableTableSeqWithTargetSize[T]]] = None
   protected val minSplitSizeForRetry: Long = minSplitSize
 
   // Don't install the callback if in a unit test
@@ -558,7 +546,7 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
         case Some(policy) =>
           // Create AutoCloseableTargetSize with targetBatchByteSize and minSplitSize
           val targetSizeWrapper = AutoCloseableTargetSize(targetBatchByteSize, minSplitSizeForRetry)
-          val wrapper = SpillableTableSeqWithTargetSize(tablesSeq, targetSizeWrapper)
+          val wrapper = CloseableTableSeqWithTargetSize(tablesSeq, targetSizeWrapper)
           val resultIter = withRetry(wrapper, policy) { wrappedSeq =>
             tableOperator.concat(wrappedSeq.toArray)
           }
@@ -853,8 +841,8 @@ class KudoHostShuffleCoalesceIterator(
 
   // Create the byte-size-based split policy after tableOperator is initialized
   override protected val splitPolicy: Option[
-      SpillableTableSeqWithTargetSize[KudoSerializedTableColumn] =>
-      Seq[SpillableTableSeqWithTargetSize[KudoSerializedTableColumn]]] = {
+      CloseableTableSeqWithTargetSize[KudoSerializedTableColumn] =>
+      Seq[CloseableTableSeqWithTargetSize[KudoSerializedTableColumn]]] = {
     Some(GpuShuffleCoalesceUtils.createSplitPolicyByTargetSize(tableOperator, minSplitSizeForRetry))
   }
 }
@@ -880,8 +868,8 @@ class KudoGpuShuffleCoalesceIterator(
 
   // Create the byte-size-based split policy after tableOperator is initialized
   override protected val splitPolicy: Option[
-      SpillableTableSeqWithTargetSize[KudoSerializedTableColumn] =>
-      Seq[SpillableTableSeqWithTargetSize[KudoSerializedTableColumn]]] = {
+      CloseableTableSeqWithTargetSize[KudoSerializedTableColumn] =>
+      Seq[CloseableTableSeqWithTargetSize[KudoSerializedTableColumn]]] = {
     Some(GpuShuffleCoalesceUtils.createSplitPolicyByTargetSize(tableOperator, minSplitSizeForRetry))
   }
 }
