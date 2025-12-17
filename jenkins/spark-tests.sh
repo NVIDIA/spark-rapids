@@ -278,7 +278,8 @@ run_iceberg_tests() {
   local test_type=${1:-'default'}
   if [[ "$test_type" == "default" ]]; then
     echo "!!! Running iceberg tests"
-    PYSP_TEST_spark_driver_memory="6G" \
+    PYSP_TEST_spark_driver_memory=6G \
+    PYSP_TEST_spark_executor_memory=6G \
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
@@ -292,6 +293,7 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
         env \
           ICEBERG_TEST_REMOTE_CATALOG=1 \
           PYSP_TEST_spark_driver_memory=6G \
+          PYSP_TEST_spark_executor_memory=6G \
           PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
           PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
           PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
@@ -333,6 +335,7 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
     env \
       ICEBERG_TEST_REMOTE_CATALOG=1 \
       PYSP_TEST_spark_driver_memory=6G \
+      PYSP_TEST_spark_executor_memory=6G \
       PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
       PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
