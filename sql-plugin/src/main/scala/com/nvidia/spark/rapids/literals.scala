@@ -20,6 +20,7 @@ import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float =
 import java.math.BigInteger
 import java.util
 import java.util.{List => JList, Objects}
+import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.TypeTag
@@ -27,11 +28,13 @@ import scala.reflect.runtime.universe.TypeTag
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
 import org.apache.commons.codec.binary.{Hex => ApacheHex}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Literal, UnsafeArrayData}
@@ -593,6 +596,43 @@ class GpuScalar private(
 }
 
 object GpuLiteral {
+
+  // Per-task cache: taskId -> (GpuLiteral -> GpuScalar)
+  // GpuLiterals with same value and dataType in the same task share the same GpuScalar.
+  // GpuLiteral's equals/hashCode already handles Array[Byte] correctly.
+  private val taskScalarCache =
+    new ConcurrentHashMap[Long, ConcurrentHashMap[GpuLiteral, GpuScalar]]()
+
+  /**
+   * Get or create a cached GpuScalar for the given GpuLiteral.
+   * If a scalar for an equal GpuLiteral already exists in the current task,
+   * it will be reused. Otherwise a new scalar is created and cached.
+   */
+  def getOrCreateCachedScalar(literal: GpuLiteral): GpuScalar = {
+    val tc = TaskContext.get()
+    if (tc == null) {
+      // No task context (e.g., in unit tests), just create a new scalar without caching
+      GpuScalar(literal.value, literal.dataType)
+    } else {
+      val taskId = tc.taskAttemptId()
+      val cache = taskScalarCache.computeIfAbsent(taskId, _ => {
+        // First access for this task, register the cleanup callback
+        onTaskCompletion(tc) {
+          cleanupTaskScalars(taskId)
+        }
+        new ConcurrentHashMap[GpuLiteral, GpuScalar]()
+      })
+      cache.computeIfAbsent(literal, _ => GpuScalar(literal.value, literal.dataType))
+    }
+  }
+
+  private def cleanupTaskScalars(taskId: Long): Unit = {
+    val cache = taskScalarCache.remove(taskId)
+    if (cache != null) {
+      cache.values().forEach(_.close())
+    }
+  }
+
   /**
    * Create a `GpuLiteral` from a Scala value, by leveraging the corresponding CPU
    * APIs to do the data conversion and type checking, which are quite complicated.
@@ -634,6 +674,11 @@ object GpuLiteral {
  * In order to do type conversion and checking, use GpuLiteral.create() instead of constructor.
  */
 case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression {
+
+  // Get cached scalar from per-task cache.
+  // GpuLiterals with same value and dataType in the same task share the same GpuScalar.
+  @transient private lazy val cachedScalar: GpuScalar =
+    GpuLiteral.getOrCreateCachedScalar(this)
 
   // Assume this came from Spark Literal and no need to call Literal.validateLiteralValue here.
 
@@ -716,9 +761,8 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
   }
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    // Returns a Scalar instead of the value to support the scalar of nested type, and
-    // simplify the handling of result from a `expr.columnarEval`.
-    GpuScalar(value, dataType)
+    // Returns a cached Scalar with incRefCount to avoid repeated cudaMalloc
+    cachedScalar.incRefCount
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
