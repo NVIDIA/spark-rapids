@@ -47,7 +47,7 @@ fi
 $WGET_CMD $PROJECT_TEST_REPO/com/nvidia/rapids-4-spark-integration-tests_$SCALA_BINARY_VER/$PROJECT_TEST_VER/rapids-4-spark-integration-tests_$SCALA_BINARY_VER-$PROJECT_TEST_VER-pytest.tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
-# The version of pytest.tar.gz that is uploaded is the one built against spark320 but its being pushed without classifier for now
+# The version of pytest.tar.gz that is uploaded is the one built against spark330 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
 
 tmp_info=${TMP_INFO_FILE:-'/tmp/artifacts-build.info'}
@@ -244,18 +244,33 @@ run_delta_lake_tests() {
 }
 
 run_iceberg_tests() {
-  # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
-  ICEBERG_VERSION=1.6.1
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
-  IS_SPARK_35X=0
-  # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
-  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
-    IS_SPARK_35X=1
-  fi
+  # get the patch version of Spark
+  SPARK_PATCH_VER=$(echo "$SPARK_VER" | cut -d. -f3)
 
-  # RAPIDS-iceberg only supports Spark 3.5.x yet
-  if [[ "$IS_SPARK_35X" -ne "1" ]]; then
+  # Determine Iceberg version based on Spark version and Scala version
+  # Scala 2.12 + Spark 3.5.x -> Iceberg 1.6.1
+  # Scala 2.13 + Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
+  # Scala 2.13 + Spark 3.5.4-3.5.7 -> Iceberg 1.9.2
+  # Otherwise -> skip
+  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
+    if [[ "$SCALA_BINARY_VER" == "2.12" ]]; then
+      ICEBERG_VERSION=1.6.1
+    elif [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
+      if [[ "$SPARK_PATCH_VER" -ge 0 && "$SPARK_PATCH_VER" -le 3 ]]; then
+        ICEBERG_VERSION=1.6.1
+      elif [[ "$SPARK_PATCH_VER" -ge 4 && "$SPARK_PATCH_VER" -le 7 ]]; then
+        ICEBERG_VERSION=1.9.2
+      else
+        echo "!!!! Skipping Iceberg tests. Spark patch version $SPARK_PATCH_VER is not supported for Scala $SCALA_BINARY_VER"
+        return 0
+      fi
+    else
+      echo "!!!! Skipping Iceberg tests. Scala version $SCALA_BINARY_VER is not supported"
+      return 0
+    fi
+  else
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
   fi

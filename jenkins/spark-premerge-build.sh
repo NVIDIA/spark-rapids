@@ -49,7 +49,7 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}"
     do
         echo "Spark version: $version"
-        # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
+        # build and run unit tests on one specific version for each sub-version (e.g. 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
         match=1
         for element in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}"; do
@@ -90,12 +90,12 @@ mvn_verify() {
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
     # things we care about
-    SPK_VER=${JACOCO_SPARK_VER:-"320"}
+    SPK_VER=${JACOCO_SPARK_VER:-"330"}
     mkdir -p target/jacoco_classes/
     FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
     UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
     pushd target/jacoco_classes/
-    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-320}/"
+    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-330}/"
     # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
     # because the class files in udf jar will be modified in aggregator's shade phase
     jar xf "$UDF_JAR" com/nvidia/spark/udf
@@ -235,7 +235,7 @@ ci_scala213() {
 }
 
 prepare_spark() {
-    spark_version=${1:-'3.2.0'}
+    spark_version=${1:-'3.3.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"
