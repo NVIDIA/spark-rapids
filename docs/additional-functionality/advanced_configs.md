@@ -356,6 +356,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.SecondsToTimestamp"></a>spark.rapids.sql.expression.SecondsToTimestamp|`timestamp_seconds`|Converts the number of seconds from unix epoch to a timestamp|true|None|
 <a name="sql.expression.Sequence"></a>spark.rapids.sql.expression.Sequence|`sequence`|Sequence|true|None|
 <a name="sql.expression.Sha1"></a>spark.rapids.sql.expression.Sha1|`sha1`, `sha`|Sha1 hash operator|true|None|
+<a name="sql.expression.Sha2"></a>spark.rapids.sql.expression.Sha2|`sha2`|Sha2 hash operator|true|None|
 <a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|`shiftleft`|Bitwise shift left (<<)|true|None|
 <a name="sql.expression.ShiftRight"></a>spark.rapids.sql.expression.ShiftRight|`shiftright`|Bitwise shift right (>>)|true|None|
 <a name="sql.expression.ShiftRightUnsigned"></a>spark.rapids.sql.expression.ShiftRightUnsigned|`shiftrightunsigned`|Bitwise unsigned shift right (>>>)|true|None|

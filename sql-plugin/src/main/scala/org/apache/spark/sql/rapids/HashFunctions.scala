@@ -18,15 +18,15 @@ package org.apache.spark.sql.rapids
 
 import java.util.Optional
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuLiteral, GpuProjectExec, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.shims.{HashUtils, NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
+import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, Sha2}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -69,6 +69,117 @@ case class GpuSha1(child: Expression)
       withResource(ColumnVector.sha1Hash(normalizedStringCV)) { fullResult =>
         // necessary because cudf treats nulls as "" for hashing
         fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, normalizedStringCV)
+      }
+    }
+  }
+}
+
+/**
+ * GPU implementation of the SHA2 hash function set.
+ * Note:
+ *   - Only bit lengths of 0, 224, 256, 384, and 512 are supported.
+ *   - A bit length of 0 is treated as 256, following Spark behaviour.
+ *   - For the GPU implementation, the bit length must be provided as a literal.
+ *     This differs from the CPU implementation, where the bit length can differ
+ *     per row.
+ * @see https://spark.apache.org/docs/latest/api/sql/index.html#sha2
+ * @param left The BINARY input column to be hashed.
+ * @param right The INTEGER literal bitlength for hashing.
+ */
+case class GpuSha2(left: Expression, right: Expression)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+  private val childExpr: Expression = left
+  private val bitLengthExpr: Expression = right
+  override def toString: String = s"sha2($childExpr, $bitLength)"
+  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType, IntegerType)
+  override def dataType: DataType = StringType
+
+  private val bitLength: Option[Int] = bitLengthExpr match {
+    case lit: GpuLiteral if lit.value.isInstanceOf[Int] =>
+      lit.value.asInstanceOf[Int] match {
+        case 224 | 256 | 384 | 512 => Some(lit.value.asInstanceOf[Int])
+        case 0 => Some(256) // Spark default
+        case _ => None // SHA2 returns null for other bit lengths.
+      }
+    case _ => None
+  }
+
+  override def nullable: Boolean = childExpr.nullable || bitLength.isEmpty
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    if (bitLength.isEmpty) {
+      // SHA2 returns null for "unsupported" bit lengths.
+      withResource(Scalar.fromNull(DType.STRING)) { nullStringExemplar =>
+        ColumnVector.fromScalar(nullStringExemplar, lhs.getRowCount.toInt)
+      }
+    } else {
+        bitLength match {
+          case Some(224) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+            Hash.sha224NullsPreserved(_)
+          }
+          case Some(256) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+            Hash.sha256NullsPreserved(_)
+          }
+          case Some(384) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+            Hash.sha384NullsPreserved(_)
+          }
+          case Some(512) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+            Hash.sha512NullsPreserved(_)
+          }
+          case unexpected =>
+            throw new UnsupportedOperationException(s"Unsupported bit length for SHA2: $unexpected")
+        }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    doColumnar(GpuColumnVector.from(lhs, numRows, lhs.dataType), rhs)
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException("Only literal bit lengths are supported for SHA2")
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException("Only literal bit lengths are supported for SHA2")
+  }
+}
+
+object GpuSha2 {
+
+  def getStringViewOfBinaryColumn(col: ColumnView): ColumnVector = {
+    withResource(col.getChildColumnView(0)) { dataCol =>
+      withResource(new ColumnView(DType.STRING, col.getRowCount,
+        Optional.of[java.lang.Long](col.getNullCount),
+        dataCol.getData, col.getValid, col.getOffsets)) { cv =>
+        cv.copyToColumnVector()
+      }
+    }
+  }
+
+  def getMeta(e: Sha2,
+              conf: RapidsConf,
+              p: Option[RapidsMeta[_, _, _]],
+              r: DataFromReplacementRule): BinaryExprMeta[Sha2] = {
+    new BinaryExprMeta[Sha2](e, conf, p, r) {
+      // TODO: Probably don't need tagExprForGpu after expr lit checks.
+      override def tagExprForGpu(): Unit = {
+        e.right match {
+          case lit: org.apache.spark.sql.catalyst.expressions.Literal =>
+            if (!lit.dataType.isInstanceOf[IntegerType]) {
+              willNotWorkOnGpu(s"SHA2 second argument must be an integer literal, found $lit")
+            }
+          case _ =>
+            willNotWorkOnGpu(s"SHA2 second argument must be an integer literal, found ${e.right}")
+        }
+      }
+
+      override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+        // Extract the bit length from the rhs literal.
+//        val bitLength = e.right.asInstanceOf[org.apache.spark.sql.catalyst.expressions.Literal]
+//          .value.asInstanceOf[Int]
+//        GpuSha2(lhs, if (bitLength == 0) 256 else bitLength)
+        GpuSha2(lhs, rhs)
       }
     }
   }
