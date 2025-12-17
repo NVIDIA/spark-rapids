@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -25,7 +27,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, SortOrder, SpecializedGetters, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, SortOrder, SpecializedGetters, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator, GenerateUnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
@@ -601,6 +603,7 @@ class RowToColumnarIterator(
   private var targetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
+  private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
 
   override def hasNext: Boolean = rowIter.hasNext
 
@@ -634,11 +637,17 @@ class RowToColumnarIterator(
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
+        val converter = new RetryableRowConverter(builders, rowCopyProjection)
         // read at least one row
         while (rowIter.hasNext &&
             (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
-          val row = rowIter.next()
-          byteCount += converters.convert(row, builders)
+          converter.attempt(rowIter.next())
+          val bytesWritten = withRetryNoSplit {
+            withRestoreOnRetry(converter) {
+              converters.convert(converter.currentRow, builders)
+            }
+          }
+          byteCount += bytesWritten
           rowCount += 1
         }
 
@@ -678,6 +687,85 @@ class RowToColumnarIterator(
       }
     }
   }
+
+}
+
+/**
+ * A retryable row converter that integrates with the retry framework via `withRestoreOnRetry`.
+ *
+ * The design defers expensive operations to when OOM actually occurs:
+ * - Builder state is captured lazily on first `currentRow` access (before convert runs)
+ * - Row copying is deferred to `restore()` - only happens if OOM occurs
+ * - `checkpoint()` is a no-op since we capture state lazily
+ *
+ * This class is designed to be reused across multiple rows to minimize object allocation
+ * overhead. Call `attempt()` with a new row before each conversion attempt.
+ *
+ * This minimizes overhead in the common case (no OOM) while still enabling proper
+ * rollback when OOM does occur.
+ */
+private class RetryableRowConverter(
+    builders: GpuColumnarBatchBuilder,
+    projection: UnsafeProjection)
+  extends Retryable {
+
+  // The current row being converted - set via attempt()
+  private var initialRow: InternalRow = _
+
+  // Builder state - captured once on first call to ensureSnapshotCaptured()
+  private var builderSnapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot] = _
+  private var snapshotCaptured: Boolean = false
+
+  // Row snapshot - only created when restore() is called (i.e., OOM happened)
+  private var rowSnapshot: Option[UnsafeRow] = None
+
+  /**
+   * Attempt the conversion for a new row. This must be called before each row conversion.
+   */
+  def attempt(row: InternalRow): Unit = {
+    initialRow = row
+    snapshotCaptured = false
+    rowSnapshot = None
+  }
+
+  /**
+   * Ensures builder state is captured exactly once, before conversion starts.
+   * This must be called before convert() to enable rollback on OOM.
+   */
+  private def ensureSnapshotCaptured(): Unit = {
+    if (!snapshotCaptured) {
+      builderSnapshots = builders.captureState()
+      snapshotCaptured = true
+    }
+  }
+
+  /**
+   * The row to convert. Captures builder state on first access.
+   * After restore(), returns the copied row for retry.
+   */
+  def currentRow: InternalRow = {
+    ensureSnapshotCaptured()
+    rowSnapshot.getOrElse(initialRow)
+  }
+
+  override def checkpoint(): Unit = ()
+
+  /**
+   * Called by withRestoreOnRetry when an OOM occurs.
+   * Copies the row (for retry) and rolls back the builders to pre-conversion state.
+   */
+  override def restore(): Unit = {
+    // Snapshot the row for the retry attempt (only on first restore)
+    if (rowSnapshot.isEmpty) {
+      rowSnapshot = Some(initialRow match {
+        case unsafe: UnsafeRow => unsafe.copy()
+        case other => projection.apply(other).copy()
+      })
+    }
+    // Roll back builders to state before this row's conversion started
+    builders.restoreState(builderSnapshots)
+  }
+
 }
 
 object GeneratedInternalRowToCudfRowIterator extends Logging {

@@ -283,6 +283,37 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return builders[i];
     }
 
+    /**
+     * Capture the current state of all column builders for rollback on OOM.
+     * @return array of snapshots, one per builder
+     */
+    public RapidsHostColumnBuilder.BuilderSnapshot[] captureState() {
+      RapidsHostColumnBuilder.BuilderSnapshot[] snapshots =
+          new RapidsHostColumnBuilder.BuilderSnapshot[builders.length];
+      for (int i = 0; i < builders.length; i++) {
+        if (builders[i] != null) {
+          snapshots[i] = builders[i].captureState();
+        }
+      }
+      return snapshots;
+    }
+
+    /**
+     * Restore all column builders to a previously captured state.
+     * @param snapshots the snapshots captured via {@link #captureState()}
+     */
+    public void restoreState(RapidsHostColumnBuilder.BuilderSnapshot[] snapshots) {
+      if (snapshots == null || snapshots.length != builders.length) {
+        throw new IllegalArgumentException(
+            "Snapshot array must match builders length");
+      }
+      for (int i = 0; i < builders.length; i++) {
+        if (snapshots[i] != null && builders[i] != null) {
+          builders[i].restoreState(snapshots[i]);
+        }
+      }
+    }
+
     @Override
     protected ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
