@@ -207,11 +207,25 @@ def test_iceberg_merge_full_coverage(spark_tmp_table_factory, partition_col_sql,
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize('merge_mode', ['copy-on-write'])
+@pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('partition_col_sql', [
+    pytest.param(None, id="unpartitioned"),
     pytest.param("year(_c9)", id="year(timestamp_col)"),
 ])
 @pytest.mark.parametrize('merge_sql', [
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED AND t._c2 % 2 = 0 THEN UPDATE SET t._c1 = s._c1
+        WHEN NOT MATCHED THEN INSERT *
+        """,
+        id="conditional_update"),
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED THEN DELETE
+        """,
+        id="delete_when_matched"),
     pytest.param(
         """
         MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
@@ -220,6 +234,27 @@ def test_iceberg_merge_full_coverage(spark_tmp_table_factory, partition_col_sql,
         WHEN NOT MATCHED THEN INSERT *
         """,
         id="multiple_matched_clauses"),
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN NOT MATCHED THEN INSERT *
+        """,
+        id="insert_only"),
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        WHEN NOT MATCHED BY SOURCE THEN DELETE
+        """,
+        id="not_matched_by_source_delete"),
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED BY SOURCE AND t._c2 > 0 THEN DELETE
+        """,
+        id="conditional_not_matched_by_source"),
 ])
 def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
     """Test additional MERGE patterns (conditional updates, deletes, not matched by source) on Iceberg tables."""
