@@ -59,8 +59,8 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
     .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
   enableSuite[RapidsDateFunctionsSuite]
-    .exclude("function to_date", WONT_FIX_ISSUE("CPU expects SparkException for invalid date format, but GPU with incompatibleDateFormats.enabled=true has different behavior. This is a known architectural difference documented in compatibility.md"))
-    //.exclude("unix_timestamp", WONT_FIX_ISSUE("GPU with incompatibleDateFormats.enabled=true parses dates differently than CPU for invalid formats - returns values instead of null. This is documented behavior."))
+    .exclude("function to_date", WONT_FIX_ISSUE("CPU expects SparkException for invalid date format, but GPU with incompatibleDateFormats.enabled=true has different behavior. This is a known difference documented in compatibility.md"))
+    .exclude("unix_timestamp", WONT_FIX_ISSUE("GPU with incompatibleDateFormats.enabled=true parses dates differently than CPU for invalid formats - returns values instead of null. This is documented behavior."))
     .exclude("to_unix_timestamp", WONT_FIX_ISSUE("GPU with incompatibleDateFormats.enabled=true parses dates differently than CPU for invalid formats - returns values instead of null. This is documented behavior."))
   enableSuite[RapidsDecimalExpressionSuite]
     .exclude("MakeDecimal", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13816"))
