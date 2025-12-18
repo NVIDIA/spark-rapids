@@ -502,8 +502,8 @@ object GpuScalar extends Logging {
  * Do not create a GpuScalar from the constructor, instead call the factory APIs above.
  */
 class GpuScalar private(
-    private var scalar: Option[Scalar],
-    private var value: Option[Any],
+    @volatile private var scalar: Option[Scalar],
+    @volatile private var value: Option[Any],
     val dataType: DataType) extends AutoCloseable {
 
   private var refCount: Int = 0
@@ -524,20 +524,42 @@ class GpuScalar private(
    * the return cudf Scalar, not both.
    */
   def getBase: Scalar = {
-    if (scalar.isEmpty) {
-      scalar = Some(GpuScalar.from(value.get, dataType))
+    // Fast path: scalar already initialized (no lock needed)
+    val s = scalar
+    if (s != null && s.isDefined) {
+      return s.get
     }
-    scalar.get
+    // Slow path: need to initialize or handle closed state
+    this.synchronized {
+      if (scalar == null) {
+        throw new IllegalStateException("GpuScalar is already closed")
+      }
+      if (scalar.isEmpty) {
+        scalar = Some(GpuScalar.from(value.get, dataType))
+      }
+      scalar.get
+    }
   }
 
   /**
    * Gets the internal Scala value of this GpuScalar.
    */
   def getValue: Any = {
-    if (value.isEmpty) {
-      value = Some(GpuScalar.extract(scalar.get))
+    // Fast path: value already initialized (no lock needed)
+    val v = value
+    if (v != null && v.isDefined) {
+      return v.get
     }
-    value.get
+    // Slow path: need to initialize or handle closed state
+    this.synchronized {
+      if (value == null) {
+        throw new IllegalStateException("GpuScalar is already closed")
+      }
+      if (value.isEmpty) {
+        value = Some(GpuScalar.extract(scalar.get))
+      }
+      value.get
+    }
   }
 
   /**
