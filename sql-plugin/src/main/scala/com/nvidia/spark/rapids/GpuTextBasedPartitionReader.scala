@@ -472,32 +472,34 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     // to close them after creating the table
     withResource(columns) { _ =>
       for (i <- 0 until table.getNumberOfColumns) {
-        val castColumn = readSchema.fields(i).dataType match {
-          case DataTypes.BooleanType =>
-            castStringToBool(table.getColumn(i))
-          case DataTypes.ByteType =>
-            castStringToInt(table.getColumn(i), DType.INT8)
-          case DataTypes.ShortType =>
-            castStringToInt(table.getColumn(i), DType.INT16)
-          case DataTypes.IntegerType =>
-            castStringToInt(table.getColumn(i), DType.INT32)
-          case DataTypes.LongType =>
-            castStringToInt(table.getColumn(i), DType.INT64)
-          case DataTypes.FloatType =>
-            castStringToFloat(table.getColumn(i), DType.FLOAT32)
-          case DataTypes.DoubleType =>
-            castStringToFloat(table.getColumn(i), DType.FLOAT64)
-          case dt: DecimalType =>
-            castStringToDecimal(table.getColumn(i), dt)
-          case DataTypes.DateType =>
-            castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
-          case DataTypes.TimestampType =>
-            castStringToTimestamp(table.getColumn(i),
-              timestampFormat, DType.TIMESTAMP_MICROSECONDS)
-          case other if GpuTypeShims.supportCsvRead(other) =>
-            GpuTypeShims.csvRead(table.getColumn(i), other)
-          case _ =>
-            table.getColumn(i).incRefCount()
+        val castColumn = withRetryNoSplit[ColumnVector] {
+          readSchema.fields(i).dataType match {
+            case DataTypes.BooleanType =>
+              castStringToBool(table.getColumn(i))
+            case DataTypes.ByteType =>
+              castStringToInt(table.getColumn(i), DType.INT8)
+            case DataTypes.ShortType =>
+              castStringToInt(table.getColumn(i), DType.INT16)
+            case DataTypes.IntegerType =>
+              castStringToInt(table.getColumn(i), DType.INT32)
+            case DataTypes.LongType =>
+              castStringToInt(table.getColumn(i), DType.INT64)
+            case DataTypes.FloatType =>
+              castStringToFloat(table.getColumn(i), DType.FLOAT32)
+            case DataTypes.DoubleType =>
+              castStringToFloat(table.getColumn(i), DType.FLOAT64)
+            case dt: DecimalType =>
+              castStringToDecimal(table.getColumn(i), dt)
+            case DataTypes.DateType =>
+              castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
+            case DataTypes.TimestampType =>
+              castStringToTimestamp(table.getColumn(i),
+                timestampFormat, DType.TIMESTAMP_MICROSECONDS)
+            case other if GpuTypeShims.supportCsvRead(other) =>
+              GpuTypeShims.csvRead(table.getColumn(i), other)
+            case _ =>
+              table.getColumn(i).incRefCount()
+          }
         }
         columns += castColumn
       }
@@ -532,8 +534,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
-        val castTable = withRetryNoSplit(table) { decodedTable =>
-          castTableToDesiredTypes(decodedTable, newReadDataSchema)
+        val castTable = withResource(table) { _ =>
+          castTableToDesiredTypes(table, newReadDataSchema)
         }
 
         handleResult(newReadDataSchema, castTable)

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.window
 
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Table => CudfTable}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
@@ -161,61 +161,73 @@ class GpuBatchedBoundedWindowIterator(
     var outputBatch: ColumnarBatch = null
     while (outputBatch == null  &&  hasNext) {
       withResource(getNextInputBatch) { inputCbSpillable =>
-        withResource(inputCbSpillable.getColumnarBatch()) { inputCB =>
-
-          val inputRowCount = inputCB.numRows()
-          val noMoreInput = !input.hasNext
-          numUnprocessedInCache = if (noMoreInput) {
-            // If there are no more input rows expected,
-            // this is the last output batch.
-            // Consider all rows in the batch as processed.
+        val inputRowCount = inputCbSpillable.numRows()
+        val noMoreInput = !input.hasNext
+        val outputTrimPrecedingRows = numPrecedingRowsAdded
+        numUnprocessedInCache = if (noMoreInput) {
+          // If there are no more input rows expected,
+          // this is the last output batch.
+          // Consider all rows in the batch as processed.
+          0
+        } else {
+          // More input rows expected. The last `maxFollowing` rows can't be finalized.
+          // Cannot exceed `inputRowCount`.
+          if (maxFollowing < 0) { // E.g. LAG(3) => [ preceding=-3, following=-3 ]
+            // -ve following => No need to wait for more following rows.
+            // All "following" context is already available in the current batch.
             0
           } else {
-            // More input rows expected. The last `maxFollowing` rows can't be finalized.
-            // Cannot exceed `inputRowCount`.
-            if (maxFollowing < 0) { // E.g. LAG(3) => [ preceding=-3, following=-3 ]
-              // -ve following => No need to wait for more following rows.
-              // All "following" context is already available in the current batch.
-              0
-            } else {
-              maxFollowing min inputRowCount
-            }
+            maxFollowing min inputRowCount
           }
+        }
 
-          if (numPrecedingRowsAdded + numUnprocessedInCache >= inputRowCount) {
-            // No point calling windowing kernel: the results will simply be ignored.
-            logWarning("Not enough rows! Cannot output a batch.")
-          } else {
-            outputBatch = withRetryNoSplit {
-              NvtxIdWithMetrics(NvtxRegistry.WINDOW_EXEC, opTime) {
-                withResource(computeBasicWindow(inputCB)) { outputCols =>
-                  withResource(
-                    trim(outputCols,
-                      numPrecedingRowsAdded, numUnprocessedInCache)) { trimmed =>
-                    convertToBatch(outputTypes, trimmed)
-                  }
-                }
-              }
-            }
-          }
+        val shouldOutput = outputTrimPrecedingRows + numUnprocessedInCache < inputRowCount
+        if (!shouldOutput) {
+          // No point calling windowing kernel: the results will simply be ignored.
+          logWarning("Not enough rows! Cannot output a batch.")
+        }
 
-          // Compute new cache using current input.
-          numPrecedingRowsAdded = if (minPreceding > 0) { // E.g. LEAD(3) => [prec=3, foll=3]
+        // Compute new cache using current input.
+        numPrecedingRowsAdded = if (minPreceding > 0) { // E.g. LEAD(3) => [prec=3, foll=3]
             // preceding > 0 => No "preceding" rows need be carried forward.
             // Only the rows that need to be recomputed.
             0
           } else {
             Math.abs(minPreceding) min (inputRowCount - numUnprocessedInCache)
           }
-          val inputCols = Range(0, inputCB.numCols()).map {
-            inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
-          }.toArray
 
-          val newCached = trim(inputCols,
-            inputRowCount - (numPrecedingRowsAdded + numUnprocessedInCache),
-            0)
-          resetInputCache(Some(newCached), numPrecedingRowsAdded)
+        // Materialize inside the retry block to uphold the withRetry contract: any GPU
+        // data held across retries must be spillable.
+        val (maybeOutputBatch, newCached) = withRetryNoSplit {
+          withResource(inputCbSpillable.getColumnarBatch()) { inputCB =>
+            val inputCols = Range(0, inputCB.numCols()).map {
+              inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
+            }.toArray
+
+            val newCached = trim(inputCols,
+              inputRowCount - (numPrecedingRowsAdded + numUnprocessedInCache),
+              0)
+            closeOnExcept(newCached) { newCached =>
+              val maybeOutputBatch = if (shouldOutput) {
+                NvtxIdWithMetrics(NvtxRegistry.WINDOW_EXEC, opTime) {
+                  withResource(computeBasicWindow(inputCB)) { outputCols =>
+                    withResource(
+                      trim(outputCols,
+                        outputTrimPrecedingRows, numUnprocessedInCache)) { trimmed =>
+                      convertToBatch(outputTypes, trimmed)
+                    }
+                  }
+                }
+              } else {
+                null
+              }
+              (maybeOutputBatch, newCached)
+            }
+          }
         }
+
+        outputBatch = maybeOutputBatch
+        resetInputCache(Some(newCached), numPrecedingRowsAdded)
       }
     }
     numOutputBatches += 1
