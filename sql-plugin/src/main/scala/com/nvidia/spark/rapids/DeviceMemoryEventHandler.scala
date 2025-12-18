@@ -21,7 +21,6 @@ import java.lang.management.ManagementFactory
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{Cuda, Rmm, RmmEventHandler}
-import com.nvidia.spark.rapids.AllocationKind.DEVICE
 import com.nvidia.spark.rapids.spill.SpillableDeviceStore
 import com.sun.management.HotSpotDiagnosticMXBean
 
@@ -168,9 +167,7 @@ class DeviceMemoryEventHandler(
    * Used for retry coverage tracking.
    */
   override def onAllocated(size: Long): Unit = {
-    if (AllocationRetryCoverageTracker.ENABLED) {
-      AllocationRetryCoverageTracker.checkAllocation(DEVICE)
-    }
+    AllocationRetryCoverageTracker.checkDeviceAllocation()
   }
 
   override def onDeallocThreshold(totalAllocated: Long): Unit = {

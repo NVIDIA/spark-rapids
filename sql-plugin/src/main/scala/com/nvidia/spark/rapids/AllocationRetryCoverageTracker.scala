@@ -106,11 +106,7 @@ object AllocationRetryCoverageTracker extends Logging {
    * 
    * @param kind The kind of memory allocation (HOST or DEVICE)
    */
-  def checkAllocation(kind: AllocationKind): Unit = {
-    if (!ENABLED) {
-      return
-    }
-
+  private def checkAllocationInternal(kind: AllocationKind): Unit = {
     // Ensure header is written on first check
     ensureHeaderWritten()
 
@@ -161,15 +157,21 @@ object AllocationRetryCoverageTracker extends Logging {
   /**
    * Check host memory allocation coverage.
    */
+  @inline
   def checkHostAllocation(): Unit = {
-    checkAllocation(HOST)
+    if (ENABLED) {
+      checkAllocationInternal(HOST)
+    }
   }
 
   /**
    * Check device (GPU) memory allocation coverage.
    */
+  @inline
   def checkDeviceAllocation(): Unit = {
-    checkAllocation(DEVICE)
+    if (ENABLED) {
+      checkAllocationInternal(DEVICE)
+    }
   }
 
   /**

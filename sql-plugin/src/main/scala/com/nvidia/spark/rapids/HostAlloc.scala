@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.LongAdder
 import scala.collection.mutable
 
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
-import com.nvidia.spark.rapids.AllocationKind.HOST
 import com.nvidia.spark.rapids.HostAlloc.bookkeepHostMemoryFree
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{BOOKKEEP_MEMORY, BOOKKEEP_MEMORY_CALLSTACK}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
@@ -224,9 +223,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
             HostAlloc.bookkeepHostMemoryAlloc(buffer.getAddress, amount)
           }
           // Check retry coverage for host memory allocation
-          if (AllocationRetryCoverageTracker.ENABLED) {
-            AllocationRetryCoverageTracker.checkAllocation(HOST)
-          }
+          AllocationRetryCoverageTracker.checkHostAllocation()
           logTrace(getHostAllocMetricsLogStr(metrics))
           RmmSpark.postCpuAllocSuccess(buffer.getAddress, amount, blocking, isRecursive)
         case None =>
