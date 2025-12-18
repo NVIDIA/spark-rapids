@@ -67,6 +67,17 @@ object GpuKudoWritePartitioningSuite {
   }
 
   /**
+   * Creates the expected data set for a single batch (10 rows)
+   */
+  def createExpectedBatchData(): Set[(Option[Integer], Option[String])] = {
+    testIntValues.zip(testStringValues).map {
+      case (intVal, stringVal) =>
+        val intOpt = if (intVal == null) None else Option(intVal.asInstanceOf[Integer])
+        (intOpt, Option(stringVal))
+    }.toSet
+  }
+
+  /**
    * Extract all rows from a ColumnarBatch as tuples of (row index, integer value, string value)
    * This is a standalone function to avoid serialization issues
    */
@@ -133,6 +144,17 @@ object GpuKudoWritePartitioningSuite {
 
     // Collect all deserialized batches
     coalesceIter.toSeq
+  }
+
+  /**
+   * Deserialize a single SlicedSerializedColumnVector batch individually,
+   * preserving its structure without coalescing with other batches.
+   */
+  def deserializeSingleSlicedBatch(
+      slicedBatch: ColumnarBatch,
+      dataTypes: Array[DataType],
+      serializer: GpuColumnarBatchSerializer): Seq[ColumnarBatch] = {
+    deserializeSlicedBatches(Seq(slicedBatch), dataTypes, serializer)
   }
 }
 
@@ -284,8 +306,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
   private def verifyBatchContents(
       allPartitionedBatches: mutable.ArrayBuffer[(Int, ColumnarBatch)],
       totalRowsSeen: Long,
-      serializer: GpuColumnarBatchSerializer,
-      contextMessage: String): Unit = {
+      serializer: GpuColumnarBatchSerializer): Unit = {
     // Verify total rows are preserved
     assert(totalRowsSeen == expectedTotalRows,
       s"Expected $expectedTotalRows total rows (10 per batch × 2 batches), got $totalRowsSeen")
@@ -307,21 +328,133 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       }.toSet
 
       // Create expected data set (twice since we have 2 batches)
-      val testIntValues = GpuKudoWritePartitioningSuite.testIntValues
-      val testStringValues = GpuKudoWritePartitioningSuite.testStringValues
-      val expectedDataValues = (testIntValues ++ testIntValues).zip(
-        testStringValues ++ testStringValues).map { case (intVal, stringVal) =>
-        val intOpt = if (intVal == null) None else Option(intVal.asInstanceOf[Integer])
-        (intOpt, Option(stringVal))
-      }.toSet
+      val expectedSingleBatchData = GpuKudoWritePartitioningSuite.createExpectedBatchData()
+      val expectedDataValues = expectedSingleBatchData ++ expectedSingleBatchData
 
       // Verify deserialized result matches original
-      val messagePrefix = if (contextMessage.nonEmpty) s"$contextMessage: " else ""
       assert(partitionedDataValues == expectedDataValues,
-        s"${messagePrefix}Deserialized data doesn't match original. " +
+        s"Deserialized data doesn't match original. " +
         s"Partitioned: $partitionedDataValues, Expected: $expectedDataValues")
     } finally {
       deserializedBatches.foreach(_.close())
+    }
+  }
+
+  /**
+   * Verifies that the split retry worked correctly:
+   * - One of the input batches was split into 2 batches
+   * - The other input batch remains as 1 batch
+   * - The split batches together contain exactly the rows from one original batch
+   * - The unsplit batch contains exactly the rows from the other original batch
+   * - No rows are duplicated or missing
+   * Note: This method does NOT close the input batches - caller is responsible for cleanup.
+   */
+  private def verifySplitRetryStructure(
+      allPartitionedBatches: mutable.ArrayBuffer[(Int, ColumnarBatch)],
+      serializer: GpuColumnarBatchSerializer): Unit = {
+    // Deserialize each sliced batch individually to preserve structure
+    val slicedBatches = allPartitionedBatches.map(_._2).toSeq
+
+    // Verify we have exactly 3 sliced batches after split
+    assert(slicedBatches.length == 3,
+      s"Expected 3 sliced batches after split, but got ${slicedBatches.length}")
+
+    // Deserialize each batch individually
+    val deserializedBatch0 = GpuKudoWritePartitioningSuite.deserializeSingleSlicedBatch(
+      slicedBatches(0), GpuKudoWritePartitioningSuite.dataTypes, serializer)
+    val deserializedBatch1 = GpuKudoWritePartitioningSuite.deserializeSingleSlicedBatch(
+      slicedBatches(1), GpuKudoWritePartitioningSuite.dataTypes, serializer)
+    val deserializedBatch2 = GpuKudoWritePartitioningSuite.deserializeSingleSlicedBatch(
+      slicedBatches(2), GpuKudoWritePartitioningSuite.dataTypes, serializer)
+
+    try {
+      // Helper function to extract and convert rows from deserialized batches
+      def extractBatchData(
+          deserializedBatches: Seq[ColumnarBatch]):
+          Seq[(Option[Integer], Option[String])] = {
+        deserializedBatches.flatMap { batch =>
+          GpuKudoWritePartitioningSuite.extractRowsFromBatch(batch)
+        }.map { case (_, intVal, stringVal) =>
+          // Convert Option[Int] to Option[Integer] to match expectedFirstBatchData
+          (intVal.map(i => i.asInstanceOf[java.lang.Integer]), stringVal)
+        }
+      }
+
+      // Extract rows from each deserialized batch (each may contain multiple batches)
+      val batch0Data = extractBatchData(deserializedBatch0)
+      val batch1Data = extractBatchData(deserializedBatch1)
+      val batch2Data = extractBatchData(deserializedBatch2)
+
+      val expectedFirstBatchData = GpuKudoWritePartitioningSuite.createExpectedBatchData()
+
+      // Debug: Print batch sizes and contents
+      val batch0Size = batch0Data.length
+      val batch1Size = batch1Data.length
+      val batch2Size = batch2Data.length
+
+      // Collect all data from all batches to verify we have the right total
+      val allBatchData = (batch0Data ++ batch1Data ++ batch2Data).toSet
+      val expectedAllData = (expectedFirstBatchData ++ expectedFirstBatchData).toSet
+
+      assert(allBatchData == expectedAllData,
+        s"All batches together should contain all data from both input batches")
+
+      // Check if we have exactly 20 rows total
+      val totalRows = batch0Size + batch1Size + batch2Size
+      assert(totalRows == 20,
+        s"Expected 20 total rows (10 per input batch), " +
+        s"but got $totalRows. Batch 0: $batch0Size, Batch 1: $batch1Size, " +
+        s"Batch 2: $batch2Size")
+
+      // Find the unsplit batch (size == 10 and matches expected data)
+      val batches = Seq(
+        (batch0Data, batch0Size),
+        (batch1Data, batch1Size),
+        (batch2Data, batch2Size))
+
+      // One batch should be unsplit (10 rows), the other two form the split batch
+      val unsplitBatch = batches.find { case (data, size) =>
+        size == 10 && data.toSet == expectedFirstBatchData
+      }.getOrElse(throw new AssertionError(
+        "Could not find unsplit batch with 10 rows matching expected data"))
+
+      val splitBatchDataList = batches.filter(_._1 != unsplitBatch._1).map(_._1)
+      val (splitBatches, remainingBatch) =
+        ((splitBatchDataList(0), splitBatchDataList(1)), unsplitBatch._1)
+
+      // Verify split batches are each 5 rows (split in half)
+      assert(splitBatches._1.length == 5,
+        s"First split batch should have 5 rows, but got ${splitBatches._1.length}")
+      assert(splitBatches._2.length == 5,
+        s"Second split batch should have 5 rows, but got ${splitBatches._2.length}")
+
+      // Verify the split batches together contain the expected data
+      val splitBatchData = (splitBatches._1 ++ splitBatches._2).toSet
+      assert(splitBatchData == expectedFirstBatchData,
+        "Split batches should contain exactly the expected batch data")
+
+      // Verify the remaining batch contains the expected data
+      assert(remainingBatch.toSet == expectedFirstBatchData,
+        "Remaining batch should contain exactly the expected batch data")
+      assert(remainingBatch.length == 10,
+        "Remaining batch should contain exactly 10 rows")
+
+      // Verify no overlap between batches that form the split batch (no duplicate rows)
+      val splitBatch0Set = splitBatches._1.toSet
+      val splitBatch1Set = splitBatches._2.toSet
+      val overlap = splitBatch0Set.intersect(splitBatch1Set)
+      assert(overlap.isEmpty,
+        "Batches that form the split should not overlap")
+
+      // Verify both batches in the split are non-empty
+      assert(splitBatches._1.nonEmpty,
+        "First part of split batch should be non-empty")
+      assert(splitBatches._2.nonEmpty,
+        "Second part of split batch should be non-empty")
+    } finally {
+      deserializedBatch0.foreach(_.close())
+      deserializedBatch1.foreach(_.close())
+      deserializedBatch2.foreach(_.close())
     }
   }
 
@@ -336,18 +469,13 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       val inputRDD = createInputRDD(spark)
       val dependency = setupShuffleDependency(spark, inputRDD, serializer)
 
-      // Collect batches without OOM injection
       val (allPartitionedBatches, totalRowsSeen, numNextCalls) =
         collectBatches(dependency, injectOOM = false)
 
-      // Verify number of next() calls equals number of input batches (2)
       assert(numNextCalls == 2,
         s"Expected 2 calls to next() (one per input batch), but got $numNextCalls")
 
-      // Verify batch contents match expected data
-      verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer, "")
-
-      // Clean up collected batches
+      verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer)
       allPartitionedBatches.foreach(_._2.close())
     }
   }
@@ -366,7 +494,6 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       val (allPartitionedBatches, totalRowsSeen, numNextCalls) =
         collectBatches(dependency, injectOOM = true)
 
-      // Verify that a retry occurred
       val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
       assert(retryCount > 0,
         s"Expected at least one split retry, but saw $retryCount retries")
@@ -376,11 +503,8 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
         s"Expected 3 calls to next() (split first batch produces 2, " +
         s"second batch produces 1), but got $numNextCalls")
 
-      // Verify batch contents match expected data (even after split retry)
-      verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer,
-        "After split retry")
-
-      // Clean up collected batches
+      verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer)
+      verifySplitRetryStructure(allPartitionedBatches, serializer)
       allPartitionedBatches.foreach(_._2.close())
     }
   }
