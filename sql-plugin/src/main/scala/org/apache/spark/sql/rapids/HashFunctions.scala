@@ -147,7 +147,7 @@ case class GpuSha2(left: Expression, right: Expression)
 
 object GpuSha2 {
 
-  def getStringViewOfBinaryColumn(col: ColumnView): ColumnVector = {
+  private def getStringViewOfBinaryColumn(col: ColumnView): ColumnVector = {
     withResource(col.getChildColumnView(0)) { dataCol =>
       withResource(new ColumnView(DType.STRING, col.getRowCount,
         Optional.of[java.lang.Long](col.getNullCount),
@@ -162,25 +162,7 @@ object GpuSha2 {
               p: Option[RapidsMeta[_, _, _]],
               r: DataFromReplacementRule): BinaryExprMeta[Sha2] = {
     new BinaryExprMeta[Sha2](e, conf, p, r) {
-      // TODO: Probably don't need tagExprForGpu after expr lit checks.
-      override def tagExprForGpu(): Unit = {
-        e.right match {
-          case lit: org.apache.spark.sql.catalyst.expressions.Literal =>
-            if (!lit.dataType.isInstanceOf[IntegerType]) {
-              willNotWorkOnGpu(s"SHA2 second argument must be an integer literal, found $lit")
-            }
-          case _ =>
-            willNotWorkOnGpu(s"SHA2 second argument must be an integer literal, found ${e.right}")
-        }
-      }
-
-      override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-        // Extract the bit length from the rhs literal.
-//        val bitLength = e.right.asInstanceOf[org.apache.spark.sql.catalyst.expressions.Literal]
-//          .value.asInstanceOf[Int]
-//        GpuSha2(lhs, if (bitLength == 0) 256 else bitLength)
-        GpuSha2(lhs, rhs)
-      }
+      override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = GpuSha2(lhs, rhs)
     }
   }
 }
