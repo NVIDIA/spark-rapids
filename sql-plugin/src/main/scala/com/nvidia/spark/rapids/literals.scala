@@ -629,23 +629,20 @@ object GpuLiteral {
    * Get or create a cached GpuScalar for the given GpuLiteral.
    * If a scalar for an equal GpuLiteral already exists in the current task,
    * it will be reused. Otherwise a new scalar is created and cached.
+   * Note: This should only be called when TaskContext is available.
    */
-  def getOrCreateCachedScalar(literal: GpuLiteral): GpuScalar = {
+  private def getOrCreateCachedScalar(literal: GpuLiteral): GpuScalar = {
     val tc = TaskContext.get()
-    if (tc == null) {
-      // No task context (e.g., in unit tests), just create a new scalar without caching
-      GpuScalar(literal.value, literal.dataType)
-    } else {
-      val taskId = tc.taskAttemptId()
-      val cache = taskScalarCache.computeIfAbsent(taskId, _ => {
-        // First access for this task, register the cleanup callback
-        onTaskCompletion(tc) {
-          cleanupTaskScalars(taskId)
-        }
-        new ConcurrentHashMap[GpuLiteral, GpuScalar]()
-      })
-      cache.computeIfAbsent(literal, _ => GpuScalar(literal.value, literal.dataType))
-    }
+    require(tc != null, "getOrCreateCachedScalar should only be called with TaskContext")
+    val taskId = tc.taskAttemptId()
+    val cache = taskScalarCache.computeIfAbsent(taskId, _ => {
+      // First access for this task, register the cleanup callback
+      onTaskCompletion(tc) {
+        cleanupTaskScalars(taskId)
+      }
+      new ConcurrentHashMap[GpuLiteral, GpuScalar]()
+    })
+    cache.computeIfAbsent(literal, _ => GpuScalar(literal.value, literal.dataType))
   }
 
   private def cleanupTaskScalars(taskId: Long): Unit = {
@@ -783,8 +780,14 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
   }
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    // Returns a cached Scalar with incRefCount to avoid repeated cudaMalloc
-    cachedScalar.incRefCount
+    // When there's no TaskContext (e.g., unit tests), create a new GpuScalar
+    // each time like original behavior, because there's no cleanup callback
+    // to properly close the cached scalar. Otherwise use the cached scalar.
+    if (TaskContext.get() == null) {
+      GpuScalar(value, dataType)
+    } else {
+      cachedScalar.incRefCount
+    }
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
