@@ -32,7 +32,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, TrampolineUtil}
 import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
@@ -186,14 +186,12 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
   /**
    * Sets up the shuffle dependency for testing
-   * Returns both the dependency and the metrics map for reading metric values
    */
   private def setupShuffleDependency(
       spark: org.apache.spark.sql.SparkSession,
       inputRDD: org.apache.spark.rdd.RDD[ColumnarBatch],
       serializer: GpuColumnarBatchSerializer):
-      (org.apache.spark.ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
-          Map[String, GpuMetric]) = {
+      org.apache.spark.ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val gpuPartitioning = GpuHashPartitioning(
       Seq(GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "key")),
       numPartitions)
@@ -203,14 +201,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       AttributeReference("name", StringType, nullable = true)(ExprId(1)))
 
     val writeMetrics = Map[String, SQLMetric]()
-
-    // Create real metrics that we can read back, including required metrics
-    val partitionedArraysMetric = GpuMetric.wrap(
-      SQLMetrics.createMetric(spark.sparkContext,
-        GpuMetric.DESCRIPTION_NUM_OUTPUT_BATCHES))
-    val metrics = Map[String, GpuMetric](
-      GpuMetric.NUM_OUTPUT_BATCHES -> partitionedArraysMetric
-    ).withDefaultValue(NoopMetric)
+    val metrics = Map[String, GpuMetric]().withDefaultValue(NoopMetric)
 
     val dependency = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
@@ -226,18 +217,20 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       None,
       Seq.empty,
       enableOpTimeTrackingRdd = false)
-    (dependency, metrics)
+    dependency
   }
 
   /**
    * Collects batches from the shuffle dependency, optionally injecting OOM for retry testing
+   * Returns: (batches, totalRowsSeen, numNextCalls)
    */
   private def collectBatches(
       dependency: org.apache.spark.ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
-      injectOOM: Boolean): (mutable.ArrayBuffer[(Int, ColumnarBatch)], Long) = {
+      injectOOM: Boolean): (mutable.ArrayBuffer[(Int, ColumnarBatch)], Long, Int) = {
     val allPartitionedBatches = mutable.ArrayBuffer[(Int, ColumnarBatch)]()
     var totalRowsSeen = 0L
     var firstIteration = true
+    var numNextCalls = 0
 
     if (injectOOM) {
       // Associate the current thread with a task (required for OOM injection)
@@ -259,6 +252,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
         while (partitionIterator.hasNext) {
           val result = partitionIterator.next()
+          numNextCalls += 1
           val partitionId = result._1
           val batch = result._2
 
@@ -280,7 +274,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       }
     }
 
-    (allPartitionedBatches, totalRowsSeen)
+    (allPartitionedBatches, totalRowsSeen, numNextCalls)
   }
 
   /**
@@ -340,15 +334,15 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
       val serializer = createSerializer()
       val inputRDD = createInputRDD(spark)
-      val (dependency, metrics) = setupShuffleDependency(spark, inputRDD, serializer)
+      val dependency = setupShuffleDependency(spark, inputRDD, serializer)
 
       // Collect batches without OOM injection
-      val (allPartitionedBatches, totalRowsSeen) = collectBatches(dependency, injectOOM = false)
+      val (allPartitionedBatches, totalRowsSeen, numNextCalls) =
+        collectBatches(dependency, injectOOM = false)
 
-      // Verify partitioned arrays count equals number of input batches (2)
-      val batchesCount = metrics(GpuMetric.NUM_OUTPUT_BATCHES).value
-      assert(batchesCount == 2,
-        s"Expected 2 partitioned arrays (one per input batch), but got $batchesCount")
+      // Verify number of next() calls equals number of input batches (2)
+      assert(numNextCalls == 2,
+        s"Expected 2 calls to next() (one per input batch), but got $numNextCalls")
 
       // Verify batch contents match expected data
       verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer, "")
@@ -366,21 +360,21 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
       val serializer = createSerializer()
       val inputRDD = createInputRDD(spark)
-      val (dependency, metrics) = setupShuffleDependency(spark, inputRDD, serializer)
+      val dependency = setupShuffleDependency(spark, inputRDD, serializer)
 
       // Collect batches with OOM injection to trigger split retry
-      val (allPartitionedBatches, totalRowsSeen) = collectBatches(dependency, injectOOM = true)
+      val (allPartitionedBatches, totalRowsSeen, numNextCalls) =
+        collectBatches(dependency, injectOOM = true)
 
       // Verify that a retry occurred
       val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
       assert(retryCount > 0,
         s"Expected at least one split retry, but saw $retryCount retries")
 
-      // Verify partitioned arrays count: one batch splits (1->2), plus one normal batch = 3
-      val batchesCount = metrics(GpuMetric.NUM_OUTPUT_BATCHES).value
-      assert(batchesCount == 3,
-        s"Expected 3 partitioned arrays (split first batch produces 2, " +
-        s"second batch produces 1), but got $batchesCount")
+      // Verify number of next() calls: one batch splits (1->2), plus one normal batch = 3
+      assert(numNextCalls == 3,
+        s"Expected 3 calls to next() (split first batch produces 2, " +
+        s"second batch produces 1), but got $numNextCalls")
 
       // Verify batch contents match expected data (even after split retry)
       verifyBatchContents(allPartitionedBatches, totalRowsSeen, serializer,
