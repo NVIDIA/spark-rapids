@@ -1500,7 +1500,12 @@ object GpuAverage {
         } else {
           GpuBasicDecimalAverage(child, sumDataType, failOnError)
         }
+      case LongType =>
+        // For Long input, use LongType for sum accumulation to avoid per-row Long->Double
+        // cast. The cast to Double only happens once at the end in evaluateExpression.
+        GpuBasicAverage(child, LongType, failOnError)
       case _ =>
+        // For other numeric types (Int, Short, Byte, Float, Double), use DoubleType
         GpuBasicAverage(child, DoubleType, failOnError)
     }
   }
@@ -1568,8 +1573,10 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
+  // For long type, sumDataType is LongType, so we need to cast sum to DoubleType here.
+  // For other types, sumDataType is already DoubleType, so GpuCast is a no-op.
   override lazy val evaluateExpression: Expression =
-      GpuDivide(sum, GpuCast(count, DoubleType), failOnError = false)
+      GpuDivide(GpuCast(sum, DoubleType), GpuCast(count, DoubleType), failOnError = false)
 
   // Window
   // Replace average with SUM/COUNT. This lets us run average in running window mode without
