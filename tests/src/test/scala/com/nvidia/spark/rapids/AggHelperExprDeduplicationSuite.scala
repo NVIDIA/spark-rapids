@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 /**
  * Integration tests for AggHelper's expression deduplication logic.
