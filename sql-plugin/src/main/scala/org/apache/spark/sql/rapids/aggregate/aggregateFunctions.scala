@@ -1518,8 +1518,10 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
     val castedForSum = GpuCoalesce(Seq(
       GpuCast(child, sumDataType),
       GpuLiteral.default(sumDataType)))
-    // Pass through the original child for count - CudfCount with NullPolicy.EXCLUDE
-    // will handle null counting directly, avoiding the overhead of isnotnull + cast
+    // Pass child directly for count - CudfCount with NullPolicy.EXCLUDE handles nulls.
+    // AggHelper deduplicates expressions, so if another aggregate (e.g., count(child))
+    // uses the same child, they will share the column and cudf will deduplicate the
+    // identical count aggregations.
     Seq(castedForSum, child)
   }
 
@@ -1648,7 +1650,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType, failOnError:
     val chunks = (0 until 4).map {
       GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true)
     }
-    // Pass through the original child for count - CudfCount will handle nulls
+    // Pass child directly for count - AggHelper deduplicates expressions (see GpuAverage)
     chunks :+ child
   }
 
