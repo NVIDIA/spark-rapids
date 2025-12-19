@@ -312,7 +312,6 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach
       s"Expected $expectedTotalRows total rows (10 per batch × 2 batches), got $totalRowsSeen")
 
     // Deserialize SlicedSerializedColumnVector batches
-    // Note: We create a copy of the batch references to avoid closing the originals
     val slicedBatches = allPartitionedBatches.map(_._2).toSeq
     val deserializedBatches = GpuKudoWritePartitioningSuite.deserializeSlicedBatches(
       slicedBatches, GpuKudoWritePartitioningSuite.dataTypes, serializer)
