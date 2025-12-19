@@ -453,7 +453,6 @@ class CSVPartitionReader(
       parsedOptions: CSVOptions,
       schema: StructType,
       hasHeader: Boolean): cudf.CSVOptions.Builder = {
-
     val builder = cudf.CSVOptions.builder()
     builder.withDelim(parsedOptions.delimiter.charAt(0))
     builder.hasHeader(hasHeader)
