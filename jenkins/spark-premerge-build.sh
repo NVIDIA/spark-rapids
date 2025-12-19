@@ -17,6 +17,8 @@
 
 set -ex
 
+. jenkins/shuffle-common.sh
+
 BUILD_TYPE=all
 
 if [[ $# -eq 1 ]]; then
@@ -136,38 +138,11 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
-    invoke_shuffle_integration_test() {
-      # check out what else is on the GPU
-      nvidia-smi
-
-      # because the RapidsShuffleManager smoke tests work against a standalone cluster
-      # we do not want the integration tests to launch N different applications, just one app
-      # is what is expected.
-      TEST_PARALLEL=0 \
-      PYSP_TEST_spark_master=$SPARK_MASTER \
-        PYSP_TEST_spark_cores_max=2 \
-        PYSP_TEST_spark_executor_cores=1 \
-        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-        PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
-        PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
-        PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
-        ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
-    }
-
     # using UCX shuffle
-    # The UCX_TLS=^posix config is removing posix from the list of memory transports
-    # so that IPC regions are obtained using SysV API instead. This was done because of
-    # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
-    PYSP_TEST_spark_rapids_shuffle_mode=UCX \
-    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
-    PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
-        invoke_shuffle_integration_test
+    invoke_shuffle_integration_test UCX ./integration_tests/run_pyspark_from_build.sh premerge
 
     # using MULTITHREADED shuffle
-    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-        invoke_shuffle_integration_test
+    invoke_shuffle_integration_test MULTITHREADED ./integration_tests/run_pyspark_from_build.sh premerge
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
@@ -204,8 +179,8 @@ ci_scala213() {
     update-java-alternatives --set $JAVA_HOME
     java -version
 
-    # Download a Scala 2.13 version of Spark
-    prepare_spark 3.5.0 2.13
+    # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
+    prepare_spark 4.0.1 2.13
 
     # build Scala 2.13 versions
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
