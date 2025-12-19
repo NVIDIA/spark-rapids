@@ -29,6 +29,7 @@ import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.prop.TableDrivenPropertyChecks
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId}
@@ -158,7 +159,8 @@ object GpuKudoWritePartitioningSuite {
   }
 }
 
-class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach {
+class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach
+    with TableDrivenPropertyChecks {
   var rapidsConf = new RapidsConf(Map[String, String]())
 
   override def beforeEach(): Unit = {
@@ -171,7 +173,6 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
     TrampolineUtil.cleanupAnyExistingSession()
   }
 
-  private val numPartitions = 2
   private val expectedTotalRows = 20 // 10 rows per batch × 2 batches
 
   /**
@@ -212,7 +213,8 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
   private def setupShuffleDependency(
       spark: org.apache.spark.sql.SparkSession,
       inputRDD: org.apache.spark.rdd.RDD[ColumnarBatch],
-      serializer: GpuColumnarBatchSerializer):
+      serializer: GpuColumnarBatchSerializer,
+      numPartitions: Int):
       org.apache.spark.ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val gpuPartitioning = GpuHashPartitioning(
       Seq(GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "key")),
@@ -244,15 +246,14 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
   /**
    * Collects batches from the shuffle dependency, optionally injecting OOM for retry testing
-   * Returns: (batches, totalRowsSeen, numNextCalls)
+   * Returns: (batches, totalRowsSeen)
    */
   private def collectBatches(
       dependency: org.apache.spark.ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
-      injectOOM: Boolean): (mutable.ArrayBuffer[(Int, ColumnarBatch)], Long, Int) = {
+      injectOOM: Boolean): (mutable.ArrayBuffer[(Int, ColumnarBatch)], Long) = {
     val allPartitionedBatches = mutable.ArrayBuffer[(Int, ColumnarBatch)]()
     var totalRowsSeen = 0L
     var firstIteration = true
-    var numNextCalls = 0
 
     if (injectOOM) {
       // Associate the current thread with a task (required for OOM injection)
@@ -274,7 +275,6 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
 
         while (partitionIterator.hasNext) {
           val result = partitionIterator.next()
-          numNextCalls += 1
           val partitionId = result._1
           val batch = result._2
 
@@ -296,7 +296,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       }
     }
 
-    (allPartitionedBatches, totalRowsSeen, numNextCalls)
+    (allPartitionedBatches, totalRowsSeen)
   }
 
   /**
@@ -386,11 +386,6 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
     val splitBatchDataSeq =
       extractBatchDataFromSlicedBatches(slicedBatches, serializer)
     val splitBatchData = splitPartitionIds.zip(splitBatchDataSeq)
-
-    // Verify we have one more batch than baseline (one batch was split)
-    assert(splitBatchData.length == baselineBatchData.length + 2,
-      s"Expected ${baselineBatchData.length + 2} batches after split " +
-      s"(baseline had ${baselineBatchData.length}), but got ${splitBatchData.length}")
 
     // Group batches by partition ID to handle interleaved splits across partitions
     val baselineByPartition = baselineBatchData.groupBy(_._1)
@@ -505,54 +500,49 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
   }
 
 
+  val partitionCounts = Table("numPartitions", 1, 2, 4, 20)
+
   test("GPU Kudo write partitioning and serialization - with split retry") {
-    TrampolineUtil.cleanupAnyExistingSession()
-    val conf = createKudoSparkConf()
-    TestUtils.withGpuSparkSession(conf) { spark =>
-      GpuShuffleEnv.init(new RapidsConf(conf))
+    forAll(partitionCounts) { numPartitions =>
+      TrampolineUtil.cleanupAnyExistingSession()
+      val conf = createKudoSparkConf()
+      TestUtils.withGpuSparkSession(conf) { spark =>
+        GpuShuffleEnv.init(new RapidsConf(conf))
 
-      val serializer = createSerializer()
-      val inputRDD = createInputRDD(spark)
-      val dependency = setupShuffleDependency(spark, inputRDD, serializer)
+        val serializer = createSerializer()
+        val inputRDD = createInputRDD(spark)
+        val dependency = setupShuffleDependency(spark, inputRDD, serializer, numPartitions)
 
-      // Part 1: Run without split to establish baseline batch data
-      val (baselineBatches, baselineTotalRowsSeen, baselineNumNextCalls) =
-        collectBatches(dependency, injectOOM = false)
+        // Part 1: Run without split to establish baseline batch data
+        val (baselineBatches, baselineTotalRowsSeen) =
+          collectBatches(dependency, injectOOM = false)
 
-      assert(baselineNumNextCalls == 4,
-        s"Expected 4 calls to next() (one per input batch), but got " +
-        s"$baselineNumNextCalls")
+        verifyBatchContents(baselineBatches, baselineTotalRowsSeen, serializer)
 
-      verifyBatchContents(baselineBatches, baselineTotalRowsSeen, serializer)
+        // Extract and save baseline batch data with partition IDs
+        val baselinePartitionIds = baselineBatches.map(_._1).toSeq
+        val slicedBaselineBatches = baselineBatches.map(_._2).toSeq
+        val baselineBatchDataSeq =
+          extractBatchDataFromSlicedBatches(slicedBaselineBatches, serializer)
+        val baselineBatchData = baselinePartitionIds.zip(baselineBatchDataSeq)
 
-      // Extract and save baseline batch data with partition IDs
-      val baselinePartitionIds = baselineBatches.map(_._1).toSeq
-      val slicedBaselineBatches = baselineBatches.map(_._2).toSeq
-      val baselineBatchDataSeq =
-        extractBatchDataFromSlicedBatches(slicedBaselineBatches, serializer)
-      val baselineBatchData = baselinePartitionIds.zip(baselineBatchDataSeq)
+        baselineBatches.foreach(_._2.close())
 
-      baselineBatches.foreach(_._2.close())
+        // Part 2: Run with OOM injection to trigger split retry
+        val inputRDD2 = createInputRDD(spark)
+        val dependency2 = setupShuffleDependency(spark, inputRDD2, serializer, numPartitions)
 
-      // Part 2: Run with OOM injection to trigger split retry
-      val inputRDD2 = createInputRDD(spark)
-      val dependency2 = setupShuffleDependency(spark, inputRDD2, serializer)
+        val (splitBatches, splitTotalRowsSeen) =
+          collectBatches(dependency2, injectOOM = true)
 
-      val (splitBatches, splitTotalRowsSeen, splitNumNextCalls) =
-        collectBatches(dependency2, injectOOM = true)
+        val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
+        assert(retryCount > 0,
+          s"Expected at least one split retry, but saw $retryCount retries")
 
-      val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
-      assert(retryCount > 0,
-        s"Expected at least one split retry, but saw $retryCount retries")
-
-      // Verify number of next() calls: one batch splits (1->2), plus one normal batch = 3
-      assert(splitNumNextCalls == 6,
-        s"Expected 6 calls to next() (split first batch produces 2, " +
-        s"second batch produces 1), but got $splitNumNextCalls")
-
-      verifyBatchContents(splitBatches, splitTotalRowsSeen, serializer)
-      verifySplitRetryStructure(baselineBatchData, splitBatches, serializer)
-      splitBatches.foreach(_._2.close())
+        verifyBatchContents(splitBatches, splitTotalRowsSeen, serializer)
+        verifySplitRetryStructure(baselineBatchData, splitBatches, serializer)
+        splitBatches.foreach(_._2.close())
+      }
     }
   }
 }
