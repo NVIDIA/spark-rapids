@@ -857,6 +857,116 @@ class BinaryGen(DataGen):
             return bytes([ rand.randint(0, 255) for _ in range(length) ])
         self._start(rand, gen_bytes)
 
+
+# -----------------------------------------------------------------------------
+# Protobuf (simple types) generators/utilities (for from_protobuf/to_protobuf tests)
+# -----------------------------------------------------------------------------
+
+_PROTOBUF_WIRE_VARINT = 0
+_PROTOBUF_WIRE_64BIT = 1
+_PROTOBUF_WIRE_LEN_DELIM = 2
+_PROTOBUF_WIRE_32BIT = 5
+
+def _encode_protobuf_uvarint(value):
+    """Encode a non-negative integer as protobuf varint."""
+    if value is None:
+        raise ValueError("value must not be None")
+    if value < 0:
+        raise ValueError("uvarint only supports non-negative integers")
+    out = bytearray()
+    v = int(value)
+    while True:
+        b = v & 0x7F
+        v >>= 7
+        if v:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            break
+    return bytes(out)
+
+def _encode_protobuf_key(field_number, wire_type):
+    return _encode_protobuf_uvarint((int(field_number) << 3) | int(wire_type))
+
+def _encode_protobuf_field(field_number, spark_type, value):
+    """
+    Encode a single protobuf field for a subset of scalar types.
+    Notes on signed ints:
+    - Protobuf `int32`/`int64` use *varint* encoding of the two's-complement integer.
+    - Negative `int32` values are encoded as a 10-byte varint (because they are sign-extended to 64 bits).
+    """
+    if value is None:
+        return b""
+
+    if isinstance(spark_type, BooleanType):
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(1 if value else 0)
+    elif isinstance(spark_type, IntegerType):
+        # Match protobuf-java behavior for writeInt32NoTag: negative values are sign-extended and written as uint64.
+        u64 = int(value) & 0xFFFFFFFFFFFFFFFF
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(u64)
+    elif isinstance(spark_type, LongType):
+        u64 = int(value) & 0xFFFFFFFFFFFFFFFF
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(u64)
+    elif isinstance(spark_type, FloatType):
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_32BIT) + struct.pack("<f", float(value))
+    elif isinstance(spark_type, DoubleType):
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_64BIT) + struct.pack("<d", float(value))
+    elif isinstance(spark_type, StringType):
+        b = value.encode("utf-8")
+        return (_encode_protobuf_key(field_number, _PROTOBUF_WIRE_LEN_DELIM) +
+                _encode_protobuf_uvarint(len(b)) + b)
+    else:
+        raise ValueError("Unsupported type for protobuf simple generator: {}".format(spark_type))
+
+
+class ProtobufSimpleMessageRowGen(DataGen):
+    """
+    Generates rows that include:
+      - one column per message field (Spark scalar types)
+      - a binary column containing a serialized protobuf message containing those fields
+
+    This is intentionally limited to the simple scalar types supported in Patch 1:
+    boolean/int32/int64/float/double/string.
+
+    Fields are omitted from the encoded message if the corresponding value is None.
+    """
+    def __init__(self, fields, binary_col_name="bin", nullable=False):
+        """
+        fields: list of (field_name, field_number, DataGen)
+        """
+        self._fields = fields
+        self._binary_col_name = binary_col_name
+
+        struct_fields = []
+        for (name, _num, gen) in fields:
+            struct_fields.append(StructField(name, gen.data_type, nullable=gen.nullable))
+        struct_fields.append(StructField(binary_col_name, BinaryType(), nullable=True))
+        super().__init__(StructType(struct_fields), nullable=nullable)
+
+    def __repr__(self):
+        return "ProtobufSimpleMessageRowGen({})".format(
+            ",".join(["{}#{}".format(n, num) for (n, num, _g) in self._fields]))
+
+    def _cache_repr(self):
+        kids = ",".join(["{}:{}#{}".format(n, str(g.data_type), num) for (n, num, g) in self._fields])
+        return super()._cache_repr() + "(" + kids + "," + self._binary_col_name + ")"
+
+    def start(self, rand):
+        for (_name, _num, gen) in self._fields:
+            gen.start(rand)
+
+        def make_row():
+            values = []
+            encoded_parts = []
+            for (name, num, gen) in self._fields:
+                v = gen.gen()
+                values.append(v)
+                encoded_parts.append(_encode_protobuf_field(num, gen.data_type, v))
+            msg = b"".join(encoded_parts)
+            return tuple(values + [msg])
+
+        self._start(rand, make_row)
+
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
 @lru_cache(maxsize=128, typed=True)
