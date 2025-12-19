@@ -1661,6 +1661,17 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType, failOnError:
     chunks :+ child
   }
 
+  override def filteredInputProjection(filter: Expression): Seq[Expression] = {
+    // For sum chunks: if filter is false, use 0 (replaceNullsWithZero handles nulls)
+    // Note: GpuExtractChunk32 returns GpuUnsignedIntegerType for chunks 0-2, IntegerType for 3
+    val chunks = (0 until 4).map { i =>
+      val chunk = GpuExtractChunk32(GpuCast(child, dt), i, replaceNullsWithZero = true)
+      GpuIf(filter, chunk, GpuLiteral(0, chunk.dataType))
+    }
+    // For count: if filter is false, use null so CudfCount will exclude it
+    chunks :+ GpuIf(filter, child, GpuLiteral(null, child.dataType))
+  }
+
   private lazy val updateSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
 
   override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateCount
