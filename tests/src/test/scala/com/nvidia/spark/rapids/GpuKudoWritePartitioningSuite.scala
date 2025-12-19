@@ -171,7 +171,7 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
     TrampolineUtil.cleanupAnyExistingSession()
   }
 
-  private val numPartitions = 1
+  private val numPartitions = 2
   private val expectedTotalRows = 20 // 10 rows per batch × 2 batches
 
   /**
@@ -372,98 +372,136 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
    * - One of the baseline batches was split into 2 batches
    * - The other baseline batch remains as 1 batch
    * - The split batches together contain exactly the rows from the original batch
+   * - Split batches end up in the same partition as the original baseline batch
    * - No rows are duplicated or missing
    * Note: This method does NOT close the input batches - caller is responsible for cleanup.
    */
   private def verifySplitRetryStructure(
-      baselineBatchData: Seq[Seq[(Option[Integer], Option[String])]],
+      baselineBatchData: Seq[(Int, Seq[(Option[Integer], Option[String])])],
       allPartitionedBatches: mutable.ArrayBuffer[(Int, ColumnarBatch)],
       serializer: GpuColumnarBatchSerializer): Unit = {
     // Deserialize each sliced batch individually to preserve structure
+    val splitPartitionIds = allPartitionedBatches.map(_._1).toSeq
     val slicedBatches = allPartitionedBatches.map(_._2).toSeq
-    val splitBatchData = extractBatchDataFromSlicedBatches(slicedBatches, serializer)
+    val splitBatchDataSeq =
+      extractBatchDataFromSlicedBatches(slicedBatches, serializer)
+    val splitBatchData = splitPartitionIds.zip(splitBatchDataSeq)
 
     // Verify we have one more batch than baseline (one batch was split)
-    assert(splitBatchData.length == baselineBatchData.length + 1,
-      s"Expected ${baselineBatchData.length + 1} batches after split " +
+    assert(splitBatchData.length == baselineBatchData.length + 2,
+      s"Expected ${baselineBatchData.length + 2} batches after split " +
       s"(baseline had ${baselineBatchData.length}), but got ${splitBatchData.length}")
 
-    // Compare each split batch against baseline batches to find which was split
-    var baselineIndex = 0
-    var splitIndex = 0
-    var foundSplit = false
+    // Group batches by partition ID to handle interleaved splits across partitions
+    val baselineByPartition = baselineBatchData.groupBy(_._1)
+    val splitByPartition = splitBatchData.groupBy(_._1)
 
-    while (baselineIndex < baselineBatchData.length && splitIndex < splitBatchData.length) {
-      val baselineBatch = baselineBatchData(baselineIndex)
-      val currentSplitBatch = splitBatchData(splitIndex)
+    // Verify we have the same partitions in both baseline and split
+    assert(baselineByPartition.keySet == splitByPartition.keySet,
+      s"Partitions should match. Baseline: ${baselineByPartition.keySet}, " +
+      s"Split: ${splitByPartition.keySet}")
 
-      // Determine if this is a split batch or a matching batch
-      val isSplit = currentSplitBatch.length != baselineBatch.length
-      val splitBatchToCompare = if (isSplit) {
-        // This batch was split - verify we have one more batch in split data
-        assert(splitIndex + 1 < splitBatchData.length,
-          "Split batch should be followed by another batch")
-        assert(!foundSplit, "Found multiple split batches, expected only one")
-        foundSplit = true
+    var foundAnySplit = false
 
-        val splitBatch2 = splitBatchData(splitIndex + 1)
+    // Process each partition separately
+    baselineByPartition.foreach { case (partitionId, baselineBatchesForPartition) =>
+      val splitBatchesForPartition = splitByPartition(partitionId)
 
-        // Verify both batches in the split are non-empty
-        assert(currentSplitBatch.nonEmpty,
-          "First part of split batch should be non-empty")
-        assert(splitBatch2.nonEmpty,
-          "Second part of split batch should be non-empty")
+      // Compare batches within this partition
+      var baselineIdx = 0
+      var splitIdx = 0
+      var foundSplitInPartition = false
 
-        // Verify no overlap between the two split batches
-        val splitBatch1Set = currentSplitBatch.toSet
-        val splitBatch2Set = splitBatch2.toSet
-        val overlap = splitBatch1Set.intersect(splitBatch2Set)
-        assert(overlap.isEmpty,
-          "Batches that form the split should not overlap")
+      while (baselineIdx < baselineBatchesForPartition.length &&
+             splitIdx < splitBatchesForPartition.length) {
+        val (_, baselineBatch) = baselineBatchesForPartition(baselineIdx)
+        val (currentSplitPartitionId, currentSplitBatch) =
+          splitBatchesForPartition(splitIdx)
 
-        currentSplitBatch ++ splitBatch2
-      } else {
-        currentSplitBatch
+        // Verify partition IDs match
+        assert(currentSplitPartitionId == partitionId,
+          s"Split batch partition ID should match. Expected: $partitionId, " +
+          s"Got: $currentSplitPartitionId")
+
+        // Determine if this is a split batch or a matching batch
+        val isSplit = currentSplitBatch.length != baselineBatch.length
+        val splitBatchToCompare = if (isSplit) {
+          // This batch was split - find the second part in the same partition
+          assert(splitIdx + 1 < splitBatchesForPartition.length,
+            s"Split batch should be followed by another batch in partition " +
+            s"$partitionId")
+          assert(!foundSplitInPartition,
+            s"Found multiple split batches in partition $partitionId, " +
+            s"expected only one per partition")
+          foundSplitInPartition = true
+          foundAnySplit = true
+
+          val (splitPartitionId2, splitBatch2) =
+            splitBatchesForPartition(splitIdx + 1)
+
+          // Verify both batches in the split are in the same partition
+          assert(splitPartitionId2 == partitionId,
+            s"Both parts of split batch should be in partition $partitionId. " +
+            s"Part 2 is in partition $splitPartitionId2")
+
+          // Verify both batches in the split are non-empty
+          assert(currentSplitBatch.nonEmpty,
+            "First part of split batch should be non-empty")
+          assert(splitBatch2.nonEmpty,
+            "Second part of split batch should be non-empty")
+
+          // Verify no overlap between the two split batches
+          val splitBatch1Set = currentSplitBatch.toSet
+          val splitBatch2Set = splitBatch2.toSet
+          val overlap = splitBatch1Set.intersect(splitBatch2Set)
+          assert(overlap.isEmpty,
+            "Batches that form the split should not overlap")
+
+          currentSplitBatch ++ splitBatch2
+        } else {
+          currentSplitBatch
+        }
+
+        // Explicitly compare row values: verify against baseline
+        val splitBatchSet = splitBatchToCompare.toSet
+        val baselineSet = baselineBatch.toSet
+
+        // Verify row counts match
+        assert(splitBatchToCompare.length == baselineBatch.length,
+          s"Split batch should have ${baselineBatch.length} rows " +
+          s"(same as baseline), but got ${splitBatchToCompare.length}")
+
+        // Verify every row in baseline appears in split batch
+        val missingRows = baselineSet -- splitBatchSet
+        assert(missingRows.isEmpty,
+          s"Baseline batch has rows not found in split batch: $missingRows")
+
+        // Verify no extra rows in split batch (every row in split appears in baseline)
+        val extraRows = splitBatchSet -- baselineSet
+        assert(extraRows.isEmpty,
+          s"Split batch has rows not found in baseline batch: $extraRows")
+
+        // Explicitly verify all row values match
+        assert(splitBatchSet == baselineSet,
+          s"Split batch should contain exactly the same rows as " +
+          s"baseline batch at partition $partitionId, baseline index " +
+          s"$baselineIdx. Baseline: $baselineSet, Split: $splitBatchSet")
+
+        // Move indices forward
+        baselineIdx += 1
+        splitIdx += (if (isSplit) 2 else 1)
       }
 
-      // Explicitly compare row values: verify against baseline
-      val splitBatchSet = splitBatchToCompare.toSet
-      val baselineSet = baselineBatch.toSet
-
-      // Verify row counts match
-      assert(splitBatchToCompare.length == baselineBatch.length,
-        s"Split batch should have ${baselineBatch.length} rows " +
-        s"(same as baseline), but got ${splitBatchToCompare.length}")
-
-      // Verify every row in baseline appears in split batch
-      val missingRows = baselineSet -- splitBatchSet
-      assert(missingRows.isEmpty,
-        s"Baseline batch has rows not found in split batch: $missingRows")
-
-      // Verify no extra rows in split batch (every row in split appears in baseline)
-      val extraRows = splitBatchSet -- baselineSet
-      assert(extraRows.isEmpty,
-        s"Split batch has rows not found in baseline batch: $extraRows")
-
-      // Explicitly verify all row values match
-      assert(splitBatchSet == baselineSet,
-        s"Split batch should contain exactly the same rows as " +
-        s"baseline batch $baselineIndex. Baseline: $baselineSet, " +
-        s"Split: $splitBatchSet")
-
-      // Move indices forward
-      baselineIndex += 1
-      splitIndex += (if (isSplit) 2 else 1)
+      // Verify we processed all batches for this partition
+      assert(baselineIdx == baselineBatchesForPartition.length,
+        s"Did not process all baseline batches for partition $partitionId " +
+        s"(processed $baselineIdx of ${baselineBatchesForPartition.length})")
+      assert(splitIdx == splitBatchesForPartition.length,
+        s"Did not process all split batches for partition $partitionId " +
+        s"(processed $splitIdx of ${splitBatchesForPartition.length})")
     }
 
-    // Verify we processed all batches
-    assert(baselineIndex == baselineBatchData.length,
-      s"Did not process all baseline batches (processed $baselineIndex of " +
-      s"${baselineBatchData.length})")
-    assert(splitIndex == splitBatchData.length,
-      s"Did not process all split batches (processed $splitIndex of " +
-      s"${splitBatchData.length})")
-    assert(foundSplit, "Did not find any split batch")
+    assert(foundAnySplit, "Did not find any split batch")
   }
 
 
@@ -481,16 +519,18 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
       val (baselineBatches, baselineTotalRowsSeen, baselineNumNextCalls) =
         collectBatches(dependency, injectOOM = false)
 
-      assert(baselineNumNextCalls == 2,
-        s"Expected 2 calls to next() (one per input batch), but got " +
+      assert(baselineNumNextCalls == 4,
+        s"Expected 4 calls to next() (one per input batch), but got " +
         s"$baselineNumNextCalls")
 
       verifyBatchContents(baselineBatches, baselineTotalRowsSeen, serializer)
 
-      // Extract and save baseline batch data
+      // Extract and save baseline batch data with partition IDs
+      val baselinePartitionIds = baselineBatches.map(_._1).toSeq
       val slicedBaselineBatches = baselineBatches.map(_._2).toSeq
-      val baselineBatchData =
+      val baselineBatchDataSeq =
         extractBatchDataFromSlicedBatches(slicedBaselineBatches, serializer)
+      val baselineBatchData = baselinePartitionIds.zip(baselineBatchDataSeq)
 
       baselineBatches.foreach(_._2.close())
 
@@ -506,8 +546,8 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach 
         s"Expected at least one split retry, but saw $retryCount retries")
 
       // Verify number of next() calls: one batch splits (1->2), plus one normal batch = 3
-      assert(splitNumNextCalls == 3,
-        s"Expected 3 calls to next() (split first batch produces 2, " +
+      assert(splitNumNextCalls == 6,
+        s"Expected 6 calls to next() (split first batch produces 2, " +
         s"second batch produces 1), but got $splitNumNextCalls")
 
       verifyBatchContents(splitBatches, splitTotalRowsSeen, serializer)
