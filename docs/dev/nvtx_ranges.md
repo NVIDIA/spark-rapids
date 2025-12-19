@@ -19,187 +19,187 @@ See [nvtx_profiling.md](https://nvidia.github.io/spark-rapids/docs/dev/nvtx_prof
 
 Name | Description
 -----|-------------
-getMapSizesByExecId|Call to internal Spark API for retrieving size and location of shuffle map output blocks
-gpuKudoSerialize|Perform kudo serialization on the gpu
-agg reduce|Reduction aggregation for operations without grouping keys
-read python batch|Reading Python batch
-join asymmetric fetch|Asymmetric join data fetch
-agg post-process|Post-processing step for aggregation, including casting and struct decomposition
 project tier|Executing tiered projection operation
-first stream batch|Processing first stream batch
-agg repartition|Repartitioning data for aggregation
-DoubleBatchedWindow_PRE|Pre-processing for double-batched window operation
-GpuGenerate project split|Splitting projection in generate operation
-parquet parse filter footer|Parsing and filtering Parquet footer by range
-Compile ASTs|Compiling abstract syntax trees for expression evaluation
-parquet filter blocks|Filtering Parquet row group blocks based on predicates
-PageableH2D|Copying from pageable host memory to device
-TOP N|Computing top N rows
-zstd post process|Post-processing ZSTD compressed data
-split input batch|Splitting input batch for sorting
-update tracking mask|Updating tracking mask for join operation
-hash partition slice|Slicing partitioned table into individual partitions
-probe right|Probing the right side of a join input iterator to get the data size for preparing the join
-DeserializeBatch|Deserializing broadcast batch
-Serialize Row Only Batch|Serializing row-only batch
-alloc output bufs|Allocating output buffers for compression
-existence join scatter map|Creating scatter map for existence join
-Transport copy buffer|Copying buffer for Rapids shuffle transport
-hash partition|Partitioning data based on hash values
-fetch join stream|IO time on the stream side data for the following join
-Sample Exec|Sampling rows from data
-shuffled join stream|GpuShuffledHashJoinExec op is preparing build batches for join
-cartesian product deserialize|Deserializing batch from cartesian product operation
-doHandleMeta|Processing metadata handling
-sort lower boundaries|Computing lower boundaries for sort operation
-Release GPU|Releasing the GPU semaphore
-Acquire GPU|Time waiting for GPU semaphore to be acquired
-RapidsCachingReader.read|Reading shuffle data from cache or remote transport
-computeAggregate|Computing aggregation on input batch
-concat pending|Concatenating pending batches
-RepartitionAggregateIterator.next|Fetching next batch from repartition aggregate iterator
-copy compressed buffers|Copying compressed buffer data
-GpuCoalesceBatches: collect|GPU combining of small batches post-kernel processing
-Round robin partition|Partitioning data using round-robin strategy
-Sub-join part|Hash partitioning for sub-join operation
-write python batch|Writing Python batch
-get map|Getting join map
-GpuPartitioner|GPU partitioner operation
-Sort next output batch|Fetching next sorted output batch
-existence join batch|Processing batch for existence join
-TOP N Offset|Computing top N rows with offset
-sort_order|Computing sort order for data
-broadcast collect|Collecting data for broadcast
-join asymmetric probe fetch|Asymmetric join probe side data fetch
-gather|Gathering sorted data based on indices
-sort op|General sort operation
-Avro decode|Decoding Avro data to columnar format
-interleaveBits|Interleaving bits for Z-order
-sort to unsafe row|Converting sorted data to unsafe row format
-window|Computing window function results
-cartesian product serialize|Serializing batch for cartesian product operation
-Buffer file split|Buffering file split for reading
-broadcast join stream|time it takes to materialize a broadcast batch on the host
-GpuJsonToStructs|Converting JSON to structs
-Buffer Callback|Processing buffer callback
-concatenateBatches|Concatenating multiple batches into one
-avro buffer file split|Splitting Avro file into buffer chunks for reading
-parquet buffer file split|Splitting Parquet file into buffer chunks for reading
-gpuKudoSliceBuffers|slice kudo serialized buffers on host into partitions
-merge sort|Merge sorting multiple sorted batches
-Parquet readBatch|Reading Parquet batch
-GPU file format write|Writing batch of data to file format on GPU
-get final batch|Getting final batch from join operation
-ORC decode|Decoding ORC data to columnar format
-Round robin partition slice|Slicing data for round-robin partitioning
-BATCH RECEIVED|Processing received shuffle batch
-parquet read filtered footer|Reading filtered Parquet footer with selected row groups
-sort|Sorting columnar data
-ColumnarToRow: batch|Converting columnar batch to row format
-Avro readBatch|Reading Avro batch
-Shuffle Concat CPU|Concatenating shuffle data on CPU
-ColumnarToRow: fetch|Fetching data during columnar to row conversion
-PartitionD2H|Copying partition data from device to host
-HIVE decode|Decoding Hive table data
-device spill|Spilling data from device memory to host
-parquet read footer|Reading and parsing complete Parquet footer
-CommitShuffle|After all temporary shuffle writes are done, produce a single file (shuffle_[map_id]_0) in the commit phase
-agg pre-process|Pre-processing step for aggregation before calling cuDF aggregate, including casting and struct creation
-ProjectExec|Executing projection operation on columnar batch
-Columnar batch serialize row only|Serializing row-only batch (no GPU data)
-disk spill|Spilling data from host memory to disk
-Async Shuffle Buffer|Asynchronous shuffle buffering operation
-CSV decode|Decoding CSV data
-get batch|Getting join batch
-Spark Task|Spark task execution range for stage and task tracking
-reduction merge m2|Merging M2 values during variance/stddev reduction
-HILBERT INDEX|Computing Hilbert index
-gpuAcquireC2C|Acquiring GPU for coalesce-to-coalesce operation
-ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
-Bring back to host|Copying GPU data back to host memory
-limit and offset|Applying limit and offset to data
-Parquet decode|Decoding Parquet data to columnar format
-generate estimate repetition|Estimating repetition count for generate operation
-Read Header|Reading serialized batch header
-random expr|Generating random values in expression evaluation
-queueFetched|MT shuffle manager is using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results
-generate get row byte count|Computing byte count for generated rows
-single build batch concat|Concatenating batches for single build batch
-sort copy boundaries|Copying boundary data for sort operation
-WaitingForWrites|Rapids Shuffle Manager (multi threaded) is waiting for any queued writes to finish before finalizing the map output writer
-Project AST|Applying AST-based projection to batch
-ORC readBatches|Reading ORC batches
-Shuffle Transfer Request|Handling shuffle data transfer request
-consumeWindow|Consuming transfer window
-orc buffer file split|Splitting ORC file into buffer chunks for reading
-parquet clip schema|Clipping Parquet schema to required columns
-AbstractGpuCoalesceIterator|Default range for a code path in the AbstractGpuCoalesceIterator for an op which is not explicitly documented in its own range
-Client.fetch|Fetching data from shuffle server
-Columnar batch serialize|Serializing columnar batch for shuffle or storage
 Read Batch|Reading serialized batch data
-pinnedH2D|Copying from pinned host memory to device
-sliceInternalOnGpu|Slicing partition data on GPU
-file format readBatch|Reading batch of data from file format (Parquet/ORC/Avro/CSV/JSON)
-batch decompress|Decompressing batch data
-broadcast|Broadcasting data to executors
-HostColumnarToGpu concat|Concatenating batches in HostColumnarToGpu
-ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
-ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
-RapidsShuffleIterator.next|Fetching next batch from Rapids shuffle iterator
-post-process|Post-processing aggregation results
-json convert datetime|Converting JSON datetime types to Spark datetime types
-Buffer file split text|Buffering text file split
-agg groupby|Group-by aggregation using cuDF groupBy operation
-gpuKudoCopyToHost|copy gpu kudo serialized outputs back to the host
-RapidsShuffleIterator.gotBatch|Processing batch received from Rapids shuffle
-RapidsShuffleIterator prep|Preparing shuffle iterator with cached and remote blocks
-JSON decode|Decoding JSON data
-Handle Meta Request|Handling metadata request on shuffle server
-filter batch|Filtering rows from a columnar batch
-shuffle fetch first batch|Fetching first batch in shuffle coalesce operation
-windowExec|Executing window operation on batch
-build join table|Building hash table for join operation
-join first stream batch|Fetching and processing first batch from stream side of join
-GpuGenerateIterator|Iterating through generated data
-finalize agg|Finalizing aggregation results
-DoubleBatchedWindow_POST|Post-processing for double-batched window operation
-broadcast build|Building broadcast data structure
-getBroadcastBatch|Getting broadcast batch
-hash join build|IO time on the build side data for the following join
-row to columnar|Converting row-based data to columnar format
-SerializeBatch|Serializing broadcast batch
-build batch: collect|Perform a join where the build side fits in a single GPU batch
-probe left|Probing the left side of a join input iterator to get the data size for preparing the join
-spill map|Spilling join map
-Async Shuffle Read|Asynchronous shuffle read operation
-Client.handleMeta|Handling metadata from shuffle server
-Serialize Batch|Serializing columnar batch
-json convert table|Converting JSON table to desired schema type
-RapidsCachingWriter.close|Closing Rapids caching writer and finalizing shuffle output
-GpuRange|Generating range of values on GPU
-Calculate part|Calculating hash partition assignments
-RunningWindow|Computing running window aggregation
-GpuGenerateExec|Executing generate operation on GPU
-Join gather|Gathering join results
-waitForCPU|Waiting for CPU batch in hybrid execution
-parquet get blocks with filter|Retrieving Parquet blocks after applying filters
-dynamic sort heuristic|Applying dynamic sort heuristic for aggregation
-shuffle concat load batch|Concatenating and loading batch in shuffle operation
+generate estimate repetition|Estimating repetition count for generate operation
+hash partition|Partitioning data based on hash values
+Columnar batch serialize|Serializing columnar batch for shuffle or storage
+fetch join stream|IO time on the stream side data for the following join
 parquet read footer bytes|Reading raw footer bytes from Parquet file
-spill batch|Spilling join batch
-Fast Sample Exec|Fast sampling rows from data
-partition for join|Hash partitioning data for join operation
-BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
-lz4 post process|Post-processing LZ4 compressed data
-GpuCoalesceBatches concat|Concatenating batches in GpuCoalesceBatches
-full hash join gather map|Gathering full hash join results
-readNConcat|Reading and concatenating N batches
-RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing
-hash join gather map|Gathering hash join results using gather map
+hash partition slice|Slicing partitioned table into individual partitions
+dynamic sort heuristic|Applying dynamic sort heuristic for aggregation
+AbstractGpuCoalesceIterator|Default range for a code path in the AbstractGpuCoalesceIterator for an op which is not explicitly documented in its own range
+Acquire GPU|Time waiting for GPU semaphore to be acquired
+TOP N Offset|Computing top N rows with offset
+get batch|Getting join batch
+Shuffle Transfer Request|Handling shuffle data transfer request
+gpuKudoCopyToHost|copy gpu kudo serialized outputs back to the host
+generate get row byte count|Computing byte count for generated rows
 calc gather size|Calculating gather operation size
-sliceInternalOnCpu|Slicing partition data on CPU
-broadcast manifest batch|Creating broadcast manifest batch
-batch compress|Compressing batch data
-ExpandExec projections|Projecting expand operation on batch
-HostDeserializeBatch|Deserializing batch on host
+hash join build|IO time on the build side data for the following join
+Async Shuffle Buffer|Asynchronous shuffle buffering operation
+RapidsShuffleIterator.gotBatch|Processing batch received from Rapids shuffle
+BATCH RECEIVED|Processing received shuffle batch
+Buffer file split text|Buffering text file split
+parquet filter blocks|Filtering Parquet row group blocks based on predicates
+sort lower boundaries|Computing lower boundaries for sort operation
+row to columnar|Converting row-based data to columnar format
+Shuffle Concat CPU|Concatenating shuffle data on CPU
+GpuCoalesceBatches concat|Concatenating batches in GpuCoalesceBatches
+Round robin partition|Partitioning data using round-robin strategy
 RapidsCachingReader read local|Reading shuffle blocks from local cache
+parquet buffer file split|Splitting Parquet file into buffer chunks for reading
+Sort next output batch|Fetching next sorted output batch
+sort copy boundaries|Copying boundary data for sort operation
+hash join gather map|Gathering hash join results using gather map
+probe right|Probing the right side of a join input iterator to get the data size for preparing the join
+Read Header|Reading serialized batch header
+SerializeBatch|Serializing broadcast batch
+concat pending|Concatenating pending batches
+agg post-process|Post-processing step for aggregation, including casting and struct decomposition
+ParallelDeserializerIterator.next|Calling next on the MT shuffle reader iterator
+Spark Task|Spark task execution range for stage and task tracking
+PageableH2D|Copying from pageable host memory to device
+join first stream batch|Fetching and processing first batch from stream side of join
+parquet read footer|Reading and parsing complete Parquet footer
+zstd post process|Post-processing ZSTD compressed data
+RapidsCachingWriter.close|Closing Rapids caching writer and finalizing shuffle output
+cartesian product deserialize|Deserializing batch from cartesian product operation
+json convert datetime|Converting JSON datetime types to Spark datetime types
+broadcast|Broadcasting data to executors
+post-process|Post-processing aggregation results
+RapidsCachingReader.read|Reading shuffle data from cache or remote transport
+RapidsShuffleIterator.next|Fetching next batch from Rapids shuffle iterator
+Parquet readBatch|Reading Parquet batch
+HostColumnarToGpu concat|Concatenating batches in HostColumnarToGpu
+Avro decode|Decoding Avro data to columnar format
+Join gather|Gathering join results
+GpuCoalesceBatches: collect|GPU combining of small batches post-kernel processing
+batch decompress|Decompressing batch data
+gpuAcquireC2C|Acquiring GPU for coalesce-to-coalesce operation
+join asymmetric probe fetch|Asymmetric join probe side data fetch
+windowExec|Executing window operation on batch
+CSV decode|Decoding CSV data
+ThreadedWriter.write|Rapids Shuffle Manager (multi threaded) writing
+DeserializeBatch|Deserializing broadcast batch
+json convert table|Converting JSON table to desired schema type
+copy compressed buffers|Copying compressed buffer data
+Handle Meta Request|Handling metadata request on shuffle server
+Round robin partition slice|Slicing data for round-robin partitioning
+shuffle concat load batch|Concatenating and loading batch in shuffle operation
+agg reduce|Reduction aggregation for operations without grouping keys
+alloc output bufs|Allocating output buffers for compression
+join asymmetric fetch|Asymmetric join data fetch
+CommitShuffle|After all temporary shuffle writes are done, produce a single file (shuffle_[map_id]_0) in the commit phase
+sort to unsafe row|Converting sorted data to unsafe row format
+queueFetched|MT shuffle manager is using the RapidsShuffleBlockFetcherIterator to queue the next set of fetched results
+consumeWindow|Consuming transfer window
+RepartitionAggregateIterator.next|Fetching next batch from repartition aggregate iterator
+pinnedH2D|Copying from pinned host memory to device
+avro buffer file split|Splitting Avro file into buffer chunks for reading
+GpuJsonToStructs|Converting JSON to structs
+waitForCPU|Waiting for CPU batch in hybrid execution
+broadcast build|Building broadcast data structure
+lz4 post process|Post-processing LZ4 compressed data
+build batch: collect|Perform a join where the build side fits in a single GPU batch
+WaitingForWrites|Rapids Shuffle Manager (multi threaded) is waiting for any queued writes to finish before finalizing the map output writer
+ProjectExec|Executing projection operation on columnar batch
+limit and offset|Applying limit and offset to data
+HILBERT INDEX|Computing Hilbert index
+device spill|Spilling data from device memory to host
+spill batch|Spilling join batch
+parquet read filtered footer|Reading filtered Parquet footer with selected row groups
+getMapSizesByExecId|Call to internal Spark API for retrieving size and location of shuffle map output blocks
+ExpandExec projections|Projecting expand operation on batch
+Parquet decode|Decoding Parquet data to columnar format
+HostDeserializeBatch|Deserializing batch on host
+partition for join|Hash partitioning data for join operation
+ColumnarToRow: batch|Converting columnar batch to row format
+HIVE decode|Decoding Hive table data
+Sub-join part|Hash partitioning for sub-join operation
+concatenateBatches|Concatenating multiple batches into one
+GPU file format write|Writing batch of data to file format on GPU
+broadcast join stream|time it takes to materialize a broadcast batch on the host
+filter batch|Filtering rows from a columnar batch
+RunningWindow|Computing running window aggregation
+gpuKudoSerialize|Perform kudo serialization on the gpu
+Client.fetch|Fetching data from shuffle server
+Columnar batch serialize row only|Serializing row-only batch (no GPU data)
+file format readBatch|Reading batch of data from file format (Parquet/ORC/Avro/CSV/JSON)
+GpuRange|Generating range of values on GPU
+spill map|Spilling join map
+agg pre-process|Pre-processing step for aggregation before calling cuDF aggregate, including casting and struct creation
+Bring back to host|Copying GPU data back to host memory
+Fast Sample Exec|Fast sampling rows from data
+parquet clip schema|Clipping Parquet schema to required columns
+PartitionD2H|Copying partition data from device to host
+batch compress|Compressing batch data
+Serialize Batch|Serializing columnar batch
+full hash join gather map|Gathering full hash join results
+broadcast collect|Collecting data for broadcast
+GpuGenerateExec|Executing generate operation on GPU
+orc buffer file split|Splitting ORC file into buffer chunks for reading
+GpuGenerate project split|Splitting projection in generate operation
+agg groupby|Group-by aggregation using cuDF groupBy operation
+gather|Gathering sorted data based on indices
+sort|Sorting columnar data
+Compile ASTs|Compiling abstract syntax trees for expression evaluation
+ThreadedReader.read|Rapids Shuffle Manager (multi threaded) reading
+build join table|Building hash table for join operation
+split input batch|Splitting input batch for sorting
+agg repartition|Repartitioning data for aggregation
+interleaveBits|Interleaving bits for Z-order
+write python batch|Writing Python batch
+disk spill|Spilling data from host memory to disk
+broadcast manifest batch|Creating broadcast manifest batch
+finalize agg|Finalizing aggregation results
+computeAggregate|Computing aggregation on input batch
+BatchWait|Rapids Shuffle Manager (multi threaded) reader blocked waiting for batches to finish decoding
+GpuGenerateIterator|Iterating through generated data
+RapidsCachingWriter.write|Rapids Shuffle Manager (ucx) writing
+existence join scatter map|Creating scatter map for existence join
+Sample Exec|Sampling rows from data
+read python batch|Reading Python batch
+getBroadcastBatch|Getting broadcast batch
+Buffer file split|Buffering file split for reading
+reduction merge m2|Merging M2 values during variance/stddev reduction
+Async Shuffle Read|Asynchronous shuffle read operation
+DoubleBatchedWindow_PRE|Pre-processing for double-batched window operation
+shuffle fetch first batch|Fetching first batch in shuffle coalesce operation
+ColumnarToRow: fetch|Fetching data during columnar to row conversion
+first stream batch|Processing first stream batch
+Transport copy buffer|Copying buffer for Rapids shuffle transport
+readNConcat|Reading and concatenating N batches
+existence join batch|Processing batch for existence join
+probe left|Probing the left side of a join input iterator to get the data size for preparing the join
+cartesian product serialize|Serializing batch for cartesian product operation
+Release GPU|Releasing the GPU semaphore
+Buffer Callback|Processing buffer callback
+GpuPartitioner|GPU partitioner operation
+sort_order|Computing sort order for data
+Avro readBatch|Reading Avro batch
+ORC decode|Decoding ORC data to columnar format
+sliceInternalOnGpu|Slicing partition data on GPU
+Client.handleMeta|Handling metadata from shuffle server
+get final batch|Getting final batch from join operation
+sliceInternalOnCpu|Slicing partition data on CPU
+TOP N|Computing top N rows
+single build batch concat|Concatenating batches for single build batch
+JSON decode|Decoding JSON data
+Serialize Row Only Batch|Serializing row-only batch
+parquet parse filter footer|Parsing and filtering Parquet footer by range
+gpuKudoSliceBuffers|slice kudo serialized buffers on host into partitions
+DoubleBatchedWindow_POST|Post-processing for double-batched window operation
+doHandleMeta|Processing metadata handling
+RapidsShuffleIterator prep|Preparing shuffle iterator with cached and remote blocks
+sort op|General sort operation
+shuffled join stream|GpuShuffledHashJoinExec op is preparing build batches for join
+Calculate part|Calculating hash partition assignments
+parquet get blocks with filter|Retrieving Parquet blocks after applying filters
+ORC readBatches|Reading ORC batches
+Project AST|Applying AST-based projection to batch
+merge sort|Merge sorting multiple sorted batches
+window|Computing window function results
+get map|Getting join map
+random expr|Generating random values in expression evaluation
+update tracking mask|Updating tracking mask for join operation

@@ -30,6 +30,8 @@ function print_usage() {
   echo "        print this help message"
   echo "   --debug"
   echo "        enable bash -x tracing right after this option is parsed"
+  echo "   --docgen"
+  echo "        generate markdown and csv files for supported ops and configs"
   echo "   --clean"
   echo "        include Maven clean phase"
   echo "   -gb, --generate-bloop"
@@ -135,6 +137,11 @@ case "$1" in
 
 --install)
   FINAL_OP="install"
+  ;;
+
+--docgen)
+  FINAL_OP="verify"
+  DOCGEN=true
   ;;
 
 --scala213)
@@ -255,6 +262,8 @@ function build_single_shim() {
     # precedence package-phase artifacts
     #
     MVN_PHASE="install"
+  elif [[ "$DOCGEN" == "true" ]]; then
+    MVN_PHASE="verify"
   else
     SKIP_CHECKS="true"
     MVN_PHASE="package"
