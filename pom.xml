@@ -1024,7 +1024,8 @@
             330
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
-            350
+            350,
+            401
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             331,
