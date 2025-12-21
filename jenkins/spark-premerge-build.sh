@@ -194,7 +194,8 @@ ci_scala213() {
             -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
     done
 
-    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
+    # We are going to run integration tests against Spark 4.0.1
+    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=401 clean package $MVN_BUILD_ARGS -DskipTests=true
 
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
