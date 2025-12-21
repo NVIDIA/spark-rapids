@@ -2885,6 +2885,7 @@ def test_avg_long_ansi_groupby_overflow():
 
 
 @approximate_float
+@ignore_order
 @pytest.mark.parametrize("ansi", [True, False], ids=["ANSI", "NO_ANSI"])
 @pytest.mark.parametrize('data_type', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4,0), DecimalGen(10,0), DecimalGen(12,0), DecimalGen(38,0)], ids=idfn)
 def test_avg_divide_by_zero(data_type, ansi):
