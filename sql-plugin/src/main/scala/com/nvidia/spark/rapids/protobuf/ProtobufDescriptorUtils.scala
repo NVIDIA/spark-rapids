@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.protobuf
 
-import scala.collection.mutable
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 import com.google.protobuf.DescriptorProtos
 import com.google.protobuf.Descriptors
@@ -67,7 +67,9 @@ object ProtobufDescriptorUtils {
       fd: Descriptors.FileDescriptor,
       messageName: String): Iterator[Descriptors.Descriptor] = {
     def matches(d: Descriptors.Descriptor): Boolean = {
-      d.getName == messageName || d.getFullName == messageName || d.getFullName.endsWith("." + messageName)
+      d.getName == messageName ||
+        d.getFullName == messageName ||
+        d.getFullName.endsWith("." + messageName)
     }
 
     def walk(d: Descriptors.Descriptor): Iterator[Descriptors.Descriptor] = {
