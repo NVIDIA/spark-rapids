@@ -487,7 +487,7 @@ case class CloseableTableSeqWithTargetSize[T <: AutoCloseable](
  * collecting serialized tables and managing batch sizes. Subclasses handle
  * the specific concatenation logic (host vs GPU) and async behavior.
  */
-abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
+abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R <: AutoCloseable](
     iter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
     concatTimeMetric: GpuMetric,
@@ -559,9 +559,11 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
           // Store the iterator so we can yield results one by one if splits occurred
           if (resultIter.hasNext) {
             val firstResult = resultIter.next()
-            // If there are more results, store the iterator for subsequent calls
-            if (resultIter.hasNext) {
-              pendingResultIter = Some(resultIter)
+            closeOnExcept(firstResult) { _ =>
+              // If there are more results, store the iterator for subsequent calls
+              if (resultIter.hasNext) {
+                pendingResultIter = Some(resultIter)
+              }
             }
             firstResult
           } else {
