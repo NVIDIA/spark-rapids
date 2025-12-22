@@ -1235,7 +1235,7 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.3.0</version>
+                    <version>3.6.1</version>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
@@ -1821,45 +1821,42 @@ This will force full Scala code rebuild in downstream modules.
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>update-highest-source-dir</id>
+                        <id>regex-properties</id>
                         <goals>
-                            <goal>regex-property</goal>
+                            <goal>regex-properties</goal>
                         </goals>
                         <phase>initialize</phase>
                         <configuration>
-                            <name>spark.rapids.source.basedir</name>
-                            <value>${spark.rapids.project.basedir}</value>
-                            <regex>\/scala[0-9.]+</regex>
-                            <replacement></replacement>
-                            <failIfNoMatch>false</failIfNoMatch>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>update-base-source-dir</id>
-                        <goals>
-                            <goal>regex-property</goal>
-                        </goals>
-                        <phase>initialize</phase>
-                        <configuration>
-                            <name>origbasedir</name>
-                            <value>${project.basedir}</value>
-                            <regex>\/scala[0-9.]+</regex>
-                            <replacement></replacement>
-                            <failIfNoMatch>false</failIfNoMatch>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>update-shimplify-base-source-dir</id>
-                        <goals>
-                            <goal>regex-property</goal>
-                        </goals>
-                        <phase>initialize</phase>
-                        <configuration>
-                            <name>shimplify.src.basedir</name>
-                            <value>${project.basedir}</value>
-                            <regex>\/scala[0-9.]+</regex>
-                            <replacement></replacement>
-                            <failIfNoMatch>false</failIfNoMatch>
+                            <regexPropertySettings>
+                                <regexPropertySetting>
+                                    <name>spark.rapids.source.basedir</name>
+                                    <value>${spark.rapids.project.basedir}</value>
+                                    <regex>\/scala[0-9.]+</regex>
+                                    <replacement></replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                                <regexPropertySetting>
+                                    <name>origbasedir</name>
+                                    <value>${project.basedir}</value>
+                                    <regex>\/scala[0-9.]+</regex>
+                                    <replacement></replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                                <regexPropertySetting>
+                                    <name>shimplify.src.basedir</name>
+                                    <value>${project.basedir}</value>
+                                    <regex>\/scala[0-9.]+</regex>
+                                    <replacement></replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                                <regexPropertySetting>
+                                    <name>jdk9plus.args</name>
+                                    <value>${extraJavaTestArgs}</value>
+                                    <regex>[\r\n]+</regex>
+                                    <replacement> </replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                            </regexPropertySettings>
                         </configuration>
                     </execution>
                     <execution>
