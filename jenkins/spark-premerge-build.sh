@@ -17,8 +17,6 @@
 
 set -ex
 
-. jenkins/shuffle-common.sh
-
 BUILD_TYPE=all
 
 if [[ $# -eq 1 ]]; then
@@ -230,11 +228,15 @@ prepare_spark() {
     TMP_PYTHON=/tmp/$(date +"%Y%m%d")
     rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
     export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$(echo -n $TMP_PYTHON/python/lib/py4j-*-src.zip)
+
+    # Update SHUFFLE_SPARK_SHIM to match the downloaded Spark version
+    export SHUFFLE_SPARK_SHIM=$(get_shuffle_shim "$spark_version")
 }
 
 nvidia-smi
 
 . jenkins/version-def.sh
+. jenkins/shuffle-common.sh
 
 PREMERGE_PROFILES="-Ppre-merge"
 

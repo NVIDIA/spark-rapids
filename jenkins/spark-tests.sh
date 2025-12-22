@@ -21,6 +21,10 @@ nvidia-smi
 
 . jenkins/version-def.sh
 . jenkins/shuffle-common.sh
+
+# Get the shuffle shim for the current Spark version
+SHUFFLE_SPARK_SHIM=$(get_shuffle_shim)
+
 # if run in jenkins WORKSPACE refers to rapids root path; if not run in jenkins just use current pwd(contains jenkins dirs)
 WORKSPACE=${WORKSPACE:-`pwd`}
 

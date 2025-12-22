@@ -17,15 +17,34 @@
 
 # Common shuffle test utilities shared between spark-premerge-build.sh and spark-tests.sh
 
+# Get the shuffle shim name for a given Spark version
+# Arguments:
+#   $1 - Spark version (e.g., "3.3.0", "4.0.1"). Defaults to $SPARK_VER if not provided.
+# Output:
+#   Prints the shim name (e.g., "spark330", "spark401")
+# Note: For non-Apache Spark flavors (databricks, cloudera, etc.), the version string
+#       may need special handling - set SHUFFLE_SPARK_SHIM explicitly in those cases.
+get_shuffle_shim() {
+    local spark_ver="${1:-$SPARK_VER}"
+    local shim="spark${spark_ver//./}"
+    # Remove -SNAPSHOT suffix if present
+    echo "${shim//\-SNAPSHOT/}"
+}
+
 # Run shuffle integration test
 # Arguments:
 #   $1 - shuffle mode: "UCX" or "MULTITHREADED"
 #   $2 - path to run_pyspark_from_build.sh (e.g., "./run_pyspark_from_build.sh" or "./integration_tests/run_pyspark_from_build.sh")
 #   $3 - (optional) "premerge" to use premerge-specific configs (memory limits, TEST_PARALLEL=0, etc.)
+#   $4 - (optional) Spark version for shuffle shim. Defaults to $SPARK_VER.
 invoke_shuffle_integration_test() {
     local shuffle_mode="$1"
     local pyspark_script="${2:-./run_pyspark_from_build.sh}"
     local run_mode="${3:-}"
+    local spark_ver="${4:-$SPARK_VER}"
+
+    # Get the shuffle shim for this Spark version
+    local shuffle_shim=$(get_shuffle_shim "$spark_ver")
 
     # check out what else is on the GPU
     nvidia-smi
@@ -47,7 +66,7 @@ invoke_shuffle_integration_test() {
     fi
 
     # Common shuffle manager
-    env_vars+="PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager "
+    env_vars+="PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$shuffle_shim.RapidsShuffleManager "
 
     # Mode-specific configs
     if [[ "$shuffle_mode" == "UCX" ]]; then
