@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import org.apache.spark.unsafe.types.UTF8String;
  * Wraps a GpuColumnVector but only points to a slice of it.  This is intended to only be used
  * during shuffle after the data is partitioned and before it is serialized.
  */
-public class SlicedGpuColumnVector extends ColumnVectorWithState {
+public class SlicedGpuColumnVector extends ColumnVector {
   private final RapidsHostColumnVector wrap;
   private final int start;
   private final int end;

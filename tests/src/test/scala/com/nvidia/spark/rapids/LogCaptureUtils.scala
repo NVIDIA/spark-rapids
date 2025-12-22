@@ -16,6 +16,9 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.{Boolean => JBoolean}
+import java.lang.reflect.{InvocationHandler, Method, Proxy}
+
 import scala.collection.mutable.ArrayBuffer
 
 /**
@@ -92,11 +95,11 @@ private class Log4j1Capturer(
   
   private val appenderClass = Class.forName("org.apache.log4j.Appender")
   
-  private val appender = java.lang.reflect.Proxy.newProxyInstance(
+  private val appender = Proxy.newProxyInstance(
     getClass.getClassLoader,
     Array(appenderClass),
-    new java.lang.reflect.InvocationHandler {
-      override def invoke(proxy: Any, method: java.lang.reflect.Method, 
+    new InvocationHandler {
+      override def invoke(proxy: Any, method: Method, 
           args: Array[Object]): Object = {
         method.getName match {
           case "doAppend" if args != null && args.length > 0 =>
@@ -108,13 +111,13 @@ private class Log4j1Capturer(
             null
           case "getName" => "TestCaptureAppender"
           case "close" => null
-          case "requiresLayout" => java.lang.Boolean.FALSE
+          case "requiresLayout" => JBoolean.FALSE
           case "equals" =>
             if (args != null && args.length == 1) {
-              java.lang.Boolean.valueOf(
+              JBoolean.valueOf(
                 proxy.asInstanceOf[AnyRef] eq args(0).asInstanceOf[AnyRef])
             } else {
-              java.lang.Boolean.FALSE
+              JBoolean.FALSE
             }
           case "hashCode" => 
             Integer.valueOf(System.identityHashCode(proxy))
@@ -155,7 +158,7 @@ private class Log4j2Capturer(
   private val logManagerClass = Class.forName("org.apache.logging.log4j.LogManager")
   private val getContextMethod = logManagerClass.getMethod(
     "getContext", classOf[Boolean])
-  private val context = getContextMethod.invoke(null, java.lang.Boolean.FALSE)
+  private val context = getContextMethod.invoke(null, JBoolean.FALSE)
   
   private val getConfigurationMethod = context.getClass.getMethod("getConfiguration")
   private val config = getConfigurationMethod.invoke(context)
@@ -166,11 +169,11 @@ private class Log4j2Capturer(
   private val appenderClass = Class.forName(
     "org.apache.logging.log4j.core.Appender")
   
-  private val appender = java.lang.reflect.Proxy.newProxyInstance(
+  private val appender = Proxy.newProxyInstance(
     getClass.getClassLoader,
     Array(appenderClass),
-    new java.lang.reflect.InvocationHandler {
-      override def invoke(proxy: Any, method: java.lang.reflect.Method, 
+    new InvocationHandler {
+      override def invoke(proxy: Any, method: Method, 
           args: Array[Object]): Object = {
         method.getName match {
           case "append" if args != null && args.length > 0 =>
@@ -183,16 +186,16 @@ private class Log4j2Capturer(
             logMessages.synchronized { logMessages += formattedMsg }
             null
           case "getName" => "TestCaptureAppender"
-          case "isStarted" => java.lang.Boolean.TRUE
-          case "isStopped" => java.lang.Boolean.FALSE
+          case "isStarted" => JBoolean.TRUE
+          case "isStopped" => JBoolean.FALSE
           case "getLayout" => null
-          case "ignoreExceptions" => java.lang.Boolean.TRUE
+          case "ignoreExceptions" => JBoolean.TRUE
           case "equals" =>
             if (args != null && args.length == 1) {
-              java.lang.Boolean.valueOf(
+              JBoolean.valueOf(
                 proxy.asInstanceOf[AnyRef] eq args(0).asInstanceOf[AnyRef])
             } else {
-              java.lang.Boolean.FALSE
+              JBoolean.FALSE
             }
           case "hashCode" => 
             Integer.valueOf(System.identityHashCode(proxy))

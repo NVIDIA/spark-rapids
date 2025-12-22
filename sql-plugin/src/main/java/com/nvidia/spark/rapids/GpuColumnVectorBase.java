@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,26 @@ import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
 /** Base class for all GPU column vectors. */
-abstract class GpuColumnVectorBase extends ColumnVectorWithState {
+abstract class GpuColumnVectorBase extends ColumnVector {
   private final static String BAD_ACCESS = "DATA ACCESS MUST BE ON A HOST VECTOR";
+
+  private boolean isFinalBatch = false;
+
+  /**
+   * Set if this is a part of the final batch for this partition or not.
+   * @param isFinal true if this is part of the final batch or false if unknown.
+   */
+  public final void setFinalBatch(boolean isFinal) {
+    isFinalBatch = isFinal;
+  }
+
+  /**
+   * Is this the final batch or is it unknown.
+   * @return true if it is known to be a part of the final batch, else false if it is unknown
+   */
+  public boolean isKnownFinalBatch() {
+    return isFinalBatch;
+  }
 
   protected GpuColumnVectorBase(DataType type) {
     super(type);

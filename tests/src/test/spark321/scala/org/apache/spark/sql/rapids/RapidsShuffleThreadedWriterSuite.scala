@@ -33,6 +33,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import java.io.{DataInputStream, File, FileInputStream, IOException, ObjectStreamException}
+import ExecutionException
 import java.util.UUID
 import java.util.zip.CheckedInputStream
 
@@ -410,7 +411,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
         1024 * 1024,
         shuffleExecutorComponents,
         numWriterThreads)
-      assertThrows[java.util.concurrent.ExecutionException] {
+      assertThrows[ExecutionException] {
         writer.write(records)
       }
       if (stopWithSuccess) {

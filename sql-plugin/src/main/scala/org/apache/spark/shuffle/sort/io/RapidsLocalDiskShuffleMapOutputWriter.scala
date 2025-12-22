@@ -16,7 +16,7 @@
 
 package org.apache.spark.shuffle.sort.io
 
-import java.io.{File, OutputStream}
+import java.io.{File, IOException, OutputStream}
 import java.nio.ByteBuffer
 import java.nio.channels.WritableByteChannel
 import java.util.Optional
@@ -118,7 +118,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
         }
       } else {
         // Memory scarce: use FILE_ONLY mode
-        logInfo(s"Host memory usage high, using file-only mode for shuffle " +
+        logDebug(s"Host memory usage high, using file-only mode for shuffle " +
           s"$shuffleId map $mapId")
         val handle = SpillablePartialFileHandle.createFileOnly(
           outputTempFile, syncWrites)
@@ -270,7 +270,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
 
       override def write(src: ByteBuffer): Int = {
         if (!channelOpen) {
-          throw new java.io.IOException("Channel is closed")
+          throw new IOException("Channel is closed")
         }
         val remaining = src.remaining()
         val temp = new Array[Byte](remaining)

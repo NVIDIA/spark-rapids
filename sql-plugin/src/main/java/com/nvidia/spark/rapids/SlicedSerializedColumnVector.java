@@ -30,7 +30,7 @@ import static org.apache.spark.sql.types.DataTypes.NullType;
  * Wraps a GpuColumnVector but only points to a slice of it.  This is intended to only be used
  * during shuffle after the data is partitioned and before it is serialized.
  */
-public class SlicedSerializedColumnVector extends ColumnVectorWithState {
+public class SlicedSerializedColumnVector extends ColumnVector {
   private final HostMemoryBuffer wrap;
 
   private static final String BAD_ACCESS_MSG = "Column is serialized";

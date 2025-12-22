@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.spill
 
 import java.io.File
+import java.util.Arrays
 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsConf
@@ -555,7 +556,7 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
       
       // Write data larger than max buffer size to trigger spill during write
       val largeData = new Array[Byte](300)
-      java.util.Arrays.fill(largeData, 42.toByte)
+      Arrays.fill(largeData, 42.toByte)
       handle.write(largeData, 0, largeData.length)
       
       // After writing, should have spilled during write phase

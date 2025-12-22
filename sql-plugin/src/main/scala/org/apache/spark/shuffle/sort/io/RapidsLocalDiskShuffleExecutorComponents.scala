@@ -16,12 +16,11 @@
 
 package org.apache.spark.shuffle.sort.io
 
-import java.util.Optional
+import java.util.{Map => JMap, Optional}
 
 import com.google.common.annotations.VisibleForTesting
 
-import org.apache.spark.SparkConf
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.shuffle.api.{ShuffleExecutorComponents, ShuffleMapOutputWriter, SingleSpillShuffleMapOutputWriter}
@@ -50,7 +49,7 @@ class RapidsLocalDiskShuffleExecutorComponents(sparkConf: SparkConf)
   override def initializeExecutor(
       appId: String,
       execId: String,
-      extraConfigs: java.util.Map[String, String]): Unit = {
+      extraConfigs: JMap[String, String]): Unit = {
     blockManager = SparkEnv.get.blockManager
     if (blockManager == null) {
       throw new IllegalStateException("No blockManager available from the SparkEnv.")

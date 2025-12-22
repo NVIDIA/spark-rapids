@@ -17,11 +17,12 @@
 package org.apache.spark.sql.rapids
 
 import java.io.{IOException, OutputStream}
-import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.{Callable, ConcurrentHashMap, CopyOnWriteArrayList, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
@@ -32,6 +33,7 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.kudo.OpenByteArrayOutputStream
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
+import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
 
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.executor.ShuffleWriteMetrics
@@ -42,6 +44,7 @@ import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.SortShuffleManager
+import org.apache.spark.shuffle.sort.io.{RapidsLocalDiskShuffleDataIO, RapidsLocalDiskShuffleMapOutputWriter}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
@@ -276,7 +279,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   private val partitioner = dep.partitioner
   private val numPartitions = partitioner.numPartitions
   private val serializer = dep.serializer.newInstance()
-  private val fileBufferSize = 64 << 10
+  private val fileBufferSize = sparkConf.get(config.SHUFFLE_FILE_BUFFER_SIZE).toInt * 1024
   private val limiter = new BytesInFlightLimiter(maxBytesInFlight)
   private val limiterWaitTimeMetric =
     handle.metrics.get(METRIC_THREADED_WRITER_LIMITER_WAIT_TIME)
@@ -287,21 +290,55 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
   // Case class for tracking partial sorted files in multi-batch scenario
   private case class PartialFile(
-    handle: com.nvidia.spark.rapids.spill.SpillablePartialFileHandle,
+    handle: SpillablePartialFileHandle,
     partitionLengths: Array[Long],
     mapOutputWriter: ShuffleMapOutputWriter)
 
-  // Encapsulates all state for processing one GPU batch
+  /**
+   * Encapsulates all state for processing one GPU batch in the multi-batch shuffle write.
+   *
+   * In multi-batch mode, each GPU batch gets its own BatchState with independent buffers,
+   * futures, and a dedicated merger thread. This enables pipeline parallelism where:
+   * - Main thread: processes records and queues compression tasks (non-blocking)
+   * - Writer threads: execute compression tasks in parallel
+   * - Merger thread: waits for completed compressions and writes partitions sequentially
+   *
+   * The merger thread writes partitions in order (0, 1, 2, ...) because Spark's
+   * ShuffleMapOutputWriter requires sequential partition writes.
+   *
+   * @param batchId Unique identifier for this batch (for debugging/logging)
+   * @param mapOutputWriter Spark's shuffle output writer for this batch. Each batch writes
+   *                        to a separate temp file, later merged into final output.
+   * @param partitionBuffers Maps partitionId -> compressed data buffer. Compression tasks
+   *                         append data here; merger thread reads and writes to disk.
+   * @param partitionFutures Maps partitionId -> list of compression task futures.
+   *                         Each future returns (uncompressedSize, compressedSize).
+   *                         One future per record, so multiple futures when partition has
+   *                         multiple records.
+   * @param partitionWrittenBytes Maps partitionId -> bytes already written to output stream.
+   *                              Used for incremental writes as compression tasks complete.
+   * @param partitionProcessedFutures Maps partitionId -> count of futures already processed.
+   *                                   Merger thread skips already-processed futures.
+   * @param maxPartitionIdQueued Highest partition ID that main thread has queued tasks for.
+   *                             Merger thread uses this to know when a partition is complete:
+   *                             if currentPartition < maxPartitionIdQueued, all data for
+   *                             currentPartition has been queued. This typically happens at
+   *                             batch boundaries when partition ID wraps back to a lower value.
+   * @param mergerCondition Condition variable for main thread to wake up merger thread
+   *                        when new compression tasks are queued or batch is complete.
+   * @param mergerSlotNum The merger thread pool slot assigned to this batch.
+   * @param mergerFuture Future representing the merger task, used to wait for completion.
+   */
   private case class BatchState(
     batchId: Int,
     mapOutputWriter: ShuffleMapOutputWriter,
     partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
     partitionFutures: ConcurrentHashMap[Int,
-      java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]],
-    partitionBytesProgress: ConcurrentHashMap[Int, Long],
-    partitionFuturesProgress: ConcurrentHashMap[Int, Int],
-    maxPartitionSeen: java.util.concurrent.atomic.AtomicInteger,
-    writerCondition: Object,
+      CopyOnWriteArrayList[Future[(Long, Long)]]],
+    partitionWrittenBytes: ConcurrentHashMap[Int, Long],
+    partitionProcessedFutures: ConcurrentHashMap[Int, Int],
+    maxPartitionIdQueued: AtomicInteger,
+    mergerCondition: Object,
     mergerSlotNum: Int,
     mergerFuture: Future[_])
 
@@ -343,16 +380,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   private def createBatchState(
       batchId: Int,
       writer: ShuffleMapOutputWriter): BatchState = {
-    import java.util.concurrent.atomic.AtomicInteger
-    import java.util.concurrent.ConcurrentHashMap
 
     val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
     val partitionFutures = new ConcurrentHashMap[Int,
-      java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]]()
-    val partitionBytesProgress = new ConcurrentHashMap[Int, Long]()
-    val partitionFuturesProgress = new ConcurrentHashMap[Int, Int]()
-    val maxPartitionSeen = new AtomicInteger(-1)
-    val writerCondition = new Object()
+      CopyOnWriteArrayList[Future[(Long, Long)]]]()
+    val partitionWrittenBytes = new ConcurrentHashMap[Int, Long]()
+    val partitionProcessedFutures = new ConcurrentHashMap[Int, Int]()
+    val maxPartitionIdQueued = new AtomicInteger(-1)
+    val mergerCondition = new Object()
 
     // Assign a merger slot for this batch
     val mergerSlotNum = RapidsShuffleInternalManagerBase.getNextMergerSlot
@@ -379,8 +414,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             unfinishedStream.get.close()
             unfinishedStream = None
             partitionFutures.remove(partitionId)
-            partitionFuturesProgress.remove(partitionId)
-            partitionBytesProgress.remove(partitionId)
+            partitionProcessedFutures.remove(partitionId)
+            partitionWrittenBytes.remove(partitionId)
           }
         case None =>
           throw new IllegalStateException(
@@ -393,38 +428,40 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       override def run(): Unit = {
         var currentPartitionToWrite = 0
         while (currentPartitionToWrite < numPartitions) {
-          if (currentPartitionToWrite <= maxPartitionSeen.get()) {
+          if (currentPartitionToWrite <= maxPartitionIdQueued.get()) {
             var containsLastForThisPartition = false
-            var futures: java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]] = null
+            var futures: CopyOnWriteArrayList[Future[(Long, Long)]] = null
 
-            maxPartitionSeen.synchronized {
+            maxPartitionIdQueued.synchronized {
               futures = partitionFutures.get(currentPartitionToWrite)
-              if (currentPartitionToWrite < maxPartitionSeen.get()) {
+              if (currentPartitionToWrite < maxPartitionIdQueued.get()) {
                 containsLastForThisPartition = true
               }
             }
 
             if (futures != null) {
-              import scala.collection.JavaConverters._
+              // Track if any new future was processed in this iteration
               var newFutureTouched = false
-              val futuresProgress =
-                 partitionFuturesProgress.getOrDefault(currentPartitionToWrite, 0)
+              val processedCount =
+                 partitionProcessedFutures.getOrDefault(currentPartitionToWrite, 0)
+              // Process only futures that haven't been processed yet
               futures.asScala.zipWithIndex.filter(pair => {
-                pair._2 >= futuresProgress
+                pair._2 >= processedCount
               }).foreach { future =>
                 newFutureTouched = true
                 val (recordSize, compressedSize) = future._1.get()
 
-                val bytesProgress =
-                  partitionBytesProgress.getOrDefault(currentPartitionToWrite, 0L)
+                // Write newly compressed data incrementally
+                val writtenBytes =
+                  partitionWrittenBytes.getOrDefault(currentPartitionToWrite, 0L)
                 writeBufferForSinglePartition(currentPartitionToWrite,
-                  bytesProgress,
-                  bytesProgress + compressedSize,
+                  writtenBytes,
+                  writtenBytes + compressedSize,
                   doCleanUp = false)
 
-                partitionBytesProgress.put(
-                  currentPartitionToWrite, bytesProgress + compressedSize)
-                partitionFuturesProgress.compute(currentPartitionToWrite,
+                partitionWrittenBytes.put(
+                  currentPartitionToWrite, writtenBytes + compressedSize)
+                partitionProcessedFutures.compute(currentPartitionToWrite,
                   (key, value) => { value + 1 })
 
                 limiter.release(recordSize)
@@ -435,8 +472,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 currentPartitionToWrite += 1
               } else {
                 if (!newFutureTouched) {
-                  writerCondition.synchronized {
-                    writerCondition.wait(1)
+                  mergerCondition.synchronized {
+                    mergerCondition.wait(1)
                   }
                 }
               }
@@ -446,8 +483,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               currentPartitionToWrite += 1
             }
           } else {
-            writerCondition.synchronized {
-              writerCondition.wait(1)
+            mergerCondition.synchronized {
+              mergerCondition.wait(1)
             }
           }
         }
@@ -465,10 +502,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       writer,
       partitionBuffers,
       partitionFutures,
-      partitionBytesProgress,
-      partitionFuturesProgress,
-      maxPartitionSeen,
-      writerCondition,
+      partitionWrittenBytes,
+      partitionProcessedFutures,
+      maxPartitionIdQueued,
+      mergerCondition,
       mergerSlotNum,
       mergerFuture)
   }
@@ -514,10 +551,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       records: Iterator[Product2[Any, Any]],
       mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
 
-    import java.util.concurrent.atomic.AtomicLong
-    import java.util.concurrent.ConcurrentHashMap
-    import scala.collection.mutable.ArrayBuffer
-
     val serializerInstance = serializer
     var recordsWritten: Long = 0L
 
@@ -534,7 +567,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     var previousMaxPartition: Int = -1
     var isMultiBatch: Boolean = false
 
-    // Assign a slot number to each partition for consistent serialization
+    // Maps partitionId -> writer slot number. Ensures all compression tasks for the same
+    // partition run serially in the same single-threaded slot, preventing concurrent writes
+    // to the same partition buffer. Different partitions can still run in parallel.
     val partitionSlots = new ConcurrentHashMap[Int, Int]()
 
     // Create initial batch state
@@ -551,14 +586,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         if (reducePartitionId < previousMaxPartition) {
           if (!isMultiBatch) {
             isMultiBatch = true
-            logInfo(s"Detected multi-batch scenario for shuffle $shuffleId, " +
+            logDebug(s"Detected multi-batch scenario for shuffle $shuffleId, " +
               s"transitioning to pipeline mode")
           }
 
           // Signal current batch is complete (but don't block next batch!)
-          currentBatch.maxPartitionSeen.set(numPartitions)
-          currentBatch.writerCondition.synchronized {
-            currentBatch.writerCondition.notifyAll()
+          currentBatch.maxPartitionIdQueued.set(numPartitions)
+          currentBatch.mergerCondition.synchronized {
+            currentBatch.mergerCondition.notifyAll()
           }
 
           // Add to list for later finalization
@@ -581,7 +616,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
         // Get or create futures queue for this partition in current batch
         val futures = currentBatch.partitionFutures.computeIfAbsent(reducePartitionId,
-          _ => new java.util.concurrent.CopyOnWriteArrayList[Future[(Long, Long)]]())
+          _ => new CopyOnWriteArrayList[Future[(Long, Long)]]())
 
         val (cb, recordSize) = incRefCountAndGetSize(value)
 
@@ -603,7 +638,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 reducePartitionId, _ => new OpenByteArrayOutputStream())
               val originLength = buffer.getCount
 
-              // Serialize + compress to memory buffer
+              // Serialize + compress + encryption to memory buffer
               val compressedOutputStream = blockManager.serializerManager.wrapStream(
                 ShuffleBlockId(shuffleId, mapId, reducePartitionId), buffer)
 
@@ -620,29 +655,29 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               (recordSize, compressedSize)
             }
           } catch {
-            case e: Exception => {
-              logError(s"Exception in compression task for shuffle $shuffleId", e)
-              throw e
-            }
+            case e: Exception =>
+              throw new IOException(
+                s"Failed compression task for shuffle $shuffleId, map $mapId, " +
+                s"partition $reducePartitionId", e)
           }
         })
 
-        currentBatch.maxPartitionSeen.synchronized {
+        currentBatch.maxPartitionIdQueued.synchronized {
           futures.add(future)
-          currentBatch.maxPartitionSeen.set(
-            math.max(currentBatch.maxPartitionSeen.get(), reducePartitionId))
+          currentBatch.maxPartitionIdQueued.set(
+            math.max(currentBatch.maxPartitionIdQueued.get(), reducePartitionId))
         }
 
-        // Wake up writer thread for current batch
-        currentBatch.writerCondition.synchronized {
-          currentBatch.writerCondition.notifyAll()
+        // Wake up merger thread for current batch
+        currentBatch.mergerCondition.synchronized {
+          currentBatch.mergerCondition.notifyAll()
         }
       }
 
       // Mark end of last batch - ensure all partitions are processed
-      currentBatch.maxPartitionSeen.set(numPartitions)
-      currentBatch.writerCondition.synchronized {
-        currentBatch.writerCondition.notifyAll()
+      currentBatch.maxPartitionIdQueued.set(numPartitions)
+      currentBatch.mergerCondition.synchronized {
+        currentBatch.mergerCondition.notifyAll()
       }
 
       // Add last batch to list
@@ -681,7 +716,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
     } finally {
       // Cleanup all batch states
-      import scala.collection.JavaConverters._
       batchStates.foreach { batch =>
         // Cancel writer future if still running
         batch.mergerFuture.cancel(true)
@@ -698,7 +732,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           try {
             iter.next().close()
           } catch {
-            case _: Exception => /* ignore */
+            case e: Exception =>
+              logWarning(s"Failed to close partition buffer during cleanup", e)
           }
         }
       }
@@ -717,8 +752,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       // Force file-only mode for final merge writer since it doesn't benefit
       // from memory buffering (merge operation is already doing sequential I/O)
       finalMergeWriter match {
-        case rapidsWriter: org.apache.spark.shuffle.sort.io
-          .RapidsLocalDiskShuffleMapOutputWriter =>
+        case rapidsWriter: RapidsLocalDiskShuffleMapOutputWriter =>
           rapidsWriter.setForceFileOnlyMode()
         case _ => // Other writer types don't need this optimization
       }
@@ -805,9 +839,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    * Since we always use RapidsLocalDiskShuffleMapOutputWriter, this is straightforward.
    */
   private def extractHandleAndLengthsFromWriter(writer: ShuffleMapOutputWriter):
-  (com.nvidia.spark.rapids.spill.SpillablePartialFileHandle, Array[Long]) = {
+  (SpillablePartialFileHandle, Array[Long]) = {
     writer match {
-      case rapidsWriter: org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleMapOutputWriter =>
+      case rapidsWriter: RapidsLocalDiskShuffleMapOutputWriter =>
         // finishWritePhase() will enable spill
         rapidsWriter.finishWritePhase()
         val handle = rapidsWriter.getPartialFileHandle().getOrElse {
@@ -1595,20 +1629,18 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   }
 
   lazy val execComponents: Option[ShuffleExecutorComponents] = {
-    import scala.collection.JavaConverters._
-    
     // Check if user configured a different ShuffleDataIO plugin
     val configuredPlugin = conf.get("spark.shuffle.sort.io.plugin.class", "")
     val rapidsPlugin = "org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleDataIO"
     
-    if (configuredPlugin.nonEmpty && configuredPlugin != rapidsPlugin) {
+    if (configuredPlugin.nonEmpty && !configuredPlugin.endsWith("RapidsLocalDiskShuffleDataIO")) {
       logWarning(s"User configured shuffle plugin '$configuredPlugin' but " +
         s"RapidsShuffleManager requires '$rapidsPlugin'. " +
         s"Overriding to use RAPIDS plugin for optimal performance.")
     }
     
     // Force RAPIDS ShuffleDataIO since we're using RapidsShuffleManager
-    val rapidsDataIO = new org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleDataIO(conf)
+    val rapidsDataIO = new RapidsLocalDiskShuffleDataIO(conf)
     val executorComponents = rapidsDataIO.executor()
     
     val extraConfigs = conf.getAllWithPrefix(ShuffleDataIOUtils.SHUFFLE_SPARK_CONF_PREFIX).toMap

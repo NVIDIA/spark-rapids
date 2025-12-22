@@ -1,6 +1,7 @@
 
+
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +41,7 @@ import java.math.BigDecimal;
  * is on the host, and we want to keep as much of the data on the device as possible.
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
-public class RapidsHostColumnVectorCore extends ColumnVectorWithState {
+public class RapidsHostColumnVectorCore extends ColumnVector {
 
   private final HostColumnVectorCore cudfCv;
   private final RapidsHostColumnVectorCore[] cachedChildren;

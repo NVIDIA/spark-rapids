@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import org.apache.spark.unsafe.types.UTF8String;
  * return the default value of a type when trying to read a null.
  * The performance may not be good enough, so use it only when there is no other way.
  */
-public class RapidsNullSafeHostColumnVectorCore extends ColumnVectorWithState {
+public class RapidsNullSafeHostColumnVectorCore extends ColumnVector {
   private final RapidsHostColumnVectorCore rapidsHcvc;
   private final RapidsNullSafeHostColumnVectorCore[] cachedChildren;
 

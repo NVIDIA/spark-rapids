@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.spill
 
-import java.io.File
+import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream, FileOutputStream, IOException}
 
 import com.nvidia.spark.rapids.HostAlloc
 
@@ -78,13 +78,13 @@ class SpillablePartialFileHandle private (
 
   // Write state
   private var writePosition: Long = 0L
-  private var fileOutputStream: Option[java.io.FileOutputStream] = None
-  private var bufferedOutputStream: Option[java.io.BufferedOutputStream] = None
+  private var fileOutputStream: Option[FileOutputStream] = None
+  private var bufferedOutputStream: Option[BufferedOutputStream] = None
 
   // Read state
   private var readPosition: Long = 0L
-  private var fileInputStream: Option[java.io.FileInputStream] = None
-  private var bufferedInputStream: Option[java.io.BufferedInputStream] = None
+  private var fileInputStream: Option[FileInputStream] = None
+  private var bufferedInputStream: Option[BufferedInputStream] = None
   private var totalBytesWritten: Long = 0L
 
   // Initialize host buffer for MEMORY_WITH_SPILL mode
@@ -137,7 +137,7 @@ class SpillablePartialFileHandle private (
         
         // Check if new capacity is still insufficient after expansion
         if (newCapacity < requiredCapacity) {
-          logInfo(s"Buffer expansion cannot meet required capacity " +
+          logDebug(s"Buffer expansion cannot meet required capacity " +
             s"(need $requiredCapacity bytes, max limit is $maxBufferSize bytes), " +
             s"spilling to disk")
           spillBufferToFileAndSwitch(currentBuffer)
@@ -146,7 +146,7 @@ class SpillablePartialFileHandle private (
         
         // Check if new capacity exceeds limit (should not happen due to math.min)
         if (newCapacity > maxBufferSize) {
-          logInfo(s"Buffer expansion would exceed configured limit " +
+          logDebug(s"Buffer expansion would exceed configured limit " +
             s"(need $newCapacity bytes, limit is $maxBufferSize bytes), spilling to disk")
           spillBufferToFileAndSwitch(currentBuffer)
           return false
@@ -154,7 +154,7 @@ class SpillablePartialFileHandle private (
         
         // Check if memory usage is still below threshold
         if (!HostAlloc.isUsageBelowThreshold(memoryThreshold)) {
-          logInfo(s"Memory usage above ${memoryThreshold * 100}% threshold, " +
+          logDebug(s"Memory usage above ${memoryThreshold * 100}% threshold, " +
             s"spilling to disk instead of expanding")
           spillBufferToFileAndSwitch(currentBuffer)
           return false
@@ -184,7 +184,7 @@ class SpillablePartialFileHandle private (
           }
         } catch {
           case e: Exception =>
-            logInfo(s"Failed to allocate buffer of $newCapacity bytes, " +
+            logDebug(s"Failed to allocate buffer of $newCapacity bytes, " +
               s"spilling to disk", e)
             spillBufferToFileAndSwitch(currentBuffer)
             false
@@ -201,7 +201,7 @@ class SpillablePartialFileHandle private (
   private def spillBufferToFileAndSwitch(
       buffer: ai.rapids.cudf.HostMemoryBuffer): Unit = {
     // Write current buffer content to file
-    val fos = new java.io.FileOutputStream(file)
+    val fos = new FileOutputStream(file)
     try {
       val channel = fos.getChannel
       val bb = buffer.asByteBuffer()
@@ -222,7 +222,7 @@ class SpillablePartialFileHandle private (
     host = None
     spilledToDisk = true
 
-    logInfo(s"Spilled buffer to ${file.getAbsolutePath} during write " +
+    logDebug(s"Spilled buffer to ${file.getAbsolutePath} during write " +
       s"($writePosition bytes), continuing write to file")
   }
 
@@ -285,7 +285,7 @@ class SpillablePartialFileHandle private (
           // Check if buffer needs expansion
           val requiredCapacity = writePosition + length
           if (requiredCapacity > currentBufferCapacity) {
-            logInfo(s"Buffer expansion needed: writePos=$writePosition, length=$length, " +
+            logDebug(s"Buffer expansion needed: writePos=$writePosition, length=$length, " +
               s"required=$requiredCapacity, current=$currentBufferCapacity")
             val expanded = expandBuffer(requiredCapacity)
             // After expansion, may have spilled to file, recursively call write
@@ -294,7 +294,7 @@ class SpillablePartialFileHandle private (
               write(bytes, offset, length)
               return
             }
-            logInfo(s"After expansion: currentCapacity=$currentBufferCapacity, " +
+            logDebug(s"After expansion: currentCapacity=$currentBufferCapacity, " +
               s"bufferLength=${host.get.getLength}")
           }
           // Write to buffer (may be new buffer after expansion)
@@ -349,7 +349,7 @@ class SpillablePartialFileHandle private (
     // Record disk write savings if applicable
     if (shouldRecordSavings) {
       SpillablePartialFileHandle.recordDiskWriteSaved(totalBytesWritten)
-      logInfo(s"Recorded disk write savings: $totalBytesWritten bytes " +
+      logDebug(s"Recorded disk write savings: $totalBytesWritten bytes " +
         s"(kept in memory during write phase)")
     }
   }
@@ -454,7 +454,7 @@ class SpillablePartialFileHandle private (
     host match {
       case Some(buffer) =>
         // Spill all written data to file
-        val fos = new java.io.FileOutputStream(file)
+        val fos = new FileOutputStream(file)
         try {
           val channel = fos.getChannel
           val bb = buffer.asByteBuffer()
@@ -490,9 +490,9 @@ class SpillablePartialFileHandle private (
    */
   private def ensureFileOutputStreamOpen(): Unit = synchronized {
     if (fileOutputStream.isEmpty) {
-      val fos = new java.io.FileOutputStream(file, true)  // append mode
+      val fos = new FileOutputStream(file, true)  // append mode
       fileOutputStream = Some(fos)
-      bufferedOutputStream = Some(new java.io.BufferedOutputStream(fos, 64 * 1024))
+      bufferedOutputStream = Some(new BufferedOutputStream(fos, 64 * 1024))
     }
   }
 
@@ -502,20 +502,20 @@ class SpillablePartialFileHandle private (
    */
   private def ensureFileInputStreamOpen(): Unit = synchronized {
     if (fileInputStream.isEmpty) {
-      val fis = new java.io.FileInputStream(file)
+      val fis = new FileInputStream(file)
       // Skip to current read position
       if (readPosition > 0) {
         var remaining = readPosition
         while (remaining > 0) {
           val skipped = fis.skip(remaining)
           if (skipped <= 0) {
-            throw new java.io.IOException(s"Failed to skip to position $readPosition")
+            throw new IOException(s"Failed to skip to position $readPosition")
           }
           remaining -= skipped
         }
       }
       fileInputStream = Some(fis)
-      bufferedInputStream = Some(new java.io.BufferedInputStream(fis, 64 * 1024))
+      bufferedInputStream = Some(new BufferedInputStream(fis, 64 * 1024))
     }
   }
 
@@ -571,7 +571,7 @@ object SpillablePartialFileHandle extends Logging {
   private[spill] def recordDiskWriteSaved(bytesSaved: Long): Unit = {
     if (bytesSaved > 0) {
       GpuTaskMetrics.get.addDiskWriteSaved(bytesSaved)
-      logInfo(s"Recorded disk write savings: $bytesSaved bytes " +
+      logDebug(s"Recorded disk write savings: $bytesSaved bytes " +
         s"(kept in memory during write phase)")
     }
   }
