@@ -20,6 +20,7 @@ import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float =
 import java.math.BigInteger
 import java.util
 import java.util.{List => JList, Objects}
+import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.TypeTag
@@ -28,10 +29,12 @@ import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
 import org.apache.commons.codec.binary.{Hex => ApacheHex}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Literal, UnsafeArrayData}
@@ -499,8 +502,8 @@ object GpuScalar extends Logging {
  * Do not create a GpuScalar from the constructor, instead call the factory APIs above.
  */
 class GpuScalar private(
-    private var scalar: Option[Scalar],
-    private var value: Option[Any],
+    @volatile private var scalar: Option[Scalar],
+    @volatile private var value: Option[Any],
     val dataType: DataType) extends AutoCloseable {
 
   private var refCount: Int = 0
@@ -521,20 +524,42 @@ class GpuScalar private(
    * the return cudf Scalar, not both.
    */
   def getBase: Scalar = {
-    if (scalar.isEmpty) {
-      scalar = Some(GpuScalar.from(value.get, dataType))
+    // Fast path: scalar already initialized (no lock needed)
+    val s = scalar
+    if (s != null && s.isDefined) {
+      return s.get
     }
-    scalar.get
+    // Slow path: need to initialize or handle closed state
+    this.synchronized {
+      if (scalar == null) {
+        throw new IllegalStateException("GpuScalar is already closed")
+      }
+      if (scalar.isEmpty) {
+        scalar = Some(GpuScalar.from(value.get, dataType))
+      }
+      scalar.get
+    }
   }
 
   /**
    * Gets the internal Scala value of this GpuScalar.
    */
   def getValue: Any = {
-    if (value.isEmpty) {
-      value = Some(GpuScalar.extract(scalar.get))
+    // Fast path: value already initialized (no lock needed)
+    val v = value
+    if (v != null && v.isDefined) {
+      return v.get
     }
-    value.get
+    // Slow path: need to initialize or handle closed state
+    this.synchronized {
+      if (value == null) {
+        throw new IllegalStateException("GpuScalar is already closed")
+      }
+      if (value.isEmpty) {
+        value = Some(GpuScalar.extract(scalar.get))
+      }
+      value.get
+    }
   }
 
   /**
@@ -593,6 +618,40 @@ class GpuScalar private(
 }
 
 object GpuLiteral {
+
+  // Per-task cache: taskId -> (GpuLiteral -> GpuScalar)
+  // GpuLiterals with same value and dataType in the same task share the same GpuScalar.
+  // GpuLiteral's equals/hashCode already handles Array[Byte] correctly.
+  private val taskScalarCache =
+    new ConcurrentHashMap[Long, ConcurrentHashMap[GpuLiteral, GpuScalar]]()
+
+  /**
+   * Get or create a cached GpuScalar for the given GpuLiteral.
+   * If a scalar for an equal GpuLiteral already exists in the current task,
+   * it will be reused. Otherwise a new scalar is created and cached.
+   * Note: This should only be called when TaskContext is available.
+   */
+  private def getOrCreateCachedScalar(literal: GpuLiteral): GpuScalar = {
+    val tc = TaskContext.get()
+    require(tc != null, "getOrCreateCachedScalar should only be called with TaskContext")
+    val taskId = tc.taskAttemptId()
+    val cache = taskScalarCache.computeIfAbsent(taskId, _ => {
+      // First access for this task, register the cleanup callback
+      onTaskCompletion(tc) {
+        cleanupTaskScalars(taskId)
+      }
+      new ConcurrentHashMap[GpuLiteral, GpuScalar]()
+    })
+    cache.computeIfAbsent(literal, _ => GpuScalar(literal.value, literal.dataType))
+  }
+
+  private def cleanupTaskScalars(taskId: Long): Unit = {
+    val cache = taskScalarCache.remove(taskId)
+    if (cache != null) {
+      cache.values().forEach(_.close())
+    }
+  }
+
   /**
    * Create a `GpuLiteral` from a Scala value, by leveraging the corresponding CPU
    * APIs to do the data conversion and type checking, which are quite complicated.
@@ -634,6 +693,11 @@ object GpuLiteral {
  * In order to do type conversion and checking, use GpuLiteral.create() instead of constructor.
  */
 case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression {
+
+  // Get cached scalar from per-task cache.
+  // GpuLiterals with same value and dataType in the same task share the same GpuScalar.
+  @transient private lazy val cachedScalar: GpuScalar =
+    GpuLiteral.getOrCreateCachedScalar(this)
 
   // Assume this came from Spark Literal and no need to call Literal.validateLiteralValue here.
 
@@ -716,9 +780,14 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
   }
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    // Returns a Scalar instead of the value to support the scalar of nested type, and
-    // simplify the handling of result from a `expr.columnarEval`.
-    GpuScalar(value, dataType)
+    // When there's no TaskContext (e.g., unit tests), create a new GpuScalar
+    // each time like original behavior, because there's no cleanup callback
+    // to properly close the cached scalar. Otherwise use the cached scalar.
+    if (TaskContext.get() == null) {
+      GpuScalar(value, dataType)
+    } else {
+      cachedScalar.incRefCount
+    }
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
