@@ -470,7 +470,7 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; t
   invoke_shuffle_integration_test MULTITHREADED ./run_pyspark_from_build.sh
 fi
 
-if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "UCX_SHUFFLE" ]]; then
+if [[ "$TEST_MODE" == "UCX_SHUFFLE" ]]; then
   invoke_shuffle_integration_test UCX ./run_pyspark_from_build.sh
 fi
 
