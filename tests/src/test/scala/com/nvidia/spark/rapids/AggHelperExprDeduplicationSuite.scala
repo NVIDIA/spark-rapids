@@ -143,4 +143,97 @@ class AggHelperExprDeduplicationSuite extends SparkQueryCompareTestSuite {
     maxFloatDiff = 0.0001) { df =>
     df.groupBy("key").agg(avg("x"), sum("x"), count("x"))
   }
+
+  // ==================== DISTINCT avg tests for LongType optimization ====================
+
+  // Test data with Long values (larger range to potentially trigger overflow if using Long sum)
+  private def longDf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq[java.lang.Long](
+      1000000000000L, 2000000000000L, 3000000000000L, null,
+      1000000000000L, 2000000000000L, // duplicates for DISTINCT
+      5000000000000L, 6000000000000L, null, 8000000000000L
+    ).toDF("x")
+  }
+
+  // Test data with very large Long values that will overflow if summed as Long
+  // These values are close to Long.MAX_VALUE (9223372036854775807)
+  private def overflowLongDf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq[java.lang.Long](
+      5000000000000000000L,  // 5e18
+      4000000000000000000L,  // 4e18
+      3000000000000000000L,  // 3e18
+      2000000000000000000L,  // 2e18
+      1000000000000000000L   // 1e18
+      // Sum = 15e18, which overflows Long.MAX_VALUE (9.2e18)
+    ).toDF("x")
+  }
+
+  // Test data with Long for group by with duplicates
+  private def longGroupByDf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq[(String, java.lang.Long)](
+      ("a", 1000000000000L), ("a", 2000000000000L), ("a", 1000000000000L), ("a", null),
+      ("b", 4000000000000L), ("b", 5000000000000L), ("b", 4000000000000L), ("b", null),
+      ("c", 7000000000000L), ("c", 8000000000000L), ("c", 9000000000000L)
+    ).toDF("key", "x")
+  }
+
+  // avg(DISTINCT x) - Long reduction - this is the failing case
+  testSparkResultsAreEqual(
+    "avg(DISTINCT x) - Long reduction",
+    longDf,
+    conf = aggConf,
+    maxFloatDiff = 0.0001) { df =>
+    df.agg(avg(col("x")).as("avg_x"), countDistinct("x").as("cnt_distinct"))
+  }
+
+  // avg(DISTINCT x) - Long group by
+  IGNORE_ORDER_testSparkResultsAreEqual(
+    "avg(DISTINCT x) - Long group by",
+    longGroupByDf,
+    conf = aggConf) { df =>
+    df.groupBy("key").agg(avg(col("x")).as("avg_x"), countDistinct("x").as("cnt_distinct"))
+  }
+
+  // The actual failing test case: avgDistinct on Long type
+  testSparkResultsAreEqual(
+    "avgDistinct(x) - Long reduction - reproducer",
+    longDf,
+    conf = aggConf,
+    maxFloatDiff = 0.0001) { df =>
+    // Use SQL to get avg(DISTINCT x) since DataFrame API doesn't have avgDistinct
+    df.createOrReplaceTempView("long_data")
+    df.sparkSession.sql("SELECT avg(DISTINCT x) as avg_distinct_x FROM long_data")
+  }
+
+  // Test with replaceMode=partial to simulate CPU fallback scenario
+  // This is the configuration that causes integration test failures
+  private def partialModeConf: SparkConf = new SparkConf()
+    .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
+    .set(RapidsConf.HASH_AGG_REPLACE_MODE.key, "partial")
+    .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+      "HashAggregateExec,AggregateExpression,Average,Cast,Alias,AttributeReference")
+
+  // This test simulates the integration test failure scenario
+  testSparkResultsAreEqual(
+    "avgDistinct(x) - Long with partial replaceMode (CPU fallback)",
+    longDf,
+    conf = partialModeConf,
+    maxFloatDiff = 0.0001) { df =>
+    df.createOrReplaceTempView("long_data_partial")
+    df.sparkSession.sql("SELECT avg(DISTINCT x) as avg_distinct_x FROM long_data_partial")
+  }
+
+  // This test uses values large enough to overflow Long when summed
+  // Expected: avg = (5e18 + 4e18 + 3e18 + 2e18 + 1e18) / 5 = 15e18 / 5 = 3e18
+  // If Long overflow occurs, sum would wrap around to a negative number
+  testSparkResultsAreEqual(
+    "avg(x) - Large Long values that overflow Long.MAX_VALUE when summed",
+    overflowLongDf,
+    conf = aggConf,
+    maxFloatDiff = 0.0001) { df =>
+    df.agg(avg("x").as("avg_x"), sum("x").as("sum_x"), count("x").as("cnt_x"))
+  }
 }

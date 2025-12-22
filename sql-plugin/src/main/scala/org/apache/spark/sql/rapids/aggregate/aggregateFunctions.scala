@@ -1501,19 +1501,36 @@ object GpuAverage {
           GpuBasicDecimalAverage(child, sumDataType, failOnError)
         }
       case LongType =>
-        // For Long input, use LongType for sum accumulation to avoid per-row Long->Double
-        // cast. The cast to Double only happens once at the end in evaluateExpression.
-        GpuBasicAverage(child, LongType, failOnError)
+        // For Long input, use LongType for internal sum accumulation to avoid per-row cast.
+        // sumDataType = DoubleType ensures shuffle buffer uses Double for CPU compatibility.
+        // internalSumType = LongType means updateSum uses Long, then postUpdate casts to Double.
+        GpuBasicAverage(child, DoubleType, failOnError, internalSumType = LongType)
       case _ =>
-        // For other numeric types (Int, Short, Byte, Float, Double), use DoubleType
+        // Use DoubleType for all other types to match Spark's CPU behavior.
         GpuBasicAverage(child, DoubleType, failOnError)
     }
   }
 }
 
+/**
+ * Base class for GPU Average aggregation.
+ *
+ * @param child The child expression to average
+ * @param sumDataType The data type for the sum buffer (used in shuffle and merge)
+ * @param failOnError Whether to fail on ANSI errors
+ * @param internalSumType The data type for internal sum accumulation (optimization).
+ *                        When different from sumDataType, the sum is cast in postUpdate.
+ *                        This allows using LongType internally for Long inputs while
+ *                        keeping DoubleType in shuffle buffer for CPU compatibility.
+ */
 abstract class GpuAverage(child: Expression, sumDataType: DataType,
-                          failOnError: Boolean) extends GpuAggregateFunction
+                          failOnError: Boolean,
+                          val internalSumType: DataType) extends GpuAggregateFunction
     with GpuReplaceWindowFunction with Serializable {
+
+  // Secondary constructor for backward compatibility
+  def this(child: Expression, sumDataType: DataType, failOnError: Boolean) =
+    this(child, sumDataType, failOnError, sumDataType)
 
   override lazy val inputProjection: Seq[Expression] = {
     // Replace the nulls with 0s in the SUM column because Spark does not protect against
@@ -1521,8 +1538,8 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
     // decimal aggregations.  The null gets inserted back in with evaluateExpression where
     // a divide by 0 gets replaced with a null.
     val castedForSum = GpuCoalesce(Seq(
-      GpuCast(child, sumDataType),
-      GpuLiteral.default(sumDataType)))
+      GpuCast(child, internalSumType),
+      GpuLiteral.default(internalSumType)))
     // Pass child directly for count - CudfCount with NullPolicy.EXCLUDE handles nulls.
     // AggHelper deduplicates expressions, so if another aggregate (e.g., count(child))
     // uses the same child, they will share the column and cudf will deduplicate the
@@ -1534,37 +1551,38 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
     // For sum: if filter is false, use default value (0)
     // For count: if filter is false, use null so CudfCount will exclude it
     val castedForSum = GpuCoalesce(Seq(
-      GpuCast(child, sumDataType),
-      GpuLiteral.default(sumDataType)))
+      GpuCast(child, internalSumType),
+      GpuLiteral.default(internalSumType)))
     Seq(
-      GpuIf(filter, castedForSum, GpuLiteral.default(sumDataType)),
+      GpuIf(filter, castedForSum, GpuLiteral.default(internalSumType)),
       GpuIf(filter, child, GpuLiteral(null, child.dataType))
     )
   }
 
+  // Use internalSumType for initial value to match updateSum type
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
-    GpuLiteral.default(sumDataType),
+    GpuLiteral.default(internalSumType),
     GpuLiteral(0L, LongType))
 
-  protected lazy val updateSum = new CudfSum(sumDataType)
+  // Use internalSumType for update aggregation (optimization)
+  protected lazy val updateSum = new CudfSum(internalSumType)
   // Use CudfCount instead of CudfSum - it directly counts non-null values
   // with NullPolicy.EXCLUDE, avoiding the overhead of isnotnull + cast
   protected lazy val updateCount = new CudfCount(IntegerType)
 
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateSum, updateCount)
 
+  // Cast sum to sumDataType if internalSumType is different (e.g., Long -> Double)
   // CudfCount returns IntegerType (cudf limitation), need to cast to LongType for Spark.
-  // This is safe because:
-  // 1. Update phase operates on individual batches/partitions, unlikely to exceed ~2.1B rows
-  // 2. Merge phase uses CudfSum(LongType) to accumulate counts across partitions
-  // This follows the same pattern as GpuCount.
   override lazy val postUpdate: Seq[Expression] =
-    Seq(updateSum.attr, GpuCast(updateCount.attr, LongType))
+    Seq(GpuCast(updateSum.attr, sumDataType), GpuCast(updateCount.attr, LongType))
 
+  // Shuffle buffer uses sumDataType for CPU compatibility
   protected lazy val sum: AttributeReference = AttributeReference("sum", sumDataType)()
   protected lazy val count: AttributeReference = AttributeReference("count", LongType)()
   override lazy val aggBufferAttributes: Seq[AttributeReference] = sum :: count :: Nil
 
+  // Merge uses sumDataType
   protected lazy val mergeSum = new CudfSum(sumDataType)
   protected lazy val mergeCount = new CudfSum(LongType)
 
@@ -1573,8 +1591,6 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
-  // For long type, sumDataType is LongType, so we need to cast sum to DoubleType here.
-  // For other types, sumDataType is already DoubleType, so GpuCast is a no-op.
   override lazy val evaluateExpression: Expression =
       GpuDivide(GpuCast(sum, DoubleType), GpuCast(count, DoubleType), failOnError = false)
 
@@ -1600,8 +1616,17 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
   override val dataType: DataType = DoubleType
 }
 
-case class GpuBasicAverage(child: Expression, dt: DataType, failOnError: Boolean)
-  extends GpuAverage(child, dt, failOnError)
+object GpuBasicAverage {
+  def apply(child: Expression, dt: DataType, failOnError: Boolean,
+            internalSumType: DataType = null): GpuBasicAverage = {
+    val actualInternalType = if (internalSumType == null) dt else internalSumType
+    new GpuBasicAverage(child, dt, failOnError, actualInternalType)
+  }
+}
+
+case class GpuBasicAverage private (child: Expression, dt: DataType, failOnError: Boolean,
+                                    intSumType: DataType)
+  extends GpuAverage(child, dt, failOnError, intSumType)
 
 abstract class GpuDecimalAverageBase(child: Expression, sumDataType: DecimalType,
                                      failOnError: Boolean)
