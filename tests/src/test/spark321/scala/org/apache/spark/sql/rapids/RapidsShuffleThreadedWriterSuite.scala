@@ -33,8 +33,8 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import java.io.{DataInputStream, File, FileInputStream, IOException, ObjectStreamException}
-import ExecutionException
 import java.util.UUID
+import java.util.concurrent.ExecutionException
 import java.util.zip.CheckedInputStream
 
 import scala.collection.mutable
