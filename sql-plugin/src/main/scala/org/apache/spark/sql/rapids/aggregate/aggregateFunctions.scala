@@ -1491,7 +1491,18 @@ case class GpuCount(children: Seq[Expression],
 }
 
 object GpuAverage {
-  def apply(child: Expression, failOnError: Boolean): GpuAverage = {
+  /**
+   * Create a GpuAverage instance.
+   *
+   * @param child The child expression to average
+   * @param failOnError Whether to fail on ANSI errors
+   * @param useLongAccumulator When true and child is LongType, use LongType for internal sum
+   *                           accumulation to avoid per-row casting. WARNING: This can cause
+   *                           Long overflow if the sum exceeds Long.MAX_VALUE (9.2e18).
+   *                           Default is false for safety.
+   */
+  def apply(child: Expression, failOnError: Boolean,
+            useLongAccumulator: Boolean = false): GpuAverage = {
     child.dataType match {
       case DecimalType.Fixed(p, s) =>
         val sumDataType = DecimalType.bounded(p + 10, s)
@@ -1500,15 +1511,38 @@ object GpuAverage {
         } else {
           GpuBasicDecimalAverage(child, sumDataType, failOnError)
         }
+      case LongType if useLongAccumulator =>
+        // For Long input, use LongType for internal sum accumulation to avoid per-row cast.
+        // sumDataType = DoubleType ensures shuffle buffer uses Double for CPU compatibility.
+        // internalSumType = LongType means updateSum uses Long, then postUpdate casts to Double.
+        // WARNING: This can overflow if sum exceeds Long.MAX_VALUE.
+        GpuBasicAverage(child, DoubleType, failOnError, internalSumType = LongType)
       case _ =>
+        // Use DoubleType for all types to match Spark's CPU behavior.
         GpuBasicAverage(child, DoubleType, failOnError)
     }
   }
 }
 
+/**
+ * Base class for GPU Average aggregation.
+ *
+ * @param child The child expression to average
+ * @param sumDataType The data type for the sum buffer (used in shuffle and merge)
+ * @param failOnError Whether to fail on ANSI errors
+ * @param internalSumType The data type for internal sum accumulation (optimization).
+ *                        When different from sumDataType, the sum is cast in postUpdate.
+ *                        This allows using LongType internally for Long inputs while
+ *                        keeping DoubleType in shuffle buffer for CPU compatibility.
+ */
 abstract class GpuAverage(child: Expression, sumDataType: DataType,
-                          failOnError: Boolean) extends GpuAggregateFunction
+                          failOnError: Boolean,
+                          val internalSumType: DataType) extends GpuAggregateFunction
     with GpuReplaceWindowFunction with Serializable {
+
+  // Secondary constructor for backward compatibility
+  def this(child: Expression, sumDataType: DataType, failOnError: Boolean) =
+    this(child, sumDataType, failOnError, sumDataType)
 
   override lazy val inputProjection: Seq[Expression] = {
     // Replace the nulls with 0s in the SUM column because Spark does not protect against
@@ -1516,34 +1550,51 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
     // decimal aggregations.  The null gets inserted back in with evaluateExpression where
     // a divide by 0 gets replaced with a null.
     val castedForSum = GpuCoalesce(Seq(
-      GpuCast(child, sumDataType),
-      GpuLiteral.default(sumDataType)))
-    val forCount = GpuCast(GpuIsNotNull(child), LongType)
-    Seq(castedForSum, forCount)
+      GpuCast(child, internalSumType),
+      GpuLiteral.default(internalSumType)))
+    // Pass child directly for count - CudfCount with NullPolicy.EXCLUDE handles nulls.
+    // AggHelper deduplicates expressions, so if another aggregate (e.g., count(child))
+    // uses the same child, they will share the column and cudf will deduplicate the
+    // identical count aggregations.
+    Seq(castedForSum, child)
   }
 
   override def filteredInputProjection(filter: Expression): Seq[Expression] = {
-    inputProjection.map(e => GpuIf(filter, e, GpuLiteral.default(e.dataType)))
+    // For sum: if filter is false, use default value (0)
+    // For count: if filter is false, use null so CudfCount will exclude it
+    val castedForSum = GpuCoalesce(Seq(
+      GpuCast(child, internalSumType),
+      GpuLiteral.default(internalSumType)))
+    Seq(
+      GpuIf(filter, castedForSum, GpuLiteral.default(internalSumType)),
+      GpuIf(filter, child, GpuLiteral(null, child.dataType))
+    )
   }
 
+  // Use internalSumType for initial value to match updateSum type
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
-    GpuLiteral.default(sumDataType),
+    GpuLiteral.default(internalSumType),
     GpuLiteral(0L, LongType))
 
-  protected lazy val updateSum = new CudfSum(sumDataType)
-  protected lazy val updateCount = new CudfSum(LongType)
+  // Use internalSumType for update aggregation (optimization)
+  protected lazy val updateSum = new CudfSum(internalSumType)
+  // Use CudfCount instead of CudfSum - it directly counts non-null values
+  // with NullPolicy.EXCLUDE, avoiding the overhead of isnotnull + cast
+  protected lazy val updateCount = new CudfCount(IntegerType)
 
-  // The count input projection will need to be collected as a sum (of counts) instead of
-  // counts (of counts) as the GpuIsNotNull o/p is casted to count=0 for null and 1 otherwise, and
-  // the total count can be correctly evaluated only by summing them. eg. avg(col(null, 27))
-  // should be 27, with count column projection as (0, 1) and total count for dividing the
-  // average = (0 + 1) and not 2 which is the rowcount of the projected column.
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateSum, updateCount)
 
+  // Cast sum to sumDataType if internalSumType is different (e.g., Long -> Double)
+  // CudfCount returns IntegerType (cudf limitation), need to cast to LongType for Spark.
+  override lazy val postUpdate: Seq[Expression] =
+    Seq(GpuCast(updateSum.attr, sumDataType), GpuCast(updateCount.attr, LongType))
+
+  // Shuffle buffer uses sumDataType for CPU compatibility
   protected lazy val sum: AttributeReference = AttributeReference("sum", sumDataType)()
   protected lazy val count: AttributeReference = AttributeReference("count", LongType)()
   override lazy val aggBufferAttributes: Seq[AttributeReference] = sum :: count :: Nil
 
+  // Merge uses sumDataType
   protected lazy val mergeSum = new CudfSum(sumDataType)
   protected lazy val mergeCount = new CudfSum(LongType)
 
@@ -1553,7 +1604,7 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: Expression =
-      GpuDivide(sum, GpuCast(count, DoubleType), failOnError = false)
+      GpuDivide(GpuCast(sum, DoubleType), GpuCast(count, DoubleType), failOnError = false)
 
   // Window
   // Replace average with SUM/COUNT. This lets us run average in running window mode without
@@ -1577,15 +1628,25 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
   override val dataType: DataType = DoubleType
 }
 
-case class GpuBasicAverage(child: Expression, dt: DataType, failOnError: Boolean)
-  extends GpuAverage(child, dt, failOnError)
+object GpuBasicAverage {
+  def apply(child: Expression, dt: DataType, failOnError: Boolean,
+            internalSumType: DataType = null): GpuBasicAverage = {
+    val actualInternalType = if (internalSumType == null) dt else internalSumType
+    new GpuBasicAverage(child, dt, failOnError, actualInternalType)
+  }
+}
+
+case class GpuBasicAverage private (child: Expression, dt: DataType, failOnError: Boolean,
+                                    intSumType: DataType)
+  extends GpuAverage(child, dt, failOnError, intSumType)
 
 abstract class GpuDecimalAverageBase(child: Expression, sumDataType: DecimalType,
                                      failOnError: Boolean)
   extends GpuAverage(child, sumDataType, failOnError) {
+  // CudfCount returns IntegerType, cast to LongType (see GpuAverage.postUpdate for details)
   override lazy val postUpdate: Seq[Expression] =
       Seq(GpuCheckOverflow(updateSum.attr, sumDataType, nullOnOverflow = !failOnError),
-        updateCount.attr)
+        GpuCast(updateCount.attr, LongType))
 
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
   // Cudf does not have such an aggregation, so for merge we have to work around that with an extra
@@ -1633,18 +1694,31 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType, failOnError:
     val chunks = (0 until 4).map {
       GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true)
     }
-    val forCount = GpuCast(GpuIsNotNull(child), LongType)
-    chunks :+ forCount
+    // Pass child directly for count - AggHelper deduplicates expressions (see GpuAverage)
+    chunks :+ child
+  }
+
+  override def filteredInputProjection(filter: Expression): Seq[Expression] = {
+    // For sum chunks: if filter is false, use 0 (replaceNullsWithZero handles nulls)
+    // Note: GpuExtractChunk32 returns GpuUnsignedIntegerType for chunks 0-2, IntegerType for 3
+    val chunks = (0 until 4).map { i =>
+      val chunk = GpuExtractChunk32(GpuCast(child, dt), i, replaceNullsWithZero = true)
+      GpuIf(filter, chunk, GpuLiteral(0, chunk.dataType))
+    }
+    // For count: if filter is false, use null so CudfCount will exclude it
+    chunks :+ GpuIf(filter, child, GpuLiteral(null, child.dataType))
   }
 
   private lazy val updateSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
 
   override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateCount
 
+  // CudfCount returns IntegerType, cast to LongType (see GpuAverage.postUpdate for details)
   override lazy val postUpdate: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt,
       nullOnOverflow = !failOnError, None)
-    Seq(GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = !failOnError), updateCount.attr)
+    Seq(GpuCheckOverflow(assembleExpr, dt, nullOnOverflow = !failOnError),
+      GpuCast(updateCount.attr, LongType))
   }
 
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
