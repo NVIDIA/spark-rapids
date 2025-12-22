@@ -1491,7 +1491,18 @@ case class GpuCount(children: Seq[Expression],
 }
 
 object GpuAverage {
-  def apply(child: Expression, failOnError: Boolean): GpuAverage = {
+  /**
+   * Create a GpuAverage instance.
+   *
+   * @param child The child expression to average
+   * @param failOnError Whether to fail on ANSI errors
+   * @param useLongAccumulator When true and child is LongType, use LongType for internal sum
+   *                           accumulation to avoid per-row casting. WARNING: This can cause
+   *                           Long overflow if the sum exceeds Long.MAX_VALUE (9.2e18).
+   *                           Default is false for safety.
+   */
+  def apply(child: Expression, failOnError: Boolean,
+            useLongAccumulator: Boolean = false): GpuAverage = {
     child.dataType match {
       case DecimalType.Fixed(p, s) =>
         val sumDataType = DecimalType.bounded(p + 10, s)
@@ -1500,13 +1511,14 @@ object GpuAverage {
         } else {
           GpuBasicDecimalAverage(child, sumDataType, failOnError)
         }
-      case LongType =>
+      case LongType if useLongAccumulator =>
         // For Long input, use LongType for internal sum accumulation to avoid per-row cast.
         // sumDataType = DoubleType ensures shuffle buffer uses Double for CPU compatibility.
         // internalSumType = LongType means updateSum uses Long, then postUpdate casts to Double.
+        // WARNING: This can overflow if sum exceeds Long.MAX_VALUE.
         GpuBasicAverage(child, DoubleType, failOnError, internalSumType = LongType)
       case _ =>
-        // Use DoubleType for all other types to match Spark's CPU behavior.
+        // Use DoubleType for all types to match Spark's CPU behavior.
         GpuBasicAverage(child, DoubleType, failOnError)
     }
   }

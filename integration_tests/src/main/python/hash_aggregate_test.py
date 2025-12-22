@@ -44,44 +44,35 @@ _float_conf_partial = copy_and_update(_float_conf,
 _float_conf_final = copy_and_update(_float_conf,
         {'spark.rapids.sql.hashAgg.replaceMode': 'final'})
 
-# Long gen with limited range to avoid overflow when summing in avg
-# (100 rows * 1e16 < Long.MAX_VALUE 9.2e18)
-_long_gen_safe = LongGen(min_val=-10000000000000000, max_val=10000000000000000)
-_numeric_gens_safe = [byte_gen, short_gen, int_gen, _long_gen_safe, float_gen, double_gen]
-
 # The input lists or schemas that are used by StructGen.
 
 # grouping longs with nulls
-# Limit Long range to avoid overflow when summing (100 rows * 1e16 < Long.MAX_VALUE 9.2e18)
-_longs_with_nulls = [('a', LongGen(min_val=-10000000000000000, max_val=10000000000000000)),
-                     ('b', IntegerGen()),
-                     ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+_longs_with_nulls = [('a', LongGen()), ('b', IntegerGen()), ('c', LongGen())]
 # grouping longs with no nulls
 _longs_with_no_nulls = [
-    ('a', LongGen(nullable=False, min_val=-10000000000000000, max_val=10000000000000000)),
+    ('a', LongGen(nullable=False)),
     ('b', IntegerGen(nullable=False)),
-    ('c', LongGen(nullable=False, min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen(nullable=False))]
 # grouping longs with nulls present
 _grpkey_longs_with_nulls = [
-    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0), min_val=-10000000000000000,
-                               max_val=10000000000000000), length= 20)),
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length= 20)),
     ('b', IntegerGen()),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 # grouping doubles with nulls present
 _grpkey_dbls_with_nulls = [
     ('a', RepeatSeqGen(DoubleGen(nullable=(True, 10.0), special_cases=[]), length= 20)),
     ('b', IntegerGen()),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 # grouping floats with nulls present
 _grpkey_floats_with_nulls = [
     ('a', RepeatSeqGen(FloatGen(nullable=(True, 10.0), special_cases=[]), length= 20)),
     ('b', IntegerGen()),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 # grouping strings with nulls present
 _grpkey_strings_with_nulls = [
     ('a', RepeatSeqGen(StringGen(pattern='[0-9]{0,30}'), length= 20)),
     ('b', IntegerGen()),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 # grouping strings with nulls present, and null value
 _grpkey_strings_with_extra_nulls = [
     ('a', RepeatSeqGen(StringGen(pattern='[0-9]{0,30}'), length= 20)),
@@ -120,13 +111,13 @@ _grpkey_nested_structs_with_array_child = [
 _grpkey_nulls = [
     ('a', NullGen()),
     ('b', IntegerGen()),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 
 # grouping floats with other columns containing nans and nulls
 _grpkey_floats_with_nulls_and_nans = [
     ('a', RepeatSeqGen(FloatGen(nullable=(True, 10.0)), length= 20)),
     ('b', FloatGen(nullable=(True, 10.0), special_cases=[(float('nan'), 10.0)])),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 
 # grouping single-level lists
 # StringGen for the value being aggregated will force CUDF to do a sort based aggregation internally.
@@ -157,7 +148,7 @@ _nan_zero_float_special_cases = [
 _grpkey_floats_with_nan_zero_grouping_keys = [
     ('a', RepeatSeqGen(FloatGen(nullable=(True, 10.0), special_cases=_nan_zero_float_special_cases), length=50)),
     ('b', IntegerGen(nullable=(True, 10.0))),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 
 _nan_zero_double_special_cases = [
     (float('nan'),  5.0),
@@ -172,7 +163,7 @@ _nan_zero_double_special_cases = [
 _grpkey_doubles_with_nan_zero_grouping_keys = [
     ('a', RepeatSeqGen(DoubleGen(nullable=(True, 10.0), special_cases=_nan_zero_double_special_cases), length=50)),
     ('b', IntegerGen(nullable=(True, 10.0))),
-    ('c', LongGen(min_val=-10000000000000000, max_val=10000000000000000))]
+    ('c', LongGen())]
 
 # Schema for xfail cases
 struct_gens_xfail = [
@@ -1764,7 +1755,7 @@ def test_distinct_float_count_reductions(data_gen, kudo_enabled):
         conf = {kudo_enabled_conf_key: kudo_enabled})
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', _numeric_gens_safe + [decimal_gen_64bit, decimal_gen_128bit], ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + [decimal_gen_64bit, decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_arithmetic_reductions(data_gen, kudo_enabled):
     assert_gpu_and_cpu_are_equal_collect(

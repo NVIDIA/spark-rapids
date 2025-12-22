@@ -21,15 +21,17 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 /**
- * Integration tests for AggHelper's expression deduplication logic.
+ * Integration tests for GpuAverage aggregation function.
  *
- * When avg(x) and count(x) are used together, they both need to count non-null values of x.
- * AggHelper should deduplicate the 'x' expression in preStep and let cudf deduplicate
- * the identical count aggregations on the same column.
+ * Tests cover:
+ * - avg combined with sum/count (expression deduplication)
+ * - avg on different data types (int, double, long)
+ * - avg with group by
+ * - avg(DISTINCT x) scenarios
  *
  * These tests verify the end-to-end correctness by comparing GPU results with CPU results.
  */
-class AggHelperExprDeduplicationSuite extends SparkQueryCompareTestSuite {
+class GpuAverageSuite extends SparkQueryCompareTestSuite {
 
   private def aggConf: SparkConf = new SparkConf()
     .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
@@ -156,20 +158,6 @@ class AggHelperExprDeduplicationSuite extends SparkQueryCompareTestSuite {
     ).toDF("x")
   }
 
-  // Test data with very large Long values that will overflow if summed as Long
-  // These values are close to Long.MAX_VALUE (9223372036854775807)
-  private def overflowLongDf(spark: SparkSession): DataFrame = {
-    import spark.implicits._
-    Seq[java.lang.Long](
-      5000000000000000000L,  // 5e18
-      4000000000000000000L,  // 4e18
-      3000000000000000000L,  // 3e18
-      2000000000000000000L,  // 2e18
-      1000000000000000000L   // 1e18
-      // Sum = 15e18, which overflows Long.MAX_VALUE (9.2e18)
-    ).toDF("x")
-  }
-
   // Test data with Long for group by with duplicates
   private def longGroupByDf(spark: SparkSession): DataFrame = {
     import spark.implicits._
@@ -224,16 +212,5 @@ class AggHelperExprDeduplicationSuite extends SparkQueryCompareTestSuite {
     maxFloatDiff = 0.0001) { df =>
     df.createOrReplaceTempView("long_data_partial")
     df.sparkSession.sql("SELECT avg(DISTINCT x) as avg_distinct_x FROM long_data_partial")
-  }
-
-  // This test uses values large enough to overflow Long when summed
-  // Expected: avg = (5e18 + 4e18 + 3e18 + 2e18 + 1e18) / 5 = 15e18 / 5 = 3e18
-  // If Long overflow occurs, sum would wrap around to a negative number
-  testSparkResultsAreEqual(
-    "avg(x) - Large Long values that overflow Long.MAX_VALUE when summed",
-    overflowLongDf,
-    conf = aggConf,
-    maxFloatDiff = 0.0001) { df =>
-    df.agg(avg("x").as("avg_x"), sum("x").as("sum_x"), count("x").as("cnt_x"))
   }
 }
