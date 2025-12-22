@@ -160,6 +160,12 @@ object GpuShuffleCoalesceUtils {
       minSize: Long): CloseableTableSeqWithTargetSize[T] =>
       Seq[CloseableTableSeqWithTargetSize[T]] = {
     (wrapper: CloseableTableSeqWithTargetSize[T]) => {
+      val tables = wrapper
+      if (tables.isEmpty) {
+        throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
+          s"GPU OutOfMemory: empty table sequence cannot be split!")
+      }
+
       // Don't close the wrapper here - withRetry will handle closing it.
       // The split sequences need to reference the same table objects.
       // First split the target size
@@ -171,12 +177,6 @@ object GpuShuffleCoalesceUtils {
       }
       val newTargetSize = splitTargetSizes.head
       val targetByteSize = newTargetSize.targetSize
-
-      val tables = wrapper
-      if (tables.isEmpty) {
-        throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
-          s"GPU OutOfMemory: empty table sequence cannot be split!")
-      }
 
       // Split tables based on byte size to match the new target
       var currentSize = 0L
@@ -514,12 +514,18 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
   }
 
   override def close(): Unit = {
-    serializedTables.forEach(_.close())
-    serializedTables.clear()
+    val allCloseables = new ArrayBuffer[AutoCloseable]()
+    // Collect all serialized tables
+    serializedTables.forEach(table => allCloseables += table)
+    // Collect all AutoCloseable results from pending iterator
     pendingResultIter.foreach(_.foreach {
-      case ac: AutoCloseable => ac.safeClose()
+      case ac: AutoCloseable => allCloseables += ac
       case _ => // non-closeable result
     })
+    // Close all AutoCloseables together
+    allCloseables.safeClose()
+
+    serializedTables.clear()
     pendingResultIter = None
   }
 
@@ -596,13 +602,8 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R](
   }
 
   protected def canAddToBatch(nextTable: T): Boolean = {
-    if (batchByteSize + tableOperator.getDataLen(nextTable) > targetBatchByteSize) {
-      return false
-    }
-    if (numRowsInBatch.toLong + tableOperator.getNumRows(nextTable) > Integer.MAX_VALUE) {
-      return false
-    }
-    true
+    (batchByteSize + tableOperator.getDataLen(nextTable) <= targetBatchByteSize) &&
+    (numRowsInBatch.toLong + tableOperator.getNumRows(nextTable) <= Integer.MAX_VALUE)
   }
 
   protected def updateBatchState(): Unit = {
@@ -699,13 +700,14 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   override def hasNext(): Boolean = {
     // Check for pending results from splits first
     if (pendingResultIter.exists(_.hasNext)) {
-      return true
+      true
+    } else {
+      // Don't do any heavy things here to support the async read by
+      // GpuShuffleAsyncCoalesceIterator.
+      // Suppose "iter.hasNext" reads in only a header which should be small
+      // enough to make this a very lightweight operation.
+      bufferingFuture.isDefined || !serializedTables.isEmpty || iter.hasNext
     }
-    // Don't do any heavy things here to support the async read by
-    // GpuShuffleAsyncCoalesceIterator.
-    // Suppose "iter.hasNext" reads in only a header which should be small
-    // enough to make this a very lightweight operation.
-    bufferingFuture.isDefined || !serializedTables.isEmpty || iter.hasNext
   }
 
   override def next(): CoalescedHostResult = {
@@ -715,26 +717,24 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
 
     // Check for pending results from splits first
     getNextResult() match {
-      case Some(result) =>
-        return result
+      case Some(result) => result
       case None =>
         // No pending results, proceed with normal concatenation
-    }
+        bufferingFuture.map(f => {
+          NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
+            f.get()
+          }
+        }).getOrElse({
+          NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
+            bufferNextBatch()
+          }
+        }
+        )
+        bufferingFuture = None
 
-    bufferingFuture.map(f => {
-      NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
-        f.get()
-      }
-    }).getOrElse({
-      NvtxRegistry.ASYNC_SHUFFLE_BUFFER {
-        bufferNextBatch()
-      }
-    }
-    )
-    bufferingFuture = None
-
-    NvtxRegistry.SHUFFLE_CONCAT_CPU {
-      concatenateTablesInHost()
+        NvtxRegistry.SHUFFLE_CONCAT_CPU {
+          concatenateTablesInHost()
+        }
     }
   }
 }
@@ -768,9 +768,10 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   override def hasNext(): Boolean = {
     // Check for pending results from splits first
     if (pendingResultIter.exists(_.hasNext)) {
-      return true
+      true
+    } else {
+      !serializedTables.isEmpty || iter.hasNext
     }
-    !serializedTables.isEmpty || iter.hasNext
   }
 
   override def next(): ColumnarBatch = {
@@ -780,19 +781,17 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
 
     // Check for pending results from splits first
     getNextResult() match {
-      case Some(result) =>
-        return result
+      case Some(result) => result
       case None =>
         // No pending results, proceed with normal concatenation
-    }
+        withResource(new NvtxRange("BufferNextBatch", NvtxColor.ORANGE)) { _ =>
+          bufferNextBatch()
+        }
 
-    withResource(new NvtxRange("BufferNextBatch", NvtxColor.ORANGE)) { _ =>
-      bufferNextBatch()
-    }
-
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-    withResource(new NvtxRange("concatTablesInGpu", NvtxColor.ORANGE)) { _ =>
-      concatenateTablesInGpu()
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        withResource(new NvtxRange("concatTablesInGpu", NvtxColor.ORANGE)) { _ =>
+          concatenateTablesInGpu()
+        }
     }
   }
 }
