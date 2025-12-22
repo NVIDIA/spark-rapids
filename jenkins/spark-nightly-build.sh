@@ -42,7 +42,7 @@ export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 export DEV_MODE=${DEV_MODE:-'false'}
 
 function mvnEval {
-    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease320 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
+    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease330 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
 }
 
 ART_ID=$(mvnEval project.artifactId)
@@ -230,7 +230,7 @@ installDistArtifact ${DEFAULT_CUDA_CLASSIFIER}
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
-    # this deploys selected submodules that is unconditionally built with Spark 3.2.0
+    # this deploys selected submodules that is unconditionally built with default Spark shim
     $MVN -B deploy -pl "!${DIST_PL}" \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         -DskipTests -Drat.skip=true \

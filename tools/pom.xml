@@ -121,6 +121,63 @@
                             </target>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>update_config_docs</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>                               
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <property name="plugin_classpath" refid="maven.plugin.classpath"/>
+                                <path id="plugin_classpath_path">
+                                   <pathelement path="${plugin_classpath}"/>
+                                </path>
+                                <property environment="env"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <or>
+                                      <equals arg1="spark${env.BASE_VER}" arg2="${spark.version.classifier}"/>
+                                      <equals arg1="spark321" arg2="${spark.version.classifier}"/>
+                                    </or>
+                                    <ac:then>
+                                        <!-- requires Spark jvm args for newer Java versions -->
+                                        <java classname="com.nvidia.spark.rapids.RapidsConf"
+                                              failonerror="true" 
+                                              fork="true"
+                                              jvmargs="${jdk9plus.args}">
+                                            <classpath>
+                                                <path refid="plugin_classpath_path"/>
+                                            </classpath>
+                                            <arg value="${spark.rapids.source.basedir}/docs/configs.md"/>
+                                            <arg value="${spark.rapids.source.basedir}/docs/additional-functionality/advanced_configs.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.NvtxRangeDocs" failonerror="true">
+                                            <arg value="${spark.rapids.source.basedir}/docs/dev/nvtx_ranges.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
+                                            <arg value="${spark.rapids.source.basedir}/docs/supported_ops.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${spark.rapids.source.basedir}/tools/generated_files/supportedDataSource.csv"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${spark.rapids.source.basedir}/tools/generated_files/operatorsScore.csv"/>
+                                            <arg value="operatorScore"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools">
+                                            <arg value="${spark.rapids.source.basedir}/tools/generated_files/supportedExecs.csv"/>
+                                            <arg value="execs"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${spark.rapids.source.basedir}/tools/generated_files/supportedExprs.csv"/>
+                                            <arg value="exprs"/>
+                                        </java>
+                                    </ac:then>
+                                </ac:if>
+                            </target>
+                        </configuration>
+                    </execution>
                 </executions>
                 <dependencies>
                     <dependency>

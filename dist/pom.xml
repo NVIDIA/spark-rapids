@@ -342,48 +342,6 @@ self.log("... OK")
                             </target>
                         </configuration>
                     </execution>
-                    <execution>
-                        <id>update_config_docs</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                                    <equals arg1="spark320" arg2="${spark.version.classifier}"/>
-                                    <ac:then>
-                                        <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/configs.md"/>
-                                            <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.NvtxRangeDocs" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/dev/nvtx_ranges.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/supported_ops.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/supportedDataSource.csv"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/operatorsScore.csv"/>
-                                            <arg value="operatorScore"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/supportedExecs.csv"/>
-                                            <arg value="execs"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/supportedExprs.csv"/>
-                                            <arg value="exprs"/>
-                                        </java>
-                                    </ac:then>
-                                </ac:if>
-                            </target>
-                        </configuration>
-                    </execution>
                 </executions>
                 <dependencies>
                     <dependency>

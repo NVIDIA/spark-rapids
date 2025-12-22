@@ -23,6 +23,9 @@ SKIP_CLEAN=1
 BUILD_ALL_DEBUG=0
 SCALA213=0
 
+function join_by { local IFS="$1"; shift; echo "$*"; }
+
+
 function print_usage() {
   echo "Usage: buildall [OPTION]"
   echo "Options:"
@@ -38,8 +41,8 @@ function print_usage() {
   echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
   echo "        snapshotsWithDatabricks, noSnapshotsWithDatabricks, noSnapshotsScala213, snapshotsScala213."
   echo "        NOTE: the Databricks-related spark3XYdb shims are not built locally, the jars are fetched prebuilt from a"
-  echo " .      remote Maven repo. You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will"
-  echo "        build only the distribution jar only for 3.2.0 and 3.3.0"
+  echo " .      remote Maven repo. You can also supply a comma-separated list of build versions. E.g., --profile=330,331 will"
+  echo "        build only the distribution jar only for 3.3.0 and 3.3.1"
   echo "   -m=MODULE, --module=MODULE"
   echo "        after finishing parallel builds, resume from dist and build up to and including module MODULE."
   echo "        E.g., --module=integration_tests"
@@ -92,6 +95,7 @@ function versionsFromDistProfile() {
 }
 
 function versionsFromReleaseProfiles() {
+  [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
   versionRawStr=$(python build/get_buildvers.py $1 $2)
   versionStr=${versionRawStr//[$'\n',]/}
   echo -n $versionStr
@@ -125,7 +129,8 @@ case "$1" in
   ;;
 
 --debug)
-  BUILD_ALL_DEBUG=1
+  # access in called functions
+  export BUILD_ALL_DEBUG=1
   set -x
   ;;
 
@@ -205,7 +210,6 @@ case $DIST_PROFILE in
 
   [34]*)
     <<< $DIST_PROFILE IFS="," read -ra SPARK_SHIM_VERSIONS
-    INCLUDED_BUILDVERS_OPT="-Dincluded_buildvers=$DIST_PROFILE"
     unset DIST_PROFILE
     ;;
 
@@ -277,8 +281,8 @@ export -f build_single_shim
 # Install all the versions for DIST_PROFILE
 
 # First build the aggregator module for all SPARK_SHIM_VERSIONS in parallel skipping expensive plugins that
-# - either deferred to 320 because the check is identical in all shim profiles such as scalastyle
-# - or deferred to 320 because we currently don't require it per shim such as scaladoc generation
+# - either deferred to 330 because the check is identical in all shim profiles such as scalastyle
+# - or deferred to 330 because we currently don't require it per shim such as scaladoc generation
 # - or there is a dedicated step to run against a particular shim jar such as unit tests, in
 #   the near future we will run unit tests against a combined multi-shim jar to catch classloading
 #   regressions even before pytest-based integration_tests
@@ -299,10 +303,11 @@ time (
   fi
   # This used to resume from dist. However, without including aggregator in the build
   # the build does not properly initialize spark.version property via buildver profiles
-  # in the root pom, and we get a missing spark320 dependency even for --profile=320,321
+  # in the root pom, and we get a missing spark330 dependency even for --profile=330,331
   # where the build does not require it. Moving it to aggregator resolves this issue with
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
+  INCLUDED_BUILDVERS_OPT=-Dincluded_buildvers=$(join_by , "${SPARK_SHIM_VERSIONS[@]}")
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
   $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
