@@ -823,7 +823,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         try {
           pf.handle.close()
         } catch {
-          case _: Exception => // Ignore cleanup errors
+          case e: Exception =>
+            logWarning(s"Failed to close partial file handle during cleanup", e)
         }
       }
     }
