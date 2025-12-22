@@ -183,7 +183,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuAverage(childExprs.head, ansiEnabled, conf.avgUseLongAccumulator)
+          GpuAverage(childExprs.head, ansiEnabled, this.conf.avgUseLongAccumulator)
 
         override def needsAnsiCheck: Boolean = false
       }),
