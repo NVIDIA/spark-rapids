@@ -107,7 +107,7 @@ case class GpuExpandExec(
     if (preprojectEnabled) {
       // Tiered projection is enabled, check if pre-projection is needed.
       val boundPreprojections = GpuBindReferences.bindGpuReferencesTiered(
-        preprojectionList, child.output, conf)
+        preprojectionList, child.output, conf, metricsMap)
       if (boundPreprojections.exprTiers.size > 1) {
         logDebug("GPU expanding with pre-projection.")
         // We got some nested expressions, so pre-projection is good to enable.
@@ -125,7 +125,7 @@ case class GpuExpandExec(
     }
 
     val boundProjections = projectionsForBind.map { pl =>
-      GpuBindReferences.bindGpuReferencesTiered(pl, attributesForBind, conf)
+      GpuBindReferences.bindGpuReferencesTiered(pl, attributesForBind, conf, metricsMap)
     }
 
     child.executeColumnar().mapPartitions { it =>

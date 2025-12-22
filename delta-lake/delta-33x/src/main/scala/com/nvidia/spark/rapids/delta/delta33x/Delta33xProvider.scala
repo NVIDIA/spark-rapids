@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.delta.delta33x
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.catalog.DeltaTableV2
@@ -27,7 +28,7 @@ import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.AppendDataExecV1
 
-object Delta33xProvider extends DeltaProviderBase {
+object Delta33xProvider extends DeltaProviderBase with Logging {
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
     write == classOf[DeltaTableV2] || write == classOf[GpuDeltaCatalog#GpuStagedDeltaTableV2]
@@ -72,9 +73,21 @@ object Delta33xProvider extends DeltaProviderBase {
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
-  override protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat =
+  override protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat = {
+    val optimizationsEnabled = if (fmt.hasTablePath) {
+      logWarning("Input Delta table has deletion vectors. Optimizations such as file splitting " +
+        "and predicate pushdown are currently not supported for this table " +
+        "(https://github.com/NVIDIA/spark-rapids/issues/13999). If you see performance issues, " +
+        "consider disabling deletion vectors and running the optimize command on the table. " +
+        "See https://docs.delta.io/delta-deletion-vectors/#apply-changes-to-parquet-data-files " +
+        "for more details about how to apply delete changes to physical files.")
+      false
+    } else {
+      fmt.optimizationsEnabled
+    }
     GpuDelta33xParquetFileFormat(fmt.protocol, fmt.metadata, fmt.nullableRowTrackingFields,
-      fmt.optimizationsEnabled, fmt.tablePath, fmt.isCDCRead)
+      optimizationsEnabled, fmt.tablePath, fmt.isCDCRead)
+  }
 
   override def convertToGpu(
       cpuExec: AppendDataExecV1,

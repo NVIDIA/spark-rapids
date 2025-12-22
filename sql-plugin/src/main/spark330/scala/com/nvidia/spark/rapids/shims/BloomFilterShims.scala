@@ -38,6 +38,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -74,7 +75,7 @@ object BloomFilterShims {
                 ParamCheck("numBits",
                   TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))))))),
         (a, conf, p, r) => new ExprMeta[BloomFilterAggregate](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression = {
+          override def convertToGpuImpl(): GpuExpression = {
             GpuBloomFilterAggregate(
               childExprs.head.convertToGpu(),
               a.estimatedNumItemsExpression.eval().asInstanceOf[Number].longValue,

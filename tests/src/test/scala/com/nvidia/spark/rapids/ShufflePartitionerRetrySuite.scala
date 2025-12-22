@@ -60,7 +60,7 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
     val ref = GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "a")
     val sortOrder = SortOrder(ref, Ascending)
     val attrs = AttributeReference(ref.name, ref.dataType, ref.nullable)()
-    val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs))
+    val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs), Map.empty[String, GpuMetric])
 
     val rp = GpuRangePartitioner(Array.apply(bounds), gpuSorter)
     // batch will be closed within columnarEvalAny

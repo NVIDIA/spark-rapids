@@ -27,6 +27,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -61,8 +62,8 @@ class GpuBroadcastNestedLoopJoinMeta(
 
     if (isAstCondition) {
       // Try to extract non-ast-able conditions from join conditions
-      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta,
-        left.output, right.output, true)
+      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.output, right.output)
 
       // Reconstruct the child with wrapped project node if needed.
       val leftChild =

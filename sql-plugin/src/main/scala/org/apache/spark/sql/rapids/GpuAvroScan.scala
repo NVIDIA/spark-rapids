@@ -1012,6 +1012,8 @@ class GpuMultiFileAvroPartitionReader(
 
     override def callImpl(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
+      // Mark the async thread as a pool thread within the RetryFramework
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         val startBytesRead = fileSystemBytesRead()
         val res = withResource(outhmb) { _ =>
@@ -1024,6 +1026,7 @@ class GpuMultiFileAvroPartitionReader(
         val bytesRead = fileSystemBytesRead() - startBytesRead
         (res, bytesRead)
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }

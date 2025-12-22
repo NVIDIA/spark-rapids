@@ -108,7 +108,7 @@ class GpuStackMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = stack.children
       .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     // There is no need to implement convertToGpu() here, because GpuGenerateExec will handle
     // stack logic in terms of GpuExpandExec, no convertToGpu() will be called during the process
     throw new UnsupportedOperationException(s"Should not be here: $this")
@@ -134,7 +134,7 @@ abstract class ReplicateRowsExprMeta[INPUT <: ReplicateRows](
     rule: DataFromReplacementRule)
     extends GeneratorExprMeta[INPUT](gen, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
+  override final def convertToGpuImpl(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
@@ -859,9 +859,9 @@ case class GpuGenerateExec(
       // perform optimized lazy generation via `generator.fixedLenLazyArrayGenerate`
       case expressions if expressions.nonEmpty =>
         val boundLazyProjectList =
-          GpuBindReferences.bindGpuReferences(expressions, child.output).toArray
+          GpuBindReferences.bindGpuReferences(expressions, child.output, allMetrics).toArray
         val boundOthersProjectList =
-          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output).toArray
+          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output, allMetrics).toArray
         val outputSchema = output.map(_.dataType).toArray
 
         child.executeColumnar().mapPartitions { iter =>
@@ -878,9 +878,9 @@ case class GpuGenerateExec(
       // Otherwise, perform common generation via `generator.generate`
       case _ =>
         val genProjectList: Seq[GpuExpression] =
-          GpuBindReferences.bindGpuReferences(generator.children, child.output)
+          GpuBindReferences.bindGpuReferences(generator.children, child.output, allMetrics)
         val othersProjectList: Seq[GpuExpression] =
-          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output)
+          GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output, allMetrics)
 
         child.executeColumnar().flatMap { inputFromChild =>
           doGenerateAndClose(inputFromChild, genProjectList, othersProjectList,

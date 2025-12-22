@@ -370,6 +370,15 @@ else
     # Set a seed to be used to pick random tests to inject with OOM
     export SPARK_RAPIDS_TEST_INJECT_OOM_SEED=${SPARK_RAPIDS_TEST_INJECT_OOM_SEED:-`date +%s`}
     echo "SPARK_RAPIDS_TEST_INJECT_OOM_SEED used: $SPARK_RAPIDS_TEST_INJECT_OOM_SEED"
+    if [[ -n "${RANDOM_SELECT}" ]]; then
+        if [[ -n "${RANDOM_SELECT_SEED}" ]]; then
+            echo "RANDOM_SELECT configured: value=${RANDOM_SELECT}, seed=${RANDOM_SELECT_SEED}"
+        else
+            echo "RANDOM_SELECT configured: value=${RANDOM_SELECT}, seed=default(0)"
+        fi
+    else
+        echo "RANDOM_SELECT not set"
+    fi
 
     # If you want to change the amount of GPU memory allocated you have to change it here
     # and where TEST_PARALLEL is calculated
@@ -528,11 +537,22 @@ else
             exit 1
         fi
 
-        # Create a venv and install only pyspark[connect] to ensure a pure Python client
+        case $VERSION_STRING in
+          3.5.*)
+            CONNECT_PIP_PACKAGE="pyspark[connect]"
+            ;;
+          
+          4.*)
+            # Create a venv and install only pyspark-client to ensure a pure Python client
+            # See: https://spark.apache.org/docs/latest/api/python/getting_started/install.html#python-spark-connect-client
+            CONNECT_PIP_PACKAGE="pyspark-client"
+            ;;
+        esac
+
         CONNECT_CLIENT_VENV="${RUN_DIR}/connect_client_venv"
         python -m venv "$CONNECT_CLIENT_VENV"
         "$CONNECT_CLIENT_VENV/bin/python" -m pip install --upgrade pip >/dev/null
-        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "pyspark[connect]==${VERSION_STRING}" >/dev/null
+        "$CONNECT_CLIENT_VENV/bin/python" -m pip install --no-cache-dir "$CONNECT_PIP_PACKAGE==${VERSION_STRING}" > /dev/null
 
         # Run a simple query using the Connect client and assert expected result and GPU operator in the plan
         output=$(CONNECT_URL="$CONNECT_SERVER_URL" \

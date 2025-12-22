@@ -103,6 +103,41 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   override def value: NanoTime = NanoTime(_sum)
 }
 
+/**
+ * Accumulator to sum up size in bytes, almost identical to LongAccumulator but with
+ * a user-friendly representation of the value.
+ */
+class SizeInBytesAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
+  private var _sum = 0L
+  override def isZero: Boolean = _sum == 0
+
+  override def copy(): SizeInBytesAccumulator = {
+    val newAcc = new SizeInBytesAccumulator
+    newAcc._sum = this._sum
+    newAcc
+  }
+
+  override def reset(): Unit = {
+    _sum = 0
+  }
+
+  override def add(v: jl.Long): Unit = {
+    _sum += v
+  }
+
+  override def merge(other: AccumulatorV2[jl.Long, SizeInBytes]): Unit = other match {
+    case sb: SizeInBytesAccumulator =>
+      _sum += sb._sum
+    case _ =>
+      throw new UnsupportedOperationException(
+        s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
+  }
+
+  override def value: SizeInBytes = SizeInBytes(_sum)
+
+  private[spark] def setValue(newValue: Long): Unit = _sum = newValue
+}
+
 class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
   private var _value = 0L
   override def isZero: Boolean = _value == 0
@@ -232,6 +267,8 @@ class GpuTaskMetrics extends Serializable with Logging {
   private val spillToDiskTimeNs = new NanoSecondAccumulator
   private val readSpillFromHostTimeNs = new NanoSecondAccumulator
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
+  private val spillToHostBytes = new SizeInBytesAccumulator
+  private val spillToDiskBytes = new SizeInBytesAccumulator
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
   private val maxHostMemoryBytes = new HighWatermarkAccumulator
@@ -239,8 +276,8 @@ class GpuTaskMetrics extends Serializable with Logging {
   private val maxPinnedMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
 
-  private val maxGpuFootprint = new LongAccumulator
-  
+  private val maxGpuFootprint = new SizeInBytesAccumulator
+
   // Disk write savings from SpillablePartialFileHandle
   private val diskWriteSavedBytes = new LongAccumulator
 
@@ -294,6 +331,8 @@ class GpuTaskMetrics extends Serializable with Logging {
     "gpuSpillToDiskTime" -> spillToDiskTimeNs,
     "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
     "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
+    "gpuSpillToHostBytes" -> spillToHostBytes,
+    "gpuSpillToDiskBytes" -> spillToDiskBytes,
     "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
     "gpuMaxHostMemoryBytes" -> maxHostMemoryBytes,
     "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes,
@@ -378,6 +417,14 @@ class GpuTaskMetrics extends Serializable with Logging {
     timeIt(readSpillFromDiskTimeNs, "readSpillFromDiskTime", NvtxColor.ORANGE, f)
   }
 
+  def recordSpillToHost(sizeInBytes: Long): Unit = {
+    spillToHostBytes.add(sizeInBytes)
+  }
+
+  def recordSpillToDisk(sizeInBytes: Long): Unit = {
+    spillToDiskBytes.add(sizeInBytes)
+  }
+
   def updateRetry(taskAttemptId: Long): Unit = {
     val rc = RmmSpark.getAndResetNumRetryThrow(taskAttemptId)
     if (rc > 0) {
@@ -446,7 +493,7 @@ class GpuTaskMetrics extends Serializable with Logging {
   def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = {
     multithreadReaderMaxParallelism.add(parallelism)
   }
-  
+
   def addDiskWriteSaved(bytes: Long): Unit = {
     diskWriteSavedBytes.add(bytes)
   }

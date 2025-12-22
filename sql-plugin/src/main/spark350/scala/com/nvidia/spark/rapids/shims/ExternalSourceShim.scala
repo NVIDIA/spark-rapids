@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 {"spark": "351"}
@@ -22,15 +23,15 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.GpuExec
 
-import org.apache.spark.sql.execution.datasources.v2.ReplaceDataExec
+import org.apache.spark.sql.execution.datasources.v2.{ReplaceDataExec, WriteDeltaExec}
 import org.apache.spark.sql.rapids.ExternalSourceBase
 
 object ExternalSourceShim extends ExternalSourceBase {
@@ -49,6 +50,30 @@ object ExternalSourceShim extends ExternalSourceBase {
   def convertToGpu(
                     cpuExec: ReplaceDataExec,
                     meta: ReplaceDataExecMeta): GpuExec = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.convertToGpuPlan(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+                 cpuExec: WriteDeltaExec,
+                 meta: WriteDeltaExecMeta): Unit = {
+    val writeClass = cpuExec.write.getClass
+
+    if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {
+      icebergProvider.tagForGpuPlan(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"Write delta $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+                    cpuExec: WriteDeltaExec,
+                    meta: WriteDeltaExecMeta): GpuExec = {
     val writeClass = cpuExec.write.getClass
 
     if (hasIcebergJar && icebergProvider.isSupportedWrite(writeClass)) {

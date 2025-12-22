@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 {"spark": "351"}
@@ -22,15 +23,15 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 
-import org.apache.spark.sql.execution.datasources.v2.ReplaceDataExec
+import org.apache.spark.sql.execution.datasources.v2.{ReplaceDataExec, WriteDeltaExec}
 
 class ReplaceDataExecMeta(
     wrapped: ReplaceDataExec,
@@ -38,6 +39,22 @@ class ReplaceDataExecMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[ReplaceDataExec](wrapped, conf, parent, rule) {
+
+  override def tagPlanForGpu(): Unit = {
+    ExternalSourceShim.tagForGpu(wrapped, this)
+  }
+
+  override def convertToGpu(): GpuExec = {
+    ExternalSourceShim.convertToGpu(wrapped, this)
+  }
+}
+
+class WriteDeltaExecMeta(
+    wrapped: WriteDeltaExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends SparkPlanMeta[WriteDeltaExec](wrapped, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
     ExternalSourceShim.tagForGpu(wrapped, this)

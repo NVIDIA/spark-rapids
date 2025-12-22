@@ -54,11 +54,12 @@ case class GpuCheckDeltaInvariant(
   override def foldable: Boolean = false
   override def nullable: Boolean = true
 
-  def withBoundReferences(input: AttributeSeq): GpuCheckDeltaInvariant = {
+  def withBoundReferences(input: AttributeSeq, 
+    metrics: Map[String, GpuMetric]): GpuCheckDeltaInvariant = {
     GpuCheckDeltaInvariant(
-      GpuBindReferences.bindReference(child, input),
-      columnExtractors.map { case (column, extractor) =>
-        column -> BindReferences.bindReference(extractor, input)
+      GpuBindReferences.bindReference(child, input, metrics),
+      columnExtractors.map {
+        case (column, extractor) => column -> BindReferences.bindReference(extractor, input)
       },
       constraint)
   }
@@ -175,7 +176,7 @@ class GpuCheckDeltaInvariantMeta(
     }
   }
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val child = childExprs.head.convertToGpu()
     // Delta 4.0 provides columnExtractors as Seq[(String, Expression)] while older
     // versions provide Map[String, Expression]. Normalize to Map for GPU version.

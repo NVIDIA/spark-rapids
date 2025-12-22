@@ -44,6 +44,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -68,8 +69,10 @@ class GpuCustomShuffleReaderMeta(reader: AQEShuffleReadExec,
         "Unable to replace CustomShuffleReader due to child not being columnar")
     }
     val shuffleEx = reader.child.asInstanceOf[ShuffleQueryStageExec].plan
-    shuffleEx.getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
-      wrapped.setTagValue(GpuOverrides.preRowToColProjection, r2c)
+    GpuTypedImperativeSupportedAggregateExecMeta.readBufferConverter(shuffleEx,
+      isR2C = true).foreach { r2c =>
+      wrapped.setTagValue(
+        GpuTypedImperativeSupportedAggregateExecMeta.preRowToColProjection, r2c -> 0)
     }
   }
 

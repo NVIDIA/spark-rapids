@@ -34,6 +34,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -114,7 +115,7 @@ class InSubqueryExecMeta(
     rule: DataFromReplacementRule)
   extends ExprMeta(expr, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     expr match {
       case InSubqueryExec(_, plan, exprId, shouldBroadcast, resultBroadcast, result) =>
         val gpuChild = childExprs.head.convertToGpu()

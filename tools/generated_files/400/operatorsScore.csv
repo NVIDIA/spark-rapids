@@ -33,6 +33,7 @@ OverwriteByExpressionExec,3.0
 OverwriteByExpressionExecV1,3.0
 OverwritePartitionsDynamicExec,3.0
 ReplaceDataExec,3.0
+WriteDeltaExec,3.0
 BroadcastExchangeExec,3.0
 ShuffleExchangeExec,4.2
 BroadcastHashJoinExec,5.1
@@ -199,6 +200,7 @@ MapConcat,4
 MapEntries,4
 MapFilter,4
 MapFromArrays,4
+MapFromEntries,4
 MapKeys,4
 MapValues,4
 MapZipWith,4

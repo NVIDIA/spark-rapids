@@ -22,6 +22,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -108,15 +109,18 @@ case class GpuMergeRowsExec(
 
     val dataTypes = GpuColumnVector.extractTypes(child.schema)
 
-    val boundTargetRowPresent = GpuBindReferences.bindGpuReference(isTargetRowPresent, child.output)
-    val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent, child.output)
+    val boundTargetRowPresent = GpuBindReferences.bindGpuReference(isTargetRowPresent,
+      child.output, allMetrics)
+    val boundSourceRowPresent = GpuBindReferences.bindGpuReference(isSourceRowPresent,
+      child.output, allMetrics)
 
-    val boundMatchedInsts = GpuBindReferences.bindGpuReferences(matchedInstructions, child.output)
+    val boundMatchedInsts = GpuBindReferences.bindGpuReferences(matchedInstructions,
+        child.output, allMetrics)
       .asInstanceOf[Seq[GpuInstruction]]
     val boundNotMatchedInsts = GpuBindReferences.bindGpuReferences(notMatchedInstructions,
-      child.output).asInstanceOf[Seq[GpuInstruction]]
+      child.output, allMetrics).asInstanceOf[Seq[GpuInstruction]]
     val boundMatchedBySourceInsts = GpuBindReferences.bindGpuReferences(
-      notMatchedBySourceInstructions, child.output)
+      notMatchedBySourceInstructions, child.output, allMetrics)
       .asInstanceOf[Seq[GpuInstruction]]
 
     child.executeColumnar().mapPartitions { iter =>

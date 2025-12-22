@@ -22,6 +22,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -65,7 +66,7 @@ class GpuKeepInstructionMeta(
     rule: DataFromReplacementRule)
   extends InstructionExprMeta[Keep](keep, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val gpuCondition = childExprs.head.convertToGpu()
     val gpuOutputs = childExprs.tail.map(_.convertToGpu())
     GpuKeep(gpuCondition, gpuOutputs)
@@ -85,7 +86,7 @@ class GpuDiscardInstructionMeta(
     rule: DataFromReplacementRule)
   extends InstructionExprMeta[Discard](discard, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val gpuCondition = childExprs.head.convertToGpu()
     GpuDiscard(gpuCondition)
   }
@@ -105,7 +106,7 @@ class GpuSplitInstructionMeta(
     rule: DataFromReplacementRule)
   extends InstructionExprMeta[Split](split, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val gpuCondition = childExprs.head.convertToGpu()
 
     val (outputsPart, otherOutputsPart) = childExprs.tail.splitAt(childExprs.tail.length / 2)

@@ -24,6 +24,7 @@
 {"spark": "354"}
 {"spark": "355"}
 {"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -316,8 +317,9 @@ case class GpuWindowGroupLimitExec(
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
 
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output,
+      allMetrics)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output, allMetrics)
 
     child.executeColumnar().mapPartitions { input =>
       new GpuWindowGroupLimitingIterator(input,
