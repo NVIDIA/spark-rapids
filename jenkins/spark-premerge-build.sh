@@ -208,6 +208,9 @@ ci_scala213() {
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    # Trigger the RapidsShuffleManager tests for scala 2.13
+    rapids_shuffle_smoke_test
 }
 
 prepare_spark() {
