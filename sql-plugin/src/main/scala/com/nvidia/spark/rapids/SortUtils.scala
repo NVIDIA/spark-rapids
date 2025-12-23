@@ -273,9 +273,12 @@ class GpuSorter(
         // Single batch no need for a merge sort
         spillableBatches.pop()
       } else { // spillableBatches.size > 1
-        // cuDF merge doesn't support all nested types.
-        // Nested types in sort key columns are not supported.
-        // Some nested types in ride-along columns are also not supported.
+        // cudf::merge claims to support nested types for both key and ride-along columns,
+        // but testing shows the support may produce results incompatible with Spark.
+        // For now, we only enable merge for single-level nested types in ride-along columns.
+        // Nested types in key columns and deeply nested types in ride-along columns still use
+        // the fallback path.
+        // TODO: see https://github.com/NVIDIA/spark-rapids/issues/14059 for tracking.
         if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
           // As a workaround, concatenate all data together and then sort it.
           // It is slower, but it works for all types.
