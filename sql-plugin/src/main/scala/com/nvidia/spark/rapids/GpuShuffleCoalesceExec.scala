@@ -154,7 +154,7 @@ object GpuShuffleCoalesceUtils {
    * Creates a split policy that divides a sequence of tables based on target byte size.
    * Uses splitTargetSizeInHalfGpu to split the target size, then splits the tables
    * sequence to match the new target size based on byte size. If it is unable to find
-   * a split, e.g. if the targetSize is target than the full data size, it instead splits
+   * a split, e.g. if the targetSize is larger than the full data size, it instead splits
    * the sequence in half by number of elements.
    */
   def createSplitPolicyByTargetSize[T <: AutoCloseable](
