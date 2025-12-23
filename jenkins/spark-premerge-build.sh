@@ -193,10 +193,11 @@ ci_scala213() {
     # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
     # don't leak the new version here, it's only for use within this function
     local SPARK_VER=4.0.1
+    local buildver="${SPARK_VER//./}"
     prepare_spark $SPARK_VER 2.13
 
     # We are going to run integration tests against Spark 4.0.1
-    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$SPARK_VER clean package $MVN_BUILD_ARGS -DskipTests=true
+    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$buildver clean package $MVN_BUILD_ARGS -DskipTests=true
 
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
