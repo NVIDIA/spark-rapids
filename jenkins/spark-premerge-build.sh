@@ -125,7 +125,8 @@ mvn_verify() {
 }
 
 rapids_shuffle_smoke_test() {
-    echo "Run rapids_shuffle_smoke_test..."
+    local spark_ver=${1:-${SPARK_VER}}
+    echo "Run rapids_shuffle_smoke_test for Spark version: $spark_ver..."
 
     # basic ucx check
     ucx_info -d
@@ -137,10 +138,10 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
     # using UCX shuffle
-    invoke_shuffle_integration_test UCX ./integration_tests/run_pyspark_from_build.sh premerge
+    invoke_shuffle_integration_test UCX ./integration_tests/run_pyspark_from_build.sh premerge $spark_ver
 
     # using MULTITHREADED shuffle
-    invoke_shuffle_integration_test MULTITHREADED ./integration_tests/run_pyspark_from_build.sh premerge
+    invoke_shuffle_integration_test MULTITHREADED ./integration_tests/run_pyspark_from_build.sh premerge $spark_ver
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
@@ -177,9 +178,6 @@ ci_scala213() {
     update-java-alternatives --set $JAVA_HOME
     java -version
 
-    # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
-    prepare_spark 4.0.1 2.13
-
     # build Scala 2.13 versions
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
     do
@@ -192,8 +190,12 @@ ci_scala213() {
             -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
     done
 
+    # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
+    local spark_ver=4.0.1
+    prepare_spark $spark_ver 2.13
+
     # We are going to run integration tests against Spark 4.0.1
-    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=401 clean package $MVN_BUILD_ARGS -DskipTests=true
+    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$spark_ver clean package $MVN_BUILD_ARGS -DskipTests=true
 
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
@@ -208,7 +210,7 @@ ci_scala213() {
         LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
 
     # Trigger the RapidsShuffleManager tests for scala 2.13
-    rapids_shuffle_smoke_test
+    rapids_shuffle_smoke_test $spark_ver
 }
 
 prepare_spark() {
@@ -228,9 +230,6 @@ prepare_spark() {
     TMP_PYTHON=/tmp/$(date +"%Y%m%d")
     rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
     export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$(echo -n $TMP_PYTHON/python/lib/py4j-*-src.zip)
-
-    # Update SHUFFLE_SPARK_SHIM to match the downloaded Spark version
-    export SHUFFLE_SPARK_SHIM=$(get_shuffle_shim "$spark_version")
 }
 
 nvidia-smi
