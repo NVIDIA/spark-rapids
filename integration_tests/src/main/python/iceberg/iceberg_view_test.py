@@ -47,3 +47,7 @@ def test_iceberg_view(spark_tmp_table_factory, reader_type, view_sql):
     def setup_iceberg_view(spark):
         spark.sql(f"CREATE VIEW {view_name} AS {view_sql.format(table_name=table_name)}")
     with_cpu_session(setup_iceberg_view)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT * FROM {view_name}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
