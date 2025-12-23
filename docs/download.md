@@ -98,7 +98,9 @@ The output of signature verify:
 
 ### Release Notes
 * Iceberg enhancements including DML operations (delete, update, merge) for merge-on-read tables, partition transforms (year/month/day/hour/truncate), and write operations enabled by default.
-* Delta Lake clustered tables DML support including update, merge, and delete operations with deletion vector enabled GPU by default.
+* Delta Lake clustered tables DML support operations (update, merge, delete) with deletion vector enabled GPU by default.  
+* Delta Lake liquid clustering write operations (merge, update, delete) on the GPU
+* Delta Lake support for Spark 4.0
 * Join improvements including support for left-outer joins with no columns, new join strategies with logging and heuristic configurations, and improved gather map ordering.
 * CSV support for GBK encoded data.
 * Refine GpuTaskMetrics over the spill framework.
