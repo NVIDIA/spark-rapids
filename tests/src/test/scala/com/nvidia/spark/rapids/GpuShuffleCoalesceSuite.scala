@@ -202,6 +202,8 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
       val partitionIndices = Array(0, 2, 2)
       val gp = createGpuPartitioning(partitionIndices)
       withResource(buildBatch()) { originalBatch =>
+        // incRefCounts here so we can hold onto the original batch and use it
+        // below to compare the values to the coalesced results
         GpuColumnVector.incRefCounts(originalBatch)
         val columns = GpuColumnVector.extractColumns(originalBatch)
         val numRows = originalBatch.numRows
@@ -242,6 +244,12 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
 
           // Verify results
           verifyAndCompareResults(deserializedBatches, originalBatch, dataTypes)
+
+          if (forceSplitRetry) {
+            val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
+            assert(retryCount > 0,
+              s"Expected at least one split retry, but saw $retryCount retries")
+          }
         }
       }
     }
