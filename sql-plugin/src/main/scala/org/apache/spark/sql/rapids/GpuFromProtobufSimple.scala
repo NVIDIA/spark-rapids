@@ -19,8 +19,8 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.BinaryOp
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.ProtobufSimple
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
@@ -30,7 +30,8 @@ import org.apache.spark.sql.types._
 /**
  * GPU implementation for Spark's `from_protobuf` decode path (simple types only).
  *
- * This is designed to replace `org.apache.spark.sql.protobuf.ProtobufDataToCatalyst` when supported.
+ * This is designed to replace `org.apache.spark.sql.protobuf.ProtobufDataToCatalyst` when
+ * supported.
  */
 case class GpuFromProtobufSimple(
     outputSchema: StructType,
@@ -51,7 +52,11 @@ case class GpuFromProtobufSimple(
     // ProtobufSimple returns a non-null STRUCT with nullable children. Spark's
     // ProtobufDataToCatalyst is NullIntolerant, so if the input binary row is null the output
     // struct row must be null as well.
-    val decoded = ProtobufSimple.decodeToStruct(input.getBase, fieldNumbers, cudfTypeIds, cudfTypeScales)
+    val decoded = ProtobufSimple.decodeToStruct(
+      input.getBase,
+      fieldNumbers,
+      cudfTypeIds,
+      cudfTypeScales)
     if (input.getBase.hasNulls) {
       withResource(decoded) { _ =>
         decoded.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)

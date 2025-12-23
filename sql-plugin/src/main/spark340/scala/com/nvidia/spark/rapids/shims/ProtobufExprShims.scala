@@ -39,10 +39,9 @@ import java.nio.file.{Files, Path}
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
-import org.apache.spark.sql.rapids.GpuFromProtobufSimple
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.expressions.UnaryExpression
+import org.apache.spark.sql.catalyst.expressions.{Expression, UnaryExpression}
+import org.apache.spark.sql.rapids.GpuFromProtobufSimple
 import org.apache.spark.sql.types._
 
 /**
@@ -87,33 +86,42 @@ object ProtobufExprShims {
           schema = e.dataType match {
             case st: StructType => st
             case other =>
-              willNotWorkOnGpu(s"Only StructType output is supported for from_protobuf(simple), got $other")
+              willNotWorkOnGpu(
+                s"Only StructType output is supported for from_protobuf(simple), got $other")
               return
           }
 
           val options = getOptionsMap(e)
           if (options.nonEmpty) {
-            willNotWorkOnGpu(s"from_protobuf options are not supported yet on GPU: ${options.keys.mkString(",")}")
+            val keys = options.keys.mkString(",")
+            willNotWorkOnGpu(
+              s"from_protobuf options are not supported yet on GPU: $keys")
             return
           }
 
           val messageName = getMessageName(e)
           val descFilePathOpt = getDescFilePath(e).orElse {
-            // Newer Spark may embed a descriptor set (binaryDescriptorSet). Write it to a temp file so we can
-            // reuse Spark's own ProtobufUtils + shaded protobuf classes to resolve the descriptor.
+            // Newer Spark may embed a descriptor set (binaryDescriptorSet). Write it to a temp file
+            // so we can reuse Spark's ProtobufUtils (and its shaded protobuf classes) to resolve
+            // the descriptor.
             getDescriptorBytes(e).map(writeTempDescFile)
           }
           if (descFilePathOpt.isEmpty) {
-            willNotWorkOnGpu("from_protobuf(simple) requires a descriptor set (descFilePath or binaryDescriptorSet)")
+            willNotWorkOnGpu(
+              "from_protobuf(simple) requires a descriptor set " +
+                "(descFilePath or binaryDescriptorSet)")
             return
           }
 
           val msgDesc = try {
-            // Spark 3.4.x builds the descriptor as: ProtobufUtils.buildDescriptor(messageName, descFilePathOpt)
+            // Spark 3.4.x builds the descriptor as:
+            // ProtobufUtils.buildDescriptor(messageName, descFilePathOpt)
             buildMessageDescriptorWithSparkProtobuf(messageName, descFilePathOpt)
           } catch {
             case t: Throwable =>
-              willNotWorkOnGpu(s"Failed to resolve protobuf descriptor for message '$messageName': ${t.getMessage}")
+              willNotWorkOnGpu(
+                s"Failed to resolve protobuf descriptor for message '$messageName': " +
+                  s"${t.getMessage}")
               return
           }
 
@@ -126,7 +134,8 @@ object ProtobufExprShims {
             sf.dataType match {
               case BooleanType | IntegerType | LongType | FloatType | DoubleType | StringType =>
               case other =>
-                willNotWorkOnGpu(s"Unsupported field type for from_protobuf(simple): ${sf.name}: $other")
+                willNotWorkOnGpu(
+                  s"Unsupported field type for from_protobuf(simple): ${sf.name}: $other")
                 return
             }
 
@@ -136,9 +145,12 @@ object ProtobufExprShims {
               return
             }
 
-            val isRepeated = Try(invoke0[java.lang.Boolean](fd, "isRepeated").booleanValue()).getOrElse(false)
+            val isRepeated = Try {
+              invoke0[java.lang.Boolean](fd, "isRepeated").booleanValue()
+            }.getOrElse(false)
             if (isRepeated) {
-              willNotWorkOnGpu(s"Repeated fields are not supported for from_protobuf(simple): ${sf.name}")
+              willNotWorkOnGpu(
+                s"Repeated fields are not supported for from_protobuf(simple): ${sf.name}")
               return
             }
 
@@ -154,7 +166,9 @@ object ProtobufExprShims {
               case _ => false
             }
             if (!ok) {
-              willNotWorkOnGpu(s"Field type mismatch for '${sf.name}': Spark ${sf.dataType} vs Protobuf $protoTypeName")
+              willNotWorkOnGpu(
+                s"Field type mismatch for '${sf.name}': Spark ${sf.dataType} vs " +
+                  s"Protobuf $protoTypeName")
               return
             }
 
@@ -180,7 +194,8 @@ object ProtobufExprShims {
     invoke0[String](e, "messageName")
 
   /**
-   * Newer Spark versions may carry an in-expression descriptor set payload (e.g. binaryDescriptorSet).
+   * Newer Spark versions may carry an in-expression descriptor set payload
+   * (e.g. binaryDescriptorSet).
    * Spark 3.4.x does not, so callers should fall back to descFilePath().
    */
   private def getDescriptorBytes(e: Expression): Option[Array[Byte]] = {
