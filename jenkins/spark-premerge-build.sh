@@ -125,8 +125,8 @@ mvn_verify() {
 }
 
 rapids_shuffle_smoke_test() {
-    local spark_ver=${1:-${SPARK_VER}}
-    echo "Run rapids_shuffle_smoke_test for Spark version: $spark_ver..."
+    local SPARK_VER=${1:-${SPARK_VER}}
+    echo "Run rapids_shuffle_smoke_test for Spark version: $SPARK_VER..."
 
     # basic ucx check
     ucx_info -d
@@ -138,10 +138,10 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
     # using UCX shuffle
-    invoke_shuffle_integration_test UCX ./integration_tests/run_pyspark_from_build.sh premerge $spark_ver
+    invoke_shuffle_integration_test UCX ./integration_tests/run_pyspark_from_build.sh premerge $SPARK_VER
 
     # using MULTITHREADED shuffle
-    invoke_shuffle_integration_test MULTITHREADED ./integration_tests/run_pyspark_from_build.sh premerge $spark_ver
+    invoke_shuffle_integration_test MULTITHREADED ./integration_tests/run_pyspark_from_build.sh premerge $SPARK_VER
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
@@ -191,11 +191,11 @@ ci_scala213() {
     done
 
     # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
-    local spark_ver=4.0.1
-    prepare_spark $spark_ver 2.13
+    SPARK_VER=4.0.1
+    prepare_spark $SPARK_VER 2.13
 
     # We are going to run integration tests against Spark 4.0.1
-    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$spark_ver clean package $MVN_BUILD_ARGS -DskipTests=true
+    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$SPARK_VER clean package $MVN_BUILD_ARGS -DskipTests=true
 
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
@@ -210,7 +210,7 @@ ci_scala213() {
         LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
 
     # Trigger the RapidsShuffleManager tests for scala 2.13
-    rapids_shuffle_smoke_test $spark_ver
+    rapids_shuffle_smoke_test $SPARK_VER
 }
 
 prepare_spark() {
