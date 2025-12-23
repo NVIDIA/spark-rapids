@@ -250,13 +250,16 @@ class GpuSorter(
         fields.exists {
           _.dataType match {
             case _: ArrayType | _: MapType => true
-            case s: StructType => s.fields.exists(f => isUnsupportedType(f.dataType))
+            case st: StructType => isUnsupportedType(st)
             case _ => false
           }
         }
       case _ => false
     }
-    projectedBatchTypes.exists(isUnsupportedType)
+
+    val keyColumnIndices = cpuOrderingInternal.map(_.child.asInstanceOf[BoundReference].ordinal)
+    val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
+    rideColumnIndices.exists(idx => isUnsupportedType(projectedBatchSchema(idx).dataType))
   }
 
   /**
