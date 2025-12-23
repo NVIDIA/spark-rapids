@@ -105,6 +105,7 @@ The output of signature verify:
 * CSV support for GBK encoded data.
 * Refine GpuTaskMetrics over the spill framework.
 * Fix race condition due to premature disk handle exposure.
+* Spark 3.5.7 support
 
 Note: There is a known issue in the 25.12.0 release when decompressing gzip files on H100 GPUs.
 Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
