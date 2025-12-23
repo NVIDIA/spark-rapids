@@ -22,16 +22,13 @@ import java.nio.file.Files
 import java.util.Random
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.{BytesWritable, SequenceFile, Text}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.SparkSession
 
-/**
- * Lives in the `tests` module so it can be discovered by the repo's standard
- * `-DwildcardSuites=...` test invocation.
- */
 class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
   private def withSparkSession(f: SparkSession => Unit): Unit = {
@@ -118,8 +115,6 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
     withSparkSession { spark =>
       val df = spark.read
-        // Use the class name (not the short name) to avoid relying on ServiceLoader resources
-        // being present in the tests module classpath.
         .format(classOf[SequenceFileBinaryFileFormat].getName)
         .load(file.getAbsolutePath)
 
@@ -139,6 +134,49 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       }
     }
   }
+
+  test("SequenceFileBinaryFileFormat vs RDD scan") {
+    val tmpDir = Files.createTempDirectory("seqfile-rdd-test").toFile
+    tmpDir.deleteOnExit()
+    val file = new File(tmpDir, "test.seq")
+    file.deleteOnExit()
+
+    val conf = new Configuration()
+    val payloads: Array[Array[Byte]] = Array(
+      Array[Byte](1, 2, 3),
+      "hello".getBytes(StandardCharsets.UTF_8),
+      Array.fill[Byte](10)(42.toByte)
+    )
+    writeSequenceFileWithRawRecords(file, conf, payloads)
+
+    withSparkSession { spark =>
+      // File Scan Path
+      val fileDf = spark.read
+        .format(classOf[SequenceFileBinaryFileFormat].getName)
+        .load(file.getAbsolutePath)
+        .select(SequenceFileBinaryFileFormat.VALUE_FIELD)
+      val fileResults = fileDf.collect().map(_.getAs[Array[Byte]](0))
+
+      // RDD Scan Path
+      import org.apache.hadoop.io.BytesWritable
+      import org.apache.hadoop.mapreduce.lib.input.SequenceFileAsBinaryInputFormat
+      val sc = spark.sparkContext
+      val rddResults = sc.newAPIHadoopFile(
+        file.getAbsolutePath,
+        classOf[SequenceFileAsBinaryInputFormat],
+        classOf[BytesWritable],
+        classOf[BytesWritable]
+      ).map { case (_, v) =>
+        java.util.Arrays.copyOfRange(v.getBytes, 0, v.getLength)
+      }.collect()
+
+      assert(fileResults.length == rddResults.length)
+      fileResults.zip(rddResults).foreach { case (f, r) =>
+        assert(java.util.Arrays.equals(f, r))
+      }
+    }
+  }
 }
+
 
 
