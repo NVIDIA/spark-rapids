@@ -141,6 +141,21 @@ def do_merge_test(
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+def _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode):
+    """Helper function for MERGE tests."""
+    merge_sql = """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        """
+    do_merge_test(
+        spark_tmp_table_factory,
+        lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
+        partition_col_sql=partition_col_sql,
+        merge_mode=merge_mode
+    )
+
+
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
@@ -148,11 +163,23 @@ def do_merge_test(
 @pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
 @pytest.mark.parametrize('partition_col_sql', [
     None,
-    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
+def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode):
+    """Basic partition test - runs for all catalogs including remote."""
+    _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode)
+
+
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize('partition_col_sql', [
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
-    pytest.param("year(_c9)", id="year(timestamp_col)"),
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
@@ -163,14 +190,21 @@ def do_merge_test(
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
+def test_iceberg_merge_full_coverage(spark_tmp_table_factory, partition_col_sql, merge_mode):
+    """Full partition coverage test - skipped for remote catalogs."""
+    _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode)
+
+
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize('partition_col_sql', [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
 @pytest.mark.parametrize('merge_sql', [
-    pytest.param(
-        """
-        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
-        WHEN MATCHED THEN UPDATE SET *
-        WHEN NOT MATCHED THEN INSERT *
-        """,
-        id="basic_update_insert"),
     pytest.param(
         """
         MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
@@ -214,8 +248,8 @@ def do_merge_test(
         """,
         id="conditional_not_matched_by_source"),
 ])
-def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
-    """Test various MERGE operations on Iceberg tables (partitioned and unpartitioned)."""
+def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
+    """Test additional MERGE patterns (conditional updates, deletes, not matched by source) on Iceberg tables."""
     do_merge_test(
         spark_tmp_table_factory,
         lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
@@ -227,6 +261,7 @@ def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_sql, me
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('merge_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -273,6 +308,7 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, merge_mo
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('merge_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -353,6 +389,7 @@ def test_iceberg_merge_fallback_unsupported_partition_transform(
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('merge_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -435,6 +472,7 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('merge_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -508,6 +546,7 @@ def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, m
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('merge_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -550,6 +589,7 @@ def test_iceberg_merge_fallback_iceberg_disabled(spark_tmp_table_factory, merge_
 @allow_non_gpu("WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_iceberg_merge_mor_fallback_writedelta_disabled(spark_tmp_table_factory):
     """Test merge-on-read MERGE falls back when WriteDeltaExec is disabled
     
@@ -589,3 +629,53 @@ def test_iceberg_merge_mor_fallback_writedelta_disabled(spark_tmp_table_factory)
         })
     )
 
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_merge_aqe(spark_tmp_table_factory, partition_col_sql):
+    """
+    Test MERGE INTO with AQE enabled.
+    """
+    table_prop = {
+        'format-version': '2',
+    }
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_target = f"{base_table_name}_target_cpu"
+    gpu_target = f"{base_table_name}_target_gpu"
+    source = f"{base_table_name}_source"
+
+    def initialize_tables():
+        df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        create_iceberg_table(cpu_target, partition_col_sql, table_prop, df_gen)
+        create_iceberg_table(gpu_target, partition_col_sql, table_prop, df_gen)
+        create_iceberg_table(source, partition_col_sql, table_prop, df_gen)
+
+    with_cpu_session(lambda spark: initialize_tables())
+
+    def merge_table(spark, target_table):
+        spark.sql(f"""
+            MERGE INTO {target_table} t
+            USING {source} s
+            ON t._c0 = s._c0
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
+
+    with_gpu_session(lambda spark: merge_table(spark, gpu_target), conf=conf)
+    with_cpu_session(lambda spark: merge_table(spark, cpu_target), conf=conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_target).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_target).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)

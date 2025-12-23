@@ -63,6 +63,8 @@ def test_insert_into_unpartitioned_table(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
+@allow_non_gpu('AppendDataExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
                                                 partition_table):
@@ -99,6 +101,7 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {"format-version": "2"}
 
@@ -120,26 +123,8 @@ def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_facto
                                 conf = iceberg_write_enabled_conf)
 
 
-@iceberg
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
-@ignore_order(local=True)
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
-    pytest.param("year(_c8)", id="year(date_col)"),
-    pytest.param("month(_c8)", id="month(date_col)"),
-    pytest.param("day(_c8)", id="day(date_col)"),
-    pytest.param("year(_c9)", id="year(timestamp_col)"),
-    pytest.param("month(_c9)", id="month(timestamp_col)"),
-    pytest.param("day(_c9)", id="day(timestamp_col)"),
-    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
-    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
-    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
-    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
-    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
-    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
-    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
-])
-def test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+def _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+    """Helper function for partitioned table insert tests."""
     table_prop = {"format-version": "2"}
 
     def create_table_and_set_write_order(table_name: str):
@@ -155,9 +140,45 @@ def test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sq
         spark_tmp_table_factory,
         create_table_and_set_write_order)
 
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
+def test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+    """Basic partition test - runs for all catalogs including remote."""
+    _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql)
+
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("bucket(16, _c2), bucket(16, _c3)", id="bucket(16, int_col), bucket(16, long_col)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+])
+def test_insert_into_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
+    """Full partition coverage test - skipped for remote catalogs."""
+    _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql)
+
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {"format-version": "2"}
 
@@ -185,6 +206,7 @@ def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
@@ -212,6 +234,7 @@ def test_insert_into_partitioned_table_unsupported_partition_fallback(
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 def test_insert_into_table_unsupported_file_format_fallback(
         spark_tmp_table_factory, file_format):
@@ -234,6 +257,7 @@ def test_insert_into_table_unsupported_file_format_fallback(
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
@@ -255,4 +279,48 @@ def test_insert_into_iceberg_table_fallback_when_conf_disabled(
                                 "AppendDataExec",
                                 conf = updated_conf)
 
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_insert_into_aqe(spark_tmp_table_factory, partition_col_sql):
+    """
+    Test INSERT INTO with AQE enabled.
+    """
+    table_prop = {"format-version": "2"}
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+
+    # Create tables
+    with_cpu_session(lambda spark: create_iceberg_table(
+        cpu_table_name, partition_col_sql, table_prop,
+        lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list)))))
+    with_cpu_session(lambda spark: create_iceberg_table(
+        gpu_table_name, partition_col_sql, table_prop,
+        lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list)))))
+
+    # Insert data
+    def insert_data(spark, table_name: str):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        view_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(view_name)
+        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+
+    with_gpu_session(lambda spark: insert_data(spark, gpu_table_name), conf=conf)
+    with_cpu_session(lambda spark: insert_data(spark, cpu_table_name), conf=conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
 

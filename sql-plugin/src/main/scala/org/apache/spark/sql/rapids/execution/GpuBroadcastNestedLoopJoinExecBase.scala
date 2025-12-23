@@ -283,41 +283,45 @@ class ConditionalNestedLoopJoinIterator(
   private def computeGatherMaps(
       left: Table,
       right: Table,
-      numJoinRows: Option[Long]): Array[GatherMap] = {
+      numJoinRows: Option[Long]): GatherMapsResult = {
     joinType match {
       case _: InnerLike =>
-        numJoinRows.map { rowCount =>
+        val arraysRet = numJoinRows.map { rowCount =>
           left.conditionalInnerJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
           left.conditionalInnerJoinGatherMaps(right, condition)
         }
+        GatherMapsResult(arraysRet(0), arraysRet(1))
       case LeftOuter =>
-        numJoinRows.map { rowCount =>
+        val arraysRet = numJoinRows.map { rowCount =>
           left.conditionalLeftJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
           left.conditionalLeftJoinGatherMaps(right, condition)
         }
+        GatherMapsResult(arraysRet(0), arraysRet(1))
       case RightOuter =>
-        val maps = numJoinRows.map { rowCount =>
+        // switch the inputs to the join so we can use left join for right
+        val arraysRet = numJoinRows.map { rowCount =>
           right.conditionalLeftJoinGatherMaps(left, condition, rowCount)
         }.getOrElse {
           right.conditionalLeftJoinGatherMaps(left, condition)
         }
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right
-        maps.reverse
+        // Then switch them back
+        GatherMapsResult(arraysRet(1), arraysRet(0))
       case LeftSemi =>
-        numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount))
+        val leftGather = numJoinRows.map { rowCount =>
+          left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount)
         }.getOrElse {
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition))
+          left.conditionalLeftSemiJoinGatherMap(right, condition)
         }
+        GatherMapsResult.makeFromLeft(leftGather)
       case LeftAnti =>
-        numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount))
+        val leftGatherer = numJoinRows.map { rowCount =>
+          left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount)
         }.getOrElse {
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition))
+          left.conditionalLeftAntiJoinGatherMap(right, condition)
         }
+        GatherMapsResult.makeFromLeft(leftGatherer)
       case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
     }
   }
@@ -372,13 +376,17 @@ object GpuBroadcastNestedLoopJoinExecBase {
     }
   }
 
-  // A degenerate left-outer join means either the build or stream side has no columns.
-  // There are degenerate cases already found for the left-outer join with BuildRight.
-  // So now it just takes care of the left-outer join here.
+  // A degenerate outer join means either the build or stream side has no columns.
+  // This handles degenerate cases for left-outer join with BuildRight and
+  // right-outer join with BuildLeft (which are semantically equivalent - both
+  // keep all stream rows and add nulls from build when no match).
   private def isDegenerateLeftOuterJoin(joinType: JoinType, side: GpuBuildSide,
       builtBatch: LazySpillableColumnarBatch, streamAtts: Seq[Attribute]): Boolean = {
     joinType match {
-      case LeftOuter if side == GpuBuildRight =>  // now only support BuildRight
+      case LeftOuter if side == GpuBuildRight =>
+        // build or stream has no columns
+        builtBatch.numCols == 0 || streamAtts.isEmpty
+      case RightOuter if side == GpuBuildLeft =>
         // build or stream has no columns
         builtBatch.numCols == 0 || streamAtts.isEmpty
       case _ => false
@@ -390,7 +398,8 @@ object GpuBroadcastNestedLoopJoinExecBase {
       streamAttrs: Seq[Attribute],
       builtBatch: LazySpillableColumnarBatch,
       boundCondition: GpuExpression): Iterator[ColumnarBatch] = {
-    // Now only support BuildRight so the stream is left side.
+    // Supports both LeftOuter+BuildRight and RightOuter+BuildLeft.
+    // In both cases, all stream rows are kept with nulls from build when no match.
     if (streamAttrs.isEmpty) { // Stream has no columns
       new Iterator[ColumnarBatch] with TaskAutoCloseableResource {
         override def hasNext: Boolean = stream.hasNext
@@ -445,11 +454,17 @@ object GpuBroadcastNestedLoopJoinExecBase {
           // Build has no columns (but may have rows), so each matched stream row will
           // match "builtBatch.numRows" times. And keep the notmatched rows unchanged,
           // aka 1 for the repeat count.
-          val repeatCnts = withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
-            withResource(Scalar.fromInt(builtBatch.numRows)) { matchedRowsCnt =>
-              // Keep the not match stream rows unchanged.
-              withResource(Scalar.fromInt(1)) { notmatchedRowsCnt =>
-                matched.getBase.ifElse(matchedRowsCnt, notmatchedRowsCnt)
+          val repeatCnts = if (builtBatch.numRows == 0) {
+            // Build side has no rows, so all stream rows should appear once (unmatched)
+            withResource(Scalar.fromInt(1)) { oneScalar =>
+              cudf.ColumnVector.fromScalar(oneScalar, scb.numRows)
+            }
+          } else {
+            withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
+              withResource(Scalar.fromInt(builtBatch.numRows)) { matchedRowsCnt =>
+                withResource(Scalar.fromInt(1)) { notmatchedRowsCnt =>
+                  matched.getBase.ifElse(matchedRowsCnt, notmatchedRowsCnt)
+                }
               }
             }
           }
@@ -641,7 +656,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
     val numFirstTableColumns = firstTable.output.size
     val boundCondition = condition.map {
-      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output)
+      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output, allMetrics)
     }
 
     val broadcastRelation = getBroadcastRelation()
@@ -692,7 +707,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
         // batch.
         val proj = GpuBindReferences.bindGpuReferencesTiered(
-          postBuildCondition, p.child.output, conf)
+          postBuildCondition, p.child.output, conf, allMetrics)
         val fn = (batch: ColumnarBatch) => {
           withResource(batch)(proj.project)
         }

@@ -22,6 +22,8 @@ import scala.concurrent.Future
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -375,14 +377,15 @@ object GpuShuffleExchangeExecBase {
           attr.nullable)(attr.exprId, attr.name), Ascending)
         // Force the sequence to materialize so we don't have issues with serializing too much
       }.toArray.toSeq
-      val sorter = new GpuSorter(boundReferences, outputAttributes)
+      val sorter = new GpuSorter(boundReferences, outputAttributes, metrics)
       rdd.mapPartitions { cbIter =>
         GpuSortEachBatchIterator(cbIter, sorter, false)
       }
     } else {
       rdd
     }
-    val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
+    val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes,
+      newPartitioning, metrics)
     // Inject debugging subMetrics, such as D2HTime before SliceOnCpu
     // The injected metrics will be serialized as the members of GpuPartitioning
     partitioner match {
@@ -399,7 +402,9 @@ object GpuShuffleExchangeExecBase {
       newRdd.mapPartitions { iter =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
-          private var partitioned : Array[(ColumnarBatch, Int)] = _
+          private var partitionedIter: Iterator[Array[(ColumnarBatch, Int)]] =
+            Iterator.empty
+          private var partitioned: Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private def partNextBatch(): Unit = {
@@ -408,7 +413,8 @@ object GpuShuffleExchangeExecBase {
               partitioned = null
               at = 0
             }
-            if (iter.hasNext) {
+            // Try to fill partitionedIter from iter if it's empty
+            if (!partitionedIter.hasNext && iter.hasNext) {
               var batch = iter.next()
               while (batch.numRows == 0 && iter.hasNext) {
                 batch.close()
@@ -417,15 +423,25 @@ object GpuShuffleExchangeExecBase {
               // Get a non-empty batch or the last batch. So still need to
               // check if it is empty for the later case.
               if (batch.numRows > 0) {
-                partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-                partitioned.foreach(batches => {
-                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                })
-                metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-                at = 0
+                val spillableBatch = SpillableColumnarBatch(batch,
+                    ACTIVE_ON_DECK_PRIORITY)
+                partitionedIter = withRetry(spillableBatch,
+                    splitSpillableInHalfByRows) { spillable =>
+                  val cb = spillable.getColumnarBatch()
+                  getParts(cb).asInstanceOf[Array[(ColumnarBatch, Int)]]
+                }
               } else {
                 batch.close()
               }
+            }
+            // Process the next partitioned array from the iterator
+            if (partitionedIter.hasNext) {
+              partitioned = partitionedIter.next()
+              partitioned.foreach(batches => {
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+              })
+              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+              at = 0
             }
           }
 
@@ -483,12 +499,13 @@ object GpuShuffleExchangeExecBase {
   private def getPartitioner(
     rdd: RDD[ColumnarBatch],
     outputAttributes: Seq[Attribute],
-    newPartitioning: GpuPartitioning): GpuExpression with GpuPartitioning = {
+    newPartitioning: GpuPartitioning,
+    metrics: Map[String, GpuMetric]): GpuExpression with GpuPartitioning = {
     newPartitioning match {
       case h: GpuHashPartitioning =>
-        GpuBindReferences.bindReference(h, outputAttributes)
+        GpuBindReferences.bindReference(h, outputAttributes, metrics)
       case r: GpuRangePartitioning =>
-        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes)
+        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes, metrics)
         val bounds = GpuRangePartitioner.createRangeBounds(r.numPartitions, sorter,
           rdd, SQLConf.get.rangeExchangeSampleSizePerPartition)
         // No need to bind arguments for the GpuRangePartitioner. The Sorter has already done it
@@ -496,7 +513,7 @@ object GpuShuffleExchangeExecBase {
       case GpuSinglePartitioning =>
         GpuSinglePartitioning
       case rrp: GpuRoundRobinPartitioning =>
-        GpuBindReferences.bindReference(rrp, outputAttributes)
+        GpuBindReferences.bindReference(rrp, outputAttributes, metrics)
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
     }
   }

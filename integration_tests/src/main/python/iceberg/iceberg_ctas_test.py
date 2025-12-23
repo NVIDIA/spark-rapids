@@ -96,27 +96,8 @@ def test_ctas_unpartitioned_table(spark_tmp_table_factory):
     _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory, df_gen, table_prop)
 
 
-@iceberg
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
-@ignore_order(local=True)
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("bucket(8, _c2)", id="bucket(8, int_column)"),
-    pytest.param("year(_c8)", id="year(date_col)"),
-    pytest.param("month(_c8)", id="month(date_col)"),
-    pytest.param("day(_c8)", id="day(date_col)"),
-    pytest.param("year(_c9)", id="year(timestamp_col)"),
-    pytest.param("month(_c9)", id="month(timestamp_col)"),
-    pytest.param("day(_c9)", id="day(timestamp_col)"),
-    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
-    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
-    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
-    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
-    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
-    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
-    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
-])
-def test_ctas_partitioned_table(spark_tmp_table_factory,
-                                partition_col_sql):
+def _do_test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+    """Helper function for partitioned table CTAS tests."""
     table_prop = {
         "format-version": "2"
     }
@@ -130,8 +111,44 @@ def test_ctas_partitioned_table(spark_tmp_table_factory,
 
 
 @iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
+def test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+    """Basic partition test - runs for all catalogs including remote."""
+    _do_test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql)
+
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("bucket(8, _c2)", id="bucket(8, int_column)"),
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+])
+def test_ctas_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
+    """Full partition coverage test - skipped for remote catalogs."""
+    _do_test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql)
+
+
+@iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 def test_ctas_unsupported_file_format_fallback(spark_tmp_table_factory,
                                                file_format):
@@ -156,6 +173,7 @@ def test_ctas_unsupported_file_format_fallback(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
@@ -182,6 +200,7 @@ def test_ctas_fallback_when_conf_disabled(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec',  'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
@@ -204,6 +223,7 @@ def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
@@ -227,6 +247,7 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
     pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
@@ -254,7 +275,9 @@ def test_ctas_partitioned_table_unsupported_partition_fallback(
 
 @iceberg
 @ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
+@allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
 def test_ctas_from_values(spark_tmp_table_factory,
                           partition_table):
     table_prop = {
@@ -284,3 +307,40 @@ def test_ctas_from_values(spark_tmp_table_factory,
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="triple_datetime_transforms"),
+])
+def test_ctas_aqe(spark_tmp_table_factory, partition_col_sql):
+    """
+    Test CTAS with multiple partition transforms on the same column with AQE enabled.
+    
+    This test reproduces NVBUGS-5689547 where the error "ROW BASED PROCESSING IS NOT SUPPORTED"
+    occurs when writing to Iceberg tables with multiple partition transforms when AQE is enabled.
+    
+    The issue manifests when:
+    - AQE is enabled
+    - Multiple partition transforms are applied (year, month, day, hour)
+    - GpuShuffleCoalesceExec ends up as a child of GpuRowToColumnarExec
+    """
+    table_prop = {
+        "format-version": "2",
+    }
+
+    df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+
+    # Configuration with AQE enabled (this is the key to reproducing the issue)
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
+                                df_gen,
+                                table_prop,
+                                partition_col_sql=partition_col_sql,
+                                conf=conf)

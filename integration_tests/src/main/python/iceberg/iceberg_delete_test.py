@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
+from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list)
@@ -122,6 +123,16 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, delete_mode
         delete_mode=delete_mode
     )
 
+def _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode):
+    """Helper function for partitioned table DELETE tests."""
+    do_delete_test(
+        spark_tmp_table_factory,
+        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 % 3 = 0"),
+        partition_col_sql=partition_col_sql,
+        delete_mode=delete_mode
+    )
+
+
 # This requires reading of _partition field, which is a struct
 @allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
@@ -129,11 +140,26 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, delete_mode
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("year(_c9)", id="year(timestamp_col)"),
+])
+@pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
+def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode):
+    """Basic partition test - runs for all catalogs including remote."""
+    _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode)
+
+
+# This requires reading of _partition field, which is a struct
+@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("partition_col_sql", [
     pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
-    pytest.param("year(_c9)", id="year(timestamp_col)"),
     pytest.param("month(_c9)", id="month(timestamp_col)"),
     pytest.param("day(_c9)", id="day(timestamp_col)"),
     pytest.param("hour(_c9)", id="hour(timestamp_col)"),
@@ -145,19 +171,15 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, delete_mode
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
 ])
 @pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
-def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode):
-    """Test DELETE on bucket-partitioned table with both copy-on-write and merge-on-read modes"""
-    do_delete_test(
-        spark_tmp_table_factory,
-        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 % 3 = 0"),
-        partition_col_sql=partition_col_sql,
-        delete_mode=delete_mode
-    )
+def test_iceberg_delete_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql, delete_mode):
+    """Full partition coverage test - skipped for remote catalogs."""
+    _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode)
 
 @allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
 def test_iceberg_delete_with_complex_predicate(spark_tmp_table_factory, delete_mode):
     """Test DELETE with complex predicate"""
@@ -174,6 +196,7 @@ def test_iceberg_delete_with_complex_predicate(spark_tmp_table_factory, delete_m
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('delete_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -210,6 +233,7 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, delete_
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('delete_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -269,6 +293,7 @@ def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('delete_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -334,6 +359,7 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('delete_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -392,6 +418,7 @@ def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, delete_mo
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('delete_mode,fallback_exec', [
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -429,6 +456,7 @@ def test_iceberg_delete_fallback_iceberg_disabled(spark_tmp_table_factory, delet
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory):
     """Test merge-on-read DELETE falls back when WriteDeltaExec is disabled
     
@@ -460,3 +488,49 @@ def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory
             "spark.rapids.sql.exec.WriteDeltaExec": "false"
         })
     )
+
+
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param(None, id="unpartitioned"),
+    pytest.param("year(_c9)", id="year_partition"),
+])
+def test_delete_aqe(spark_tmp_table_factory, update_mode, partition_col_sql):
+    """
+    Test DELETE with AQE enabled.
+    """
+    table_prop = {
+        'format-version': '2',
+        'write.delete.mode': update_mode
+    }
+
+    # Configuration with AQE enabled
+    conf = copy_and_update(iceberg_write_enabled_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true"
+    })
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table = f"{base_table_name}_cpu"
+    gpu_table = f"{base_table_name}_gpu"
+
+    def initialize_table(table_name):
+        df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        create_iceberg_table(table_name, partition_col_sql, table_prop, df_gen)
+
+    with_cpu_session(lambda spark: initialize_table(cpu_table))
+    with_cpu_session(lambda spark: initialize_table(gpu_table))
+
+    def delete_from_table(spark, table_name):
+        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
+
+    with_gpu_session(lambda spark: delete_from_table(spark, gpu_table), conf=conf)
+    with_cpu_session(lambda spark: delete_from_table(spark, cpu_table), conf=conf)
+
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)

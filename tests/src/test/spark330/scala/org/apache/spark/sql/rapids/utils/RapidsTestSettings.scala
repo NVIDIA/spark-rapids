@@ -42,23 +42,26 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("collect functions should be able to cast to array type with no null values", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("SPARK-17641: collect functions should not collect null values", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", WONT_FIX_ISSUE("Codegen related UT, not applicable for GPU"))
-    .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"), (getJavaMajorVersion() >= 17))
+    .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", ADJUST_UT("Replaced by testRapids version that considers the difference of JDK version"))
   enableSuite[RapidsDataFrameComplexTypeSuite]
   enableSuite[RapidsDataFrameNaFunctionsSuite]
   enableSuite[RapidsDataFramePivotSuite]
   enableSuite[RapidsDataFrameSetOperationsSuite]
     .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", ADJUST_UT("CPU test uses CPU-specific node checks (InMemoryTableScanExec, UnionExec); GPU version implemented as testRapids() in RapidsDataFrameSetOperationsSuite"))
   enableSuite[RapidsDataFrameWindowFunctionsSuite]
-    .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13763"))
-    .exclude("SPARK-21258: complex object in combination with spilling", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13764"))
-    .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13765"))
+    .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
+    .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
+    .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", ADJUST_UT("Replaced by testRapids version for GPU execution"))
   enableSuite[RapidsDateExpressionsSuite]
     .exclude("unsupported fmt fields for trunc/date_trunc results null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13757"))
     .exclude("SPARK-31896: Handle am-pm timestamp parsing when hour is missing", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13758"))
-    .exclude("DATE_FROM_UNIX_DATE", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13760"))
     .exclude("TIMESTAMP_MICROS", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13760"))
     .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
     .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
+  enableSuite[RapidsDateFunctionsSuite]
+    .exclude("function to_date", WONT_FIX_ISSUE("CPU expects SparkException for invalid date format, but GPU with incompatibleDateFormats.enabled=true has different behavior. This is a known difference documented in compatibility.md"))
+    .exclude("unix_timestamp", WONT_FIX_ISSUE("GPU with incompatibleDateFormats.enabled=true parses dates differently than CPU for invalid formats - returns values instead of null. This is documented behavior."))
+    .exclude("to_unix_timestamp", WONT_FIX_ISSUE("GPU with incompatibleDateFormats.enabled=true parses dates differently than CPU for invalid formats - returns values instead of null. This is documented behavior."))
   enableSuite[RapidsDecimalExpressionSuite]
     .exclude("MakeDecimal", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13816"))
   enableSuite[RapidsIntervalFunctionsSuite]

@@ -38,8 +38,15 @@ partitions.
 
 You also need to set `spark.rapids.sql.lore.dumpPath` to tell LORE where to dump the data, the 
 value of which should point to a directory. All dumped data of a query will live in this 
-directory. Note, the directory may either not exist, in which case it will be created, or it should be empty.
-If the directory exists and contains files, an `IllegalArgumentException` will be thrown to prevent overwriting existing data.
+directory. By default the directory must either not exist (it will be created) or be empty.
+If the directory exists and contains files, an `IllegalArgumentException` will be thrown to prevent overwriting existing data unless you explicitly enable non-strict mode (see below).
+
+### Non-strict mode
+
+Set `spark.rapids.sql.lore.nonStrictMode.enabled=true` to make LORE more tolerant when dumping multiple lore ids. When this flag is enabled:
+
+* Any lore id that fails to dump because of unsupported operators or misconfigurations is skipped with a warning while the rest of the query continues.
+* Existing data underneath `spark.rapids.sql.lore.dumpPath` is preserved. LORE logs a warning if the path is non-empty but still dumps any remaining lore ids into their own subdirectories.
 ### Preserve original schema names in Parquet
 
 By default, LORE writes Parquet files using the original Spark schema names (including nested

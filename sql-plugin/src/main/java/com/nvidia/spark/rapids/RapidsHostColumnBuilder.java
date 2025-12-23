@@ -81,6 +81,76 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     }
   }
 
+  /**
+   * Immutable snapshot of a builder and all of its children so the state can be restored
+   * if an exception happens while appending a row.
+   */
+  public static final class BuilderSnapshot {
+    private final long rows;
+    private final long currentIndex;
+    private final long currentStringByteIndex;
+    private final BuilderSnapshot[] childStates;
+
+    private BuilderSnapshot(long rows,
+        long currentIndex,
+        long currentStringByteIndex,
+        BuilderSnapshot[] childStates) {
+      this.rows = rows;
+      this.currentIndex = currentIndex;
+      this.currentStringByteIndex = currentStringByteIndex;
+      this.childStates = childStates;
+    }
+  }
+
+  private BuilderSnapshot[] captureChildStates() {
+    if (childBuilders.isEmpty()) {
+      return null;
+    }
+    BuilderSnapshot[] childStates = new BuilderSnapshot[childBuilders.size()];
+    for (int i = 0; i < childBuilders.size(); i++) {
+      childStates[i] = childBuilders.get(i).captureState();
+    }
+    return childStates;
+  }
+
+  /**
+   * Capture the current state of this builder and all of its children. This is intended to be
+   * inexpensive state used to rollback partial row additions if host memory allocation fails
+   * while materializing the row.
+   */
+  public BuilderSnapshot captureState() {
+    return new BuilderSnapshot(rows, currentIndex, currentStringByteIndex, captureChildStates());
+  }
+
+  /**
+   * Restore the builder to a previously captured snapshot. This will also restore child builders
+   * to their corresponding snapshots.
+   *
+   * @param snapshot the snapshot captured earlier via {@link #captureState()}
+   */
+  public void restoreState(BuilderSnapshot snapshot) {
+    if (snapshot == null) {
+      throw new IllegalArgumentException("snapshot cannot be null");
+    }
+    this.rows = snapshot.rows;
+    this.currentIndex = snapshot.currentIndex;
+    this.currentStringByteIndex = Math.toIntExact(snapshot.currentStringByteIndex);
+    // Note: nullCount is intentionally NOT restored because setNullAt() is idempotent.
+    // It only increments nullCount if the validity bit was previously valid (1).
+    // Since we restore currentIndex and replay the same row, setNullAt will be called
+    // at the same index with the bit already set to null (0), so it returns 0 and
+    // nullCount isn't double-incremented.
+    if (snapshot.childStates != null) {
+      if (snapshot.childStates.length != childBuilders.size()) {
+        throw new IllegalStateException(
+            "Mismatch between snapshot child count and current child builders");
+      }
+      for (int i = 0; i < snapshot.childStates.length; i++) {
+        childBuilders.get(i).restoreState(snapshot.childStates[i]);
+      }
+    }
+  }
+
   private void setupNullHandler() {
     if (this.type == DType.LIST) {
       this.nullHandler = () -> {
@@ -367,7 +437,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     long bucket = index / 8;
     byte currentByte = valid.getByte(bucket);
     int bitmask = ~(1 << (index % 8));
-    int ret = (currentByte >> index) & 0x1;
+    int ret = (currentByte >> (index % 8)) & 0x1;
     currentByte &= bitmask;
     valid.setByte(bucket, currentByte);
     return ret;

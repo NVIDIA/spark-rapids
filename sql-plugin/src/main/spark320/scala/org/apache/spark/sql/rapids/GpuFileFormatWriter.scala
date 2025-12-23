@@ -210,7 +210,8 @@ object GpuFileFormatWriter extends Logging {
         // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
         // the physical plan may have different attribute ids due to optimizer removing some
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
-        val orderingExpr = GpuBindReferences.bindReferences(
+        // Using Internal method: simple SortOrder expressions for file writing
+        val orderingExpr = GpuBindReferences.bindReferencesNoMetrics(
           requiredOrdering
               .map(attr => SortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
         if (concurrentWritersEnabled) {
