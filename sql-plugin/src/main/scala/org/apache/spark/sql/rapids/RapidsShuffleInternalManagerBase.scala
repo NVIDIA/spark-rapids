@@ -427,7 +427,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     val mergerTask = new Runnable {
       override def run(): Unit = {
         var currentPartitionToWrite = 0
-        while (currentPartitionToWrite < numPartitions) {
+        // Check for thread interruption to allow graceful shutdown
+        while (currentPartitionToWrite < numPartitions && !Thread.currentThread().isInterrupted) {
           if (currentPartitionToWrite <= maxPartitionIdQueued.get()) {
             var containsLastForThisPartition = false
             var futures: CopyOnWriteArrayList[Future[(Long, Long)]] = null

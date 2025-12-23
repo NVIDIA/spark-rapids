@@ -198,6 +198,8 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   override def beforeEach(): Unit = {
     super.beforeEach()
+    // Ensure thread pool is started (may have been stopped in previous test's afterEach)
+    RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(numWriterThreads, 0)
     TaskContext.setTaskContext(taskContext)
     MockitoAnnotations.openMocks(this).close()
     tempDir = Utils.createTempDir()
@@ -274,6 +276,8 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     TaskContext.unset()
     blockIdToFileMap.clear()
     temporaryFilesCreated.clear()
+    // Stop thread pool to prevent merger tasks from previous test blocking new tests
+    RapidsShuffleInternalManagerBase.stopThreadPool()
     try {
       Utils.deleteRecursively(tempDir)
     } catch {

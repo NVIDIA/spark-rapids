@@ -57,7 +57,6 @@
 # ============================================================================
 
 set -ex
-PS4='+${LINENO}: '
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 cd "$SCRIPTPATH"
@@ -272,7 +271,7 @@ else
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
-    TEST_COMMON_OPTS=(-v -x
+    TEST_COMMON_OPTS=(-v
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$STD_INPUT_PATH"

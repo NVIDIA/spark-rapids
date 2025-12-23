@@ -389,7 +389,6 @@ object SpillableHostBufferHandle extends Logging {
   }
 }
 
-
 class SpillableHostBufferHandle private (
     val sizeInBytes: Long,
     private[spill] override var host: Option[HostMemoryBuffer] = None,
