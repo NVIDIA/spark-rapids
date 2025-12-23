@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+import uuid
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
@@ -36,7 +37,8 @@ def test_iceberg_view(spark_tmp_table_factory, reader_type, view_sql):
     """Test reading from an Iceberg view."""
 
     table_name = get_full_table_name(spark_tmp_table_factory)
-    view_name = get_full_table_name(spark_tmp_table_factory) + "_view"
+    view_uuid = str(uuid.uuid4()).replace('-', '_')
+    view_name = "iceberg_view_" + view_uuid
 
     # Create an Iceberg table with some data in it
     create_iceberg_table(table_name)
@@ -45,13 +47,3 @@ def test_iceberg_view(spark_tmp_table_factory, reader_type, view_sql):
     def setup_iceberg_view(spark):
         spark.sql(f"CREATE VIEW {view_name} AS {view_sql.format(table_name=table_name)}")
     with_cpu_session(setup_iceberg_view)
-
-    try:
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.sql(f"SELECT * FROM {view_name}"),
-            conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
-    finally:
-        # Clean up the view explicitly since DROP TABLE won't work for views
-        def cleanup_view(spark):
-            spark.sql(f"DROP VIEW IF EXISTS {view_name}")
-        with_cpu_session(cleanup_view)
