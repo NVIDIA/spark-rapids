@@ -191,7 +191,8 @@ ci_scala213() {
     done
 
     # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
-    SPARK_VER=4.0.1
+    # don't leak the new version here, it's only for use within this function
+    local SPARK_VER=4.0.1
     prepare_spark $SPARK_VER 2.13
 
     # We are going to run integration tests against Spark 4.0.1
