@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -226,14 +225,31 @@ class GpuSorter(
     }
   }
 
-  /** (This can be removed once https://github.com/rapidsai/cudf/issues/8050 is addressed) */
+  /**
+   * Check if any ride-along column has types not supported by cuDF merge for OOC sort.
+   * Unsupported types include:
+   * - Array with nested element types (e.g., Array of Struct, Array of Array)
+   * - Map with nested key/value types
+   * - Struct containing Array or Map fields
+   *
+   * Supported types: primitives, BinaryType, Struct (including Struct of Struct),
+   * Array of primitives, Map of primitives.
+   */
   private[this] lazy val hasUnsupportedNestedInRideColumns = {
-    val keyColumnIndices = cpuOrderingInternal.map(_.child.asInstanceOf[BoundReference].ordinal)
-    val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
-    rideColumnIndices.exists { idx =>
-      TrampolineUtil.dataTypeExistsRecursively(projectedBatchTypes(idx),
-        t => t.isInstanceOf[ArrayType] || t.isInstanceOf[MapType] || t.isInstanceOf[BinaryType])
+    def isUnsupportedType(dt: DataType): Boolean = dt match {
+      case ArrayType(elementType, _) =>
+        // Array is unsupported if element type is nested (e.g., Array of Struct, Array of Array)
+        DataTypeUtils.isNestedType(elementType)
+      case MapType(keyType, valueType, _) =>
+        // Map is unsupported if key or value type is nested
+        DataTypeUtils.isNestedType(keyType) || DataTypeUtils.isNestedType(valueType)
+      case StructType(fields) =>
+        // Struct is unsupported if any field is Array or Map (Struct of Struct is OK)
+        fields.exists(f => f.dataType.isInstanceOf[ArrayType] ||
+          f.dataType.isInstanceOf[MapType])
+      case _ => false
     }
+    projectedBatchTypes.exists(isUnsupportedType)
   }
 
   /**
@@ -257,12 +273,12 @@ class GpuSorter(
         // Single batch no need for a merge sort
         spillableBatches.pop()
       } else { // spillableBatches.size > 1
-        // In the current version of cudf merge does not work for lists and maps.
-        // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
-        // Nested types in sort key columns is not supported either.
+        // cuDF merge doesn't support all nested types.
+        // Nested types in sort key columns are not supported.
+        // Some nested types in ride-along columns are also not supported.
         if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
-          // so as a work around we concatenate all of the data together and then sort it.
-          // It is slower, but it works
+          // As a workaround, concatenate all data together and then sort it.
+          // It is slower, but it works for all types.
           val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.toSeq) { attempt =>
             val tablesToMerge = attempt.safeMap { sb =>
               withResource(sb.getColumnarBatch()) { cb =>
@@ -282,6 +298,7 @@ class GpuSorter(
             }
           }
         } else {
+          // For simple types and single-level nested types, use efficient Table.merge
           closeOnExcept(spillableBatches.toSeq) { _ =>
             val batchesToMerge = new RapidsStack[SpillableColumnarBatch]()
             closeOnExcept(batchesToMerge.toSeq) { _ =>

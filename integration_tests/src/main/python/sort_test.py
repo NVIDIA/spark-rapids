@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
-from conftest import is_not_utc
 from data_gen import *
 from marks import allow_non_gpu
 from pyspark.sql.types import *
@@ -75,6 +74,7 @@ def test_single_orderby_fallback_for_multilevel_array(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             "SortExec")
 
+# Array of Struct as sort key still falls back due to null ordering limitations
 @allow_non_gpu('SortExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('child1', sub_gen)])) for sub_gen in orderable_gens], ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_first(), f.col('a').asc_nulls_last(),
@@ -84,18 +84,21 @@ def test_single_orderby_fallback_for_array_of_struct(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             "SortExec")
 
+
+_test_single_nested_orderby_plain_data_gen = [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', decimal_gen_128bit]])),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
+    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+                                      marks=pytest.mark.xfail(reason="maps are not supported")),
+] + single_level_array_gens
+
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
     pytest.param(200)
 ])
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
-@pytest.mark.parametrize('data_gen', [
-    pytest.param(all_basic_struct_gen),
-    pytest.param(StructGen([['child0', decimal_gen_128bit]])),
-    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
-    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
-        marks=pytest.mark.xfail(reason="maps are not supported")),
-], ids=idfn)
+@pytest.mark.parametrize('data_gen', _test_single_nested_orderby_plain_data_gen, ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
     pytest.param(f.col('a').asc_nulls_first()),
@@ -374,3 +377,76 @@ def test_orderby_nested_ridealong_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, UniqueLongGen(), data_gen)\
                     .orderBy(f.col('a').desc()).limit(100))
+
+# ============================================================================
+# NESTED RIDE COLUMNS TESTS
+# Testing Array, Struct, Map as ride-along columns while sorting on a simple key
+# ============================================================================
+
+# Single-level nested ride column types (supported with efficient merge sort)
+_single_level_nested_ridealong_gens = [
+    pytest.param(ArrayGen(long_gen), id='ridealong_array_long'),
+    pytest.param(ArrayGen(string_gen), id='ridealong_array_string'),
+    pytest.param(StructGen([('a', long_gen), ('b', string_gen)]), id='ridealong_struct'),
+    # Struct of Struct is supported (not deeply nested)
+    pytest.param(StructGen([('a', long_gen), ('b', StructGen([('c', string_gen), ('d', int_gen)]))]),
+                 id='ridealong_struct_of_struct'),
+    pytest.param(simple_string_to_string_map_gen, id='ridealong_map'),
+    # BinaryType and Binary wrapped by single-level nested types
+    pytest.param(binary_gen, id='ridealong_binary'),
+    pytest.param(StructGen([('a', long_gen), ('b', binary_gen)]), id='ridealong_struct_with_binary'),
+    pytest.param(ArrayGen(binary_gen, max_length=5), id='ridealong_array_of_binary'),
+    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), binary_gen), id='ridealong_map_of_binary'),
+]
+
+@pytest.mark.parametrize('ridealong_gen', _single_level_nested_ridealong_gens)
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
+@pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').desc()], ids=idfn)
+@pytest.mark.parametrize('batch_size', ['8192', '16384'], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_nested_ridealong_columns_orderby(ridealong_gen, stable_sort, order, batch_size):
+    """Test single-level nested ride-along columns with multiple batches to exercise merge sort."""
+    # Use UniqueLongGen as the sort key to avoid ambiguity
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, UniqueLongGen(), ridealong_gen, length=2048).orderBy(order),
+        conf={
+            'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'
+        })
+
+# ============================================================================
+# DEEPLY NESTED RIDE COLUMNS TESTS
+# Testing deeply nested types (Array of Struct, Struct with Array/Map, etc.) as ride-along columns.
+# These types trigger the fallback path (concatenate + sort) in OOC sort.
+# ============================================================================
+
+# Deeply nested ride column types (uses fallback concat+sort path)
+_deeply_nested_ridealong_gens = [
+    # Array of Struct - deeply nested
+    pytest.param(ArrayGen(StructGen([('a', long_gen), ('b', string_gen)]), max_length=5),
+                 id='ridealong_array_of_struct'),
+    # Array of Array - deeply nested
+    pytest.param(ArrayGen(ArrayGen(long_gen, max_length=5), max_length=5),
+                 id='ridealong_array_of_array'),
+    # Struct with Array field - deeply nested
+    pytest.param(StructGen([('a', long_gen), ('b', ArrayGen(string_gen, max_length=5))]),
+                 id='ridealong_struct_with_array'),
+    # Struct with Map field - deeply nested
+    pytest.param(StructGen([('a', long_gen), ('b', simple_string_to_string_map_gen)]),
+                 id='ridealong_struct_with_map'),
+]
+
+@pytest.mark.parametrize('ridealong_gen', _deeply_nested_ridealong_gens)
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
+@pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').desc()], ids=idfn)
+@pytest.mark.parametrize('batch_size', ['8192', '16384'], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_deeply_nested_ridealong_columns_orderby(ridealong_gen, stable_sort, order, batch_size):
+    """Test deeply nested ride-along columns with multiple batches to exercise fallback merge sort."""
+    # Use UniqueLongGen as the sort key to avoid ambiguity
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, UniqueLongGen(), ridealong_gen, length=2048).orderBy(order),
+        conf={
+            'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'
+        })
