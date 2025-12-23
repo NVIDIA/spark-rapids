@@ -25,6 +25,7 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.KudoSerializedTableColumn.SER_CHECK_SCHEMA
 import com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit, SizeProvider}
@@ -170,20 +171,12 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
                                  kudoMeasureBufferCopy: Boolean)
   extends Serializer with Serializable {
 
-  private lazy val kudo = {
-    if (useKudo && dataTypes.nonEmpty) {
-      Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
-    } else {
-      None
-    }
-  }
-
   override def newInstance(): SerializerInstance = {
     if (useKudo) {
       if (kudoMode == ShuffleKudoMode.GPU) {
         new KudoGpuSerializerInstance(metrics, dataTypes)
       } else {
-        new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
+        new KudoSerializerInstance(metrics, dataTypes, kudoMeasureBufferCopy)
       }
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
@@ -385,15 +378,14 @@ object SerializedTableColumn {
 /**
  * Serializer instance for serializing `ColumnarBatch`s for use during shuffle with
  * [[KudoSerializer]]
- *
- * @param dataSize  metric to track the size of the serialized data
+ * @param metrics map of GpuMetric contains serializer specific metrics
  * @param dataTypes data types of the columns in the batch
+ * @param measureBufferCopyTime whether to measure the buffer copy time
  */
 private class KudoSerializerInstance(
     val metrics: Map[String, GpuMetric],
     val dataTypes: Array[DataType],
-    val kudo: Option[KudoSerializer],
-    val measureBufferCopyTime: Boolean,
+    val measureBufferCopyTime: Boolean
 ) extends SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
@@ -401,10 +393,24 @@ private class KudoSerializerInstance(
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
   private val stalledByInputStream = metrics(METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM)
 
+  private lazy val kudo = if (dataTypes.nonEmpty) {
+    Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
+  } else {
+    None
+  }
+
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
+      if (SER_CHECK_SCHEMA) {
+        val actualTypes = GpuColumnVector.extractTypes(batch)
+        if (!dataTypes.sameElements(actualTypes)) {
+          throw new IllegalStateException(s"Kudo writer got a unmatched batch, types: " +
+            s"[${actualTypes.mkString("; ")}], but expected types: " +
+            s"[${dataTypes.mkString("; ")}].")
+        }
+      }
       val numColumns = batch.numCols()
       val columns: Array[HostColumnVector] = new Array(numColumns)
       withResource(new ArrayBuffer[AutoCloseable](numColumns)) { toClose =>
@@ -533,9 +539,6 @@ private class KudoSerializerInstance(
   override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
     throw new UnsupportedOperationException
 }
-
-
-
 
 private class KudoGpuSerializerInstance(
     val metrics: Map[String, GpuMetric],
@@ -691,6 +694,9 @@ object KudoSerializedTableColumn {
     val column = new KudoSerializedTableColumn(kudoTable)
     new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
+
+  val SER_CHECK_SCHEMA: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.ser.kudo.checkSchema")
 }
 
 class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
