@@ -434,6 +434,9 @@ _deeply_nested_ridealong_gens = [
     # Struct with Map field - deeply nested
     pytest.param(StructGen([('a', long_gen), ('b', simple_string_to_string_map_gen)]),
                  id='ridealong_struct_with_map'),
+    # Struct of Struct with nested Array - tests recursive check
+    pytest.param(StructGen([('a', long_gen), ('b', StructGen([('c', long_gen), ('d', ArrayGen(string_gen, max_length=5))]))]),
+                 id='ridealong_struct_of_struct_with_array'),
 ]
 
 @pytest.mark.parametrize('ridealong_gen', _deeply_nested_ridealong_gens)

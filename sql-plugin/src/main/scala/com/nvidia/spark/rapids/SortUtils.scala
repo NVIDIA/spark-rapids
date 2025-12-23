@@ -232,7 +232,7 @@ class GpuSorter(
    * - Map with nested key/value types
    * - Struct containing Array or Map fields
    *
-   * Supported types: primitives, BinaryType, Struct (including Struct of Struct),
+   * Supported types: primitives, BinaryType, Struct of primitives/Struct (no Array/Map anywhere),
    * Array of primitives, Map of primitives.
    */
   private[this] lazy val hasUnsupportedNestedInRideColumns = {
@@ -244,9 +244,16 @@ class GpuSorter(
         // Map is unsupported if key or value type is nested
         DataTypeUtils.isNestedType(keyType) || DataTypeUtils.isNestedType(valueType)
       case StructType(fields) =>
-        // Struct is unsupported if any field is Array or Map (Struct of Struct is OK)
-        fields.exists(f => f.dataType.isInstanceOf[ArrayType] ||
-          f.dataType.isInstanceOf[MapType])
+        // Struct is unsupported if any field is Array, Map, or a Struct that recursively
+        // contains Array/Map. This ensures types like Struct<a: Struct<b: Array<...>>>
+        // are correctly identified as unsupported.
+        fields.exists {
+          _.dataType match {
+            case _: ArrayType | _: MapType => true
+            case s: StructType => s.fields.exists(f => isUnsupportedType(f.dataType))
+            case _ => false
+          }
+        }
       case _ => false
     }
     projectedBatchTypes.exists(isUnsupportedType)
