@@ -1007,8 +1007,8 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <!--
-          Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
-          Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
+          Build and run unit tests on one specific version for each sub-version (e.g. 330)
+          Base shim version (330 currently) should be covered in default mvn verify command of premerge script,
           so base shim version is removed from the premergeUT list.
           Separate the versions to two parts: premergeUT1(2 shims' UT + 1/3 of the integration tests)
           and premergeUT2(1 shim's UT + 2/3 of the integration tests), for balancing the duration
