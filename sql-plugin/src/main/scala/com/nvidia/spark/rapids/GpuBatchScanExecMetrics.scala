@@ -41,6 +41,7 @@ trait GpuBatchScanExecMetrics extends GpuExec {
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
     // New scan metrics for detailed breakdown
+    INIT_READERS_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_INIT_READERS_TIME),
     INIT_FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_INIT_FILTER_TIME),
     MATERIALIZE_HOST_BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
       DESCRIPTION_MATERIALIZE_HOST_BUFFER_TIME),

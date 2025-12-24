@@ -406,12 +406,38 @@ case class GpuFileSourceScanExec(
       DESCRIPTION_DELETION_VECTOR_SCATTER_TIME),
     DELETION_VECTOR_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_DELETION_VECTOR_SIZE),
     // Detailed scan frontend metrics
+    INIT_READERS_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_INIT_READERS_TIME),
+    BATCH_ITER_NEXT_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
+      DESCRIPTION_BATCH_ITER_NEXT_TIME),
     INIT_FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_INIT_FILTER_TIME),
     MATERIALIZE_HOST_BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
       DESCRIPTION_MATERIALIZE_HOST_BUFFER_TIME),
     TABLE_TO_BATCH_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TABLE_TO_BATCH_TIME),
     ADD_PARTITION_VALUES_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
-      DESCRIPTION_ADD_PARTITION_VALUES_TIME)
+      DESCRIPTION_ADD_PARTITION_VALUES_TIME),
+    // Debug metrics for detailed breakdown
+    DEBUG_READ_BUFFER_TO_BATCHES_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_READ_BUFFER_TO_BATCHES_TIME),
+    DEBUG_GET_PARQUET_OPTIONS_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_GET_PARQUET_OPTIONS_TIME),
+    DEBUG_MAKE_PRODUCER_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_MAKE_PRODUCER_TIME),
+    DEBUG_CACHED_ITER_APPLY_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_CACHED_ITER_APPLY_TIME),
+    DEBUG_BATCH_ITER_HAS_NEXT_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_BATCH_ITER_HAS_NEXT_TIME),
+    DEBUG_READ_BUFFERS_TO_BATCH_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_READ_BUFFERS_TO_BATCH_TIME),
+    DEBUG_GET_NEXT_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_GET_NEXT_BUFFER_TIME),
+    DEBUG_WAIT_BG_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_WAIT_BG_TIME),
+    DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME),
+    DEBUG_EVOLVE_SCHEMA_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_EVOLVE_SCHEMA_TIME),
+    DEBUG_REBASE_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      DESCRIPTION_DEBUG_REBASE_TIME)
   ) ++ fileCacheMetrics ++ {
     relation.fileFormat match {
       case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
@@ -486,9 +512,11 @@ case class GpuFileSourceScanExec(
         }
 
         override def next(): ColumnarBatch = {
-          val batch = batches.next()
-          numOutputRows += batch.numRows()
-          batch
+          scanTime.ns {
+            val batch = batches.next()
+            numOutputRows += batch.numRows()
+            batch
+          }
         }
       }
     }

@@ -144,29 +144,35 @@ class CachedGpuBatchIterator private(pending: mutable.Queue[SpillableColumnarBat
  */
 object CachedGpuBatchIterator {
   private[this] def makeSpillableAndClose(table: Table,
-      dataTypes: Array[DataType]): SpillableColumnarBatch = {
+      dataTypes: Array[DataType],
+      tableToBatchMetric: GpuMetric): SpillableColumnarBatch = {
     withResource(table) { _ =>
-      SpillableColumnarBatch(GpuColumnVector.from(table, dataTypes),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      val batch = tableToBatchMetric.ns {
+        GpuColumnVector.from(table, dataTypes)
+      }
+      SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     }
   }
 
   def apply(producer: GpuDataProducer[Table],
-      dataTypes: Array[DataType]): GpuColumnarBatchIterator = {
+      dataTypes: Array[DataType],
+      tableToBatchMetric: GpuMetric = NoopMetric): GpuColumnarBatchIterator = {
     withResource(producer) { _ =>
       if (producer.hasNext) {
         // Special case for the first one.
         closeOnExcept(producer.next) { firstTable =>
           if (!producer.hasNext) {
-            val ret =
-              new SingleGpuColumnarBatchIterator(GpuColumnVector.from(firstTable, dataTypes))
+            val batch = tableToBatchMetric.ns {
+              GpuColumnVector.from(firstTable, dataTypes)
+            }
+            val ret = new SingleGpuColumnarBatchIterator(batch)
             firstTable.close()
             ret
           } else {
             val pending = mutable.Queue.empty[SpillableColumnarBatch]
-            pending += makeSpillableAndClose(firstTable, dataTypes)
+            pending += makeSpillableAndClose(firstTable, dataTypes, tableToBatchMetric)
             producer.foreach { t =>
-              pending += makeSpillableAndClose(t, dataTypes)
+              pending += makeSpillableAndClose(t, dataTypes, tableToBatchMetric)
             }
             new CachedGpuBatchIterator(pending)
           }
