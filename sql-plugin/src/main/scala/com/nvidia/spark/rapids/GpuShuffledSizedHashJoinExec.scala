@@ -1133,7 +1133,7 @@ sealed trait SpillableHostConcatResult extends AutoCloseable {
   def getDataLen: Long
 
   protected var spillableBuffer = {
-    SpillableHostBuffer(hmb, hmb.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    SpillableHostBuffer(hmb, hmb.getLength)
   }
 
   override def close(): Unit = if (spillableBuffer != null) {

@@ -546,6 +546,41 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
+  val PARTIAL_FILE_BUFFER_INITIAL_SIZE = 
+    conf("spark.rapids.memory.host.partialFileBufferInitialSize")
+    .doc("The initial size in bytes for a host memory buffer used by " +
+        "SpillablePartialFileHandle. The buffer can expand dynamically up to " +
+        "partialFileBufferMaxSize. A smaller initial size reduces upfront memory " +
+        "allocation but may require more expansions.")
+    .startupOnly()
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(1024L * 1024 * 1024)  // 1GB default
+
+  val PARTIAL_FILE_BUFFER_MAX_SIZE = 
+    conf("spark.rapids.memory.host.partialFileBufferMaxSize")
+    .doc("The maximum size in bytes for a single host memory buffer used by " +
+        "SpillablePartialFileHandle. When a buffer needs to expand beyond this limit, " +
+        "it will be spilled to disk instead. This prevents excessive memory usage " +
+        "for large shuffle partitions.")
+    .startupOnly()
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(8L * 1024 * 1024 * 1024)  // 8GB
+
+  val PARTIAL_FILE_BUFFER_MEMORY_THRESHOLD =
+    conf("spark.rapids.memory.host.partialFileBufferMemoryThreshold")
+    .doc("The host memory usage threshold (as a fraction from 0.0 to 1.0) for deciding " +
+        "whether to use memory-based buffering for partial files. When host memory usage " +
+        "exceeds this threshold, file-based storage will be used directly. This threshold " +
+        "also applies when expanding buffers dynamically.")
+    .startupOnly()
+    .internal()
+    .doubleConf
+    .checkValue(v => v > 0.0 && v <= 1.0,
+      "The memory threshold must be in the range (0.0, 1.0]")
+    .createWithDefault(0.5)
+
   val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
     .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
         "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
@@ -3280,6 +3315,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val integratedGpuMemoryFraction: Double = get(INTEGRATED_GPU_MEMORY_FRACTION)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
+
+  lazy val partialFileBufferInitialSize: Long = get(PARTIAL_FILE_BUFFER_INITIAL_SIZE)
+
+  lazy val partialFileBufferMaxSize: Long = get(PARTIAL_FILE_BUFFER_MAX_SIZE)
+
+  lazy val partialFileBufferMemoryThreshold: Double = get(PARTIAL_FILE_BUFFER_MEMORY_THRESHOLD)
 
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
 
