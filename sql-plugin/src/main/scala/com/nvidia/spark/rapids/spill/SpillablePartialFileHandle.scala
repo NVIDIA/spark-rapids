@@ -309,14 +309,10 @@ class SpillablePartialFileHandle private (
   /**
    * Finish write phase and enable spilling.
    * After this call, no more writes are allowed but reads can proceed.
-   * 
-   * This is where we record disk write savings metric: if this handle is in
-   * MEMORY_WITH_SPILL mode and hasn't spilled yet, it means we successfully
-   * avoided disk writes during the write phase.
    */
   def finishWrite(): Unit = {
     // Extract streams under lock, close them outside
-    val (bos, fos, shouldRecordSavings) = synchronized {
+    val (bos, fos) = synchronized {
       if (writeFinished) {
         return
       }
@@ -325,18 +321,11 @@ class SpillablePartialFileHandle private (
       totalBytesWritten = writePosition
       protectedFromSpill = false
 
-      // Check if we should record disk write savings:
-      // 1. Must be MEMORY_WITH_SPILL mode (not FILE_ONLY)
-      // 2. Must not have spilled yet (data still in memory)
-      // This means we successfully avoided disk writes during write phase
-      val recordSavings = storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
-        !spilledToDisk && totalBytesWritten > 0
-
       val b = bufferedOutputStream
       val f = fileOutputStream
       bufferedOutputStream = None
       fileOutputStream = None
-      (b, f, recordSavings)
+      (b, f)
     }
 
     // Close streams outside lock (IO operations can be slow)
@@ -345,13 +334,6 @@ class SpillablePartialFileHandle private (
       s.close()
     }
     fos.foreach(_.close())
-    
-    // Record disk write savings if applicable
-    if (shouldRecordSavings) {
-      SpillablePartialFileHandle.recordDiskWriteSaved(totalBytesWritten)
-      logDebug(s"Recorded disk write savings: $totalBytesWritten bytes " +
-        s"(kept in memory during write phase)")
-    }
   }
 
   /**
@@ -521,8 +503,21 @@ class SpillablePartialFileHandle private (
 
   /**
    * Close and cleanup resources.
+   * This is where we record disk write savings: only if data was never spilled to disk
+   * throughout the entire lifecycle (write phase + read phase), we count it as saved.
    */
   override private[spill] def doClose(): Unit = synchronized {
+    // Record disk write savings if applicable:
+    // 1. Must be MEMORY_WITH_SPILL mode (not FILE_ONLY)
+    // 2. Must never have spilled to disk (data stayed in memory the entire time)
+    // 3. Must have written some data
+    if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
+        !spilledToDisk && totalBytesWritten > 0) {
+      SpillablePartialFileHandle.recordDiskWriteSaved(totalBytesWritten)
+      logDebug(s"Recorded disk write savings: $totalBytesWritten bytes " +
+        s"(data stayed in memory throughout lifecycle)")
+    }
+
     // Close output streams
     bufferedOutputStream.foreach { bos =>
       try { bos.close() } catch { case _: Exception => }
@@ -561,10 +556,11 @@ object SpillablePartialFileHandle extends Logging {
   
   /**
    * Record disk write savings for a SpillablePartialFileHandle.
-   * Should be called when a handle successfully avoided disk writes during write phase.
+   * Should be called when a handle successfully avoided disk writes throughout its
+   * entire lifecycle (from write to close without ever spilling to disk).
    * 
-   * This tracks bytes that were kept in memory during shuffle write phase,
-   * avoiding disk writes compared to the baseline implementation.
+   * This tracks bytes that were kept in memory during the entire shuffle write/read
+   * lifecycle, avoiding disk writes compared to the baseline implementation.
    * 
    * @param bytesSaved Number of bytes that avoided disk write
    */
