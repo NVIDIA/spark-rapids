@@ -504,6 +504,8 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R <: AutoClos
   @volatile protected[this] var numRowsInBatch: Int = 0
   @volatile protected[this] var batchByteSize: Long = 0L
   @volatile protected[this] var pendingResultIter: Option[Iterator[R]] = None
+  @volatile protected[this] var inputIter:
+    Option[Iterator[CloseableTableSeqWithTargetSize[T]]] = None
 
   protected val tableOperator: SerializedTableOperator[T, R]
   protected val splitPolicy: Option[CloseableTableSeqWithTargetSize[T] =>
@@ -520,7 +522,7 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R <: AutoClos
     // Collect all serialized tables
     serializedTables.forEach(table => allCloseables += table)
     // Collect all AutoCloseable results from pending iterator
-    pendingResultIter.foreach(_.foreach {
+    inputIter.foreach(_.foreach {
       case ac: AutoCloseable => allCloseables += ac
       case _ => // non-closeable result
     })
@@ -529,6 +531,7 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R <: AutoClos
 
     serializedTables.clear()
     pendingResultIter = None
+    inputIter = None
   }
 
   /**
@@ -555,7 +558,9 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R <: AutoClos
           // Create AutoCloseableTargetSize with targetBatchByteSize and minSplitSize
           val targetSizeWrapper = AutoCloseableTargetSize(targetBatchByteSize, minSplitSizeForRetry)
           val wrapper = CloseableTableSeqWithTargetSize(tablesSeq, targetSizeWrapper)
-          val resultIter = withRetry(wrapper, policy) { wrappedSeq =>
+          val wrapperIter = Iterator(wrapper)
+          inputIter = Some(wrapperIter)
+          val resultIter = withRetry(wrapperIter, policy) { wrappedSeq =>
             tableOperator.concat(wrappedSeq.toArray)
           }
           // Store the iterator so we can yield results one by one if splits occurred
