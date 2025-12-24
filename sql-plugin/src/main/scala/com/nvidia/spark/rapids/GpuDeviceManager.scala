@@ -340,8 +340,7 @@ object GpuDeviceManager extends Logging {
       RmmSpark.setEventHandler(memoryEventHandler, debugLoc, enableDebug)
     } else {
       logWarning("SparkRMM retry has been disabled")
-      // Enable RMM debug mode if retry coverage tracking is enabled, to get onAllocated callbacks
-      Rmm.setEventHandler(memoryEventHandler, AllocationRetryCoverageTracker.ENABLED)
+      Rmm.setEventHandler(memoryEventHandler)
     }
   }
 
