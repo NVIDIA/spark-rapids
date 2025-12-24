@@ -20,6 +20,11 @@ set -ex
 nvidia-smi
 
 . jenkins/version-def.sh
+. jenkins/shuffle-common.sh
+
+# Get the shuffle shim for the current Spark version
+SHUFFLE_SPARK_SHIM=$(get_shuffle_shim)
+
 # if run in jenkins WORKSPACE refers to rapids root path; if not run in jenkins just use current pwd(contains jenkins dirs)
 WORKSPACE=${WORKSPACE:-`pwd`}
 
@@ -358,18 +363,6 @@ run_avro_tests() {
     ./run_pyspark_from_build.sh -k avro
 }
 
-rapids_shuffle_smoke_test() {
-    echo "Run rapids_shuffle_smoke_test..."
-
-    # using MULTITHREADED shuffle
-    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-    SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
-    ./run_pyspark_from_build.sh -m shuffle_test
-}
-
 run_pyarrow_tests() {
   ./run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test
 }
@@ -409,7 +402,8 @@ run_non_utc_time_zone_tests() {
 # - ICEBERG_REST_CATALOG_ONLY: iceberg rest catalog tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
-# - MULTITHREADED_SHUFFLE: shuffle tests only
+# - MULTITHREADED_SHUFFLE: shuffle tests only using MULTITHREADED shuffle mode
+# - UCX_SHUFFLE: shuffle tests only using UCX shuffle mode
 # - NON_UTC_TZ: test all tests in a non-UTC time zone which is selected according to current day of week.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
@@ -471,9 +465,17 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "AVRO_ONLY" ]]; then
   run_avro_tests
 fi
 
-# Mutithreaded Shuffle test
+# Rapids Shuffle Manager smoke test.
+# Note the TEST_MODE is either DEFAULT or MULTITHREADED_SHUFFLE. The later is
+# a misleading, it actually tests the Rapids Shuffle Manager with both UCX and
+# MULTITHREADED shuffle modes, but was kept to not break possible CI that is
+# using it.
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
-  rapids_shuffle_smoke_test
+  invoke_shuffle_integration_test MULTITHREADED ./run_pyspark_from_build.sh
+fi
+
+if [[ "$TEST_MODE" == "UCX_SHUFFLE" ]]; then
+  invoke_shuffle_integration_test UCX ./run_pyspark_from_build.sh
 fi
 
 # cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
