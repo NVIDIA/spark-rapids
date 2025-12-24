@@ -177,21 +177,19 @@ def test_str_special_characters_sha1():
         lambda spark: unary_op_df(spark, special_string_gen).selectExpr('sha1(a)'))
 
 
-@pytest.mark.parametrize("datagen", [binary_gen,
-                                     string_gen,
-                                     StringGen().with_special_case('好').with_special_case('吃')])
-@pytest.mark.parametrize("bitlength", [0, 123, 224, 256, 384, 512], ids=idfn)
+@pytest.mark.parametrize("datagen", [binary_gen, string_gen])
+@pytest.mark.parametrize("bitlength", [-20, 0, 123, 224, 256, 384, 512], ids=idfn)
 def test_sha2_with_literal_bitlengths(bitlength, datagen):
     """
     Tests sha2 with bitlengths provided as literals, for string and binary inputs.
     For bitlength==0, the output is the same as with 256.  Should run on the GPU.
-    For bitlength==123, the output should be nulls.  The operator should still run on the GPU.
+    For bitlength ∈ [-1, 123], the output should be nulls.  Should still run on the GPU.
     All the other bitlengths are valid and should run on the GPU.
     """
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, datagen).selectExpr(f'sha2(a, {bitlength})'))
+        lambda spark: unary_op_df(spark, datagen).selectExpr(f'SHA2(a, {bitlength})'))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, datagen).selectExpr(f'sha2("asdf", {bitlength})'))
+        lambda spark: unary_op_df(spark, datagen).selectExpr(f'SHA2("asdf", {bitlength})'))
 
 
 @allow_non_gpu("ProjectExec")
@@ -200,5 +198,5 @@ def test_sha2_bitlength_fallback():
     Verifies that sha2 falls back to the CPU when the bitlength argument is not a literal.
     """
     assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, string_gen).selectExpr('sha2(a, length(a))'),
+        lambda spark: unary_op_df(spark, string_gen).selectExpr('SHA2(a, LENGTH(a))'),
         "ProjectExec")

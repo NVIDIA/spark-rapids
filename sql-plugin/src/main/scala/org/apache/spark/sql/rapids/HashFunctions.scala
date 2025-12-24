@@ -113,22 +113,22 @@ case class GpuSha2(left: Expression, right: Expression)
         ColumnVector.fromScalar(nullStringExemplar, lhs.getRowCount.toInt)
       }
     } else {
-        bitLength match {
-          case Some(224) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
-            Hash.sha224NullsPreserved(_)
-          }
-          case Some(256) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
-            Hash.sha256NullsPreserved(_)
-          }
-          case Some(384) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
-            Hash.sha384NullsPreserved(_)
-          }
-          case Some(512) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
-            Hash.sha512NullsPreserved(_)
-          }
-          case unexpected =>
-            throw new UnsupportedOperationException(s"Unsupported bit length for SHA2: $unexpected")
+      bitLength match {
+        case Some(224) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+          Hash.sha224NullsPreserved
         }
+        case Some(256) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+          Hash.sha256NullsPreserved
+        }
+        case Some(384) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+          Hash.sha384NullsPreserved
+        }
+        case Some(512) => withResource(GpuSha2.getStringViewOfBinaryColumn(lhs.getBase)) {
+          Hash.sha512NullsPreserved
+        }
+        case unexpected =>
+          throw new UnsupportedOperationException(s"Unsupported bit length for SHA2: $unexpected")
+      }
     }
   }
 
@@ -149,13 +149,11 @@ case class GpuSha2(left: Expression, right: Expression)
 
 object GpuSha2 {
 
-  private def getStringViewOfBinaryColumn(col: ColumnView): ColumnVector = {
+  private def getStringViewOfBinaryColumn(col: ColumnView): ColumnViewt stat = {
     withResource(col.getChildColumnView(0)) { dataCol =>
-      withResource(new ColumnView(DType.STRING, col.getRowCount,
+      new ColumnView(DType.STRING, col.getRowCount,
         Optional.of[java.lang.Long](col.getNullCount),
-        dataCol.getData, col.getValid, col.getOffsets)) { cv =>
-        cv.copyToColumnVector()
-      }
+        dataCol.getData, col.getValid, col.getOffsets)
     }
   }
 
