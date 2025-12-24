@@ -461,6 +461,9 @@ class CSVPartitionReader(
     builder.withComment(parsedOptions.comment)
     builder.withNullValue(parsedOptions.nullValue)
     builder.includeColumn(schema.fields.map(_.name): _*)
+    // Disable quote handling for Spark compatibility - Spark does not interpret
+    // RFC 4180 quote escaping (e.g., "" as escaped quote) by default
+    builder.withQuoteStyle(cudf.QuoteStyle.NONE)
     builder
   }
 
