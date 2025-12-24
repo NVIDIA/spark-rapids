@@ -404,9 +404,13 @@ private class KudoSerializerInstance(
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
       if (SER_CHECK_SCHEMA) {
+        // The written batch should always has the same schema with the one used to create
+        // the kudo serializer. But if they become different in some cases unintentionally,
+        // the kudo shuffle can easily run into errors. e.g. the negative "numRows" error.
+        // Then enable this to figure out if the error is caused by mismatched batches.
         val actualTypes = GpuColumnVector.extractTypes(batch)
         if (!dataTypes.sameElements(actualTypes)) {
-          throw new IllegalStateException(s"Kudo writer got a unmatched batch, types: " +
+          throw new IllegalStateException(s"Kudo writer got a mismatched batch, types: " +
             s"[${actualTypes.mkString("; ")}], but expected types: " +
             s"[${dataTypes.mkString("; ")}].")
         }
@@ -695,8 +699,9 @@ object KudoSerializedTableColumn {
     new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
 
+  /** This is for debugging kudo Shuffle errors, e.g. numRows < 0 in kudo Shuffle read */
   val SER_CHECK_SCHEMA: Boolean =
-    java.lang.Boolean.getBoolean("ai.rapids.ser.kudo.checkSchema")
+    java.lang.Boolean.getBoolean("ai.rapids.kudo.debug.ser.checkSchema")
 }
 
 class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
