@@ -216,52 +216,6 @@ class GpuSorter(
     }
   }
 
-  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
-    order.child.dataType match {
-      case _: BinaryType =>
-        // binary is represented in cudf as a LIST column of UINT8
-        true
-      case t => DataTypeUtils.isNestedType(t)
-    }
-  }
-
-  /**
-   * Check if any ride-along column has types not supported by cuDF merge for OOC sort.
-   * Unsupported types include:
-   * - Array with nested element types (e.g., Array of Struct, Array of Array)
-   * - Map with nested key/value types
-   * - Struct containing Array or Map fields
-   *
-   * Supported types: primitives, BinaryType, Struct of primitives/Struct (no Array/Map anywhere),
-   * Array of primitives, Map of primitives.
-   */
-  private[this] lazy val hasUnsupportedNestedInRideColumns = {
-    def isUnsupportedType(dt: DataType): Boolean = dt match {
-      case ArrayType(elementType, _) =>
-        // Array is unsupported if element type is nested (e.g., Array of Struct, Array of Array)
-        DataTypeUtils.isNestedType(elementType)
-      case MapType(keyType, valueType, _) =>
-        // Map is unsupported if key or value type is nested
-        DataTypeUtils.isNestedType(keyType) || DataTypeUtils.isNestedType(valueType)
-      case StructType(fields) =>
-        // Struct is unsupported if any field is Array, Map, or a Struct that recursively
-        // contains Array/Map. This ensures types like Struct<a: Struct<b: Array<...>>>
-        // are correctly identified as unsupported.
-        fields.exists {
-          _.dataType match {
-            case _: ArrayType | _: MapType => true
-            case st: StructType => isUnsupportedType(st)
-            case _ => false
-          }
-        }
-      case _ => false
-    }
-
-    val keyColumnIndices = cpuOrderingInternal.map(_.child.asInstanceOf[BoundReference].ordinal)
-    val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
-    rideColumnIndices.exists(idx => isUnsupportedType(projectedBatchSchema(idx).dataType))
-  }
-
   /**
    * Merge multiple batches together. All of these batches should be the output of
    * `appendProjectedColumns` and the output of this will also be in that same format.
@@ -283,72 +237,44 @@ class GpuSorter(
         // Single batch no need for a merge sort
         spillableBatches.pop()
       } else { // spillableBatches.size > 1
-        // cudf::merge claims to support nested types for both key and ride-along columns,
-        // but testing shows the support may produce results incompatible with Spark.
-        // For now, we only enable merge for single-level nested types in ride-along columns.
-        // Nested types in key columns and deeply nested types in ride-along columns still use
-        // the fallback path.
-        // TODO: see https://github.com/NVIDIA/spark-rapids/issues/14059 for tracking.
-        if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
-          // As a workaround, concatenate all data together and then sort it.
-          // It is slower, but it works for all types.
-          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.toSeq) { attempt =>
-            val tablesToMerge = attempt.safeMap { sb =>
-              withResource(sb.getColumnarBatch()) { cb =>
-                GpuColumnVector.from(cb)
+        // Use efficient Table.merge for all types.
+        // cudf::merge now supports nested types for both key and ride-along columns.
+        closeOnExcept(spillableBatches.toSeq) { _ =>
+          val batchesToMerge = new RapidsStack[SpillableColumnarBatch]()
+          closeOnExcept(batchesToMerge.toSeq) { _ =>
+            while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
+              // pop a spillable batch if there is one, and add it to `batchesToMerge`.
+              if (spillableBatches.nonEmpty) {
+                batchesToMerge.push(spillableBatches.pop())
               }
-            }
-            val concatenated = withResource(tablesToMerge) { _ =>
-              Table.concatenate(tablesToMerge: _*)
-            }
-            withResource(concatenated) { _ =>
-              concatenated.orderBy(cudfOrdering: _*)
-            }
-          }
-          withResource(merged) { _ =>
-            closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
-              SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-            }
-          }
-        } else {
-          // For simple types and single-level nested types, use efficient Table.merge
-          closeOnExcept(spillableBatches.toSeq) { _ =>
-            val batchesToMerge = new RapidsStack[SpillableColumnarBatch]()
-            closeOnExcept(batchesToMerge.toSeq) { _ =>
-              while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
-                // pop a spillable batch if there is one, and add it to `batchesToMerge`.
-                if (spillableBatches.nonEmpty) {
-                  batchesToMerge.push(spillableBatches.pop())
+              if (batchesToMerge.size > 1) {
+                val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
+                  val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
+                    withResource(sb.getColumnarBatch()) { cb =>
+                      GpuColumnVector.from(cb)
+                    }
+                  }
+                  withResource(tablesToMerge) { _ =>
+                    Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
+                  }
                 }
-                if (batchesToMerge.size > 1) {
-                  val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-                    val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
-                      withResource(sb.getColumnarBatch()) { cb =>
-                        GpuColumnVector.from(cb)
-                      }
-                    }
-                    withResource(tablesToMerge) { _ =>
-                      Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
-                    }
-                  }
 
-                  // we no longer care about the old batches, we closed them
-                  closeOnExcept(merged) { _ =>
-                    batchesToMerge.toSeq.safeClose()
-                    batchesToMerge.clear()
-                  }
+                // we no longer care about the old batches, we closed them
+                closeOnExcept(merged) { _ =>
+                  batchesToMerge.toSeq.safeClose()
+                  batchesToMerge.clear()
+                }
 
-                  // add the result to be merged with the next spillable batch
-                  withResource(merged) { _ =>
-                    closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
-                      batchesToMerge.push(
-                        SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-                    }
+                // add the result to be merged with the next spillable batch
+                withResource(merged) { _ =>
+                  closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
+                    batchesToMerge.push(
+                      SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
                   }
                 }
               }
-              batchesToMerge.pop()
             }
+            batchesToMerge.pop()
           }
         }
       }
