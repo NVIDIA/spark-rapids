@@ -699,7 +699,10 @@ object KudoSerializedTableColumn {
     new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
 
-  /** This is for debugging kudo Shuffle errors, e.g. numRows < 0 in kudo Shuffle read */
+  /**
+   * This is for debugging kudo Shuffle errors, e.g. numRows < 0 in kudo Shuffle read.
+   * It is disabled by default for performance.
+   */
   val SER_CHECK_SCHEMA: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.kudo.debug.ser.checkSchema")
 }
