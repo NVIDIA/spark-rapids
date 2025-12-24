@@ -2574,7 +2574,7 @@ object GpuOverrides extends Logging {
         TypeSig.STRING,
         ("input", TypeSig.BINARY, TypeSig.BINARY),
         ("bitLength", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
-      (a, conf, p, r) => GpuSha2.getMeta(a, conf, p, r)
+      (a, conf, p, r) => new GpuSha2.Meta(a, conf, p, r)
     ),
     expr[Upper](
       "String uppercase operator",
