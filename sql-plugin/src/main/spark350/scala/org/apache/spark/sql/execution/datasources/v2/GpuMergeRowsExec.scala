@@ -32,7 +32,7 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor}
+import ai.rapids.cudf.{ColumnVector, NvtxColor, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
@@ -296,10 +296,19 @@ class GpuMergeBatchIterator(
 
     val (condMask, nextMask) = withResource(mask) { _ =>
       withResource(instructionExec.evaluateCondition(batch)) { cond =>
-        val condMask = cond.getBase.and(mask)
+        // cond.and(mask) may contain NULLs if cond has NULLs
+        // Replace NULLs with FALSE since NULL condition means "condition not satisfied"
+        val condMask = withResource(cond.getBase.and(mask)) { condAndMask =>
+          withResource(Scalar.fromBool(false)) { falseScalar =>
+            condAndMask.replaceNulls(falseScalar)
+          }
+        }
         closeOnExcept(condMask) { _ =>
-          val nextMask = withResource(cond.getBase.not()) { notThis =>
-            notThis.and(mask)
+          // nextMask includes rows where condition was FALSE or NULL
+          // Since condMask has NULLs replaced with FALSE, NOT(condMask) correctly
+          // includes rows that were NULL in the original condition
+          val nextMask = withResource(condMask.not()) { notCondMask =>
+            mask.and(notCondMask)
           }
           (condMask, nextMask)
         }
