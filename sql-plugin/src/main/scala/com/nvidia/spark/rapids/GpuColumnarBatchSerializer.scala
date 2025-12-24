@@ -408,11 +408,13 @@ private class KudoSerializerInstance(
         // the kudo serializer. But if they become different in some cases unintentionally,
         // the kudo shuffle can easily run into errors. e.g. the negative "numRows" error.
         // Then enable this to figure out if the error is caused by mismatched batches.
-        val actualTypes = GpuColumnVector.extractTypes(batch)
-        if (!dataTypes.sameElements(actualTypes)) {
-          throw new IllegalStateException(s"Kudo writer got a mismatched batch, types: " +
-            s"[${actualTypes.mkString("; ")}], but expected types: " +
-            s"[${dataTypes.mkString("; ")}].")
+        closeOnExcept(batch) { _ =>
+          val actualTypes = GpuColumnVector.extractTypes(batch)
+          if (!dataTypes.sameElements(actualTypes)) {
+            throw new IllegalStateException(s"Kudo writer got a mismatched batch, types: " +
+              s"[${actualTypes.mkString("; ")}], but expected types: " +
+              s"[${dataTypes.mkString("; ")}].")
+          }
         }
       }
       val numColumns = batch.numCols()
