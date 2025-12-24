@@ -162,6 +162,14 @@ class DeviceMemoryEventHandler(
   override def onAllocThreshold(totalAllocated: Long): Unit = {
   }
 
+  /**
+   * Called after every device memory allocation when RMM debug mode is enabled.
+   * Used for retry coverage tracking.
+   */
+  override def onAllocated(size: Long): Unit = {
+    AllocationRetryCoverageTracker.checkDeviceAllocation()
+  }
+
   override def onDeallocThreshold(totalAllocated: Long): Unit = {
   }
 
