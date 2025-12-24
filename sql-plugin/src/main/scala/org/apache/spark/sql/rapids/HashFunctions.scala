@@ -149,7 +149,7 @@ case class GpuSha2(left: Expression, right: Expression)
 
 object GpuSha2 {
 
-  private def getStringViewOfBinaryColumn(col: ColumnView): ColumnViewt stat = {
+  private def getStringViewOfBinaryColumn(col: ColumnView): ColumnView = {
     withResource(col.getChildColumnView(0)) { dataCol =>
       new ColumnView(DType.STRING, col.getRowCount,
         Optional.of[java.lang.Long](col.getNullCount),
@@ -157,13 +157,12 @@ object GpuSha2 {
     }
   }
 
-  def getMeta(e: Sha2,
+  class Meta(e: Sha2,
               conf: RapidsConf,
               p: Option[RapidsMeta[_, _, _]],
-              r: DataFromReplacementRule): BinaryExprMeta[Sha2] = {
-    new BinaryExprMeta[Sha2](e, conf, p, r) {
-      override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = GpuSha2(lhs, rhs)
-    }
+              r: DataFromReplacementRule)
+    extends BinaryExprMeta[Sha2](e, conf, p, r) {
+    override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = GpuSha2(lhs, rhs)
   }
 }
 
