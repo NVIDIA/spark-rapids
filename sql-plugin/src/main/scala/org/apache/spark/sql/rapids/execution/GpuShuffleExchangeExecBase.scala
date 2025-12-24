@@ -311,6 +311,9 @@ object GpuShuffleExchangeExecBase {
     "rapidsThreadedWriterSerializationWaitTime"
   val METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME =
     "threaded writer serialization wait time"
+  val METRIC_THREADED_WRITER_INPUT_FETCH_TIME = "rapidsThreadedWriterInputFetchTime"
+  val METRIC_DESC_THREADED_WRITER_INPUT_FETCH_TIME =
+    "threaded writer input fetch time (records.hasNext/next)"
 
   def createAdditionalExchangeMetrics(gpu: GpuExec): Map[String, GpuMetric] = Map(
     // dataSize and dataReadSize are uncompressed, one is on write and the other on read
@@ -335,7 +338,10 @@ object GpuShuffleExchangeExecBase {
           METRIC_DESC_THREADED_WRITER_LIMITER_WAIT_TIME),
     METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL,
-          METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME)
+          METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME),
+    METRIC_THREADED_WRITER_INPUT_FETCH_TIME ->
+        gpu.createNanoTimingMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_WRITER_INPUT_FETCH_TIME)
   )
 
   def prepareBatchShuffleDependency(

@@ -46,7 +46,7 @@ import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.shuffle.sort.io.{RapidsLocalDiskShuffleDataIO, RapidsLocalDiskShuffleMapOutputWriter}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_WRITER_INPUT_FETCH_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
@@ -285,6 +285,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     handle.metrics.get(METRIC_THREADED_WRITER_LIMITER_WAIT_TIME)
   private val serializationWaitTimeMetric =
     handle.metrics.get(METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME)
+  private val inputFetchTimeMetric =
+    handle.metrics.get(METRIC_THREADED_WRITER_INPUT_FETCH_TIME)
 
   private var shuffleWriteRange: NvtxId = NvtxRegistry.THREADED_WRITER_WRITE.push()
 
@@ -560,6 +562,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     // Track total written size (compressed size)
     val totalCompressedSize = new AtomicLong(0L)
     var waitTimeOnLimiterNs: Long = 0L
+    var inputFetchTimeNs: Long = 0L
 
     // Multi-batch tracking
     val batchStates = new ArrayBuffer[BatchState]()
@@ -577,8 +580,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     var currentBatch = createBatchState(currentBatchId, mapOutputWriter)
 
     try {
+      var inputFetchStart = System.nanoTime()
       while (records.hasNext) {
         val record = records.next()
+        inputFetchTimeNs += System.nanoTime() - inputFetchStart
+
         val key = record._1
         val value = record._2
         val reducePartitionId: Int = partitioner.getPartition(key)
@@ -673,7 +679,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         currentBatch.mergerCondition.synchronized {
           currentBatch.mergerCondition.notifyAll()
         }
+
+        // Reset timer for next iteration's hasNext/next
+        inputFetchStart = System.nanoTime()
       }
+      // Account for the final hasNext call that returned false
+      inputFetchTimeNs += System.nanoTime() - inputFetchStart
 
       // Mark end of last batch - ensure all partitions are processed
       currentBatch.maxPartitionIdQueued.set(numPartitions)
@@ -707,13 +718,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         }
       }
 
-      // Update write metrics
-      val totalWriteTime = System.nanoTime() - writeStartTime
-      writeMetrics.incWriteTime(totalWriteTime - waitTimeOnLimiterNs)
+      // Update write metrics (except writeTime which is calculated at the end)
       writeMetrics.incRecordsWritten(recordsWritten)
       writeMetrics.incBytesWritten(totalCompressedSize.get())
       limiterWaitTimeMetric.foreach(_ += waitTimeOnLimiterNs)
       serializationWaitTimeMetric.foreach(_ += totalSerializationWaitTimeNs)
+      inputFetchTimeMetric.foreach(_ += inputFetchTimeNs)
 
     } finally {
       // Cleanup all batch states
@@ -758,9 +768,16 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         case _ => // Other writer types don't need this optimization
       }
 
-      mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
+      val result = mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
+      // Update write time: total time from start minus input fetch time
+      val totalWriteTime = System.nanoTime() - writeStartTime
+      writeMetrics.incWriteTime(totalWriteTime - inputFetchTimeNs)
+      result
     } else {
       // Single batch: already committed, just return lengths
+      // Update write time: total time from start minus input fetch time
+      val totalWriteTime = System.nanoTime() - writeStartTime
+      writeMetrics.incWriteTime(totalWriteTime - inputFetchTimeNs)
       getPartitionLengths
     }
   }
@@ -782,8 +799,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   private def mergePartialFiles(
       partialFiles: Seq[PartialFile],
       finalWriter: ShuffleMapOutputWriter): Array[Long] = {
-
-    val mergeStartTime = System.nanoTime()
 
     try {
       // For each partition, copy data from all partial files in order
@@ -829,8 +844,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         }
       }
     }
-
-    writeMetrics.incWriteTime(System.nanoTime() - mergeStartTime)
 
     // Commit final merged output
     commitAllPartitions(finalWriter, true)
