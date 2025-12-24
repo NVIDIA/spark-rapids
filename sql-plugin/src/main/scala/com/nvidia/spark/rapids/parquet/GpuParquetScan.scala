@@ -1270,7 +1270,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
 
     metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
       metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
-        val metaAndFilesArr = if (numFilesFilterParallel > 0) {
+        metrics.getOrElse(INIT_FILTER_TIME, NoopMetric).ns {
+          val metaAndFilesArr = if (numFilesFilterParallel > 0) {
           val tc = TaskContext.get()
           val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
           files.grouped(numFilesFilterParallel).map { fileGroup =>
@@ -1305,6 +1306,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
               new ParquetExtraInfo(singleFileInfo.dateRebaseMode,
                 singleFileInfo.timestampRebaseMode,
                 singleFileInfo.hasInt96Timestamps)))
+        }
         }
       }
     }
@@ -2943,7 +2945,9 @@ class MultiFileCloudParquetPartitionReader(
     withResource(hostBuffers) { _ =>
       RmmRapidsRetryIterator.withRetryNoSplit {
         // The MakeParquetTableProducer will close the input buffers
-        val hostBufs = hostBuffers.safeMap(_.getDataHostBuffer())
+        val hostBufs = metrics.getOrElse(MATERIALIZE_HOST_BUFFER_TIME, NoopMetric).ns {
+          hostBuffers.safeMap(_.getDataHostBuffer())
+        }
         // Duplicate request is ok, and start to use the GPU just after the host
         // buffer is ready to not block CPU things.
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -2957,21 +2961,26 @@ class MultiFileCloudParquetPartitionReader(
           isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, files,
           debugDumpPrefix, debugDumpAlways)
 
-        val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
+        val batchIter = metrics.getOrElse(TABLE_TO_BATCH_TIME, NoopMetric).ns {
+          CachedGpuBatchIterator(tableReader, colTypes)
+        }
 
+        val addPartValuesMetric = metrics.getOrElse(ADD_PARTITION_VALUES_TIME, NoopMetric)
         if (allPartValues.isDefined) {
           val allPartInternalRows = allPartValues.get.map(_._2)
           val rowsPerPartition = allPartValues.get.map(_._1)
           new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
-            rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes)
+            rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes, addPartValuesMetric)
         } else {
           // this is a bit weird, we don't have number of rows when allPartValues isn't
           // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
           batchIter.flatMap { batch =>
             // we have to add partition values here for this batch, we already verified that
             // its not different for all the blocks in this batch
-            BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
-              partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+            addPartValuesMetric.ns {
+              BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+                partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+            }
           }
         }
       }

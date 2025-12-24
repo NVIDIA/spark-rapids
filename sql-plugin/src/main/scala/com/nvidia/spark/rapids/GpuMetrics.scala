@@ -139,6 +139,11 @@ object GpuMetric extends Logging {
   val BIG_JOIN_COUNT = "sizedBigJoin"
   val SYNC_READ_TIME = "shuffleSyncReadTime"
   val ASYNC_READ_TIME = "shuffleAsyncReadTime"
+  // New scan metrics for detailed breakdown
+  val INIT_FILTER_TIME = "initFilterTime"
+  val MATERIALIZE_HOST_BUFFER_TIME = "materializeHostBufferTime"
+  val TABLE_TO_BATCH_TIME = "tableToBatchTime"
+  val ADD_PARTITION_VALUES_TIME = "addPartitionValuesTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -193,6 +198,11 @@ object GpuMetric extends Logging {
   val DESCRIPTION_BIG_JOIN_COUNT = "big joins"
   val DESCRIPTION_SYNC_READ_TIME = "sync read time"
   val DESCRIPTION_ASYNC_READ_TIME = "async read time"
+  // New scan metrics descriptions
+  val DESCRIPTION_INIT_FILTER_TIME = "init filter blocks time"
+  val DESCRIPTION_MATERIALIZE_HOST_BUFFER_TIME = "materialize host buffer time"
+  val DESCRIPTION_TABLE_TO_BATCH_TIME = "table to batch time"
+  val DESCRIPTION_ADD_PARTITION_VALUES_TIME = "add partition values time"
 
   /**
    * Determine if a GpuMetric wraps a TimingMetric or NanoTimingMetric.

@@ -104,7 +104,8 @@ class GpuColumnarBatchWithPartitionValuesIterator(
     partValues: Array[InternalRow],
     partRowNums: Array[Long],
     partSchema: StructType,
-    maxGpuColumnSizeBytes: Long) extends Iterator[ColumnarBatch] {
+    maxGpuColumnSizeBytes: Long,
+    addPartValuesMetric: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
   assert(partValues.length == partRowNums.length)
 
   private var leftValues: Array[InternalRow] = partValues
@@ -124,8 +125,10 @@ class GpuColumnarBatchWithPartitionValuesIterator(
         val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
           computeValuesAndRowNumsForBatch(batch.numRows())
         }
-        outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
-          readPartValues, partSchema, maxGpuColumnSizeBytes)
+        outputIter = addPartValuesMetric.ns {
+          BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
+            readPartValues, partSchema, maxGpuColumnSizeBytes)
+        }
         outputIter.next()
       } else {
         batch
