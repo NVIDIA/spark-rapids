@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.rapids.spill
 
-import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream, FileOutputStream, IOException}
+import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream, FileOutputStream, IOException, RandomAccessFile}
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 
 import com.nvidia.spark.rapids.HostAlloc
 
@@ -81,11 +83,15 @@ class SpillablePartialFileHandle private (
   private var fileOutputStream: Option[FileOutputStream] = None
   private var bufferedOutputStream: Option[BufferedOutputStream] = None
 
-  // Read state
+  // Read state (for sequential read() method)
   private var readPosition: Long = 0L
   private var fileInputStream: Option[FileInputStream] = None
   private var bufferedInputStream: Option[BufferedInputStream] = None
   private var totalBytesWritten: Long = 0L
+
+  // Random access read state (for concurrent readAt() method)
+  private var randomAccessFile: Option[RandomAccessFile] = None
+  private var fileChannel: Option[FileChannel] = None
 
   // Initialize host buffer for MEMORY_WITH_SPILL mode
   if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL) {
@@ -397,6 +403,80 @@ class SpillablePartialFileHandle private (
   }
 
   /**
+   * Read bytes from a specific position without modifying internal read state.
+   * Thread-safe for concurrent reads from different positions.
+   * 
+   * This method is designed for scenarios where multiple reducers need to
+   * read different partitions from the same handle concurrently.
+   *
+   * @param position starting position to read from (0-based)
+   * @param bytes destination buffer
+   * @param offset offset in destination buffer
+   * @param length number of bytes to read
+   * @return number of bytes actually read, or -1 if position >= totalBytesWritten
+   */
+  def readAt(position: Long, bytes: Array[Byte], offset: Int, length: Int): Int = {
+    if (!writeFinished) {
+      throw new IllegalStateException("Cannot read before write is finished")
+    }
+
+    if (position < 0 || position >= totalBytesWritten) {
+      return -1
+    }
+
+    val actualLength = math.min(length, (totalBytesWritten - position).toInt)
+    if (actualLength <= 0) {
+      return -1
+    }
+
+    def readFromFileChannel(pos: Long, bytes: Array[Byte], off: Int, len: Int): Int = {
+      ensureFileChannelOpen()
+      val buf = ByteBuffer.wrap(bytes, off, len)
+      fileChannel.get.read(buf, pos)
+    }
+
+    if (shouldUseFile) {
+      // FILE_ONLY mode: use FileChannel for random access
+      readFromFileChannel(position, bytes, offset, actualLength)
+    } else {
+      // MEMORY_WITH_SPILL mode
+      if (spilledToDisk) {
+        // Already spilled: use FileChannel
+        readFromFileChannel(position, bytes, offset, actualLength)
+      } else {
+        // Still in memory: read from host buffer (thread-safe)
+        synchronized {
+          if (spilledToDisk) {
+            // Spilled during our check, read from file
+          } else {
+            host match {
+              case Some(buffer) =>
+                buffer.getBytes(bytes, offset, position, actualLength)
+                return actualLength
+              case None =>
+                throw new IllegalStateException("Host buffer is null")
+            }
+          }
+        }
+        // If we reach here, spilled during synchronized block
+        readFromFileChannel(position, bytes, offset, actualLength)
+      }
+    }
+  }
+
+  /**
+   * Ensure FileChannel is open for random access reading.
+   * Thread-safe: uses synchronized to prevent duplicate channel creation.
+   */
+  private def ensureFileChannelOpen(): Unit = synchronized {
+    if (fileChannel.isEmpty) {
+      val raf = new RandomAccessFile(file, "r")
+      randomAccessFile = Some(raf)
+      fileChannel = Some(raf.getChannel)
+    }
+  }
+
+  /**
    * Get total bytes written to this partial file.
    */
   def getTotalBytesWritten: Long = totalBytesWritten
@@ -528,7 +608,7 @@ class SpillablePartialFileHandle private (
     }
     fileOutputStream = None
 
-    // Close input streams
+    // Close input streams (for sequential read)
     bufferedInputStream.foreach { bis =>
       try { bis.close() } catch { case _: Exception => }
     }
@@ -537,6 +617,16 @@ class SpillablePartialFileHandle private (
       try { fis.close() } catch { case _: Exception => }
     }
     fileInputStream = None
+
+    // Close file channel (for random access read)
+    fileChannel.foreach { fc =>
+      try { fc.close() } catch { case _: Exception => }
+    }
+    fileChannel = None
+    randomAccessFile.foreach { raf =>
+      try { raf.close() } catch { case _: Exception => }
+    }
+    randomAccessFile = None
 
     // Release host buffer (removes from SpillFramework tracking and closes buffer)
     releaseHostResource()

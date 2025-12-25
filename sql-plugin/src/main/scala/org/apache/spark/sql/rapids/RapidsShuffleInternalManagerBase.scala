@@ -70,21 +70,38 @@ class ShuffleHandleWithMetrics[K, V, C](
 
 abstract class GpuShuffleBlockResolverBase(
     protected val wrapped: ShuffleBlockResolver,
-    catalog: ShuffleBufferCatalog)
+    catalog: ShuffleBufferCatalog,
+    mtCatalog: Option[MultithreadedShuffleBufferCatalog] = None)
   extends ShuffleBlockResolver with Logging {
   override def getBlockData(blockId: BlockId, dirs: Option[Array[String]]): ManagedBuffer = {
-    val hasActiveShuffle: Boolean = blockId match {
-      case sbbid: ShuffleBlockBatchId =>
-        catalog.hasActiveShuffle(sbbid.shuffleId)
+    blockId match {
       case sbid: ShuffleBlockId =>
-        catalog.hasActiveShuffle(sbid.shuffleId)
-      case _ => throw new IllegalArgumentException(s"${blockId.getClass} $blockId "
+        // First check MultithreadedShuffleBufferCatalog (MULTITHREADED mode without merge)
+        mtCatalog match {
+          case Some(mtc) if mtc.hasData(sbid) =>
+            return mtc.getMergedBuffer(sbid)
+          case _ => // Continue to other checks
+        }
+
+        // Check UCX/CACHE_ONLY catalog
+        if (catalog != null && catalog.hasActiveShuffle(sbid.shuffleId)) {
+          throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
+        }
+
+        // Fall back to disk-based resolver
+        wrapped.getBlockData(blockId, dirs)
+
+      case sbbid: ShuffleBlockBatchId =>
+        // Batch blocks are only used in UCX/CACHE_ONLY mode
+        if (catalog != null && catalog.hasActiveShuffle(sbbid.shuffleId)) {
+          throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
+        }
+        wrapped.getBlockData(blockId, dirs)
+
+      case _ =>
+        throw new IllegalArgumentException(s"${blockId.getClass} $blockId "
           + "is not currently supported")
     }
-    if (hasActiveShuffle) {
-      throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
-    }
-    wrapped.getBlockData(blockId, dirs)
   }
 
   override def stop(): Unit = wrapped.stop()
@@ -706,14 +723,16 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           case ee: ExecutionException => throw ee.getCause
         }
 
-        // CRITICAL: For multi-batch, preserve handle before any commit
+        // CRITICAL: Preserve handle before any commit
         // commitAllPartitions() would flush/rename data, so we extract first
-        if (isMultiBatch) {
+        val mtCatalog = GpuShuffleEnv.getMultithreadedCatalog
+        if (isMultiBatch || mtCatalog.isDefined) {
+          // For multi-batch or when using catalog mode, extract handle
           val (handle, partLengths) = extractHandleAndLengthsFromWriter(
             batch.mapOutputWriter)
           partialFiles += PartialFile(handle, partLengths, batch.mapOutputWriter)
         } else {
-          // Single batch: commit normally
+          // Single batch without catalog: commit normally
           commitAllPartitions(batch.mapOutputWriter, true)
         }
       }
@@ -751,35 +770,86 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     }
 
     // Handle final output
-    if (isMultiBatch) {
-      // Multi-batch: create NEW writer for final merge
-      // CRITICAL: Cannot reuse mapOutputWriter as it would write to same outputTempFile
-      val finalMergeWriter = shuffleExecutorComponents.createMapOutputWriter(
-        shuffleId,
-        mapId,
-        numPartitions)
-      mapOutputWriters += finalMergeWriter  // Track for cleanup
+    val mtCatalog = GpuShuffleEnv.getMultithreadedCatalog
+    
+    val result = mtCatalog match {
+      case Some(catalog) =>
+        // Store data in MultithreadedShuffleBufferCatalog instead of merging
+        storePartialFilesInCatalog(catalog, partialFiles.toSeq, isMultiBatch)
+      case None =>
+        // Fallback to original merge behavior
+        if (isMultiBatch) {
+          // Multi-batch: create NEW writer for final merge
+          val finalMergeWriter = shuffleExecutorComponents.createMapOutputWriter(
+            shuffleId,
+            mapId,
+            numPartitions)
+          mapOutputWriters += finalMergeWriter
 
-      // Force file-only mode for final merge writer since it doesn't benefit
-      // from memory buffering (merge operation is already doing sequential I/O)
-      finalMergeWriter match {
-        case rapidsWriter: RapidsLocalDiskShuffleMapOutputWriter =>
-          rapidsWriter.setForceFileOnlyMode()
-        case _ => // Other writer types don't need this optimization
-      }
+          finalMergeWriter match {
+            case rapidsWriter: RapidsLocalDiskShuffleMapOutputWriter =>
+              rapidsWriter.setForceFileOnlyMode()
+            case _ =>
+          }
 
-      val result = mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
-      // Update write time: total time from start minus input fetch time
-      val totalWriteTime = System.nanoTime() - writeStartTime
-      writeMetrics.incWriteTime(totalWriteTime - inputFetchTimeNs)
-      result
-    } else {
-      // Single batch: already committed, just return lengths
-      // Update write time: total time from start minus input fetch time
-      val totalWriteTime = System.nanoTime() - writeStartTime
-      writeMetrics.incWriteTime(totalWriteTime - inputFetchTimeNs)
-      getPartitionLengths
+          mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
+        } else {
+          getPartitionLengths
+        }
     }
+
+    // Update write time: total time from start minus input fetch time
+    val totalWriteTime = System.nanoTime() - writeStartTime
+    writeMetrics.incWriteTime(totalWriteTime - inputFetchTimeNs)
+    result
+  }
+
+  /**
+   * Store partial files in MultithreadedShuffleBufferCatalog instead of merging.
+   * This avoids the I/O cost of merging while keeping data in memory when possible.
+   *
+   * @param catalog the MultithreadedShuffleBufferCatalog to store data
+   * @param partialFiles list of partial files from all batches
+   * @param isMultiBatch whether this is a multi-batch scenario
+   * @return array of partition lengths (sum across all batches for each partition)
+   */
+  private def storePartialFilesInCatalog(
+      catalog: MultithreadedShuffleBufferCatalog,
+      partialFiles: Seq[PartialFile],
+      isMultiBatch: Boolean): Array[Long] = {
+
+    val accumulatedLengths = new Array[Long](numPartitions)
+
+    if (isMultiBatch) {
+      // Multi-batch: store each partial file's partitions in catalog
+      partialFiles.foreach { pf =>
+        var offset = 0L
+        for (partId <- 0 until numPartitions) {
+          val length = pf.partitionLengths(partId)
+          if (length > 0) {
+            catalog.addPartition(shuffleId, mapId, partId, pf.handle, offset, length)
+          }
+          accumulatedLengths(partId) += length
+          offset += length
+        }
+        // Don't close the handle here - it will be closed when shuffle is unregistered
+      }
+    } else {
+      // Single batch: extract handle and store in catalog
+      val (handle, lengths) = extractHandleAndLengthsFromWriter(
+        mapOutputWriters.head)
+      var offset = 0L
+      for (partId <- 0 until numPartitions) {
+        val length = lengths(partId)
+        if (length > 0) {
+          catalog.addPartition(shuffleId, mapId, partId, handle, offset, length)
+        }
+        accumulatedLengths(partId) = length
+        offset += length
+      }
+    }
+
+    accumulatedLengths
   }
 
   /**
@@ -1593,7 +1663,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
         // else statement, because the "executor" is the driver, and isDriver=true, or
         // The regular case where the executor has RapidsShuffleManager enabled.
         // What these cases have in common is that `catalog` is defined.
-        new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, catalog)
+        val mtCatalog = GpuShuffleEnv.getMultithreadedCatalog
+        new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, catalog, mtCatalog)
       }
     }
 
@@ -1822,6 +1893,11 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       logInfo(s"Registering shuffle $shuffleId")
       catalog.registerShuffle(shuffleId)
     }
+    // Also register with MultithreadedShuffleBufferCatalog if available
+    GpuShuffleEnv.getMultithreadedCatalog.foreach { mtCatalog =>
+      logInfo(s"Registering shuffle $shuffleId with multithreaded catalog")
+      mtCatalog.registerShuffle(shuffleId)
+    }
   }
 
   def unregisterGpuShuffle(shuffleId: Int): Unit = {
@@ -1829,6 +1905,11 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     if (catalog != null) {
       logInfo(s"Unregistering shuffle $shuffleId from shuffle buffer catalog")
       catalog.unregisterShuffle(shuffleId)
+    }
+    // Also unregister from MultithreadedShuffleBufferCatalog if available
+    GpuShuffleEnv.getMultithreadedCatalog.foreach { mtCatalog =>
+      logInfo(s"Unregistering shuffle $shuffleId from multithreaded catalog")
+      mtCatalog.unregisterShuffle(shuffleId)
     }
   }
 
