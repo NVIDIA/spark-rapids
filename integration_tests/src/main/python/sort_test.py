@@ -42,10 +42,10 @@ _nested_orderby_with_xfail = [
     pytest.param(f.col('a').asc()),
     pytest.param(f.col('a').asc_nulls_first()),
     pytest.param(f.col('a').asc_nulls_last(),
-                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
+                 marks=pytest.mark.xfail(reason='asc with null_last order not supported')),
     pytest.param(f.col('a').desc()),
     pytest.param(f.col('a').desc_nulls_first(),
-                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
+                 marks=pytest.mark.xfail(reason='desc with null_first order not supported')),
     pytest.param(f.col('a').desc_nulls_last()),
 ]
 
