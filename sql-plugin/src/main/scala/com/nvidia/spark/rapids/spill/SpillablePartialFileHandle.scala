@@ -96,7 +96,7 @@ class SpillablePartialFileHandle private (
   // Initialize host buffer for MEMORY_WITH_SPILL mode
   if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL) {
     try {
-      val buffer = ai.rapids.cudf.HostMemoryBuffer.allocate(initialCapacity)
+      val buffer = ai.rapids.cudf.HostMemoryBuffer.allocate(initialCapacity, false)
       host = Some(buffer)
       currentBufferCapacity = initialCapacity
       this.taskPriority = priority
@@ -168,7 +168,7 @@ class SpillablePartialFileHandle private (
         
         try {
           // Allocate new larger buffer
-          val newBuffer = ai.rapids.cudf.HostMemoryBuffer.allocate(newCapacity)
+          val newBuffer = ai.rapids.cudf.HostMemoryBuffer.allocate(newCapacity, false)
           try {
             // Copy existing data
             newBuffer.copyFromHostBuffer(0, currentBuffer, 0, writePosition)
