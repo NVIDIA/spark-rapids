@@ -85,6 +85,7 @@ def _build_simple_descriptor_set_bytes(spark):
     try:
         fd = fd.setSyntax("proto2")
     except Exception:
+        # If setSyntax is unavailable (older protobuf-java), we intentionally leave syntax unset.
         pass
 
     msg = D.DescriptorProto.newBuilder().setName("Simple")
@@ -130,17 +131,17 @@ def _write_bytes_to_hadoop_path(spark, path_str, data_bytes):
 @ignore_order(local=True)
 def test_from_protobuf_simple_parquet_binary_round_trip(spark_tmp_path):
     from_protobuf = _try_import_from_protobuf()
-    # if from_protobuf is None:
-    #     pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
-    # if not with_cpu_session(lambda spark: _spark_protobuf_jvm_available(spark)):
-    #     pytest.skip("spark-protobuf JVM module is not available on the classpath")
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(lambda spark: _spark_protobuf_jvm_available(spark)):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
 
     data_path = spark_tmp_path + "/PROTOBUF_SIMPLE_PARQUET/"
     desc_path = spark_tmp_path + "/simple.desc"
     message_name = "test.Simple"
 
     # Generate descriptor bytes once using the JVM (no protoc dependency)
-    desc_bytes = with_cpu_session(lambda spark: _build_simple_descriptor_set_bytes(spark))
+    desc_bytes = with_cpu_session(_build_simple_descriptor_set_bytes)
     with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
 
     # Build a DF with scalar columns + binary protobuf column and write to parquet
@@ -200,11 +201,16 @@ def test_from_protobuf_simple_parquet_binary_round_trip(spark_tmp_path):
 @ignore_order(local=True)
 def test_from_protobuf_simple_null_input_returns_null(spark_tmp_path):
     from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(lambda spark: _spark_protobuf_jvm_available(spark)):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
     desc_path = spark_tmp_path + "/simple_null_input.desc"
     message_name = "test.Simple"
 
     # Generate descriptor bytes once using the JVM (no protoc dependency)
-    desc_bytes = with_cpu_session(lambda spark: _build_simple_descriptor_set_bytes(spark))
+    desc_bytes = with_cpu_session(_build_simple_descriptor_set_bytes)
     with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
 
     # Spark's ProtobufDataToCatalyst is NullIntolerant (null input -> null output).
@@ -225,5 +231,3 @@ def test_from_protobuf_simple_null_input_returns_null(spark_tmp_path):
         return df.select(decoded.alias("decoded"))
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-

@@ -71,7 +71,8 @@ object ProtobufExprShims {
       "Decode a BinaryType column (protobuf) into a Spark SQL struct (simple types only)",
       ExprChecks.unaryProject(
         // Output is a struct; the rule does detailed checks in tagExprForGpu.
-        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRING),
+        TypeSig.STRUCT.nested(
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRING + TypeSig.BINARY),
         TypeSig.all,
         TypeSig.BINARY,
         TypeSig.BINARY),
@@ -81,6 +82,7 @@ object ProtobufExprShims {
         private var fieldNumbers: Array[Int] = _
         private var cudfTypeIds: Array[Int] = _
         private var cudfTypeScales: Array[Int] = _
+        private var failOnErrors: Boolean = _
 
         override def tagExprForGpu(): Unit = {
           schema = e.dataType match {
@@ -92,13 +94,17 @@ object ProtobufExprShims {
           }
 
           val options = getOptionsMap(e)
-          if (options.nonEmpty) {
-            val keys = options.keys.mkString(",")
+          val supportedOptions = Set("enums.as.ints", "mode")
+          val unsupportedOptions = options.keys.filterNot(supportedOptions.contains)
+          if (unsupportedOptions.nonEmpty) {
+            val keys = unsupportedOptions.mkString(",")
             willNotWorkOnGpu(
               s"from_protobuf options are not supported yet on GPU: $keys")
             return
           }
 
+          val enumsAsInts = options.getOrElse("enums.as.ints", "false").toBoolean
+          failOnErrors = options.getOrElse("mode", "PERMISSIVE").equalsIgnoreCase("FAILFAST")
           val messageName = getMessageName(e)
           val descFilePathOpt = getDescFilePath(e).orElse {
             // Newer Spark may embed a descriptor set (binaryDescriptorSet). Write it to a temp file
@@ -132,7 +138,8 @@ object ProtobufExprShims {
 
           fields.zipWithIndex.foreach { case (sf, idx) =>
             sf.dataType match {
-              case BooleanType | IntegerType | LongType | FloatType | DoubleType | StringType =>
+              case BooleanType | IntegerType | LongType | FloatType | DoubleType |
+                   StringType | BinaryType =>
               case other =>
                 willNotWorkOnGpu(
                   s"Unsupported field type for from_protobuf(simple): ${sf.name}: $other")
@@ -156,16 +163,32 @@ object ProtobufExprShims {
 
             val protoType = invoke0[AnyRef](fd, "getType")
             val protoTypeName = typeName(protoType)
-            val ok = (sf.dataType, protoTypeName) match {
-              case (BooleanType, "BOOL") => true
-              case (IntegerType, "INT32") => true
-              case (LongType, "INT64") => true
-              case (FloatType, "FLOAT") => true
-              case (DoubleType, "DOUBLE") => true
-              case (StringType, "STRING") => true
-              case _ => false
+
+            val encoding = (sf.dataType, protoTypeName) match {
+              case (BooleanType, "BOOL") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case (IntegerType, "INT32" | "UINT32") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case (IntegerType, "SINT32") => Some(GpuFromProtobufSimple.ENC_ZIGZAG)
+              case (IntegerType, "FIXED32" | "SFIXED32") => Some(GpuFromProtobufSimple.ENC_FIXED)
+              case (LongType, "INT64" | "UINT64") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case (LongType, "SINT64") => Some(GpuFromProtobufSimple.ENC_ZIGZAG)
+              case (LongType, "FIXED64" | "SFIXED64") => Some(GpuFromProtobufSimple.ENC_FIXED)
+              // Spark may upcast smaller integers to LongType
+              case (LongType, "INT32" | "UINT32" | "SINT32" | "FIXED32" | "SFIXED32") =>
+                val enc = protoTypeName match {
+                  case "SINT32" => GpuFromProtobufSimple.ENC_ZIGZAG
+                  case "FIXED32" | "SFIXED32" => GpuFromProtobufSimple.ENC_FIXED
+                  case _ => GpuFromProtobufSimple.ENC_DEFAULT
+                }
+                Some(enc)
+              case (FloatType, "FLOAT") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case (DoubleType, "DOUBLE") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case (StringType, "STRING") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case (BinaryType, "BYTES") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case (IntegerType, "ENUM") if enumsAsInts => Some(GpuFromProtobufSimple.ENC_DEFAULT)
+              case _ => None
             }
-            if (!ok) {
+
+            if (encoding.isEmpty) {
               willNotWorkOnGpu(
                 s"Field type mismatch for '${sf.name}': Spark ${sf.dataType} vs " +
                   s"Protobuf $protoTypeName")
@@ -173,9 +196,9 @@ object ProtobufExprShims {
             }
 
             fnums(idx) = invoke0[java.lang.Integer](fd, "getNumber").intValue()
-            val (tid, scale) = GpuFromProtobufSimple.sparkTypeToCudfId(sf.dataType)
+            val (tid, _) = GpuFromProtobufSimple.sparkTypeToCudfId(sf.dataType)
             typeIds(idx) = tid
-            scales(idx) = scale
+            scales(idx) = encoding.get
           }
 
           fieldNumbers = fnums
@@ -184,7 +207,8 @@ object ProtobufExprShims {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = {
-          GpuFromProtobufSimple(schema, fieldNumbers, cudfTypeIds, cudfTypeScales, child)
+          GpuFromProtobufSimple(
+            schema, fieldNumbers, cudfTypeIds, cudfTypeScales, failOnErrors, child)
         }
       }
     )
@@ -246,5 +270,3 @@ object ProtobufExprShims {
   private def invoke1[T](obj: AnyRef, method: String, arg0Cls: Class[_], arg0: AnyRef): T =
     obj.getClass.getMethod(method, arg0Cls).invoke(obj, arg0).asInstanceOf[T]
 }
-
-

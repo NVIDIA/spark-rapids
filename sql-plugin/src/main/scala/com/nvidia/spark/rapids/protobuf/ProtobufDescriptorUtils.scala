@@ -80,5 +80,3 @@ object ProtobufDescriptorUtils {
     fd.getMessageTypes.asScala.iterator.flatMap(walk _)
   }
 }
-
-

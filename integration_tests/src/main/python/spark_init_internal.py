@@ -61,10 +61,37 @@ def findspark_init():
     if spark_jars is not None:
         logging.info(f"Adding to findspark jars: {spark_jars}")
         findspark.add_jars(spark_jars)
+        # Also add to driver classpath so classes are available to Class.forName()
+        # This is needed for optional modules like spark-protobuf
+        _add_driver_classpath(spark_jars)
 
     if spark_jars_packages is not None:
         logging.info(f"Adding to findspark packages: {spark_jars_packages}")
         findspark.add_packages(spark_jars_packages)
+
+
+def _add_driver_classpath(jars):
+    """
+    Add jars to the driver classpath via PYSPARK_SUBMIT_ARGS.
+    findspark.add_jars() only adds --jars, which doesn't make classes available
+    to Class.forName() on the driver. This function adds --driver-class-path.
+    """
+    if not jars:
+        return
+    current_args = os.environ.get('PYSPARK_SUBMIT_ARGS', '')
+    # Remove trailing 'pyspark-shell' if present
+    if current_args.endswith('pyspark-shell'):
+        current_args = current_args[:-len('pyspark-shell')].strip()
+    # Skip if driver-class-path is already present
+    if '--driver-class-path' in current_args:
+        logging.info("driver-class-path already in PYSPARK_SUBMIT_ARGS, skipping")
+        return
+    # Add driver-class-path for each jar
+    jar_list = jars.replace(',', ' ').split()
+    driver_cp = ':'.join(jar_list)
+    new_args = f"{current_args} --driver-class-path {driver_cp} pyspark-shell".strip()
+    os.environ['PYSPARK_SUBMIT_ARGS'] = new_args
+    logging.info(f"Updated PYSPARK_SUBMIT_ARGS with driver-class-path")
 
 def running_with_xdist(session, is_worker):
     try:

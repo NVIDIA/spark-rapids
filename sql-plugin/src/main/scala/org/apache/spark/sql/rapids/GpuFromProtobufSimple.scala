@@ -38,6 +38,7 @@ case class GpuFromProtobufSimple(
     fieldNumbers: Array[Int],
     cudfTypeIds: Array[Int],
     cudfTypeScales: Array[Int],
+    failOnErrors: Boolean,
     child: Expression)
   extends GpuUnaryExpression with ExpectsInputTypes with NullIntolerantShim {
 
@@ -56,7 +57,8 @@ case class GpuFromProtobufSimple(
       input.getBase,
       fieldNumbers,
       cudfTypeIds,
-      cudfTypeScales)
+      cudfTypeScales,
+      failOnErrors)
     if (input.getBase.hasNulls) {
       withResource(decoded) { _ =>
         decoded.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
@@ -68,17 +70,20 @@ case class GpuFromProtobufSimple(
 }
 
 object GpuFromProtobufSimple {
+  // Encodings from com.nvidia.spark.rapids.jni.ProtobufSimple
+  val ENC_DEFAULT = 0
+  val ENC_FIXED   = 1
+  val ENC_ZIGZAG  = 2
+
   def sparkTypeToCudfId(dt: DataType): (Int, Int) = dt match {
-    case BooleanType => (DType.BOOL8.getTypeId.getNativeId, 0)
-    case IntegerType => (DType.INT32.getTypeId.getNativeId, 0)
-    case LongType => (DType.INT64.getTypeId.getNativeId, 0)
-    case FloatType => (DType.FLOAT32.getTypeId.getNativeId, 0)
-    case DoubleType => (DType.FLOAT64.getTypeId.getNativeId, 0)
-    case StringType => (DType.STRING.getTypeId.getNativeId, 0)
+    case BooleanType => (DType.BOOL8.getTypeId.getNativeId, ENC_DEFAULT)
+    case IntegerType => (DType.INT32.getTypeId.getNativeId, ENC_DEFAULT)
+    case LongType => (DType.INT64.getTypeId.getNativeId, ENC_DEFAULT)
+    case FloatType => (DType.FLOAT32.getTypeId.getNativeId, ENC_DEFAULT)
+    case DoubleType => (DType.FLOAT64.getTypeId.getNativeId, ENC_DEFAULT)
+    case StringType => (DType.STRING.getTypeId.getNativeId, ENC_DEFAULT)
+    case BinaryType => (DType.LIST.getTypeId.getNativeId, ENC_DEFAULT)
     case other =>
       throw new IllegalArgumentException(s"Unsupported Spark type for protobuf(simple): $other")
   }
 }
-
-
-
