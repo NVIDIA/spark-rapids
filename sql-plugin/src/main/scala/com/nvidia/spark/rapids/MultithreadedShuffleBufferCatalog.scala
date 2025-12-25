@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.storage.ShuffleBlockId
+import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
 
 /**
  * A segment of data within a SpillablePartialFileHandle.
@@ -127,6 +127,28 @@ class MultithreadedShuffleBufferCatalog extends Logging {
     }
 
     new MultiBatchManagedBuffer(segments.toSeq)
+  }
+
+  /**
+   * Get a ManagedBuffer for a batch of shuffle blocks (used in batch fetch optimization).
+   * This method handles ShuffleBlockBatchId which represents multiple reduce partitions.
+   */
+  def getMergedBatchBuffer(batchId: ShuffleBlockBatchId): ManagedBuffer = {
+    val allSegments = new ArrayBuffer[PartitionSegment]()
+
+    for (reduceId <- batchId.startReduceId until batchId.endReduceId) {
+      val blockId = ShuffleBlockId(batchId.shuffleId, batchId.mapId, reduceId)
+      val segments = partitionSegments.get(blockId)
+      if (segments != null) {
+        allSegments ++= segments
+      }
+    }
+
+    if (allSegments.isEmpty) {
+      throw new IllegalArgumentException(s"No data found for batch block $batchId")
+    }
+
+    new MultiBatchManagedBuffer(allSegments.toSeq)
   }
 
   /**

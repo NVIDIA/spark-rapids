@@ -50,7 +50,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import com.nvidia.spark.rapids.{MultithreadedShuffleBufferCatalog, ShuffleBufferCatalog}
+import com.nvidia.spark.rapids.ShuffleBufferCatalog
 
 import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.network.shuffle.MergedBlockMeta
@@ -60,9 +60,8 @@ import org.apache.spark.storage.ShuffleMergedBlockId
 
 class GpuShuffleBlockResolver(
     resolver: IndexShuffleBlockResolver,
-    catalog: ShuffleBufferCatalog,
-    mtCatalog: Option[MultithreadedShuffleBufferCatalog] = None)
-    extends GpuShuffleBlockResolverBase(resolver, catalog, mtCatalog) {
+    catalog: ShuffleBufferCatalog)
+    extends GpuShuffleBlockResolverBase(resolver, catalog) {
 
   /**
  * Retrieve the data for the specified merged shuffle block as multiple chunks.
