@@ -433,9 +433,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }
   }
 
-  // Note: GPU path verification test requires GPU hardware and rapids plugin to be available.
-  // This test is marked to run only when GPU environment is available.
-  ignore("GPU execution path verification") {
+  test("GPU execution path verification") {
     withTempDir("seqfile-gpu-test") { tmpDir =>
       val file = new File(tmpDir, "test.seq")
       val conf = new Configuration()
