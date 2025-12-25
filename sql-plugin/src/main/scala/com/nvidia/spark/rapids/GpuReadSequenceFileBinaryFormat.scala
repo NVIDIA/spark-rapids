@@ -100,14 +100,13 @@ object GpuReadSequenceFileBinaryFormat {
     val required = fsse.requiredSchema
     // Only support reading BinaryType columns named "key" and/or "value".
     required.fields.foreach { f =>
-      val nameOk = f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD) ||
-        f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD)
-      val typeOk = f.dataType == org.apache.spark.sql.types.BinaryType
-      if (!nameOk || !typeOk) {
+      val isKey = f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD)
+      val isValue = f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD)
+      if ((isKey || isValue) && f.dataType != org.apache.spark.sql.types.BinaryType) {
         meta.willNotWorkOnGpu(
-          s"SequenceFileBinary only supports BinaryType columns " +
+          s"SequenceFileBinary only supports BinaryType for " +
             s"'${SequenceFileBinaryFileFormat.KEY_FIELD}' and " +
-            s"'${SequenceFileBinaryFileFormat.VALUE_FIELD}', but saw " +
+            s"'${SequenceFileBinaryFileFormat.VALUE_FIELD}' columns, but saw " +
             s"${f.name}: ${f.dataType.catalogString}")
       }
     }

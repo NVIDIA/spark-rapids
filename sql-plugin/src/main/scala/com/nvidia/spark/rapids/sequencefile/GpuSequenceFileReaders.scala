@@ -205,10 +205,9 @@ class SequenceFilePartitionReader(
   // For the initial version, we explicitly fail fast on compressed SequenceFiles.
   // (Record- and block-compressed files can be added later.)
   if (reader.isCompressed || reader.isBlockCompressed) {
+    val compressionType = reader.getCompressionType
     val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
-      s"compressed SequenceFiles " +
-      s"(isCompressed=${reader.isCompressed}, " +
-      s"isBlockCompressed=${reader.isBlockCompressed}), " +
+      s"compressed SequenceFiles (compressionType=$compressionType), " +
       s"file=$path, keyClass=${reader.getKeyClassName}, " +
       s"valueClass=${reader.getValueClassName}"
     logError(msg)
@@ -335,17 +334,27 @@ class SequenceFilePartitionReader(
             val cols = new Array[SparkVector](requiredSchema.length)
             var success = false
             try {
+              var keyCol: ColumnVector = null
+              var valueCol: ColumnVector = null
               requiredSchema.fields.zipWithIndex.foreach { case (f, i) =>
                 if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD)) {
-                  val cudf = keyBufferer.getDeviceListColumnAndRelease()
-                  cols(i) = GpuColumnVector.from(cudf, BinaryType)
+                  if (keyCol == null) {
+                    keyCol = keyBufferer.getDeviceListColumnAndRelease()
+                  }
+                  cols(i) = GpuColumnVector.from(keyCol.incRefCount(), BinaryType)
                 } else if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD)) {
-                  val cudf = valueBufferer.getDeviceListColumnAndRelease()
-                  cols(i) = GpuColumnVector.from(cudf, BinaryType)
+                  if (valueCol == null) {
+                    valueCol = valueBufferer.getDeviceListColumnAndRelease()
+                  }
+                  cols(i) = GpuColumnVector.from(valueCol.incRefCount(), BinaryType)
                 } else {
                   cols(i) = GpuColumnVector.fromNull(rows, f.dataType)
                 }
               }
+              // Close our local references now that the columns are in SparkVector
+              if (keyCol != null) keyCol.close()
+              if (valueCol != null) valueCol.close()
+              
               val cb = new ColumnarBatch(cols, rows)
               success = true
               cb

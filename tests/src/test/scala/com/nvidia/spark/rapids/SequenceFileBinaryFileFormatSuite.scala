@@ -115,11 +115,10 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
     withSparkSession { spark =>
       val df = spark.read
-        .format(classOf[SequenceFileBinaryFileFormat].getName)
+        .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
         .load(file.getAbsolutePath)
 
-      val got = df.select(SequenceFileBinaryFileFormat.KEY_FIELD,
-          SequenceFileBinaryFileFormat.VALUE_FIELD)
+      val got = df.select("key", "value")
         .collect()
         .map { row =>
           val k = row.getAs[Array[Byte]](0)
@@ -152,9 +151,9 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     withSparkSession { spark =>
       // File Scan Path
       val fileDf = spark.read
-        .format(classOf[SequenceFileBinaryFileFormat].getName)
+        .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
         .load(file.getAbsolutePath)
-        .select(SequenceFileBinaryFileFormat.VALUE_FIELD)
+        .select("value")
       val fileResults = fileDf.collect().map(_.getAs[Array[Byte]](0))
 
       // RDD Scan Path
