@@ -27,6 +27,11 @@ import com.google.protobuf.Descriptors
  *
  * This is intentionally lightweight for the "simple types" from_protobuf patch: it supports
  * descriptor sets produced by `protoc --include_imports --descriptor_set_out=...`.
+ *
+ * NOTE: This utility is currently not used in the initial implementation, which relies on
+ * Spark's ProtobufUtils via reflection (buildMessageDescriptorWithSparkProtobuf). This class
+ * is preserved for potential future use cases where direct descriptor parsing is needed
+ * without depending on Spark's shaded protobuf classes.
  */
 object ProtobufDescriptorUtils {
 

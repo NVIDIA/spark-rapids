@@ -133,7 +133,7 @@ def test_from_protobuf_simple_parquet_binary_round_trip(spark_tmp_path):
     from_protobuf = _try_import_from_protobuf()
     if from_protobuf is None:
         pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
-    if not with_cpu_session(lambda spark: _spark_protobuf_jvm_available(spark)):
+    if not with_cpu_session(_spark_protobuf_jvm_available):
         pytest.skip("spark-protobuf JVM module is not available on the classpath")
 
     data_path = spark_tmp_path + "/PROTOBUF_SIMPLE_PARQUET/"
@@ -203,7 +203,7 @@ def test_from_protobuf_simple_null_input_returns_null(spark_tmp_path):
     from_protobuf = _try_import_from_protobuf()
     if from_protobuf is None:
         pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
-    if not with_cpu_session(lambda spark: _spark_protobuf_jvm_available(spark)):
+    if not with_cpu_session(_spark_protobuf_jvm_available):
         pytest.skip("spark-protobuf JVM module is not available on the classpath")
 
     desc_path = spark_tmp_path + "/simple_null_input.desc"

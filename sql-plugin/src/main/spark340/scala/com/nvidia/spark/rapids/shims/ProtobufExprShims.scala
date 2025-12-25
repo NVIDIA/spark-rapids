@@ -196,8 +196,7 @@ object ProtobufExprShims {
             }
 
             fnums(idx) = invoke0[java.lang.Integer](fd, "getNumber").intValue()
-            val (tid, _) = GpuFromProtobufSimple.sparkTypeToCudfId(sf.dataType)
-            typeIds(idx) = tid
+            typeIds(idx) = GpuFromProtobufSimple.sparkTypeToCudfId(sf.dataType)
             scales(idx) = encoding.get
           }
 

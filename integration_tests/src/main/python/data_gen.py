@@ -925,7 +925,7 @@ class ProtobufSimpleMessageRowGen(DataGen):
       - one column per message field (Spark scalar types)
       - a binary column containing a serialized protobuf message containing those fields
 
-    This is intentionally limited to the simple scalar types supported in Patch 1:
+    This is intentionally limited to the simple scalar types currently supported:
     boolean/int32/int64/float/double/string.
 
     Fields are omitted from the encoded message if the corresponding value is None.

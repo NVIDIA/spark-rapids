@@ -86,9 +86,9 @@ def _add_driver_classpath(jars):
     if '--driver-class-path' in current_args:
         logging.info("driver-class-path already in PYSPARK_SUBMIT_ARGS, skipping")
         return
-    # Add driver-class-path for each jar
+    # Add driver-class-path for each jar (use os.pathsep for platform independence)
     jar_list = jars.replace(',', ' ').split()
-    driver_cp = ':'.join(jar_list)
+    driver_cp = os.pathsep.join(jar_list)
     new_args = f"{current_args} --driver-class-path {driver_cp} pyspark-shell".strip()
     os.environ['PYSPARK_SUBMIT_ARGS'] = new_args
     logging.info(f"Updated PYSPARK_SUBMIT_ARGS with driver-class-path")

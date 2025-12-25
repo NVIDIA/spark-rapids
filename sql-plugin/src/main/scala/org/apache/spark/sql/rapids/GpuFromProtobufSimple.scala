@@ -75,14 +75,19 @@ object GpuFromProtobufSimple {
   val ENC_FIXED   = 1
   val ENC_ZIGZAG  = 2
 
-  def sparkTypeToCudfId(dt: DataType): (Int, Int) = dt match {
-    case BooleanType => (DType.BOOL8.getTypeId.getNativeId, ENC_DEFAULT)
-    case IntegerType => (DType.INT32.getTypeId.getNativeId, ENC_DEFAULT)
-    case LongType => (DType.INT64.getTypeId.getNativeId, ENC_DEFAULT)
-    case FloatType => (DType.FLOAT32.getTypeId.getNativeId, ENC_DEFAULT)
-    case DoubleType => (DType.FLOAT64.getTypeId.getNativeId, ENC_DEFAULT)
-    case StringType => (DType.STRING.getTypeId.getNativeId, ENC_DEFAULT)
-    case BinaryType => (DType.LIST.getTypeId.getNativeId, ENC_DEFAULT)
+  /**
+   * Maps a Spark DataType to the corresponding cuDF native type ID.
+   * Note: The encoding (varint/zigzag/fixed) is determined by the protobuf field type,
+   * not the Spark data type, so it must be set separately based on the protobuf schema.
+   */
+  def sparkTypeToCudfId(dt: DataType): Int = dt match {
+    case BooleanType => DType.BOOL8.getTypeId.getNativeId
+    case IntegerType => DType.INT32.getTypeId.getNativeId
+    case LongType => DType.INT64.getTypeId.getNativeId
+    case FloatType => DType.FLOAT32.getTypeId.getNativeId
+    case DoubleType => DType.FLOAT64.getTypeId.getNativeId
+    case StringType => DType.STRING.getTypeId.getNativeId
+    case BinaryType => DType.LIST.getTypeId.getNativeId
     case other =>
       throw new IllegalArgumentException(s"Unsupported Spark type for protobuf(simple): $other")
   }
