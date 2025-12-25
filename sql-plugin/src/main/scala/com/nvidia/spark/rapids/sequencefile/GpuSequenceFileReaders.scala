@@ -132,10 +132,36 @@ private[sequencefile] final class HostBinaryListBufferer(
     val childRowCount = dataLocation.toInt
     val offsetsRowCount = numRows + 1
 
-    val childHost = new HostColumnVector(DType.UINT8, childRowCount,
-      Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
-    val offsetsHost = new HostColumnVector(DType.INT32, offsetsRowCount,
-      Optional.of[java.lang.Long](0L), offsetsBuffer, null, null, emptyChildren)
+    // Wrap HostColumnVector construction to ensure buffers are closed on failure.
+    // Once construction succeeds, the HostColumnVector takes ownership of the buffer.
+    val childHost = try {
+      new HostColumnVector(DType.UINT8, childRowCount,
+        Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
+    } catch {
+      case e: Exception =>
+        if (dataBuffer != null) {
+          dataBuffer.close()
+          dataBuffer = null
+        }
+        if (offsetsBuffer != null) {
+          offsetsBuffer.close()
+          offsetsBuffer = null
+        }
+        throw e
+    }
+
+    val offsetsHost = try {
+      new HostColumnVector(DType.INT32, offsetsRowCount,
+        Optional.of[java.lang.Long](0L), offsetsBuffer, null, null, emptyChildren)
+    } catch {
+      case e: Exception =>
+        childHost.close()
+        if (offsetsBuffer != null) {
+          offsetsBuffer.close()
+          offsetsBuffer = null
+        }
+        throw e
+    }
 
     // Transfer ownership of the host buffers to the HostColumnVectors.
     dataBuffer = null
@@ -239,13 +265,16 @@ class SequenceFilePartitionReader(
 
   override def next(): Boolean = {
     // Close any batch that was prepared but never consumed via get()
-    batch.foreach(_.close())
-    batch = if (exhausted) {
-      None
+    val previousBatch = batch
+    batch = None
+    previousBatch.foreach(_.close())
+
+    if (exhausted) {
+      false
     } else {
-      readBatch()
+      batch = readBatch()
+      batch.isDefined
     }
-    batch.isDefined
   }
 
   override def get(): ColumnarBatch = {
@@ -284,7 +313,10 @@ class SequenceFilePartitionReader(
       var bytes = 0L
 
       bufferMetric.ns {
-        // Handle a pending record (spill-over from previous batch)
+        // Handle a pending record (spill-over from previous batch).
+        // Note: If rows == 0, we always add the pending record even if it exceeds
+        // maxBytesPerBatch. This is intentional to ensure forward progress and avoid
+        // infinite loops when a single record is larger than the batch size limit.
         pending.foreach { p =>
           if (rows == 0 || bytes + p.bytes <= maxBytesPerBatch) {
             p.key.foreach { k => keyBufferer.addBytes(k, 0, k.length) }
@@ -323,6 +355,10 @@ class SequenceFilePartitionReader(
               bytes += recBytes
             }
           }
+        }
+        // Mark as exhausted if we've reached the end of this split
+        if (!exhausted && reader.getPosition >= end) {
+          exhausted = true
         }
       }
 
