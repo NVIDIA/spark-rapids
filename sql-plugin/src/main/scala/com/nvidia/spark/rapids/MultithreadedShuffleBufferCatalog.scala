@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
-
+import _root_.io.netty.buffer.Unpooled
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
@@ -238,8 +238,8 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
   override def release(): ManagedBuffer = this
 
   override def convertToNetty(): AnyRef = {
-    // For network transfer, convert to ByteBuffer
-    nioByteBuffer()
+    // For network transfer, wrap ByteBuffer in Netty ByteBuf
+    Unpooled.wrappedBuffer(nioByteBuffer())
   }
 }
 
