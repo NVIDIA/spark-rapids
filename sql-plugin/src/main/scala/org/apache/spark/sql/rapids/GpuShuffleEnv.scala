@@ -29,9 +29,8 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
   private var multithreadedCatalog: MultithreadedShuffleBufferCatalog = _
 
-  private lazy val conf = SparkEnv.get.conf
-
   private lazy val isRapidsShuffleConfigured: Boolean = {
+    val conf = SparkEnv.get.conf
     conf.contains("spark.shuffle.manager") &&
       conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
@@ -53,8 +52,18 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
       shuffleReceivedBufferCatalog =
           new ShuffleReceivedBufferCatalog()
       // Initialize MultithreadedShuffleBufferCatalog for MULTITHREADED mode
+      // when External Shuffle Service is disabled. With ESS disabled, all shuffle
+      // fetch requests go through GpuShuffleBlockResolverBase which can serve data
+      // from the catalog. With ESS enabled, remote fetches go through the external
+      // shuffle service process which cannot access our in-memory catalog.
       if (rapidsConf.isMultiThreadedShuffleManagerMode) {
-        multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
+        if (!GpuShuffleEnv.isExternalShuffleEnabled) {
+          multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
+          logInfo("MultithreadedShuffleBufferCatalog enabled (ESS disabled)")
+        } else {
+          logInfo("MultithreadedShuffleBufferCatalog disabled - " +
+            "ESS is enabled, using disk-based shuffle files")
+        }
       }
     }
   }
@@ -63,10 +72,12 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = shuffleReceivedBufferCatalog
 
-  def getMultithreadedCatalog: MultithreadedShuffleBufferCatalog = multithreadedCatalog
+  def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
+    Option(multithreadedCatalog)
+  }
 
   def getShuffleFetchTimeoutSeconds: Long = {
-    conf.getTimeAsSeconds("spark.network.timeout", "120s")
+    SparkEnv.get.conf.getTimeAsSeconds("spark.network.timeout", "120s")
   }
 }
 
@@ -176,7 +187,7 @@ object GpuShuffleEnv extends Logging {
   }
 
   def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
-    Option(env).map(_.getMultithreadedCatalog).filter(_ != null)
+    Option(env).flatMap(_.getMultithreadedCatalog)
   }
 
   private def validateRapidsShuffleManager(shuffManagerClassName: String): Unit = {
