@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{IOException, InputStream}
+import java.io.{InputStream, IOException}
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
