@@ -75,8 +75,8 @@ class SpillablePartialFileHandle private (
   private var currentBufferCapacity: Long = initialCapacity
 
   // Protect from spill during write phase
-  private var protectedFromSpill: Boolean = true
-  private var writeFinished: Boolean = false
+  @volatile private var protectedFromSpill: Boolean = true
+  @volatile private var writeFinished: Boolean = false
 
   // Write state
   private var writePosition: Long = 0L
@@ -346,8 +346,8 @@ class SpillablePartialFileHandle private (
    * Read bytes from the partial file sequentially.
    * Returns number of bytes actually read, or -1 if EOF.
    * 
-   * Synchronization: Only needed for memory-based reads to prevent concurrent spill.
-   * Once we detect spill has happened, we can immediately release the lock.
+   * This method is designed for single-threaded sequential reading.
+   * Synchronization is only needed to prevent concurrent spill from closing the buffer.
    */
   def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
     if (!writeFinished) {
@@ -360,44 +360,44 @@ class SpillablePartialFileHandle private (
 
     val actualLength = math.min(length, (totalBytesWritten - readPosition).toInt)
 
-    def readFromFile(bytes: Array[Byte], offset: Int, length: Int): Int = {
+    def readFromFile(): Int = {
       ensureFileInputStreamOpen()
-      val bytesRead = bufferedInputStream.get.read(bytes, offset, length)
+      val bytesRead = bufferedInputStream.get.read(bytes, offset, actualLength)
       if (bytesRead > 0) {
         readPosition += bytesRead
       }
       bytesRead
     }
 
+    // FILE_ONLY mode or already spilled: read from file directly
     if (shouldUseFile) {
-      // File-based: no spill can happen, no synchronization needed
-      readFromFile(bytes, offset, actualLength)
-    } else {
-      // Memory-based: check volatile flag without lock
+      return readFromFile()
+    }
+
+    // MEMORY_WITH_SPILL mode: need to coordinate with spill()
+    // Fast check without lock
+    if (spilledToDisk) {
+      return readFromFile()
+    }
+
+    // Try to read from memory buffer with lock protection
+    synchronized {
+      // Double-check after acquiring lock
       if (spilledToDisk) {
-        // Spilled after our first check, no lock needed now
-        readFromFile(bytes, offset, actualLength)
-      } else {
-        // Still in memory, need lock for the read operation
-        synchronized {
-          // Double-check: may have spilled between our checks
-          if (spilledToDisk) {
-            // Just spilled, release lock and read from file
-            // Note: We exit synchronized block here
-          } else {
-            // Confirmed still in memory, read with lock held
-            host match {
-              case Some(buffer) =>
-                buffer.getBytes(bytes, offset, readPosition, actualLength)
-                readPosition += actualLength
-                return actualLength
-              case None =>
-                throw new IllegalStateException("Host buffer is null")
-            }
-          }
-        }
-        // If we reach here, it means spilled during double-check
-        readFromFile(bytes, offset, actualLength)
+        // Spilled while waiting for lock, read from file instead
+        // (file is guaranteed to be complete before spilledToDisk is set)
+        return readFromFile()
+      }
+
+      // Still in memory, read with lock held to prevent concurrent spill
+      host match {
+        case Some(buffer) =>
+          buffer.getBytes(bytes, offset, readPosition, actualLength)
+          readPosition += actualLength
+          actualLength
+        case None =>
+          throw new IllegalStateException(
+            "Host buffer is null but spilledToDisk is false")
       }
     }
   }
@@ -429,37 +429,39 @@ class SpillablePartialFileHandle private (
       return -1
     }
 
-    def readFromFileChannel(pos: Long, bytes: Array[Byte], off: Int, len: Int): Int = {
+    def readFromFileChannel(): Int = {
       ensureFileChannelOpen()
-      val buf = ByteBuffer.wrap(bytes, off, len)
-      fileChannel.get.read(buf, pos)
+      val buf = ByteBuffer.wrap(bytes, offset, actualLength)
+      fileChannel.get.read(buf, position)
     }
 
+    // FILE_ONLY mode or already spilled: read from file directly
     if (shouldUseFile) {
-      // FILE_ONLY mode: use FileChannel for random access
-      readFromFileChannel(position, bytes, offset, actualLength)
-    } else {
-      // MEMORY_WITH_SPILL mode
+      return readFromFileChannel()
+    }
+
+    // MEMORY_WITH_SPILL mode: need to coordinate with spill()
+    // Fast check without lock
+    if (spilledToDisk) {
+      return readFromFileChannel()
+    }
+
+    // Try to read from memory buffer with lock protection
+    synchronized {
+      // Double-check after acquiring lock
       if (spilledToDisk) {
-        // Already spilled: use FileChannel
-        readFromFileChannel(position, bytes, offset, actualLength)
-      } else {
-        // Still in memory: read from host buffer (thread-safe)
-        synchronized {
-          if (spilledToDisk) {
-            // Spilled during our check, read from file
-          } else {
-            host match {
-              case Some(buffer) =>
-                buffer.getBytes(bytes, offset, position, actualLength)
-                return actualLength
-              case None =>
-                throw new IllegalStateException("Host buffer is null")
-            }
-          }
-        }
-        // If we reach here, spilled during synchronized block
-        readFromFileChannel(position, bytes, offset, actualLength)
+        // Spilled while waiting for lock, read from file instead
+        return readFromFileChannel()
+      }
+
+      // Still in memory, read with lock held to prevent concurrent spill
+      host match {
+        case Some(buffer) =>
+          buffer.getBytes(bytes, offset, position, actualLength)
+          actualLength
+        case None =>
+          throw new IllegalStateException(
+            "Host buffer is null but spilledToDisk is false")
       }
     }
   }
@@ -494,63 +496,102 @@ class SpillablePartialFileHandle private (
 
   /**
    * Override spillable to add write phase protection.
+   * No lock needed: protectedFromSpill is volatile.
    */
-  override private[spill] def spillable: Boolean = synchronized {
+  override private[spill] def spillable: Boolean = {
     super.spillable && !protectedFromSpill
   }
 
+  // Flag to prevent concurrent spill attempts
+  @volatile private var spillInProgress: Boolean = false
+
   /**
    * Spill memory buffer to disk.
+   * 
+   * IO operations are performed outside the synchronized block to allow
+   * concurrent read() access to the buffer during the file write.
    */
-  override def spill(): Long = synchronized {
+  override def spill(): Long = {
     if (storageMode != PartialFileStorageMode.MEMORY_WITH_SPILL) {
       return 0L  // Nothing to spill for FILE_ONLY mode
     }
 
-    if (!writeFinished) {
-      // This should not happen because protectedFromSpill prevents spill during write
-      logWarning("Attempted to spill during write phase, which should be protected")
+    // Fast path check without lock
+    // writeFinished only transitions false->true, so no need to double-check in lock
+    if (spilledToDisk || spillInProgress || !writeFinished) {
       return 0L
     }
 
-    host match {
-      case Some(buffer) =>
-        // Spill all written data to file
-        val fos = new FileOutputStream(file)
-        try {
-          val channel = fos.getChannel
-          val bb = buffer.asByteBuffer()
-          bb.limit(totalBytesWritten.toInt)
-          while (bb.hasRemaining) {
-            channel.write(bb)
-          }
-          if (syncWrites) {
-            channel.force(true)
-          }
-        } finally {
-          fos.close()
+    // Acquire buffer reference and set spilling flag under lock
+    val bufferToSpill = synchronized {
+      // Double check after acquiring lock (except writeFinished which only goes false->true)
+      if (spilledToDisk || spillInProgress) {
+        return 0L
+      }
+
+      host match {
+        case Some(buffer) =>
+          spillInProgress = true
+          buffer
+        case None =>
+          return 0L  // Already spilled
+      }
+    }
+
+    // Perform IO outside lock - read() can still access buffer during this time
+    try {
+      val fos = new FileOutputStream(file)
+      try {
+        val channel = fos.getChannel
+        val bb = bufferToSpill.asByteBuffer()
+        bb.limit(totalBytesWritten.toInt)
+        while (bb.hasRemaining) {
+          channel.write(bb)
         }
+        if (syncWrites) {
+          channel.force(true)
+        }
+      } finally {
+        fos.close()
+      }
+    } catch {
+      case e: Exception =>
+        // IO failed, reset flag and propagate
+        synchronized {
+          spillInProgress = false
+          notifyAll()  // Wake up any waiting doClose()
+        }
+        throw e
+    }
 
-        spilledToDisk = true
-        SpillFramework.removeFromHostStore(this)
-        buffer.close()
-        host = None
+    // Finalize spill under lock - now we close the buffer
+    synchronized {
+      spillInProgress = false
+      notifyAll()  // Wake up any waiting doClose()
 
-        logDebug(s"Spilled to ${file.getAbsolutePath} " +
-          s"($totalBytesWritten bytes)")
+      // Check if doClose() already released the buffer while we were doing IO
+      if (host.isEmpty) {
+        // Buffer was already closed, nothing more to do
+        return 0L
+      }
 
-        totalBytesWritten
+      spilledToDisk = true
+      SpillFramework.removeFromHostStore(this)
+      bufferToSpill.close()
+      host = None
 
-      case None =>
-        0L  // Already spilled
+      logDebug(s"Spilled to ${file.getAbsolutePath} " +
+        s"($totalBytesWritten bytes)")
+
+      totalBytesWritten
     }
   }
 
   /**
    * Ensure file output stream is open for writing.
-   * Thread-safe: uses synchronized to prevent duplicate stream creation.
+   * No lock needed: write() is single-threaded by design.
    */
-  private def ensureFileOutputStreamOpen(): Unit = synchronized {
+  private def ensureFileOutputStreamOpen(): Unit = {
     if (fileOutputStream.isEmpty) {
       val fos = new FileOutputStream(file, true)  // append mode
       fileOutputStream = Some(fos)
@@ -560,9 +601,9 @@ class SpillablePartialFileHandle private (
 
   /**
    * Ensure file input stream is open for reading.
-   * Thread-safe: uses synchronized to prevent duplicate stream creation.
+   * No lock needed: read() is single-threaded by design.
    */
-  private def ensureFileInputStreamOpen(): Unit = synchronized {
+  private def ensureFileInputStreamOpen(): Unit = {
     if (fileInputStream.isEmpty) {
       val fis = new FileInputStream(file)
       // Skip to current read position
@@ -586,50 +627,50 @@ class SpillablePartialFileHandle private (
    * This is where we record disk write savings: only if data was never spilled to disk
    * throughout the entire lifecycle (write phase + read phase), we count it as saved.
    */
-  override private[spill] def doClose(): Unit = synchronized {
-    // Record disk write savings if applicable:
-    // 1. Must be MEMORY_WITH_SPILL mode (not FILE_ONLY)
-    // 2. Must never have spilled to disk (data stayed in memory the entire time)
-    // 3. Must have written some data
-    if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
-        !spilledToDisk && totalBytesWritten > 0) {
-      SpillablePartialFileHandle.recordDiskWriteSaved(totalBytesWritten)
-      logDebug(s"Recorded disk write savings: $totalBytesWritten bytes " +
-        s"(data stayed in memory throughout lifecycle)")
+  override private[spill] def doClose(): Unit = {
+    // Collect resources to close under lock, then close them outside lock
+    val (bos, fos, bis, fis, fc, raf) = synchronized {
+      // Wait for any in-progress spill to complete before closing buffer
+      while (spillInProgress) {
+        wait()
+      }
+
+      // Record disk write savings if applicable:
+      // 1. Must be MEMORY_WITH_SPILL mode (not FILE_ONLY)
+      // 2. Must never have spilled to disk (data stayed in memory the entire time)
+      // 3. Must have written some data
+      if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
+          !spilledToDisk && totalBytesWritten > 0) {
+        SpillablePartialFileHandle.recordDiskWriteSaved(totalBytesWritten)
+        logDebug(s"Recorded disk write savings: $totalBytesWritten bytes " +
+          s"(data stayed in memory throughout lifecycle)")
+      }
+
+      // Collect streams/channels to close
+      val result = (bufferedOutputStream, fileOutputStream,
+        bufferedInputStream, fileInputStream, fileChannel, randomAccessFile)
+
+      // Clear references
+      bufferedOutputStream = None
+      fileOutputStream = None
+      bufferedInputStream = None
+      fileInputStream = None
+      fileChannel = None
+      randomAccessFile = None
+
+      // Release host buffer (removes from SpillFramework tracking and closes buffer)
+      releaseHostResource()
+
+      result
     }
 
-    // Close output streams
-    bufferedOutputStream.foreach { bos =>
-      try { bos.close() } catch { case _: Exception => }
-    }
-    bufferedOutputStream = None
-    fileOutputStream.foreach { fos =>
-      try { fos.close() } catch { case _: Exception => }
-    }
-    fileOutputStream = None
-
-    // Close input streams (for sequential read)
-    bufferedInputStream.foreach { bis =>
-      try { bis.close() } catch { case _: Exception => }
-    }
-    bufferedInputStream = None
-    fileInputStream.foreach { fis =>
-      try { fis.close() } catch { case _: Exception => }
-    }
-    fileInputStream = None
-
-    // Close file channel (for random access read)
-    fileChannel.foreach { fc =>
-      try { fc.close() } catch { case _: Exception => }
-    }
-    fileChannel = None
-    randomAccessFile.foreach { raf =>
-      try { raf.close() } catch { case _: Exception => }
-    }
-    randomAccessFile = None
-
-    // Release host buffer (removes from SpillFramework tracking and closes buffer)
-    releaseHostResource()
+    // Close streams outside lock (IO operations can be slow)
+    bos.foreach { s => try { s.close() } catch { case _: Exception => } }
+    fos.foreach { s => try { s.close() } catch { case _: Exception => } }
+    bis.foreach { s => try { s.close() } catch { case _: Exception => } }
+    fis.foreach { s => try { s.close() } catch { case _: Exception => } }
+    fc.foreach { c => try { c.close() } catch { case _: Exception => } }
+    raf.foreach { r => try { r.close() } catch { case _: Exception => } }
 
     // Delete file if it exists
     if (file != null && file.exists()) {
