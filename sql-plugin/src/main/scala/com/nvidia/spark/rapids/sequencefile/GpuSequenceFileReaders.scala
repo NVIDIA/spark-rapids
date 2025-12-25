@@ -72,7 +72,7 @@ private[sequencefile] final class HostBinaryListBufferer(
 
   private def growOffsetsIfNeeded(): Unit = {
     if (numRows + 1 > rowsAllocated) {
-      val newRowsAllocated = math.min(rowsAllocated * 2, Int.MaxValue - 1)
+      val newRowsAllocated = math.min(rowsAllocated.toLong * 2, Int.MaxValue.toLong - 1L).toInt
       val tmpBuffer =
         HostMemoryBuffer.allocate((newRowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes)
       tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
@@ -161,14 +161,18 @@ private[sequencefile] final class HostBinaryListBufferer(
       // Close host columns (releasing the host buffers).
       childHost.close()
       offsetsHost.close()
-      // Close result on failure.
-      if (list == null) {
-        // nothing
-      }
     }
   }
 
   override def close(): Unit = {
+    if (dos != null) {
+      dos.close()
+      dos = null
+    }
+    if (out != null) {
+      out.close()
+      out = null
+    }
     if (dataBuffer != null) {
       dataBuffer.close()
       dataBuffer = null
@@ -294,6 +298,7 @@ class SequenceFilePartitionReader(
         // Read new records
         var keepReading = true
         while (keepReading && rows < maxRowsPerBatch && reader.getPosition < end) {
+          keyBuf.reset()
           val recLen = reader.nextRaw(keyBuf, valueBytes)
           if (recLen < 0) {
             exhausted = true
@@ -412,12 +417,7 @@ class SequenceFileMultiFilePartitionReader(
     while (fileIndex < files.length) {
       val pf = files(fileIndex)
       if (currentReader == null) {
-        if (queryUsesInputFile) {
-          InputFileUtils.setInputFileBlock(pf.filePath.toString(), pf.start, pf.length)
-        } else {
-          // Still set it to avoid stale values if any downstream uses it unexpectedly.
-          InputFileUtils.setInputFileBlock(pf.filePath.toString(), pf.start, pf.length)
-        }
+        InputFileUtils.setInputFileBlock(pf.filePath.toString(), pf.start, pf.length)
 
         val base = new SequenceFilePartitionReader(
           conf,
@@ -495,7 +495,7 @@ case class GpuSequenceFilePartitionReaderFactory(
 case class GpuSequenceFileMultiFilePartitionReaderFactory(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
-    requiredSchema: StructType,
+    readDataSchema: StructType,
     partitionSchema: StructType,
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
@@ -512,7 +512,7 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     // No special cloud implementation yet; read sequentially on the task thread.
     new PartitionReaderWithBytesRead(
-      new SequenceFileMultiFilePartitionReader(conf, files, requiredSchema, partitionSchema,
+      new SequenceFileMultiFilePartitionReader(conf, files, readDataSchema, partitionSchema,
         maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
         metrics, queryUsesInputFile))
   }
@@ -522,10 +522,8 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     // Sequential multi-file reader (no cross-file coalescing).
     new PartitionReaderWithBytesRead(
-      new SequenceFileMultiFilePartitionReader(conf, files, requiredSchema, partitionSchema,
+      new SequenceFileMultiFilePartitionReader(conf, files, readDataSchema, partitionSchema,
         maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
         metrics, queryUsesInputFile))
   }
 }
-
-

@@ -26,6 +26,7 @@ import org.apache.hadoop.io.{DataOutputBuffer, SequenceFile}
 import org.apache.hadoop.mapreduce.Job
 import org.slf4j.LoggerFactory
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, UnsafeProjection}
@@ -127,6 +128,12 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
       val valueOut = new DataOutputBuffer()
       val valueDos = new DataOutputStream(valueOut)
 
+      // Register a task completion listener to ensure the reader is closed
+      // even if the iterator is abandoned early or an exception occurs.
+      Option(TaskContext.get()).foreach { tc =>
+        tc.addTaskCompletionListener[Unit](_ => reader.close())
+      }
+
       new Iterator[InternalRow] {
         private[this] val unsafeProj = UnsafeProjection.create(outputSchema)
         private[this] var nextRow: InternalRow = _
@@ -218,5 +225,3 @@ object SequenceFileBinaryFileFormat {
     StructField(VALUE_FIELD, BinaryType, nullable = true)
   ))
 }
-
-

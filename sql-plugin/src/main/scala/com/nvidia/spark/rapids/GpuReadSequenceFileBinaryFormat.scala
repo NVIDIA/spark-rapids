@@ -112,5 +112,3 @@ object GpuReadSequenceFileBinaryFormat {
     }
   }
 }
-
-
