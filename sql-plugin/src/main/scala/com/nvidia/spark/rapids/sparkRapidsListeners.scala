@@ -24,3 +24,18 @@ case class SparkRapidsBuildInfoEvent(
   cudfBuildInfo: Map[String, String],
   sparkRapidsPrivateBuildInfo: Map[String, String]
 ) extends SparkListenerEvent
+
+/**
+ * Event posted when a shuffle is unregistered, containing disk I/O savings statistics.
+ * This tracks how much data stayed in memory throughout the shuffle lifecycle,
+ * avoiding disk writes compared to the baseline implementation.
+ *
+ * @param shuffleId The shuffle ID being unregistered
+ * @param bytesFromMemory Bytes that were read from memory (never spilled to disk)
+ * @param bytesFromDisk Bytes that were read from disk (spilled at some point)
+ */
+case class SparkRapidsShuffleDiskSavingsEvent(
+  shuffleId: Int,
+  bytesFromMemory: Long,
+  bytesFromDisk: Long
+) extends SparkListenerEvent

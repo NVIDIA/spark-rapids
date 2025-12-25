@@ -146,9 +146,11 @@ class RapidsLocalDiskShuffleMapOutputWriter(
     // Finish write phase to enable spilling and finalize data
     partialFileHandle.foreach { handle =>
       handle.finishWrite()
-      
-      // If memory-based and not spilled yet, force spill to create file
-      // writeMetadataFileAndCommit requires a valid file
+
+      // commitAllPartitions is only called when NOT using MultithreadedShuffleBufferCatalog.
+      // In that case, Spark's shuffle read path (including ESS) expects the data file to exist.
+      // So we must force spill to create the file if data is still in memory.
+      // When using catalog, this method is not called - data is served from catalog instead.
       if (handle.isMemoryBased && !handle.isSpilled) {
         handle.spill()
       }

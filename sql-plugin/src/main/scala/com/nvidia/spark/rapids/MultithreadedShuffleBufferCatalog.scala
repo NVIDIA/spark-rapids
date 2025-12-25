@@ -23,9 +23,13 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
+
 import _root_.io.netty.buffer.Unpooled
+
+import org.apache.spark.SparkContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
 
 /**
@@ -167,17 +171,30 @@ class MultithreadedShuffleBufferCatalog extends Logging {
       }
     }
 
-    // Close handles and remove entries
+    // Collect unique handles and gather statistics before closing
     val closedHandles = new java.util.HashSet[SpillablePartialFileHandle]()
+    var bytesFromMemory = 0L
+    var bytesFromDisk = 0L
+
     toRemove.foreach { blockId =>
       val segments = partitionSegments.remove(blockId)
       if (segments != null) {
         segments.foreach { segment =>
-          // Only close each handle once (multiple partitions may share a handle)
+          // Only process each handle once (multiple partitions may share a handle)
           if (!closedHandles.contains(segment.handle)) {
             closedHandles.add(segment.handle)
+
+            // Collect statistics before closing
+            val handle = segment.handle
+            val totalBytes = handle.getTotalBytesWritten
+            if (handle.isMemoryBased && !handle.isSpilled) {
+              bytesFromMemory += totalBytes
+            } else {
+              bytesFromDisk += totalBytes
+            }
+
             try {
-              segment.handle.close()
+              handle.close()
             } catch {
               case e: Exception =>
                 logWarning(s"Failed to close handle for shuffle $shuffleId", e)
@@ -187,7 +204,21 @@ class MultithreadedShuffleBufferCatalog extends Logging {
       }
     }
 
-    logDebug(s"Unregistered shuffle $shuffleId, closed ${closedHandles.size()} handles")
+    // Post event with disk savings statistics
+    if (bytesFromMemory > 0 || bytesFromDisk > 0) {
+      try {
+        // SparkContext.getOrCreate() works on driver where unregisterShuffle is called
+        val sc = SparkContext.getOrCreate()
+        TrampolineUtil.postEvent(sc,
+          SparkRapidsShuffleDiskSavingsEvent(shuffleId, bytesFromMemory, bytesFromDisk))
+      } catch {
+        case e: Exception =>
+          logDebug(s"Failed to post shuffle disk savings event for shuffle $shuffleId", e)
+      }
+    }
+
+    logInfo(s"Unregistered shuffle $shuffleId: closed ${closedHandles.size()} handles, " +
+      s"bytesFromMemory=$bytesFromMemory, bytesFromDisk=$bytesFromDisk")
   }
 }
 

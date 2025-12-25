@@ -865,6 +865,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           offset += length
         }
         // Don't close the handle here - it will be closed when shuffle is unregistered
+        // Disk write savings are recorded by the reducer when reading the data
       }
     } else {
       // Single batch: extract handle and store in catalog
@@ -879,6 +880,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         accumulatedLengths(partId) = length
         offset += length
       }
+      // Disk write savings are recorded by the reducer when reading the data
     }
 
     accumulatedLengths
