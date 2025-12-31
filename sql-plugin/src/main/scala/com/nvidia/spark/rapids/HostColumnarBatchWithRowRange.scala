@@ -218,8 +218,8 @@ class HostColumnarBatchWithRowRange private (
   }
 
   /**
-   * Slice a validity buffer (if present) for the given row range, returning (newValidity, nullCount).
-   * If the input column has no validity buffer, returns (null, 0).
+   * Slice a validity buffer (if present) for the given row range, returning (newValidity, 
+   * nullCount). If the input column has no validity buffer, returns (null, 0).
    */
   private def sliceValidity(
       col: HostColumnVectorCore,
