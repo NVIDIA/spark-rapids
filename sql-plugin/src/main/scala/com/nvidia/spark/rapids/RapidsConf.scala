@@ -706,12 +706,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(JoinStrategy.AUTO.toString)
 
   val JOIN_BUILD_SIDE = conf("spark.rapids.sql.join.buildSide")
-    .doc("Specifies the build side selection strategy for GPU joins. Options are: " +
-      "AUTO (default) - automatically determine the best build side using heuristics, " +
+    .doc("Specifies the physical build side selection strategy for GPU join algorithms. " +
+      "This controls which side the join algorithm uses as its internal build table, " +
+      "which is distinct from the data movement build side (which side is materialized/" +
+      "buffered/broadcast, determined by the query plan). Options are: " +
+      "AUTO (default) - automatically determine the best physical build side using heuristics, " +
       "currently behaves the same as SMALLEST but may evolve to use additional factors; " +
-      "FIXED - use the build side as specified by the query plan without dynamic selection; " +
-      "SMALLEST - always select the side with the smallest row count as the build side, " +
-      "determined on a batch-by-batch basis at join time.")
+      "FIXED - use the build side as suggested by the query plan without dynamic selection; " +
+      "SMALLEST - always select the side with the smallest row count as the physical build side, " +
+      "determined on a batch-by-batch basis at join time. When AUTO or SMALLEST is used, " +
+      "the physical build side may differ from the data movement build side.")
     .internal()
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))

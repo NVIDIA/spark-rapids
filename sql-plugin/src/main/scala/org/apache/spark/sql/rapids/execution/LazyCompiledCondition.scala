@@ -123,7 +123,11 @@ class LazyCompiledCondition(
   /**
    * Get the compiled AST for the specified build side.
    *
-   * @param buildSide which side is the build side
+   * The build side parameter represents the semantic build side used for determining
+   * AST table ordering (e.g., which side is the "build" side for the target join type).
+   * This is typically the data movement build side or the cuDF API build side for sub-joins.
+   *
+   * @param buildSide which side is the semantic build side for AST compilation
    * @return the compiled AST expression for the specified configuration
    */
   def getForBuildSide(buildSide: GpuBuildSide): CompiledExpression = {
