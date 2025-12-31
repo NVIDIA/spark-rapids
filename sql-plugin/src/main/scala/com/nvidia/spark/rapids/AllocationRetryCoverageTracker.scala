@@ -139,7 +139,8 @@ object AllocationRetryCoverageTracker extends Logging {
     val stackTrace = Thread.currentThread().getStackTrace
 
     // Consider an allocation "covered" if the call stack includes one of the retry framework
-    // entrypoints inside Spark RAPIDS code, e.g. withRetry/withRetryNoSplit/withRestoreOnRetry.
+    // entrypoints inside Spark RAPIDS code, e.g. withRetry/withRetryNoSplit/withRestoreOnRetry,
+    // or if it is executing inside RmmRapidsRetryIterator internals.
     //
     // Note: Scala often generates methods like `$anonfun$withRetryNoSplit$1`, so we match by
     // substring rather than exact method name.
@@ -150,7 +151,9 @@ object AllocationRetryCoverageTracker extends Logging {
       isSparkRapidsClassName(className) &&
         !className.contains("AllocationRetryCoverageTracker") && {
         val lowerMethod = methodName.toLowerCase(java.util.Locale.ROOT)
-        lowerMethod.contains("withretry") || lowerMethod.contains("restoreonretry")
+        lowerMethod.contains("withretry") ||
+          lowerMethod.contains("restoreonretry") ||
+          className.startsWith("com.nvidia.spark.rapids.RmmRapidsRetryIterator")
       }
     }
 
