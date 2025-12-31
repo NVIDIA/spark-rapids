@@ -356,6 +356,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return build(rows, i -> hostColumns[i].copyToDevice());
     }
 
+    /**
+     * Build host columns and transfer ownership to the caller. The builder will not close
+     * the returned host columns.
+     */
+    public HostColumnVector[] buildHostColumnsWithoutOwnership() {
+      if (hostColumns == null) {
+        hostColumns = buildHostColumns();
+      }
+      HostColumnVector[] ret = hostColumns;
+      hostColumns = null;
+      return ret;
+    }
+
     @Override
     public void close() {
       try {
