@@ -17,7 +17,9 @@
 package com.nvidia.spark.rapids
 
 import java.io.{BufferedWriter, FileWriter, PrintWriter}
+import java.nio.file.{Files, Paths}
 import java.util.concurrent.ConcurrentHashMap
+import java.util.regex.Pattern
 
 import org.apache.spark.internal.Logging
 
@@ -48,7 +50,7 @@ object AllocationKind extends Enumeration {
  * 
  * When enabled:
  * - Checks memory allocations' call stacks for retry-related methods
- * - Logs uncovered allocations to /tmp/uncovered_allocations.csv
+ * - Logs uncovered allocations to a CSV file under the JVM temp dir (see log output for path)
  * - Also logs warnings via Spark logging
  * 
  * Note: Enabling this feature turns on RMM debug mode which may impact performance.
@@ -59,23 +61,34 @@ object AllocationKind extends Enumeration {
 object AllocationRetryCoverageTracker extends Logging {
   import AllocationKind._
 
-  // Package prefixes for spark-rapids code where we look for "Retry" in method names
-  private val SPARK_RAPIDS_PACKAGE_PREFIXES = Seq(
-    "com.nvidia.spark.rapids",
-    "org.apache.spark.sql.rapids"
-  )
+  // Spark RAPIDS shims may live under a variety of packages, e.g.
+  // - org.apache.spark.rapids
+  // - org.apache.spark.shuffle.rapids
+  // - org.apache.spark.sql.catalyst.rapids
+  private val ORG_APACHE_SPARK_RAPIDS_CLASS_PATTERN =
+    Pattern.compile("""^org\.apache\.spark(?:\.[\w$]+)*\.rapids\..*""")
 
-  // Default output file path for uncovered allocations - use /tmp for easy access
-  private val DEFAULT_OUTPUT_PATH = "/tmp/uncovered_allocations.csv"
+  private def isSparkRapidsClassName(className: String): Boolean = {
+    className.startsWith("com.nvidia.spark.rapids.") ||
+      ORG_APACHE_SPARK_RAPIDS_CLASS_PATTERN.matcher(className).matches()
+  }
+
+  private def isRelevantStackClassName(className: String): Boolean = {
+    isSparkRapidsClassName(className) || className.startsWith("ai.rapids.cudf.")
+  }
+
+  // Default output file path for uncovered allocations. Use the JVM temp dir so this works
+  // cross-platform without hardcoding "/tmp".
+  private val DEFAULT_OUTPUT_PATH: String = {
+    val tmpDir = Option(System.getProperty("java.io.tmpdir")).getOrElse("/tmp")
+    Paths.get(tmpDir, "uncovered_allocations.csv").toString
+  }
 
   // Environment variable to enable tracking
   private val ENV_VAR_NAME = "SPARK_RAPIDS_RETRY_COVERAGE_TRACKING"
 
   // Check environment variable - this works reliably across all processes
-  val ENABLED: Boolean = {
-    val envValue = System.getenv(ENV_VAR_NAME)
-    envValue != null && envValue.equalsIgnoreCase("true")
-  }
+  val ENABLED: Boolean = "true".equalsIgnoreCase(System.getenv(ENV_VAR_NAME))
 
   @volatile private var headerWritten: Boolean = false
 
@@ -92,8 +105,21 @@ object AllocationRetryCoverageTracker extends Logging {
     if (!headerWritten) {
       writeLock.synchronized {
         if (!headerWritten) {
-          logWarning(s"Retry coverage tracking ACTIVE. Output: $DEFAULT_OUTPUT_PATH")
-          writeToFileInternal("kind,call_stack", append = false)
+          val outputPath = Paths.get(DEFAULT_OUTPUT_PATH)
+          val shouldWriteHeader = try {
+            !Files.exists(outputPath) || Files.size(outputPath) == 0L
+          } catch {
+            case _: Exception => true
+          }
+
+          if (shouldWriteHeader) {
+            logWarning(s"Retry coverage tracking ACTIVE. Output: $DEFAULT_OUTPUT_PATH")
+            writeToFileInternal("kind,call_stack", append = false)
+          } else {
+            // File already exists and is non-empty. Avoid clobbering previous output and keep
+            // appending to the existing file.
+            logWarning(s"Retry coverage tracking ACTIVE. Appending to: $DEFAULT_OUTPUT_PATH")
+          }
           headerWritten = true
         }
       }
@@ -111,20 +137,21 @@ object AllocationRetryCoverageTracker extends Logging {
     ensureHeaderWritten()
 
     val stackTrace = Thread.currentThread().getStackTrace
-    
-    // Check if any retry-related code is in the call stack.
-    // We look for any class or method containing "Retry" in its name within spark-rapids packages.
-    // This catches:
-    // - Core retry methods: withRetry, withRetryNoSplit, withRestoreOnRetry
-    // - Wrapper functions: concatenateAndMergeWithRetry, projectAndCloseWithRetrySingleBatch, etc.
-    // - Retry framework internals: RmmRapidsRetryIterator$AutoCloseableAttemptSpliterator.next
-    // Note: We exclude AllocationRetryCoverageTracker itself since it's always in the stack
+
+    // Consider an allocation "covered" if the call stack includes one of the retry framework
+    // entrypoints inside Spark RAPIDS code, e.g. withRetry/withRetryNoSplit/withRestoreOnRetry.
+    //
+    // Note: Scala often generates methods like `$anonfun$withRetryNoSplit$1`, so we match by
+    // substring rather than exact method name.
+    // Also exclude AllocationRetryCoverageTracker itself since it's always in the stack.
     val hasCoverage = stackTrace.exists { element =>
       val className = element.getClassName
       val methodName = element.getMethodName
-      SPARK_RAPIDS_PACKAGE_PREFIXES.exists(className.startsWith) && 
-        !className.contains("AllocationRetryCoverageTracker") &&
-        (className.contains("Retry") || methodName.contains("Retry"))
+      isSparkRapidsClassName(className) &&
+        !className.contains("AllocationRetryCoverageTracker") && {
+        val lowerMethod = methodName.toLowerCase(java.util.Locale.ROOT)
+        lowerMethod.contains("withretry") || lowerMethod.contains("restoreonretry")
+      }
     }
 
     if (!hasCoverage) {
@@ -132,9 +159,8 @@ object AllocationRetryCoverageTracker extends Logging {
       val relevantStack = stackTrace
         .filter { element =>
           val className = element.getClassName
-          className.startsWith("com.nvidia.spark.rapids") ||
-            className.startsWith("org.apache.spark.sql.rapids") ||
-            className.startsWith("ai.rapids.cudf")
+          isRelevantStackClassName(className) &&
+            !className.contains("AllocationRetryCoverageTracker")
         }
         .map(_.toString)
         .mkString(" -> ")
@@ -143,13 +169,11 @@ object AllocationRetryCoverageTracker extends Logging {
       val stackKey = s"$kind:$relevantStack"
       
       // Only log if we haven't seen this exact stack before
-      if (!loggedStacks.contains(stackKey)) {
-        if (loggedStacks.add(stackKey)) {
-          // Escape the stack trace for CSV (replace quotes and wrap in quotes)
-          val escapedStack = "\"" + relevantStack.replace("\"", "\"\"") + "\""
-          writeToFile(s"$kind,$escapedStack", append = true)
-          logWarning(s"Uncovered $kind allocation #${loggedStacks.size()}. Stack: $relevantStack")
-        }
+      if (loggedStacks.add(stackKey)) {
+        // Escape the stack trace for CSV (replace quotes and wrap in quotes)
+        val escapedStack = "\"" + relevantStack.replace("\"", "\"\"") + "\""
+        writeToFile(s"$kind,$escapedStack", append = true)
+        logWarning(s"Uncovered $kind allocation #${loggedStacks.size()}. Stack: $relevantStack")
       }
     }
   }
