@@ -54,6 +54,20 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
+  test("test empty schema preserves row count") {
+    // Spark uses OneRowRelation (1 row, 0 cols) for constant expressions like pi()/e().
+    // Ensure R2C preserves the row count even when there are no columns.
+    val emptySchema = StructType(Nil)
+    val rowIter: Iterator[InternalRow] = Iterator(InternalRow.empty)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, emptySchema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(emptySchema))
+    withResource(row2ColIter.next()) { batch =>
+      assertResult(1)(batch.numRows())
+      assertResult(0)(batch.numCols())
+    }
+    assert(!row2ColIter.hasNext)
+  }
+
   test("test GPU OOM split and retry with RequireSingleBatch still throws") {
     // When RequireSingleBatch is specified but we need to split due to GPU OOM,
     // we should still throw because we can't satisfy the single batch requirement

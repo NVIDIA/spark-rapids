@@ -690,7 +690,7 @@ class RowToColumnarIterator(
         }
         val dataTypes = localSchema.fields.map(_.dataType)
         val hostBatch = Arm.closeOnExcept(hostColumns) { _ =>
-          HostColumnarBatchWithRowRange(hostColumns, dataTypes)
+          HostColumnarBatchWithRowRange(hostColumns, rowCount, dataTypes)
         }
 
         if (localGoal.isInstanceOf[RequireSingleBatchLike]) {

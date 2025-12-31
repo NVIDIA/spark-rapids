@@ -322,8 +322,13 @@ object HostColumnarBatchWithRowRange {
    */
   def apply(
       hostColumns: Array[HostColumnVector],
+      numRows: Int,
       dataTypes: Array[DataType]): HostColumnarBatchWithRowRange = {
-    val numRows = if (hostColumns.nonEmpty) hostColumns(0).getRowCount.toInt else 0
+    require(numRows >= 0, s"numRows must be non-negative, got $numRows")
+    if (hostColumns.nonEmpty) {
+      require(hostColumns(0).getRowCount.toInt == numRows,
+        s"numRows ($numRows) must match hostColumns rowCount (${hostColumns(0).getRowCount})")
+    }
     new HostColumnarBatchWithRowRange(hostColumns, 0, numRows, dataTypes, ownsHostColumns = true)
   }
 }
