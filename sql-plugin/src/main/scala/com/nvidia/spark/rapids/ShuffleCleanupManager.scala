@@ -30,21 +30,66 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * When a shuffle is unregistered on the driver, this manager:
  * 1. Records the shuffle ID for cleanup
  * 2. Responds to executor polls with the list of shuffles to clean up
- * 3. Collects cleanup statistics from executors
- * 4. Aggregates statistics and posts SparkRapidsShuffleDiskSavingsEvent
+ * 3. Posts SparkRapidsShuffleDiskSavingsEvent immediately when executor reports stats
  *
  * This solves the problem where shuffle data is stored in executor-side catalogs,
  * but unregisterShuffle is called on the driver. By using a polling mechanism,
  * executors can learn about shuffles that need cleanup and report their statistics.
  *
+ * == Aggregating SparkRapidsShuffleDiskSavingsEvent ==
+ *
+ * Each executor posts its own SparkRapidsShuffleDiskSavingsEvent when it cleans up shuffle data.
+ * This means a single shuffle may have multiple events in the eventlog (one per executor that
+ * participated in the shuffle write). To get the total disk I/O savings for a shuffle or the
+ * entire application, you need to aggregate these events.
+ *
+ * Event format in eventlog (JSON):
+ * {{{
+ * {"Event":"com.nvidia.spark.rapids.SparkRapidsShuffleDiskSavingsEvent",
+ *  "shuffleId":0,"bytesFromMemory":7868,"bytesFromDisk":0}
+ * }}}
+ *
+ *
+ * To get application-wide totals:
+ * {{{
+ * grep "SparkRapidsShuffleDiskSavingsEvent" eventlog | \
+ *   jq -s '{
+ *     totalBytesFromMemory: (map(.bytesFromMemory) | add),
+ *     totalBytesFromDisk: (map(.bytesFromDisk) | add),
+ *     diskSavingsBytes: (map(.bytesFromMemory) | add)
+ *   }'
+ * }}}
+ *
+ * The `bytesFromMemory` field represents bytes that were kept in memory and never written to
+ * disk, which is the actual disk I/O savings. The `bytesFromDisk` field represents bytes that
+ * were spilled to disk due to memory pressure. The sum of `bytesFromMemory` across all events
+ * should match the total "Shuffle Bytes Written" reported in task metrics.
+ *
+ * == Timing Considerations ==
+ *
+ * The cleanup mechanism uses a polling model where executors poll the driver every 1 second
+ * (configurable via pollIntervalMs in ShuffleCleanupEndpoint). For short-running applications
+ * or scripts, the session may exit before executors have a chance to poll and report their
+ * statistics. To ensure all events are captured, add a short delay (e.g., 2 seconds) before
+ * exiting the Spark session:
+ *
+ * {{{
+ * // After your last query completes
+ * Thread.sleep(2000)  // Wait for executor cleanup polling
+ * spark.stop()
+ * }}}
+ *
+ * For long-running applications or interactive sessions (spark-shell, notebooks), this is
+ * typically not an issue as there is enough time between queries for cleanup to complete.
+ *
  * @param sc SparkContext for posting events
- * @param staleEntryMaxAgeMs maximum age for pending entries before they are considered stale
+ * @param staleEntryMaxAgeMs maximum age for pending entries before they are removed
  * @param cleanupIntervalMs interval for running stale entry cleanup
  */
 class ShuffleCleanupManager(
     sc: SparkContext,
     staleEntryMaxAgeMs: Long = 300000,  // 5 minutes
-    cleanupIntervalMs: Long = 60000      // 1 minute
+    cleanupIntervalMs: Long = 60000     // 1 minute
 ) extends Logging {
 
   /**
@@ -53,15 +98,9 @@ class ShuffleCleanupManager(
   private val pendingCleanup = new ConcurrentHashMap[Int, Long]()
 
   /**
-   * Aggregated statistics for each shuffle.
-   * Maps shuffleId -> (totalBytesFromMemory, totalBytesFromDisk, executorCount)
-   */
-  private val aggregatedStats =
-    new ConcurrentHashMap[Int, (Long, Long, Int)]()
-
-  /**
    * Track which executors have reported stats for each shuffle.
-   * Maps shuffleId -> Set of executorIds that have reported
+   * Maps shuffleId -> Set of executorIds that have reported.
+   * Used to avoid sending cleanup requests multiple times to the same executor.
    */
   private val reportedExecutors =
     new ConcurrentHashMap[Int, java.util.Set[String]]()
@@ -129,6 +168,7 @@ class ShuffleCleanupManager(
 
   /**
    * Handle cleanup statistics from executor.
+   * Immediately posts a SparkRapidsShuffleDiskSavingsEvent for each non-zero stat.
    *
    * @param executorId the executor reporting stats
    * @param stats cleanup statistics
@@ -145,45 +185,15 @@ class ShuffleCleanupManager(
         reported.add(executorId)
       }
 
-      // Aggregate statistics
-      aggregatedStats.compute(shuffleId, (_, existing) => {
-        if (existing == null) {
-          (stat.bytesFromMemory, stat.bytesFromDisk, 1)
-        } else {
-          (existing._1 + stat.bytesFromMemory,
-           existing._2 + stat.bytesFromDisk,
-           existing._3 + 1)
-        }
-      })
-
-      // Check if we should emit the event
-      // We emit after a reasonable delay to allow all executors to report
-      maybeEmitEvent(shuffleId)
-    }
-  }
-
-  /**
-   * Check if we should emit the event for a shuffle.
-   * We use a simple heuristic: emit if at least one executor has reported.
-   * The event will aggregate all stats received so far.
-   */
-  private def maybeEmitEvent(shuffleId: Int): Unit = {
-    val stats = aggregatedStats.get(shuffleId)
-    if (stats != null && (stats._1 > 0 || stats._2 > 0)) {
-      // Remove from pending and aggregated to emit exactly once
-      // Use containsKey + remove pattern to avoid Scala Long vs null comparison warning
-      if (pendingCleanup.containsKey(shuffleId)) {
-        pendingCleanup.remove(shuffleId)
-        aggregatedStats.remove(shuffleId)
-        reportedExecutors.remove(shuffleId)
-
-        logInfo(s"Emitting SparkRapidsShuffleDiskSavingsEvent for shuffle $shuffleId: " +
-          s"bytesFromMemory=${stats._1}, bytesFromDisk=${stats._2} " +
-          s"(aggregated from ${stats._3} executor(s))")
+      // Immediately emit event if there are non-zero bytes
+      if (stat.bytesFromMemory > 0 || stat.bytesFromDisk > 0) {
+        logInfo(s"Emitting SparkRapidsShuffleDiskSavingsEvent for shuffle $shuffleId " +
+          s"from executor $executorId: " +
+          s"bytesFromMemory=${stat.bytesFromMemory}, bytesFromDisk=${stat.bytesFromDisk}")
 
         try {
           TrampolineUtil.postEvent(sc,
-            SparkRapidsShuffleDiskSavingsEvent(shuffleId, stats._1, stats._2))
+            SparkRapidsShuffleDiskSavingsEvent(shuffleId, stat.bytesFromMemory, stat.bytesFromDisk))
         } catch {
           case e: Exception =>
             logWarning(s"Failed to post shuffle disk savings event for shuffle $shuffleId", e)
@@ -207,20 +217,7 @@ class ShuffleCleanupManager(
       val timestamp = entry.getValue
       if (now - timestamp > maxAgeMs) {
         logWarning(s"Removing stale shuffle cleanup entry for shuffle $shuffleId " +
-          s"(no executor reported in ${maxAgeMs}ms)")
-
-        // Try to emit with whatever stats we have
-        val stats = aggregatedStats.remove(shuffleId)
-        if (stats != null && (stats._1 > 0 || stats._2 > 0)) {
-          try {
-            TrampolineUtil.postEvent(sc,
-              SparkRapidsShuffleDiskSavingsEvent(shuffleId, stats._1, stats._2))
-          } catch {
-            case e: Exception =>
-              logDebug(s"Failed to post stale shuffle disk savings event", e)
-          }
-        }
-
+          s"(registered ${maxAgeMs}ms ago)")
         iter.remove()
         reportedExecutors.remove(shuffleId)
       }
@@ -228,12 +225,12 @@ class ShuffleCleanupManager(
   }
 
   /**
-   * Shutdown the manager and emit events for any remaining pending shuffles.
+   * Shutdown the manager.
    */
   def shutdown(): Unit = {
     logInfo("Shutting down ShuffleCleanupManager")
 
-    // Stop the cleanup executor first
+    // Stop the cleanup executor
     cleanupExecutor.shutdown()
     try {
       if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -244,25 +241,7 @@ class ShuffleCleanupManager(
         cleanupExecutor.shutdownNow()
     }
 
-    // Emit events for any remaining pending shuffles
-    val iter = pendingCleanup.keySet().iterator()
-    while (iter.hasNext) {
-      val shuffleId = iter.next()
-      val stats = aggregatedStats.remove(shuffleId)
-      if (stats != null && (stats._1 > 0 || stats._2 > 0)) {
-        logInfo(s"Shutdown: emitting event for shuffle $shuffleId with " +
-          s"bytesFromMemory=${stats._1}, bytesFromDisk=${stats._2}")
-        try {
-          TrampolineUtil.postEvent(sc,
-            SparkRapidsShuffleDiskSavingsEvent(shuffleId, stats._1, stats._2))
-        } catch {
-          case e: Exception =>
-            logDebug(s"Failed to post shutdown shuffle disk savings event", e)
-        }
-      }
-    }
     pendingCleanup.clear()
-    aggregatedStats.clear()
     reportedExecutors.clear()
   }
 }
@@ -285,4 +264,3 @@ object ShuffleCleanupManager {
     }
   }
 }
-
