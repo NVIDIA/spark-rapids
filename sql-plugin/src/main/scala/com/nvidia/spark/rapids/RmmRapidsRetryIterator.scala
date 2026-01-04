@@ -574,6 +574,7 @@ object RmmRapidsRetryIterator extends Logging {
         throw new NoSuchElementException("Closed called on an empty iterator.")
       }
       try {
+        RetryStateTracker.enterRetryBlock()
         super.next()
       } catch {
         case t: Throwable =>
@@ -581,6 +582,9 @@ object RmmRapidsRetryIterator extends Logging {
           // we close our attempts (which includes the item we last attempted)
           attemptIter.close()
           throw t
+      } finally {
+        RetryStateTracker.clearCurThreadRetrying()
+        RetryStateTracker.exitRetryBlock()
       }
     }
   }
@@ -620,145 +624,140 @@ object RmmRapidsRetryIterator extends Logging {
     }
 
     override def next(): K = {
-      RetryStateTracker.enterRetryBlock()
-      try {
-        // this is set on the first exception, and we add suppressed if there are others
-        // during the retry attempts
-        var lastException: Throwable = null
-        var firstAttempt: Boolean = true
-        var result: Option[K] = None
-        var splitReason = SplitReason.NONE
-        while (result.isEmpty && attemptIter.hasNext) {
-          RetryStateTracker.setCurThreadRetrying(!firstAttempt)
-          if (!firstAttempt) {
-            // call thread block API
-            try {
-              threadCountBlockedUntilReady.incrementAndGet()
-              RmmSpark.blockThreadUntilReady()
-            } catch {
-              case _: GpuSplitAndRetryOOM =>
-                splitReason = SplitReason.GPU_OOM
-              case _: CpuSplitAndRetryOOM =>
-                splitReason = SplitReason.CPU_OOM
-            } finally {
-              threadCountBlockedUntilReady.decrementAndGet()
-            }
-          }
-          firstAttempt = false
-          if (splitReason != SplitReason.NONE) {
-            preSplitLogging()
-            attemptIter.split(splitReason)
-          }
-          splitReason = SplitReason.NONE
+      // this is set on the first exception, and we add suppressed if there are others
+      // during the retry attempts
+      var lastException: Throwable = null
+      var firstAttempt: Boolean = true
+      var result: Option[K] = None
+      var splitReason = SplitReason.NONE
+      while (result.isEmpty && attemptIter.hasNext) {
+        RetryStateTracker.setCurThreadRetrying(!firstAttempt)
+        if (!firstAttempt) {
+          // call thread block API
           try {
-            // call the user's function
-            RapidsConf.testRetryOOMInjectionMode() match {
-              case mode if !injectedOOM && mode.numOoms > 0 =>
-                injectedOOM = true
-                // ensure we have associated our thread with the running task, as
-                // `forceRetryOOM` requires a prior association.
-                var threadAssociated = true
-                if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
-                  // If RmmSpark isn't aware of this thread, we are going to
-                  // try to find the TaskContext and use it to register it for a taskID.
-                  // However, TaskContext is not going to work for a pool thread that isn't
-                  // managed by Spark, so we are going to skip registration, and skip the OOM.
-                  // This is a temporary workaround, see:
-                  // https://github.com/NVIDIA/spark-rapids/issues/13098
-                  threadAssociated = false
-                  Option(TaskContext.get()).foreach { tc =>
-                    threadAssociated = true
-                    RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
-                  }
-                }
-                if (threadAssociated) {
-                  if (mode.withSplit) {
-                    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
-                      mode.numOoms,
-                      mode.oomInjectionFilter.ordinal,
-                      mode.skipCount)
-                  } else {
-                    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                      mode.numOoms,
-                      mode.oomInjectionFilter.ordinal,
-                      mode.skipCount)
-                  }
-                } else {
-                  log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
-                    "https://github.com/NVIDIA/spark-rapids/issues/13098")
-                }
-              case _ => ()
-            }
-            result = Some(attemptIter.next())
-            clearInjectedOOMIfNeeded()
+            threadCountBlockedUntilReady.incrementAndGet()
+            RmmSpark.blockThreadUntilReady()
           } catch {
-            case ex: Throwable =>
-              log.info("got a throwable in RmmRapidsRetryIterator.next():", ex)
-              // handle a retry as the top-level exception
-              val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
-              if (topLevelIsSplit) {
-                if (isGpuOom) {
-                  splitReason = SplitReason.GPU_OOM
-                } else {
-                  splitReason = SplitReason.CPU_OOM
-                }
-                logInfo("splitReason is set " +
-                  s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:",
-                  ex)
-              }
-
-              // handle any retries that are wrapped in a different top-level exception
-              var causedByRetry = false
-              if (!topLevelIsRetry) {
-                val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
-                causedByRetry = cbRetry
-                if (!(splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM)) {
-                  if (cbSplit) {
-                    if (isGpuOom) {
-                      splitReason = SplitReason.GPU_OOM
-                    } else {
-                      splitReason = SplitReason.CPU_OOM
-                    }
-                  }
-                  if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
-                    logInfo(s"splitReason is set to ${splitReason} after checking " +
-                      s"causedByRetryOrSplit, related exception:", ex)
-                  }
-                }
-              }
-
-              clearInjectedOOMIfNeeded()
-
-              // make sure we add any prior exceptions to this one as causes
-              if (lastException != null) {
-                ex.addSuppressed(lastException)
-              }
-              lastException = ex
-
-              if (!topLevelIsRetry && !causedByRetry) {
-                if (isOrCausedByColumnSizeOverflow(ex)) {
-                  // CUDF column size overflow? Attempt split-retry.
-                  splitReason = SplitReason.CUDF_OVERFLOW
-                  logInfo(s"splitReason is set to ${splitReason} after checking " +
-                    s"isOrCausedByColumnSizeOverflow, related exception:", ex)
-                } else {
-                  // we want to throw early here, since we got an exception
-                  // we were not prepared to handle
-                  throw lastException
-                }
-              }
-            // else another exception wrapped a retry. So we are going to try again
+            case _: GpuSplitAndRetryOOM =>
+              splitReason = SplitReason.GPU_OOM
+            case _: CpuSplitAndRetryOOM =>
+              splitReason = SplitReason.CPU_OOM
+          } finally {
+            threadCountBlockedUntilReady.decrementAndGet()
           }
         }
-        if (result.isEmpty) {
-          // then lastException must be set, throw it.
-          throw lastException
+        firstAttempt = false
+        if (splitReason != SplitReason.NONE) {
+          preSplitLogging()
+          attemptIter.split(splitReason)
         }
-        result.get
-      } finally {
-        RetryStateTracker.clearCurThreadRetrying()
-        RetryStateTracker.exitRetryBlock()
+        splitReason = SplitReason.NONE
+        try {
+          // call the user's function
+          RapidsConf.testRetryOOMInjectionMode() match {
+            case mode if !injectedOOM && mode.numOoms > 0 =>
+              injectedOOM = true
+              // ensure we have associated our thread with the running task, as
+              // `forceRetryOOM` requires a prior association.
+              var threadAssociated = true
+              if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
+                // If RmmSpark isn't aware of this thread, we are going to
+                // try to find the TaskContext and use it to register it for a taskID.
+                // However, TaskContext is not going to work for a pool thread that isn't
+                // managed by Spark, so we are going to skip registration, and skip the OOM.
+                // This is a temporary workaround, see:
+                // https://github.com/NVIDIA/spark-rapids/issues/13098
+                threadAssociated = false
+                Option(TaskContext.get()).foreach { tc =>
+                  threadAssociated = true
+                  RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
+                }
+              }
+              if (threadAssociated) {
+                if (mode.withSplit) {
+                  RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                } else {
+                  RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                }
+              } else {
+                log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
+                  "https://github.com/NVIDIA/spark-rapids/issues/13098")
+              }
+            case _ => ()
+          }
+          result = Some(attemptIter.next())
+          clearInjectedOOMIfNeeded()
+        } catch {
+          case ex: Throwable =>
+            log.info("got a throwable in RmmRapidsRetryIterator.next():", ex)
+            // handle a retry as the top-level exception
+            val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
+            if (topLevelIsSplit) {
+              if (isGpuOom) {
+                splitReason = SplitReason.GPU_OOM
+              } else {
+                splitReason = SplitReason.CPU_OOM
+              }
+              logInfo("splitReason is set " +
+                s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:",
+                ex)
+            }
+
+            // handle any retries that are wrapped in a different top-level exception
+            var causedByRetry = false
+            if (!topLevelIsRetry) {
+              val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
+              causedByRetry = cbRetry
+              if (!(splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM)) {
+                if (cbSplit) {
+                  if (isGpuOom) {
+                    splitReason = SplitReason.GPU_OOM
+                  } else {
+                    splitReason = SplitReason.CPU_OOM
+                  }
+                }
+                if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
+                  logInfo(s"splitReason is set to ${splitReason} after checking " +
+                    s"causedByRetryOrSplit, related exception:", ex)
+                }
+              }
+            }
+
+            clearInjectedOOMIfNeeded()
+
+            // make sure we add any prior exceptions to this one as causes
+            if (lastException != null) {
+              ex.addSuppressed(lastException)
+            }
+            lastException = ex
+
+            if (!topLevelIsRetry && !causedByRetry) {
+              if (isOrCausedByColumnSizeOverflow(ex)) {
+                // CUDF column size overflow? Attempt split-retry.
+                splitReason = SplitReason.CUDF_OVERFLOW
+                logInfo(s"splitReason is set to ${splitReason} after checking " +
+                  s"isOrCausedByColumnSizeOverflow, related exception:", ex)
+              } else {
+                // we want to throw early here, since we got an exception
+                // we were not prepared to handle
+                throw lastException
+              }
+            }
+          // else another exception wrapped a retry. So we are going to try again
+        }
       }
+      RetryStateTracker.clearCurThreadRetrying()
+      if (result.isEmpty) {
+        // then lastException must be set, throw it.
+        throw lastException
+      }
+      result.get
     }
   }
 
