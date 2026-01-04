@@ -16,10 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{BufferedWriter, FileWriter, PrintWriter}
+import java.io.{BufferedWriter, FileWriter}
 import java.nio.file.{Files, Paths}
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
+
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.internal.Logging
 
@@ -63,6 +65,10 @@ object AllocationKind extends Enumeration {
 object AllocationRetryCoverageTracker extends Logging {
   import AllocationKind._
 
+  // Environment variable to enable retry coverage tracking (debug-only).
+  // Kept here so other components can reference it without duplicating the name.
+  final val RETRY_COVERAGE_TRACKING_ENV_VAR_NAME: String = "SPARK_RAPIDS_RETRY_COVERAGE_TRACKING"
+
   // Spark RAPIDS shims may live under a variety of packages, e.g.
   // - org.apache.spark.rapids
   // - org.apache.spark.shuffle.rapids
@@ -86,11 +92,9 @@ object AllocationRetryCoverageTracker extends Logging {
     Paths.get(tmpDir, "uncovered_allocations.csv").toString
   }
 
-  // Environment variable to enable tracking
-  private val ENV_VAR_NAME = "SPARK_RAPIDS_RETRY_COVERAGE_TRACKING"
-
   // Check environment variable - this works reliably across all processes
-  val ENABLED: Boolean = "true".equalsIgnoreCase(System.getenv(ENV_VAR_NAME))
+  val ENABLED: Boolean =
+    "true".equalsIgnoreCase(System.getenv(RETRY_COVERAGE_TRACKING_ENV_VAR_NAME))
 
   @volatile private var headerWritten: Boolean = false
 
@@ -195,17 +199,16 @@ object AllocationRetryCoverageTracker extends Logging {
    * Write a line to the output CSV file (internal, assumes lock is NOT held).
    */
   private def writeToFileInternal(line: String, append: Boolean): Unit = {
-    var writer: PrintWriter = null
     try {
-      writer = new PrintWriter(new BufferedWriter(new FileWriter(DEFAULT_OUTPUT_PATH, append)))
-      writer.println(line)
+      withResource(new FileWriter(DEFAULT_OUTPUT_PATH, append)) { fw =>
+        withResource(new BufferedWriter(fw)) { bw =>
+          bw.write(line)
+          bw.newLine()
+        }
+      }
     } catch {
       case e: Exception =>
         logError(s"Failed to write to retry coverage tracking file: $DEFAULT_OUTPUT_PATH", e)
-    } finally {
-      if (writer != null) {
-        writer.close()
-      }
     }
   }
 
@@ -239,7 +242,7 @@ object AllocationRetryCoverageTracker extends Logging {
    * Reset the tracker state (useful for testing).
    * Note: Cannot change ENABLED as it's read from env var at class load time.
    */
-  def reset(): Unit = synchronized {
+  def reset(): Unit = writeLock.synchronized {
     headerWritten = false
     loggedStacks.clear()
   }

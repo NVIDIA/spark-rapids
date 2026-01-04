@@ -583,7 +583,6 @@ object RmmRapidsRetryIterator extends Logging {
           attemptIter.close()
           throw t
       } finally {
-        RetryStateTracker.clearCurThreadRetrying()
         RetryStateTracker.exitRetryBlock()
       }
     }
@@ -623,7 +622,7 @@ object RmmRapidsRetryIterator extends Logging {
       }
     }
 
-    override def next(): K = {
+    override def next(): K = try {
       // this is set on the first exception, and we add suppressed if there are others
       // during the retry attempts
       var lastException: Throwable = null
@@ -752,12 +751,13 @@ object RmmRapidsRetryIterator extends Logging {
           // else another exception wrapped a retry. So we are going to try again
         }
       }
-      RetryStateTracker.clearCurThreadRetrying()
       if (result.isEmpty) {
         // then lastException must be set, throw it.
         throw lastException
       }
       result.get
+    } finally {
+      RetryStateTracker.clearCurThreadRetrying()
     }
   }
 
@@ -933,9 +933,9 @@ object RetryStateTracker {
   // Use a depth counter to correctly handle nested retry blocks.
   private val localRetryBlockDepth = new ThreadLocal[java.lang.Integer]()
   // Gate retry-block tracking behind the retry coverage debug flag to avoid overhead when unused.
-  private val RETRY_COVERAGE_TRACKING_ENV = "SPARK_RAPIDS_RETRY_COVERAGE_TRACKING"
   private val trackRetryBlock: Boolean =
-    "true".equalsIgnoreCase(System.getenv(RETRY_COVERAGE_TRACKING_ENV))
+    "true".equalsIgnoreCase(
+      System.getenv(AllocationRetryCoverageTracker.RETRY_COVERAGE_TRACKING_ENV_VAR_NAME))
 
   def isCurThreadRetrying: Boolean = {
     val ret = localIsRetrying.get()
