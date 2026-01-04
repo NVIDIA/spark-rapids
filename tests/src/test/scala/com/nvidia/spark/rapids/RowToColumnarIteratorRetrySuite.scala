@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -132,9 +132,10 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
         batches += row2ColIter.next()
       }
 
-      // With 3 splits, we should have at least 4 batches (2^2 from first, then more splits)
+      // With 3 sequential splits (each split divides one batch into two), we should have
+      // at least 4 batches in total: 1 → 2 → 3 → 4.
       assert(batches.length >= 4,
-        s"Expected at least 4 batches after 3 splits, got ${batches.length}")
+        s"Expected at least 4 batches after 3 sequential splits, got ${batches.length}")
 
       // Total rows across all batches should equal input rows
       val totalRows = batches.map(_.numRows()).sum

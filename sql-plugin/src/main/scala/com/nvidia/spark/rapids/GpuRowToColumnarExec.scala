@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.Retryable
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
@@ -715,11 +715,12 @@ class RowToColumnarIterator(
           }
           // Return the first batch now and keep the iterator for subsequent output batches.
           // This ensures we only transfer one split at a time (avoid multiple device allocations).
-          val first = it.next()
-          pendingBatchIter = it
-          // Update input rows metric once per successful input build.
-          numInputRows += rowCount
-          first
+          closeOnExcept(it.next()) { first =>
+            pendingBatchIter = it
+            // Update input rows metric once per successful input build.
+            numInputRows += rowCount
+            first
+          }
         }
 
         // The returned batch will be closed by the consumer of it

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -154,9 +154,8 @@ class HostColumnarBatchWithRowRange private (
         }
       } else if (dtype.equals(DType.STRING)) {
         val origOffsets = col.getOffsets
-        val origData = col.getData
         require(origOffsets != null, "STRING column offsets buffer is null")
-        require(origData != null, "STRING column data buffer is null")
+        val origData = col.getData
 
         val startByte = origOffsets.getInt(startRow.toLong * 4L)
         val endByte = origOffsets.getInt((startRow + numRows).toLong * 4L)
@@ -173,13 +172,19 @@ class HostColumnarBatchWithRowRange private (
           r += 1
         }
 
-        if (dataLen == 0 && nullCount == 0L) {
-          // Workaround matching HostColumnVector.copyToDevice behavior for all-empty strings.
-          // We must provide at least 1 byte of data or copyToDevice will attempt to copy 1 byte
-          // from a 0-length buffer.
-          dataSlice = HostMemoryBuffer.allocate(1L)
-          dataSlice.setByte(0L, 0.toByte)
+        if (dataLen == 0) {
+          if (nullCount == 0L) {
+            // Workaround matching HostColumnVector.copyToDevice behavior for all-empty strings.
+            // We must provide at least 1 byte of data or copyToDevice will attempt to copy 1 byte
+            // from a 0-length buffer.
+            dataSlice = HostMemoryBuffer.allocate(1L)
+            dataSlice.setByte(0L, 0.toByte)
+          } else {
+            // No string data required; avoid slicing/copying a 0-length data buffer.
+            dataSlice = null
+          }
         } else {
+          require(origData != null, "STRING column data buffer is null")
           dataSlice = origData.slice(startByte.toLong, dataLen.toLong)
         }
       } else {
@@ -218,7 +223,7 @@ class HostColumnarBatchWithRowRange private (
   }
 
   /**
-   * Slice a validity buffer (if present) for the given row range, returning (newValidity, 
+   * Slice a validity buffer (if present) for the given row range, returning (newValidity,
    * nullCount). If the input column has no validity buffer, returns (null, 0).
    */
   private def sliceValidity(
@@ -332,4 +337,3 @@ object HostColumnarBatchWithRowRange {
     new HostColumnarBatchWithRowRange(hostColumns, 0, numRows, dataTypes, ownsHostColumns = true)
   }
 }
-
