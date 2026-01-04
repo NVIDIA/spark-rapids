@@ -87,13 +87,13 @@ trait HostMemoryBuffersWithMetaDataBase extends AutoCloseable {
   // Total bytes read
   def bytesRead: Long
 
-  // Time spent on filtering
+  // Time spent on filtering (includes filter-phase allocations)
   private var _filterTime: Long = 0L
-  // Time spent on buffering (excludes allocate time)
+  // Time spent on buffering (includes buffer-phase allocations)
   private var _bufferTime: Long = 0L
   // Time spent on waiting for (virtual) resource
   private var _scheduleTime: Long = 0L
-  // Time spent on allocating host memory buffer (separate from buffer time)
+  // Time spent on allocating host memory buffer (subset of filter + buffer time)
   private var _allocTime: Long = 0L
 
   // The partition values which are needed if combining host memory buffers
@@ -102,7 +102,6 @@ trait HostMemoryBuffersWithMetaDataBase extends AutoCloseable {
 
   // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)
   // that filtering and buffering incurred in one of the scan runners.
-  // Note: bufferTime should NOT include allocTime
   def setExecutionTime(filterTime: Long, bufferTime: Long): Unit = {
     _bufferTime = bufferTime
     _filterTime = filterTime
@@ -117,7 +116,9 @@ trait HostMemoryBuffersWithMetaDataBase extends AutoCloseable {
   def getScheduleTime: Long = _scheduleTime
   def getAllocTime: Long = _allocTime
 
-  private def getTotalBgTime: Long = _filterTime + _bufferTime + _allocTime + _scheduleTime
+  // Total bg time = filter + buffer + schedule (these are mutually exclusive)
+  // allocTime is a subset of (filter + buffer), tracked separately
+  private def getTotalBgTime: Long = _filterTime + _bufferTime + _scheduleTime
 
   def getBufferTimePct: Double = _bufferTime.toDouble / getTotalBgTime
 
@@ -125,6 +126,8 @@ trait HostMemoryBuffersWithMetaDataBase extends AutoCloseable {
 
   def getScheduleTimePct: Double = _scheduleTime.toDouble / getTotalBgTime
 
+  // allocTime is a subset of (filter + buffer), this pct shows how much of the total
+  // bg time was spent on allocation
   def getAllocTimePct: Double = _allocTime.toDouble / getTotalBgTime
 
   def releaseResource(): Unit = {

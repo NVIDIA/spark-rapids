@@ -1776,17 +1776,21 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
    * @param realStartOffset starting file offset of the first block
    * @return updated block metadata corresponding to the output
    */
+  /**
+   * @return (updated block metadata, allocTime in nanoseconds)
+   */
   protected def copyAndUncompressBlocksData(
       filePath: Path,
       out: HostMemoryOutputStream,
       blocks: Seq[BlockMetaData],
       realStartOffset: Long,
       metrics: Map[String, GpuMetric],
-      compressCfg: CpuCompressionConfig): Seq[BlockMetaData] = {
+      compressCfg: CpuCompressionConfig): (Seq[BlockMetaData], Long) = {
     val outStartPos = out.getPos
     val writeTime = metrics.getOrElse(WRITE_BUFFER_TIME, NoopMetric)
-    withResource(new BufferedFileInput(fileIO, filePath, blocks, metrics)) { in =>
-      val newBlocks = blocks.map { block =>
+    val allocTimeAccum = new LocalGpuMetric()
+    val newBlocks = withResource(new BufferedFileInput(fileIO, filePath, blocks, metrics)) { in =>
+      blocks.map { block =>
         val newColumns = block.getColumns.asScala.map { column =>
           var columnTotalSize = column.getTotalSize
           var columnCodec = column.getCodec
@@ -1800,12 +1804,12 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
             columnCodec match {
               case CompressionCodecName.SNAPPY if compressCfg.decompressSnappyCpu =>
                 val columnStartPos = out.getPos
-                decompressSnappy(in, out, column)
+                decompressSnappy(in, out, column, allocTimeAccum)
                 columnCodec = CompressionCodecName.UNCOMPRESSED
                 columnTotalSize = out.getPos - columnStartPos
               case CompressionCodecName.ZSTD if compressCfg.decompressZstdCpu =>
                 val columnStartPos = out.getPos
-                decompressZstd(in, out, column)
+                decompressZstd(in, out, column, allocTimeAccum)
                 columnCodec = CompressionCodecName.UNCOMPRESSED
                 columnTotalSize = out.getPos - columnStartPos
               case _ =>
@@ -1828,14 +1832,15 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         }
         GpuParquetUtils.newBlockMeta(block.getRowCount, newColumns.toSeq)
       }
-      newBlocks
     }
+    (newBlocks, allocTimeAccum.value)
   }
 
   private def decompressSnappy(
       in: BufferedFileInput,
       out: HostMemoryOutputStream,
-      column: ColumnChunkMetaData): Unit = {
+      column: ColumnChunkMetaData,
+      allocTimeAccum: LocalGpuMetric): Unit = {
     val endPos = column.getStartingPos + column.getTotalSize
     in.seek(column.getStartingPos)
     var inData: Option[HostMemoryBuffer] = None
@@ -1849,7 +1854,9 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         Util.writePageHeader(pageHeader, out)
         if (inData.map(_.getLength).getOrElse(0L) < compressedSize) {
           inData.foreach(_.close())
+          val allocStart = System.nanoTime()
           inData = Some(HostMemoryBuffer.allocate(compressedSize, false))
+          allocTimeAccum += (System.nanoTime() - allocStart)
         }
         inData.foreach { compressedBuffer =>
           in.read(compressedBuffer, compressedSize)
@@ -1866,7 +1873,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
   private def decompressZstd(
       in: BufferedFileInput,
       out: HostMemoryOutputStream,
-      column: ColumnChunkMetaData): Unit = {
+      column: ColumnChunkMetaData,
+      allocTimeAccum: LocalGpuMetric): Unit = {
     val endPos = column.getStartingPos + column.getTotalSize
     in.seek(column.getStartingPos)
     var inData: Option[HostMemoryBuffer] = None
@@ -1881,7 +1889,9 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           Util.writePageHeader(pageHeader, out)
           if (inData.map(_.getLength).getOrElse(0L) < compressedSize) {
             inData.foreach(_.close())
+            val allocStart = System.nanoTime()
             inData = Some(HostMemoryBuffer.allocate(compressedSize, false))
+            allocTimeAccum += (System.nanoTime() - allocStart)
           }
           inData.foreach { compressedBuffer =>
             in.read(compressedBuffer, compressedSize)
@@ -2013,12 +2023,15 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       val outHostBuf = withRetryNoSplit[HostMemoryBuffer] {
         HostMemoryBuffer.allocate(estTotalSize)
       }
-      val allocTime = System.nanoTime() - allocStart
+      var allocTime = System.nanoTime() - allocStart
       closeOnExcept(outHostBuf) { hmb =>
         val out = new HostMemoryOutputStream(hmb)
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         val outputBlocks = if (compressCfg.decompressAnyCpu) {
-          copyAndUncompressBlocksData(filePath, out, blocks, out.getPos, metrics, compressCfg)
+          val (resultBlocks, decompressAllocTime) =
+            copyAndUncompressBlocksData(filePath, out, blocks, out.getPos, metrics, compressCfg)
+          allocTime += decompressAllocTime
+          resultBlocks
         } else {
           copyBlocksData(filePath, out, blocks, out.getPos, metrics)
         }
@@ -2276,7 +2289,11 @@ class MultiFileParquetPartitionReader(
         val outputBlocks = withResource(outhmb) { _ =>
           withResource(new HostMemoryOutputStream(outhmb)) { out =>
             if (compressCfg.decompressAnyCpu) {
-              copyAndUncompressBlocksData(file, out, blocks.toSeq, offset, metrics, compressCfg)
+              // Note: allocTime from decompression is not tracked here since this is
+              // MultiFileCoalesceReader path and the buffer is pre-allocated
+              val (resultBlocks, _) =
+                copyAndUncompressBlocksData(file, out, blocks.toSeq, offset, metrics, compressCfg)
+              resultBlocks
             } else {
               copyBlocksData(file, out, blocks.toSeq, offset, metrics)
             }
@@ -2579,6 +2596,8 @@ class MultiFileCloudParquetPartitionReader(
       newHmbMeta.setExecutionTime(filterTime, bufferTime)
       val scheduleTime = combinedMeta.toCombine.map(_.getScheduleTime).sum
       newHmbMeta.setScheduleTime(scheduleTime)
+      val allocTime = combinedMeta.toCombine.map(_.getAllocTime).sum
+      newHmbMeta.setAllocTime(allocTime)
       // Combine the release callbacks from all the parts
       combinedMeta.toCombine.foreach { hmb =>
         hmb.combineReleaseCallbacks(newHmbMeta)
@@ -2844,8 +2863,9 @@ class MultiFileCloudParquetPartitionReader(
           hostBuffers.safeClose(e)
           throw e
       }
-      val bufferTime = System.nanoTime() - bufferStartTime - allocTime
+      val bufferTime = System.nanoTime() - bufferStartTime
       result.setExecutionTime(filterTime, bufferTime)
+      // allocTime is a subset of bufferTime, tracked separately for analysis
       result.setAllocTime(allocTime)
       result
     }
