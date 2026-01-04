@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -620,139 +620,145 @@ object RmmRapidsRetryIterator extends Logging {
     }
 
     override def next(): K = {
-      // this is set on the first exception, and we add suppressed if there are others
-      // during the retry attempts
-      var lastException: Throwable = null
-      var firstAttempt: Boolean = true
-      var result: Option[K] = None
-      var splitReason = SplitReason.NONE
-      while (result.isEmpty && attemptIter.hasNext) {
-        RetryStateTracker.setCurThreadRetrying(!firstAttempt)
-        if (!firstAttempt) {
-          // call thread block API
-          try {
-            threadCountBlockedUntilReady.incrementAndGet()
-            RmmSpark.blockThreadUntilReady()
-          } catch {
-            case _: GpuSplitAndRetryOOM =>
-              splitReason = SplitReason.GPU_OOM
-            case _: CpuSplitAndRetryOOM =>
-              splitReason = SplitReason.CPU_OOM
-          } finally {
-            threadCountBlockedUntilReady.decrementAndGet()
-          }
-        }
-        firstAttempt = false
-        if (splitReason != SplitReason.NONE) {
-          preSplitLogging()
-          attemptIter.split(splitReason)
-        }
-        splitReason = SplitReason.NONE
-        try {
-          // call the user's function
-          RapidsConf.testRetryOOMInjectionMode() match {
-            case mode if !injectedOOM && mode.numOoms > 0 =>
-              injectedOOM = true
-              // ensure we have associated our thread with the running task, as
-              // `forceRetryOOM` requires a prior association.
-              var threadAssociated = true
-              if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
-                // If RmmSpark isn't aware of this thread, we are going to
-                // try to find the TaskContext and use it to register it for a taskID.
-                // However, TaskContext is not going to work for a pool thread that isn't
-                // managed by Spark, so we are going to skip registration, and skip the OOM.
-                // This is a temporary workaround, see:
-                // https://github.com/NVIDIA/spark-rapids/issues/13098
-                threadAssociated = false
-                Option(TaskContext.get()).foreach { tc =>
-                  threadAssociated = true
-                  RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
-                }
-              }
-              if (threadAssociated) {
-                if (mode.withSplit) {
-                  RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
-                    mode.numOoms,
-                    mode.oomInjectionFilter.ordinal,
-                    mode.skipCount)
-                } else {
-                  RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                    mode.numOoms,
-                    mode.oomInjectionFilter.ordinal,
-                    mode.skipCount)
-                }
-              } else {
-                log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
-                  "https://github.com/NVIDIA/spark-rapids/issues/13098")
-              }
-            case _ => ()
-          }
-          result = Some(attemptIter.next())
-          clearInjectedOOMIfNeeded()
-        } catch {
-          case ex: Throwable =>
-            log.info("got a throwable in RmmRapidsRetryIterator.next():", ex)
-            // handle a retry as the top-level exception
-            val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
-            if (topLevelIsSplit) {
-              if (isGpuOom) {
+      RetryStateTracker.enterRetryBlock()
+      try {
+        // this is set on the first exception, and we add suppressed if there are others
+        // during the retry attempts
+        var lastException: Throwable = null
+        var firstAttempt: Boolean = true
+        var result: Option[K] = None
+        var splitReason = SplitReason.NONE
+        while (result.isEmpty && attemptIter.hasNext) {
+          RetryStateTracker.setCurThreadRetrying(!firstAttempt)
+          if (!firstAttempt) {
+            // call thread block API
+            try {
+              threadCountBlockedUntilReady.incrementAndGet()
+              RmmSpark.blockThreadUntilReady()
+            } catch {
+              case _: GpuSplitAndRetryOOM =>
                 splitReason = SplitReason.GPU_OOM
-              } else {
+              case _: CpuSplitAndRetryOOM =>
                 splitReason = SplitReason.CPU_OOM
-              }
-              logInfo("splitReason is set " +
-                s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:", ex)
+            } finally {
+              threadCountBlockedUntilReady.decrementAndGet()
             }
-
-            // handle any retries that are wrapped in a different top-level exception
-            var causedByRetry = false
-            if (!topLevelIsRetry) {
-              val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
-              causedByRetry = cbRetry
-              if (!(splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM)) {
-                if (cbSplit) {
-                  if (isGpuOom) {
-                    splitReason = SplitReason.GPU_OOM
-                  } else {
-                    splitReason = SplitReason.CPU_OOM
+          }
+          firstAttempt = false
+          if (splitReason != SplitReason.NONE) {
+            preSplitLogging()
+            attemptIter.split(splitReason)
+          }
+          splitReason = SplitReason.NONE
+          try {
+            // call the user's function
+            RapidsConf.testRetryOOMInjectionMode() match {
+              case mode if !injectedOOM && mode.numOoms > 0 =>
+                injectedOOM = true
+                // ensure we have associated our thread with the running task, as
+                // `forceRetryOOM` requires a prior association.
+                var threadAssociated = true
+                if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
+                  // If RmmSpark isn't aware of this thread, we are going to
+                  // try to find the TaskContext and use it to register it for a taskID.
+                  // However, TaskContext is not going to work for a pool thread that isn't
+                  // managed by Spark, so we are going to skip registration, and skip the OOM.
+                  // This is a temporary workaround, see:
+                  // https://github.com/NVIDIA/spark-rapids/issues/13098
+                  threadAssociated = false
+                  Option(TaskContext.get()).foreach { tc =>
+                    threadAssociated = true
+                    RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
                   }
                 }
-                if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
-                  logInfo(s"splitReason is set to ${splitReason} after checking " +
-                    s"causedByRetryOrSplit, related exception:", ex)
+                if (threadAssociated) {
+                  if (mode.withSplit) {
+                    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                      mode.numOoms,
+                      mode.oomInjectionFilter.ordinal,
+                      mode.skipCount)
+                  } else {
+                    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                      mode.numOoms,
+                      mode.oomInjectionFilter.ordinal,
+                      mode.skipCount)
+                  }
+                } else {
+                  log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
+                    "https://github.com/NVIDIA/spark-rapids/issues/13098")
+                }
+              case _ => ()
+            }
+            result = Some(attemptIter.next())
+            clearInjectedOOMIfNeeded()
+          } catch {
+            case ex: Throwable =>
+              log.info("got a throwable in RmmRapidsRetryIterator.next():", ex)
+              // handle a retry as the top-level exception
+              val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
+              if (topLevelIsSplit) {
+                if (isGpuOom) {
+                  splitReason = SplitReason.GPU_OOM
+                } else {
+                  splitReason = SplitReason.CPU_OOM
+                }
+                logInfo("splitReason is set " +
+                  s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:",
+                  ex)
+              }
+
+              // handle any retries that are wrapped in a different top-level exception
+              var causedByRetry = false
+              if (!topLevelIsRetry) {
+                val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
+                causedByRetry = cbRetry
+                if (!(splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM)) {
+                  if (cbSplit) {
+                    if (isGpuOom) {
+                      splitReason = SplitReason.GPU_OOM
+                    } else {
+                      splitReason = SplitReason.CPU_OOM
+                    }
+                  }
+                  if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
+                    logInfo(s"splitReason is set to ${splitReason} after checking " +
+                      s"causedByRetryOrSplit, related exception:", ex)
+                  }
                 }
               }
-            }
 
-            clearInjectedOOMIfNeeded()
+              clearInjectedOOMIfNeeded()
 
-            // make sure we add any prior exceptions to this one as causes
-            if (lastException != null) {
-              ex.addSuppressed(lastException)
-            }
-            lastException = ex
-
-            if (!topLevelIsRetry && !causedByRetry) {
-              if (isOrCausedByColumnSizeOverflow(ex)) {
-                // CUDF column size overflow? Attempt split-retry.
-                splitReason = SplitReason.CUDF_OVERFLOW
-                logInfo(s"splitReason is set to ${splitReason} after checking " +
-                  s"isOrCausedByColumnSizeOverflow, related exception:", ex)
-              } else {
-                // we want to throw early here, since we got an exception
-                // we were not prepared to handle
-                throw lastException
+              // make sure we add any prior exceptions to this one as causes
+              if (lastException != null) {
+                ex.addSuppressed(lastException)
               }
-            }
-          // else another exception wrapped a retry. So we are going to try again
+              lastException = ex
+
+              if (!topLevelIsRetry && !causedByRetry) {
+                if (isOrCausedByColumnSizeOverflow(ex)) {
+                  // CUDF column size overflow? Attempt split-retry.
+                  splitReason = SplitReason.CUDF_OVERFLOW
+                  logInfo(s"splitReason is set to ${splitReason} after checking " +
+                    s"isOrCausedByColumnSizeOverflow, related exception:", ex)
+                } else {
+                  // we want to throw early here, since we got an exception
+                  // we were not prepared to handle
+                  throw lastException
+                }
+              }
+            // else another exception wrapped a retry. So we are going to try again
+          }
         }
+        if (result.isEmpty) {
+          // then lastException must be set, throw it.
+          throw lastException
+        }
+        result.get
+      } finally {
+        RetryStateTracker.clearCurThreadRetrying()
+        RetryStateTracker.exitRetryBlock()
       }
-      RetryStateTracker.clearCurThreadRetrying()
-      if (result.isEmpty) {
-        // then lastException must be set, throw it.
-        throw lastException
-      }
-      result.get
     }
   }
 
@@ -924,15 +930,62 @@ case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends Auto
  */
 object RetryStateTracker {
   private val localIsRetrying = new ThreadLocal[java.lang.Boolean]()
+  // Track if the current thread is executing inside a retry framework block (withRetry*).
+  // Use a depth counter to correctly handle nested retry blocks.
+  private val localRetryBlockDepth = new ThreadLocal[java.lang.Integer]()
+  // Gate retry-block tracking behind the retry coverage debug flag to avoid overhead when unused.
+  private val RETRY_COVERAGE_TRACKING_ENV = "SPARK_RAPIDS_RETRY_COVERAGE_TRACKING"
+  private val trackRetryBlock: Boolean =
+    "true".equalsIgnoreCase(System.getenv(RETRY_COVERAGE_TRACKING_ENV))
 
   def isCurThreadRetrying: Boolean = {
     val ret = localIsRetrying.get()
     ret != null && ret
   }
 
+  /**
+   * True if the current thread is executing inside a retry framework block (e.g. withRetry).
+   */
+  def isInRetryBlock: Boolean = {
+    if (!trackRetryBlock) {
+      false
+    } else {
+      val depth = localRetryBlockDepth.get()
+      depth != null && depth.intValue() > 0
+    }
+  }
+
   def setCurThreadRetrying(retrying: Boolean): Unit = localIsRetrying.set(retrying)
 
   def clearCurThreadRetrying(): Unit = localIsRetrying.remove()
+
+  /**
+   * Mark entering a retry framework block on the current thread.
+   */
+  def enterRetryBlock(): Unit = {
+    if (trackRetryBlock) {
+      val depth = localRetryBlockDepth.get()
+      if (depth == null) {
+        localRetryBlockDepth.set(1)
+      } else {
+        localRetryBlockDepth.set(depth.intValue() + 1)
+      }
+    }
+  }
+
+  /**
+   * Mark leaving a retry framework block on the current thread.
+   */
+  def exitRetryBlock(): Unit = {
+    if (trackRetryBlock) {
+      val depth = localRetryBlockDepth.get()
+      if (depth == null || depth.intValue() <= 1) {
+        localRetryBlockDepth.remove()
+      } else {
+        localRetryBlockDepth.set(depth.intValue() - 1)
+      }
+    }
+  }
 }
 
 object SplitReason extends Enumeration {

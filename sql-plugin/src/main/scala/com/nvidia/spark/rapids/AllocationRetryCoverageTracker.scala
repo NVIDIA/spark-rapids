@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,9 @@ object AllocationKind extends Enumeration {
  *   SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true ./integration_tests/run_pyspark_from_build.sh
  * 
  * When enabled:
- * - Checks memory allocations' call stacks for retry-related methods
+ * - Checks whether allocations happen while the current thread is executing inside the retry
+ *   framework (withRetry/withRetryNoSplit)
+ * - For uncovered allocations, captures a filtered stack trace for debugging
  * - Logs uncovered allocations to a CSV file under the JVM temp dir (see log output for path)
  * - Also logs warnings via Spark logging
  * 
@@ -136,28 +138,12 @@ object AllocationRetryCoverageTracker extends Logging {
     // Ensure header is written on first check
     ensureHeaderWritten()
 
-    val stackTrace = Thread.currentThread().getStackTrace
-
-    // Consider an allocation "covered" if the call stack includes one of the retry framework
-    // entrypoints inside Spark RAPIDS code, e.g. withRetry/withRetryNoSplit/withRestoreOnRetry,
-    // or if it is executing inside RmmRapidsRetryIterator internals.
+    // Consider an allocation "covered" if it happens while the current thread is executing
+    // inside the retry framework (withRetry/withRetryNoSplit).
     //
-    // Note: Scala often generates methods like `$anonfun$withRetryNoSplit$1`, so we match by
-    // substring rather than exact method name.
-    // Also exclude AllocationRetryCoverageTracker itself since it's always in the stack.
-    val hasCoverage = stackTrace.exists { element =>
-      val className = element.getClassName
-      val methodName = element.getMethodName
-      isSparkRapidsClassName(className) &&
-        !className.contains("AllocationRetryCoverageTracker") && {
-        val lowerMethod = methodName.toLowerCase(java.util.Locale.ROOT)
-        lowerMethod.contains("withretry") ||
-          lowerMethod.contains("restoreonretry") ||
-          className.startsWith("com.nvidia.spark.rapids.RmmRapidsRetryIterator")
-      }
-    }
-
-    if (!hasCoverage) {
+    // When uncovered, we capture a filtered stack trace for debugging.
+    if (!RetryStateTracker.isInRetryBlock) {
+      val stackTrace = Thread.currentThread().getStackTrace
       // Filter to only spark-rapids related frames for cleaner output
       val relevantStack = stackTrace
         .filter { element =>
