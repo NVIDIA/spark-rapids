@@ -22,9 +22,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
-
 import _root_.io.netty.buffer.Unpooled
+import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer

@@ -46,7 +46,7 @@ import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.internal.StaticSQLConf
-import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleCleanupListener}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class PluginException(msg: String) extends RuntimeException(msg)
@@ -443,6 +443,7 @@ object RapidsPluginUtils extends Logging {
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
+  var shuffleCleanupListener: ShuffleCleanupListener = null
   private lazy val extraDriverPlugins =
     RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
 
@@ -501,10 +502,12 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatInterval,
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
       }
-      // Initialize ShuffleCleanupManager for MULTITHREADED mode
+      // Initialize ShuffleCleanupManager and listener for MULTITHREADED mode
       if (conf.isMultiThreadedShuffleManagerMode) {
         ShuffleCleanupManager.init(sc)
-        logInfo("ShuffleCleanupManager initialized for MULTITHREADED shuffle mode")
+        shuffleCleanupListener = new ShuffleCleanupListener()
+        sc.addSparkListener(shuffleCleanupListener)
+        logInfo("ShuffleCleanupManager and listener initialized for MULTITHREADED shuffle mode")
       }
     }
 
@@ -524,6 +527,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def shutdown(): Unit = {
     extraDriverPlugins.foreach(_.shutdown())
     FileCacheLocalityManager.shutdown()
+    // Shutdown listener first to trigger cleanup for any remaining jobs
+    Option(shuffleCleanupListener).foreach(_.shutdown())
     ShuffleCleanupManager.shutdown()
   }
 }

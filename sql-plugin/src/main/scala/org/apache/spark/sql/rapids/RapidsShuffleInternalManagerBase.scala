@@ -46,7 +46,6 @@ import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.shuffle.sort.io.{RapidsLocalDiskShuffleDataIO, RapidsLocalDiskShuffleMapOutputWriter}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_WRITER_INPUT_FETCH_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -1949,19 +1948,16 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       logInfo(s"Unregistering shuffle $shuffleId from shuffle buffer catalog")
       catalog.unregisterShuffle(shuffleId)
     }
-    // For MultithreadedShuffleBufferCatalog, we use a different approach:
-    // - On driver: register the shuffle for cleanup via ShuffleCleanupManager
-    // - On executor: cleanup is done via ShuffleCleanupEndpoint polling mechanism
-    // This is because the catalog data is on executors but unregisterShuffle is called on driver
-    if (TrampolineUtil.isDriver(SparkEnv.get)) {
-      val manager = ShuffleCleanupManager.get
-      if (manager != null) {
-        logInfo(s"Registering shuffle $shuffleId for cleanup via ShuffleCleanupManager")
-        manager.registerForCleanup(shuffleId)
-      }
-    }
-    // Note: We don't call mtCatalog.unregisterShuffle directly anymore.
-    // The ShuffleCleanupEndpoint will poll for shuffles to clean and call it.
+    // For MultithreadedShuffleBufferCatalog:
+    // Cleanup is now triggered by ShuffleCleanupListener on job end, not here.
+    // The ShuffleCleanupEndpoint will poll for shuffles to clean and call
+    // mtCatalog.unregisterShuffle on executors.
+    //
+    // Note: This method is called via GC-triggered ContextCleaner.doCleanupShuffle().
+    // We don't register for cleanup here anymore because:
+    // 1. GC timing is unpredictable and often happens too late (at app shutdown)
+    // 2. By that time, executors may already be shutting down
+    // 3. Instead, ShuffleCleanupListener triggers cleanup proactively on job end
   }
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {

@@ -63,6 +63,9 @@ class ShuffleCleanupEndpoint(
     }
   }
 
+  @volatile private var shutdownHookAdded = false
+  @volatile private var closed = false
+
   /**
    * Start the periodic polling for shuffle cleanup.
    */
@@ -74,6 +77,24 @@ class ShuffleCleanupEndpoint(
       pollIntervalMs, // initial delay
       pollIntervalMs,
       TimeUnit.MILLISECONDS)
+    
+    // Add shutdown hook to ensure finalCleanup is called on JVM termination
+    if (!shutdownHookAdded) {
+      shutdownHookAdded = true
+      Runtime.getRuntime.addShutdownHook(new Thread("rapids-shuffle-cleanup-shutdown") {
+        override def run(): Unit = {
+          if (!closed) {
+            logInfo("Shutdown hook triggered, performing final cleanup")
+            try {
+              finalCleanup()
+            } catch {
+              case e: Exception =>
+                logWarning("Error during shutdown hook cleanup", e)
+            }
+          }
+        }
+      })
+    }
   }
 
   /**
@@ -158,6 +179,10 @@ class ShuffleCleanupEndpoint(
   }
 
   override def close(): Unit = {
+    if (closed) {
+      return
+    }
+    closed = true
     logInfo(s"Shutting down ShuffleCleanupEndpoint on executor $executorId")
 
     // Stop the scheduled polling first
