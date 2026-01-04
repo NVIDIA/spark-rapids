@@ -113,20 +113,6 @@ object GpuMetric extends Logging {
   val FILTER_TIME_BUBBLE = "filterTimeBubble"
   val SCHEDULE_TIME = "scheduleTime"
   val SCHEDULE_TIME_BUBBLE = "scheduleTimeBubble"
-  val INIT_READERS_TIME = "initReadersTime"
-  val BATCH_ITER_NEXT_TIME = "batchIterNextTime"
-  // Debug metrics for scan time breakdown
-  val DEBUG_READ_BUFFER_TO_BATCHES_TIME = "debugReadBufferToBatchesTime"
-  val DEBUG_GET_PARQUET_OPTIONS_TIME = "debugGetParquetOptionsTime"
-  val DEBUG_MAKE_PRODUCER_TIME = "debugMakeProducerTime"
-  val DEBUG_CACHED_ITER_APPLY_TIME = "debugCachedIterApplyTime"
-  val DEBUG_BATCH_ITER_HAS_NEXT_TIME = "debugBatchIterHasNextTime"
-  val DEBUG_READ_BUFFERS_TO_BATCH_TIME = "debugReadBuffersToBatchTime"
-  val DEBUG_GET_NEXT_BUFFER_TIME = "debugGetNextBufferTime"
-  val DEBUG_WAIT_BG_TIME = "debugWaitBgTime"
-  val DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME = "debugGetNextBufferExclWaitTime"
-  val DEBUG_EVOLVE_SCHEMA_TIME = "debugEvolveSchemaTime"
-  val DEBUG_REBASE_TIME = "debugRebaseTime"
   val BUILD_DATA_SIZE = "buildDataSize"
   val BUILD_TIME = "buildTime"
   val STREAM_TIME = "streamTime"
@@ -153,11 +139,30 @@ object GpuMetric extends Logging {
   val BIG_JOIN_COUNT = "sizedBigJoin"
   val SYNC_READ_TIME = "shuffleSyncReadTime"
   val ASYNC_READ_TIME = "shuffleAsyncReadTime"
-  // New scan metrics for detailed breakdown
-  val INIT_FILTER_TIME = "initFilterTime"
-  val MATERIALIZE_HOST_BUFFER_TIME = "materializeHostBufferTime"
-  val TABLE_TO_BATCH_TIME = "tableToBatchTime"
-  val ADD_PARTITION_VALUES_TIME = "addPartitionValuesTime"
+
+  // ==========================================================================
+  // Debug metrics for scan time breakdown
+  // Scan Time = DEBUG_INIT_READERS_TIME + DEBUG_INIT_FILTER_TIME
+  //           + DEBUG_BATCH_ITER_NEXT_TIME + DEBUG_WAIT_BG_TIME
+  //           + DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME + DEBUG_READ_BUFFER_TO_BATCHES_TIME
+  // ==========================================================================
+  // Top level metrics
+  val DEBUG_INIT_READERS_TIME = "debugInitReadersTime"
+  val DEBUG_INIT_FILTER_TIME = "debugInitFilterTime"
+  val DEBUG_BATCH_ITER_NEXT_TIME = "debugBatchIterNextTime"
+  val DEBUG_WAIT_BG_TIME = "debugWaitBgTime"
+  val DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME = "debugGetNextBufferExclWaitTime"
+  val DEBUG_READ_BUFFER_TO_BATCHES_TIME = "debugReadBufferToBatchesTime"
+  val BG_ALLOC_TIME = "bgAllocTime"
+  // Sub-metrics of DEBUG_READ_BUFFER_TO_BATCHES_TIME (RBTB = Read Buffer To Batches)
+  val DEBUG_RBTB_GET_PARQUET_OPTIONS_TIME = "debugRbtbGetParquetOptionsTime"
+  val DEBUG_RBTB_MATERIALIZE_HOST_BUFFER_TIME = "debugRbtbMaterializeHostBufferTime"
+  val DEBUG_RBTB_MAKE_PRODUCER_TIME = "debugRbtbMakeProducerTime"
+  val DEBUG_RBTB_CACHED_ITER_APPLY_TIME = "debugRbtbCachedIterApplyTime"
+  val DEBUG_RBTB_TABLE_TO_BATCH_TIME = "debugRbtbTableToBatchTime"
+  val DEBUG_RBTB_EVOLVE_SCHEMA_TIME = "debugRbtbEvolveSchemaTime"
+  val DEBUG_RBTB_REBASE_TIME = "debugRbtbRebaseTime"
+  val DEBUG_RBTB_ADD_PARTITION_VALUES_TIME = "debugRbtbAddPartitionValuesTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -184,21 +189,6 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILTER_TIME_BUBBLE = "filter time (GPU underloaded)"
   val DESCRIPTION_SCHEDULE_TIME = "I/O schedule time"
   val DESCRIPTION_SCHEDULE_TIME_BUBBLE = "I/O schedule time (GPU underloaded)"
-  val DESCRIPTION_INIT_READERS_TIME = "init readers time"
-  val DESCRIPTION_BATCH_ITER_NEXT_TIME = "batch iter next time"
-  // Debug descriptions
-  val DESCRIPTION_DEBUG_READ_BUFFER_TO_BATCHES_TIME = "debug: readBufferToBatches time"
-  val DESCRIPTION_DEBUG_GET_PARQUET_OPTIONS_TIME = "debug: getParquetOptions time"
-  val DESCRIPTION_DEBUG_MAKE_PRODUCER_TIME = "debug: MakeParquetTableProducer time"
-  val DESCRIPTION_DEBUG_CACHED_ITER_APPLY_TIME = "debug: CachedGpuBatchIterator.apply time"
-  val DESCRIPTION_DEBUG_BATCH_ITER_HAS_NEXT_TIME = "debug: batchIter.hasNext time"
-  val DESCRIPTION_DEBUG_READ_BUFFERS_TO_BATCH_TIME = "debug: readBuffersToBatch time"
-  val DESCRIPTION_DEBUG_GET_NEXT_BUFFER_TIME = "debug: getNextBuffersAndMeta time"
-  val DESCRIPTION_DEBUG_WAIT_BG_TIME = "debug: wait for background threads time"
-  val DESCRIPTION_DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME =
-    "debug: getNextBuffersAndMeta time (excl. wait)"
-  val DESCRIPTION_DEBUG_EVOLVE_SCHEMA_TIME = "debug: evolveSchemaIfNeededAndClose time"
-  val DESCRIPTION_DEBUG_REBASE_TIME = "debug: rebaseDateTime time"
   val DESCRIPTION_SCAN_TIME = "scan time"
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
@@ -227,11 +217,29 @@ object GpuMetric extends Logging {
   val DESCRIPTION_BIG_JOIN_COUNT = "big joins"
   val DESCRIPTION_SYNC_READ_TIME = "sync read time"
   val DESCRIPTION_ASYNC_READ_TIME = "async read time"
-  // New scan metrics descriptions
-  val DESCRIPTION_INIT_FILTER_TIME = "init filter blocks time"
-  val DESCRIPTION_MATERIALIZE_HOST_BUFFER_TIME = "materialize host buffer time"
-  val DESCRIPTION_TABLE_TO_BATCH_TIME = "table to batch time"
-  val DESCRIPTION_ADD_PARTITION_VALUES_TIME = "add partition values time"
+
+  // ==========================================================================
+  // Debug metric descriptions for scan time breakdown
+  // ==========================================================================
+  // Top level descriptions
+  val DESCRIPTION_DEBUG_INIT_READERS_TIME = "debug: init readers time"
+  val DESCRIPTION_DEBUG_INIT_FILTER_TIME = "debug: init filter blocks time"
+  val DESCRIPTION_DEBUG_BATCH_ITER_NEXT_TIME = "debug: batch iter next time"
+  val DESCRIPTION_DEBUG_WAIT_BG_TIME = "debug: wait for background threads time"
+  val DESCRIPTION_DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME =
+    "debug: getNextBuffersAndMeta time (excl. wait)"
+  val DESCRIPTION_DEBUG_READ_BUFFER_TO_BATCHES_TIME = "debug: readBufferToBatches time"
+  val DESCRIPTION_BG_ALLOC_TIME = "bg alloc host buffer time"
+  // Sub-metric descriptions (RBTB = Read Buffer To Batches)
+  val DESCRIPTION_DEBUG_RBTB_GET_PARQUET_OPTIONS_TIME = "debug: rbtb: getParquetOptions time"
+  val DESCRIPTION_DEBUG_RBTB_MATERIALIZE_HOST_BUFFER_TIME =
+    "debug: rbtb: materialize host buffer time"
+  val DESCRIPTION_DEBUG_RBTB_MAKE_PRODUCER_TIME = "debug: rbtb: MakeParquetTableProducer time"
+  val DESCRIPTION_DEBUG_RBTB_CACHED_ITER_APPLY_TIME = "debug: rbtb: CachedGpuBatchIterator.apply"
+  val DESCRIPTION_DEBUG_RBTB_TABLE_TO_BATCH_TIME = "debug: rbtb: table to batch time"
+  val DESCRIPTION_DEBUG_RBTB_EVOLVE_SCHEMA_TIME = "debug: rbtb: evolveSchemaIfNeededAndClose"
+  val DESCRIPTION_DEBUG_RBTB_REBASE_TIME = "debug: rbtb: rebaseDateTime time"
+  val DESCRIPTION_DEBUG_RBTB_ADD_PARTITION_VALUES_TIME = "debug: rbtb: add partition values time"
 
   /**
    * Determine if a GpuMetric wraps a TimingMetric or NanoTimingMetric.
