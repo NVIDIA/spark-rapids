@@ -135,14 +135,13 @@ object AllocationRetryCoverageTracker extends Logging {
    * @param kind The kind of memory allocation (HOST or DEVICE)
    */
   private def checkAllocationInternal(kind: AllocationKind): Unit = {
-    // Ensure header is written on first check
-    ensureHeaderWritten()
-
     // Consider an allocation "covered" if it happens while the current thread is executing
     // inside the retry framework (withRetry/withRetryNoSplit).
     //
     // When uncovered, we capture a filtered stack trace for debugging.
     if (!RetryStateTracker.isInRetryBlock) {
+      // Ensure header is written before logging the first uncovered allocation
+      ensureHeaderWritten()
       val stackTrace = Thread.currentThread().getStackTrace
       // Filter to only spark-rapids related frames for cleaner output
       val relevantStack = stackTrace
@@ -159,8 +158,13 @@ object AllocationRetryCoverageTracker extends Logging {
       
       // Only log if we haven't seen this exact stack before
       if (loggedStacks.add(stackKey)) {
-        // Escape the stack trace for CSV (replace quotes and wrap in quotes)
-        val escapedStack = "\"" + relevantStack.replace("\"", "\"\"") + "\""
+        // Sanitize and escape the stack trace for CSV:
+        //  - replace newlines/carriage returns to keep one record per line
+        //  - escape embedded quotes and wrap in quotes
+        val sanitizedStack = relevantStack
+          .replace("\r", " ")
+          .replace("\n", " ")
+        val escapedStack = "\"" + sanitizedStack.replace("\"", "\"\"") + "\""
         writeToFile(s"$kind,$escapedStack", append = true)
         logWarning(s"Uncovered $kind allocation #${loggedStacks.size()}. Stack: $relevantStack")
       }
