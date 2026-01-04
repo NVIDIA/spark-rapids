@@ -82,6 +82,47 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * For long-running applications or interactive sessions (spark-shell, notebooks), this is
  * typically not an issue as there is enough time between queries for cleanup to complete.
  *
+ * == Design Rationale: Why Pull (Polling) Instead of Push ==
+ *
+ * This implementation uses a pull model (executors poll driver) rather than a push model
+ * (driver pushes to executors). Here's why:
+ *
+ * '''1. Spark Plugin API Limitation'''
+ *
+ * The Spark Plugin API only supports executor-to-driver communication:
+ * {{{
+ * // PluginContext (executor side)
+ * def send(message: Any): Unit      // executor -> driver (fire-and-forget)
+ * def ask(message: Any): AnyRef     // executor -> driver (request-response)
+ *
+ * // DriverPlugin (driver side)
+ * def receive(message: Any): AnyRef // can only respond to executor requests
+ * }}}
+ *
+ * There is NO `driver.sendToExecutor(executorId, message)` API available.
+ *
+ * '''2. Alternative: Spark's RemoveShuffle Mechanism'''
+ *
+ * Spark has a built-in RemoveShuffle mechanism triggered by GC:
+ * {{{
+ * ContextCleaner.doCleanupShuffle(shuffleId)
+ *   -> mapOutputTrackerMaster.unregisterShuffle(shuffleId)  // clears map output info
+ *   -> shuffleDriverComponents.removeShuffle(shuffleId)     // sends RemoveShuffle to executors
+ * }}}
+ *
+ * This calls `shuffleManager.unregisterShuffle(shuffleId)` on each executor. However:
+ * - It's GC-triggered, so timing is unpredictable (often too late for short jobs)
+ * - Calling it manually risks clearing map output info too early, causing FetchFailedException
+ * - It's one-way (no return value), so we'd still need Plugin RPC to report stats back
+ *
+ * '''3. Benefits of Pull Model'''
+ *
+ * - Uses standard Plugin API, no dependency on Spark internals
+ * - Safe timing: we control when cleanup happens (after SQL execution ends)
+ * - Naturally handles executor failures (failed executors just stop polling)
+ * - No need to track executor list on driver side
+ * - 1-second polling overhead is negligible
+ *
  * @param sc SparkContext for posting events
  * @param staleEntryMaxAgeMs maximum age for pending entries before they are removed
  * @param cleanupIntervalMs interval for running stale entry cleanup
