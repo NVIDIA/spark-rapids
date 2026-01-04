@@ -465,6 +465,20 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
       case m: GpuCoreDumpMsg => GpuCoreDumpHandler.handleMsg(m)
       case m: ProfileMsg => ProfilerOnDriver.handleMsg(m)
+      // Shuffle cleanup RPC messages
+      case RapidsShuffleCleanupPollMsg(executorId) =>
+        val manager = ShuffleCleanupManager.get
+        if (manager != null) {
+          manager.handlePoll(executorId)
+        } else {
+          RapidsShuffleCleanupResponseMsg(Array.empty)
+        }
+      case RapidsShuffleCleanupStatsMsg(executorId, stats) =>
+        val manager = ShuffleCleanupManager.get
+        if (manager != null) {
+          manager.handleStats(executorId, stats)
+        }
+        null // No response needed for stats report
       case m => throw new IllegalStateException(s"Unknown message $m")
     }
   }
@@ -487,6 +501,11 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatInterval,
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
       }
+      // Initialize ShuffleCleanupManager for MULTITHREADED mode
+      if (conf.isMultiThreadedShuffleManagerMode) {
+        ShuffleCleanupManager.init(sc)
+        logInfo("ShuffleCleanupManager initialized for MULTITHREADED shuffle mode")
+      }
     }
 
     FileCacheLocalityManager.init(sc)
@@ -505,6 +524,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def shutdown(): Unit = {
     extraDriverPlugins.foreach(_.shutdown())
     FileCacheLocalityManager.shutdown()
+    ShuffleCleanupManager.shutdown()
   }
 }
 
@@ -539,6 +559,7 @@ case class ActiveTaskMetrics(
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
+  var shuffleCleanupEndpoint: ShuffleCleanupEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
 
@@ -613,6 +634,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             logInfo("Initializing shuffle manager heartbeats")
             rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
             rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+          }
+          // Initialize ShuffleCleanupEndpoint for MULTITHREADED mode with ESS disabled
+          if (conf.isMultiThreadedShuffleManagerMode && !GpuShuffleEnv.isExternalShuffleEnabled) {
+            logInfo("Initializing shuffle cleanup endpoint for MULTITHREADED mode")
+            shuffleCleanupEndpoint = new ShuffleCleanupEndpoint(pluginContext)
+            shuffleCleanupEndpoint.start()
           }
         }
       }
@@ -732,6 +759,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       AsyncProfilerOnExecutor.shutdown()
     }
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+    Option(shuffleCleanupEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
     GpuCoreDumpHandler.shutdown()

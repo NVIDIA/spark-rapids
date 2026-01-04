@@ -26,10 +26,8 @@ import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
 
 import _root_.io.netty.buffer.Unpooled
 
-import org.apache.spark.SparkContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
 
 /**
@@ -121,6 +119,15 @@ class MultithreadedShuffleBufferCatalog extends Logging {
   }
 
   /**
+   * Get all active shuffle IDs.
+   * Used during executor shutdown to clean up all remaining shuffles.
+   */
+  def getActiveShuffleIds: Seq[Int] = {
+    import scala.collection.JavaConverters._
+    activeShuffles.keySet().asScala.map(_.intValue()).toSeq
+  }
+
+  /**
    * Get a ManagedBuffer that reads data from all segments for a block.
    * The buffer dynamically assembles data from multiple partial files if needed.
    */
@@ -157,8 +164,11 @@ class MultithreadedShuffleBufferCatalog extends Logging {
 
   /**
    * Unregister a shuffle and clean up all associated data.
+   *
+   * @param shuffleId the shuffle ID to unregister
+   * @return optional cleanup statistics (None if this catalog has no data for the shuffle)
    */
-  def unregisterShuffle(shuffleId: Int): Unit = {
+  def unregisterShuffle(shuffleId: Int): Option[ShuffleCleanupStats] = {
     activeShuffles.remove(shuffleId)
 
     // Find and remove all blocks for this shuffle
@@ -204,21 +214,15 @@ class MultithreadedShuffleBufferCatalog extends Logging {
       }
     }
 
-    // Post event with disk savings statistics
-    if (bytesFromMemory > 0 || bytesFromDisk > 0) {
-      try {
-        // SparkContext.getOrCreate() works on driver where unregisterShuffle is called
-        val sc = SparkContext.getOrCreate()
-        TrampolineUtil.postEvent(sc,
-          SparkRapidsShuffleDiskSavingsEvent(shuffleId, bytesFromMemory, bytesFromDisk))
-      } catch {
-        case e: Exception =>
-          logDebug(s"Failed to post shuffle disk savings event for shuffle $shuffleId", e)
-      }
-    }
-
     logInfo(s"Unregistered shuffle $shuffleId: closed ${closedHandles.size()} handles, " +
       s"bytesFromMemory=$bytesFromMemory, bytesFromDisk=$bytesFromDisk")
+
+    // Return statistics if we had any data
+    if (bytesFromMemory > 0 || bytesFromDisk > 0) {
+      Some(ShuffleCleanupStats(shuffleId, bytesFromMemory, bytesFromDisk))
+    } else {
+      None
+    }
   }
 }
 
