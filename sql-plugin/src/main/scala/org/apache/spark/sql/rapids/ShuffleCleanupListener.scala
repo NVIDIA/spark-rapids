@@ -184,7 +184,7 @@ class ShuffleCleanupListener extends SparkListener with Logging {
     // Check for static ReusedExchange first
     val hasReusedExchange = containsReusedExchange(targetPlan)
     if (hasReusedExchange) {
-      logInfo(s"Execution $executionId: has ReusedExchange nodes in plan, " +
+      logWarning(s"Execution $executionId: has ReusedExchange nodes in plan, " +
         s"all shuffles will be cleaned up at query end")
       executionsWithReuse.add(executionId)
       return
@@ -192,7 +192,7 @@ class ShuffleCleanupListener extends SparkListener with Logging {
 
     if (exchanges.size <= 1) {
       // Single or no exchange - safe for early cleanup
-      logInfo(s"Execution $executionId: ${if (isAQE) "AQE" else "non-AQE"} query " +
+      logWarning(s"Execution $executionId: ${if (isAQE) "AQE" else "non-AQE"} query " +
         s"with ${exchanges.size} exchange(s), early cleanup enabled")
       return
     }
@@ -219,12 +219,12 @@ class ShuffleCleanupListener extends SparkListener with Logging {
     }
 
     if (hasDuplicateCanonicalized) {
-      logInfo(s"Execution $executionId: detected ${exchanges.size} Exchanges with " +
+      logWarning(s"Execution $executionId: detected ${exchanges.size} Exchanges with " +
         s"$uniqueCount unique canonicalized forms, " +
         s"potential reuse detected, all shuffles will be cleaned up at query end")
       executionsWithReuse.add(executionId)
     } else {
-      logInfo(s"Execution $executionId: ${if (isAQE) "AQE" else "non-AQE"} query " +
+      logWarning(s"Execution $executionId: ${if (isAQE) "AQE" else "non-AQE"} query " +
         s"with ${exchanges.size} unique exchanges, early cleanup enabled")
     }
   }
@@ -366,7 +366,7 @@ class ShuffleCleanupListener extends SparkListener with Logging {
       }
     }
 
-    logInfo(s"Job ${jobStart.jobId} (execution $executionId): " +
+    logWarning(s"Job ${jobStart.jobId} (execution $executionId): " +
       s"${localStageProducedShuffle.size} shuffles, " +
       s"${earlyCleanupCandidates.size()} early cleanup candidates")
   }
@@ -432,7 +432,7 @@ class ShuffleCleanupListener extends SparkListener with Logging {
       if (consumerStageId == completedStageId) {
         // Verify shuffle is still valid for early cleanup
         if (!mayReuseShuffles.contains(shuffleId) && !cleanedUpShuffles.contains(shuffleId)) {
-          logInfo(s"Stage $completedStageId completed, " +
+          logWarning(s"Stage $completedStageId completed, " +
             s"triggering early cleanup for shuffle $shuffleId")
           toCleanup += shuffleId
           cleanedUpShuffles.add(shuffleId)
@@ -485,7 +485,7 @@ class ShuffleCleanupListener extends SparkListener with Logging {
     if (needsCleanup.nonEmpty) {
       // Count early vs deferred for logging
       val earlyCleanedCount = allShuffles.count(cleanedUpShuffles.contains)
-      logInfo(s"SQL execution $executionId ended: " +
+      logWarning(s"SQL execution $executionId ended: " +
         s"$earlyCleanedCount shuffles cleaned early, " +
         s"${needsCleanup.size} shuffles cleaned at query end")
 
@@ -520,7 +520,7 @@ class ShuffleCleanupListener extends SparkListener with Logging {
   def shutdown(): Unit = {
     val remainingExecutions = executionShuffles.keySet().asScala.toSeq
     if (remainingExecutions.nonEmpty) {
-      logInfo(s"Shutdown: ${remainingExecutions.size} executions still have " +
+      logWarning(s"Shutdown: ${remainingExecutions.size} executions still have " +
         s"pending shuffle cleanup")
       val cleanupManager = ShuffleCleanupManager.get
       if (cleanupManager != null) {
