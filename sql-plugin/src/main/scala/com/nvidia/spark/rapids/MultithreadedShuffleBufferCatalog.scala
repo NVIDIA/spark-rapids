@@ -49,8 +49,9 @@ case class PartitionSegment(
  * a shuffle block, the catalog dynamically assembles the data from all
  * relevant segments.
  * 
- * This approach avoids the I/O cost of merging while keeping data in memory
- * when possible (through SpillablePartialFileHandle's MEMORY_WITH_SPILL mode).
+ * This approach avoids the I/O cost of merging. The data may be kept in memory
+ * (MEMORY_WITH_SPILL mode) or stored directly on disk (ONLY_FILE mode) depending
+ * on memory pressure - both modes work with this skip-merge design.
  */
 class MultithreadedShuffleBufferCatalog extends Logging {
 
