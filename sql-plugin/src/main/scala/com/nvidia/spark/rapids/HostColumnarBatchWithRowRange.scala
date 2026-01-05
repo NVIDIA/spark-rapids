@@ -176,14 +176,12 @@ class HostColumnarBatchWithRowRange private (
           }
 
           if (dataLen == 0) {
-            if (nullCount == 0L) {
-              // Workaround matching HostColumnVector.copyToDevice behavior for all-empty strings.
-              // We must provide at least 1 byte of data or copyToDevice will attempt to copy 1 byte
-              // from a 0-length buffer.
+            if (numRows > nullCount) {
+              // Existsing empty strings, we must provide at least 1 byte of data.
               dataSlice = HostMemoryBuffer.allocate(1L)
               dataSlice.setByte(0L, 0.toByte)
             } else {
-              // No string data required; avoid slicing/copying a 0-length data buffer.
+              // All rows are null (or 0 rows); safe to have no data buffer.
               dataSlice = null
             }
           } else {
