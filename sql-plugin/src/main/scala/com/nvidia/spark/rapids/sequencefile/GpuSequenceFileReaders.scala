@@ -21,10 +21,9 @@ import java.net.URI
 import java.util
 import java.util.Optional
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, HostColumnVectorCore,
-  HostMemoryBuffer}
+import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
@@ -73,12 +72,13 @@ private[sequencefile] final class HostBinaryListBufferer(
   private def growOffsetsIfNeeded(): Unit = {
     if (numRows + 1 > rowsAllocated) {
       val newRowsAllocated = math.min(rowsAllocated.toLong * 2, Int.MaxValue.toLong - 1L).toInt
-      val tmpBuffer =
-        HostMemoryBuffer.allocate((newRowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes)
-      tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
-      offsetsBuffer.close()
-      offsetsBuffer = tmpBuffer
-      rowsAllocated = newRowsAllocated
+      val newSize = (newRowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes
+      closeOnExcept(HostMemoryBuffer.allocate(newSize)) { tmpBuffer =>
+        tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
+        offsetsBuffer.close()
+        offsetsBuffer = tmpBuffer
+        rowsAllocated = newRowsAllocated
+      }
     }
   }
 
@@ -132,61 +132,37 @@ private[sequencefile] final class HostBinaryListBufferer(
     val childRowCount = dataLocation.toInt
     val offsetsRowCount = numRows + 1
 
-    // Wrap HostColumnVector construction to ensure buffers are closed on failure.
-    // Once construction succeeds, the HostColumnVector takes ownership of the buffer.
-    val childHost = try {
-      new HostColumnVector(DType.UINT8, childRowCount,
-        Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
-    } catch {
-      case e: Exception =>
-        if (dataBuffer != null) {
-          dataBuffer.close()
-          dataBuffer = null
-        }
-        if (offsetsBuffer != null) {
-          offsetsBuffer.close()
-          offsetsBuffer = null
-        }
-        throw e
-    }
-
-    val offsetsHost = try {
-      new HostColumnVector(DType.INT32, offsetsRowCount,
-        Optional.of[java.lang.Long](0L), offsetsBuffer, null, null, emptyChildren)
-    } catch {
-      case e: Exception =>
-        childHost.close()
-        if (offsetsBuffer != null) {
-          offsetsBuffer.close()
-          offsetsBuffer = null
-        }
-        throw e
-    }
-
     // Transfer ownership of the host buffers to the HostColumnVectors.
+    // closeOnExcept ensures buffers are closed if HostColumnVector construction fails.
+    val childHost = closeOnExcept(dataBuffer) { _ =>
+      closeOnExcept(offsetsBuffer) { _ =>
+        new HostColumnVector(DType.UINT8, childRowCount,
+          Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
+      }
+    }
     dataBuffer = null
+
+    val offsetsHost = closeOnExcept(childHost) { _ =>
+      closeOnExcept(offsetsBuffer) { _ =>
+        new HostColumnVector(DType.INT32, offsetsRowCount,
+          Optional.of[java.lang.Long](0L), offsetsBuffer, null, null, emptyChildren)
+      }
+    }
     offsetsBuffer = null
     out = null
     dos = null
 
-    var list: ColumnVector = null
-    try {
-      val childDev = childHost.copyToDevice()
-      try {
-        val offsetsDev = offsetsHost.copyToDevice()
-        try {
-          list = childDev.makeListFromOffsets(numRows, offsetsDev)
-        } finally {
-          offsetsDev.close()
-        }
-      } finally {
-        childDev.close()
+    // Copy to device and close host columns immediately after copy.
+    val childDev = closeOnExcept(offsetsHost) { _ =>
+      withResource(childHost)(_.copyToDevice())
+    }
+    val offsetsDev = closeOnExcept(childDev) { _ =>
+      withResource(offsetsHost)(_.copyToDevice())
+    }
+    withResource(childDev) { _ =>
+      withResource(offsetsDev) { _ =>
+        childDev.makeListFromOffsets(numRows, offsetsDev)
       }
-      list
-    } finally {
-      // Close host columns (releasing the host buffers).
-      childHost.close()
-      offsetsHost.close()
     }
   }
 
@@ -225,25 +201,29 @@ class SequenceFilePartitionReader(
     execMetrics: Map[String, GpuMetric]) extends PartitionReader[ColumnarBatch] with Logging {
 
   private[this] val path = new org.apache.hadoop.fs.Path(new URI(partFile.filePath.toString))
-  private[this] val reader = new SequenceFile.Reader(conf, SequenceFile.Reader.file(path))
+  private[this] val reader = {
+    val r = new SequenceFile.Reader(conf, SequenceFile.Reader.file(path))
+    closeOnExcept(r) { _ =>
+      val start = partFile.start
+      if (start > 0) {
+        r.sync(start)
+      }
+      // For the initial version, we explicitly fail fast on compressed SequenceFiles.
+      // (Record- and block-compressed files can be added later.)
+      if (r.isCompressed || r.isBlockCompressed) {
+        val compressionType = r.getCompressionType
+        val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
+          s"compressed SequenceFiles (compressionType=$compressionType), " +
+          s"file=$path, keyClass=${r.getKeyClassName}, " +
+          s"valueClass=${r.getValueClassName}"
+        logError(msg)
+        throw new UnsupportedOperationException(msg)
+      }
+      r
+    }
+  }
   private[this] val start = partFile.start
   private[this] val end = start + partFile.length
-  if (start > 0) {
-    reader.sync(start)
-  }
-
-  // For the initial version, we explicitly fail fast on compressed SequenceFiles.
-  // (Record- and block-compressed files can be added later.)
-  if (reader.isCompressed || reader.isBlockCompressed) {
-    val compressionType = reader.getCompressionType
-    val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
-      s"compressed SequenceFiles (compressionType=$compressionType), " +
-      s"file=$path, keyClass=${reader.getKeyClassName}, " +
-      s"valueClass=${reader.getValueClassName}"
-    logError(msg)
-    reader.close()
-    throw new UnsupportedOperationException(msg)
-  }
 
   private[this] val wantsKey = requiredSchema.fieldNames.exists(
     _.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD))
@@ -303,118 +283,112 @@ class SequenceFilePartitionReader(
     val initialSize = math.min(maxBytesPerBatch, 1024L * 1024L) // 1MiB
     val initialRows = math.min(maxRowsPerBatch, 1024)
 
-    var keyBufferer: HostBinaryListBufferer = null
-    var valueBufferer: HostBinaryListBufferer = null
-    if (wantsKey) keyBufferer = new HostBinaryListBufferer(initialSize, initialRows)
-    if (wantsValue) valueBufferer = new HostBinaryListBufferer(initialSize, initialRows)
+    val keyBufferer = if (wantsKey) {
+      Some(new HostBinaryListBufferer(initialSize, initialRows))
+    } else None
+    val valueBufferer = closeOnExcept(keyBufferer) { _ =>
+      if (wantsValue) {
+        Some(new HostBinaryListBufferer(initialSize, initialRows))
+      } else None
+    }
 
-    try {
-      var rows = 0
-      var bytes = 0L
+    // Both bufferers need to be open throughout the read loop, so nesting is necessary.
+    withResource(keyBufferer) { keyBuf =>
+      withResource(valueBufferer) { valBuf =>
+        var rows = 0
+        var bytes = 0L
 
-      bufferMetric.ns {
-        // Handle a pending record (spill-over from previous batch).
-        // Note: If rows == 0, we always add the pending record even if it exceeds
-        // maxBytesPerBatch. This is intentional to ensure forward progress and avoid
-        // infinite loops when a single record is larger than the batch size limit.
-        pending.foreach { p =>
-          if (rows == 0 || bytes + p.bytes <= maxBytesPerBatch) {
-            p.key.foreach { k => keyBufferer.addBytes(k, 0, k.length) }
-            p.value.foreach { v => valueBufferer.addBytes(v, 0, v.length) }
-            rows += 1
-            bytes += p.bytes
-            pending = None
+        bufferMetric.ns {
+          // Handle a pending record (spill-over from previous batch).
+          // Note: If rows == 0, we always add the pending record even if it exceeds
+          // maxBytesPerBatch. This is intentional to ensure forward progress and avoid
+          // infinite loops when a single record is larger than the batch size limit.
+          pending.foreach { p =>
+            if (rows == 0 || bytes + p.bytes <= maxBytesPerBatch) {
+              p.key.foreach { k => keyBuf.foreach(_.addBytes(k, 0, k.length)) }
+              p.value.foreach { v => valBuf.foreach(_.addBytes(v, 0, v.length)) }
+              rows += 1
+              bytes += p.bytes
+              pending = None
+            }
           }
-        }
 
-        // Read new records
-        var keepReading = true
-        while (keepReading && rows < maxRowsPerBatch && reader.getPosition < end) {
-          keyBuf.reset()
-          val recLen = reader.nextRaw(keyBuf, valueBytes)
-          if (recLen < 0) {
-            exhausted = true
-            keepReading = false
-          } else {
-            val keyLen = keyBuf.getLength
-            val valueLen = valueBytes.getSize
-            val recBytes = recordBytes(keyLen, valueLen)
-
-            // If this record doesn't fit, keep it for the next batch (unless it's the first row)
-            if (rows > 0 && recBytes > 0 && bytes + recBytes > maxBytesPerBatch) {
-              pending = Some(makePending(keyLen, valueLen))
+          // Read new records
+          var keepReading = true
+          while (keepReading && rows < maxRowsPerBatch && reader.getPosition < end) {
+            this.keyBuf.reset()
+            val recLen = reader.nextRaw(this.keyBuf, valueBytes)
+            if (recLen < 0) {
+              exhausted = true
               keepReading = false
             } else {
-              if (wantsKey) {
-                keyBufferer.addBytes(keyBuf.getData, 0, keyLen)
+              val keyLen = this.keyBuf.getLength
+              val valueLen = valueBytes.getSize
+              val recBytes = recordBytes(keyLen, valueLen)
+
+              // If this record doesn't fit, keep it for the next batch (unless it's the first row)
+              if (rows > 0 && recBytes > 0 && bytes + recBytes > maxBytesPerBatch) {
+                pending = Some(makePending(keyLen, valueLen))
+                keepReading = false
+              } else {
+                keyBuf.foreach(_.addBytes(this.keyBuf.getData, 0, keyLen))
+                valBuf.foreach(_.addValueBytes(valueBytes, valueLen))
+                rows += 1
+                bytes += recBytes
               }
-              if (wantsValue) {
-                valueBufferer.addValueBytes(valueBytes, valueLen)
-              }
-              rows += 1
-              bytes += recBytes
             }
           }
+          // Mark as exhausted if we've reached the end of this split
+          if (!exhausted && reader.getPosition >= end) {
+            exhausted = true
+          }
         }
-        // Mark as exhausted if we've reached the end of this split
-        if (!exhausted && reader.getPosition >= end) {
-          exhausted = true
-        }
-      }
 
-      if (rows == 0) {
-        None
-      } else {
-        // Acquire the semaphore before doing any GPU work (including partition columns downstream).
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
-        val outBatch = if (requiredSchema.isEmpty) {
-          new ColumnarBatch(Array.empty, rows)
+        if (rows == 0) {
+          None
         } else {
-          decodeMetric.ns {
-            val cols = new Array[SparkVector](requiredSchema.length)
-            var success = false
-            try {
-              var keyCol: ColumnVector = null
-              var valueCol: ColumnVector = null
-              requiredSchema.fields.zipWithIndex.foreach { case (f, i) =>
-                if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD)) {
-                  if (keyCol == null) {
-                    keyCol = keyBufferer.getDeviceListColumnAndRelease()
-                  }
-                  cols(i) = GpuColumnVector.from(keyCol.incRefCount(), BinaryType)
-                } else if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD)) {
-                  if (valueCol == null) {
-                    valueCol = valueBufferer.getDeviceListColumnAndRelease()
-                  }
-                  cols(i) = GpuColumnVector.from(valueCol.incRefCount(), BinaryType)
-                } else {
-                  cols(i) = GpuColumnVector.fromNull(rows, f.dataType)
-                }
-              }
-              // Close our local references now that the columns are in SparkVector
-              if (keyCol != null) keyCol.close()
-              if (valueCol != null) valueCol.close()
-              
-              val cb = new ColumnarBatch(cols, rows)
-              success = true
-              cb
-            } finally {
-              if (!success) {
-                cols.foreach { cv =>
-                  if (cv != null) {
-                    cv.close()
-                  }
-                }
-              }
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+          val outBatch = if (requiredSchema.isEmpty) {
+            new ColumnarBatch(Array.empty, rows)
+          } else {
+            decodeMetric.ns {
+              buildColumnarBatch(rows, keyBuf, valBuf)
             }
           }
+          Some(outBatch)
         }
-        Some(outBatch)
       }
-    } finally {
-      if (keyBufferer != null) keyBufferer.close()
-      if (valueBufferer != null) valueBufferer.close()
+    }
+  }
+
+  private def buildColumnarBatch(
+      rows: Int,
+      keyBufferer: Option[HostBinaryListBufferer],
+      valueBufferer: Option[HostBinaryListBufferer]): ColumnarBatch = {
+    // Build device columns once, then reference them for each schema field.
+    // Use closeOnExcept to ensure keyCol is cleaned up if valueCol creation fails.
+    val keyCol = keyBufferer.map(_.getDeviceListColumnAndRelease())
+    val valueCol = closeOnExcept(keyCol) { _ =>
+      valueBufferer.map(_.getDeviceListColumnAndRelease())
+    }
+
+    // Both columns need to be open for the mapping, so nesting is necessary here.
+    withResource(keyCol) { kc =>
+      withResource(valueCol) { vc =>
+        val cols: Array[SparkVector] = requiredSchema.fields.map { f =>
+          if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD)) {
+            GpuColumnVector.from(kc.get.incRefCount(), BinaryType)
+          } else if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD)) {
+            GpuColumnVector.from(vc.get.incRefCount(), BinaryType)
+          } else {
+            GpuColumnVector.fromNull(rows, f.dataType)
+          }
+        }
+        closeOnExcept(cols) { _ =>
+          new ColumnarBatch(cols, rows)
+        }
+      }
     }
   }
 

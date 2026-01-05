@@ -92,25 +92,36 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
             throw e
         }
 
-      // For the initial version, we explicitly fail fast on compressed SequenceFiles.
-      // (Record- and block-compressed files can be added later.)
-      if (reader.isCompressed || reader.isBlockCompressed) {
-        val compressionType = reader.getCompressionType
-        val msg = s"$SHORT_NAME does not support compressed SequenceFiles " +
-          s"(compressionType=$compressionType), " +
-          s"file=$path, keyClass=${reader.getKeyClassName}, " +
-          s"valueClass=${reader.getValueClassName}"
-        LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat]).error(msg)
-        reader.close()
-        throw new UnsupportedOperationException(msg)
+      // Register a task completion listener to ensure the reader is closed
+      // even if the iterator is abandoned early or an exception occurs.
+      Option(TaskContext.get()).foreach { tc =>
+        tc.addTaskCompletionListener[Unit](_ => reader.close())
       }
 
       val start = partFile.start
-      val end = start + partFile.length
-      if (start > 0) {
-        reader.sync(start)
+      try {
+        // For the initial version, we explicitly fail fast on compressed SequenceFiles.
+        // (Record- and block-compressed files can be added later.)
+        if (reader.isCompressed || reader.isBlockCompressed) {
+          val compressionType = reader.getCompressionType
+          val msg = s"$SHORT_NAME does not support compressed SequenceFiles " +
+            s"(compressionType=$compressionType), " +
+            s"file=$path, keyClass=${reader.getKeyClassName}, " +
+            s"valueClass=${reader.getValueClassName}"
+          LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat]).error(msg)
+          throw new UnsupportedOperationException(msg)
+        }
+
+        if (start > 0) {
+          reader.sync(start)
+        }
+      } catch {
+        case e: Throwable =>
+          reader.close()
+          throw e
       }
 
+      val end = start + partFile.length
       val reqFields = requiredSchema.fields
       val reqLen = reqFields.length
       val partLen = partitionSchema.length
@@ -127,12 +138,6 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
       val valueBytes = reader.createValueBytes()
       val valueOut = new DataOutputBuffer()
       val valueDos = new DataOutputStream(valueOut)
-
-      // Register a task completion listener to ensure the reader is closed
-      // even if the iterator is abandoned early or an exception occurs.
-      Option(TaskContext.get()).foreach { tc =>
-        tc.addTaskCompletionListener[Unit](_ => reader.close())
-      }
 
       new Iterator[InternalRow] {
         private[this] val unsafeProj = UnsafeProjection.create(outputSchema)
