@@ -177,7 +177,7 @@ class HostColumnarBatchWithRowRange private (
 
           if (dataLen == 0) {
             if (numRows > nullCount) {
-              // Existsing empty strings, we must provide at least 1 byte of data.
+              // Existing empty strings, we must provide at least 1 byte of data.
               dataSlice = HostMemoryBuffer.allocate(1L)
               dataSlice.setByte(0L, 0.toByte)
             } else {
