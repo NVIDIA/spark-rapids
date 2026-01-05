@@ -122,79 +122,83 @@ class HostColumnarBatchWithRowRange private (
     val children = new ArrayList[HostColumnVectorCore]()
     var success = false
     try {
-      if (dtype.equals(DType.LIST)) {
-        // Offsets map rows -> child element indices
-        val origOffsets = col.getOffsets
-        require(origOffsets != null, "LIST column offsets buffer is null")
+      dtype match {
+        case DType.LIST =>
+          // Offsets map rows -> child element indices
+          val origOffsets = col.getOffsets
+          require(origOffsets != null, "LIST column offsets buffer is null")
 
-        val startElem = origOffsets.getInt(startRow.toLong * 4L)
-        val endElem = origOffsets.getInt((startRow + numRows).toLong * 4L)
-        val numElems = endElem - startElem
-        require(startElem >= 0 && endElem >= startElem,
-          s"Invalid LIST offsets: startElem=$startElem endElem=$endElem")
+          val startElem = origOffsets.getInt(startRow.toLong * 4L)
+          val endElem = origOffsets.getInt((startRow + numRows).toLong * 4L)
+          val numElems = endElem - startElem
+          require(startElem >= 0 && endElem >= startElem,
+            s"Invalid LIST offsets: startElem=$startElem endElem=$endElem")
 
-        offsetsSlice = HostMemoryBuffer.allocate((numRows.toLong + 1L) * 4L)
-        // Normalize offsets so the first element starts at 0
-        var r = 0
-        while (r <= numRows) {
-          val v = origOffsets.getInt((startRow + r).toLong * 4L) - startElem
-          offsetsSlice.setInt(r.toLong * 4L, v)
-          r += 1
-        }
-
-        // Slice the child column by element indices
-        val child = col.getChildColumnView(0)
-        children.add(sliceHostColumn(child, startElem, numElems))
-      } else if (dtype.equals(DType.STRUCT)) {
-        // STRUCT children all have the same row count
-        var c = 0
-        while (c < col.getNumChildren) {
-          children.add(sliceHostColumn(col.getChildColumnView(c), startRow, numRows))
-          c += 1
-        }
-      } else if (dtype.equals(DType.STRING)) {
-        val origOffsets = col.getOffsets
-        require(origOffsets != null, "STRING column offsets buffer is null")
-        val origData = col.getData
-
-        val startByte = origOffsets.getInt(startRow.toLong * 4L)
-        val endByte = origOffsets.getInt((startRow + numRows).toLong * 4L)
-        val dataLen = endByte - startByte
-        require(startByte >= 0 && endByte >= startByte,
-          s"Invalid STRING offsets: startByte=$startByte endByte=$endByte")
-
-        // Normalize offsets so the first string starts at 0
-        offsetsSlice = HostMemoryBuffer.allocate((numRows.toLong + 1L) * 4L)
-        var r = 0
-        while (r <= numRows) {
-          val v = origOffsets.getInt((startRow + r).toLong * 4L) - startByte
-          offsetsSlice.setInt(r.toLong * 4L, v)
-          r += 1
-        }
-
-        if (dataLen == 0) {
-          if (nullCount == 0L) {
-            // Workaround matching HostColumnVector.copyToDevice behavior for all-empty strings.
-            // We must provide at least 1 byte of data or copyToDevice will attempt to copy 1 byte
-            // from a 0-length buffer.
-            dataSlice = HostMemoryBuffer.allocate(1L)
-            dataSlice.setByte(0L, 0.toByte)
-          } else {
-            // No string data required; avoid slicing/copying a 0-length data buffer.
-            dataSlice = null
+          offsetsSlice = HostMemoryBuffer.allocate((numRows.toLong + 1L) * 4L)
+          // Normalize offsets so the first element starts at 0
+          var r = 0
+          while (r <= numRows) {
+            val v = origOffsets.getInt((startRow + r).toLong * 4L) - startElem
+            offsetsSlice.setInt(r.toLong * 4L, v)
+            r += 1
           }
-        } else {
-          require(origData != null, "STRING column data buffer is null")
-          dataSlice = origData.slice(startByte.toLong, dataLen.toLong)
-        }
-      } else {
-        // Fixed-width (non-nested) types
-        val origData = col.getData
-        if (origData != null && numRows > 0) {
-          val startByte = startRow.toLong * dtype.getSizeInBytes
-          val dataLen = numRows.toLong * dtype.getSizeInBytes
-          dataSlice = origData.slice(startByte, dataLen)
-        }
+
+          // Slice the child column by element indices
+          val child = col.getChildColumnView(0)
+          children.add(sliceHostColumn(child, startElem, numElems))
+
+        case DType.STRUCT =>
+          // STRUCT children all have the same row count
+          var c = 0
+          while (c < col.getNumChildren) {
+            children.add(sliceHostColumn(col.getChildColumnView(c), startRow, numRows))
+            c += 1
+          }
+
+        case DType.STRING =>
+          val origOffsets = col.getOffsets
+          require(origOffsets != null, "STRING column offsets buffer is null")
+          val origData = col.getData
+
+          val startByte = origOffsets.getInt(startRow.toLong * 4L)
+          val endByte = origOffsets.getInt((startRow + numRows).toLong * 4L)
+          val dataLen = endByte - startByte
+          require(startByte >= 0 && endByte >= startByte,
+            s"Invalid STRING offsets: startByte=$startByte endByte=$endByte")
+
+          // Normalize offsets so the first string starts at 0
+          offsetsSlice = HostMemoryBuffer.allocate((numRows.toLong + 1L) * 4L)
+          var r = 0
+          while (r <= numRows) {
+            val v = origOffsets.getInt((startRow + r).toLong * 4L) - startByte
+            offsetsSlice.setInt(r.toLong * 4L, v)
+            r += 1
+          }
+
+          if (dataLen == 0) {
+            if (nullCount == 0L) {
+              // Workaround matching HostColumnVector.copyToDevice behavior for all-empty strings.
+              // We must provide at least 1 byte of data or copyToDevice will attempt to copy 1 byte
+              // from a 0-length buffer.
+              dataSlice = HostMemoryBuffer.allocate(1L)
+              dataSlice.setByte(0L, 0.toByte)
+            } else {
+              // No string data required; avoid slicing/copying a 0-length data buffer.
+              dataSlice = null
+            }
+          } else {
+            require(origData != null, "STRING column data buffer is null")
+            dataSlice = origData.slice(startByte.toLong, dataLen.toLong)
+          }
+
+        case _ =>
+          // Fixed-width (non-nested) types
+          val origData = col.getData
+          if (origData != null && numRows > 0) {
+            val startByte = startRow.toLong * dtype.getSizeInBytes
+            val dataLen = numRows.toLong * dtype.getSizeInBytes
+            dataSlice = origData.slice(startByte, dataLen)
+          }
       }
 
       val sliced = new HostColumnVector(
@@ -242,7 +246,7 @@ class HostColumnarBatchWithRowRange private (
     while (r < numRows) {
       if (col.isNull((startRow + r).toLong)) {
         nullCount += 1
-        setNullAt(out, r)
+        RapidsHostColumnBuilder.setNullAt(out, r.toLong)
       }
       r += 1
     }
@@ -258,14 +262,6 @@ class HostColumnarBatchWithRowRange private (
     // Matches cudf::bitmask_allocation_size_bytes (64-byte padding)
     val actualBytes = (numRows.toLong + 7L) >> 3
     ((actualBytes + 63L) >> 6) << 6
-  }
-
-  private def setNullAt(valid: HostMemoryBuffer, index: Int): Unit = {
-    val bucket = index / 8
-    val bit = index % 8
-    val cur = valid.getByte(bucket.toLong) & 0xFF
-    val mask = (~(1 << bit)) & 0xFF
-    valid.setByte(bucket.toLong, (cur & mask).toByte)
   }
 
   /**

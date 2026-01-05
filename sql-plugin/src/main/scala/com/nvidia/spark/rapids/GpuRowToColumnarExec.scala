@@ -689,7 +689,7 @@ class RowToColumnarIterator(
           builders.buildHostColumnsWithoutOwnership()
         }
         val dataTypes = localSchema.fields.map(_.dataType)
-        val hostBatch = Arm.closeOnExcept(hostColumns) { _ =>
+        val hostBatch = closeOnExcept(hostColumns) { _ =>
           HostColumnarBatchWithRowRange(hostColumns, rowCount, dataTypes)
         }
 
@@ -722,7 +722,6 @@ class RowToColumnarIterator(
             first
           }
         }
-
         // The returned batch will be closed by the consumer of it
         // Output metrics and targetRows refinement are handled in recordOutput().
       }
