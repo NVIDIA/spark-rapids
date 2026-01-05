@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,14 +24,18 @@ cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
 SERVER_URL="$URM_URL-local"
-SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
+SCALA_VERSION=`mvn help:evaluate -q -f $POM_FILE -pl dist -Dexpression=scala.binary.version -DforceStdout`
 # remove the periods so change something like 3.2.1 to 321
 VERSION_NUM=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS//.}
 SPARK_VERSION_STR=spark$VERSION_NUM
-SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
-# Append 143 into the db shim version because Databricks 14.3.x and 15.4.x are both based on spark version 3.5.0
+SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -f $POM_FILE -pl dist -Dexpression=project.version -DforceStdout`
+# Append 143 or 173 into the db shim version because Databricks 14.3.x and 15.4.x are both based on spark version 3.5.0
+# and Databricks 17.3 based on Spark 4.0.0
 if [[ "$DB_RUNTIME" == "14.3"* ]]; then
     DB_SHIM_NAME="${SPARK_VERSION_STR}db143"
+elif [[ "$DB_RUNTIME" == "17.3"* ]]; then
+    # Databricks 17.3 based on Spark 4.0.0
+    DB_SHIM_NAME="${SPARK_VERSION_STR}db173"
 else
     DB_SHIM_NAME="${SPARK_VERSION_STR}db"
 fi

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,19 @@ class ProxyRapidsShuffleInternalManagerBase(
   private lazy val realImpl = ShimLoader.newInternalShuffleManager(conf, isDriver)
     .asInstanceOf[ShuffleManager]
 
+  // Cache reflection lookup for getReader methods (done once at initialization)
+  private lazy val getReader7ParamMethod = try {
+    Some(realImpl.getClass.getMethod("getReader",
+      classOf[ShuffleHandle], classOf[Int], classOf[Int], classOf[Int], classOf[Int],
+      classOf[TaskContext], classOf[ShuffleReadMetricsReporter]))
+  } catch {
+    case _: NoSuchMethodException => None
+  }
+
+  private lazy val getReader8ParamMethod = realImpl.getClass.getMethod("getReader",
+    classOf[ShuffleHandle], classOf[Int], classOf[Int], classOf[Int], classOf[Int],
+    classOf[TaskContext], classOf[ShuffleReadMetricsReporter], classOf[Boolean])
+
   // This function touches the lazy val `self` so we actually instantiate
   // the manager. This is called from both the driver and executor.
   // In the driver, it's mostly to display information on how to enable/disable the manager,
@@ -77,9 +90,42 @@ class ProxyRapidsShuffleInternalManagerBase(
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    realImpl.getReader(handle,
-      startMapIndex, endMapIndex, startPartition, endPartition,
-      context, metrics)
+    // Use cached reflection (lookup done once at init)
+    getReader7ParamMethod match {
+      case Some(method) =>
+        method.invoke(realImpl, handle,
+          Integer.valueOf(startMapIndex), Integer.valueOf(endMapIndex),
+          Integer.valueOf(startPartition), Integer.valueOf(endPartition),
+          context, metrics)
+          .asInstanceOf[ShuffleReader[K, C]]
+      case None =>
+        // Databricks 17.3: Only 8-param exists, call with false
+        getReader8ParamMethod.invoke(realImpl, handle,
+          Integer.valueOf(startMapIndex), Integer.valueOf(endMapIndex),
+          Integer.valueOf(startPartition), Integer.valueOf(endPartition),
+          context, metrics, java.lang.Boolean.FALSE)
+          .asInstanceOf[ShuffleReader[K, C]]
+    }
+  }
+
+  /**
+   * Databricks 17.3+ added prismMapStatusEnabled parameter.
+   */
+  def getReader[K, C](
+      handle: ShuffleHandle,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter,
+      prismMapStatusEnabled: Boolean): ShuffleReader[K, C] = {
+    // Use cached reflection (lookup done once at init)
+    getReader8ParamMethod.invoke(realImpl, handle,
+      Integer.valueOf(startMapIndex), Integer.valueOf(endMapIndex),
+      Integer.valueOf(startPartition), Integer.valueOf(endPartition),
+      context, metrics, java.lang.Boolean.valueOf(prismMapStatusEnabled))
+      .asInstanceOf[ShuffleReader[K, C]]
   }
 
   def registerShuffle[K, V, C](

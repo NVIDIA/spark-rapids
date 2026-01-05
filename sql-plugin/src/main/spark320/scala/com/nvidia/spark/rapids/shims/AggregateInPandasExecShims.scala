@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,26 +50,23 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
-
-import org.apache.spark.sql.catalyst.expressions.NamedExpression
+import com.nvidia.spark.rapids._
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
 
+/**
+ * Exec rules for AggregateInPandasExec (exists before rename to ArrowAggregatePythonExec).
+ * Helper methods are in AggregateInPandasShims trait.
+ */
 object AggregateInPandasExecShims {
-  val execRule: Option[ExecRule[_ <: SparkPlan]] = Some(
-    GpuOverrides.exec[AggregateInPandasExec](
-      "The backend for an Aggregation Pandas UDF." +
-        " This accelerates the data transfer between the Java process and the Python process." +
-        " It also supports scheduling GPU resources for the Python process" +
-        " when enabled.",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
-  )
-
-  def isAggregateInPandasExec(plan: SparkPlan): Boolean = plan.isInstanceOf[AggregateInPandasExec]
-
-  def getGroupingExpressions(plan: SparkPlan): Seq[NamedExpression] = {
-    plan.asInstanceOf[AggregateInPandasExec].groupingExpressions
+  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    Seq(
+      GpuOverrides.exec[AggregateInPandasExec](
+        "The backend for an Aggregation Pandas UDF, this accelerates the data transfer between" +
+          " the Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled.",
+        ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+        (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 }

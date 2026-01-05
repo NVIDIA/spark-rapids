@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "400db173"}
+spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
 import java.io.{BufferedReader, File, InputStreamReader}
@@ -22,7 +25,8 @@ import scala.collection.mutable
 import scala.io.Source
 
 import org.json4s._
-import org.json4s.jackson.JsonMethods._
+// Databricks 17.3: Use jackson.Serialization instead of JsonMethods
+import org.json4s.jackson.Serialization
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -32,6 +36,8 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach {
+  // Databricks 17.3: implicit formats for json4s
+  implicit val formats: Formats = org.json4s.DefaultFormats
 
   private var spark: SparkSession = _
   private val tempDir = new File(System.getProperty("java.io.tmpdir"), "metrics-eventlog-test")
@@ -190,7 +196,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
 
         lines.foreach { line =>
           try {
-            val json = parse(line)
+            val json = Serialization.read[JValue](line)
             val eventType = (json \ "Event").extractOpt[String]
 
             eventType match {
@@ -199,11 +205,11 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
                 val taskInfo = (json \ "Task Info")
 
                 // Extract task execution time from Task Metrics
-                val taskId = (taskInfo \ "Task ID").extractOpt[Long]
+                val taskId = (taskInfo \ "Task ID").extractOpt[BigInt].map(_.toLong)
                 val taskMetrics = (json \ "Task Metrics")
                 // https://github.com/apache/spark/blob/450b415028c3b00f3a002126cd11318d3932e28f/
                 // core/src/main/scala/org/apache/spark/ui/jobs/StagePage.scala#L151
-                val executorRunTime = (taskMetrics \ "Executor Run Time").extractOpt[Long]
+                val executorRunTime = (taskMetrics \ "Executor Run Time").extractOpt[BigInt].map(_.toLong)
 
                 (taskId, executorRunTime) match {
                   case (Some(tId), Some(runTime)) =>

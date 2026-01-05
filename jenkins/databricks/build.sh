@@ -119,11 +119,23 @@ initialize()
     # the version of Spark used when we install the Databricks jars in .m2
     BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
     SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}-databricks
+
+     # Determine Scala version based on Spark version
+    # Spark 4.0+ uses Scala 2.13, earlier versions use 2.12
+    if [[ "$BASE_SPARK_VERSION" == 4.* ]]; then
+        export SCALA_BINARY_VER=2.13
+    fi
+
     DBR_VER=$(cat /databricks/DBR_VERSION)
     if [ $DBR_VER == '14.3' ]; then 
         DBR_VER=$(echo $DBR_VER | sed 's/\.//g')
         # We are appending 143 in addition to the base spark version because Databricks 14.3
         # and Databricks 15.4 are both based on spark version 3.5.0
+        BUILDVER="$BUILDVER$DBR_VER"
+        SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS="$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS-$DBR_VER"
+    elif [ $DBR_VER == '17.3' ]; then
+        DBR_VER=$(echo $DBR_VER | sed 's/\.//g')
+        # Appending 173 for Databricks 17.3 based on Spark 4.0.0
         BUILDVER="$BUILDVER$DBR_VER"
         SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS="$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS-$DBR_VER"
     fi
@@ -145,10 +157,18 @@ initialize()
     export WORKSPACE=$PWD
     # set the retry count for mvn commands
     MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
+
+    # Determine which pom to use based on Scala version
+    if [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
+        POM_FILE="scala2.13/pom.xml"
+    else
+        POM_FILE="pom.xml"
+    fi
+
     # getting the versions of CUDA, SCALA and SPARK_PLUGIN
-    SPARK_PLUGIN_JAR_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout)
-    SCALA_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout)
-    CUDA_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout)
+    SPARK_PLUGIN_JAR_VERSION=$($MVN_CMD help:evaluate -q -f $POM_FILE -pl dist -Dexpression=project.version -DforceStdout)
+    SCALA_VERSION=$($MVN_CMD help:evaluate -q -f $POM_FILE -pl dist -Dexpression=scala.binary.version -DforceStdout)
+    CUDA_VERSION=$($MVN_CMD help:evaluate -q -f $POM_FILE -pl dist -Dexpression=cuda.version -DforceStdout)
     RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
     # If set to 1, skips installing dependencies into mvn repo.
     SKIP_DEP_INSTALL=${SKIP_DEP_INSTALL:-'0'}
@@ -228,12 +248,17 @@ else
 fi
 
 # Build the RAPIDS plugin by running package command for databricks
-$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER $MVN_PHASES -DskipTests $MVN_OPT
+$MVN_CMD -B -f $POM_FILE -Ddatabricks -Dbuildver=$BUILDVER $MVN_PHASES -DskipTests $MVN_OPT
 
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     echo "Building the default Spark shim and creating a two-shim dist jar"
-    UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=buildver -DforceStdout)
-    $MVN_CMD -B package -pl dist -am -DskipTests -Dmaven.scaladoc.skip $MVN_OPT \
+    if [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
+        # For Scala 2.13, we always use buildver 400 (Scala 2.13 is only used with Spark 4.0+)
+        UPSTREAM_BUILDVER=400
+    else
+        UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -f $POM_FILE -pl dist -Dexpression=buildver -DforceStdout)
+    fi
+    $MVN_CMD -B -f $POM_FILE package -pl dist -am -DskipTests -Dmaven.scaladoc.skip $MVN_OPT \
         -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER
 fi
 

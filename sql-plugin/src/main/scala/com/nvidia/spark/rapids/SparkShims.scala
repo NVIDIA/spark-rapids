@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,6 +62,10 @@ trait SparkShims {
     dateTimeRebaseModeFromConf: String): ParquetFilters
 
   def isWindowFunctionExec(plan: SparkPlan): Boolean
+
+  def isAggregateInPandasExec(plan: SparkPlan): Boolean
+
+  def getAggregateInPandasExecGroupingExpressions(plan: SparkPlan): Seq[Expression]
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]

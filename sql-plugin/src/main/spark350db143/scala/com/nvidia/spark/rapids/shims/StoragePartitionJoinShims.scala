@@ -21,16 +21,15 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-// Spark 3.5.0-db143, 4.0.x: StoragePartitionJoinParams is in datasources.v2 package
 import org.apache.spark.sql.execution.datasources.v2.StoragePartitionJoinParams
 
 /**
- * Shim for StoragePartitionJoinParams to handle package location change.
- * In Spark 3.5.0-db143 and 4.0.x, it's in org.apache.spark.sql.execution.datasources.v2
- * In Spark 4.1.0+, it moved to org.apache.spark.sql.execution.joins
+ * Wrapper for StoragePartitionJoinParams to handle versions where it exists.
  */
 object StoragePartitionJoinShims {
   type SpjParams = StoragePartitionJoinParams
-
+  
   def default(): SpjParams = StoragePartitionJoinParams()
+
+  def fromBatchScan(spjParams: StoragePartitionJoinParams): SpjParams = spjParams
 }

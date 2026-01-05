@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "400db173"}
+spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector}
@@ -76,14 +79,16 @@ case class GpuRand(child: Expression, doContextCheck: Boolean) extends ShimUnary
   override def withNewSeed(seed: Long): GpuRand = GpuRand(GpuLiteral(seed, LongType),
     doContextCheck)
 
-  // Added in Spark 4.1.0
-  def withShiftedSeed(shift: Long): Expression = {
-    val newSeed = child match {
-      case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int].toLong + shift
-      case GpuLiteral(s, LongType) => s.asInstanceOf[Long] + shift
-      case _ => shift
+  // New method in Databricks 17.3 / Spark 4.1
+  // See: https://github.com/apache/spark/commit/abc72f2da462b07afdc03c4181bb7c2e63fe00b8
+  override def withShiftedSeed(shift: Long): GpuRand = {
+    child match {
+      case GpuLiteral(s, IntegerType) => 
+        GpuRand(GpuLiteral(s.asInstanceOf[Int] + shift, LongType), doContextCheck)
+      case GpuLiteral(s, LongType) => 
+        GpuRand(GpuLiteral(s.asInstanceOf[Long] + shift, LongType), doContextCheck)
+      case _ => this
     }
-    withNewSeed(newSeed)
   }
 
   def seedExpression: Expression = child

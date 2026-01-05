@@ -46,6 +46,7 @@
 {"spark": "356"}
 {"spark": "357"}
 {"spark": "400"}
+{"spark": "400db173"}
 {"spark": "401"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
@@ -54,7 +55,6 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.rapids.hybrid.HybridFileSourceScanExec
-import org.apache.spark.sql.catalyst.expressions.DynamicPruningExpression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 
@@ -76,12 +76,12 @@ class HybridFileSourceScanExecMeta(plan: FileSourceScanExec,
     }
     wrapped.partitionFilters.map { filter =>
       filter.transformDown {
-        case dpe@DynamicPruningExpression(inSub: InSubqueryExec) =>
+        case dpe@DynamicPruningShims(inSub: InSubqueryExec) =>
           inSub.plan match {
             case bc: SubqueryBroadcastExec =>
-              dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+              DynamicPruningShims(inSub.copy(plan = convertBroadcast(bc)))
             case reuse@ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
-              dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+              DynamicPruningShims(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
             case _ =>
               dpe
           }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 {"spark": "332db"}
 {"spark": "341db"}
 {"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -75,16 +76,14 @@ trait Spark321PlusDBShims extends SparkShims
   override def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
       newPlan: SparkPlan): BroadcastQueryStageExec =
-    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, old.isSparkExchange)
+    QueryStageExecShims.createBroadcastQueryStageExec(
+      old, old.id, newPlan, old.originalPlan, old.isSparkExchange)
 
   override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
     fileCatalog.allFiles().map(_.toFileStatus)
   }
 
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
-
-  override def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] =
-    winPy.projectList
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean =
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]

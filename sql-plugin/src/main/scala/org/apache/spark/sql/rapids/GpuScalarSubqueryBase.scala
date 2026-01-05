@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- * GPU placeholder of ScalarSubquery, which returns the scalar result with columnarEval method.
- * This placeholder is to make ScalarSubquery working as a GPUExpression to cooperate
- * other GPU overrides.
- */
-case class GpuScalarSubquery(
+abstract class GpuScalarSubqueryBase(
     plan: BaseSubqueryExec,
     exprId: ExprId)
   extends ExecSubqueryExpression with GpuExpression with ShimExpression {
@@ -39,11 +34,11 @@ case class GpuScalarSubquery(
   override def children: Seq[Expression] = Seq.empty
   override def nullable: Boolean = true
   override def toString: String = plan.simpleString(SQLConf.get.maxToStringFields)
-  override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
+  def withNewPlan(query: BaseSubqueryExec): GpuScalarSubqueryBase
 
   // the first column in first row from `query`.
   @volatile private var result: Any = _
-  @volatile private var updated: Boolean = false
+  @volatile protected var updated: Boolean = false
 
   override def updateResult(): Unit = {
     val rows = plan.executeCollect()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -115,4 +115,8 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
 
   private[spark] def createResourceUninterruptibly[T <: Closeable](
       resourceBuilder: => T): T = resourceBuilder
+
+  // New methods in Databricks 17.3 / Spark 4.1
+  override def addTaskInterruptListener(listener: org.apache.spark.util.TaskInterruptListener): TaskContext = this
+  private[spark] override def getTaskFailure(): Option[Throwable] = None
 }
