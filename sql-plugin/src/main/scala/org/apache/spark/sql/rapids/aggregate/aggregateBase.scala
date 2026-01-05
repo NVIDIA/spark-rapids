@@ -125,7 +125,7 @@ trait GpuAggregateFunction extends GpuExpression
    *             M2 and Count cases we overwrite it, because the cuDF shape isn't
    *             what Spark expects.
    */
-  final lazy val postUpdateAttr: Seq[AttributeReference] = updateAggregates.map(_.attr)
+  lazy val postUpdateAttr: Seq[AttributeReference] = updateAggregates.map(_.attr)
   lazy val postUpdate: Seq[Expression] = postUpdateAttr
 
   /**
@@ -160,7 +160,7 @@ trait GpuAggregateFunction extends GpuExpression
    *            is the exception, where `postMerge` mutates the result of the
    *            `mergeAggregates` to output what Spark expects.
    */
-  final lazy val postMergeAttr: Seq[AttributeReference] = mergeAggregates.map(_.attr)
+  lazy val postMergeAttr: Seq[AttributeReference] = mergeAggregates.map(_.attr)
   lazy val postMerge: Seq[Expression] = postMergeAttr
 
   /**

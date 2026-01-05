@@ -2179,112 +2179,72 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
   override def prettyName: String = "var_samp"
 }
 
-case class GpuReplaceNullmask(
-    input: Expression,
-    mask: Expression) extends GpuExpression with ShimExpression {
-
-  override def dataType: DataType = input.dataType
-  override def nullable: Boolean = mask.nullable
-  override def children: Seq[Expression] = Seq(input, mask)
-
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    val maskColumnNullity = withResource(mask.columnarEval(batch)) { maskColumn =>
-      maskColumn.getBase.isNull
-    }
-    val res = withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-      withResource(maskColumnNullity) { _ =>
-        withResource(input.columnarEval(batch)) { inputColumn =>
-          maskColumnNullity.ifElse(nullScalar, inputColumn.getBase)
-        }
-      }
-    }
-    GpuColumnVector.from(res, dataType)
-  }
-}
-
-object CudfMaxMinBy {
-  val KEY_ORDERING: String = "_key_ordering"
-  val KEY_VALUE: String = "_key_value"
-}
-
-abstract class CudfMaxMinByAggregate(
-    orderingType: DataType,
-    valueType: DataType) extends CudfAggregate {
-
-  protected val reductionAggregation: ReductionAggregation
-
+abstract class CudfArgMinMaxBase() extends CudfAggregate {
+  protected val cudfReductionOp: ReductionAggregation
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = col => {
     if (col.getNullCount == col.getRowCount) { // all nulls
       GpuScalar.from(null, dataType)
     } else {
-      col.reduce(reductionAggregation)
+      col.reduce(cudfReductionOp, DType.INT32)
     }
   }
-
-  override val dataType: DataType = StructType(Seq(
-    StructField(CudfMaxMinBy.KEY_ORDERING, orderingType),
-    StructField(CudfMaxMinBy.KEY_VALUE, valueType)))
+  override val dataType: DataType = IntegerType
 }
 
-class CudfMaxBy(valueType: DataType, orderingType: DataType)
-  extends CudfMaxMinByAggregate(orderingType, valueType) {
-
-  override val name: String = "CudfMaxBy"
-  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.max()
-  override lazy val reductionAggregation: ReductionAggregation = ReductionAggregation.max()
+class CudfArgMin() extends CudfArgMinMaxBase() {
+  override val name: String = "CudfArgMin"
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.argMin()
+  override lazy val cudfReductionOp: ReductionAggregation = ReductionAggregation.argMin()
 }
 
-class CudfMinBy(valueType: DataType, orderingType: DataType)
-  extends CudfMaxMinByAggregate(orderingType, valueType) {
-
-  override val name: String = "CudfMinBy"
-  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.min()
-  override lazy val reductionAggregation: ReductionAggregation = ReductionAggregation.min()
+class CudfArgMax() extends CudfArgMinMaxBase() {
+  override val name: String = "CudfArgMax"
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.argMax()
+  override lazy val cudfReductionOp: ReductionAggregation = ReductionAggregation.argMax()
 }
 
 abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
   extends GpuAggregateFunction with Serializable {
 
-  protected val cudfMaxMinByAggregate: CudfAggregate
-
-  private lazy val bufferOrdering: AttributeReference =
-    AttributeReference("ordering", orderingExpr.dataType)()
+  // Must be an instance of either CudfArgMin or CudfArgMax.
+  protected val cudfArgMinMaxAggregate: CudfAggregate
 
   private lazy val bufferValue: AttributeReference =
     AttributeReference("value", valueExpr.dataType)()
-
-  // Cudf allows only one column as input, so wrap value and ordering columns by
-  // a struct before just going into cuDF.
-  private def createStructExpression(order: Expression, value: Expression): Expression =
-    GpuReplaceNullmask(
-      GpuCreateNamedStruct(Seq(
-        GpuLiteral(CudfMaxMinBy.KEY_ORDERING, StringType), order,
-        GpuLiteral(CudfMaxMinBy.KEY_VALUE, StringType), value)),
-      order)
-
-  // Extract the value and ordering columns from cuDF results
-  // to match the expectation of Spark.
-  private def extractChildren: Seq[Expression] = Seq(
-    GpuGetStructField(cudfMaxMinByAggregate.attr, 1, Some(CudfMaxMinBy.KEY_VALUE)),
-    GpuGetStructField(cudfMaxMinByAggregate.attr, 0, Some(CudfMaxMinBy.KEY_ORDERING))
-  )
-
-  override lazy val initialValues: Seq[Expression] = Seq(
-    GpuLiteral(null, valueExpr.dataType), GpuLiteral(null, orderingExpr.dataType))
-
-  override lazy val inputProjection: Seq[Expression] = Seq(
-    createStructExpression(orderingExpr, valueExpr))
-  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(cudfMaxMinByAggregate)
-  override lazy val postUpdate: Seq[Expression] = extractChildren
-
-  override lazy val preMerge: Seq[Expression] = Seq(
-    createStructExpression(bufferOrdering, bufferValue))
-  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(cudfMaxMinByAggregate)
-  override lazy val postMerge: Seq[Expression] = extractChildren
-
-  override lazy val evaluateExpression: Expression = bufferValue
+  private lazy val bufferOrdering: AttributeReference =
+    AttributeReference("ordering", orderingExpr.dataType)()
 
   override def aggBufferAttributes: Seq[AttributeReference] = Seq(bufferValue, bufferOrdering)
+
+  override lazy val initialValues: Seq[Expression] =
+    Seq(GpuLiteral(null, valueExpr.dataType), GpuLiteral(null, orderingExpr.dataType))
+
+  // The ordering column is used as input for reduction/groupby to find the argmin/argmax index.
+  override lazy val inputProjection: Seq[Expression] = Seq(orderingExpr)
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(cudfArgMinMaxAggregate)
+
+  override lazy val postUpdateAttr: Seq[AttributeReference] =
+    updateAggregates.map(_.attr) :+ (valueExpr match {
+      case attr: AttributeReference => attr
+      case _ => throw new IllegalArgumentException("Not an AttributeReference")
+    }) :+ (orderingExpr match {
+      case attr: AttributeReference => attr
+      case _ => throw new IllegalArgumentException("Not an AttributeReference")
+    })
+  // Extract the extremum value from argmin/argmax index.
+  override lazy val postUpdate: Seq[Expression] =
+    Seq(GpuGather(valueExpr, cudfArgMinMaxAggregate.attr),
+      GpuGather(orderingExpr, cudfArgMinMaxAggregate.attr))
+
+  override lazy val preMerge: Seq[Expression] = Seq(bufferOrdering)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(cudfArgMinMaxAggregate)
+  override lazy val postMergeAttr: Seq[AttributeReference] =
+    mergeAggregates.map(_.attr) :+ bufferValue :+ bufferOrdering
+  override lazy val postMerge: Seq[Expression] =
+    Seq(GpuGather(bufferValue, cudfArgMinMaxAggregate.attr),
+      GpuGather(bufferOrdering, cudfArgMinMaxAggregate.attr))
+
+  override lazy val evaluateExpression: Expression = bufferValue
 
   override def children: Seq[Expression] = Seq(valueExpr, orderingExpr)
 
@@ -2299,8 +2259,7 @@ case class GpuMaxBy(valueExpr: Expression, orderingExpr: Expression)
 
   override def prettyName: String = "max_by"
 
-  override protected lazy val cudfMaxMinByAggregate: CudfAggregate =
-    new CudfMaxBy(valueExpr.dataType, orderingExpr.dataType)
+  override protected lazy val cudfArgMinMaxAggregate: CudfAggregate = new CudfArgMax()
 }
 
 case class GpuMinBy(valueExpr: Expression, orderingExpr: Expression)
@@ -2308,8 +2267,7 @@ case class GpuMinBy(valueExpr: Expression, orderingExpr: Expression)
 
   override def prettyName: String = "min_by"
 
-  override protected lazy val cudfMaxMinByAggregate: CudfAggregate =
-    new CudfMinBy(valueExpr.dataType, orderingExpr.dataType)
+  override protected lazy val cudfArgMinMaxAggregate: CudfAggregate = new CudfArgMin()
 }
 
 class CudfBitAndAgg(override val dataType: DataType) extends CudfAggregate {
