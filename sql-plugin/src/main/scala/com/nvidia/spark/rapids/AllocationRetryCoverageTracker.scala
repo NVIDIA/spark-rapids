@@ -237,14 +237,5 @@ object AllocationRetryCoverageTracker extends Logging {
    * Check if tracking is currently enabled.
    */
   def isEnabled: Boolean = ENABLED
-
-  /**
-   * Reset the tracker state (useful for testing).
-   * Note: Cannot change ENABLED as it's read from env var at class load time.
-   */
-  def reset(): Unit = writeLock.synchronized {
-    headerWritten = false
-    loggedStacks.clear()
-  }
 }
 
