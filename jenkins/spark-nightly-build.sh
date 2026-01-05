@@ -23,11 +23,10 @@ export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentC
 . jenkins/version-def.sh
 
 # Set JDK 17 as the default for nightly builds across both:
-# scala2.12 (with maven.compiler.source as 1.8)
-# and scala2.13
+# scala2.12 and scala2.13 (with maven.compiler.source as 1.8)
 export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
 update-java-alternatives --set $JAVA_HOME
-java -version
+mvn -version
 
 DIST_PL="dist"
 DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
