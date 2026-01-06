@@ -71,7 +71,8 @@ private[sequencefile] final class HostBinaryListBufferer(
 
   private def growOffsetsIfNeeded(): Unit = {
     if (numRows + 1 > rowsAllocated) {
-      val newRowsAllocated = math.min(rowsAllocated.toLong * 2, Int.MaxValue.toLong - 1L).toInt
+      // Use Int.MaxValue - 2 to ensure (rowsAllocated + 1) * 4 doesn't overflow
+      val newRowsAllocated = math.min(rowsAllocated.toLong * 2, Int.MaxValue.toLong - 2L).toInt
       val newSize = (newRowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes
       closeOnExcept(HostMemoryBuffer.allocate(newSize)) { tmpBuffer =>
         tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
@@ -89,6 +90,8 @@ private[sequencefile] final class HostBinaryListBufferer(
         newBuff.copyFromHostBuffer(0, dataBuffer, 0, dataLocation)
         dataBuffer.close()
         dataBuffer = newBuff
+        // Clear old stream wrapper before creating new ones
+        dos = null
         out = new HostMemoryOutputStream(dataBuffer)
         dos = new DataOutputStream(out)
       }
@@ -123,7 +126,13 @@ private[sequencefile] final class HostBinaryListBufferer(
     val offsetPosition = numRows.toLong * DType.INT32.getSizeInBytes
     val startDataLocation = dataLocation
     out.seek(dataLocation)
+    val startPos = out.getPos
     valueBytes.writeUncompressedBytes(dos)
+    val actualLen = (out.getPos - startPos).toInt
+    if (actualLen != len) {
+      throw new IllegalStateException(
+        s"addValueBytes length mismatch: expected $len bytes, but wrote $actualLen bytes")
+    }
     dataLocation = out.getPos
     // Write offset only after successful data write
     offsetsBuffer.setInt(offsetPosition, startDataLocation.toInt)
@@ -534,23 +543,26 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
 
   override protected def getFileFormatShortName: String = "SequenceFileBinary"
 
-  override protected def buildBaseColumnarReaderForCloud(
+  private def buildSequenceFileMultiFileReader(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    // No special cloud implementation yet; read sequentially on the task thread.
     new PartitionReaderWithBytesRead(
       new SequenceFileMultiFilePartitionReader(conf, files, readDataSchema, partitionSchema,
         maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
         metrics, queryUsesInputFile))
   }
 
+  override protected def buildBaseColumnarReaderForCloud(
+      files: Array[PartitionedFile],
+      conf: Configuration): PartitionReader[ColumnarBatch] = {
+    // No special cloud implementation yet; read sequentially on the task thread.
+    buildSequenceFileMultiFileReader(files, conf)
+  }
+
   override protected def buildBaseColumnarReaderForCoalescing(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     // Sequential multi-file reader (no cross-file coalescing).
-    new PartitionReaderWithBytesRead(
-      new SequenceFileMultiFilePartitionReader(conf, files, readDataSchema, partitionSchema,
-        maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-        metrics, queryUsesInputFile))
+    buildSequenceFileMultiFileReader(files, conf)
   }
 }

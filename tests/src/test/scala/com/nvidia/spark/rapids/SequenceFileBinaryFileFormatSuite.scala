@@ -32,6 +32,15 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.SparkException
 import org.apache.spark.sql.SparkSession
 
+/**
+ * Unit tests for SequenceFileBinaryFileFormat.
+ *
+ * Note: This test suite uses its own withSparkSession/withGpuSparkSession methods instead of
+ * extending SparkQueryCompareTestSuite because:
+ * 1. These tests need fresh SparkSession instances per test to avoid state pollution
+ * 2. The tests don't need the compare-CPU-vs-GPU pattern from SparkQueryCompareTestSuite
+ * 3. The simpler session management makes the tests more self-contained
+ */
 class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
   private def withSparkSession(f: SparkSession => Unit): Unit = {
@@ -56,7 +65,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       .config("spark.sql.shuffle.partitions", "1")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.sql.enabled", "true")
-      .config("spark.rapids.sql.test.enabled", "false")
+      .config("spark.rapids.sql.test.enabled", "true")
       .getOrCreate()
     try {
       f(spark)
