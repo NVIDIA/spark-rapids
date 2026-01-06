@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,13 +16,21 @@ import pytest
 import uuid
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_iceberg_rest_catalog
 from data_gen import *
-from iceberg import get_full_table_name, rapids_reader_types, create_iceberg_table
+from iceberg import get_full_table_name, rapids_reader_types, create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list
 from marks import iceberg, ignore_order
 from spark_session import with_cpu_session, is_spark_35x
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                                reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = [
+    pytest.mark.skipif(not is_spark_35x(),
+                       reason="Current spark-rapids only support spark 3.5.x"),
+
+    # Iceberg view tests only supported with REST catalog,
+    # because the view sql is not supported with Hadoop/S3Table catalog for Iceberg 1.9.x
+    pytest.mark.skipif(not is_iceberg_rest_catalog(),
+                       reason="Iceberg view tests only supported with REST catalog")
+]
 
 @iceberg
 @ignore_order(local=True)
@@ -40,8 +48,12 @@ def test_iceberg_view(spark_tmp_table_factory, reader_type, view_sql):
     view_uuid = str(uuid.uuid4()).replace('-', '_')
     view_name = "iceberg_view_" + view_uuid
 
-    # Create an Iceberg table with some data in it
+    # Create an Iceberg table, and insert data into it
     create_iceberg_table(table_name)
+    def insert_data(spark):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        df.writeTo(table_name).append()
+    with_cpu_session(insert_data)
 
     # Create an Iceberg view on the table with a view sql
     def setup_iceberg_view(spark):
