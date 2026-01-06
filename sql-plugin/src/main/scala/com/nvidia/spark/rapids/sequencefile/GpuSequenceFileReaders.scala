@@ -96,23 +96,37 @@ private[sequencefile] final class HostBinaryListBufferer(
   }
 
   def addBytes(bytes: Array[Byte], offset: Int, len: Int): Unit = {
+    val newEnd = dataLocation + len
+    if (newEnd > Int.MaxValue) {
+      throw new IllegalStateException(
+        s"Binary column child size $newEnd would exceed INT32 offset limit")
+    }
     growOffsetsIfNeeded()
-    val end = dataLocation + len
-    growDataIfNeeded(end)
-    offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataLocation.toInt)
+    growDataIfNeeded(newEnd)
+    val offsetPosition = numRows.toLong * DType.INT32.getSizeInBytes
+    val startDataLocation = dataLocation
     dataBuffer.setBytes(dataLocation, bytes, offset, len)
-    dataLocation = end
+    dataLocation = newEnd
+    // Write offset only after successful data write
+    offsetsBuffer.setInt(offsetPosition, startDataLocation.toInt)
     numRows += 1
   }
 
   def addValueBytes(valueBytes: SequenceFile.ValueBytes, len: Int): Unit = {
+    val newEnd = dataLocation + len
+    if (newEnd > Int.MaxValue) {
+      throw new IllegalStateException(
+        s"Binary column child size $newEnd would exceed INT32 offset limit")
+    }
     growOffsetsIfNeeded()
-    val end = dataLocation + len
-    growDataIfNeeded(end)
-    offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataLocation.toInt)
+    growDataIfNeeded(newEnd)
+    val offsetPosition = numRows.toLong * DType.INT32.getSizeInBytes
+    val startDataLocation = dataLocation
     out.seek(dataLocation)
     valueBytes.writeUncompressedBytes(dos)
     dataLocation = out.getPos
+    // Write offset only after successful data write
+    offsetsBuffer.setInt(offsetPosition, startDataLocation.toInt)
     numRows += 1
   }
 
@@ -149,6 +163,9 @@ private[sequencefile] final class HostBinaryListBufferer(
       }
     }
     offsetsBuffer = null
+    // The stream wrappers (out, dos) don't hold independent resources - they just wrap the
+    // dataBuffer which is now owned by childHost. Setting to null without close() is intentional
+    // to avoid attempting operations on the transferred buffer.
     out = null
     dos = null
 
@@ -327,7 +344,7 @@ class SequenceFilePartitionReader(
               val recBytes = recordBytes(keyLen, valueLen)
 
               // If this record doesn't fit, keep it for the next batch (unless it's the first row)
-              if (rows > 0 && recBytes > 0 && bytes + recBytes > maxBytesPerBatch) {
+              if (rows > 0 && bytes + recBytes > maxBytesPerBatch) {
                 pending = Some(makePending(keyLen, valueLen))
                 keepReading = false
               } else {

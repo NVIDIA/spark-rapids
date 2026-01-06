@@ -463,4 +463,36 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       }
     }
   }
+
+  test("Split boundary handling - records starting before boundary are read") {
+    withTempDir("seqfile-split-test") { tmpDir =>
+      val file = new File(tmpDir, "split-test.seq")
+      val conf = new Configuration()
+
+      // Create file with multiple records using raw record format (consistent with other tests)
+      val numRecords = 100
+      val payloads = (0 until numRecords).map { i =>
+        s"record-$i-with-some-padding-data".getBytes(StandardCharsets.UTF_8)
+      }.toArray
+
+      writeSequenceFileWithRawRecords(file, conf, payloads)
+
+      withSparkSession { spark =>
+        // Read entire file
+        val df = spark.read
+          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .load(file.getAbsolutePath)
+
+        val results = df.select("key", "value").collect()
+        assert(results.length == numRecords,
+          s"Expected $numRecords records, got ${results.length}")
+
+        // Verify all records present and no duplicates
+        val indices = results.map(r => bytesToInt(r.getAs[Array[Byte]](0))).sorted.toSeq
+        val expected = (0 until numRecords).toSeq
+        assert(indices == expected,
+          "Records missing or duplicated")
+      }
+    }
+  }
 }
