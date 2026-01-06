@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,6 +80,7 @@ case class GpuSha1(child: Expression)
  *   - Only bit lengths of 0, 224, 256, 384, and 512 are supported.
  *   - A bit length of 0 is treated as 256, following Spark behaviour.
  *   - For the GPU implementation, the bit length must be provided as a literal.
+ *   - For unsupported (including negative) bit lengths, SHA2 returns null.
  *     This differs from the CPU implementation, where the bit length can differ
  *     per row.
  * @see https://spark.apache.org/docs/latest/api/sql/index.html#sha2
