@@ -87,7 +87,7 @@ case class GpuWindowInPandasExec(
     val unboundToRefMap = allExpressions.zip(references).toMap
     // Bound the project list for GPU
     GpuBindReferences.bindGpuReferences(
-      projectList.map(_.transform(unboundToRefMap)), child.output)
+      projectList.map(_.transform(unboundToRefMap)), child.output, allMetrics)
   }
 
   // Override internalDoExecuteColumnar so we use the correct GpuArrowPythonRunner
@@ -185,14 +185,17 @@ case class GpuWindowInPandasExec(
     // UDF contains multiple columns.
     val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
+    val localMetrics = allMetrics
 
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
 
-      val boundDataRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs, childOutput)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs, childOutput,
+        localMetrics)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput,
+        localMetrics)
       val batchProducer = new BatchProducer(
         new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
       val pyInputIterator = batchProducer.asIterator.map { batch =>

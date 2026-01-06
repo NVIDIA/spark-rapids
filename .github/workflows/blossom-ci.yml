@@ -75,7 +75,8 @@ jobs:
         github.actor == 'pxLi'  ||
         github.actor == 'SurajAralihalli' ||
         github.actor == 'jihoonson' ||
-        github.actor == 'knoguchi22'
+        github.actor == 'knoguchi22' ||
+        github.actor == 'pmattione-nvidia'
       )
     steps:
       - name: Check if comment is issued by authorized person
@@ -99,7 +100,7 @@ jobs:
 
       # repo specific steps
       - name: Setup java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: adopt
           java-version: 8

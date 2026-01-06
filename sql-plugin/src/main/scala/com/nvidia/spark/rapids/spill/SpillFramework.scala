@@ -227,21 +227,32 @@ trait SpillableHandle extends StoreHandle with Logging {
   private[spill] def doClose(): Unit
 
   /**
-   * When the current handle is actually doing spilling, it might encounter exceptions, e.g.
-   * InterruptedException. This method is used to catch those exceptions and reset spilling state
-   * to false
+   * Executes a spill operation while handling exceptions.
+   * If an exception occurs during spilling (e.g. InterruptedException), this method
+   * catches it, logs a warning, resets the spilling state to false, and rethrows the exception.
+   *
+   * Subclasses override this method to wrap the spill operation with appropriate metrics tracking:
+   * - DeviceSpillableHandle tracks spillToHostTime and memory bytes spilled
+   * - HostSpillableHandle tracks spillToDiskTime and disk bytes spilled
+   *
+   * @param block the spill operation to execute, should return the number of bytes spilled
+   * @return the number of bytes spilled, or 0 if the spill was not successful (only being used
+   *         for metrics tracking for the time being)
    */
-  def inCaseSpillingFailed(block: () => Long): Long = {
-    try {
-      block()
-    } catch {
-      case e: Throwable =>
-        logWarning("Failed to spill SpillableColumnarBatchHandle", e)
-        synchronized {
-          spilling = false
-        }
-        throw e
+  protected def executeSpill(block: => Long): Long = {
+    def impl(): Long = {
+      try {
+        block
+      } catch {
+        case e: Throwable =>
+          logWarning(s"Failed to spill $this", e)
+          synchronized {
+            spilling = false
+          }
+          throw e
+      }
     }
+    impl()
   }
 
   /**
@@ -297,6 +308,15 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   def releaseSpilled(): Unit = {
     releaseDeviceResource()
   }
+
+  // Wrap spill execution with memory spill metrics tracking
+  override protected def executeSpill(block: => Long): Long = {
+    GpuTaskMetrics.get.spillToHostTime {
+      val spilledBytes = super.executeSpill(block)
+      TrampolineUtil.incTaskMetricsMemoryBytesSpilled(spilledBytes)
+      spilledBytes
+    }
+  }
 }
 
 /**
@@ -316,6 +336,15 @@ trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
     synchronized {
       host.foreach(_.close())
       host = None
+    }
+  }
+
+  // Wrap spill execution with disk spill metrics tracking
+  override protected def executeSpill(block: => Long): Long = {
+    GpuTaskMetrics.get.spillToDiskTime {
+      val spilledBytes = super.executeSpill(block)
+      TrampolineUtil.incTaskMetricsDiskBytesSpilled(spilledBytes)
+      spilledBytes
     }
   }
 }
@@ -431,41 +460,42 @@ class SpillableHostBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed { () =>
+        executeSpill {
           withResource(host.get) { buf =>
-            withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+            var staging: Option[DiskHandle] = None
+            val actualBytes = withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
               val outputChannel = diskHandleBuilder.getChannel
               // the spill IO is non-blocking as it won't impact dev or host directly
               // instead we "atomically" swap the buffers below once they are ready
-              GpuTaskMetrics.get.spillToDiskTime {
-                val iter = new HostByteBufferIterator(buf)
-                iter.foreach { bb =>
-                  try {
-                    while (bb.hasRemaining) {
-                      outputChannel.write(bb)
-                    }
-                  } finally {
-                    RapidsStorageUtils.dispose(bb)
+              val iter = new HostByteBufferIterator(buf)
+              iter.foreach { bb =>
+                try {
+                  while (bb.hasRemaining) {
+                    outputChannel.write(bb)
                   }
+                } finally {
+                  RapidsStorageUtils.dispose(bb)
                 }
               }
-              TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
-              var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
-              synchronized {
-                spilling = false
-                if (closed) {
-                  staging.foreach(_.close())
-                  staging = None
-                  doClose()
-                } else {
-                  disk = staging
-                }
-              }
-              releaseHostResource()
+              staging = Some(diskHandleBuilder.build(taskPriority))
+              diskHandleBuilder.size // actual bytes to be spilled
             }
+            // diskHandleBuilder is now closed, safe to expose disk handle to other threads
+            synchronized {
+              spilling = false
+              if (closed) {
+                staging.foreach(_.close())
+                staging = None
+                doClose()
+              } else {
+                disk = staging
+              }
+            }
+            releaseHostResource()
+            actualBytes // return actual bytes spilled for metrics
           }
-          sizeInBytes
         }
+        sizeInBytes
       } else {
         0
       }
@@ -608,7 +638,7 @@ class SpillableDeviceBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed { () =>
+        executeSpill {
           withResource(dev.get) { buf =>
             // the spill IO is non-blocking as it won't impact dev or host directly
             // instead we "atomically" swap the buffers below once they are ready
@@ -624,9 +654,10 @@ class SpillableDeviceBufferHandle private (
                 host = stagingHost
               }
             }
+            buf.getLength // return actual bytes spilled for metrics
           }
-          sizeInBytes
         }
+        sizeInBytes
       } else {
         0
       }
@@ -717,12 +748,13 @@ class SpillableColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed { () =>
+        executeSpill {
           withChunkedPacker(dev.get) { chunkedPacker =>
             meta = Some(chunkedPacker.getPackedMeta)
             var staging: Option[SpillableHostBufferHandle] =
               Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker,
                 taskPriority))
+            val actualBytes: Long = staging.map(_.sizeInBytes).getOrElse(0L)
             synchronized {
               spilling = false
               if (closed) {
@@ -733,12 +765,13 @@ class SpillableColumnarBatchHandle private (
                 host = staging
               }
             }
+            actualBytes // return actual bytes spilled for metrics
           }
-          // We return the size we were created with. This is not the actual size
-          // of this batch when it is packed, and it is used by the calling code
-          // to figure out more or less how much did we free in the device.
-          approxSizeInBytes
         }
+        // We return the size we were created with. This is not the actual size
+        // of this batch when it is packed, and it is used by the calling code
+        // to figure out more or less how much did we free in the device.
+        approxSizeInBytes
       } else {
         0L
       }
@@ -868,7 +901,7 @@ class SpillableColumnarBatchFromBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed { () =>
+        executeSpill {
           withResource(dev.get) { cb =>
             val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
             meta = Some(cvFromBuffer.getTableMeta)
@@ -885,9 +918,10 @@ class SpillableColumnarBatchFromBufferHandle private (
                 host = staging
               }
             }
-            sizeInBytes
+            cvFromBuffer.getBuffer.getLength // return actual bytes spilled for metrics
           }
         }
+        sizeInBytes
       } else {
         0L
       }
@@ -984,7 +1018,7 @@ class SpillableCompressedColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed { () =>
+        executeSpill {
           withResource(dev.get) { cb =>
             val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
             meta = Some(cvFromBuffer.getTableMeta)
@@ -1000,9 +1034,10 @@ class SpillableCompressedColumnarBatchHandle private (
                 host = staging
               }
             }
-            compressedSizeInBytes
+            cvFromBuffer.getTableBuffer.getLength // return actual bytes spilled for metrics
           }
         }
+        compressedSizeInBytes
       } else {
         0L
       }
@@ -1101,15 +1136,13 @@ class SpillableHostColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        inCaseSpillingFailed { () =>
+        executeSpill {
           withResource(host.get) { cb =>
             withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
-              GpuTaskMetrics.get.spillToDiskTime {
-                val dos = diskHandleBuilder.getDataOutputStream
-                val columns = RapidsHostColumnVector.extractBases(cb)
-                JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
-              }
-              TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
+              val dos = diskHandleBuilder.getDataOutputStream
+              val columns = RapidsHostColumnVector.extractBases(cb)
+              JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
+              val actualBytes = diskHandleBuilder.size
               var staging: Option[DiskHandle] = Some(diskHandleBuilder.build(taskPriority))
               synchronized {
                 spilling = false
@@ -1122,10 +1155,11 @@ class SpillableHostColumnarBatchHandle private (
                 }
               }
               releaseHostResource()
-              approxSizeInBytes
+              actualBytes // return actual bytes spilled for metrics
             }
           }
         }
+        approxSizeInBytes
       } else {
         0L
       }
@@ -1178,11 +1212,9 @@ class DiskHandle private(
 
   private def withInputChannel[T](body: FileChannel => T): T = synchronized {
     val file = SpillFramework.stores.diskStore.diskBlockManager.getFile(blockId)
-    GpuTaskMetrics.get.readSpillFromDiskTime {
-      withResource(new FileInputStream(file)) { fs =>
-        withResource(fs.getChannel) { channel =>
-          body(channel)
-        }
+    withResource(new FileInputStream(file)) { fs =>
+      withResource(fs.getChannel) { channel =>
+        body(channel)
       }
     }
   }
@@ -1572,16 +1604,13 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     private var copied = 0L
 
     override def copyNext(mb: DeviceMemoryBuffer, len: Long, stream: Cuda.Stream): Unit = {
-      GpuTaskMetrics.get.spillToHostTime {
-        singleShotBuffer.copyFromMemoryBuffer(
-          copied,
-          mb,
-          0,
-          len,
-          stream)
-        copied += len
-        TrampolineUtil.incTaskMetricsMemoryBytesSpilled(len)
-      }
+      singleShotBuffer.copyFromMemoryBuffer(
+        copied,
+        mb,
+        0,
+        len,
+        stream)
+      copied += len
     }
 
     override def build: SpillableHostBufferHandle = {
@@ -1616,22 +1645,20 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
 
     override def copyNext(mb: DeviceMemoryBuffer, len: Long, stream: Cuda.Stream): Unit = {
       SpillFramework.withHostSpillBounceBuffer { hostSpillBounceBuffer =>
-        GpuTaskMetrics.get.spillToDiskTime {
-          val outputChannel = diskHandleBuilder.getChannel
-          withResource(mb.slice(0, len)) { slice =>
-            val iter = new MemoryBufferToHostByteBufferIterator(
-              slice,
-              hostSpillBounceBuffer,
-              Cuda.DEFAULT_STREAM)
-            iter.foreach { byteBuff =>
-              try {
-                while (byteBuff.hasRemaining) {
-                  outputChannel.write(byteBuff)
-                }
-                copied += byteBuff.capacity()
-              } finally {
-                RapidsStorageUtils.dispose(byteBuff)
+        val outputChannel = diskHandleBuilder.getChannel
+        withResource(mb.slice(0, len)) { slice =>
+          val iter = new MemoryBufferToHostByteBufferIterator(
+            slice,
+            hostSpillBounceBuffer,
+            Cuda.DEFAULT_STREAM)
+          iter.foreach { byteBuff =>
+            try {
+              while (byteBuff.hasRemaining) {
+                outputChannel.write(byteBuff)
               }
+              copied += byteBuff.capacity()
+            } finally {
+              RapidsStorageUtils.dispose(byteBuff)
             }
           }
         }
@@ -1643,7 +1670,6 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       require(handle != null, "Called build too many times")
       require(copied == handle.sizeInBytes,
         s"Expected ${handle.sizeInBytes} B but copied $copied B instead")
-      TrampolineUtil.incTaskMetricsDiskBytesSpilled(diskHandleBuilder.size)
       handle.setDisk(diskHandleBuilder.build)
       val res = handle
       handle = null

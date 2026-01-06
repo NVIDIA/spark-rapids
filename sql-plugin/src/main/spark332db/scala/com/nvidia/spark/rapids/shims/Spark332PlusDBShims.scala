@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,6 +64,8 @@ trait Spark332PlusDBShims extends Spark330PlusDBShims {
     DataWritingCommandRule[_ <: DataWritingCommand]] = {
     Map.empty
   }
+
+  override def hasGpuWriteFiles: Boolean = true
 
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
     RunnableCommandRule[_ <: RunnableCommand]] = {

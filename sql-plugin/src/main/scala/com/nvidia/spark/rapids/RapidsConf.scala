@@ -1696,7 +1696,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val ENABLE_ICEBERG_WRITE = conf("spark.rapids.sql.format.iceberg.write.enabled")
     .doc("When set to false disables Iceberg write acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")
@@ -2729,6 +2729,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
   val LORE_SKIP_DUMPING_PLAN = conf("spark.rapids.sql.lore.skip.plan.dump")
     .doc("Skip dumping plan metadata when doing lore dump")
     .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val LORE_NON_STRICT_MODE = conf("spark.rapids.sql.lore.nonStrictMode.enabled")
+    .doc("Allow LoRE dumping to continue when a selected lore id fails. When enabled, failing " +
+      "lore ids are skipped with a warning, previously dumped data under the dump path is kept, " +
+      "and the rest of the query continues executing.")
     .booleanConf
     .createWithDefault(false)
 
@@ -3826,6 +3833,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
 
   lazy val loreSkipDumpingPlan: Boolean = get(LORE_SKIP_DUMPING_PLAN)
+
+  lazy val loreDumpNonStrictMode: Boolean = get(LORE_NON_STRICT_MODE)
 
   lazy val loreParquetUseOriginalNames: Boolean = get(LORE_PARQUET_USE_ORIGINAL_NAMES)
 
