@@ -684,12 +684,11 @@ class RowToColumnarIterator(
         Option(TaskContext.get())
             .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
-        // Build host columns (retryable) and wrap them so GPU OOM can split/retry by rows.
         val hostColumns = withRetryNoSplit {
-          builders.buildHostColumnsWithoutOwnership()
+          builders.buildHostColumns()
         }
         val dataTypes = localSchema.fields.map(_.dataType)
-        val hostBatch = closeOnExcept(hostColumns) { _ =>
+        val hostBatch = withResource(hostColumns) { _ =>
           HostColumnarBatchWithRowRange(hostColumns, rowCount, dataTypes)
         }
 
@@ -734,7 +733,7 @@ class RowToColumnarIterator(
    */
   private val splitHostBatchInHalf
       : HostColumnarBatchWithRowRange => Seq[HostColumnarBatchWithRowRange] = {
-    (batch: HostColumnarBatchWithRowRange) => Arm.withResource(batch)(_.splitInHalf())
+    (batch: HostColumnarBatchWithRowRange) => HostColumnarBatchWithRowRange.splitInHalf(batch)
   }
 }
 

@@ -39,17 +39,19 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param ownsHostColumns Whether this instance owns (should close) the host columns
  */
 class HostColumnarBatchWithRowRange private (
-    private val hostColumns: Array[HostColumnVector],
+    val hostColumns: Array[HostColumnVector],
     val startRow: Int,
     val numRows: Int,
-    val dataTypes: Array[DataType],
-    private var ownsHostColumns: Boolean) extends AutoCloseable {
+    val dataTypes: Array[DataType]) extends AutoCloseable {
 
   require(hostColumns != null, "hostColumns cannot be null")
   require(hostColumns.length == dataTypes.length,
     s"hostColumns length (${hostColumns.length}) must match dataTypes length (${dataTypes.length})")
   require(startRow >= 0, s"startRow must be non-negative, got $startRow")
   require(numRows >= 0, s"numRows must be non-negative, got $numRows")
+
+  // Increment ref count for the host columns.
+  hostColumns.foreach(_.incRefCount())
 
   /**
    * Copy the specified row range from host columns to GPU and return a ColumnarBatch.
@@ -274,49 +276,48 @@ class HostColumnarBatchWithRowRange private (
    * the last returned split. After calling this method, this instance no longer owns
    * the columns and closing it will not free them.
    */
-  def splitInHalf(): Seq[HostColumnarBatchWithRowRange] = {
-    if (numRows <= 1) {
-      throw new GpuSplitAndRetryOOM(
-        s"GPU OutOfMemory: cannot split host batch with only $numRows row(s)")
-    }
-
-    val firstHalfRows = numRows / 2
-    val secondHalfRows = numRows - firstHalfRows
-
-    // Transfer ownership: this batch no longer owns the columns
-    val wasOwner = this.ownsHostColumns
-    this.ownsHostColumns = false
-
-    Seq(
-      // First half - doesn't own the columns (processed first, columns must stay alive)
-      new HostColumnarBatchWithRowRange(
-        hostColumns, startRow, firstHalfRows, dataTypes, ownsHostColumns = false),
-      // Second half - OWNS the columns if we were the owner (processed last)
-      new HostColumnarBatchWithRowRange(
-        hostColumns, startRow + firstHalfRows, secondHalfRows, dataTypes,
-        ownsHostColumns = wasOwner)
-    )
-  }
-
   override def close(): Unit = {
-    if (ownsHostColumns) {
-      hostColumns.foreach { hcv =>
-        if (hcv != null) hcv.close()
-      }
+    hostColumns.foreach { hcv =>
+      if (hcv != null) hcv.close()
     }
   }
 
   override def toString: String = {
     val totalRows = if (hostColumns.nonEmpty) hostColumns(0).getRowCount else 0
     s"HostColumnarBatchWithRowRange(startRow=$startRow, numRows=$numRows, " +
-      s"totalHostRows=$totalRows, numCols=${hostColumns.length}, owns=$ownsHostColumns)"
+      s"totalHostRows=$totalRows, numCols=${hostColumns.length})"
   }
 }
 
 object HostColumnarBatchWithRowRange {
 
   /**
-   * Create a HostColumnarBatchWithRowRange that owns the host columns.
+   * Split a HostColumnarBatchWithRowRange in half by rows.
+   * Returns two new HostColumnarBatchWithRowRange instances covering the first and second half.
+   *
+   * The input batch is closed by this method.
+   */
+  def splitInHalf(batch: HostColumnarBatchWithRowRange): Seq[HostColumnarBatchWithRowRange] = {
+    withResource(batch) { _ =>
+      if (batch.numRows <= 1) {
+        throw new GpuSplitAndRetryOOM(
+          s"GPU OutOfMemory: cannot split host batch with only ${batch.numRows} row(s)")
+      }
+
+      val firstHalfRows = batch.numRows / 2
+      val secondHalfRows = batch.numRows - firstHalfRows
+
+      Seq(
+        new HostColumnarBatchWithRowRange(
+          batch.hostColumns, batch.startRow, firstHalfRows, batch.dataTypes),
+        new HostColumnarBatchWithRowRange(
+          batch.hostColumns, batch.startRow + firstHalfRows, secondHalfRows, batch.dataTypes)
+      )
+    }
+  }
+
+  /**
+   * Create a HostColumnarBatchWithRowRange.
    * The host columns will be closed when this instance is closed.
    */
   def apply(
@@ -328,6 +329,10 @@ object HostColumnarBatchWithRowRange {
       require(hostColumns(0).getRowCount.toInt == numRows,
         s"numRows ($numRows) must match hostColumns rowCount (${hostColumns(0).getRowCount})")
     }
-    new HostColumnarBatchWithRowRange(hostColumns, 0, numRows, dataTypes, ownsHostColumns = true)
+    // The builder that created these host columns owns the initial reference and will close it
+    // when the builder is closed. We increment the reference count here to take a new independent
+    // reference. This ensures the host columns remain valid for the lifetime of this
+    // HostColumnarBatchWithRowRange instance, even after the builder releases its reference.
+    new HostColumnarBatchWithRowRange(hostColumns, 0, numRows, dataTypes)
   }
 }
