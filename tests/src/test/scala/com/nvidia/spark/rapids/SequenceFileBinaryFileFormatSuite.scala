@@ -195,7 +195,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
 
         val got = df.select("key", "value")
@@ -229,7 +229,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       withSparkSession { spark =>
         // File Scan Path
         val fileDf = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
           .select("value")
         val fileResults = fileDf.collect().map(_.getAs[Array[Byte]](0))
@@ -267,7 +267,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
 
         // Spark wraps the UnsupportedOperationException in a SparkException
@@ -302,7 +302,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(tmpDir.getAbsolutePath)
 
         val results = df.select("value").collect().map(_.getAs[Array[Byte]](0))
@@ -334,7 +334,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(tmpDir.getAbsolutePath)
 
         val results = df.select("value", "part")
@@ -360,7 +360,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
           .select("key") // Only select key column
 
@@ -381,7 +381,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
           .select("value") // Only select value column
 
@@ -401,7 +401,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
 
         val results = df.collect()
@@ -423,7 +423,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
 
         val results = df.select("key", "value").collect()
@@ -454,7 +454,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       withGpuSparkSession { spark =>
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
 
         val results = df.select("key", "value").collect()
@@ -489,7 +489,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       withSparkSession { spark =>
         // Read entire file
         val df = spark.read
-          .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+          .format("SequenceFileBinary")
           .load(file.getAbsolutePath)
 
         val results = df.select("key", "value").collect()

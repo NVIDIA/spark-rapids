@@ -48,7 +48,7 @@ import org.apache.spark.util.SerializableConfiguration
  * Usage:
  * {{{
  *   val df = spark.read
- *     .format("com.nvidia.spark.rapids.SequenceFileBinaryFileFormat")
+ *     .format("SequenceFileBinary")
  *     .load("path/to/sequencefiles")
  * }}}
  */
@@ -99,26 +99,19 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
       }
 
       val start = partFile.start
-      try {
-        // For the initial version, we explicitly fail fast on compressed SequenceFiles.
-        // (Record- and block-compressed files can be added later.)
-        if (reader.isCompressed || reader.isBlockCompressed) {
-          val compressionType = reader.getCompressionType
-          val msg = s"$SHORT_NAME does not support compressed SequenceFiles " +
-            s"(compressionType=$compressionType), " +
-            s"file=$path, keyClass=${reader.getKeyClassName}, " +
-            s"valueClass=${reader.getValueClassName}"
-          LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat]).error(msg)
-          throw new UnsupportedOperationException(msg)
-        }
+      // Compressed SequenceFiles are not supported, fail fast since the format is Rapids-only.
+      if (reader.isCompressed || reader.isBlockCompressed) {
+        val compressionType = reader.getCompressionType
+        val msg = s"$SHORT_NAME does not support compressed SequenceFiles " +
+          s"(compressionType=$compressionType), " +
+          s"file=$path, keyClass=${reader.getKeyClassName}, " +
+          s"valueClass=${reader.getValueClassName}"
+        LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat]).error(msg)
+        throw new UnsupportedOperationException(msg)
+      }
 
-        if (start > 0) {
-          reader.sync(start)
-        }
-      } catch {
-        case e: Throwable =>
-          reader.close()
-          throw e
+      if (start > 0) {
+        reader.sync(start)
       }
 
       val end = start + partFile.length

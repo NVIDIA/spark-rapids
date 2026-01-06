@@ -312,6 +312,7 @@ class SequenceFilePartitionReader(
     val keyBufferer = if (wantsKey) {
       Some(new HostBinaryListBufferer(initialSize, initialRows))
     } else None
+
     val valueBufferer = closeOnExcept(keyBufferer) { _ =>
       if (wantsValue) {
         Some(new HostBinaryListBufferer(initialSize, initialRows))
