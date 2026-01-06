@@ -101,15 +101,13 @@ object AllocationRetryCoverageTracker extends Logging {
   // Track unique call stacks we've already logged to avoid duplicates
   private val loggedStacks = ConcurrentHashMap.newKeySet[String]()
 
-  // Lock for thread-safe file writing
-  private val writeLock = new Object()
 
   /**
    * Ensure header is written (thread-safe, lazy initialization).
    */
   private def ensureHeaderWritten(): Unit = {
     if (!headerWritten) {
-      writeLock.synchronized {
+      this.synchronized {
         if (!headerWritten) {
           val outputPath = Paths.get(DEFAULT_OUTPUT_PATH)
           val shouldWriteHeader = try {
@@ -216,7 +214,7 @@ object AllocationRetryCoverageTracker extends Logging {
    * Write a line to the output CSV file (thread-safe).
    */
   private def writeToFile(line: String, append: Boolean): Unit = {
-    writeLock.synchronized {
+    this.synchronized {
       writeToFileInternal(line, append)
     }
   }
@@ -232,10 +230,5 @@ object AllocationRetryCoverageTracker extends Logging {
   def clearLoggedStacks(): Unit = {
     loggedStacks.clear()
   }
-
-  /**
-   * Check if tracking is currently enabled.
-   */
-  def isEnabled: Boolean = ENABLED
 }
 
