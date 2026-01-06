@@ -24,6 +24,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.ExplainUtils
+import org.apache.spark.sql.rapids.shims.SparkStringUtilsShims
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.util.Utils
 
@@ -46,7 +47,7 @@ trait GpuDataSourceScanExec extends ShimLeafExecNode with GpuExec {
   override def simpleString(maxFields: Int): String = {
     val metadataEntries = metadata.toSeq.sorted.map {
       case (key, value) =>
-        key + ": " + GpuDataSourceScanExec.abbreviate(redact(value), maxMetadataValueLength)
+        key + ": " + SparkStringUtilsShims.abbreviate(redact(value), maxMetadataValueLength)
     }
     val metadataStr = truncatedString(metadataEntries, " ", ", ", "", maxFields)
     redact(
@@ -101,29 +102,4 @@ object GpuDataSourceScanExec {
     metadata.append("]")
     metadata.toString
   }
-
-  /**
-   * Equivalent of SparkStringUtils.abbreviate().  Used to reduce dependencies
-   * on apache-commons-lang3. Refer to:
-   *   1. https://issues.apache.org/jira/browse/SPARK-53004
-   *   2. https://issues.apache.org/jira/browse/SPARK-52987
-   */
-  private def abbreviate(str: String, abbrevMarker: String, len: Int): String = {
-    if (str == null || abbrevMarker == null) {
-      null
-    } else if (len < abbrevMarker.length() || str.length() <= len
-      || str.length() <= abbrevMarker.length()) {
-      str
-    } else {
-      str.substring(0, len - abbrevMarker.length()) + abbrevMarker
-    }
-  }
-
-  /**
-   * Equivalent of SparkStringUtils.abbreviate().  Used to reduce dependencies
-   * on apache-commons-lang3. Refer to:
-   *   1. https://issues.apache.org/jira/browse/SPARK-53004
-   *   2. https://issues.apache.org/jira/browse/SPARK-52987
-   */
-  private def abbreviate(str: String, len: Int): String = abbreviate(str, "...", len)
 }
