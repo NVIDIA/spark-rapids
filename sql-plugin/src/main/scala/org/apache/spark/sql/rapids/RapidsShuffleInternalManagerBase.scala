@@ -46,7 +46,7 @@ import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.shuffle.sort.io.{RapidsLocalDiskShuffleDataIO, RapidsLocalDiskShuffleMapOutputWriter}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_WRITER_INPUT_FETCH_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_READER_DESER_WAIT_TIME, METRIC_THREADED_READER_IO_WAIT_TIME, METRIC_THREADED_READER_LIMITER_ACQUIRE_COUNT, METRIC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT, METRIC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT, METRIC_THREADED_WRITER_INPUT_FETCH_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
@@ -1047,6 +1047,16 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   private val deserializationTimeNs = sqlMetrics.get(METRIC_SHUFFLE_DESERIALIZATION_TIME)
   private val shuffleReadTimeNs = sqlMetrics.get(METRIC_SHUFFLE_READ_TIME)
   private val dataReadSize = sqlMetrics.get(METRIC_DATA_READ_SIZE)
+  // New metrics for wall time breakdown
+  private val ioWaitTimeNs = sqlMetrics.get(METRIC_THREADED_READER_IO_WAIT_TIME)
+  private val deserWaitTimeNs = sqlMetrics.get(METRIC_THREADED_READER_DESER_WAIT_TIME)
+  // Limiter metrics
+  private val limiterAcquireCount =
+    sqlMetrics.get(METRIC_THREADED_READER_LIMITER_ACQUIRE_COUNT)
+  private val limiterAcquireFailCount =
+    sqlMetrics.get(METRIC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT)
+  private val limiterPendingBlockCount =
+    sqlMetrics.get(METRIC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT)
 
   private var shuffleReadRange: NvtxId = NvtxRegistry.THREADED_READER_READ.push()
 
@@ -1271,7 +1281,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             NvtxRegistry.BATCH_WAIT {
               waitTimeStart = System.nanoTime()
               val pending = futures.dequeue().get // wait for one future
-              waitTime += System.nanoTime() - waitTimeStart
+              val futureWaitThisCall = System.nanoTime() - waitTimeStart
+              waitTime += futureWaitThisCall
+              deserWaitTimeNs.foreach(_ += futureWaitThisCall)
               // if the future returned a block state, we have more work to do
               pending match {
                 case Some(leftOver@BlockState(_, _, _)) =>
@@ -1292,13 +1304,15 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // here while we wait.
           waitTimeStart = System.nanoTime()
           val res = queued.take()
+          val queueWaitThisCall = System.nanoTime() - waitTimeStart
           res match {
             case (_, cb: ColumnarBatch) =>
               limiter.release(SerializedTableColumn.getMemoryUsed(cb))
               popFetchedIfAvailable()
             case _ => 0 // TODO: do we need to handle other types here?
           }
-          waitTime += System.nanoTime() - waitTimeStart
+          waitTime += queueWaitThisCall
+          deserWaitTimeNs.foreach(_ += queueWaitThisCall)
           deserializationTimeNs.foreach(_ += waitTime)
           shuffleReadTimeNs.foreach(_ += waitTime)
           res
@@ -1333,7 +1347,11 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             queued.offer(batch)
             // peek at the next batch
             currentBatchSize = blockState.getNextBatchSize
+            limiterAcquireCount.foreach(_ += 1)
             didFit = limiter.acquire(currentBatchSize)
+            if (!didFit) {
+              limiterAcquireFailCount.foreach(_ += 1)
+            }
           }
           success = true
           if (!didFit) {
@@ -1357,11 +1375,13 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         while(pendingIts.nonEmpty && continue) {
           val blockState = pendingIts.head
           // check if we can handle the head batch now
+          limiterAcquireCount.foreach(_ += 1)
           if (limiter.acquire(blockState.getNextBatchSize)) {
             // kick off deserialization task
             pendingIts.dequeue()
             deserializeTask(blockState)
           } else {
+            limiterAcquireFailCount.foreach(_ += 1)
             continue = false
           }
         }
@@ -1387,13 +1407,16 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               // fetch block time accounts for time spent waiting for streams.next()
               val readBlockedStart = System.nanoTime()
               val (blockId: BlockId, inputStream) = fetcherIterator.next()
-              readBlockedTime += System.nanoTime() - readBlockedStart
+              val ioWaitThisBlock = System.nanoTime() - readBlockedStart
+              readBlockedTime += ioWaitThisBlock
+              ioWaitTimeNs.foreach(_ += ioWaitThisBlock)
 
               val deserStream = serializerInstance.deserializeStream(inputStream)
               val batchIter = deserStream.asKeyValueIterator
                 .asInstanceOf[BaseSerializedTableIterator]
               val blockState = BlockState(blockId, batchIter, inputStream)
               // get the next known batch size (there could be multiple batches)
+              limiterAcquireCount.foreach(_ += 1)
               if (limiter.acquire(blockState.getNextBatchSize)) {
                 // we can fit at least the first batch in this block
                 // kick off a deserialization task
@@ -1401,6 +1424,8 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               } else {
                 // first batch didn't fit, put iterator aside and stop asking for results
                 // from the fetcher
+                limiterAcquireFailCount.foreach(_ += 1)
+                limiterPendingBlockCount.foreach(_ += 1)
                 pendingIts.enqueue(blockState)
                 didFit = false
               }
