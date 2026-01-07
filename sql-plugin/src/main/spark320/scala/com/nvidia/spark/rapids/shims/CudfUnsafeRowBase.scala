@@ -219,7 +219,7 @@ abstract class CudfUnsafeRowBase(
     build.toString()
   }
 
-  override def anyNull(): Boolean = throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+  override def anyNull: Boolean = throw new IllegalArgumentException("NOT IMPLEMENTED YET")
 
   private def getFieldAddressFromOrdinal(ordinal: Int): Long = {
     assertIndexIsValid(ordinal)

@@ -59,7 +59,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
     batch
   }
 
-  override def hasNext(): Boolean = {
+  override def hasNext: Boolean = {
     // isDeckFilled means if there is unconverted source data remained on the deck.
     // hasProceedingBuilders means if there exists working target vectors not being flushed yet.
     val selfHoldData = Option(converterImpl).exists { c =>

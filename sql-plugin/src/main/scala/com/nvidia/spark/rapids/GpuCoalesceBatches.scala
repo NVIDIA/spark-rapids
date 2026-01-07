@@ -887,7 +887,7 @@ class GpuCompressionAwareCoalesceIterator(
     }
   }
 
-  override def getCoalesceRetryIterator(): Iterator[ColumnarBatch] = {
+  override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>

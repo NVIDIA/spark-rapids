@@ -2340,7 +2340,7 @@ class MultiFileParquetPartitionReader(
 
   private var currentTargetBatchSize = targetBatchSizeBytes
 
-  override final def startNewBufferRetry(): Unit = {
+  override final def startNewBufferRetry: Unit = {
     currentTargetBatchSize = targetBatchSizeBytes
   }
 

@@ -1873,7 +1873,7 @@ object JsonColumnStats {
         output.append(JsonLevel(currentPath.toArray, "ARRAY", length, ""))
         parser.nextToken()
       case JsonToken.FIELD_NAME =>
-        currentPath.append(JsonPathElement(parser.getCurrentName, is_array = false))
+        currentPath.append(JsonPathElement(parser.currentName, is_array = false))
         parser.nextToken()
         processNext(parser, currentPath, output)
         currentPath.remove(currentPath.length - 1)

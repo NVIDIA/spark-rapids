@@ -124,7 +124,7 @@ case class GpuRunnableCommandExec(cmd: GpuRunnableCommand, child: SparkPlan)
   override def executeCollect(): Array[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")
 
-  override def executeToIterator: Iterator[InternalRow] = throw new UnsupportedOperationException(
+  override def executeToIterator(): Iterator[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override def executeTake(limit: Int): Array[InternalRow] =

@@ -1218,7 +1218,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
       override def next(): CachedBatch = myIter.next()
 
-      override def hasNext(): Boolean = myIter.hasNext
+      override def hasNext: Boolean = myIter.hasNext
 
       val myIter = iter.asInstanceOf[Iterator[ColumnarBatch]].flatMap { batch =>
         val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
@@ -1375,7 +1375,7 @@ private[rapids] class ParquetOutputFileFormat {
     val validating = getValidation(conf)
 
     val writeSupport = new ParquetWriteSupport().asInstanceOf[WriteSupport[InternalRow]]
-    val init = writeSupport.init(conf)
+    val init = writeSupport.init(conf): @scala.annotation.nowarn("cat=deprecation")
     val writer = new ParquetFileWriter(output, init.getSchema,
       Mode.CREATE, blockSize, maxPaddingSize)
     writer.start()

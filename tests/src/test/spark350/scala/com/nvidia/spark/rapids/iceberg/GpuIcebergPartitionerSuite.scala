@@ -49,13 +49,13 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
   private var seed = 0L
 
-  override def beforeAll: Unit = {
+  override def beforeAll(): Unit = {
     SpillFramework.initialize(new RapidsConf(new SparkConf))
     seed = System.currentTimeMillis()
     println(s"Random seed set to $seed")
   }
 
-  override def afterAll: Unit = {
+  override def afterAll(): Unit = {
     SpillFramework.shutdown()
   }
 

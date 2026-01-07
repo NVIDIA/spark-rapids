@@ -75,7 +75,7 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
 
   private var readFutureOpt: Option[Future[CoalescedHostResult]] = None
 
-  override def hasNext(): Boolean = GpuMetric.ns(asyncReadTimeMetric, opTimeMetric) {
+  override def hasNext: Boolean = GpuMetric.ns(asyncReadTimeMetric, opTimeMetric) {
     readFutureOpt.isDefined || {
       // No async read is running when it comes here, so no need synchronization
       // when accessing the input iterator. "iter.hasNext" should be lightweight
@@ -85,7 +85,7 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
   }
 
   override def next(): ColumnarBatch = {
-    if (!hasNext()) {
+    if (!hasNext) {
       throw new NoSuchElementException("No more batches")
     }
     NvtxRegistry.ASYNC_SHUFFLE_READ {

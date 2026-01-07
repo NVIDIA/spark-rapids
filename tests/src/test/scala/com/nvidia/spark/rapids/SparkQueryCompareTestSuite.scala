@@ -2186,7 +2186,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     val schema = df.schema
     // modify [[StructField] with name `cn`
     val newSchema = StructType(schema.map {
-      case StructField(c, t, _, m) ⇒ StructField(c, t, nullable = nullable, m)
+      case StructField(c, t, _, m) => StructField(c, t, nullable = nullable, m)
     })
     // apply new schema
     df.sparkSession.createDataFrame(df.rdd, newSchema)

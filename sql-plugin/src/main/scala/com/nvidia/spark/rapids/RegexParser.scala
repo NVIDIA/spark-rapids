@@ -1949,7 +1949,7 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString(): String = s"$$$num"
+  override def toRegexString: String = s"$$$num"
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],

@@ -57,7 +57,7 @@ class CloseableBufferedIterator[T <: AutoCloseable](wrapped: Iterator[T])
     }
   }
 
-  override def next: T = if (hd.isDefined) {
+  override def next(): T = if (hd.isDefined) {
     val res = hd.get
     hd = None
     res
