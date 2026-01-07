@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -882,11 +882,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    *
    * @param scalar the input GpuScalar
    * @param count the row number of the output column
-   * @param sparkType the type of the output column
    * @return a GpuColumnVector. It should be closed to avoid memory leak.
    */
-  public static GpuColumnVector from(GpuScalar scalar, int count, DataType sparkType) {
-    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count), sparkType);
+  public static GpuColumnVector from(GpuScalar scalar, int count) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count),
+        scalar.dataType());
   }
 
   /**
