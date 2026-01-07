@@ -513,6 +513,7 @@ abstract class MemoryBoundedAsyncRunner[T] extends AsyncRunner[T]
     def onClosed(refCount: Int): Unit = if (refCount == 0) {
       // Return the memory back to the local pool and signal waiting onClose thread if exists
       r.withStateLock[Unit]() { _ =>
+        // TODO: check if the returned memory satisfies the ongoing borrow requests
         usedMem.addAndGet(-bufferSize)
         bufCloseCond.signal() // awaken onClose waiting thread if exists
         logDebug(s"[OnCloseHandler Closed] bufferSize=${bToStr(bufferSize)} for $r")
