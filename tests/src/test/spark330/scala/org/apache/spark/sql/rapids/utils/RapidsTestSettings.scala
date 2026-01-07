@@ -66,7 +66,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("MakeDecimal", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13816"))
   enableSuite[RapidsIntervalFunctionsSuite]
   enableSuite[RapidsJsonExpressionsSuite]
-    .exclude("from_json - invalid data", ADJUST_UT("Replaced by testRapids version that expect a SparkException instead of TestFailedException"))
+    .exclude("from_json - invalid data", ADJUST_UT("Replaced by testRapids version that expects a SparkException instead of TestFailedException"))
   enableSuite[RapidsJsonFunctionsSuite]
     .exclude("SPARK-33134: return partial results only for root JSON objects", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14088"))
   enableSuite[RapidsJsonSuite]
