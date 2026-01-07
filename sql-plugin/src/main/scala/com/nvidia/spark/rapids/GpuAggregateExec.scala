@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -636,7 +636,7 @@ class AggHelper(
               // Convert a scalar to a one row column for returning
               outLens += sas.length
               accArgStart += argLen
-              sas.safeMap(s => GpuColumnVector.from(s, reduceRowNum, s.dataType))
+              sas.safeMap(s => GpuColumnVector.from(s, reduceRowNum))
             }
           }
           // Cache the outLens for the "postProcessWithUDAFsAndClose" to get the
@@ -1375,7 +1375,7 @@ class GpuMergeAggregateIterator(
       }
     }
     withResource(defaultValues) { _ =>
-      val vecs = defaultValues.toSeq.safeMap(s => GpuColumnVector.from(s, 1, s.dataType))
+      val vecs = defaultValues.toSeq.safeMap(s => GpuColumnVector.from(s, 1))
       new ColumnarBatch(vecs.toArray, 1)
     }
   }
