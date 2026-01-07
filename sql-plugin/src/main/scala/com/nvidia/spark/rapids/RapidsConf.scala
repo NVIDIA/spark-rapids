@@ -551,11 +551,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("The initial size in bytes for a host memory buffer used by " +
         "SpillablePartialFileHandle. The buffer can expand dynamically up to " +
         "partialFileBufferMaxSize. A smaller initial size reduces upfront memory " +
-        "allocation but may require more expansions.")
+        "allocation but may require more expansions. When used with " +
+        "RapidsLocalDiskShuffleMapOutputWriter, the buffer expansion uses predictive " +
+        "sizing based on partition write statistics to minimize expansion operations.")
     .startupOnly()
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(1024L * 1024 * 1024)  // 1GB default
+    .createWithDefault(32L * 1024 * 1024)  // 32MB default, expanded predictively
 
   val PARTIAL_FILE_BUFFER_MAX_SIZE = 
     conf("spark.rapids.memory.host.partialFileBufferMaxSize")

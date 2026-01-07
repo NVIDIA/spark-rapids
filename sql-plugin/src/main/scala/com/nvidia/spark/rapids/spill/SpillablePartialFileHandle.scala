@@ -48,6 +48,7 @@ object PartialFileStorageMode extends Enumeration {
  * - Automatic transition from memory to disk when spilled
  * - Dynamic buffer expansion when capacity is exceeded (up to configured max limit)
  * - Automatic fallback to file when expansion fails or conditions not met
+ * - Predictive capacity sizing via optional hint provider
  *
  * @param storageMode Whether to use FILE_ONLY or MEMORY_WITH_SPILL
  * @param file File to use for FILE_ONLY mode or as spill target for MEMORY_WITH_SPILL
@@ -56,6 +57,11 @@ object PartialFileStorageMode extends Enumeration {
  * @param memoryThreshold Host memory usage threshold for buffer expansion decisions
  * @param priority Spill priority for memory-based mode
  * @param syncWrites Whether to force outstanding writes to disk
+ * @param capacityHintProvider Optional function that provides capacity hints based on
+ *                             current bytes written and required capacity. When provided,
+ *                             buffer expansion will use this hint instead of simple doubling.
+ *                             The function signature is: (currentBytesWritten, requiredCapacity)
+ *                             => suggestedCapacity
  */
 class SpillablePartialFileHandle private (
     storageMode: PartialFileStorageMode.Value,
@@ -64,7 +70,8 @@ class SpillablePartialFileHandle private (
     maxBufferSize: Long,
     memoryThreshold: Double,
     priority: Long,
-    syncWrites: Boolean)
+    syncWrites: Boolean,
+    capacityHintProvider: Option[(Long, Long) => Long])
   extends HostSpillableHandle[ai.rapids.cudf.HostMemoryBuffer] with Logging {
 
   // State management
@@ -124,8 +131,10 @@ class SpillablePartialFileHandle private (
 
   /**
    * Expand host buffer capacity to meet required capacity.
-   * Tries to double the capacity until reaching required size,
-   * falls back to file-based if expansion fails.
+   * 
+   * When a capacityHintProvider is available, it will be used to predict the optimal
+   * capacity based on current write statistics. Otherwise, falls back to doubling
+   * until reaching required size.
    * 
    * Conditions checked before expansion:
    * 1. New capacity does not exceed configured max buffer size limit
@@ -139,11 +148,27 @@ class SpillablePartialFileHandle private (
       case Some(currentBuffer) =>
         val oldCapacity = currentBufferCapacity
         
-        // Calculate new capacity: keep doubling until >= requiredCapacity
-        var newCapacity = oldCapacity
-        while (newCapacity < requiredCapacity && newCapacity < maxBufferSize) {
-          newCapacity = math.min(newCapacity * 2, maxBufferSize)
+        // Calculate new capacity using hint provider if available, otherwise double
+        var newCapacity = capacityHintProvider match {
+          case Some(provider) =>
+            // Use predictive capacity from hint provider
+            val hintedCapacity = provider(writePosition, requiredCapacity)
+            // Ensure the hint is at least requiredCapacity and reasonable
+            val boundedHint = math.max(hintedCapacity, requiredCapacity)
+            logDebug(s"Capacity hint provider suggested $hintedCapacity bytes, " +
+              s"bounded to $boundedHint bytes (required=$requiredCapacity)")
+            boundedHint
+          case None =>
+            // Fallback: keep doubling until >= requiredCapacity
+            var cap = oldCapacity
+            while (cap < requiredCapacity && cap < maxBufferSize) {
+              cap = math.min(cap * 2, maxBufferSize)
+            }
+            cap
         }
+        
+        // Ensure newCapacity doesn't exceed maxBufferSize
+        newCapacity = math.min(newCapacity, maxBufferSize)
         
         // Check if new capacity is still insufficient after expansion
         if (newCapacity < requiredCapacity) {
@@ -712,7 +737,8 @@ object SpillablePartialFileHandle extends Logging {
       maxBufferSize = 0L,
       memoryThreshold = 0.0,
       priority = Long.MinValue,
-      syncWrites = syncWrites)
+      syncWrites = syncWrites,
+      capacityHintProvider = None)
   }
 
   /**
@@ -728,6 +754,12 @@ object SpillablePartialFileHandle extends Logging {
    * @param spillFile File to use when spilling is required
    * @param priority Spill priority
    * @param syncWrites Whether to force outstanding writes to disk
+   * @param capacityHintProvider Optional function that provides capacity hints.
+   *                             Signature: (currentBytesWritten, requiredCapacity) =>
+   *                             suggestedCapacity. When provided, buffer expansion will
+   *                             use this hint instead of simple doubling strategy.
+   *                             This is useful for predictive sizing based on partition
+   *                             write statistics.
    */
   def createMemoryWithSpill(
       initialCapacity: Long,
@@ -735,7 +767,9 @@ object SpillablePartialFileHandle extends Logging {
       memoryThreshold: Double,
       spillFile: File,
       priority: Long = Long.MinValue,
-      syncWrites: Boolean = false): SpillablePartialFileHandle = {
+      syncWrites: Boolean = false,
+      capacityHintProvider: Option[(Long, Long) => Long] = None):
+      SpillablePartialFileHandle = {
     new SpillablePartialFileHandle(
       storageMode = PartialFileStorageMode.MEMORY_WITH_SPILL,
       file = spillFile,
@@ -743,7 +777,8 @@ object SpillablePartialFileHandle extends Logging {
       maxBufferSize = maxBufferSize,
       memoryThreshold = memoryThreshold,
       priority = priority,
-      syncWrites = syncWrites)
+      syncWrites = syncWrites,
+      capacityHintProvider = capacityHintProvider)
   }
 }
 
