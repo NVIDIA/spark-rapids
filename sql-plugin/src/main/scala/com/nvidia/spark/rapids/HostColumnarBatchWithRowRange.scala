@@ -269,16 +269,8 @@ class HostColumnarBatchWithRowRange private (
   }
 
   /**
-   * Split this batch in half by rows.
-   * Returns two HostColumnarBatchWithRowRange instances covering the first and second half.
-   *
-   * Memory management: The LAST split will own the host columns (so they stay alive
-   * until all splits are processed). The retry framework processes splits in order,
-   * so the last split is processed and closed last.
-   *
-   * IMPORTANT: This method transfers ownership of host columns from this instance to
-   * the last returned split. After calling this method, this instance no longer owns
-   * the columns and closing it will not free them.
+   * Close this instance and decrement the reference count on the host columns.
+   * The host columns will be freed when the last reference is closed.
    */
   override def close(): Unit = {
     hostColumns.safeClose()
@@ -297,7 +289,10 @@ object HostColumnarBatchWithRowRange {
    * Split a HostColumnarBatchWithRowRange in half by rows.
    * Returns two new HostColumnarBatchWithRowRange instances covering the first and second half.
    *
-   * The input batch is closed by this method.
+   * Memory management uses reference counting:
+   * - The input batch is closed by this method (decrements ref count)
+   * - Each new split increments the ref count on the shared host columns
+   * - Host columns are freed when the last split is closed
    */
   def splitInHalf(batch: HostColumnarBatchWithRowRange): Seq[HostColumnarBatchWithRowRange] = {
     withResource(batch) { _ =>
