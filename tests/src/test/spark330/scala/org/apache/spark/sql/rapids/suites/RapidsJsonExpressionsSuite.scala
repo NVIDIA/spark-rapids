@@ -56,7 +56,7 @@ class RapidsJsonExpressionsSuite
         JsonToStructs(schema, Map("mode" -> FailFastMode.name), Literal(jsonData), UTC_OPT),
         InternalRow(null)
       )
-    }.getCause
+    }
     assert(exception.isInstanceOf[SparkException])
     assert(exception.getMessage.contains(
       "Malformed records are detected in record parsing. Parse Mode: FAILFAST"))
