@@ -1244,7 +1244,8 @@ class DiskHandle private(
       withResource(new HostMemoryOutputStream(mb)) { out =>
         val len = IOUtils.copy(in, out)
         if (len != mb.getLength) {
-          throw new IllegalStateException(s"Expected to read ${mb.getLength} bytes, but got $len bytes from disk")
+          throw new IllegalStateException(
+            s"Expected to read ${mb.getLength} bytes, but got $len bytes from disk")
         }
       }
     }
