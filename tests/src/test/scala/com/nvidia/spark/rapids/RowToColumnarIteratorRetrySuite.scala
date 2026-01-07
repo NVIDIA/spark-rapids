@@ -22,8 +22,11 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
+import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
   private val schema = StructType(Seq(StructField("a", IntegerType)))
@@ -83,7 +86,12 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
 
   test("test GPU OOM split and retry produces multiple batches") {
     // When GPU OOM occurs during host-to-GPU transfer, we should split the batch
-    // and produce multiple smaller batches
+    // and produce multiple smaller batches.
+    // Verification that split-retry happened:
+    // 1. Without split, we'd get exactly 1 batch (batchSize is huge, all rows fit)
+    // 2. With forceSplitAndRetryOOM, we get 2+ batches proving the split occurred
+    // 3. Total rows match input, proving no data loss during split
+    // 4. All values are correct, proving data integrity
     val numRows = 10
     val rowIter: Iterator[InternalRow] = (1 to numRows).map(InternalRow(_)).toIterator
     // Use TargetSize goal (not RequireSingleBatch) to allow multiple output batches
@@ -95,11 +103,19 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
 
-    // Collect all batches
+    // Collect all batches and verify values
     val batches = new ArrayBuffer[ColumnarBatch]()
+    val allValues = new ArrayBuffer[Int]()
     try {
       while (row2ColIter.hasNext) {
-        batches += row2ColIter.next()
+        val batch = row2ColIter.next()
+        batches += batch
+        // Extract values from GPU batch
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            allValues += hostCol.getInt(i)
+          }
+        }
       }
 
       // We should have produced at least 2 batches due to the split
@@ -107,8 +123,10 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
         s"Expected at least 2 batches after split, got ${batches.length}")
 
       // Total rows across all batches should equal input rows
-      val totalRows = batches.map(_.numRows()).sum
-      assertResult(numRows)(totalRows)
+      assertResult(numRows)(allValues.length)
+
+      // Verify all values are correct (1 to numRows in order)
+      assertResult((1 to numRows).toSeq)(allValues.toSeq)
     } finally {
       batches.foreach(_.close())
     }
@@ -127,9 +145,17 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
 
     val batches = new ArrayBuffer[ColumnarBatch]()
+    val allValues = new ArrayBuffer[Int]()
     try {
       while (row2ColIter.hasNext) {
-        batches += row2ColIter.next()
+        val batch = row2ColIter.next()
+        batches += batch
+        // Extract values from GPU batch
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            allValues += hostCol.getInt(i)
+          }
+        }
       }
 
       // With 3 sequential splits (each split divides one batch into two), we should have
@@ -138,8 +164,10 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
         s"Expected at least 4 batches after 3 sequential splits, got ${batches.length}")
 
       // Total rows across all batches should equal input rows
-      val totalRows = batches.map(_.numRows()).sum
-      assertResult(numRows)(totalRows)
+      assertResult(numRows)(allValues.length)
+
+      // Verify all values are correct (1 to numRows in order)
+      assertResult((1 to numRows).toSeq)(allValues.toSeq)
     } finally {
       batches.foreach(_.close())
     }
@@ -158,6 +186,97 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
 
     assertThrows[GpuSplitAndRetryOOM] {
       row2ColIter.next()
+    }
+  }
+
+  test("test GPU OOM split and retry with nested types") {
+    // Test that split and retry works correctly with various nested types:
+    // string, array, struct, map, and nested array of struct
+    val nestedSchema = StructType(Seq(
+      StructField("id", IntegerType),
+      StructField("str", StringType),
+      StructField("arr", ArrayType(IntegerType, containsNull = true)),
+      StructField("nested_struct", StructType(Seq(
+        StructField("x", IntegerType),
+        StructField("y", StringType)
+      ))),
+      StructField("map", MapType(StringType, IntegerType, valueContainsNull = true)),
+      StructField("arr_of_struct", ArrayType(
+        StructType(Seq(
+          StructField("a", IntegerType),
+          StructField("b", StringType)
+        )),
+        containsNull = true
+      ))
+    ))
+    val numRows = 10
+    val rowIter: Iterator[InternalRow] = (1 to numRows).map { i =>
+      // String column
+      val str = UTF8String.fromString(s"test_string_$i")
+      // Array column
+      val arr = ArrayData.toArrayData(Array(i, i + 1, null, i + 2))
+      // Struct column
+      val nestedStruct = new GenericInternalRow(Array[Any](i * 10, UTF8String.fromString(s"s_$i")))
+      // Map column
+      val keys = ArrayData.toArrayData(Array(
+        UTF8String.fromString(s"key_${i}_a"),
+        UTF8String.fromString(s"key_${i}_b")
+      ))
+      val values = ArrayData.toArrayData(Array(i, null))
+      val mapData = new ArrayBasedMapData(keys, values)
+      // Array of struct column
+      val struct1 = new GenericInternalRow(Array[Any](i, UTF8String.fromString(s"a_$i")))
+      val struct2 = new GenericInternalRow(Array[Any](i + 1, UTF8String.fromString(s"b_$i")))
+      val arrOfStruct = ArrayData.toArrayData(Array(struct1, null, struct2))
+
+      new GenericInternalRow(Array[Any](i, str, arr, nestedStruct, mapData, arrOfStruct))
+    }.toIterator
+
+    val goal = TargetSize(batchSize)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, nestedSchema, goal, batchSize, new GpuRowToColumnConverter(nestedSchema))
+
+    // Force a split-and-retry OOM
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    val batches = new ArrayBuffer[ColumnarBatch]()
+    val idValues = new ArrayBuffer[Int]()
+    val strValues = new ArrayBuffer[String]()
+    try {
+      while (row2ColIter.hasNext) {
+        val batch = row2ColIter.next()
+        batches += batch
+        // Extract id column (IntegerType) values
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            idValues += hostCol.getInt(i)
+          }
+        }
+        // Extract str column (StringType) values - verifies string slicing with offsets
+        withResource(batch.column(1).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            strValues += hostCol.getBase.getJavaString(i)
+          }
+        }
+      }
+
+      // We should have produced at least 2 batches due to the split
+      assert(batches.length >= 2,
+        s"Expected at least 2 batches after split with nested types, got ${batches.length}")
+
+      // Total rows across all batches should equal input rows
+      assertResult(numRows)(idValues.length)
+      assertResult(numRows)(strValues.length)
+
+      // Verify id column values are correct (1 to numRows in order)
+      assertResult((1 to numRows).toSeq)(idValues.toSeq)
+
+      // Verify string column values are correct
+      val expectedStrings = (1 to numRows).map(i => s"test_string_$i")
+      assertResult(expectedStrings)(strValues.toSeq)
+    } finally {
+      batches.foreach(_.close())
     }
   }
 }

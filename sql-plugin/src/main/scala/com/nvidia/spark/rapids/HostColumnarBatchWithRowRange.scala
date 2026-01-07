@@ -20,6 +20,7 @@ import java.util.{ArrayList, Optional}
 
 import ai.rapids.cudf.{DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 
 import org.apache.spark.sql.types.DataType
@@ -32,11 +33,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * When GPU OOM occurs during host-to-GPU transfer, we can split this batch in half
  * and retry with smaller chunks.
  *
+ * Memory management uses reference counting: each instance increments the reference count
+ * of the host columns on construction and decrements it on close. The host columns are
+ * freed when the last reference is closed.
+ *
  * @param hostColumns The underlying host column vectors (shared across splits)
  * @param startRow The starting row index (inclusive) for this range
  * @param numRows The number of rows in this range
  * @param dataTypes The Spark data types for each column
- * @param ownsHostColumns Whether this instance owns (should close) the host columns
  */
 class HostColumnarBatchWithRowRange private (
     val hostColumns: Array[HostColumnVector],
@@ -79,7 +83,7 @@ class HostColumnarBatchWithRowRange private (
     val gpuColumns = new Array[org.apache.spark.sql.vectorized.ColumnVector](hostColumns.length)
     closeOnExcept(gpuColumns) { _ =>
       for (i <- hostColumns.indices) {
-        gpuColumns(i) = new GpuColumnVector(dataTypes(i), hostColumns(i).copyToDevice())
+        gpuColumns(i) = GpuColumnVector.from(hostColumns(i).copyToDevice(), dataTypes(i))
       }
       new ColumnarBatch(gpuColumns, numRows)
     }
@@ -91,7 +95,7 @@ class HostColumnarBatchWithRowRange private (
     closeOnExcept(gpuColumns) { _ =>
       for (i <- hostColumns.indices) {
         withResource(sliceHostColumn(hostColumns(i), startRow, numRows)) { slicedHost =>
-          gpuColumns(i) = new GpuColumnVector(dataTypes(i), slicedHost.copyToDevice())
+          gpuColumns(i) = GpuColumnVector.from(slicedHost.copyToDevice(), dataTypes(i))
         }
       }
       new ColumnarBatch(gpuColumns, numRows)
@@ -277,9 +281,7 @@ class HostColumnarBatchWithRowRange private (
    * the columns and closing it will not free them.
    */
   override def close(): Unit = {
-    hostColumns.foreach { hcv =>
-      if (hcv != null) hcv.close()
-    }
+    hostColumns.safeClose()
   }
 
   override def toString: String = {
@@ -317,17 +319,21 @@ object HostColumnarBatchWithRowRange {
   }
 
   /**
-   * Create a HostColumnarBatchWithRowRange.
+   * Create a HostColumnarBatchWithRowRange from freshly built host columns.
+   *
+   * This factory method is used when creating the initial batch from the builder.
+   * It sets startRow to 0 since the host columns contain exactly the rows we need.
+   * For split batches with non-zero startRow, use the private constructor via splitInHalf.
+   *
    * The host columns will be closed when this instance is closed.
    */
   def apply(
       hostColumns: Array[HostColumnVector],
       numRows: Int,
       dataTypes: Array[DataType]): HostColumnarBatchWithRowRange = {
-    require(numRows >= 0, s"numRows must be non-negative, got $numRows")
-    if (hostColumns.nonEmpty) {
-      require(hostColumns(0).getRowCount.toInt == numRows,
-        s"numRows ($numRows) must match hostColumns rowCount (${hostColumns(0).getRowCount})")
+    hostColumns.zipWithIndex.foreach { case (col, i) =>
+      require(col.getRowCount.toInt == numRows,
+        s"numRows ($numRows) must match hostColumns[$i] rowCount (${col.getRowCount})")
     }
     // The builder that created these host columns owns the initial reference and will close it
     // when the builder is closed. We increment the reference count here to take a new independent
