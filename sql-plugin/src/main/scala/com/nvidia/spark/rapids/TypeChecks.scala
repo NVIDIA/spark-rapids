@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2250,7 +2250,7 @@ object SupportedOpsForTools {
           case "avro" =>
             (conf.isAvroEnabled, conf.isAvroReadEnabled, None)
           case "iceberg" =>
-            (conf.isIcebergEnabled, conf.isIcebergReadEnabled, None)
+            (conf.isIcebergEnabled, conf.isIcebergReadEnabled, Some(conf.isIcebergWriteEnabled))
           case "hivetext" =>
             (conf.isHiveDelimitedTextEnabled,
               conf.isHiveDelimitedTextReadEnabled,
