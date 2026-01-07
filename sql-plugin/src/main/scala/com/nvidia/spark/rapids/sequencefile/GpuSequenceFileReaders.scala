@@ -16,15 +16,19 @@
 
 package com.nvidia.spark.rapids.sequencefile
 
-import java.io.DataOutputStream
+import java.io.{DataOutputStream, FileNotFoundException, IOException}
 import java.net.URI
 import java.util
 import java.util.Optional
+
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.io.async.{AsyncRunner, UnboundedAsyncRunner}
+import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.{DataOutputBuffer, SequenceFile}
@@ -37,6 +41,8 @@ import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{BinaryType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
@@ -496,6 +502,326 @@ class SequenceFileMultiFilePartitionReader(
   }
 }
 
+/**
+ * Host memory buffer metadata for SequenceFile multi-thread reader.
+ */
+private[sequencefile] case class SequenceFileHostBuffersWithMetaData(
+    override val partitionedFile: PartitionedFile,
+    override val memBuffersAndSizes: Array[SingleHMBAndMeta],
+    override val bytesRead: Long,
+    keyBuffer: Option[HostMemoryBuffer],
+    valueBuffer: Option[HostMemoryBuffer],
+    keyOffsets: Option[HostMemoryBuffer],
+    valueOffsets: Option[HostMemoryBuffer],
+    numRows: Int,
+    wantsKey: Boolean,
+    wantsValue: Boolean) extends HostMemoryBuffersWithMetaDataBase {
+
+  override def close(): Unit = {
+    keyBuffer.foreach(_.close())
+    valueBuffer.foreach(_.close())
+    keyOffsets.foreach(_.close())
+    valueOffsets.foreach(_.close())
+    super.close()
+  }
+}
+
+/**
+ * Empty metadata returned when a file has no records.
+ */
+private[sequencefile] case class SequenceFileEmptyMetaData(
+    override val partitionedFile: PartitionedFile,
+    override val bytesRead: Long) extends HostMemoryBuffersWithMetaDataBase {
+  override def memBuffersAndSizes: Array[SingleHMBAndMeta] = Array(SingleHMBAndMeta.empty())
+}
+
+/**
+ * Multi-threaded cloud reader for SequenceFile format.
+ * Reads multiple files in parallel using a thread pool.
+ */
+class MultiFileCloudSequenceFilePartitionReader(
+    conf: Configuration,
+    files: Array[PartitionedFile],
+    requiredSchema: StructType,
+    partitionSchema: StructType,
+    maxReadBatchSizeRows: Int,
+    maxReadBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
+    poolConf: ThreadPoolConf,
+    maxNumFileProcessed: Int,
+    execMetrics: Map[String, GpuMetric],
+    ignoreMissingFiles: Boolean,
+    ignoreCorruptFiles: Boolean,
+    queryUsesInputFile: Boolean)
+  extends MultiFileCloudPartitionReaderBase(conf, files, poolConf, maxNumFileProcessed,
+    Array.empty[Filter], execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
+    ignoreCorruptFiles) with MultiFileReaderFunctions with Logging {
+
+  private val wantsKey = requiredSchema.fieldNames.exists(
+    _.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD))
+  private val wantsValue = requiredSchema.fieldNames.exists(
+    _.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD))
+
+  override def getFileFormatShortName: String = "SequenceFileBinary"
+
+  override def getBatchRunner(
+      tc: TaskContext,
+      file: PartitionedFile,
+      config: Configuration,
+      filters: Array[Filter]): AsyncRunner[HostMemoryBuffersWithMetaDataBase] = {
+    new ReadBatchRunner(tc, file, config)
+  }
+
+  override def readBatches(
+      fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch] = {
+    fileBufsAndMeta match {
+      case empty: SequenceFileEmptyMetaData =>
+        // No data, but we might need to emit partition values
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        val emptyBatch = new ColumnarBatch(Array.empty, 0)
+        BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
+          emptyBatch,
+          empty.partitionedFile.partitionValues,
+          partitionSchema,
+          maxGpuColumnSizeBytes)
+
+      case meta: SequenceFileHostBuffersWithMetaData =>
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        val batch = buildColumnarBatchFromHostBuffers(meta)
+        val partValues = meta.partitionedFile.partitionValues
+        closeOnExcept(batch) { _ =>
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
+            batch,
+            partValues,
+            partitionSchema,
+            maxGpuColumnSizeBytes)
+        }
+
+      case other =>
+        throw new RuntimeException(s"Unknown buffer type: ${other.getClass.getSimpleName}")
+    }
+  }
+
+  private def buildColumnarBatchFromHostBuffers(
+      meta: SequenceFileHostBuffersWithMetaData): ColumnarBatch = {
+    val numRows = meta.numRows
+
+    if (numRows == 0 || requiredSchema.isEmpty) {
+      return new ColumnarBatch(Array.empty, numRows)
+    }
+
+    // Build device columns from host buffers
+    val keyCol: Option[ColumnVector] = if (meta.wantsKey && meta.keyBuffer.isDefined) {
+      Some(buildDeviceColumnFromHostBuffers(
+        meta.keyBuffer.get, meta.keyOffsets.get, numRows))
+    } else None
+
+    val valueCol: Option[ColumnVector] = closeOnExcept(keyCol) { _ =>
+      if (meta.wantsValue && meta.valueBuffer.isDefined) {
+        Some(buildDeviceColumnFromHostBuffers(
+          meta.valueBuffer.get, meta.valueOffsets.get, numRows))
+      } else None
+    }
+
+    withResource(keyCol) { kc =>
+      withResource(valueCol) { vc =>
+        val cols: Array[SparkVector] = requiredSchema.fields.map { f =>
+          if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD)) {
+            GpuColumnVector.from(kc.get.incRefCount(), BinaryType)
+          } else if (f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD)) {
+            GpuColumnVector.from(vc.get.incRefCount(), BinaryType)
+          } else {
+            GpuColumnVector.fromNull(numRows, f.dataType)
+          }
+        }
+        closeOnExcept(cols) { _ =>
+          new ColumnarBatch(cols, numRows)
+        }
+      }
+    }
+  }
+
+  private def buildDeviceColumnFromHostBuffers(
+      dataBuffer: HostMemoryBuffer,
+      offsetsBuffer: HostMemoryBuffer,
+      numRows: Int): ColumnVector = {
+    val dataLen = dataBuffer.getLength.toInt
+
+    val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
+
+    // Create host column vectors (they take ownership of buffers)
+    val childHost = new HostColumnVector(DType.UINT8, dataLen,
+      Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
+
+    val offsetsHost = closeOnExcept(childHost) { _ =>
+      new HostColumnVector(DType.INT32, numRows + 1,
+        Optional.of[java.lang.Long](0L), offsetsBuffer, null, null, emptyChildren)
+    }
+
+    // Copy to device
+    val childDev = closeOnExcept(offsetsHost) { _ =>
+      withResource(childHost)(_.copyToDevice())
+    }
+    val offsetsDev = closeOnExcept(childDev) { _ =>
+      withResource(offsetsHost)(_.copyToDevice())
+    }
+
+    withResource(childDev) { _ =>
+      withResource(offsetsDev) { _ =>
+        childDev.makeListFromOffsets(numRows, offsetsDev)
+      }
+    }
+  }
+
+  /**
+   * Async runner that reads a single SequenceFile to host memory buffers.
+   */
+  private class ReadBatchRunner(
+      taskContext: TaskContext,
+      partFile: PartitionedFile,
+      config: Configuration)
+    extends UnboundedAsyncRunner[HostMemoryBuffersWithMetaDataBase] with Logging {
+
+    override def callImpl(): HostMemoryBuffersWithMetaDataBase = {
+      TrampolineUtil.setTaskContext(taskContext)
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
+      try {
+        doRead()
+      } catch {
+        case e: FileNotFoundException if ignoreMissingFiles =>
+          logWarning(s"Skipped missing file: ${partFile.filePath}", e)
+          SequenceFileEmptyMetaData(partFile, 0L)
+        case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+          logWarning(s"Skipped corrupted file: ${partFile.filePath}", e)
+          SequenceFileEmptyMetaData(partFile, 0L)
+      } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
+        TrampolineUtil.unsetTaskContext()
+      }
+    }
+
+    private def doRead(): HostMemoryBuffersWithMetaDataBase = {
+      val startingBytesRead = fileSystemBytesRead()
+      val path = new org.apache.hadoop.fs.Path(new URI(partFile.filePath.toString))
+
+      val reader = new SequenceFile.Reader(config, SequenceFile.Reader.file(path))
+      try {
+        // Check for compression
+        if (reader.isCompressed || reader.isBlockCompressed) {
+          val compressionType = reader.getCompressionType
+          val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
+            s"compressed SequenceFiles (compressionType=$compressionType), file=$path"
+          throw new UnsupportedOperationException(msg)
+        }
+
+        val start = partFile.start
+        if (start > 0) {
+          reader.sync(start)
+        }
+        val end = start + partFile.length
+
+        // Buffers for reading
+        val keyBuf = new DataOutputBuffer()
+        val valueBytes = reader.createValueBytes()
+        val valueOut = new DataOutputBuffer()
+        val valueDos = new DataOutputStream(valueOut)
+
+        // Collect all records from this file/split
+        val keyDataList = if (wantsKey) new ArrayBuffer[Array[Byte]]() else null
+        val valueDataList = if (wantsValue) new ArrayBuffer[Array[Byte]]() else null
+        var totalKeyBytes = 0L
+        var totalValueBytes = 0L
+        var numRows = 0
+
+        while (reader.getPosition < end) {
+          keyBuf.reset()
+          val recLen = reader.nextRaw(keyBuf, valueBytes)
+          if (recLen < 0) {
+            // End of file
+            // break equivalent - we'll exit the while loop
+          } else {
+            if (wantsKey) {
+              val keyLen = keyBuf.getLength
+              val keyArr = util.Arrays.copyOf(keyBuf.getData, keyLen)
+              keyDataList += keyArr
+              totalKeyBytes += keyLen
+            }
+            if (wantsValue) {
+              valueOut.reset()
+              valueBytes.writeUncompressedBytes(valueDos)
+              val valueLen = valueOut.getLength
+              val valueArr = util.Arrays.copyOf(valueOut.getData, valueLen)
+              valueDataList += valueArr
+              totalValueBytes += valueLen
+            }
+            numRows += 1
+          }
+        }
+
+        val bytesRead = fileSystemBytesRead() - startingBytesRead
+
+        if (numRows == 0) {
+          SequenceFileEmptyMetaData(partFile, bytesRead)
+        } else {
+          // Build host memory buffers
+          val (keyBuffer, keyOffsets) = if (wantsKey && keyDataList.nonEmpty) {
+            buildHostBuffers(keyDataList.toArray, totalKeyBytes)
+          } else (None, None)
+
+          val (valueBuffer, valueOffsets) = closeOnExcept(keyBuffer) { _ =>
+            closeOnExcept(keyOffsets) { _ =>
+              if (wantsValue && valueDataList.nonEmpty) {
+                buildHostBuffers(valueDataList.toArray, totalValueBytes)
+              } else (None, None)
+            }
+          }
+
+          SequenceFileHostBuffersWithMetaData(
+            partitionedFile = partFile,
+            memBuffersAndSizes = Array(SingleHMBAndMeta.empty(numRows)),
+            bytesRead = bytesRead,
+            keyBuffer = keyBuffer,
+            valueBuffer = valueBuffer,
+            keyOffsets = keyOffsets,
+            valueOffsets = valueOffsets,
+            numRows = numRows,
+            wantsKey = wantsKey,
+            wantsValue = wantsValue)
+        }
+      } finally {
+        reader.close()
+      }
+    }
+
+    private def buildHostBuffers(
+        dataArrays: Array[Array[Byte]],
+        totalBytes: Long): (Option[HostMemoryBuffer], Option[HostMemoryBuffer]) = {
+      val numRows = dataArrays.length
+      val dataBuffer = HostMemoryBuffer.allocate(totalBytes)
+      val offsetsBuffer = HostMemoryBuffer.allocate((numRows + 1L) * DType.INT32.getSizeInBytes)
+
+      closeOnExcept(dataBuffer) { _ =>
+        closeOnExcept(offsetsBuffer) { _ =>
+          var dataOffset = 0L
+          var i = 0
+          while (i < numRows) {
+            val arr = dataArrays(i)
+            offsetsBuffer.setInt(i.toLong * DType.INT32.getSizeInBytes, dataOffset.toInt)
+            dataBuffer.setBytes(dataOffset, arr, 0, arr.length)
+            dataOffset += arr.length
+            i += 1
+          }
+          // Final offset
+          offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataOffset.toInt)
+        }
+      }
+
+      (Some(dataBuffer), Some(offsetsBuffer))
+    }
+  }
+}
+
 case class GpuSequenceFilePartitionReaderFactory(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
@@ -539,8 +865,16 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
-  override val canUseCoalesceFilesReader: Boolean = true
-  override val canUseMultiThreadReader: Boolean = false
+  override val canUseCoalesceFilesReader: Boolean =
+    rapidsConf.isSequenceFileCoalesceFileReadEnabled && !queryUsesInputFile
+
+  override val canUseMultiThreadReader: Boolean =
+    rapidsConf.isSequenceFileMultiThreadReadEnabled
+
+  private val maxNumFileProcessed = rapidsConf.maxNumSequenceFilesParallel
+  private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
+  private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
+  private val poolConf = ThreadPoolConfBuilder(rapidsConf).build
 
   override protected def getFileFormatShortName: String = "SequenceFileBinary"
 
@@ -556,8 +890,22 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
   override protected def buildBaseColumnarReaderForCloud(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    // No special cloud implementation yet; read sequentially on the task thread.
-    buildSequenceFileMultiFileReader(files, conf)
+    // Multi-threaded reader for cloud/parallel file reading
+    new PartitionReaderWithBytesRead(
+      new MultiFileCloudSequenceFilePartitionReader(
+        conf,
+        files,
+        readDataSchema,
+        partitionSchema,
+        maxReadBatchSizeRows,
+        maxReadBatchSizeBytes,
+        maxGpuColumnSizeBytes,
+        poolConf,
+        maxNumFileProcessed,
+        metrics,
+        ignoreMissingFiles,
+        ignoreCorruptFiles,
+        queryUsesInputFile))
   }
 
   override protected def buildBaseColumnarReaderForCoalescing(
