@@ -1305,11 +1305,11 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           waitTimeStart = System.nanoTime()
           val res = queued.take()
           val queueWaitThisCall = System.nanoTime() - waitTimeStart
+          // limiter is now released immediately after deserialization in deserializeTask
           res match {
-            case (_, cb: ColumnarBatch) =>
-              limiter.release(SerializedTableColumn.getMemoryUsed(cb))
+            case (_, _: ColumnarBatch) =>
               popFetchedIfAvailable()
-            case _ => 0 // TODO: do we need to handle other types here?
+            case _ => // do nothing
           }
           waitTime += queueWaitThisCall
           deserWaitTimeNs.foreach(_ += queueWaitThisCall)
@@ -1335,10 +1335,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       res
     }
 
-    private def deserializeTask(blockState: BlockState): Unit = {
+    private def deserializeTask(blockState: BlockState, acquiredSize: Long): Unit = {
       val slot = RapidsShuffleInternalManagerBase.getNextReaderSlot
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
         var success = false
+        // Track the size we need to release (starts with the pre-acquired size)
+        var sizeToRelease = acquiredSize
         try {
           var currentBatchSize = blockState.getNextBatchSize
           var didFit = true
@@ -1349,7 +1351,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             currentBatchSize = blockState.getNextBatchSize
             limiterAcquireCount.foreach(_ += 1)
             didFit = limiter.acquire(currentBatchSize)
-            if (!didFit) {
+            if (didFit) {
+              // Successfully acquired, add to sizeToRelease for later release
+              sizeToRelease += currentBatchSize
+            } else {
               limiterAcquireFailCount.foreach(_ += 1)
             }
           }
@@ -1360,7 +1365,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             None // no further batches
           }
         } finally {
-          if (!success) {
+          // Release limiter immediately after deserialization completes
+          limiter.release(sizeToRelease)
+          // Close blockState (Netty buffer) immediately if:
+          // - failed (success = false), or
+          // - all batches processed (success = true and returned None)
+          if (!success || !blockState.hasNext) {
             blockState.close()
           }
         }
@@ -1375,11 +1385,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         while(pendingIts.nonEmpty && continue) {
           val blockState = pendingIts.head
           // check if we can handle the head batch now
+          val nextBatchSize = blockState.getNextBatchSize
           limiterAcquireCount.foreach(_ += 1)
-          if (limiter.acquire(blockState.getNextBatchSize)) {
+          if (limiter.acquire(nextBatchSize)) {
             // kick off deserialization task
             pendingIts.dequeue()
-            deserializeTask(blockState)
+            deserializeTask(blockState, nextBatchSize)
           } else {
             limiterAcquireFailCount.foreach(_ += 1)
             continue = false
@@ -1416,11 +1427,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
                 .asInstanceOf[BaseSerializedTableIterator]
               val blockState = BlockState(blockId, batchIter, inputStream)
               // get the next known batch size (there could be multiple batches)
+              val nextBatchSize = blockState.getNextBatchSize
               limiterAcquireCount.foreach(_ += 1)
-              if (limiter.acquire(blockState.getNextBatchSize)) {
+              if (limiter.acquire(nextBatchSize)) {
                 // we can fit at least the first batch in this block
                 // kick off a deserialization task
-                deserializeTask(blockState)
+                deserializeTask(blockState, nextBatchSize)
               } else {
                 // first batch didn't fit, put iterator aside and stop asking for results
                 // from the fetcher
