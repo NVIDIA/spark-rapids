@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,9 +88,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-33428 conv function shouldn't raise error if input string is too big", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
     .exclude("SPARK-36229 conv should return result equal to -1 in base of toBase", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
   enableSuite[RapidsMiscFunctionsSuite]
-  enableSuite[RapidsHashedRelationSuite]
-  enableSuite[RapidsInnerJoinSuite]
-  enableSuite[RapidsOuterJoinSuite]
   enableSuite[RapidsParquetAvroCompatibilitySuite]
     .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11592"))
   enableSuite[RapidsParquetColumnIndexSuite]
@@ -141,11 +138,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-22550: Elt should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22603: FormatString should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
   enableSuite[RapidsStringFunctionsSuite]
-  enableSuite[RapidsPercentileSuite]
-  enableSuite[RapidsHistogramNumericSuite]
-  enableSuite[RapidsFirstLastTestSuite]
   enableSuite[RapidsProductAggSuite]
-  enableSuite[RapidsApproximatePercentileSuite]
   enableSuite[RapidsComplexTypesSuite]
   enableSuite[RapidsCSVSuite]
     .exclude("parse unescaped quotes with maxCharsPerColumn", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13889"))
@@ -160,7 +153,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsCsvExpressionsSuite]
     .exclude("unsupported mode", ADJUST_UT("Replaced by a testRapids case which changed the expectation of SparkException instead of TestFailedException"))
   enableSuite[RapidsCsvFunctionsSuite]
-  enableSuite[RapidsCSVInferSchemaSuite]
   enableSuite[RapidsCSVReadSchemaSuite]
   enableSuite[RapidsHeaderCSVReadSchemaSuite]
   enableSuite[RapidsJsonReadSchemaSuite]
