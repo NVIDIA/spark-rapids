@@ -104,12 +104,22 @@ object AllocationRetryCoverageTracker extends Logging {
 
   /**
    * Ensure header is written (thread-safe, lazy initialization).
+   *
+   * Note: `headerWritten` is a per-JVM variable that resets to `false` when a new Spark
+   * application starts (i.e., a new JVM process). In integration tests, multiple test runs
+   * or pytest-xdist workers may write to the same output file. We check if the file already
+   * exists and is non-empty to avoid:
+   *   1. Overwriting records from previous JVM processes
+   *   2. Writing multiple CSV headers
+   * This enables cross-process append mode for accumulating results across test runs.
    */
   private def ensureHeaderWritten(): Unit = {
     if (!headerWritten) {
       this.synchronized {
         if (!headerWritten) {
           val outputPath = Paths.get(DEFAULT_OUTPUT_PATH)
+          // Check file existence because headerWritten only tracks state within this JVM.
+          // Other JVM processes may have already written to the file.
           val shouldWriteHeader = try {
             !Files.exists(outputPath) || Files.size(outputPath) == 0L
           } catch {
@@ -120,8 +130,8 @@ object AllocationRetryCoverageTracker extends Logging {
             logWarning(s"Retry coverage tracking ACTIVE. Output: $DEFAULT_OUTPUT_PATH")
             writeToFileInternal("kind,call_stack", append = false)
           } else {
-            // File already exists and is non-empty. Avoid clobbering previous output and keep
-            // appending to the existing file.
+            // File already exists and is non-empty (written by another JVM process).
+            // Skip writing header and append to preserve existing records.
             logWarning(s"Retry coverage tracking ACTIVE. Appending to: $DEFAULT_OUTPUT_PATH")
           }
           headerWritten = true

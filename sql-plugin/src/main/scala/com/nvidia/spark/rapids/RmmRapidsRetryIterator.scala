@@ -567,7 +567,14 @@ object RmmRapidsRetryIterator extends Logging {
       attemptIter: Spliterator[K])
       extends RmmRapidsRetryIterator[T, K](attemptIter) {
 
-    override def hasNext: Boolean = super.hasNext
+    override def hasNext: Boolean = {
+      try {
+        RetryStateTracker.enterRetryBlock()
+        super.hasNext
+      } finally {
+        RetryStateTracker.exitRetryBlock()
+      }
+    }
 
     override def next(): K = {
       if (!hasNext) {
@@ -933,9 +940,7 @@ object RetryStateTracker {
   // Use a depth counter to correctly handle nested retry blocks.
   private val localRetryBlockDepth = new ThreadLocal[java.lang.Integer]()
   // Gate retry-block tracking behind the retry coverage debug flag to avoid overhead when unused.
-  private val trackRetryBlock: Boolean =
-    "true".equalsIgnoreCase(
-      System.getenv(AllocationRetryCoverageTracker.RETRY_COVERAGE_TRACKING_ENV_VAR_NAME))
+  private val trackRetryBlock: Boolean = AllocationRetryCoverageTracker.ENABLED
 
   def isCurThreadRetrying: Boolean = {
     val ret = localIsRetrying.get()
