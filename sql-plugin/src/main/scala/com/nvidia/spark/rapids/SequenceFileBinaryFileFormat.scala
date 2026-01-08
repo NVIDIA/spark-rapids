@@ -48,7 +48,7 @@ import org.apache.spark.util.SerializableConfiguration
  * Usage:
  * {{{
  *   val df = spark.read
- *     .format("SequenceFileBinary")
+ *     .format("sequencefilebinary")
  *     .load("path/to/sequencefiles")
  * }}}
  */

@@ -199,14 +199,8 @@ private[sequencefile] final class HostBinaryListBufferer(
   }
 
   override def close(): Unit = {
-    if (dos != null) {
-      dos.close()
-      dos = null
-    }
-    if (out != null) {
-      out.close()
-      out = null
-    }
+    out = null
+    dos = null
     if (dataBuffer != null) {
       dataBuffer.close()
       dataBuffer = null
@@ -707,19 +701,21 @@ class MultiFileCloudSequenceFilePartitionReader(
 
       val reader = new SequenceFile.Reader(config, SequenceFile.Reader.file(path))
       try {
-        // Check for compression
-        if (reader.isCompressed || reader.isBlockCompressed) {
-          val compressionType = reader.getCompressionType
-          val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
-            s"compressed SequenceFiles (compressionType=$compressionType), file=$path"
-          throw new UnsupportedOperationException(msg)
-        }
+        // Check for compression - use closeOnExcept to ensure reader is closed on failure
+        closeOnExcept(reader) { _ =>
+          if (reader.isCompressed || reader.isBlockCompressed) {
+            val compressionType = reader.getCompressionType
+            val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
+              s"compressed SequenceFiles (compressionType=$compressionType), file=$path"
+            throw new UnsupportedOperationException(msg)
+          }
 
-        val start = partFile.start
-        if (start > 0) {
-          reader.sync(start)
+          val start = partFile.start
+          if (start > 0) {
+            reader.sync(start)
+          }
         }
-        val end = start + partFile.length
+        val end = partFile.start + partFile.length
 
         // Buffers for reading
         val keyBuf = new DataOutputBuffer()
@@ -734,12 +730,13 @@ class MultiFileCloudSequenceFilePartitionReader(
         var totalValueBytes = 0L
         var numRows = 0
 
-        while (reader.getPosition < end) {
+        var reachedEof = false
+        while (reader.getPosition < end && !reachedEof) {
           keyBuf.reset()
           val recLen = reader.nextRaw(keyBuf, valueBytes)
           if (recLen < 0) {
-            // End of file
-            // break equivalent - we'll exit the while loop
+            // End of file reached
+            reachedEof = true
           } else {
             if (wantsKey) {
               val keyLen = keyBuf.getLength
