@@ -313,7 +313,7 @@ else
     ENABLE_TEST_FEATURES="-Dcom.nvidia.spark.rapids.runningTests=true"
     DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
     export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS $ENABLE_TEST_FEATURES"
-    export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ $ENABLE_TEST_FEATURES"
+    export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ $COVERAGE_SUBMIT_FLAGS $ENABLE_TEST_FEATURES"
 
     # TODO: https://github.com/NVIDIA/spark-rapids/issues/10940
     export PYSP_TEST_spark_driver_memory=${PYSP_TEST_spark_driver_memory:-"${MB_PER_EXEC}m"}

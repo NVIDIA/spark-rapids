@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <groupId>com.nvidia</groupId>
+    <artifactId>spark-rapids-jacoco-with-sources</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>RAPIDS Jacoco Coverage Report (Using Collected Sources)</name>
+    
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        
+        <!-- Jacoco version -->
+        <jacoco.version>0.8.8</jacoco.version>
+        
+        <!-- Paths: Since this POM is now in jenkins/ subdirectory, go up one level to project root -->
+        <project.root>${project.basedir}/..</project.root>
+        <exec.output.file>${project.root}/combined/final-aggregate.exec</exec.output.file>
+        <report.output.dir>${project.root}/combined</report.output.dir>
+        
+        <!-- Class files directory (parallel-world) -->
+        <classes.dir>${project.root}/dist/target/parallel-world/spark-shared</classes.dir>
+        <classes.api.dir>${project.root}/dist/target/parallel-world/com</classes.api.dir>
+        
+        <!-- Unpacked source files directory (from merged source jars) -->
+        <sources.dir>${project.root}/dist/target/unpacked-sources</sources.dir>
+        
+        <!-- Default buildver -->
+        <buildver>353</buildver>
+    </properties>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>org.jacoco.ant</artifactId>
+                        <version>${jacoco.version}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <!-- Stage 1: Merge exec files -->
+                    <execution>
+                        <id>jacoco-merge</id>
+                        <phase>process-test-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <taskdef uri="antlib:org.jacoco.ant" 
+                                         resource="org/jacoco/ant/antlib.xml"
+                                         classpathref="maven.plugin.classpath"/>
+                                
+                                <mkdir dir="${report.output.dir}"/>
+                                
+                                <echo message="Merging Jacoco execution data files..."/>
+                                <jacoco:merge xmlns:jacoco="antlib:org.jacoco.ant"
+                                              destfile="${exec.output.file}">
+                                    <fileset dir="${project.root}">
+                                        <include name="**/target/**/*.exec"/>
+                                        <include name="**/*.exec"/>
+                                        <exclude name="combined/*.exec"/>
+                                    </fileset>
+                                </jacoco:merge>
+                                
+                                <echo message="Merge completed: ${exec.output.file}"/>
+                                <length file="${exec.output.file}" property="exec.file.size"/>
+                                <echo message="Execution data file size: ${exec.file.size} bytes"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                    
+                    <!-- Stage 2: Generate coverage report -->
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>     
+                                <taskdef uri="antlib:org.jacoco.ant" 
+                                         resource="org/jacoco/ant/antlib.xml"
+                                         classpathref="maven.plugin.classpath"/>
+                                
+                                <available file="${exec.output.file}" property="exec.file.exists"/>
+                                <fail unless="exec.file.exists" 
+                                      message="Error: Coverage data file not found at ${exec.output.file}"/>
+                                
+                                <available file="${sources.dir}" property="sources.dir.exists"/>
+                                <fail unless="sources.dir.exists" 
+                                      message="Error: Unpacked sources directory not found at ${sources.dir}. Please run 'cd dist &amp;&amp; mvn process-resources package -Dbuildver=${buildver} -Pcollect-sources-jar' first to generate unpacked sources."/>
+                                
+                                <echo message="Generating Jacoco coverage report..."/>
+                                <echo message="  Execution data: ${exec.output.file}"/>
+                                <echo message="  Class files: ${classes.dir}"/>
+                                <echo message="  Source files: ${sources.dir}"/>
+                                
+                                <jacoco:report xmlns:jacoco="antlib:org.jacoco.ant">
+                                    
+                                    <executiondata>
+                                        <file file="${exec.output.file}"/>
+                                    </executiondata>
+                                    
+                                    <!-- Report structure -->
+                                    <structure name="RAPIDS Accelerator for Apache Spark - Code Coverage">
+                                        
+                                        <!-- Group 1: sql-plugin (including sql-plugin and sql-plugin-api) -->
+                                        <group name="sql-plugin">
+                                            <classfiles>
+                                                <!-- sql-plugin classes -->
+                                                <fileset dir="${classes.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/**/*.class"/>
+                                                    <include name="org/apache/spark/sql/rapids/**/*.class"/>
+                                                    <exclude name="**/*$*.class"/>
+                                                    <exclude name="**/test/**"/>
+                                                    <exclude name="**/shaded/**"/>
+                                                </fileset>
+                                                <!-- sql-plugin-api classes -->
+                                                <fileset dir="${classes.api.dir}" erroronmissingdir="false">
+                                                    <include name="nvidia/spark/*.class"/>
+                                                    <exclude name="**/*$*.class"/>
+                                                </fileset>
+                                            </classfiles>
+                                            <sourcefiles encoding="UTF-8">
+                                                <!-- All sql-plugin and sql-plugin-api sources -->
+                                                <fileset dir="${sources.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/**/*.scala"/>
+                                                    <include name="com/nvidia/spark/rapids/**/*.java"/>
+                                                    <include name="org/apache/spark/sql/rapids/**/*.scala"/>
+                                                    <include name="org/apache/spark/sql/rapids/**/*.java"/>
+                                                    <include name="org/apache/spark/sql/nvidia/**/*.scala"/>
+                                                    <include name="org/apache/spark/sql/nvidia/**/*.java"/>
+                                                    <!-- Exclude delta and iceberg -->
+                                                    <exclude name="com/nvidia/spark/rapids/delta/**"/>
+                                                    <exclude name="com/nvidia/spark/rapids/iceberg/**"/>
+                                                    <exclude name="com/nvidia/spark/rapids/shuffle/**"/>
+                                                    <exclude name="com/nvidia/spark/udf/**"/>
+                                                </fileset>
+                                            </sourcefiles>
+                                        </group>
+                                        
+                                        <!-- Group 2: delta-lake -->
+                                        <group name="delta-lake">
+                                            <classfiles>
+                                                <!-- Delta classes in spark-shared -->
+                                                <fileset dir="${classes.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/delta/**/*.class"/>
+                                                    <include name="org/apache/spark/sql/delta/rapids/**/*.class"/>
+                                                    <exclude name="**/*$*.class"/>
+                                                </fileset>
+                                                <!-- Delta classes in com directory (DeltaProvider, DeltaProbe) -->
+                                                <fileset dir="${classes.api.dir}" erroronmissingdir="false">
+                                                    <include name="nvidia/spark/rapids/delta/**/*.class"/>
+                                                    <exclude name="**/*$*.class"/>
+                                                </fileset>
+                                            </classfiles>
+                                            <sourcefiles encoding="UTF-8">
+                                                <!-- All Delta Lake sources -->
+                                                <fileset dir="${sources.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/delta/**/*.scala"/>
+                                                    <include name="com/nvidia/spark/rapids/delta/**/*.java"/>
+                                                    <include name="org/apache/spark/sql/delta/**/*.scala"/>
+                                                    <include name="org/apache/spark/sql/delta/**/*.java"/>
+                                                </fileset>
+                                            </sourcefiles>
+                                        </group>
+                                        
+                                        <!-- Group 3: iceberg -->
+                                        <group name="iceberg">
+                                            <classfiles>
+                                                <fileset dir="${classes.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/iceberg/**/*.class"/>
+                                                    <include name="org/apache/iceberg/**/*.class"/>
+                                                    <exclude name="**/*$*.class"/>
+                                                </fileset>
+                                            </classfiles>
+                                            <sourcefiles encoding="UTF-8">
+                                                <!-- All Iceberg sources -->
+                                                <fileset dir="${sources.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/iceberg/**/*.scala"/>
+                                                    <include name="com/nvidia/spark/rapids/iceberg/**/*.java"/>
+                                                    <include name="org/apache/iceberg/spark/**/*.scala"/>
+                                                    <include name="org/apache/iceberg/spark/**/*.java"/>
+                                                </fileset>
+                                            </sourcefiles>
+                                        </group>
+                                        
+                                        <!-- Group 4: shuffle-plugin -->
+                                        <group name="shuffle-plugin">
+                                            <classfiles>
+                                                <fileset dir="${classes.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/shuffle/**/*.class"/>
+                                                    <exclude name="**/*$*.class"/>
+                                                </fileset>
+                                            </classfiles>
+                                            <sourcefiles encoding="UTF-8">
+                                                <!-- All shuffle-plugin sources -->
+                                                <fileset dir="${sources.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/rapids/shuffle/**/*.scala"/>
+                                                    <include name="com/nvidia/spark/rapids/shuffle/**/*.java"/>
+                                                    <include name="org/apache/spark/shuffle/rapids/**/*.scala"/>
+                                                    <include name="org/apache/spark/shuffle/rapids/**/*.java"/>
+                                                </fileset>
+                                            </sourcefiles>
+                                        </group>
+                                        
+                                        <!-- Group 5: udf-compiler -->
+                                        <group name="udf-compiler">
+                                            <classfiles>
+                                                <fileset dir="${classes.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/udf/**/*.class"/>
+                                                    <exclude name="**/*$*.class"/>
+                                                </fileset>
+                                            </classfiles>
+                                            <sourcefiles encoding="UTF-8">
+                                                <!-- All udf-compiler sources -->
+                                                <fileset dir="${sources.dir}" erroronmissingdir="false">
+                                                    <include name="com/nvidia/spark/udf/**/*.scala"/>
+                                                    <include name="com/nvidia/spark/udf/**/*.java"/>
+                                                </fileset>
+                                            </sourcefiles>
+                                        </group>
+                                        
+                                    </structure>
+                                    
+                                    <!-- Generate HTML report -->
+                                    <html destdir="${report.output.dir}" encoding="UTF-8" locale="en"/>
+                                    
+                                    <!-- Generate XML report -->
+                                    <xml destfile="${report.output.dir}/jacoco.xml" encoding="UTF-8"/>
+                                    
+                                    <!-- Generate CSV report -->
+                                    <csv destfile="${report.output.dir}/jacoco.csv" encoding="UTF-8"/>
+                                    
+                                </jacoco:report>
+                                
+                                <echo message="========================================"/>
+                                <echo message="Coverage report generated successfully!"/>
+                                <echo message="  HTML: ${report.output.dir}/index.html"/>
+                                <echo message="  XML:  ${report.output.dir}/jacoco.xml"/>
+                                <echo message="  CSV:  ${report.output.dir}/jacoco.csv"/>
+                                <echo message="========================================"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+
