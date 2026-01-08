@@ -1679,26 +1679,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .createWithDefault(Integer.MAX_VALUE)
 
   val SEQUENCEFILE_READER_TYPE = conf("spark.rapids.sql.format.sequencefile.reader.type")
-    .doc("Sets the SequenceFile reader type. We support different types that are optimized for " +
-      "different environments. The original Spark style reader can be selected by setting this " +
-      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
-      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
-      "recommended instead. The COALESCING reader is good when using a local file system where " +
-      "the executors are on the same nodes or close to the nodes the data is being read on. " +
-      "This reader coalesces all the files assigned to a task into a single host buffer before " +
-      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
-      s"separate threads in parallel, see $MULTITHREAD_READ_NUM_THREADS. " +
-      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
-      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
-      "environments also get better throughput when you have multiple readers in parallel. " +
-      "This reader uses multiple threads to read each file in parallel and each file is sent " +
-      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
+    .doc("Sets the SequenceFile reader type. Since SequenceFile decoding happens on the CPU " +
+      "(using Hadoop's SequenceFile.Reader), COALESCING mode is not supported and will throw " +
+      "an exception. Use PERFILE which individually reads files, or MULTITHREADED which uses " +
+      "multiple threads to read files in parallel, utilizing multiple CPU cores for I/O and " +
+      "decoding. MULTITHREADED is recommended when reading many files as it allows the CPU to " +
+      "keep reading while GPU is also doing work. " +
       s"See $MULTITHREAD_READ_NUM_THREADS and " +
       "spark.rapids.sql.format.sequencefile.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
-      "By default this is set to AUTO so we select the reader we think is best. This will " +
-      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
-      "in the cloud. See spark.rapids.cloudSchemes.")
+      "By default this is set to AUTO which selects MULTITHREADED for cloud storage and " +
+      "PERFILE for local storage. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(RapidsReaderType.values.map(_.toString))
@@ -3584,14 +3575,19 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
-  lazy val isSequenceFilePerFileReadEnabled: Boolean =
-    RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE)) == RapidsReaderType.PERFILE
+  lazy val isSequenceFilePerFileReadEnabled: Boolean = {
+    val readerType = RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE))
+    if (readerType == RapidsReaderType.COALESCING) {
+      throw new IllegalArgumentException(
+        s"COALESCING reader type is not supported for SequenceFile. " +
+        s"SequenceFile decoding happens on CPU, so coalescing provides no benefit. " +
+        s"Use PERFILE, MULTITHREADED, or AUTO instead.")
+    }
+    readerType == RapidsReaderType.PERFILE
+  }
 
   lazy val isSequenceFileAutoReaderEnabled: Boolean =
     RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE)) == RapidsReaderType.AUTO
-
-  lazy val isSequenceFileCoalesceFileReadEnabled: Boolean = isSequenceFileAutoReaderEnabled ||
-    RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE)) == RapidsReaderType.COALESCING
 
   lazy val isSequenceFileMultiThreadReadEnabled: Boolean = isSequenceFileAutoReaderEnabled ||
     RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE)) == RapidsReaderType.MULTITHREADED

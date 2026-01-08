@@ -862,8 +862,9 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
-  override val canUseCoalesceFilesReader: Boolean =
-    rapidsConf.isSequenceFileCoalesceFileReadEnabled && !queryUsesInputFile
+  // COALESCING mode is not beneficial for SequenceFile since decoding happens on CPU
+  // (using Hadoop's SequenceFile.Reader). There's no GPU-side decoding to amortize.
+  override val canUseCoalesceFilesReader: Boolean = false
 
   override val canUseMultiThreadReader: Boolean =
     rapidsConf.isSequenceFileMultiThreadReadEnabled
@@ -908,7 +909,9 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
   override protected def buildBaseColumnarReaderForCoalescing(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    // Sequential multi-file reader (no cross-file coalescing).
-    buildSequenceFileMultiFileReader(files, conf)
+    // This should never be called since canUseCoalesceFilesReader = false
+    throw new IllegalStateException(
+      "COALESCING mode is not supported for SequenceFile. " +
+      "Use PERFILE or MULTITHREADED instead.")
   }
 }
