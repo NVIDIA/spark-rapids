@@ -549,9 +549,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val PARTIAL_FILE_BUFFER_INITIAL_SIZE = 
     conf("spark.rapids.memory.host.partialFileBufferInitialSize")
     .doc("The initial size in bytes for a host memory buffer used by " +
-        "SpillablePartialFileHandle. The buffer can expand dynamically up to " +
-        "partialFileBufferMaxSize. A smaller initial size reduces upfront memory " +
-        "allocation but may require more expansions.")
+        "SpillablePartialFileHandle during shuffle write. This buffer allows shuffle " +
+        "data to be kept in memory instead of writing to disk immediately, reducing " +
+        "I/O overhead. The buffer can expand dynamically up to partialFileBufferMaxSize. " +
+        "A smaller initial size reduces upfront memory allocation but may require more " +
+        "expansions.")
     .startupOnly()
     .internal()
     .bytesConf(ByteUnit.BYTE)
@@ -560,9 +562,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val PARTIAL_FILE_BUFFER_MAX_SIZE = 
     conf("spark.rapids.memory.host.partialFileBufferMaxSize")
     .doc("The maximum size in bytes for a single host memory buffer used by " +
-        "SpillablePartialFileHandle. When a buffer needs to expand beyond this limit, " +
-        "it will be spilled to disk instead. This prevents excessive memory usage " +
-        "for large shuffle partitions.")
+        "SpillablePartialFileHandle during shuffle write. When a buffer needs to " +
+        "expand beyond this limit, it will be spilled to disk instead. This prevents " +
+        "excessive memory usage for large shuffle partitions.")
     .startupOnly()
     .internal()
     .bytesConf(ByteUnit.BYTE)
@@ -571,9 +573,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val PARTIAL_FILE_BUFFER_MEMORY_THRESHOLD =
     conf("spark.rapids.memory.host.partialFileBufferMemoryThreshold")
     .doc("The host memory usage threshold (as a fraction from 0.0 to 1.0) for deciding " +
-        "whether to use memory-based buffering for partial files. When host memory usage " +
-        "exceeds this threshold, file-based storage will be used directly. This threshold " +
-        "also applies when expanding buffers dynamically.")
+        "whether to use memory-based buffering for partial files during shuffle write. " +
+        "When host memory usage exceeds this threshold, file-based storage will be used " +
+        "directly. This threshold also applies when expanding buffers dynamically. " +
+        "Setting this too high may cause threads holding the GPU semaphore to block on " +
+        "spilling, which wastes valuable GPU resources. Setting it too low reduces the " +
+        "shuffle write optimization benefit. A value around 0.5-0.6 typically provides " +
+        "optimal performance. As a guideline, ensure that (1 - threshold) * total_host_mem " +
+        "is greater than num_threads * gpu_batch_size to leave enough memory for other " +
+        "threads to operate without forcing spills.")
     .startupOnly()
     .internal()
     .doubleConf
