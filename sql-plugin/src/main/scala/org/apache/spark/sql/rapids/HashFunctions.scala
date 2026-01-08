@@ -134,7 +134,7 @@ case class GpuSha2(left: Expression, right: Expression)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) {
+    withResource(GpuColumnVector.from(lhs, numRows)) {
       doColumnar(_, rhs)
     }
   }
