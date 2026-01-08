@@ -428,75 +428,6 @@ class SequenceFilePartitionReader(
 }
 
 /**
- * A multi-file reader that iterates through the PartitionedFiles in a Spark FilePartition and
- * emits batches for each file sequentially (no cross-file coalescing).
- */
-class SequenceFileMultiFilePartitionReader(
-    conf: Configuration,
-    files: Array[PartitionedFile],
-    requiredSchema: StructType,
-    partitionSchema: StructType,
-    maxReadBatchSizeRows: Int,
-    maxReadBatchSizeBytes: Long,
-    maxGpuColumnSizeBytes: Long,
-    execMetrics: Map[String, GpuMetric],
-    queryUsesInputFile: Boolean) extends PartitionReader[ColumnarBatch] with Logging {
-
-  private[this] var fileIndex = 0
-  private[this] var currentReader: PartitionReader[ColumnarBatch] = null
-  private[this] var batch: Option[ColumnarBatch] = None
-
-  override def next(): Boolean = {
-    // Close any batch that was prepared but never consumed via get()
-    batch.foreach(_.close())
-    batch = None
-
-    while (fileIndex < files.length) {
-      val pf = files(fileIndex)
-      if (currentReader == null) {
-        InputFileUtils.setInputFileBlock(pf.filePath.toString(), pf.start, pf.length)
-
-        val base = new SequenceFilePartitionReader(
-          conf,
-          pf,
-          requiredSchema,
-          maxReadBatchSizeRows,
-          maxReadBatchSizeBytes,
-          execMetrics)
-        val withBytesRead = new PartitionReaderWithBytesRead(base)
-        currentReader = ColumnarPartitionReaderWithPartitionValues.newReader(
-          pf, withBytesRead, partitionSchema, maxGpuColumnSizeBytes)
-      }
-
-      if (currentReader.next()) {
-        batch = Some(currentReader.get())
-        return true
-      } else {
-        currentReader.close()
-        currentReader = null
-        fileIndex += 1
-      }
-    }
-    false
-  }
-
-  override def get(): ColumnarBatch = {
-    val ret = batch.getOrElse(throw new NoSuchElementException("No batch available"))
-    batch = None
-    ret
-  }
-
-  override def close(): Unit = {
-    if (currentReader != null) {
-      currentReader.close()
-      currentReader = null
-    }
-    batch.foreach(_.close())
-    batch = None
-  }
-}
-
-/**
  * Host memory buffer metadata for SequenceFile multi-thread reader.
  */
 private[sequencefile] case class SequenceFileHostBuffersWithMetaData(
@@ -875,15 +806,6 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
   private val poolConf = ThreadPoolConfBuilder(rapidsConf).build
 
   override protected def getFileFormatShortName: String = "SequenceFileBinary"
-
-  private def buildSequenceFileMultiFileReader(
-      files: Array[PartitionedFile],
-      conf: Configuration): PartitionReader[ColumnarBatch] = {
-    new PartitionReaderWithBytesRead(
-      new SequenceFileMultiFilePartitionReader(conf, files, readDataSchema, partitionSchema,
-        maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
-        metrics, queryUsesInputFile))
-  }
 
   override protected def buildBaseColumnarReaderForCloud(
       files: Array[PartitionedFile],
