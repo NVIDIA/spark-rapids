@@ -349,7 +349,6 @@ trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   }
 }
 
-
 object SpillableHostBufferHandle extends Logging {
   def apply(hmb: HostMemoryBuffer): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(hmb.getLength, host = Some(hmb))
