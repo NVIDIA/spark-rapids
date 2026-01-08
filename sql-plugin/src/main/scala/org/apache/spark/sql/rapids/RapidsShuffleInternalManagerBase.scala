@@ -349,6 +349,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    *
    * @param value the value to process (typically a ColumnarBatch)
    * @return a tuple of (ColumnarBatch with incremented ref count, memory size)
+   * @throws IllegalStateException if value is not a ColumnarBatch or contains
+   *         unsupported column types
    */
   private def incRefCountAndGetSize(value: Any): (ColumnarBatch, Long) = {
     value match {
@@ -362,14 +364,18 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               (SlicedSerializedColumnVector.incRefCount(columnarBatch),
                 SlicedSerializedColumnVector.getTotalHostMemoryUsed(
                   columnarBatch))
-            case _ =>
-              (null, 0L)
+            case other =>
+              throw new IllegalStateException(
+                s"Unexpected column type in ColumnarBatch: ${other.getClass.getName}. " +
+                  "Expected SlicedGpuColumnVector or SlicedSerializedColumnVector.")
           }
         } else {
           (columnarBatch, 0L)
         }
-      case _ =>
-        (null, 0L)
+      case other =>
+        throw new IllegalStateException(
+          s"Unexpected value type: ${if (other == null) "null" else other.getClass.getName}. " +
+            "Expected ColumnarBatch.")
     }
   }
 
