@@ -2086,6 +2086,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
     .createWithDefault(RapidsShuffleManagerMode.MULTITHREADED.toString)
 
+  val MULTITHREADED_SHUFFLE_SKIP_MERGE = conf("spark.rapids.shuffle.multithreaded.skipMerge")
+    .doc("When using MULTITHREADED shuffle mode, skip merging partial shuffle files and " +
+      "instead serve data directly from the MultithreadedShuffleBufferCatalog. " +
+      "This avoids I/O overhead from merging but requires External Shuffle Service (ESS) " +
+      "to be disabled. When set to false, partial files will be merged into a single " +
+      "shuffle file per map task as in standard Spark shuffle. " +
+      "Default is true for better performance when ESS is disabled.")
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(true)
+
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
     .startupOnly()
@@ -3730,6 +3741,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def isMultiThreadedShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTITHREADED
+
+  def isMultithreadedShuffleSkipMergeEnabled: Boolean = get(MULTITHREADED_SHUFFLE_SKIP_MERGE)
 
   def isCacheOnlyShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode

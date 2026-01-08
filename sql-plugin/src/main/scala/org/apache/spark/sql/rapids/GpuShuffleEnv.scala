@@ -52,12 +52,15 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
       shuffleReceivedBufferCatalog =
           new ShuffleReceivedBufferCatalog()
       // Initialize MultithreadedShuffleBufferCatalog for MULTITHREADED mode
-      // when External Shuffle Service is disabled. With ESS disabled, all shuffle
-      // fetch requests go through GpuShuffleBlockResolverBase which can serve data
-      // from the catalog. With ESS enabled, remote fetches go through the external
-      // shuffle service process which cannot access our in-memory catalog.
+      // when External Shuffle Service is disabled and skipMerge is enabled.
+      // With ESS disabled, all shuffle fetch requests go through GpuShuffleBlockResolverBase
+      // which can serve data from the catalog. With ESS enabled, remote fetches go through
+      // the external shuffle service process which cannot access our in-memory catalog.
       if (rapidsConf.isMultiThreadedShuffleManagerMode) {
-        if (!GpuShuffleEnv.isExternalShuffleEnabled) {
+        if (!rapidsConf.isMultithreadedShuffleSkipMergeEnabled) {
+          logInfo("MultithreadedShuffleBufferCatalog disabled - " +
+            "spark.rapids.shuffle.multithreaded.skipMerge is false")
+        } else if (!GpuShuffleEnv.isExternalShuffleEnabled) {
           multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
           logInfo("MultithreadedShuffleBufferCatalog enabled (ESS disabled)")
         } else {
