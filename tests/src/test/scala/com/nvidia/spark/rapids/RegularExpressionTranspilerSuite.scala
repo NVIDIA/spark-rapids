@@ -253,7 +253,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     val inputs = Seq("", "abc", "\r\n", "12\u001b3", "a[b\t\n \rc]d", "[\r+\n-\t[]")
     assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]", raw"[\a-\e]"),
       inputs)
-    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", "[\\u002d-\\u007a]"),
+    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", "[\\\\-z]"),
       inputs)
   }
 
