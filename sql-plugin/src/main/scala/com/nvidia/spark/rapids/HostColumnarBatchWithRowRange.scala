@@ -320,7 +320,8 @@ object HostColumnarBatchWithRowRange {
    * It sets startRow to 0 since the host columns contain exactly the rows we need.
    * For split batches with non-zero startRow, use the private constructor via splitInHalf.
    *
-   * The host columns will be closed when this instance is closed.
+   * Note: This increments the reference count on the host columns. The caller is still
+   * responsible for closing their own reference to the host columns separately.
    */
   def apply(
       hostColumns: Array[HostColumnVector],

@@ -191,7 +191,7 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
 
   test("test GPU OOM split and retry with nested types") {
     // Test that split and retry works correctly with various nested types:
-    // string, array, struct, map, and nested array of struct
+    // string, array, struct, map, array of struct, array of array, struct of array
     val nestedSchema = StructType(Seq(
       StructField("id", IntegerType),
       StructField("str", StringType),
@@ -207,7 +207,15 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
           StructField("b", StringType)
         )),
         containsNull = true
-      ))
+      )),
+      StructField("arr_of_arr", ArrayType(
+        ArrayType(IntegerType, containsNull = true),
+        containsNull = true
+      )),
+      StructField("struct_of_arr", StructType(Seq(
+        StructField("nums", ArrayType(IntegerType, containsNull = true)),
+        StructField("strs", ArrayType(StringType, containsNull = true))
+      )))
     ))
     val numRows = 10
     val rowIter: Iterator[InternalRow] = (1 to numRows).map { i =>
@@ -228,8 +236,21 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       val struct1 = new GenericInternalRow(Array[Any](i, UTF8String.fromString(s"a_$i")))
       val struct2 = new GenericInternalRow(Array[Any](i + 1, UTF8String.fromString(s"b_$i")))
       val arrOfStruct = ArrayData.toArrayData(Array(struct1, null, struct2))
+      // Array of array column
+      val innerArr1 = ArrayData.toArrayData(Array(i, i + 1))
+      val innerArr2 = ArrayData.toArrayData(Array(i + 2, null, i + 3))
+      val arrOfArr = ArrayData.toArrayData(Array(innerArr1, null, innerArr2))
+      // Struct of array column
+      val numsArr = ArrayData.toArrayData(Array(i * 100, i * 100 + 1, null))
+      val strsArr = ArrayData.toArrayData(Array(
+        UTF8String.fromString(s"x_$i"),
+        null,
+        UTF8String.fromString(s"y_$i")
+      ))
+      val structOfArr = new GenericInternalRow(Array[Any](numsArr, strsArr))
 
-      new GenericInternalRow(Array[Any](i, str, arr, nestedStruct, mapData, arrOfStruct))
+      new GenericInternalRow(Array[Any](
+        i, str, arr, nestedStruct, mapData, arrOfStruct, arrOfArr, structOfArr))
     }.toIterator
 
     val goal = TargetSize(batchSize)
