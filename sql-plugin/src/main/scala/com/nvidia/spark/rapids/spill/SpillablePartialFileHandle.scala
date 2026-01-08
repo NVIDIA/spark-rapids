@@ -358,8 +358,12 @@ class SpillablePartialFileHandle private (
    * Read bytes from the partial file sequentially.
    * Returns number of bytes actually read, or -1 if EOF.
    * 
-   * Synchronization: Only needed for memory-based reads to prevent concurrent spill.
-   * Once we detect spill has happened, we can immediately release the lock.
+   * Note: This method is NOT thread-safe. Concurrent reads from multiple threads
+   * are not supported. This class is designed for single-threaded sequential reads
+   * in the shuffle merge phase (see RapidsShuffleInternalManagerBase.mergePartialFiles).
+   * 
+   * Internal synchronization only protects against concurrent spill operations,
+   * not concurrent read operations.
    */
   def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
     if (!writeFinished) {
