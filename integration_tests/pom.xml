@@ -193,8 +193,12 @@
                             <goal>exec</goal>
                         </goals>
                         <configuration>
-                            <executable>${spark.rapids.source.basedir}/${rapids.module}/run_pyspark_from_build.sh</executable>
-                            <workingDirectory>${spark.rapids.source.basedir}</workingDirectory>
+                            <executable>${spark.rapids.source.basedir}/${rapids.module}/run_local_integration_tests.sh</executable>
+                            <workingDirectory>${spark.rapids.source.basedir}/${rapids.module}</workingDirectory>
+                            <arguments>
+                                <!-- Test mode: DEFAULT, DELTA_LAKE_ONLY, ICEBERG_ONLY, ICEBERG_S3TABLES, AVRO_ONLY, ALL -->
+                                <argument>${pytest.TEST_MODE}</argument>
+                            </arguments>
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>

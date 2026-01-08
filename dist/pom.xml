@@ -204,6 +204,109 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+        <id>collect-sources-jar</id>
+        <properties>
+            <!-- Use buildver as default if included_buildvers is not set -->
+            <included_buildvers>${buildver}</included_buildvers>
+            <!-- Skip the main dist jar build, only generate source jar -->
+            <maven.main.skip>true</maven.main.skip>
+            <maven.install.skip>true</maven.install.skip>
+        </properties>
+        <build>
+            <plugins>
+                <!-- Step 1: Unpack all source jars from submodules to temporary directory -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>unpack-sources</id>
+                            <phase>process-resources</phase>
+                            <goals>
+                                <goal>unpack-dependencies</goal>
+                            </goals>
+                            <configuration>
+                                <!-- Only process dependencies with sources classifier -->
+                                <classifier>sources</classifier>
+                                <!-- Do not fail if classifier artifact is missing -->
+                                <failOnMissingClassifierArtifact>false</failOnMissingClassifierArtifact>
+                                <!-- Output to temporary directory -->
+                                <outputDirectory>${project.build.directory}/unpacked-sources</outputDirectory>
+                                <!-- Only include artifacts from this project group -->
+                                <includeGroupIds>com.nvidia</includeGroupIds>
+                                <!-- Only include compile scope dependencies -->
+                                <includeScope>compile</includeScope>
+                                <!-- Include transitive dependencies to get all submodule sources -->
+                                <excludeTransitive>false</excludeTransitive>
+                                <!-- Only include RAPIDS modules (com.nvidia group) -->
+                                <includeGroupIds>com.nvidia</includeGroupIds>
+                                <!-- Exclude artifacts that don't have source jars or have invalid source jars -->
+                                <excludeArtifactIds>spark-rapids-jni,jucx,rapids-4-spark-private_${scala.binary.version}</excludeArtifactIds>
+                            </configuration>
+                        </execution>
+                        
+                        <!-- Step 1.5 (optional): Can also collect jar files without unpacking -->
+                        <execution>
+                            <id>collect-source-jars</id>
+                            <phase>process-resources</phase>
+                            <goals>
+                                <goal>copy-dependencies</goal>
+                            </goals>
+                            <configuration>
+                                <classifier>sources</classifier>
+                                <outputDirectory>${project.build.directory}/collected-sources-jars</outputDirectory>
+                                <includeGroupIds>com.nvidia</includeGroupIds>
+                                <includeScope>compile</includeScope>
+                                <failOnMissingClassifierArtifact>false</failOnMissingClassifierArtifact>
+                                <!-- Include transitive dependencies to get all submodule sources -->
+                                <excludeTransitive>false</excludeTransitive>
+                                <!-- Exclude artifacts that don't have source jars or have invalid source jars -->
+                                <excludeArtifactIds>spark-rapids-jni,jucx,rapids-4-spark-private_${scala.binary.version}</excludeArtifactIds>
+                                <!-- Keep version and classifier for reference -->
+                                <stripVersion>false</stripVersion>
+                                <stripClassifier>false</stripClassifier>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                
+                <!-- Step 2: Repackage the unpacked source code into a single large source jar -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>create-merged-sources-jar</id>
+                            <phase>package</phase>
+                            <goals>
+                                <goal>jar</goal>
+                            </goals>
+                            <configuration>
+                                <!-- Use sources clas,collect-sources-jarsifier -->
+                                <classifier>sources</classifier>
+                                <!-- Create jar from the unpacked sources directory -->
+                                <classesDirectory>${project.build.directory}/unpacked-sources</classesDirectory>
+                                <!-- Do not skip if empty -->
+                                <skipIfEmpty>false</skipIfEmpty>
+                                <!-- Archive configuration -->
+                                <archive>
+                                    <manifest>
+                                        <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                                        <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+                                    </manifest>
+                                    <manifestEntries>
+                                        <Build-Time>${maven.build.timestamp}</Build-Time>
+                                        <Source-Type>Merged Source JAR</Source-Type>
+                                    </manifestEntries>
+                                </archive>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </build>
+    </profile>
     </profiles>
     <build>
         <resources>
