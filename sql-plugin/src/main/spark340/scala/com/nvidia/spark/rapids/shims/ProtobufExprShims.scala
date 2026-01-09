@@ -41,7 +41,7 @@ import scala.util.Try
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, GetStructField, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, GetStructField, UnaryExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.types._
@@ -313,13 +313,22 @@ object ProtobufExprShims {
 
           parentPlanOpt match {
             case Some(planMeta) =>
+              // First, try to analyze the immediate parent
               analyzeDownstreamProject(planMeta) match {
                 case Some(fields) if fields.nonEmpty =>
                   // Successfully identified required fields via schema projection
                   fields
                 case _ =>
-                  // Could not identify specific fields from the plan, assume all are needed
-                  allFieldNames
+                  // The immediate parent might be a ProjectExec that just aliases the output.
+                  // Try to look at its parent (the grandparent) for GetStructField references.
+                  planMeta.parent match {
+                    case Some(grandParentMeta: SparkPlanMeta[_]) =>
+                      analyzeDownstreamProject(grandParentMeta) match {
+                        case Some(fields) if fields.nonEmpty => fields
+                        case _ => allFieldNames
+                      }
+                    case _ => allFieldNames
+                  }
               }
             case None =>
               // No parent SparkPlanMeta found in the meta tree, assume all fields are needed
@@ -417,12 +426,33 @@ object ProtobufExprShims {
 
         /**
          * Check if an expression references the output of a protobuf decode expression.
-         * We check the expression type by class name since the class is in an optional module.
+         * This can be either:
+         * 1. The ProtobufDataToCatalyst expression itself
+         * 2. An AttributeReference that references the output of ProtobufDataToCatalyst
+         *    (when accessing from a downstream ProjectExec)
          */
         private def isProtobufStructReference(expr: Expression): Boolean = {
           // Check if expr is a ProtobufDataToCatalyst expression
-          // We use class name check because the class is in an optional external module
-          expr.getClass.getName.contains("ProtobufDataToCatalyst")
+          if (expr.getClass.getName.contains("ProtobufDataToCatalyst")) {
+            return true
+          }
+          
+          // Check if expr is an AttributeReference with the same schema as our protobuf output
+          // This handles the case where GetStructField references a column from a parent Project
+          expr match {
+            case attr: AttributeReference =>
+              // Check if the data type matches our full schema (struct type from protobuf)
+              attr.dataType match {
+                case st: StructType => 
+                  // Compare field names and types - StructType equality can be tricky
+                  st.fields.length == fullSchema.fields.length &&
+                    st.fields.zip(fullSchema.fields).forall { case (a, b) =>
+                      a.name == b.name && a.dataType == b.dataType
+                    }
+                case _ => false
+              }
+            case _ => false
+          }
         }
 
         override def convertToGpu(child: Expression): GpuExpression = {
