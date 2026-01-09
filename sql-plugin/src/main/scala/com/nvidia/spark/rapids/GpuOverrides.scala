@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2567,6 +2567,15 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[Sha1](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuSha1(child)
       }),
+    expr[Sha2] (
+      "Sha2 hash operator",
+      ExprChecks.binaryProject(
+        TypeSig.STRING,
+        TypeSig.STRING,
+        ("input", TypeSig.BINARY, TypeSig.BINARY),
+        ("bitLength", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
+      (a, conf, p, r) => new GpuSha2.Meta(a, conf, p, r)
+    ),
     expr[Upper](
       "String uppercase operator",
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
