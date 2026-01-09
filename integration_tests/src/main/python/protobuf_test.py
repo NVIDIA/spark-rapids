@@ -231,3 +231,142 @@ def test_from_protobuf_simple_null_input_returns_null(spark_tmp_path):
         return df.select(decoded.alias("decoded"))
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_nested_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for a message with both simple fields and nested message:
+      package test;
+      syntax = "proto2";
+      message Nested {
+        optional int32 x = 1;
+      }
+      message WithNested {
+        optional int32  simple_int  = 1;
+        optional string simple_str  = 2;
+        optional Nested nested_msg  = 3;   // nested message - not supported by GPU
+        optional int64  simple_long = 4;
+      }
+    """
+    jvm = spark.sparkContext._jvm
+    D = jvm.com.google.protobuf.DescriptorProtos
+
+    fd = D.FileDescriptorProto.newBuilder() \
+        .setName("nested.proto") \
+        .setPackage("test")
+    try:
+        fd = fd.setSyntax("proto2")
+    except Exception:
+        pass
+
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    # Define Nested message
+    nested_msg = D.DescriptorProto.newBuilder().setName("Nested")
+    nested_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("x")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    fd.addMessageType(nested_msg.build())
+
+    # Define WithNested message
+    with_nested_msg = D.DescriptorProto.newBuilder().setName("WithNested")
+    # simple_int
+    with_nested_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("simple_int")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    # simple_str
+    with_nested_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("simple_str")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
+            .build()
+    )
+    # nested_msg (nested message type)
+    with_nested_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("nested_msg")
+            .setNumber(3)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.Nested")
+            .build()
+    )
+    # simple_long
+    with_nested_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("simple_long")
+            .setNumber(4)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT64)
+            .build()
+    )
+    fd.addMessageType(with_nested_msg.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_schema_projection_simple_fields_only(spark_tmp_path):
+    """
+    Test schema projection: when only simple fields are selected from a protobuf message
+    that also contains unsupported types (nested message), GPU should be able to decode
+    just the simple fields without falling back to CPU.
+    """
+    from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(_spark_protobuf_jvm_available):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
+    desc_path = spark_tmp_path + "/nested.desc"
+    message_name = "test.WithNested"
+
+    desc_bytes = with_cpu_session(_build_nested_descriptor_set_bytes)
+    with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+
+    # Create test data: protobuf binary with simple fields set
+    # Field 1 (simple_int): varint 42 -> 0x08 0x2A
+    # Field 2 (simple_str): length-delimited "hello" -> 0x12 0x05 h e l l o
+    # Field 4 (simple_long): varint 12345 -> 0x20 0xB9 0x60
+    test_data = bytes([
+        0x08, 0x2A,  # simple_int = 42
+        0x12, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F,  # simple_str = "hello"
+        0x20, 0xB9, 0x60,  # simple_long = 12345
+    ])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(test_data,), (None,)],
+            schema="bin binary",
+        )
+        sig = inspect.signature(from_protobuf)
+        if "binaryDescriptorSet" in sig.parameters:
+            decoded = from_protobuf(
+                f.col("bin"),
+                message_name,
+                binaryDescriptorSet=bytearray(desc_bytes),
+            )
+        else:
+            decoded = from_protobuf(f.col("bin"), message_name, desc_path)
+        # Only select simple fields, not the nested_msg field
+        return df.select(
+            decoded.getField("simple_int").alias("simple_int"),
+            decoded.getField("simple_str").alias("simple_str"),
+            decoded.getField("simple_long").alias("simple_long")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)

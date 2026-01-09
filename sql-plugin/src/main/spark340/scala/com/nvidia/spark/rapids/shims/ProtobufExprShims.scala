@@ -36,13 +36,27 @@ package com.nvidia.spark.rapids.shims
 
 import java.nio.file.{Files, Path}
 
+import scala.collection.mutable
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, UnaryExpression}
-import org.apache.spark.sql.rapids.GpuFromProtobufSimple
+import org.apache.spark.sql.catalyst.expressions.{Expression, GetStructField, UnaryExpression}
+import org.apache.spark.sql.execution.ProjectExec
+import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.types._
+
+/**
+ * Information about a protobuf field for schema projection support.
+ */
+private[shims] case class ProtobufFieldInfo(
+    fieldNumber: Int,
+    protoTypeName: String,
+    sparkType: DataType,
+    encoding: Int,
+    isSupported: Boolean,
+    unsupportedReason: Option[String]
+)
 
 /**
  * Spark 3.4+ optional integration for spark-protobuf expressions.
@@ -68,28 +82,31 @@ object ProtobufExprShims {
 
   private def fromProtobufRule: ExprRule[_ <: Expression] = {
     GpuOverrides.expr[UnaryExpression](
-      "Decode a BinaryType column (protobuf) into a Spark SQL struct (simple types only)",
+      "Decode a BinaryType column (protobuf) into a Spark SQL struct",
       ExprChecks.unaryProject(
-        // Output is a struct; the rule does detailed checks in tagExprForGpu.
-        TypeSig.STRUCT.nested(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRING + TypeSig.BINARY),
+        // Use TypeSig.all here because schema projection determines which fields
+        // actually need GPU support. Detailed type checking is done in tagExprForGpu.
+        TypeSig.all,
         TypeSig.all,
         TypeSig.BINARY,
         TypeSig.BINARY),
       (e, conf, p, r) => new UnaryExprMeta[UnaryExpression](e, conf, p, r) {
 
-        private var schema: StructType = _
+        // Full schema from the expression (must match original dataType for compatibility)
+        private var fullSchema: StructType = _
+        // Indices into fullSchema for fields that will be decoded by GPU
+        private var decodedFieldIndices: Array[Int] = _
         private var fieldNumbers: Array[Int] = _
         private var cudfTypeIds: Array[Int] = _
         private var cudfTypeScales: Array[Int] = _
         private var failOnErrors: Boolean = _
 
         override def tagExprForGpu(): Unit = {
-          schema = e.dataType match {
+          fullSchema = e.dataType match {
             case st: StructType => st
             case other =>
               willNotWorkOnGpu(
-                s"Only StructType output is supported for from_protobuf(simple), got $other")
+                s"Only StructType output is supported for from_protobuf, got $other")
               return
           }
 
@@ -114,7 +131,7 @@ object ProtobufExprShims {
           }
           if (descFilePathOpt.isEmpty) {
             willNotWorkOnGpu(
-              "from_protobuf(simple) requires a descriptor set " +
+              "from_protobuf requires a descriptor set " +
                 "(descFilePath or binaryDescriptorSet)")
             return
           }
@@ -131,73 +148,50 @@ object ProtobufExprShims {
               return
           }
 
-          val fields = schema.fields
-          val fnums = new Array[Int](fields.length)
-          val typeIds = new Array[Int](fields.length)
-          val scales = new Array[Int](fields.length)
+          // Step 1: Analyze all fields and build field info map
+          val allFieldsInfo = analyzeAllFields(fullSchema, msgDesc, enumsAsInts, messageName)
+          if (allFieldsInfo.isEmpty) {
+            // Error was already reported in analyzeAllFields
+            return
+          }
+          val fieldsInfoMap = allFieldsInfo.get
 
-          fields.zipWithIndex.foreach { case (sf, idx) =>
-            sf.dataType match {
-              case BooleanType | IntegerType | LongType | FloatType | DoubleType |
-                   StringType | BinaryType =>
-              case other =>
-                willNotWorkOnGpu(
-                  s"Unsupported field type for from_protobuf(simple): ${sf.name}: $other")
-                return
+          // Step 2: Determine which fields are actually required by downstream operations
+          val requiredFieldNames = analyzeRequiredFields(fieldsInfoMap.keySet)
+
+          // Step 3: Check if all required fields are supported
+          val unsupportedRequired = requiredFieldNames.filter { name =>
+            fieldsInfoMap.get(name).exists(!_.isSupported)
+          }
+
+          if (unsupportedRequired.nonEmpty) {
+            val reasons = unsupportedRequired.map { name =>
+              val info = fieldsInfoMap(name)
+              s"${name}: ${info.unsupportedReason.getOrElse("unknown reason")}"
             }
+            willNotWorkOnGpu(
+              s"Required fields not supported for from_protobuf: ${reasons.mkString(", ")}")
+            return
+          }
 
-            val fd = invoke1[AnyRef](msgDesc, "findFieldByName", classOf[String], sf.name)
-            if (fd == null) {
-              willNotWorkOnGpu(s"Protobuf field '${sf.name}' not found in message '$messageName'")
-              return
-            }
+          // Step 4: Identify which fields in fullSchema need to be decoded
+          // These are fields that are required AND supported
+          val indicesToDecode = fullSchema.fields.zipWithIndex.collect {
+            case (sf, idx) if requiredFieldNames.contains(sf.name) => idx
+          }
+          decodedFieldIndices = indicesToDecode
 
-            val isRepeated = Try {
-              invoke0[java.lang.Boolean](fd, "isRepeated").booleanValue()
-            }.getOrElse(false)
-            if (isRepeated) {
-              willNotWorkOnGpu(
-                s"Repeated fields are not supported for from_protobuf(simple): ${sf.name}")
-              return
-            }
+          // Step 5: Build arrays for the fields to decode (parallel to decodedFieldIndices)
+          val fnums = new Array[Int](indicesToDecode.length)
+          val typeIds = new Array[Int](indicesToDecode.length)
+          val scales = new Array[Int](indicesToDecode.length)
 
-            val protoType = invoke0[AnyRef](fd, "getType")
-            val protoTypeName = typeName(protoType)
-
-            val encoding = (sf.dataType, protoTypeName) match {
-              case (BooleanType, "BOOL") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case (IntegerType, "INT32" | "UINT32") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case (IntegerType, "SINT32") => Some(GpuFromProtobufSimple.ENC_ZIGZAG)
-              case (IntegerType, "FIXED32" | "SFIXED32") => Some(GpuFromProtobufSimple.ENC_FIXED)
-              case (LongType, "INT64" | "UINT64") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case (LongType, "SINT64") => Some(GpuFromProtobufSimple.ENC_ZIGZAG)
-              case (LongType, "FIXED64" | "SFIXED64") => Some(GpuFromProtobufSimple.ENC_FIXED)
-              // Spark may upcast smaller integers to LongType
-              case (LongType, "INT32" | "UINT32" | "SINT32" | "FIXED32" | "SFIXED32") =>
-                val enc = protoTypeName match {
-                  case "SINT32" => GpuFromProtobufSimple.ENC_ZIGZAG
-                  case "FIXED32" | "SFIXED32" => GpuFromProtobufSimple.ENC_FIXED
-                  case _ => GpuFromProtobufSimple.ENC_DEFAULT
-                }
-                Some(enc)
-              case (FloatType, "FLOAT") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case (DoubleType, "DOUBLE") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case (StringType, "STRING") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case (BinaryType, "BYTES") => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case (IntegerType, "ENUM") if enumsAsInts => Some(GpuFromProtobufSimple.ENC_DEFAULT)
-              case _ => None
-            }
-
-            if (encoding.isEmpty) {
-              willNotWorkOnGpu(
-                s"Field type mismatch for '${sf.name}': Spark ${sf.dataType} vs " +
-                  s"Protobuf $protoTypeName")
-              return
-            }
-
-            fnums(idx) = invoke0[java.lang.Integer](fd, "getNumber").intValue()
-            typeIds(idx) = GpuFromProtobufSimple.sparkTypeToCudfId(sf.dataType)
-            scales(idx) = encoding.get
+          indicesToDecode.zipWithIndex.foreach { case (schemaIdx, arrIdx) =>
+            val sf = fullSchema.fields(schemaIdx)
+            val info = fieldsInfoMap(sf.name)
+            fnums(arrIdx) = info.fieldNumber
+            typeIds(arrIdx) = GpuFromProtobuf.sparkTypeToCudfId(sf.dataType)
+            scales(arrIdx) = info.encoding
           }
 
           fieldNumbers = fnums
@@ -205,9 +199,236 @@ object ProtobufExprShims {
           cudfTypeScales = scales
         }
 
+        /**
+         * Analyze all fields in the schema and build a map of field name to ProtobufFieldInfo.
+         * Returns None if there's an error that should abort processing.
+         */
+        private def analyzeAllFields(
+            schema: StructType,
+            msgDesc: AnyRef,
+            enumsAsInts: Boolean,
+            messageName: String): Option[Map[String, ProtobufFieldInfo]] = {
+          val result = mutable.Map[String, ProtobufFieldInfo]()
+
+          for (sf <- schema.fields) {
+            val fd = invoke1[AnyRef](msgDesc, "findFieldByName", classOf[String], sf.name)
+            if (fd == null) {
+              willNotWorkOnGpu(
+                s"Protobuf field '${sf.name}' not found in message '$messageName'")
+              return None
+            }
+
+            val isRepeated = Try {
+              invoke0[java.lang.Boolean](fd, "isRepeated").booleanValue()
+            }.getOrElse(false)
+
+            val protoType = invoke0[AnyRef](fd, "getType")
+            val protoTypeName = typeName(protoType)
+            val fieldNumber = invoke0[java.lang.Integer](fd, "getNumber").intValue()
+
+            // Check field support and determine encoding
+            val (isSupported, unsupportedReason, encoding) =
+              checkFieldSupport(sf.dataType, protoTypeName, isRepeated, enumsAsInts)
+
+            result(sf.name) = ProtobufFieldInfo(
+              fieldNumber = fieldNumber,
+              protoTypeName = protoTypeName,
+              sparkType = sf.dataType,
+              encoding = encoding,
+              isSupported = isSupported,
+              unsupportedReason = unsupportedReason
+            )
+          }
+
+          Some(result.toMap)
+        }
+
+        /**
+         * Check if a field type is supported and return encoding information.
+         * @return (isSupported, unsupportedReason, encoding)
+         */
+        private def checkFieldSupport(
+            sparkType: DataType,
+            protoTypeName: String,
+            isRepeated: Boolean,
+            enumsAsInts: Boolean): (Boolean, Option[String], Int) = {
+
+          if (isRepeated) {
+            return (false, Some("repeated fields are not supported"), GpuFromProtobuf.ENC_DEFAULT)
+          }
+
+          // Check Spark type is one of the supported simple types
+          sparkType match {
+            case BooleanType | IntegerType | LongType | FloatType | DoubleType |
+                 StringType | BinaryType =>
+              // Supported Spark type, continue to check encoding
+            case other =>
+              return (false, Some(s"unsupported Spark type: $other"), GpuFromProtobuf.ENC_DEFAULT)
+          }
+
+          // Determine encoding based on Spark type and proto type combination
+          val encoding = (sparkType, protoTypeName) match {
+            case (BooleanType, "BOOL") => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case (IntegerType, "INT32" | "UINT32") => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case (IntegerType, "SINT32") => Some(GpuFromProtobuf.ENC_ZIGZAG)
+            case (IntegerType, "FIXED32" | "SFIXED32") => Some(GpuFromProtobuf.ENC_FIXED)
+            case (LongType, "INT64" | "UINT64") => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case (LongType, "SINT64") => Some(GpuFromProtobuf.ENC_ZIGZAG)
+            case (LongType, "FIXED64" | "SFIXED64") => Some(GpuFromProtobuf.ENC_FIXED)
+            // Spark may upcast smaller integers to LongType
+            case (LongType, "INT32" | "UINT32" | "SINT32" | "FIXED32" | "SFIXED32") =>
+              val enc = protoTypeName match {
+                case "SINT32" => GpuFromProtobuf.ENC_ZIGZAG
+                case "FIXED32" | "SFIXED32" => GpuFromProtobuf.ENC_FIXED
+                case _ => GpuFromProtobuf.ENC_DEFAULT
+              }
+              Some(enc)
+            case (FloatType, "FLOAT") => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case (DoubleType, "DOUBLE") => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case (StringType, "STRING") => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case (BinaryType, "BYTES") => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case (IntegerType, "ENUM") if enumsAsInts => Some(GpuFromProtobuf.ENC_DEFAULT)
+            case _ => None
+          }
+
+          encoding match {
+            case Some(enc) => (true, None, enc)
+            case None =>
+              (false,
+                Some(s"type mismatch: Spark $sparkType vs Protobuf $protoTypeName"),
+                GpuFromProtobuf.ENC_DEFAULT)
+          }
+        }
+
+        /**
+         * Analyze which fields are actually required by downstream operations.
+         * Currently supports analyzing parent Project expressions.
+         *
+         * @param allFieldNames All field names in the full schema
+         * @return Set of field names that are actually required
+         */
+        private def analyzeRequiredFields(allFieldNames: Set[String]): Set[String] = {
+          // Try to find parent SparkPlanMeta and analyze downstream Project
+          val parentPlanOpt = findParentPlanMeta()
+
+          parentPlanOpt match {
+            case Some(planMeta) =>
+              analyzeDownstreamProject(planMeta) match {
+                case Some(fields) if fields.nonEmpty =>
+                  // Successfully identified required fields via schema projection
+                  fields
+                case _ =>
+                  // Could not identify specific fields from the plan, assume all are needed
+                  allFieldNames
+              }
+            case None =>
+              // No parent SparkPlanMeta found in the meta tree, assume all fields are needed
+              allFieldNames
+          }
+        }
+
+        /**
+         * Find the parent SparkPlanMeta by traversing up the parent chain.
+         */
+        private def findParentPlanMeta(): Option[SparkPlanMeta[_]] = {
+          def traverse(meta: Option[RapidsMeta[_, _, _]]): Option[SparkPlanMeta[_]] = {
+            meta match {
+              case Some(p: SparkPlanMeta[_]) => Some(p)
+              case Some(p: RapidsMeta[_, _, _]) => traverse(p.parent)
+              case _ => None
+            }
+          }
+          traverse(parent)
+        }
+
+        /**
+         * Analyze a Project plan to find which struct fields are actually used.
+         * This looks for GetStructField expressions that reference our protobuf output.
+         */
+        private def analyzeDownstreamProject(planMeta: SparkPlanMeta[_]): Option[Set[String]] = {
+          planMeta.wrapped match {
+            case p: ProjectExec =>
+              // Collect all GetStructField references from the project list
+              val fieldRefs = mutable.Set[String]()
+              var hasDirectStructRef = false
+
+              p.projectList.foreach { expr =>
+                collectStructFieldReferences(expr, fieldRefs, hasDirectStructRefHolder = () => {
+                  hasDirectStructRef = true
+                })
+              }
+
+              if (hasDirectStructRef) {
+                // If the entire struct is referenced directly (not via GetStructField),
+                // we need all fields
+                None
+              } else if (fieldRefs.nonEmpty) {
+                Some(fieldRefs.toSet)
+              } else {
+                // No GetStructField found - this shouldn't happen for valid plans
+                // where from_protobuf is followed by field access
+                None
+              }
+            case _ =>
+              // Not a ProjectExec, cannot analyze schema projection
+              None
+          }
+        }
+
+        /**
+         * Recursively collect field names from GetStructField expressions.
+         * Also tracks if the struct is used directly without field extraction.
+         */
+        private def collectStructFieldReferences(
+            expr: Expression,
+            fieldRefs: mutable.Set[String],
+            hasDirectStructRefHolder: () => Unit): Unit = {
+          expr match {
+            case GetStructField(child, ordinal, nameOpt) =>
+              // Check if this GetStructField extracts from our protobuf struct
+              if (isProtobufStructReference(child)) {
+                // Get field name from the schema using ordinal
+                val fieldName = nameOpt.getOrElse {
+                  if (ordinal < fullSchema.fields.length) {
+                    fullSchema.fields(ordinal).name
+                  } else {
+                    s"_$ordinal"
+                  }
+                }
+                fieldRefs += fieldName
+                // Don't recurse into child - we've handled this protobuf reference
+              } else {
+                // Child is not a protobuf struct, recurse to check for nested access
+                collectStructFieldReferences(child, fieldRefs, hasDirectStructRefHolder)
+              }
+
+            case _ =>
+              // Check if this expression directly references our protobuf struct
+              // without extracting a field (e.g., passing the whole struct to a function)
+              if (isProtobufStructReference(expr)) {
+                hasDirectStructRefHolder()
+              }
+              // Recursively check children
+              expr.children.foreach { child =>
+                collectStructFieldReferences(child, fieldRefs, hasDirectStructRefHolder)
+              }
+          }
+        }
+
+        /**
+         * Check if an expression references the output of a protobuf decode expression.
+         * We check the expression type by class name since the class is in an optional module.
+         */
+        private def isProtobufStructReference(expr: Expression): Boolean = {
+          // Check if expr is a ProtobufDataToCatalyst expression
+          // We use class name check because the class is in an optional external module
+          expr.getClass.getName.contains("ProtobufDataToCatalyst")
+        }
+
         override def convertToGpu(child: Expression): GpuExpression = {
-          GpuFromProtobufSimple(
-            schema, fieldNumbers, cudfTypeIds, cudfTypeScales, failOnErrors, child)
+          GpuFromProtobuf(
+            fullSchema, decodedFieldIndices, fieldNumbers, cudfTypeIds, cudfTypeScales,
+            failOnErrors, child)
         }
       }
     )
