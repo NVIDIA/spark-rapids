@@ -100,7 +100,7 @@ jobs:
 
       # repo specific steps
       - name: Setup java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: adopt
           java-version: 8

@@ -66,7 +66,7 @@ case class SizeInBytes(value: jl.Long) {
 }
 
 private object SizeInBytes {
-  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB")
+  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB", "PB", "EB")
 }
 
 class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {

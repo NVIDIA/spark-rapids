@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@
 import ipp.blossom.*
 
 def githubHelper // blossom github helper
-def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
+def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME_V2}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
 
 pipeline {
     agent {

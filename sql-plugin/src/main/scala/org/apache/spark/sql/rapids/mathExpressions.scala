@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -582,20 +582,20 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, right.dataType)) { expandedRhs =>
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { expandedRhs =>
       doColumnar(lhs, expandedRhs)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
-      withResource(GpuColumnVector.from(rhs, numRows, right.dataType)) { expandedRhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { expandedRhs =>
         doColumnar(expandedLhs, expandedRhs)
       }
     }
@@ -798,7 +798,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
   }
 
   override def doColumnar(numRows: Int, value: GpuScalar, scale: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(value, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(value, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, scale)
     }
   }
