@@ -2019,6 +2019,19 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault("all")
 
+  // scalastyle:off line.size.limit
+  val AVG_USE_LONG_ACCUMULATOR = conf("spark.rapids.sql.avg.longAccumulator.enabled")
+    .doc("When enabled, use LongType for internal sum accumulation when computing average " +
+      "of Long values. This avoids per-row casting from Long to Double during aggregation. " +
+      "WARNING: This optimization can cause Long overflow if the sum of values exceeds " +
+      "Long.MAX_VALUE (9.2e18). Only enable this if you are certain your data will not " +
+      "overflow. To pass hash_aggregate_test with this enabled, limit LongGen range to " +
+      "approximately +/-1e16 to prevent overflow with 100 rows.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+  // scalastyle:on line.size.limit
+
   val PARTIAL_MERGE_DISTINCT_ENABLED = conf("spark.rapids.sql.partialMerge.distinct.enabled")
     .doc("Enables aggregates that are in PartialMerge mode to run on the GPU if true")
     .internal()
@@ -3350,6 +3363,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hybridExprsWhitelist: String = get(HYBRID_EXPRS_WHITELIST)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
+
+  lazy val avgUseLongAccumulator: Boolean = get(AVG_USE_LONG_ACCUMULATOR)
 
   lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
 
