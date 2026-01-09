@@ -686,7 +686,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       " Adding more years will use more memory, every 100 years is roughly 1MB.")
     .startupOnly()
     .integerConf
-    .createWithTDefault(2200)
+    .createWithDefault(2200)
 
   // Internal Features
 
