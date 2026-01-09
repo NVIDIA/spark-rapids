@@ -286,7 +286,7 @@ def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_co
         id="multiple_matched_clauses"),
 ])
 def test_iceberg_merge_additional_patterns_bug(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
-    """Test for https://github.com/NVIDIA/spark-rapids/issues/14030"""
+    """Test additional MERGE patterns (conditional updates, deletes, not matched by source) on Iceberg tables."""
     do_merge_test(
         spark_tmp_table_factory,
         lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
