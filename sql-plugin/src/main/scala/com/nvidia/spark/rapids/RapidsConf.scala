@@ -557,7 +557,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .startupOnly()
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(1024L * 1024 * 1024)  // 1GB default
+    .createWithDefault(128L * 1024 * 1024)  // 128MB default
 
   val PARTIAL_FILE_BUFFER_MAX_SIZE = 
     conf("spark.rapids.memory.host.partialFileBufferMaxSize")
