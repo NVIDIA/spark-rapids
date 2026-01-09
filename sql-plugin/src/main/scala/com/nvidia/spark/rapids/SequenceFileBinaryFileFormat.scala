@@ -100,7 +100,6 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
         tc.addTaskCompletionListener[Unit](_ => reader.close())
       }
 
-      val start = partFile.start
       // Compressed SequenceFiles are not supported, fail fast since the format is Rapids-only.
       if (reader.isCompressed || reader.isBlockCompressed) {
         val compressionType = reader.getCompressionType
@@ -126,8 +125,6 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
         reader.sync(start - 1)
         log.info(s"[DEBUG] After sync(${start - 1}): position=${reader.getPosition}")
       }
-
-      val end = start + partFile.length
       val reqFields = requiredSchema.fields
       val reqLen = reqFields.length
       val partLen = partitionSchema.length
