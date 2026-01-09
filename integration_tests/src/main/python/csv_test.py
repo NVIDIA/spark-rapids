@@ -720,3 +720,24 @@ def test_csv_read_gbk_encoded_data(std_input_path):
             .schema("name string, age int, city string, job string")
             .csv(std_input_path + "/test_gbk.csv"),
         conf={"spark.sql.legacy.javaCharsets": legacy_charset})
+
+# Test for https://github.com/NVIDIA/spark-rapids/issues/13728
+# Verifies that double quotes in CSV data are preserved literally (not interpreted as RFC 4180 escapes)
+# GPU should return the same result as CPU - quotes should NOT be stripped or unescaped
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_csv_with_double_quotes_preserved(std_input_path, v1_enabled_list):
+    # Test data in double_quotes.csv contains various quote patterns:
+    # - ">{FP""`5;" : from issue #13728, GPU was returning >{FP"`5; before fix
+    # - Strings with odd number of quotes
+    # - JSON-like data with continuous ""
+    data_path = std_input_path + '/double_quotes.csv'
+    schema = StructType([StructField('value', StringType())])
+
+    updated_conf = copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list
+    })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).option("header", "false").csv(data_path),
+        conf=updated_conf)
+
