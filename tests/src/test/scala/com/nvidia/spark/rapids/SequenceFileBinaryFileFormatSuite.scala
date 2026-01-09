@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,22 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.{BytesWritable, SequenceFile, Text}
+import org.apache.hadoop.io.SequenceFile.CompressionType
+import org.apache.hadoop.io.compress.DefaultCodec
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.SparkException
 import org.apache.spark.sql.SparkSession
 
+/**
+ * Unit tests for SequenceFileBinaryFileFormat.
+ *
+ * Note: This test suite uses its own withSparkSession/withGpuSparkSession methods instead of
+ * extending SparkQueryCompareTestSuite because:
+ * 1. These tests need fresh SparkSession instances per test to avoid state pollution
+ * 2. The tests don't need the compare-CPU-vs-GPU pattern from SparkQueryCompareTestSuite
+ * 3. The simpler session management makes the tests more self-contained
+ */
 class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
   private def withSparkSession(f: SparkSession => Unit): Unit = {
@@ -42,6 +54,44 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       f(spark)
     } finally {
       spark.stop()
+    }
+  }
+
+  private def withGpuSparkSession(f: SparkSession => Unit): Unit = {
+    val spark = SparkSession.builder()
+      .appName("SequenceFileBinaryFileFormatSuite-GPU")
+      .master("local[1]")
+      .config("spark.ui.enabled", "false")
+      .config("spark.sql.shuffle.partitions", "1")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.rapids.sql.enabled", "true")
+      .config("spark.rapids.sql.test.enabled", "true")
+      .getOrCreate()
+    try {
+      f(spark)
+    } finally {
+      spark.stop()
+    }
+  }
+
+  private def deleteRecursively(f: File): Unit = {
+    if (f.isDirectory) {
+      val children = f.listFiles()
+      if (children != null) {
+        children.foreach(deleteRecursively)
+      }
+    }
+    if (f.exists()) {
+      f.delete()
+    }
+  }
+
+  private def withTempDir(prefix: String)(f: File => Unit): Unit = {
+    val tmpDir = Files.createTempDirectory(prefix).toFile
+    try {
+      f(tmpDir)
+    } finally {
+      deleteRecursively(tmpDir)
     }
   }
 
@@ -87,6 +137,39 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }
   }
 
+  private def writeCompressedSequenceFile(
+      file: File,
+      conf: Configuration,
+      payloads: Array[Array[Byte]]): Unit = {
+    val path = new Path(file.toURI)
+    val writer = SequenceFile.createWriter(
+      conf,
+      SequenceFile.Writer.file(path),
+      SequenceFile.Writer.keyClass(classOf[BytesWritable]),
+      SequenceFile.Writer.valueClass(classOf[BytesWritable]),
+      SequenceFile.Writer.compression(CompressionType.RECORD, new DefaultCodec()))
+    try {
+      payloads.zipWithIndex.foreach { case (p, idx) =>
+        val key = new BytesWritable(intToBytes(idx))
+        val value = new BytesWritable(p)
+        writer.append(key, value)
+      }
+    } finally {
+      writer.close()
+    }
+  }
+
+  private def writeEmptySequenceFile(file: File, conf: Configuration): Unit = {
+    val path = new Path(file.toURI)
+    val writer = SequenceFile.createWriter(
+      conf,
+      SequenceFile.Writer.file(path),
+      SequenceFile.Writer.keyClass(classOf[BytesWritable]),
+      SequenceFile.Writer.valueClass(classOf[BytesWritable]),
+      SequenceFile.Writer.compression(CompressionType.NONE))
+    writer.close()
+  }
+
   private def intToBytes(i: Int): Array[Byte] = Array[Byte](
     ((i >> 24) & 0xFF).toByte,
     ((i >> 16) & 0xFF).toByte,
@@ -100,83 +183,325 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
   }
 
   test("SequenceFileBinaryFileFormat reads raw value bytes even when header says BytesWritable") {
-    val tmpDir = Files.createTempDirectory("seqfile-binary-test").toFile
-    tmpDir.deleteOnExit()
-    val file = new File(tmpDir, "test.seq")
-    file.deleteOnExit()
+    withTempDir("seqfile-binary-test") { tmpDir =>
+      val file = new File(tmpDir, "test.seq")
+      val conf = new Configuration()
+      val payloads: Array[Array[Byte]] = Array(
+        Array[Byte](1, 2, 3),
+        "hello".getBytes(StandardCharsets.UTF_8),
+        Array.fill[Byte](10)(42.toByte)
+      )
+      writeSequenceFileWithRawRecords(file, conf, payloads)
 
-    val conf = new Configuration()
-    val payloads: Array[Array[Byte]] = Array(
-      Array[Byte](1, 2, 3),
-      "hello".getBytes(StandardCharsets.UTF_8),
-      Array.fill[Byte](10)(42.toByte)
-    )
-    writeSequenceFileWithRawRecords(file, conf, payloads)
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
 
-    withSparkSession { spark =>
-      val df = spark.read
-        .format(classOf[SequenceFileBinaryFileFormat].getName)
-        .load(file.getAbsolutePath)
+        val got = df.select("key", "value")
+          .collect()
+          .map { row =>
+            val k = row.getAs[Array[Byte]](0)
+            val v = row.getAs[Array[Byte]](1)
+            (bytesToInt(k), v)
+          }
+          .sortBy(_._1)
 
-      val got = df.select(SequenceFileBinaryFileFormat.KEY_FIELD,
-          SequenceFileBinaryFileFormat.VALUE_FIELD)
-        .collect()
-        .map { row =>
-          val k = row.getAs[Array[Byte]](0)
-          val v = row.getAs[Array[Byte]](1)
-          (bytesToInt(k), v)
+        assert(got.length == payloads.length)
+        got.foreach { case (idx, v) =>
+          assert(java.util.Arrays.equals(v, payloads(idx)))
         }
-        .sortBy(_._1)
-
-      assert(got.length == payloads.length)
-      got.foreach { case (idx, v) =>
-        assert(java.util.Arrays.equals(v, payloads(idx)))
       }
     }
   }
 
   test("SequenceFileBinaryFileFormat vs RDD scan") {
-    val tmpDir = Files.createTempDirectory("seqfile-rdd-test").toFile
-    tmpDir.deleteOnExit()
-    val file = new File(tmpDir, "test.seq")
-    file.deleteOnExit()
+    withTempDir("seqfile-rdd-test") { tmpDir =>
+      val file = new File(tmpDir, "test.seq")
+      val conf = new Configuration()
+      val payloads: Array[Array[Byte]] = Array(
+        Array[Byte](1, 2, 3),
+        "hello".getBytes(StandardCharsets.UTF_8),
+        Array.fill[Byte](10)(42.toByte)
+      )
+      writeSequenceFileWithRawRecords(file, conf, payloads)
 
-    val conf = new Configuration()
-    val payloads: Array[Array[Byte]] = Array(
-      Array[Byte](1, 2, 3),
-      "hello".getBytes(StandardCharsets.UTF_8),
-      Array.fill[Byte](10)(42.toByte)
-    )
-    writeSequenceFileWithRawRecords(file, conf, payloads)
+      withSparkSession { spark =>
+        // File Scan Path
+        val fileDf = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+          .select("value")
+        val fileResults = fileDf.collect().map(_.getAs[Array[Byte]](0))
 
-    withSparkSession { spark =>
-      // File Scan Path
-      val fileDf = spark.read
-        .format(classOf[SequenceFileBinaryFileFormat].getName)
-        .load(file.getAbsolutePath)
-        .select(SequenceFileBinaryFileFormat.VALUE_FIELD)
-      val fileResults = fileDf.collect().map(_.getAs[Array[Byte]](0))
+        // RDD Scan Path
+        import org.apache.hadoop.io.BytesWritable
+        import org.apache.hadoop.mapreduce.lib.input.SequenceFileAsBinaryInputFormat
+        val sc = spark.sparkContext
+        val rddResults = sc.newAPIHadoopFile(
+          file.getAbsolutePath,
+          classOf[SequenceFileAsBinaryInputFormat],
+          classOf[BytesWritable],
+          classOf[BytesWritable]
+        ).map { case (_, v) =>
+          java.util.Arrays.copyOfRange(v.getBytes, 0, v.getLength)
+        }.collect()
 
-      // RDD Scan Path
-      import org.apache.hadoop.io.BytesWritable
-      import org.apache.hadoop.mapreduce.lib.input.SequenceFileAsBinaryInputFormat
-      val sc = spark.sparkContext
-      val rddResults = sc.newAPIHadoopFile(
-        file.getAbsolutePath,
-        classOf[SequenceFileAsBinaryInputFormat],
-        classOf[BytesWritable],
-        classOf[BytesWritable]
-      ).map { case (_, v) =>
-        java.util.Arrays.copyOfRange(v.getBytes, 0, v.getLength)
-      }.collect()
+        assert(fileResults.length == rddResults.length)
+        fileResults.zip(rddResults).foreach { case (f, r) =>
+          assert(java.util.Arrays.equals(f, r))
+        }
+      }
+    }
+  }
 
-      assert(fileResults.length == rddResults.length)
-      fileResults.zip(rddResults).foreach { case (f, r) =>
-        assert(java.util.Arrays.equals(f, r))
+  test("Compressed SequenceFile throws UnsupportedOperationException") {
+    withTempDir("seqfile-compressed-test") { tmpDir =>
+      val file = new File(tmpDir, "compressed.seq")
+      val conf = new Configuration()
+      val payloads: Array[Array[Byte]] = Array(
+        Array[Byte](1, 2, 3),
+        "hello".getBytes(StandardCharsets.UTF_8)
+      )
+      writeCompressedSequenceFile(file, conf, payloads)
+
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        // Spark wraps the UnsupportedOperationException in a SparkException
+        val ex = intercept[SparkException] {
+          df.collect()
+        }
+        // Check that the root cause is UnsupportedOperationException with expected message
+        val cause = ex.getCause
+        assert(cause.isInstanceOf[UnsupportedOperationException],
+          s"Expected UnsupportedOperationException but got ${cause.getClass.getName}")
+        assert(cause.getMessage.contains("does not support compressed SequenceFiles"))
+      }
+    }
+  }
+
+  test("Multi-file reads") {
+    withTempDir("seqfile-multifile-test") { tmpDir =>
+      val conf = new Configuration()
+
+      // Create multiple files with different payloads
+      val file1 = new File(tmpDir, "file1.seq")
+      val payloads1 = Array(Array[Byte](1, 2, 3))
+      writeSequenceFileWithRawRecords(file1, conf, payloads1)
+
+      val file2 = new File(tmpDir, "file2.seq")
+      val payloads2 = Array(Array[Byte](4, 5, 6))
+      writeSequenceFileWithRawRecords(file2, conf, payloads2)
+
+      val file3 = new File(tmpDir, "file3.seq")
+      val payloads3 = Array(Array[Byte](7, 8, 9))
+      writeSequenceFileWithRawRecords(file3, conf, payloads3)
+
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(tmpDir.getAbsolutePath)
+
+        val results = df.select("value").collect().map(_.getAs[Array[Byte]](0))
+        assert(results.length == 3)
+
+        // Verify all payloads are present (order may vary)
+        val allPayloads = payloads1 ++ payloads2 ++ payloads3
+        results.foreach { r =>
+          assert(allPayloads.exists(p => java.util.Arrays.equals(r, p)))
+        }
+      }
+    }
+  }
+
+  test("Partition columns") {
+    withTempDir("seqfile-partition-test") { tmpDir =>
+      val conf = new Configuration()
+
+      // Create partitioned directory structure: part=a/file.seq and part=b/file.seq
+      val partA = new File(tmpDir, "part=a")
+      partA.mkdirs()
+      val fileA = new File(partA, "file.seq")
+      writeSequenceFileWithRawRecords(fileA, conf, Array(Array[Byte](1, 2, 3)))
+
+      val partB = new File(tmpDir, "part=b")
+      partB.mkdirs()
+      val fileB = new File(partB, "file.seq")
+      writeSequenceFileWithRawRecords(fileB, conf, Array(Array[Byte](4, 5, 6)))
+
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(tmpDir.getAbsolutePath)
+
+        val results = df.select("value", "part")
+          .collect()
+          .map(row => (row.getAs[Array[Byte]](0), row.getString(1)))
+          .sortBy(_._2)
+
+        assert(results.length == 2)
+        assert(results(0)._2 == "a")
+        assert(java.util.Arrays.equals(results(0)._1, Array[Byte](1, 2, 3)))
+        assert(results(1)._2 == "b")
+        assert(java.util.Arrays.equals(results(1)._1, Array[Byte](4, 5, 6)))
+      }
+    }
+  }
+
+  test("Key-only reads (column pruning)") {
+    withTempDir("seqfile-keyonly-test") { tmpDir =>
+      val file = new File(tmpDir, "test.seq")
+      val conf = new Configuration()
+      val payloads = Array(Array[Byte](10, 20, 30))
+      writeSequenceFileWithRawRecords(file, conf, payloads)
+
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+          .select("key") // Only select key column
+
+        val results = df.collect()
+        assert(results.length == 1)
+        val keyBytes = results(0).getAs[Array[Byte]](0)
+        assert(bytesToInt(keyBytes) == 0) // First record has key index 0
+      }
+    }
+  }
+
+  test("Value-only reads (column pruning)") {
+    withTempDir("seqfile-valueonly-test") { tmpDir =>
+      val file = new File(tmpDir, "test.seq")
+      val conf = new Configuration()
+      val payloads = Array(Array[Byte](10, 20, 30))
+      writeSequenceFileWithRawRecords(file, conf, payloads)
+
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+          .select("value") // Only select value column
+
+        val results = df.collect()
+        assert(results.length == 1)
+        val valueBytes = results(0).getAs[Array[Byte]](0)
+        assert(java.util.Arrays.equals(valueBytes, payloads(0)))
+      }
+    }
+  }
+
+  test("Empty files") {
+    withTempDir("seqfile-empty-test") { tmpDir =>
+      val file = new File(tmpDir, "empty.seq")
+      val conf = new Configuration()
+      writeEmptySequenceFile(file, conf)
+
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        val results = df.collect()
+        assert(results.isEmpty)
+      }
+    }
+  }
+
+  test("Large batch handling") {
+    withTempDir("seqfile-largebatch-test") { tmpDir =>
+      val file = new File(tmpDir, "large.seq")
+      val conf = new Configuration()
+      // Create many records to test batching
+      val numRecords = 1000
+      val payloads = (0 until numRecords).map { i =>
+        s"record-$i-payload".getBytes(StandardCharsets.UTF_8)
+      }.toArray
+      writeSequenceFileWithRawRecords(file, conf, payloads)
+
+      withSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        val results = df.select("key", "value").collect()
+        assert(results.length == numRecords)
+
+        // Verify all records are read correctly
+        val sortedResults = results
+          .map(row => (bytesToInt(row.getAs[Array[Byte]](0)), row.getAs[Array[Byte]](1)))
+          .sortBy(_._1)
+
+        sortedResults.zipWithIndex.foreach { case ((idx, value), expectedIdx) =>
+          assert(idx == expectedIdx)
+          assert(java.util.Arrays.equals(value, payloads(expectedIdx)))
+        }
+      }
+    }
+  }
+
+  test("GPU execution path verification") {
+    withTempDir("seqfile-gpu-test") { tmpDir =>
+      val file = new File(tmpDir, "test.seq")
+      val conf = new Configuration()
+      val payloads = Array(
+        Array[Byte](1, 2, 3),
+        "hello".getBytes(StandardCharsets.UTF_8)
+      )
+      writeSequenceFileWithRawRecords(file, conf, payloads)
+
+      withGpuSparkSession { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        val results = df.select("key", "value").collect()
+        assert(results.length == payloads.length)
+
+        // Verify results
+        val sortedResults = results
+          .map(row => (bytesToInt(row.getAs[Array[Byte]](0)), row.getAs[Array[Byte]](1)))
+          .sortBy(_._1)
+
+        sortedResults.zipWithIndex.foreach { case ((idx, value), expectedIdx) =>
+          assert(idx == expectedIdx)
+          assert(java.util.Arrays.equals(value, payloads(expectedIdx)))
+        }
+      }
+    }
+  }
+
+  test("Split boundary handling - records starting before boundary are read") {
+    withTempDir("seqfile-split-test") { tmpDir =>
+      val file = new File(tmpDir, "split-test.seq")
+      val conf = new Configuration()
+
+      // Create file with multiple records using raw record format (consistent with other tests)
+      val numRecords = 100
+      val payloads = (0 until numRecords).map { i =>
+        s"record-$i-with-some-padding-data".getBytes(StandardCharsets.UTF_8)
+      }.toArray
+
+      writeSequenceFileWithRawRecords(file, conf, payloads)
+
+      withSparkSession { spark =>
+        // Read entire file
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        val results = df.select("key", "value").collect()
+        assert(results.length == numRecords,
+          s"Expected $numRecords records, got ${results.length}")
+
+        // Verify all records present and no duplicates
+        val indices = results.map(r => bytesToInt(r.getAs[Array[Byte]](0))).sorted.toSeq
+        val expected = (0 until numRecords).toSeq
+        assert(indices == expected,
+          "Records missing or duplicated")
       }
     }
   }
 }
-
-
-

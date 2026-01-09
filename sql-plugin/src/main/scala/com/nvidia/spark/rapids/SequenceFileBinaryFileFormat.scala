@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import org.apache.hadoop.io.{DataOutputBuffer, SequenceFile}
 import org.apache.hadoop.mapreduce.Job
 import org.slf4j.LoggerFactory
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, UnsafeProjection}
@@ -37,12 +38,19 @@ import org.apache.spark.util.SerializableConfiguration
 /**
  * A Spark SQL file format that reads Hadoop SequenceFiles and returns raw bytes for key/value.
  *
- * The schema is always:
+ * The default inferred schema is:
  *  - key: BinaryType
  *  - value: BinaryType
  *
  * This format is intended to support protobuf payloads stored as raw bytes in the SequenceFile
- * record value bytes.
+ * record value bytes. It currently only supports uncompressed SequenceFiles.
+ *
+ * Usage:
+ * {{{
+ *   val df = spark.read
+ *     .format("sequencefilebinary")
+ *     .load("path/to/sequencefiles")
+ * }}}
  */
 class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister with Serializable {
   import SequenceFileBinaryFileFormat._
@@ -86,16 +94,21 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
             throw e
         }
 
-      // For the initial version, we explicitly fail fast on compressed SequenceFiles.
-      // (Record- and block-compressed files can be added later.)
+      // Register a task completion listener to ensure the reader is closed
+      // even if the iterator is abandoned early or an exception occurs.
+      Option(TaskContext.get()).foreach { tc =>
+        tc.addTaskCompletionListener[Unit](_ => reader.close())
+      }
+
+      val start = partFile.start
+      // Compressed SequenceFiles are not supported, fail fast since the format is Rapids-only.
       if (reader.isCompressed || reader.isBlockCompressed) {
+        val compressionType = reader.getCompressionType
         val msg = s"$SHORT_NAME does not support compressed SequenceFiles " +
-          s"(isCompressed=${reader.isCompressed}, " +
-          s"isBlockCompressed=${reader.isBlockCompressed}), " +
+          s"(compressionType=$compressionType), " +
           s"file=$path, keyClass=${reader.getKeyClassName}, " +
           s"valueClass=${reader.getValueClassName}"
         LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat]).error(msg)
-        reader.close()
         throw new UnsupportedOperationException(msg)
       }
 
@@ -114,14 +127,18 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
         log.info(s"[DEBUG] After sync(${start - 1}): position=${reader.getPosition}")
       }
 
+      val end = start + partFile.length
       val reqFields = requiredSchema.fields
       val reqLen = reqFields.length
       val partLen = partitionSchema.length
       val totalLen = reqLen + partLen
       val outputSchema = StructType(requiredSchema.fields ++ partitionSchema.fields)
 
-      val wantKey = requiredSchema.fieldNames.exists(_.equalsIgnoreCase(KEY_FIELD))
-      val wantValue = requiredSchema.fieldNames.exists(_.equalsIgnoreCase(VALUE_FIELD))
+      val fieldInfos = reqFields.map { f =>
+        if (f.name.equalsIgnoreCase(KEY_FIELD)) 1
+        else if (f.name.equalsIgnoreCase(VALUE_FIELD)) 2
+        else 0
+      }
 
       val keyBuf = new DataOutputBuffer()
       val valueBytes = reader.createValueBytes()
@@ -165,28 +182,23 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
 
         private def buildRow(): InternalRow = {
           val row = new GenericInternalRow(totalLen)
+          var valueCopied = false
           var i = 0
           while (i < reqLen) {
-            val name = reqFields(i).name
-            if (name.equalsIgnoreCase(KEY_FIELD)) {
-              if (wantKey) {
+            fieldInfos(i) match {
+              case 1 =>
                 val keyLen = keyBuf.getLength
                 row.update(i, util.Arrays.copyOf(keyBuf.getData, keyLen))
-              } else {
-                row.setNullAt(i)
-              }
-            } else if (name.equalsIgnoreCase(VALUE_FIELD)) {
-              if (wantValue) {
-                valueOut.reset()
-                valueBytes.writeUncompressedBytes(valueDos)
+              case 2 =>
+                if (!valueCopied) {
+                  valueOut.reset()
+                  valueBytes.writeUncompressedBytes(valueDos)
+                  valueCopied = true
+                }
                 val valueLen = valueOut.getLength
                 row.update(i, util.Arrays.copyOf(valueOut.getData, valueLen))
-              } else {
+              case _ =>
                 row.setNullAt(i)
-              }
-            } else {
-              // Unknown column requested
-              row.setNullAt(i)
             }
             i += 1
           }
@@ -229,5 +241,3 @@ object SequenceFileBinaryFileFormat {
     StructField(VALUE_FIELD, BinaryType, nullable = true)
   ))
 }
-
-
