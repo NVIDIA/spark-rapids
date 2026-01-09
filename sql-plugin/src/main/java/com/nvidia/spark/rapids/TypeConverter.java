@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ import org.apache.spark.sql.catalyst.expressions.SpecializedGetters;
 
 public abstract class TypeConverter implements Serializable {
   /**
-   * Append row value to the column builder and return the number of data bytes written
+   * Append row value to the column builder and return the number of data bytes written.
+   * The result is a double to allow for fractional bytes (validity bits).
    */
   public abstract double append(SpecializedGetters row, int column, RapidsHostColumnBuilder builder);
 
@@ -37,7 +38,8 @@ public abstract class TypeConverter implements Serializable {
   /**
    * This is here for structs.  When you append a null to a struct the size is not known
    * ahead of time.  Also because structs push nulls down to the children this size should
-   * assume a validity even if the schema says it cannot be null.
+   * assume a validity even if the schema says it cannot be null. The result is a double to
+   * allow for fractional bytes (validity bits).
    */
   public abstract double getNullSize();
 }

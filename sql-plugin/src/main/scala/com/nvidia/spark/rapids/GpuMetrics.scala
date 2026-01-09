@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -250,6 +250,37 @@ object GpuMetric extends Logging {
       initedMetrics.foreach { case (m, isTrack) =>
         if (isTrack) m.deactivateTimer(taken, excludeMetrics)
       }
+    }
+  }
+
+  /**
+   * Time a block of code with an optional metric. If the metric is None, the code
+   * is executed without timing.
+   * 
+   * @param metric Optional metric to record timing to
+   * @param f The code block to execute and time
+   * @return The result of executing f
+   */
+  def nsOption[T](metric: Option[GpuMetric])(f: => T): T = {
+    metric match {
+      case Some(m) => m.ns(f)
+      case None => f
+    }
+  }
+
+  /**
+   * Time a block of code with an optional metric, excluding time from other metrics.
+   * If the metric is None, the code is executed without timing.
+   * 
+   * @param metric Optional metric to record timing to
+   * @param excludeMetrics Metrics whose time should be excluded from the timing
+   * @param f The code block to execute and time
+   * @return The result of executing f
+   */
+  def nsOption[T](metric: Option[GpuMetric], excludeMetrics: Seq[GpuMetric])(f: => T): T = {
+    metric match {
+      case Some(m) => m.ns(excludeMetrics)(f)
+      case None => f
     }
   }
 

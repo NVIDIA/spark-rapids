@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -213,11 +213,18 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
   test("float type") {
     val testData = Seq(
       (1.5f, false),
+      (-1.5f, false),
       (Float.MinValue, false),
       (Float.MaxValue, false),
+      (-Float.MaxValue, false), // large negative value
       (0.0f, true), // null
       (3.14159f, false),
+      (-3.14159f, false),
       (Float.NaN, false),
+      (java.lang.Float.intBitsToFloat(0x7fc00000), false), // NaN (pos quiet, upper)
+      (java.lang.Float.intBitsToFloat(0xffc00000), false), // NaN (neg quiet, upper)
+      (java.lang.Float.intBitsToFloat(0x7f800001), false), // NaN (pos signal, lower)
+      (java.lang.Float.intBitsToFloat(0xff800001), false), // NaN (neg signal, lower)
       (Float.PositiveInfinity, false),
       (Float.NegativeInfinity, false)
     )
@@ -245,11 +252,18 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
   test("double type") {
     val testData = Seq(
       (1.5, false),
+      (-1.5, false),
       (Double.MinValue, false),
       (Double.MaxValue, false),
+      (-Double.MaxValue, false), // large negative value
       (0.0, true), // null
       (3.141592653589793, false),
+      (-3.141592653589793, false),
       (Double.NaN, false),
+      (java.lang.Double.longBitsToDouble(0x7ff8000000000000L), false), // NaN (pos quiet, upper)
+      (java.lang.Double.longBitsToDouble(0xfff8000000000000L), false), // NaN (neg quiet, upper)
+      (java.lang.Double.longBitsToDouble(0x7ff0000000000001L), false), // NaN (pos signal, lower)
+      (java.lang.Double.longBitsToDouble(0xfff0000000000001L), false), // NaN (neg signal, lower)
       (Double.PositiveInfinity, false),
       (Double.NegativeInfinity, false)
     )
@@ -356,11 +370,21 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
 
   test("timestamp type") {
     val testData = Seq(
-      (1609459200000000L, false), // 2021-01-01 00:00:00 UTC
-      (0L, false),                 // 1970-01-01 00:00:00 UTC
+      (1609459200000000L, false), // 2021-01-01 00:00:00.000000 UTC
+      (0L, false),                 // 1970-01-01 00:00:00.000000 UTC
       (-1000000L, false),          // Before epoch
       (0L, true),                  // null
-      (1672531200000000L, false)   // 2023-01-01 00:00:00 UTC
+      (1672531200000000L, false),  // 2023-01-01 00:00:00.000000 UTC
+      // Test with hours/minutes/seconds precision
+      (3600000000L, false),        // 1 hour: 1970-01-01 01:00:00 UTC
+      (60000000L, false),          // 1 minute: 1970-01-01 00:01:00 UTC
+      (1000000L, false),           // 1 second: 1970-01-01 00:00:01 UTC
+      // Test with milliseconds/microseconds
+      (1000L, false),              // 1 ms: 1970-01-01 00:00:00.001 UTC
+      (1L, false),                 // 1 us: 1970-01-01 00:00:00.000001 UTC
+      (123456789L, false),         // complex: 1970-01-01 00:02:03.456789 UTC
+      // Test with full precision
+      (1609459261123456L, false)   // full: 2021-01-01 00:01:01.123456 UTC
     )
     
     testProjection[Long](
@@ -372,6 +396,59 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
           assert(result.isNull(idx))
         } else {
           assert(result.getLong(idx) == expectedValue)
+        }
+      }
+    )
+  }
+
+  test("day-time interval type") {
+    val intervalType = DayTimeIntervalType()
+    val testData = Seq(
+      (0L, false),              // 0 duration
+      (86400000000L, false),    // 1 day in microseconds
+      (3600000000L, false),     // 1 hour in microseconds
+      (60000000L, false),       // 1 minute in microseconds
+      (1000000L, false),        // 1 second in microseconds
+      (-86400000000L, false),   // negative 1 day
+      (0L, true),               // null
+      (90061000000L, false)     // 1 day, 1 hour, 1 minute, 1 second
+    )
+    
+    testProjection[Long](
+      intervalType,
+      testData,
+      BoundReference(0, intervalType, true),
+      (result, idx, expectedValue, expectedIsNull) => {
+        if (expectedIsNull) {
+          assert(result.isNull(idx))
+        } else {
+          assert(result.getLong(idx) == expectedValue)
+        }
+      }
+    )
+  }
+
+  test("year-month interval type") {
+    val intervalType = YearMonthIntervalType()
+    val testData = Seq(
+      (0, false),      // 0 duration
+      (12, false),     // 1 year (12 months)
+      (1, false),      // 1 month
+      (-12, false),    // negative 1 year
+      (0, true),       // null
+      (25, false),     // 2 years, 1 month
+      (120, false)     // 10 years
+    )
+    
+    testProjection[Int](
+      intervalType,
+      testData,
+      BoundReference(0, intervalType, true),
+      (result, idx, expectedValue, expectedIsNull) => {
+        if (expectedIsNull) {
+          assert(result.isNull(idx))
+        } else {
+          assert(result.getInt(idx) == expectedValue)
         }
       }
     )

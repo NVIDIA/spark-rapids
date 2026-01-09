@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,16 +136,11 @@ case class GpuCpuBridgeExpression(
     }
     
     // Time the entire CPU bridge operation from the SparkPlan perspective
-    val waitStartTime = System.nanoTime()
-    try {
+    GpuMetric.nsOption(cpuBridgeWaitTime) {
       // Currently sequential processing only
       logDebug(s"Using sequential processing for ${numRows} rows " +
         s"(expression: ${cpuExpression.getClass.getSimpleName})")
       evaluateSequentially(batch)
-    } finally {
-      // Record the total wait time from the SparkPlan's perspective
-      val waitTime = System.nanoTime() - waitStartTime
-      cpuBridgeWaitTime.foreach(_.add(waitTime))
     }
   }
   
@@ -158,8 +153,7 @@ case class GpuCpuBridgeExpression(
     val gpuInputColumns = gpuInputs.safeMap(_.columnarEval(batch))
 
     // Time the CPU processing (columnar->row->CPU expr->columnar)
-    val processingStartTime = System.nanoTime()
-    try {
+    GpuMetric.nsOption(cpuBridgeProcessingTime) {
       // Convert columnar data to rows for CPU expression evaluation
       // Note: ColumnarBatch takes ownership of the columns, so we don't close them separately
       val inputBatch = new ColumnarBatch(gpuInputColumns.toArray, numRows)
@@ -175,10 +169,6 @@ case class GpuCpuBridgeExpression(
 
       // Delegate to evaluation function - ColumnarToRowIterator manages the batch lifecycle
       evaluationFunction(rowIterator, numRows)
-    } finally {
-      // Record the actual CPU processing time
-      val processingTime = System.nanoTime() - processingStartTime
-      cpuBridgeProcessingTime.foreach(_.add(processingTime))
     }
   }
 

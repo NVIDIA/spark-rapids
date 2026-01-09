@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -686,7 +686,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       " Adding more years will use more memory, every 100 years is roughly 1MB.")
     .startupOnly()
     .integerConf
-    .createWithDefault(2200)
+    .createWithTDefault(2200)
 
   // Internal Features
 

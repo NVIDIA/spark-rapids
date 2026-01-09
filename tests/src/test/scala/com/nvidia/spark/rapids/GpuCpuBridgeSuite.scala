@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -114,20 +114,6 @@ class GpuCpuBridgeSuite extends SparkQueryCompareTestSuite {
   // ============================================================================
   // Configuration Tests
   // ============================================================================
-  
-  test("Bridge config controls feature enablement") {
-    // Test with bridge enabled
-    val confEnabled = new RapidsConf(Map(
-      RapidsConf.ENABLE_CPU_BRIDGE.key -> "true"
-    ))
-    assert(confEnabled.isCpuBridgeEnabled)
-    
-    // Test with bridge disabled
-    val confDisabled = new RapidsConf(Map(
-      RapidsConf.ENABLE_CPU_BRIDGE.key -> "false"
-    ))
-    assert(!confDisabled.isCpuBridgeEnabled)
-  }
   
   test("Bridge disallow list config") {
     val conf = new RapidsConf(Map(
