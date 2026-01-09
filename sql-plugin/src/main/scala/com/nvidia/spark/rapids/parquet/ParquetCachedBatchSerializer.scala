@@ -1376,8 +1376,8 @@ private[rapids] class ParquetOutputFileFormat {
 
     val writeSupport = new ParquetWriteSupport().asInstanceOf[WriteSupport[InternalRow]]
     val init = writeSupport.init(conf): @scala.annotation.nowarn(
-      "msg=method init in class WriteSupport is deprecated")
-      
+      "msg=method init in class WriteSupport is deprecated"
+    )
     val writer = new ParquetFileWriter(output, init.getSchema,
       Mode.CREATE, blockSize, maxPaddingSize)
     writer.start()
