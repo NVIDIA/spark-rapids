@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,9 +18,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list,
-                     iceberg_base_table_cols, iceberg_gens_list,
-                     iceberg_base_table_cols_for_fix, iceberg_gens_list_for_fix)
+                     iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list)
 from marks import allow_non_gpu, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
 
@@ -271,7 +269,6 @@ def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_co
         merge_mode=merge_mode
     )
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/14030')
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
 @iceberg
 @ignore_order(local=True)
@@ -289,14 +286,12 @@ def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_co
         id="multiple_matched_clauses"),
 ])
 def test_iceberg_merge_additional_patterns_bug(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
-    """Test additional MERGE patterns (conditional updates, deletes, not matched by source) on Iceberg tables."""
+    """Test for https://github.com/NVIDIA/spark-rapids/issues/14030"""
     do_merge_test(
         spark_tmp_table_factory,
         lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
         partition_col_sql=partition_col_sql,
-        merge_mode=merge_mode,
-        iceberg_base_table_cols=iceberg_base_table_cols_for_fix, # use fixed schema to reproduce
-        iceberg_gens_list=iceberg_gens_list_for_fix # use fixed schema to reproduce
+        merge_mode=merge_mode
     )
 
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
