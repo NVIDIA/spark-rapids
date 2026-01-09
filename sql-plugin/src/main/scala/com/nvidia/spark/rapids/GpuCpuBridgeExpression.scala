@@ -16,10 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimExpression
+import java.util.concurrent.Callable
+import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -50,7 +54,6 @@ case class GpuCpuBridgeExpression(
     outputNullable: Boolean) extends GpuExpression with ShimExpression 
     with Logging with GpuBind with GpuMetricsInjectable {
 
-  // Only GPU inputs are children for GPU expression tree traversal
   override def children: Seq[Expression] = gpuInputs ++ Seq(cpuExpression)
 
   override def dataType: DataType = outputDataType
@@ -137,15 +140,23 @@ case class GpuCpuBridgeExpression(
     
     // Time the entire CPU bridge operation from the SparkPlan perspective
     GpuMetric.nsOption(cpuBridgeWaitTime) {
-      // Currently sequential processing only
-      logDebug(s"Using sequential processing for ${numRows} rows " +
-        s"(expression: ${cpuExpression.getClass.getSimpleName})")
-      evaluateSequentially(batch)
+      // Check if we should use parallel processing
+      // Note: Nondeterministic expressions are excluded from CPU bridge entirely,
+      // so all expressions reaching this point are safe for parallel processing
+      if (GpuCpuBridgeThreadPool.shouldParallelize(numRows)) {
+        logDebug(s"Using parallel processing for ${numRows} rows " +
+          s"(expression: ${cpuExpression.getClass.getSimpleName})")
+        evaluateInParallel(batch)
+      } else {
+        logDebug(s"Using sequential processing for ${numRows} rows " +
+          s"(expression: ${cpuExpression.getClass.getSimpleName})")
+        evaluateSequentially(batch)
+      }
     }
   }
   
   /**
-   * Evaluate the expression sequentially (single-threaded).
+   * Evaluate the expression sequentially (single-threaded) for small batches.
    */
   private def evaluateSequentially(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
@@ -169,6 +180,196 @@ case class GpuCpuBridgeExpression(
 
       // Delegate to evaluation function - ColumnarToRowIterator manages the batch lifecycle
       evaluationFunction(rowIterator, numRows)
+    }
+  }
+  
+  /**
+   * Evaluate the expression in parallel using sub-batches for large batches.
+   */
+  private def evaluateInParallel(batch: ColumnarBatch): GpuColumnVector = {
+    val numRows = batch.numRows()
+    val subBatchCount = GpuCpuBridgeThreadPool.getSubBatchCount(numRows)
+    val ranges = GpuCpuBridgeThreadPool.getSubBatchRanges(numRows, subBatchCount)
+    
+    logDebug(s"Processing $numRows rows in $subBatchCount parallel sub-batches " +
+      s"AVG ${numRows.toDouble/subBatchCount}")
+
+    // We are going to violate some constraints on the retry framework a little bit here
+    // We want to be able to have a retry block in the thread pool that will execute the
+    // CPU expressions, but to truly be correct all data must be spillable for the
+    // task when a retry block is rolled back. The issue here is that our input batch
+    // will not be spillable because we don't have control over that life cycle so
+    // we will just declare it good enough and realize that even if we roll back
+    // all the threads some data will still not be spillable.
+
+    // Evaluate GPU input expressions once
+    val gpuInputColumns = gpuInputs.safeMap(_.columnarEval(batch))
+    
+    // Create spillable wrapper for GPU input columns to ensure they can be spilled
+    val spillableInputBatch = closeOnExcept(
+      new ColumnarBatch(gpuInputColumns.toArray, numRows)) { inputBatch =>
+      SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+
+    val subBatchResults = withResource(spillableInputBatch) { spillableInputBatch =>
+      // Submit sub-batch processing tasks to the thread pool with priority
+      val futures = ranges.map { case (startRow, endRow) =>
+        val task = new SpillableSubBatchEvaluationTask(spillableInputBatch, startRow, endRow, 
+          cpuBridgeProcessingTime)
+        GpuCpuBridgeThreadPool.submitPrioritizedTask(task)
+      }
+      
+      // Collect results from all sub-batches - these will be spillable results
+      // Note: Wait time is measured at the columnarEval level, not here
+      futures.safeMap { future =>
+        Try(future.get()) match {
+          case Success(spillableResult) => 
+            // Convert spillable result back to regular GpuColumnVector for concatenation  
+            // The spillable result transfers ownership, so we don't need incRefCount
+            withResource(spillableResult) { _ =>
+              withResource(spillableResult.getColumnarBatch()) { cb =>
+                cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
+              }
+            }
+          case Failure(exception) =>
+            // Cancel remaining futures on error with proper resource cleanup
+            cleanupFuturesOnFailure(futures)
+            throw new RuntimeException("Sub-batch evaluation failed", exception)
+        }
+      }
+    }
+      
+    // Concatenate all sub-batch results
+    concatenateResults(subBatchResults)
+  }
+
+  /**
+   * Task for evaluating a sub-batch of rows on the CPU with spillable input and output.
+   * Note: All expressions using CPU bridge are deterministic (nondeterministic 
+   * expressions are excluded entirely), so parallel processing is safe.
+   */
+  private class SpillableSubBatchEvaluationTask(
+      spillableInputBatch: SpillableColumnarBatch,
+      startRow: Int,
+      endRow: Int,
+      cpuBridgeProcessingTime: Option[GpuMetric]) extends Callable[SpillableColumnarBatch] {
+    
+    override def call(): SpillableColumnarBatch = {
+      val subBatchSize = endRow - startRow
+
+      // spillableInputBatch is what we are going to retry around, but its life cycle is
+      // controlled by the main task thread and shared between multiple threads in this pool.
+      // So we will not try and close it, nor try and split it as a part of the retry.
+      withRetryNoSplit {
+        // Create a sub-batch wrapper that represents just the slice we need
+        val subBatchInput = withResource(spillableInputBatch.getColumnarBatch()) { inputBatch =>
+          val subBatchColumns = (0 until inputBatch.numCols()).safeMap { i =>
+            val col = inputBatch.column(i).asInstanceOf[GpuColumnVector]
+            closeOnExcept(col.getBase.subVector(startRow, endRow)) { sliced =>
+              GpuColumnVector.from(sliced, col.dataType())
+            }
+          }
+          new ColumnarBatch(subBatchColumns.toArray, subBatchSize)
+        }
+        // The iterator takes ownership of the subBatchInput
+        val rowIterator = new ColumnarToRowIterator(
+          Iterator.single(subBatchInput),
+          NoopMetric,
+          NoopMetric,
+          NoopMetric,
+          NoopMetric,
+          nullSafe = false,
+          releaseSemaphore = false
+        )
+        withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
+          // Time the actual CPU processing on this thread
+          val processingStartTime = System.nanoTime()
+          val result = try {
+            evaluationFunction(rowIterator, subBatchInput.numRows())
+          } finally {
+            val processingTime = System.nanoTime() - processingStartTime
+            cpuBridgeProcessingTime.foreach(_.add(processingTime))
+          }
+
+          // Convert result to spillable format
+          val resultBatch = new ColumnarBatch(Array(result), subBatchInput.numRows())
+          SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        }
+      }
+    }
+  }
+  
+  /**
+   * Properly cleanup futures on failure, handling both cancellable and non-cancellable futures.
+   * This method addresses the race condition where futures might be in the middle of allocating
+   * resources when cancellation is attempted.
+   */
+  private def cleanupFuturesOnFailure(
+      futures: Seq[java.util.concurrent.Future[SpillableColumnarBatch]]): Unit = {
+    import java.util.concurrent.TimeUnit
+    
+    // Track which futures were successfully cancelled vs. which are still running
+    val futuresAndCancellations = futures.map { f =>
+      val didCancel = f.cancel(true)
+      (f, didCancel)
+    }
+    
+    // For futures that couldn't be cancelled, we need to wait for them to complete
+    // and clean up their resources to prevent leaks
+    val uncancelledFutures = futuresAndCancellations.filter { case (_, didCancel) => !didCancel }
+    
+    if (uncancelledFutures.nonEmpty) {
+      logDebug(s"${uncancelledFutures.length} futures could not be cancelled, " +
+        "waiting for completion to clean up resources")
+    }
+    
+    var cleanupFailure: Option[Throwable] = None
+    uncancelledFutures.foreach { case (future, _) =>
+      try {
+        // Wait with a short timeout for the future to complete
+        // If it times out, we'll have to accept the potential leak
+        val spillableResult = future.get(100, TimeUnit.MILLISECONDS)
+        spillableResult.close() // Clean up the spillable result
+      } catch {
+        case _: java.util.concurrent.TimeoutException =>
+          logWarning("Timed out waiting for future completion during cleanup. " +
+            "Potential resource leak.")
+        case _: java.util.concurrent.CancellationException =>
+          // Future was cancelled after all, no cleanup needed
+        case t: Throwable =>
+          // Capture the first cleanup exception but don't let it mask the original error
+          if (cleanupFailure.isEmpty) {
+            cleanupFailure = Some(t)
+          } else {
+            logWarning(s"Exception during future cleanup: ${t.getMessage}")
+          }
+      }
+    }
+    
+    // Log any cleanup failures but don't throw - we want the original exception to propagate
+    cleanupFailure.foreach { t =>
+      logError("Failed to clean up some future resources during error handling", t)
+    }
+  }
+  
+  /**
+   * Concatenate results from multiple sub-batches into a single result column.
+   */
+  private def concatenateResults(subBatchResults: Seq[GpuColumnVector]): GpuColumnVector = {
+    if (subBatchResults.length == 1) {
+      subBatchResults.head
+    } else {
+      try {
+        // Convert to cuDF columns for concatenation
+        val cudfColumns = subBatchResults.map(_.getBase)
+        val concatenated = ai.rapids.cudf.ColumnVector.concatenate(cudfColumns: _*)
+        closeOnExcept(concatenated) { concat =>
+          GpuColumnVector.from(concat, dataType)
+        }
+      } finally {
+        // Clean up sub-batch results
+        subBatchResults.safeClose()
+      }
     }
   }
 
@@ -206,4 +407,3 @@ case class GpuCpuBridgeExpression(
   private def createCodeGeneratedProjection(): BridgeUnsafeProjection =
     BridgeUnsafeProjection.create(Seq(cpuExpression))
 }
-
