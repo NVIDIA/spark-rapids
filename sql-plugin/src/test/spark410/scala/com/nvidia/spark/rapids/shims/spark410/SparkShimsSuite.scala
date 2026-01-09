@@ -15,23 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "401"}
 {"spark": "410"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark401
+package com.nvidia.spark.rapids.shims.spark410
 
-import com.nvidia.spark.rapids.SparkShimVersion
+import com.nvidia.spark.rapids._
+import org.scalatest.funsuite.AnyFunSuite
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(4, 0, 1)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
-
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
-
-  override def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
+  test("spark shims version") {
+    assert(ShimLoader.getShimVersion === SparkShimVersion(4, 1, 0))
   }
+
+  test("shuffle manager class") {
+    assert(ShimLoader.getRapidsShuffleManagerClass ===
+      classOf[com.nvidia.spark.rapids.spark410.RapidsShuffleManager].getCanonicalName)
+  }
+
 }
