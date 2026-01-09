@@ -1522,6 +1522,17 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
   }
 
+  /**
+   * Determines if a child expression should be converted to a GPU input for the bridge.
+   * Returns true if the child can be replaced AND is not a Literal or ScalarSubquery.
+   * Literals and ScalarSubqueries are kept on the CPU side to avoid unnecessary data movement.
+   */
+  private def shouldConvertChildToGpuInput(childMeta: BaseExprMeta[_]): Boolean = {
+    childMeta.canThisBeReplaced &&
+      !childMeta.wrapped.isInstanceOf[Literal] &&
+      !childMeta.wrapped.isInstanceOf[ScalarSubquery]
+  }
+
   def convertForGpuCpuBridge(): GpuExpression = {
     if (!this.wrapped.deterministic) {
       throw new IllegalStateException(s"$this is NOT deterministic!!!")
@@ -1533,9 +1544,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // Build GPU inputs and track their original positions
     childExprs.zipWithIndex.foreach {
       case (childMeta, originalIndex) =>
-        if (childMeta.canThisBeReplaced &&
-          !childMeta.wrapped.isInstanceOf[Literal] &&
-          !childMeta.wrapped.isInstanceOf[ScalarSubquery]) {
+        if (shouldConvertChildToGpuInput(childMeta)) {
           val gpuExpr = childMeta.convertToGpu()
           gpuInputsWithIndex += ((gpuExpr, originalIndex))
         }
@@ -1549,11 +1558,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // - Original literals/CPU expressions in their positions (no data movement needed)
     val boundChildren: Seq[Expression] = childExprs.zipWithIndex.map {
       case (childMeta, originalIndex) =>
-        if (childMeta.canThisBeReplaced &&
-          !childMeta.wrapped.isInstanceOf[Literal] &&
-          !childMeta.wrapped.isInstanceOf[ScalarSubquery]) {
+        if (shouldConvertChildToGpuInput(childMeta)) {
           // Replace with BoundReference pointing to deduplicated GPU input position
-          val deduplicatedIndex = inputMapping(originalIndex)
+          // inputMapping must contain originalIndex because shouldConvertChildToGpuInput
+          // returned true, meaning this child was added to gpuInputsWithIndex
+          val deduplicatedIndex = inputMapping.getOrElse(originalIndex,
+            throw new IllegalStateException(
+              s"Missing mapping for child at index $originalIndex. " +
+              s"This indicates a bug in convertForGpuCpuBridge. " +
+              s"Child: ${childMeta.wrapped}, " +
+              s"Available mappings: ${inputMapping.keys.mkString(", ")}"))
           val gpuExpr = deduplicatedGpuInputs(deduplicatedIndex)
           BoundReference(deduplicatedIndex, gpuExpr.dataType, gpuExpr.nullable): Expression
         } else {
