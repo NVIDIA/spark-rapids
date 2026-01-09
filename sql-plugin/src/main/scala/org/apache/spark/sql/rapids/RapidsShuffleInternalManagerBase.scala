@@ -456,7 +456,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 pair._2 >= processedCount
               }).foreach { future =>
                 newFutureTouched = true
-                val (recordSize, compressedSize) = future._1.get()
+                // remainingQuota is the compressedSize that was held after Writer released
+                // the excess quota (recordSize - compressedSize)
+                val (remainingQuota, compressedSize) = future._1.get()
 
                 // Write newly compressed data incrementally
                 val writtenBytes =
@@ -471,7 +473,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 partitionProcessedFutures.compute(currentPartitionToWrite,
                   (key, value) => { value + 1 })
 
-                limiter.release(recordSize)
+                // Release the remaining quota (compressedSize) after data is written to disk
+                limiter.release(remainingQuota)
               }
 
               if (containsLastForThisPartition) {
@@ -659,7 +662,17 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // Track total written data size (compressed size)
               val compressedSize = (buffer.getCount - originLength).toLong
               totalCompressedSize.addAndGet(compressedSize)
-              (recordSize, compressedSize)
+
+              // Release excess quota immediately after compression.
+              // Data is now in OpenByteArrayOutputStream (heap), only need to hold
+              // compressedSize quota until Merger writes to disk.
+              val excessQuota = recordSize - compressedSize
+              if (excessQuota > 0) {
+                limiter.release(excessQuota)
+              }
+
+              // Return compressedSize for Merger to release later
+              (compressedSize, compressedSize)
             }
           } catch {
             case e: Exception =>
