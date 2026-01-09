@@ -162,7 +162,7 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
       ),
       GpuElementAtMeta.elementAtRule(true)
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ shimExprs ++ ProtobufExprShims.exprs
+    super.getExprs ++ shimExprs
   }
 
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
