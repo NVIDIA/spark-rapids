@@ -1470,20 +1470,13 @@ This will force full Scala code rebuild in downstream modules.
                             <!-- #if scala-2.13 --><!--
                             <arg>-Xsource:2.13</arg>
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
-                            <arg>-Wconf:cat=deprecation:wv,any:e</arg>
+                            <arg>-Wconf:cat=deprecation:e,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
                             <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
                             <arg>-Wconf:cat=other-nullary-override:e</arg>
                             <arg>-Wconf:msg=^(?=.*?method|value|type|object|trait|inheritance)(?=.*?deprecated)(?=.*?since 2.13).+$:s</arg>
                             <arg>-Wconf:msg=^(?=.*?Widening conversion from)(?=.*?is deprecated because it loses precision).+$:s</arg>
                             <arg>-Wconf:msg=Auto-application to \`\(\)\` is deprecated:s</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=symbol literal is deprecated:e</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=unicode arrow:e</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=method formatted.*is deprecated:e</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=The method.*apply.*is inserted:e</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=getCurrentByteIndex.*is deprecated:e</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=Unicode escapes in raw interpolations are deprecated:e</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=procedure syntax is deprecated:e</arg>
                             <arg>-Wconf:cat=unchecked&amp;msg=outer reference:s</arg>
                             <arg>-Wconf:cat=unchecked&amp;msg=eliminated by erasure:s</arg>
                             <arg>-Wconf:msg=^(?=.*?a value of type)(?=.*?cannot also be).+$:s</arg>
