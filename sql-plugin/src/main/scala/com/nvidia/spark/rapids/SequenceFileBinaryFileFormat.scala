@@ -54,10 +54,12 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
       options: Map[String, String],
       files: Seq[FileStatus]): Option[StructType] = Some(dataSchema)
 
+  // TODO: Fix split boundary handling to enable multi-partition reads
+  // Currently disabled to ensure correct record counts
   override def isSplitable(
       sparkSession: SparkSession,
       options: Map[String, String],
-      path: Path): Boolean = true
+      path: Path): Boolean = false
 
   override def buildReaderWithPartitionValues(
       sparkSession: SparkSession,
@@ -99,8 +101,17 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
 
       val start = partFile.start
       val end = start + partFile.length
+      
+      // Debug logging
+      val log = LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat])
+      log.info(s"[DEBUG] Split: start=$start, end=$end, length=${partFile.length}, file=$path")
+      
       if (start > 0) {
-        reader.sync(start)
+        // sync(position) jumps to the first sync point AFTER position.
+        // If position is exactly at a sync point, it skips to the NEXT one.
+        // Use sync(start - 1) to ensure we don't miss records at the split boundary.
+        reader.sync(start - 1)
+        log.info(s"[DEBUG] After sync(${start - 1}): position=${reader.getPosition}")
       }
 
       val reqFields = requiredSchema.fields
@@ -127,7 +138,12 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
           if (!prepared && !done) {
             prepared = true
             keyBuf.reset()
-            if (reader.getPosition < end && reader.nextRaw(keyBuf, valueBytes) >= 0) {
+            // Check position BEFORE reading the next record.
+            // If current position >= end, this record belongs to the next split.
+            if (reader.getPosition >= end) {
+              done = true
+              close()
+            } else if (reader.nextRaw(keyBuf, valueBytes) >= 0) {
               nextRow = buildRow()
             } else {
               done = true
