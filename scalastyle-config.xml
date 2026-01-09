@@ -144,7 +144,7 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     <check level="error" class="org.scalastyle.file.RegexChecker" enabled="true">
         <parameters>
             <parameter name="regex">\('[a-zA-Z_][a-zA-Z0-9_]*\)</parameter>
-            <parameter name="line">false</parameter>
+            <parameter name="line">true</parameter>
         </parameters>
         <customMessage><![CDATA[Symbol literals are deprecated in Scala 2.13. Use col("name") or $"name" instead of 'name.
         For non-Spark contexts, use Symbol("name") instead of 'name if Symbol usage is required.]]></customMessage>
@@ -153,7 +153,7 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     <check level="error" class="org.scalastyle.file.RegexChecker" enabled="true">
         <parameters>
             <parameter name="regex">⇒</parameter>
-            <parameter name="line">false</parameter>
+            <parameter name="line">true</parameter>
         </parameters>
         <customMessage>Unicode arrow ⇒ is deprecated in Scala 2.13. Use => instead.</customMessage>
     </check>
