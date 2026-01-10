@@ -706,7 +706,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     concatenateTables(input)
   }
 
-  override def hasNext(): Boolean = {
+  override def hasNext: Boolean = {
     // Check for pending results from splits first
     if (pendingResultIter.exists(_.hasNext)) {
       true
@@ -720,7 +720,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   }
 
   override def next(): CoalescedHostResult = {
-    if (!hasNext()) {
+    if (!hasNext) {
       throw new NoSuchElementException("No more host batches to concatenate")
     }
 
@@ -774,7 +774,7 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     concatenateTables(input)
   }
 
-  override def hasNext(): Boolean = {
+  override def hasNext: Boolean = {
     // Check for pending results from splits first
     if (pendingResultIter.exists(_.hasNext)) {
       true
@@ -784,7 +784,7 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
   }
 
   override def next(): ColumnarBatch = {
-    if (!hasNext()) {
+    if (!hasNext) {
       throw new NoSuchElementException("No more host batches to concatenate")
     }
 
