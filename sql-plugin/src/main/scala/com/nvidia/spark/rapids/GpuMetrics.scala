@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME_LEGACY = "op time (legacy)"
   val DESCRIPTION_OP_TIME_NEW = "op time"
-  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partition & serial)"
+  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partitioning)"
   val DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ = "op time (shuffle read)"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"

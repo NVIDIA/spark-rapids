@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -626,6 +626,11 @@ PY
         unset PYSP_TEST_spark_jars_packages
         unset PYSP_TEST_spark_jars_repositories
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+
+
+        # Comment this out if you want to run remote debug this local mode spark process
+        # Don't forget to set TEST_PARALLEL=1 to ensure local mode spark 
+        # export SPARK_SUBMIT_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$driverJavaOpts" \
