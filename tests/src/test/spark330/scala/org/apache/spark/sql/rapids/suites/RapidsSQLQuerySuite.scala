@@ -234,7 +234,8 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
         if (insertCmds.nonEmpty) {
           insertCmds.head.partitionColumns.map(_.name).foreach(name => assert(name == "CAL_DT"))
         } else {
-          System.err.println("WARNING: Could not find GpuInsertIntoHadoopFsRelationCommand in GPU plan")
+          fail("Could not find GpuInsertIntoHadoopFsRelationCommand in GPU plan; " +
+            "this indicates an unexpected change in the GPU execution plan structure")
         }
         checkAnswer(sql("SELECT FLAG, CAST(CAL_DT as STRING) FROM t2 "),
             Row(2, "2021-06-29") :: Row(2, "2021-06-30") :: Nil)
