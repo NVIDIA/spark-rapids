@@ -118,7 +118,7 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
 
   // GPU-specific test for "SPARK-31594: Do not display the seed of rand/randn with no argument in output schema"
   // Original test: SQLQuerySuite.scala lines 3484-3505
-  // adjust the regex expression to match the projectExplainOutput like "gpuand(-8183248517984607901, false)"
+  // Adjust the regex expression to match the projectExplainOutput like "gpuand(-8183248517984607901, false)"
   testRapids("SPARK-31594: Do not display the seed of rand/randn with no argument in output schema") {
     def checkIfSeedExistsInExplain(df: DataFrame): Unit = {
       val output = new java.io.ByteArrayOutputStream()
