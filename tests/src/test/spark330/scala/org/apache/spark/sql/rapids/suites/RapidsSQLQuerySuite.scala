@@ -22,7 +22,6 @@ package org.apache.spark.sql.rapids.suites
 import java.io.File
 
 import com.nvidia.spark.rapids.GpuDataWritingCommandExec
-
 import org.apache.commons.io.FileUtils
 
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SQLQuerySuite}
