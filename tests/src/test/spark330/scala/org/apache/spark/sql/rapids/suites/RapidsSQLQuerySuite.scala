@@ -155,7 +155,10 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
       val sourceJar = new File(testFile("SPARK-33084.jar"))
       val targetCacheJarDir = new File(dir.getAbsolutePath +
         "/local/org.apache.spark/SPARK-33084/1.0/jars/")
-      targetCacheJarDir.mkdir()
+      if (!targetCacheJarDir.exists()) {
+        assert(targetCacheJarDir.mkdirs(),
+          s"Failed to create directory: ${targetCacheJarDir.getAbsolutePath}")
+      }
       // copy jar to local cache
       FileUtils.copyFileToDirectory(sourceJar, targetCacheJarDir)
       withTempView("v1") {
