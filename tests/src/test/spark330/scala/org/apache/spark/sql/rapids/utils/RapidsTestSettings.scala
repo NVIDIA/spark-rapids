@@ -155,5 +155,25 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsVectorizedParquetReadSchemaSuite]
   enableSuite[RapidsMergedParquetReadSchemaSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
+  enableSuite[RapidsSQLQuerySuite]
+    .exclude("SPARK-6743: no columns from cache", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14098"))
+    .exclude("aggregation with codegen updates peak execution memory", WONT_FIX_ISSUE("Codegen and memory metrics not applicable for GPU"))
+    .exclude("external sorting updates peak execution memory", WONT_FIX_ISSUE("Memory metrics implementation differs on GPU"))
+    .exclude("run sql directly on files", ADJUST_UT("Replaced by testRapids version that expects \"Path does not exist\" instead of \"Hive built-in ORC data source must be used with Hive support\" because there's spark-hive jar in the CLASSPATH in our UT running"))
+    .exclude("Common subexpression elimination", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14106"))
+    .exclude("SPARK-27619: When spark.sql.legacy.allowHashOnMapType is true, hash can be used on Maptype", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14108"))
+    .exclude("SPARK-17515: CollectLimit.execute() should perform per-partition limits", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14109"))
+    .exclude("SPARK-19650: An action on a Command should not trigger a Spark job", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14110"))
+    .exclude("SPARK-31594: Do not display the seed of rand/randn with no argument in output schema", ADJUST_UT("Replaced by testRapids version with a correct regex expression to match the projectExplainOutput, randn isn't supported now see https://github.com/NVIDIA/spark-rapids/issues/11613"))
+    .exclude("normalize special floating numbers in subquery", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14116"))
+    .exclude("SPARK-33677: LikeSimplification should be skipped if pattern contains any escapeChar", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14117"))
+    .exclude("SPARK-33593: Vector reader got incorrect data with binary partition value", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14118"))
+    .exclude("SPARK-33084: Add jar support Ivy URI in SQL -- jar contains udf class", ADJUST_UT("Replaced by testRapids version that uses testFile() to access Spark test resources instead of getContextClassLoader"))
+    .exclude("SPARK-33482: Fix FileScan canonicalization", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14122"))
+    .exclude("SPARK-36093: RemoveRedundantAliases should not change expression's name", ADJUST_UT("Replaced by testRapids version that checks the partition column name of the GpuInsertIntoHadoopFsRelationCommand"))
+    .exclude("SPARK-39166: Query context of binary arithmetic should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
+    .exclude("SPARK-39175: Query context of Cast should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
+    .exclude("SPARK-39177: Query context of getting map value should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
+    .exclude("SPARK-39190,SPARK-39208,SPARK-39210: Query context of decimal overflow error should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
 }
 // scalastyle:on line.size.limit
