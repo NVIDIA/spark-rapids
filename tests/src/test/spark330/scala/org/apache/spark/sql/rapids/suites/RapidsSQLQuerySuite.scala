@@ -134,7 +134,7 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
     val df2 = sql("SELECT rand(1L)")
     assert(df2.schema.head.name === "rand(1)")
     checkIfSeedExistsInExplain(df2)
-    // GPU doesn't support randn now see https://github.com/NVIDIA/spark-rapids/issues/11613 
+    // GPU doesn't support randn now. See https://github.com/NVIDIA/spark-rapids/issues/11613 
     // val df3 = sql("SELECT randn()")
     // assert(df3.schema.head.name === "randn()")
     // checkIfSeedExistsInExplain(df3)
