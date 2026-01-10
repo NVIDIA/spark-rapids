@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,7 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
-import com.nvidia.spark.rapids.RapidsHostColumnBuilder
-import com.nvidia.spark.rapids.TypeSig
+import com.nvidia.spark.rapids.{RapidsHostColumnBuilder, TypeConverter, TypeSig}
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnVector
