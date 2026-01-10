@@ -89,7 +89,7 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
     }
     assert(e.message.contains("Path does not exist"))
 
-    // GPU-specific adjustment: in our UT running, there'll be the spark-hive jar in the CLASSPATH
+    // GPU-specific adjustment: in our UT running, there'll be a spark-hive jar in the CLASSPATH
     // So when DataSource.lookupDataSource is called, it'll return the OrcFileFormat class successfully,
     // then never report the exception with "Hive built-in ORC data source must be used with Hive support"
     // Modify the assert to expect "Path does not exist"
