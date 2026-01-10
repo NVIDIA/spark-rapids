@@ -19,11 +19,11 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
+import com.nvidia.spark.rapids.GpuDataWritingCommandExec
+
 import java.io.File
 
 import org.apache.commons.io.FileUtils
-
-import com.nvidia.spark.rapids.GpuDataWritingCommandExec
 
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SQLQuerySuite}
 import org.apache.spark.sql.rapids.GpuInsertIntoHadoopFsRelationCommand
@@ -90,9 +90,9 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
     assert(e.message.contains("Path does not exist"))
 
     // GPU-specific adjustment: in our UT running, there'll be a spark-hive jar in the CLASSPATH
-    // So when DataSource.lookupDataSource is called, it'll return the OrcFileFormat class successfully,
-    // then never report the exception with "Hive built-in ORC data source must be used with Hive support"
-    // Modify the assert to expect "Path does not exist"
+    // So when DataSource.lookupDataSource is called, it'll return the OrcFileFormat class
+    // successfully, then never report the exception with "Hive built-in ORC data source must
+    // be used with Hive support". Modify the assert to expect "Path does not exist"
     e = intercept[AnalysisException] {
       sql(s"select id from `org.apache.spark.sql.hive.orc`.`file_path`")
     }
@@ -116,10 +116,13 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
       "org.apache.spark.sql.execution.datasources.jdbc"))
   }
 
-  // GPU-specific test for "SPARK-31594: Do not display the seed of rand/randn with no argument in output schema"
+  // GPU-specific test for "SPARK-31594: Do not display the seed of rand/randn
+  // with no argument in output schema"
   // Original test: SQLQuerySuite.scala lines 3484-3505
-  // adjust the regex expression to match the projectExplainOutput like "gpurand(-8183248517984607901, false)"
-  testRapids("SPARK-31594: Do not display the seed of rand/randn with no argument in output schema") {
+  // adjust the regex expression to match the projectExplainOutput
+  // like "gpurand(-8183248517984607901, false)"
+  testRapids("SPARK-31594: Do not display the seed of rand/randn with no argument in" +
+    " output schema") {
     def checkIfSeedExistsInExplain(df: DataFrame): Unit = {
       val output = new java.io.ByteArrayOutputStream()
       Console.withOut(output) {
