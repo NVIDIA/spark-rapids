@@ -19,12 +19,10 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import com.nvidia.spark.rapids.GpuDataWritingCommandExec
-
 import java.io.File
 
+import com.nvidia.spark.rapids.GpuDataWritingCommandExec
 import org.apache.commons.io.FileUtils
-
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SQLQuerySuite}
 import org.apache.spark.sql.rapids.GpuInsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
