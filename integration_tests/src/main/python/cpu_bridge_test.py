@@ -16,11 +16,11 @@ import pytest
 
 from pyspark.sql.functions import col
 import pyspark.sql.functions as f
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture
 from marks import allow_non_gpu
 from data_gen import *
 from marks import ignore_order
-from spark_session import is_before_spark_330, is_databricks_runtime
+from spark_session import is_before_spark_330, is_databricks_runtime, with_cpu_session
 
 
 # Helper function to create config that forces specific expressions to CPU bridge
@@ -639,3 +639,57 @@ def test_cpu_bridge_mixed_select_and_predicate():
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+
+# Test CPU bridge with aggregations containing lambda functions (ArrayForAll 
+# with collect_list/collect_set) This test covers the scenario where lambda 
+# functions are used within aggregate expressions that fall back to the CPU bridge. 
+# It verifies that lambda functions remain on the CPU side and arenot incorrectly
+# converted to GPU inputs, which would cause resolution errors.
+@ignore_order(local=True)
+@allow_non_gpu('ArrayForAll', 'NamedLambdaVariable', 'GreaterThan', 'Length', 'LambdaFunction')
+@pytest.mark.parametrize('data_gen', [[
+    ('k1', RepeatSeqGen(LongGen(), length=100)),
+    ('k2', RepeatSeqGen(LongGen(), length=20)),
+    ('v', StringGen(nullable=False))]], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+def test_cpu_bridge_aggregate_with_lambda_functions(spark_tmp_table_factory,
+                                                     data_gen,
+                                                     use_obj_hash_agg):
+    # --- Create bucketed table to trigger AQE optimization ---
+    bucketed_table = spark_tmp_table_factory.get()
+    def write_bucket_table(spark):
+        df = gen_df(spark, data_gen, length=4096)
+        return df.write.bucketBy(8, "k1").format('parquet').mode("overwrite") \
+            .saveAsTable(bucketed_table)
+    with_cpu_session(write_bucket_table)
+
+    # --- Run test case with CPU bridge enabled ---
+    conf = {
+        'spark.sql.adaptive.enabled': True,
+        'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg,
+        # Enable CPU bridge and force ArrayForAll to use it, just in case.
+        'spark.rapids.sql.expression.cpuBridge.enabled': True,
+        'spark.rapids.sql.expression.ArrayForAll': False
+    }
+    
+    # Query uses forall with lambda functions - ArrayForAll will use CPU bridge
+    # The lambda functions (x -> length(x) > 0) must remain on CPU side
+    query = """
+        select a,
+            forall(collect_list(b), x -> length(x) > 0) as forall_list,
+            forall(collect_set(b), x -> length(x) > 1) as forall_set
+        from (
+            select k1, max(k2) as a, max(v) as b
+            from table
+            group by k1
+        ) t
+        group by a"""
+    exist_clz = ['ArrayForAll']
+
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.table(bucketed_table),
+        table_name='table',
+        exist_classes=','.join(exist_clz),
+        sql=query,
+        conf=conf)

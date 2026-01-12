@@ -1545,13 +1545,19 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   /**
    * Determines if a child expression should be converted to a GPU input for the bridge.
-   * Returns true if the child can be replaced AND is not a Literal or ScalarSubquery.
-   * Literals and ScalarSubqueries are kept on the CPU side to avoid unnecessary data movement.
+   * Returns true if the child can be replaced AND is not a Literal, ScalarSubquery,
+   * or LambdaFunction.
+   * Literals, ScalarSubqueries, and LambdaFunctions are kept on the CPU side:
+   * - Literals and ScalarSubqueries to avoid unnecessary data movement
+   * - LambdaFunctions because they contain unevaluable placeholders (NamedLambdaVariables)
+   *   that cannot be evaluated in columnar fashion on the GPU
    */
   private def shouldConvertChildToGpuInput(childMeta: BaseExprMeta[_]): Boolean = {
+    import org.apache.spark.sql.catalyst.expressions.LambdaFunction
     childMeta.canThisBeReplaced &&
       !childMeta.wrapped.isInstanceOf[Literal] &&
-      !childMeta.wrapped.isInstanceOf[ScalarSubquery]
+      !childMeta.wrapped.isInstanceOf[ScalarSubquery] &&
+      !childMeta.wrapped.isInstanceOf[LambdaFunction]
   }
 
   def convertForGpuCpuBridge(): GpuExpression = {
