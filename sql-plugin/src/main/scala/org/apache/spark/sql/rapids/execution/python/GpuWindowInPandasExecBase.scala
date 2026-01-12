@@ -37,16 +37,17 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
 import org.apache.spark.sql.rapids.execution.python.shims.{GpuArrowPythonRunner, PythonArgumentUtils}
+import org.apache.spark.sql.rapids.execution.python.shims.WindowInPandasExecTypeShim.WindowInPandasExecType
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuWindowInPandasExecMetaBase(
-    winPandas: WindowInPandasExec,
+    winPandas: WindowInPandasExecType,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends SparkPlanMeta[WindowInPandasExec](winPandas, conf, parent, rule) {
+  extends SparkPlanMeta[WindowInPandasExecType](winPandas, conf, parent, rule) {
 
   override def replaceMessage: String = "partially run on GPU"
   override def noReplacementPossibleMessage(reasons: String): String =
