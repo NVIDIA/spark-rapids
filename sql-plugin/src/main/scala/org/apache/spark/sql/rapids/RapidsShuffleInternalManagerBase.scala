@@ -237,6 +237,11 @@ object RapidsShuffleInternalManagerBase extends Logging {
 
     mergerSlots.values.foreach(_.shutdownNow())
     mergerSlots.clear()
+
+    // Reset slot counters to ensure clean state for next initialization
+    writerSlotNumber.set(0)
+    readerSlotNumber.set(0)
+    mergerSlotNumber.set(0)
   }
 
   def getNextWriterSlot: Int = Math.abs(writerSlotNumber.incrementAndGet())
@@ -592,8 +597,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val value = record._2
         val reducePartitionId: Int = partitioner.getPartition(key)
 
-        // Detect multi-batch: partition ID decreased means new batch started
-        if (reducePartitionId < previousMaxPartition) {
+        // Detect multi-batch: partition ID must be strictly increasing within a batch.
+        // If current partition ID <= previous max, it's a new batch.
+        if (reducePartitionId <= previousMaxPartition) {
           if (!isMultiBatch) {
             isMultiBatch = true
             logDebug(s"Detected multi-batch scenario for shuffle $shuffleId, " +
