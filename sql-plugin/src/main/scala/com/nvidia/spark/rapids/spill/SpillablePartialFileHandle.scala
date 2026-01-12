@@ -448,10 +448,11 @@ class SpillablePartialFileHandle private (
   def isSpilled: Boolean = spilledToDisk
 
   /**
-   * Override spillable to add write phase protection.
+   * Override spillable to add write phase protection and actual state checks.
+   * Since approxSizeInBytes is now a fixed val, we need to check actual state here.
    */
   override private[spill] def spillable: Boolean = synchronized {
-    super.spillable && !protectedFromSpill
+    super.spillable && !protectedFromSpill && !spilledToDisk && host.nonEmpty
   }
 
   /**
