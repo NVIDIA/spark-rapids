@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
@@ -471,32 +472,34 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     // to close them after creating the table
     withResource(columns) { _ =>
       for (i <- 0 until table.getNumberOfColumns) {
-        val castColumn = readSchema.fields(i).dataType match {
-          case DataTypes.BooleanType =>
-            castStringToBool(table.getColumn(i))
-          case DataTypes.ByteType =>
-            castStringToInt(table.getColumn(i), DType.INT8)
-          case DataTypes.ShortType =>
-            castStringToInt(table.getColumn(i), DType.INT16)
-          case DataTypes.IntegerType =>
-            castStringToInt(table.getColumn(i), DType.INT32)
-          case DataTypes.LongType =>
-            castStringToInt(table.getColumn(i), DType.INT64)
-          case DataTypes.FloatType =>
-            castStringToFloat(table.getColumn(i), DType.FLOAT32)
-          case DataTypes.DoubleType =>
-            castStringToFloat(table.getColumn(i), DType.FLOAT64)
-          case dt: DecimalType =>
-            castStringToDecimal(table.getColumn(i), dt)
-          case DataTypes.DateType =>
-            castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
-          case DataTypes.TimestampType =>
-            castStringToTimestamp(table.getColumn(i),
-              timestampFormat, DType.TIMESTAMP_MICROSECONDS)
-          case other if GpuTypeShims.supportCsvRead(other) =>
-            GpuTypeShims.csvRead(table.getColumn(i), other)
-          case _ =>
-            table.getColumn(i).incRefCount()
+        val castColumn = withRetryNoSplit[ColumnVector] {
+          readSchema.fields(i).dataType match {
+            case DataTypes.BooleanType =>
+              castStringToBool(table.getColumn(i))
+            case DataTypes.ByteType =>
+              castStringToInt(table.getColumn(i), DType.INT8)
+            case DataTypes.ShortType =>
+              castStringToInt(table.getColumn(i), DType.INT16)
+            case DataTypes.IntegerType =>
+              castStringToInt(table.getColumn(i), DType.INT32)
+            case DataTypes.LongType =>
+              castStringToInt(table.getColumn(i), DType.INT64)
+            case DataTypes.FloatType =>
+              castStringToFloat(table.getColumn(i), DType.FLOAT32)
+            case DataTypes.DoubleType =>
+              castStringToFloat(table.getColumn(i), DType.FLOAT64)
+            case dt: DecimalType =>
+              castStringToDecimal(table.getColumn(i), dt)
+            case DataTypes.DateType =>
+              castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
+            case DataTypes.TimestampType =>
+              castStringToTimestamp(table.getColumn(i),
+                timestampFormat, DType.TIMESTAMP_MICROSECONDS)
+            case other if GpuTypeShims.supportCsvRead(other) =>
+              GpuTypeShims.csvRead(table.getColumn(i), other)
+            case _ =>
+              table.getColumn(i).incRefCount()
+          }
         }
         columns += castColumn
       }

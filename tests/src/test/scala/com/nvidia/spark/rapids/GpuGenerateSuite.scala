@@ -25,7 +25,7 @@ import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Table}
 import ai.rapids.cudf.HostColumnVector.{BasicType, ListType, StructType}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType}
@@ -804,6 +804,96 @@ class GpuGenerateSuite
       assertResult(1)(splits.length)
       assertResult(5000)(splits(0))
       checkSplits(splits, batch)
+    }
+  }
+
+  /**
+   * Test that the generate flow handles split-and-retry OOM correctly.
+   * This exercises the retry logic in the generate phase.
+   */
+  test("generate handles split and retry OOM") {
+    val (batch, _) = makeBatch(numRows = 100, listSize = 4, carryAlongColumnCount = 1)
+    val generator = GpuExplode(AttributeReference("foo", ArrayType(IntegerType))())
+    val generatorOffset = 1 // carry-along column is at 0, explode column at 1
+
+    val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+
+    // Inject 1 split-and-retry OOM
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    val it = new GpuGenerateIterator(
+      Seq(spillable),
+      generator = generator,
+      generatorOffset,
+      outer = false,
+      NoopMetric,
+      NoopMetric,
+      NoopMetric)
+
+    // Collect all results
+    val results = new ArrayBuffer[ColumnarBatch]()
+    closeOnExcept(results) { _ =>
+      while (it.hasNext) {
+        results.append(it.next())
+      }
+    }
+
+    withResource(results) { _ =>
+      // Verify we got valid output - 100 rows * 4 elements = 400 exploded rows
+      val totalRows = results.map(_.numRows()).sum
+      assertResult(400)(totalRows)
+    }
+  }
+
+  /**
+   * Test that getSplitsWithRetry handles OOM by halving the target size.
+   * This directly exercises the retry logic in the getSplits path.
+   */
+  test("getSplitsWithRetry handles OOM by reducing target size") {
+    val (batch, _) = makeBatch(numRows = 100, listSize = 4, carryAlongColumnCount = 1)
+    val generator = GpuExplode(AttributeReference("foo", ArrayType(IntegerType))())
+    val generatorOffset = 1 // carry-along column is at 0, explode column at 1
+
+    // Use a large target size that would normally produce no splits
+    val largeTargetSize = 1024L * 1024 * 1024 // 1GB
+
+    // Inject a retry OOM - this should trigger the retry logic in getSplitsWithRetry
+    // which halves the target size
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    // Call getSplitsWithRetry directly - this should handle the OOM and retry
+    val splits = GpuGenerateExec.getSplitsWithRetry(
+      batch, generator, generatorOffset, outer = false, largeTargetSize)
+
+    withResource(splits) { _ =>
+      // Verify we got valid splits
+      assert(splits.nonEmpty)
+      val totalRows = splits.map(_.numRows()).sum
+      assertResult(100)(totalRows)
+    }
+  }
+
+  /**
+   * Test that getSplitsWithRetry propagates GpuSplitAndRetryOOM when target size
+   * cannot be reduced further (below minimum threshold).
+   */
+  test("getSplitsWithRetry propagates GpuSplitAndRetryOOM at minimum target size") {
+    val (batch, _) = makeBatch(numRows = 100, listSize = 4, carryAlongColumnCount = 1)
+    val generator = GpuExplode(AttributeReference("foo", ArrayType(IntegerType))())
+    val generatorOffset = 1
+
+    // Use target size at the minimum threshold (64MB) - can't reduce further
+    val minTargetSize = 64L * 1024 * 1024
+
+    // Inject a split-and-retry OOM - since we're at minimum size, it should propagate
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    assertThrows[GpuSplitAndRetryOOM] {
+      GpuGenerateExec.getSplitsWithRetry(
+        batch, generator, generatorOffset, outer = false, minTargetSize)
     }
   }
 }

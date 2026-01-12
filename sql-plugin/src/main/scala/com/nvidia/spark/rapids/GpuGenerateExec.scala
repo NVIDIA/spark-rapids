@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import ai.rapids.cudf.{ColumnVector, DType, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.extractLit
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, splitTargetSizeInHalfGpu, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
@@ -912,12 +912,39 @@ case class GpuGenerateExec(
   private def getSplits(cb: ColumnarBatch,
       othersProjectList: Seq[GpuExpression],
       targetSize: Long): Seq[SpillableColumnarBatch] = {
-    withResource(cb) { _ =>
-      // compute split indices of input batch
-      val splitIndices = generator.inputSplitIndices(
-      cb, othersProjectList.length, outer, targetSize)
-      // split up input batch with indices
-      makeSplits(cb, splitIndices)
+    GpuGenerateExec.getSplitsWithRetry(cb, generator, othersProjectList.length, outer, targetSize)
+  }
+}
+
+object GpuGenerateExec {
+  /**
+   * Split up the input batch with retry support for OOM handling.
+   * On OOM, the target size is halved, producing more (smaller) splits.
+   */
+  def getSplitsWithRetry(
+      cb: ColumnarBatch,
+      generator: GpuGenerator,
+      generatorOffset: Int,
+      outer: Boolean,
+      targetSize: Long): Seq[SpillableColumnarBatch] = {
+    val spillableBatch = SpillableColumnarBatch(cb,
+      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    withResource(spillableBatch) { _ =>
+      // Use a minimum target size to prevent infinite splitting
+      val minTargetSize = Math.min(targetSize, 64L * 1024 * 1024)
+      val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
+      // Wrap the split computation in withRetry to handle OOM.
+      // On OOM, the target size is halved and the split computation is retried with the smaller
+      // target size, which may produce more splits.
+      withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
+        withResource(spillableBatch.getColumnarBatch()) { cb =>
+          // compute split indices of input batch
+          val splitIndices = generator.inputSplitIndices(
+            cb, generatorOffset, outer, attempt.targetSize)
+          // split up input batch with indices
+          makeSplits(cb, splitIndices)
+        }
+      }.next
     }
   }
 
