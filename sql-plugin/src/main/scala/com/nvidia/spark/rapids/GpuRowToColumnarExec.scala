@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -599,7 +599,7 @@ class RowToColumnarIterator(
     opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var initialRows = 0
-  private var targetRows = 0
+  private var nextBatchTargetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
   private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
@@ -623,11 +623,11 @@ class RowToColumnarIterator(
     numOutputRows += batch.numRows()
     numOutputBatches += 1
 
-    // Refine targetRows estimate based on actual output batches (including split outputs).
+    // Refine nextBatchTargetRows estimate based on actual output batches (including split outputs).
     totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(batch)
     totalOutputRows += batch.numRows()
     if (totalOutputRows > 0 && totalOutputBytes > 0) {
-      targetRows =
+      nextBatchTargetRows =
         GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)
     }
     batch
@@ -637,17 +637,18 @@ class RowToColumnarIterator(
     NvtxRegistry.ROW_TO_COLUMNAR {
       val streamStart = System.nanoTime()
       // estimate the size of the first batch based on the schema
-      if (targetRows == 0) {
+      if (nextBatchTargetRows == 0) {
         if (localSchema.fields.isEmpty) {
           // if there are no columns then we just default to a small number
           // of rows for the first batch
           // TODO do we even need to allocate anything here?
-          targetRows = 1024
-          initialRows = targetRows
+          nextBatchTargetRows = 1024
+          initialRows = nextBatchTargetRows
         } else {
           val sampleRows = GpuBatchUtils.VALIDITY_BUFFER_BOUNDARY_ROWS
           val sampleBytes = GpuBatchUtils.estimateGpuMemory(localSchema, sampleRows)
-          targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
+          nextBatchTargetRows = GpuBatchUtils.estimateRowCount(
+              targetSizeBytes, sampleBytes, sampleRows)
           initialRows = GpuBatchUtils.estimateRowCount(batchSizeBytes, sampleBytes, sampleRows)
         }
       }
@@ -659,7 +660,7 @@ class RowToColumnarIterator(
         val converter = new RetryableRowConverter(builders, rowCopyProjection)
         // read at least one row
         while (rowIter.hasNext &&
-            (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
+            (rowCount == 0 || rowCount < nextBatchTargetRows && byteCount < targetSizeBytes)) {
           converter.attempt(rowIter.next())
           val bytesWritten = withRetryNoSplit {
             withRestoreOnRetry(converter) {
@@ -704,7 +705,7 @@ class RowToColumnarIterator(
           numInputRows += rowCount
           ret
         } else {
-          val it = RmmRapidsRetryIterator.withRetry(
+          val it = withRetry(
             hostBatch,
             splitHostBatchInHalf
           ) { batch =>
@@ -715,14 +716,14 @@ class RowToColumnarIterator(
           // Return the first batch now and keep the iterator for subsequent output batches.
           // This ensures we only transfer one split at a time (avoid multiple device allocations).
           closeOnExcept(it.next()) { first =>
-            pendingBatchIter = it
+            pendingBatchIter = if (it.hasNext) it else Iterator.empty
             // Update input rows metric once per successful input build.
             numInputRows += rowCount
             first
           }
         }
         // The returned batch will be closed by the consumer of it
-        // Output metrics and targetRows refinement are handled in recordOutput().
+        // Output metrics and nextBatchTargetRows refinement are handled in recordOutput().
       }
     }
   }
