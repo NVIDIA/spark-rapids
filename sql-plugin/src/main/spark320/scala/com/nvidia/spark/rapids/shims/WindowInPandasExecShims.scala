@@ -51,13 +51,14 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
 
 /**
- * Exec rules for WindowInPandasExec (exists in Spark versions before the rename to ArrowWindowPythonExec).
+ * Exec rules for WindowInPandasExec (Spark versions before ArrowWindowPythonExec rename).
  */
 object WindowInPandasExecShims {
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -71,7 +72,8 @@ object WindowInPandasExecShims {
           TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
-            SparkShimImpl.getWindowExpressions(winPy).map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
+            SparkShimImpl.getWindowExpressions(winPy).map(
+              GpuOverrides.wrapExpr(_, this.conf, Some(this)))
 
           override def convertToGpu(): GpuExec = {
             val windowExprGpu = windowExpressions.map(_.convertToGpu())

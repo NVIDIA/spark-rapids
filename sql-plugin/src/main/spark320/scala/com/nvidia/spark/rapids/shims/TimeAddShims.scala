@@ -25,6 +25,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, TimeAdd}
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.unsafe.types.CalendarInterval

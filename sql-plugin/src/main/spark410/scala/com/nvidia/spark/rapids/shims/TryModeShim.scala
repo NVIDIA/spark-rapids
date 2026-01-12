@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.{Add, Divide, EvalMode, Express
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Average, Sum}
 
 /**
- * Spark 4.1.0 version where evalMode was changed to evalContext.evalMode for arithmetic expressions.
+ * Spark 4.1.0 version where evalMode changed to evalContext.evalMode for arithmetic.
  * See: https://github.com/apache/spark/commit/a96e9ca81518bff31b0089d459fe78804ca1aa38
  */
 object TryModeShim {

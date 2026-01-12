@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuTypedImperativeSupportedAggregateExecMeta.{preRowToColProjection, readBufferConverter}
 import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
-import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AggregateInPandasExecShims, DistributionUtil, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp,  WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -35,7 +35,6 @@ import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
-import com.nvidia.spark.rapids.shims.AggregateInPandasExecShims
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}

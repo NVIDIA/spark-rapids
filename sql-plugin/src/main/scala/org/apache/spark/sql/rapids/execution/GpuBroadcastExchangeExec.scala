@@ -33,7 +33,8 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.lore.{GpuLoreDumpRDD, SimpleRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.LORE_DUMP_RDD_TAG
-import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{BroadcastExchangeShims, ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.BroadcastExchangeShims.MAX_BROADCAST_TABLE_BYTES
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -46,7 +47,6 @@ import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
-import com.nvidia.spark.rapids.shims.BroadcastExchangeShims.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}

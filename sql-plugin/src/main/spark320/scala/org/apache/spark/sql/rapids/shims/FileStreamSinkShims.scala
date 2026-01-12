@@ -57,7 +57,10 @@ import org.apache.spark.sql.execution.streaming.{FileStreamSink, MetadataLogFile
 import org.apache.spark.sql.types.StructType
 
 object FileStreamSinkShims {
-  def hasMetadata(paths: Seq[String], hadoopConf: Configuration, sqlConf: org.apache.spark.sql.internal.SQLConf): Boolean = {
+  def hasMetadata(
+      paths: Seq[String],
+      hadoopConf: Configuration,
+      sqlConf: org.apache.spark.sql.internal.SQLConf): Boolean = {
     FileStreamSink.hasMetadata(paths, hadoopConf, sqlConf)
   }
 
