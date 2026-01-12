@@ -1561,7 +1561,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   def convertForGpuCpuBridge(): GpuExpression = {
-    assert(this.wrapped.deterministic,
+    require(this.wrapped.deterministic,
       s"Bridge conversion requires deterministic expressions. " +
       s"Expression ${this.wrapped.getClass.getSimpleName} is nondeterministic. " +
       s"This should have been filtered by isBridgeCompatible/canMoveToCpuBridge.")
