@@ -54,6 +54,12 @@ object DecimalArithmeticOverrides {
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
         TypeSig.DECIMAL_128),
       (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
+        // CheckOverflow prevents all bridge optimization in the tree. The CPU version
+        // takes a BigDecimal as input which could be outside the bounds of what the GPU
+        // can represent, so we cannot safely bridge any expressions when CheckOverflow
+        // is present.
+        override def preventsTreeBridgeOptimization: Boolean = true
+        
         private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
           expr.wrapped match {
             case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
