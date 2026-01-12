@@ -67,15 +67,10 @@ class SpillablePartialFileHandle private (
   // State management
   @volatile private var spilledToDisk: Boolean = false
   override private[spill] var host: Option[ai.rapids.cudf.HostMemoryBuffer] = None
+  override val approxSizeInBytes: Long = initialCapacity
   
   // Track current buffer capacity (can grow via expansion)
   private var currentBufferCapacity: Long = initialCapacity
-  
-  // Return actual memory usage: 0 if spilled/failed, otherwise current buffer capacity
-  // This ensures SpillFramework tracks correct memory usage even after allocation failure
-  override def approxSizeInBytes: Long = {
-    if (spilledToDisk || host.isEmpty) 0L else currentBufferCapacity
-  }
 
   // Protect from spill during write phase
   private var protectedFromSpill: Boolean = true
