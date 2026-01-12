@@ -164,6 +164,12 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       s"${partitionLengths.length}")
     blockResolver.writeMetadataFileAndCommit(
       shuffleId, mapId, partitionLengths, checksums, resolvedTmp)
+    
+    // Close the partial file handle to release any remaining resources
+    // (e.g., host buffer if spill() was not called due to empty partitions)
+    partialFileHandle.foreach(_.close())
+    partialFileHandle = None
+    
     MapOutputCommitMessage.of(partitionLengths)
   }
 

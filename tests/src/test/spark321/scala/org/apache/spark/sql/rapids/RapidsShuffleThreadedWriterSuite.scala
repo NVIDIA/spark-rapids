@@ -32,15 +32,17 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
-import java.io.{DataInputStream, File, FileInputStream, IOException, ObjectStreamException}
+import java.io._
+import java.nio.ByteBuffer
 import java.util.UUID
-import java.util.concurrent.ExecutionException
-import java.util.zip.CheckedInputStream
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
+import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.SlicedSerializedColumnVector
 import org.mockito.{Mock, MockitoAnnotations}
 import org.mockito.Answers.RETURNS_SMART_NULLS
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong}
@@ -49,113 +51,101 @@ import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatestplus.mockito.MockitoSugar
 
-import org.apache.spark.{HashPartitioner, SparkConf, SparkException, TaskContext}
+import org.apache.spark.{HashPartitioner, SparkConf, TaskContext}
 import org.apache.spark.executor.{ShuffleWriteMetrics, TaskMetrics}
-import org.apache.spark.internal.{Logging}
-import org.apache.spark.network.shuffle.checksum.ShuffleChecksumHelper
-import org.apache.spark.network.util.LimitedInputStream
-import org.apache.spark.serializer.{JavaSerializer, SerializerInstance, SerializerManager}
+import org.apache.spark.internal.Logging
+import org.apache.spark.serializer._
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.shuffle.api.ShuffleExecutorComponents
 import org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleExecutorComponents
 import org.apache.spark.sql.rapids.shims.RapidsShuffleThreadedWriter
-import org.apache.spark.storage.{BlockId, BlockManager, DiskBlockManager, DiskBlockObjectWriter, TempShuffleBlockId}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.storage._
 import org.apache.spark.util.Utils
 
 
 /**
- * This is mostly ported from Apache Spark's BypassMergeSortShuffleWriterSuite
- * It is only targetted for Spark 3.2.0+ but it touches all of the code for Spark 3.1.2
- * as well, except for some small tweaks when committing with checksum support.
+ * A simple serializer for testing ColumnarBatch with SlicedSerializedColumnVector.
  */
-trait ShuffleChecksumTestHelper {
-
-  /**
-   * Ensure that the checksum values are consistent between write and read side.
-   */
-  def compareChecksums(numPartition: Int,
-                       algorithm: String,
-                       checksum: File,
-                       data: File,
-                       index: File): Unit = {
-    assert(checksum.exists(), "Checksum file doesn't exist")
-    assert(data.exists(), "Data file doesn't exist")
-    assert(index.exists(), "Index file doesn't exist")
-
-    var checksumIn: DataInputStream = null
-    val expectChecksums = Array.ofDim[Long](numPartition)
-    try {
-      checksumIn = new DataInputStream(new FileInputStream(checksum))
-      (0 until numPartition).foreach(i => expectChecksums(i) = checksumIn.readLong())
-    } finally {
-      if (checksumIn != null) {
-        checksumIn.close()
-      }
-    }
-
-    var dataIn: FileInputStream = null
-    var indexIn: DataInputStream = null
-    var checkedIn: CheckedInputStream = null
-    try {
-      dataIn = new FileInputStream(data)
-      indexIn = new DataInputStream(new FileInputStream(index))
-      var prevOffset = indexIn.readLong
-      (0 until numPartition).foreach { i =>
-        val curOffset = indexIn.readLong
-        val limit = (curOffset - prevOffset).toInt
-        val bytes = new Array[Byte](limit)
-        val checksumCal = ShuffleChecksumHelper.getChecksumByAlgorithm(algorithm)
-        checkedIn = new CheckedInputStream(
-          new LimitedInputStream(dataIn, curOffset - prevOffset), checksumCal)
-        checkedIn.read(bytes, 0, limit)
-        prevOffset = curOffset
-        // checksum must be consistent at both write and read sides
-        assert(checkedIn.getChecksum.getValue == expectChecksums(i))
-      }
-    } finally {
-      if (dataIn != null) {
-        dataIn.close()
-      }
-      if (indexIn != null) {
-        indexIn.close()
-      }
-      if (checkedIn != null) {
-        checkedIn.close()
-      }
-    }
-  }
+class TestColumnarBatchSerializer extends Serializer with Serializable {
+  override def newInstance(): SerializerInstance = new TestColumnarBatchSerializerInstance()
+  override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-class BadSerializable(i: Int) extends Serializable {
-  @throws(classOf[ObjectStreamException])
-  def writeReplace(): Object = {
-    if (i >= 500) {
-      throw new IOException(s"failed to write $i")
+class TestColumnarBatchSerializerInstance extends SerializerInstance {
+  override def serialize[T: ClassTag](t: T): ByteBuffer = {
+    val bos = new ByteArrayOutputStream()
+    val stream = serializeStream(bos)
+    stream.writeObject(t)
+    stream.close()
+    ByteBuffer.wrap(bos.toByteArray)
+  }
+
+  override def deserialize[T: ClassTag](bytes: ByteBuffer): T =
+    throw new UnsupportedOperationException("Not implemented for test")
+
+  override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
+    throw new UnsupportedOperationException("Not implemented for test")
+
+  override def serializeStream(s: OutputStream): SerializationStream =
+    new TestColumnarBatchSerializationStream(s)
+
+  override def deserializeStream(s: InputStream): DeserializationStream =
+    throw new UnsupportedOperationException("Not implemented for test")
+}
+
+class TestColumnarBatchSerializationStream(out: OutputStream) extends SerializationStream {
+  private val dataOut = new DataOutputStream(out)
+
+  override def writeObject[T: ClassTag](t: T): SerializationStream = {
+    t match {
+      case batch: ColumnarBatch =>
+        dataOut.writeInt(batch.numCols())
+        for (i <- 0 until batch.numCols()) {
+          batch.column(i) match {
+            case col: SlicedSerializedColumnVector =>
+              val hmb = col.getWrap
+              val size = hmb.getLength.toInt
+              dataOut.writeInt(size)
+              val bytes = new Array[Byte](size)
+              hmb.getBytes(bytes, 0, 0, size)
+              dataOut.write(bytes)
+            case _ =>
+              dataOut.writeInt(0)
+          }
+        }
+      case key: Int =>
+        dataOut.writeInt(key)
+      case _ =>
+        dataOut.writeInt(-1)
     }
     this
   }
+
+  override def writeKey[T: ClassTag](key: T): SerializationStream = writeObject(key)
+  override def writeValue[T: ClassTag](value: T): SerializationStream = writeObject(value)
+  override def flush(): Unit = dataOut.flush()
+  override def close(): Unit = dataOut.close()
 }
 
-// Added so that we can mock a method that was created in Spark 3.3.0
-// and the override can be used in all versions of Spark
+
+// Shim for Spark 3.3.0+ createTempFile method
 trait ShimIndexShuffleBlockResolver330 {
   def createTempFile(file: File): File
 }
-class TestIndexShuffleBlockResolver(
-    conf: SparkConf,
-    bm: BlockManager)
-      extends IndexShuffleBlockResolver(conf, bm)
-        with ShimIndexShuffleBlockResolver330 {
-  // implemented in Spark 3.3.0
-  override def createTempFile(file: File): File = { null }
+
+class TestIndexShuffleBlockResolver(conf: SparkConf, bm: BlockManager)
+    extends IndexShuffleBlockResolver(conf, bm) with ShimIndexShuffleBlockResolver330 {
+  override def createTempFile(file: File): File = null
 }
+
 
 class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     with BeforeAndAfterEach
     with BeforeAndAfterAll
     with MockitoSugar
-    with ShuffleChecksumTestHelper
     with Logging {
+
   @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS) private var blockManager: BlockManager = _
 
@@ -170,11 +160,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS)
-    private var dependency: GpuShuffleDependency[Int, Int, Int] = _
-
-  @scala.annotation.nowarn("msg=consider using immutable val")
-  @Mock(answer = RETURNS_SMART_NULLS)
-    private var dependencyBad: GpuShuffleDependency[Int, BadSerializable, BadSerializable] = _
+  private var dependency: GpuShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = _
 
   private var taskMetrics: TaskMetrics = _
   private var tempDir: File = _
@@ -184,9 +170,85 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     .set("spark.app.id", "sampleApp")
   private val temporaryFilesCreated: mutable.Buffer[File] = new ArrayBuffer[File]()
   private val blockIdToFileMap: mutable.Map[BlockId, File] = new mutable.HashMap[BlockId, File]
-  private var shuffleHandle: ShuffleHandleWithMetrics[Int, Int, Int] = _
+  private var shuffleHandle: ShuffleHandleWithMetrics[Int, ColumnarBatch, ColumnarBatch] = _
+
+  // Track the sliced buffers (wrap) for cleanup, since incRefCountAndGetSize increases refCount
+  private val slicedBuffersToClean: mutable.Buffer[HostMemoryBuffer] =
+    new ArrayBuffer[HostMemoryBuffer]()
 
   private val numWriterThreads = 2
+
+  private def createTestBatch(value: Int): ColumnarBatch = {
+    val bufferSize = 64 + (value % 64)
+    val hmb = HostMemoryBuffer.allocate(bufferSize)
+    for (i <- 0 until bufferSize) {
+      hmb.setByte(i, (value + i).toByte)
+    }
+    val cv = new SlicedSerializedColumnVector(hmb, 0, bufferSize)
+    // Save the sliced buffer (wrap) for cleanup, NOT the original hmb
+    // incRefCountAndGetSize will increase wrap's refCount, we need to close it once more
+    slicedBuffersToClean += cv.getWrap
+    // Close original hmb since SlicedSerializedColumnVector.slice() increased its refCount
+    hmb.close()
+    new ColumnarBatch(Array(cv), 1)
+  }
+
+  private def createTestRecords(keys: Iterator[Int]): Iterator[(Int, ColumnarBatch)] =
+    keys.map(key => (key, createTestBatch(key)))
+
+  private def createWriter(): RapidsShuffleThreadedWriter[Int, ColumnarBatch] = {
+    new RapidsShuffleThreadedWriter[Int, ColumnarBatch](
+      blockManager, shuffleHandle, 0L, conf,
+      new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
+      1024 * 1024, shuffleExecutorComponents, numWriterThreads)
+  }
+
+  /**
+   * Verify write results including partition data presence.
+   * @param partitionsWithData Set of partition IDs that should have data
+   * @param minWritesPerPartition Optional map specifying minimum write count per partition.
+   *                              Used to verify multiple batches wrote to same partition.
+   */
+  private def verifyWrite(
+      writer: RapidsShuffleThreadedWriter[Int, ColumnarBatch],
+      expectedRecords: Int,
+      partitionsWithData: Set[Int],
+      minWritesPerPartition: Map[Int, Int] = Map.empty): Unit = {
+    val partitionLengths = writer.getPartitionLengths
+    val numPartitions = partitionLengths.length
+
+    // Basic checks
+    assert(partitionLengths.sum === outputFile.length(),
+      s"Partition lengths sum ${partitionLengths.sum} != file length ${outputFile.length()}")
+    assert(writer.getBytesInFlight == 0, "bytesInFlight should be 0 after completion")
+    assert(taskContext.taskMetrics().shuffleWriteMetrics.recordsWritten === expectedRecords,
+      s"Expected $expectedRecords records, got " +
+        s"${taskContext.taskMetrics().shuffleWriteMetrics.recordsWritten}")
+
+    // Verify each partition that should have data actually has data
+    for (partitionId <- partitionsWithData) {
+      assert(partitionLengths(partitionId) > 0,
+        s"Partition $partitionId should have data but length is ${partitionLengths(partitionId)}")
+    }
+
+    // Verify partitions NOT in the set are empty
+    for (partitionId <- 0 until numPartitions if !partitionsWithData.contains(partitionId)) {
+      assert(partitionLengths(partitionId) == 0,
+        s"Partition $partitionId should be empty but length is ${partitionLengths(partitionId)}")
+    }
+
+    // Verify multiple writes to same partition by checking data length
+    // Each write to partition P adds at least minBytesPerWrite bytes
+    // (key int + column count int + buffer size int + buffer data)
+    val minBytesPerWrite = 4 + 4 + 4 + 64 // at least 76 bytes per record
+    for ((partitionId, minWrites) <- minWritesPerPartition) {
+      val expectedMinLength = minWrites * minBytesPerWrite
+      assert(partitionLengths(partitionId) >= expectedMinLength,
+        s"Partition $partitionId: expected at least $minWrites writes " +
+          s"(>= $expectedMinLength bytes), but got ${partitionLengths(partitionId)} bytes. " +
+          s"This suggests fewer records were written than expected.")
+    }
+  }
 
   override def beforeAll(): Unit = {
     RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(numWriterThreads, 0)
@@ -198,7 +260,6 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   override def beforeEach(): Unit = {
     super.beforeEach()
-    // Ensure thread pool is started (may have been stopped in previous test's afterEach)
     RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(numWriterThreads, 0)
     TaskContext.setTaskContext(taskContext)
     MockitoAnnotations.openMocks(this).close()
@@ -206,18 +267,16 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     outputFile = File.createTempFile("shuffle", null, tempDir)
     taskMetrics = spy(new TaskMetrics)
     val shuffleWriteMetrics = new ShuffleWriteMetrics
-    shuffleHandle = new ShuffleHandleWithMetrics[Int, Int, Int](
+    shuffleHandle = new ShuffleHandleWithMetrics[Int, ColumnarBatch, ColumnarBatch](
       0, Map.empty, dependency)
     when(dependency.partitioner).thenReturn(new HashPartitioner(7))
-    when(dependency.serializer).thenReturn(new JavaSerializer(conf))
-    when(dependencyBad.partitioner).thenReturn(new HashPartitioner(7))
-    when(dependencyBad.serializer).thenReturn(new JavaSerializer(conf))
+    when(dependency.serializer).thenReturn(new TestColumnarBatchSerializer())
     when(taskMetrics.shuffleWriteMetrics).thenReturn(shuffleWriteMetrics)
     when(taskContext.taskMetrics()).thenReturn(taskMetrics)
     when(blockResolver.getDataFile(0, 0)).thenReturn(outputFile)
     when(blockManager.diskBlockManager).thenReturn(diskBlockManager)
     when(blockManager.serializerManager)
-      .thenReturn(new SerializerManager(new JavaSerializer(conf), conf))
+      .thenReturn(new SerializerManager(new TestColumnarBatchSerializer(), conf))
 
     when(blockResolver.writeMetadataFileAndCommit(
       anyInt, anyLong, any(classOf[Array[Long]]), any(classOf[Array[Long]]), any(classOf[File])))
@@ -231,28 +290,14 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       }
 
     when(blockManager.getDiskWriter(
-      any[BlockId],
-      any[File],
-      any[SerializerInstance],
-      anyInt(),
-      any[ShuffleWriteMetrics]))
+      any[BlockId], any[File], any[SerializerInstance], anyInt(), any[ShuffleWriteMetrics]))
       .thenAnswer { invocation =>
         val args = invocation.getArguments
-        val manager = new SerializerManager(new JavaSerializer(conf), conf)
+        val manager = new SerializerManager(new TestColumnarBatchSerializer(), conf)
         new DiskBlockObjectWriter(
-          args(1).asInstanceOf[File],
-          manager,
-          args(2).asInstanceOf[SerializerInstance],
-          args(3).asInstanceOf[Int],
-          syncWrites = false,
-          args(4).asInstanceOf[ShuffleWriteMetrics],
-          blockId = args(0).asInstanceOf[BlockId])
-      }
-
-    when(blockResolver.createTempFile(any(classOf[File])))
-      .thenAnswer { invocationOnMock =>
-        val file = invocationOnMock.getArguments()(0).asInstanceOf[File]
-        Utils.tempFileWith(file)
+          args(1).asInstanceOf[File], manager, args(2).asInstanceOf[SerializerInstance],
+          args(3).asInstanceOf[Int], syncWrites = false,
+          args(4).asInstanceOf[ShuffleWriteMetrics], blockId = args(0).asInstanceOf[BlockId])
       }
 
     when(diskBlockManager.createTempShuffleBlock())
@@ -264,170 +309,163 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
         (blockId, file)
       }
 
-    when(diskBlockManager.getFile(any[BlockId])).thenAnswer { invocation =>
-      blockIdToFileMap(invocation.getArguments.head.asInstanceOf[BlockId])
-    }
-
-    shuffleExecutorComponents = new RapidsLocalDiskShuffleExecutorComponents(
-      conf, blockManager, blockResolver)
+    shuffleExecutorComponents =
+      new RapidsLocalDiskShuffleExecutorComponents(conf, blockManager, blockResolver)
   }
 
   override def afterEach(): Unit = {
     TaskContext.unset()
     blockIdToFileMap.clear()
     temporaryFilesCreated.clear()
-    // Stop thread pool to prevent merger tasks from previous test blocking new tests
-    RapidsShuffleInternalManagerBase.stopThreadPool()
-    try {
-      Utils.deleteRecursively(tempDir)
-    } catch {
-      case NonFatal(e) =>
-        // Catch non-fatal errors here as we are cleaning up directories using a Spark utility
-        // and we shouldn't fail a test for these exceptions. See:
-        // https://github.com/NVIDIA/spark-rapids/issues/6515
-        logWarning(s"Error while cleaning up $tempDir", e)
-    } finally {
-      super.afterEach()
+    // Close sliced buffers to release the refCount added by incRefCountAndGetSize
+    slicedBuffersToClean.foreach { buf =>
+      try { buf.close() } catch { case NonFatal(_) => }
     }
+    slicedBuffersToClean.clear()
+    RapidsShuffleInternalManagerBase.stopThreadPool()
+    try { Utils.deleteRecursively(tempDir) } catch { case NonFatal(_) => }
   }
+
+  // ==================== Basic Tests ====================
 
   test("write empty iterator") {
-    val writer = new RapidsShuffleThreadedWriter[Int, Int](
-      blockManager,
-      shuffleHandle,
-      0L, // MapId
-      conf,
-      taskContext.taskMetrics().shuffleWriteMetrics,
-      1024 * 1024,
-      shuffleExecutorComponents,
-      numWriterThreads)
+    val writer = createWriter()
     writer.write(Iterator.empty)
-    writer.stop( /* success = */ true)
+    writer.stop(true)
     assert(writer.getPartitionLengths.sum === 0)
-    assert(writer.getBytesInFlight == 0)
-    assert(outputFile.exists())
     assert(outputFile.length() === 0)
-    val shuffleWriteMetrics = taskContext.taskMetrics().shuffleWriteMetrics
-    assert(shuffleWriteMetrics.bytesWritten === 0)
-    assert(shuffleWriteMetrics.recordsWritten === 0)
-    assert(taskMetrics.diskBytesSpilled === 0)
-    assert(taskMetrics.memoryBytesSpilled === 0)
   }
 
-  Seq(true, false).foreach { transferTo =>
-    test(s"write with some empty partitions - transferTo $transferTo") {
-      val transferConf = conf.clone.set("spark.file.transferTo", transferTo.toString)
-      def records: Iterator[(Int, Int)] =
-        Iterator((1, 1), (5, 5)) ++ (0 until 100000).iterator.map(x => (2, 2))
-      val writer = new RapidsShuffleThreadedWriter[Int, Int](
-        blockManager,
-        shuffleHandle,
-        0L, // MapId
-        transferConf,
-        new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
-        1024 * 1024,
-        shuffleExecutorComponents,
-        numWriterThreads)
-      writer.write(records)
-      writer.stop( /* success = */ true)
-      assert(writer.getPartitionLengths.sum === outputFile.length())
-      assert(writer.getPartitionLengths.count(_ == 0L) === 4) // should be 4 zero length files
-      assert(writer.getBytesInFlight == 0)
-      val shuffleWriteMetrics = taskContext.taskMetrics().shuffleWriteMetrics
-      assert(shuffleWriteMetrics.bytesWritten === outputFile.length())
-      assert(shuffleWriteMetrics.recordsWritten === records.length)
-      assert(taskMetrics.diskBytesSpilled === 0)
-      assert(taskMetrics.memoryBytesSpilled === 0)
-    }
+  test("single batch: sequential partitions") {
+    // Single batch with strictly increasing partition IDs
+    // Input: 0,1,2,3,4,5,6 -> all in one batch
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(0, 1, 2, 3, 4, 5, 6)))
+    writer.stop(true)
+    verifyWrite(writer, expectedRecords = 7, partitionsWithData = Set(0, 1, 2, 3, 4, 5, 6))
   }
 
-  test("only generate temp shuffle file for non-empty partition") {
-    // Test that an exception during write is properly handled
-    def records: Iterator[(Int, Int)] =
-      Iterator((1, 1), (5, 5)) ++
-        (0 until 100000).iterator.map { i =>
-          if (i == 99990) {
-            throw new SparkException("intentional failure")
-          } else {
-            (2, 2)
-          }
-        }
+  // ==================== Multi-batch: Basic Scenarios ====================
 
-    val writer = new RapidsShuffleThreadedWriter[Int, Int](
-      blockManager,
-      shuffleHandle,
-      0L, // MapId
-      conf,
-      taskContext.taskMetrics().shuffleWriteMetrics,
-      1024 * 1024,
-      shuffleExecutorComponents,
-      numWriterThreads)
-
-    intercept[SparkException] {
-      writer.write(records)
-    }
-
-    writer.stop( /* success = */ false)
-    assert(writer.getBytesInFlight == 0)
+  test("multi-batch: batch2 fills batch1 gaps") {
+    // Batch1: 1,3,5 (odd partitions)
+    // Batch2: 0,2,4 (even partitions, triggered by 0 <= 5)
+    // Result: partition 6 empty
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(1, 3, 5, 0, 2, 4)))
+    writer.stop(true)
+    // Both batch1 (1,3,5) and batch2 (0,2,4) data must be present
+    verifyWrite(writer, expectedRecords = 6, partitionsWithData = Set(0, 1, 2, 3, 4, 5))
   }
 
-  test("cleanup of intermediate files after errors") {
-    val writer = new RapidsShuffleThreadedWriter[Int, Int](
-      blockManager,
-      shuffleHandle,
-      0L, // MapId
-      conf,
-      taskContext.taskMetrics().shuffleWriteMetrics,
-      1024 * 1024,
-      shuffleExecutorComponents,
-      numWriterThreads)
-    intercept[SparkException] {
-      writer.write((0 until 100000).iterator.map(i => {
-        if (i == 99990) {
-          throw new SparkException("Intentional failure")
-        }
-        (i, i)
-      }))
-    }
-    writer.stop( /* success = */ false)
-    assert(writer.getBytesInFlight == 0)
+  test("multi-batch: extreme jump max to min") {
+    // Batch1: 6 (max partition only)
+    // Batch2: 0 (min partition only, triggered by 0 <= 6)
+    // Result: partitions 1-5 empty
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(6, 0)))
+    writer.stop(true)
+    // batch1 has partition 6, batch2 has partition 0
+    verifyWrite(writer, expectedRecords = 2, partitionsWithData = Set(0, 6))
   }
 
-  Seq(true, false).foreach { stopWithSuccess =>
-    test(s"create an exception in one of the writers and stop with success = $stopWithSuccess") {
-      def records: Iterator[(Int, BadSerializable)] =
-        Iterator(
-          (1, new BadSerializable(1)),
-          (5, new BadSerializable(5))) ++
-          (10 until 100000).iterator.map(x => (2, new BadSerializable(x)))
+  // ==================== Multi-batch: Overlap Scenarios ====================
 
-      val shuffleHandle = new ShuffleHandleWithMetrics[Int, BadSerializable, BadSerializable](
-        0,
-        Map.empty,
-        dependencyBad
-      )
-      val writer = new RapidsShuffleThreadedWriter[Int, BadSerializable](
-        blockManager,
-        shuffleHandle,
-        0L, // MapId
-        conf,
-        new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
-        1024 * 1024,
-        shuffleExecutorComponents,
-        numWriterThreads)
-      assertThrows[ExecutionException] {
-        writer.write(records)
-      }
-      if (stopWithSuccess) {
-        assertThrows[IllegalStateException] {
-          writer.stop(true)
-        }
-      } else {
-        writer.stop(false)
-      }
-      assert(writer.getPartitionLengths == null)
-      assert(writer.getBytesInFlight == 0)
-    }
+  test("multi-batch: partitions overlap between batches") {
+    // Batch1: 1,3,5
+    // Batch2: 3,4,5 (triggered by 3 <= 5, partitions 3,5 written again)
+    // Partitions 3,5 have data from BOTH batches
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(1, 3, 5, 3, 4, 5)))
+    writer.stop(true)
+    // batch1 contributes 1,3,5; batch2 contributes 3,4,5 -> union is 1,3,4,5
+    // Partitions 3 and 5 should have 2 writes each
+    verifyWrite(writer, expectedRecords = 6, partitionsWithData = Set(1, 3, 4, 5),
+      minWritesPerPartition = Map(3 -> 2, 5 -> 2))
+  }
+
+  test("multi-batch: batch2 fully within batch1 range") {
+    // Batch1: 0,1,2,3,4,5,6 (all partitions)
+    // Batch2: 2,3,4 (triggered by 2 <= 6, subset of batch1)
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(0, 1, 2, 3, 4, 5, 6, 2, 3, 4)))
+    writer.stop(true)
+    // All 7 partitions have data; partitions 2,3,4 have 2 writes each
+    verifyWrite(writer, expectedRecords = 10, partitionsWithData = Set(0, 1, 2, 3, 4, 5, 6),
+      minWritesPerPartition = Map(2 -> 2, 3 -> 2, 4 -> 2))
+  }
+
+  // ==================== Multi-batch: Repeated Partitions ====================
+
+  test("multi-batch: same partition repeated creates many batches") {
+    // Each record triggers new batch: 0 <= 0
+    // 5 batches, each with only partition 0
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(0, 0, 0, 0, 0)))
+    writer.stop(true)
+    // Only partition 0 has data (from all 5 batches)
+    // Verify partition 0 was written 5 times, not just once
+    verifyWrite(writer, expectedRecords = 5, partitionsWithData = Set(0),
+      minWritesPerPartition = Map(0 -> 5))
+  }
+
+  test("multi-batch: strictly decreasing creates one batch per record") {
+    // Input: 5,4,3,2,1,0
+    // Each partition ID <= previous max, so 6 batches total
+    // Batch1:5, Batch2:4, Batch3:3, Batch4:2, Batch5:1, Batch6:0
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(5, 4, 3, 2, 1, 0)))
+    writer.stop(true)
+    // All batches contribute: partitions 0,1,2,3,4,5 have data
+    verifyWrite(writer, expectedRecords = 6, partitionsWithData = Set(0, 1, 2, 3, 4, 5))
+  }
+
+  test("multi-batch: oscillating between two partitions") {
+    // Input: 2,5,2,5,2,5
+    // Batch1: 2,5; Batch2: 2,5; Batch3: 2,5
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(2, 5, 2, 5, 2, 5)))
+    writer.stop(true)
+    // Only partitions 2 and 5 have data (from all 3 batches)
+    // Each partition should have 3 writes
+    verifyWrite(writer, expectedRecords = 6, partitionsWithData = Set(2, 5),
+      minWritesPerPartition = Map(2 -> 3, 5 -> 3))
+  }
+
+  // ==================== Multi-batch: Size Variations ====================
+
+  test("multi-batch: batch1 sparse, batch2 full") {
+    // Batch1: 0,6 (only first and last)
+    // Batch2: 0,1,2,3,4,5,6 (all partitions, triggered by 0 <= 6)
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(0, 6, 0, 1, 2, 3, 4, 5, 6)))
+    writer.stop(true)
+    // batch1 contributes 0,6; batch2 contributes all -> all partitions have data
+    // Partitions 0 and 6 should have 2 writes each
+    verifyWrite(writer, expectedRecords = 9, partitionsWithData = Set(0, 1, 2, 3, 4, 5, 6),
+      minWritesPerPartition = Map(0 -> 2, 6 -> 2))
+  }
+
+  test("multi-batch: batch2 extends beyond batch1 range") {
+    // Batch1: 2,3 (middle partitions)
+    // Batch2: 0,1,4,5,6 (triggered by 0 <= 3, covers both sides)
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(2, 3, 0, 1, 4, 5, 6)))
+    writer.stop(true)
+    // batch1: 2,3; batch2: 0,1,4,5,6 -> all partitions
+    verifyWrite(writer, expectedRecords = 7, partitionsWithData = Set(0, 1, 2, 3, 4, 5, 6))
+  }
+
+  // ==================== Multi-batch: Three+ Batches ====================
+
+  test("multi-batch: three batches interleaved") {
+    // Batch1: 2,4,6
+    // Batch2: 1,3,5 (triggered by 1 <= 6)
+    // Batch3: 0 (triggered by 0 <= 5)
+    val writer = createWriter()
+    writer.write(createTestRecords(Iterator(2, 4, 6, 1, 3, 5, 0)))
+    writer.stop(true)
+    // batch1: 2,4,6; batch2: 1,3,5; batch3: 0 -> all partitions
+    verifyWrite(writer, expectedRecords = 7, partitionsWithData = Set(0, 1, 2, 3, 4, 5, 6))
   }
 }
-
