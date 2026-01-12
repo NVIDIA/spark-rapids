@@ -564,11 +564,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("The maximum size in bytes for a single host memory buffer used by " +
         "SpillablePartialFileHandle during shuffle write. When a buffer needs to " +
         "expand beyond this limit, it will be spilled to disk instead. This prevents " +
-        "excessive memory usage for large shuffle partitions.")
+        "excessive memory usage for large shuffle partitions. Note: Due to ByteBuffer " +
+        "constraints, the effective maximum is Int.MaxValue (~2GB).")
     .startupOnly()
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(8L * 1024 * 1024 * 1024)  // 8GB
+    .createWithDefault(Int.MaxValue.toLong)  // ~2GB, limited by ByteBuffer
 
   val PARTIAL_FILE_BUFFER_MEMORY_THRESHOLD =
     conf("spark.rapids.memory.host.partialFileBufferMemoryThreshold")

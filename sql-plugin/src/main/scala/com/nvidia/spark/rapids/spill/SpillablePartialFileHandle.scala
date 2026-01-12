@@ -67,10 +67,15 @@ class SpillablePartialFileHandle private (
   // State management
   @volatile private var spilledToDisk: Boolean = false
   override private[spill] var host: Option[ai.rapids.cudf.HostMemoryBuffer] = None
-  override val approxSizeInBytes: Long = initialCapacity
   
   // Track current buffer capacity (can grow via expansion)
   private var currentBufferCapacity: Long = initialCapacity
+  
+  // Return actual memory usage: 0 if spilled/failed, otherwise current buffer capacity
+  // This ensures SpillFramework tracks correct memory usage even after allocation failure
+  override def approxSizeInBytes: Long = {
+    if (spilledToDisk || host.isEmpty) 0L else currentBufferCapacity
+  }
 
   // Protect from spill during write phase
   private var protectedFromSpill: Boolean = true
@@ -152,6 +157,14 @@ class SpillablePartialFileHandle private (
           return false
         }
         
+        // Check for Int.MaxValue limit due to ByteBuffer constraints
+        if (newCapacity > Int.MaxValue) {
+          logDebug(s"Buffer expansion would exceed ByteBuffer limit " +
+            s"(need $newCapacity bytes, limit is ${Int.MaxValue} bytes), spilling to disk")
+          spillBufferToFileAndSwitch(currentBuffer)
+          return false
+        }
+        
         // Check if memory usage is still below threshold
         if (!HostAlloc.isUsageBelowThreshold(memoryThreshold)) {
           logDebug(s"Memory usage above ${memoryThreshold * 100}% threshold, " +
@@ -200,6 +213,11 @@ class SpillablePartialFileHandle private (
    */
   private def spillBufferToFileAndSwitch(
       buffer: ai.rapids.cudf.HostMemoryBuffer): Unit = {
+    // Defensive check: writePosition should not exceed Int.MaxValue
+    // because expandBuffer() limits buffer size to Int.MaxValue
+    require(writePosition <= Int.MaxValue,
+      s"Cannot spill buffer larger than Int.MaxValue: $writePosition bytes")
+    
     // Write current buffer content to file
     val fos = new FileOutputStream(file)
     try {
@@ -457,6 +475,11 @@ class SpillablePartialFileHandle private (
 
     host match {
       case Some(buffer) =>
+        // Defensive check: totalBytesWritten should not exceed Int.MaxValue
+        // because expandBuffer() limits buffer size to Int.MaxValue
+        require(totalBytesWritten <= Int.MaxValue,
+          s"Cannot spill buffer larger than Int.MaxValue: $totalBytesWritten bytes")
+        
         // Spill all written data to file
         val fos = new FileOutputStream(file)
         try {
