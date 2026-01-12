@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.FileCommitProtocol
+import org.apache.spark.sql.rapids.shims.FileCommitProtocolShims
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, ExternalCatalogUtils}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
@@ -256,16 +257,14 @@ class GpuSingleDirectoryDataWriter(
   // Initialize currentWriter and statsTrackers
   newOutputWriter()
 
-  @scala.annotation.nowarn(
-    "msg=method newTaskTempFile in class FileCommitProtocol is deprecated"
-  )
   private def newOutputWriter(): Unit = {
     currentWriterStatus.recordsInFile = 0
     val fileCounter = currentWriterStatus.fileCounter
     releaseResources()
 
     val ext = description.outputWriterFactory.getFileExtension(taskAttemptContext)
-    val currentPath = committer.newTaskTempFile(
+    val currentPath = FileCommitProtocolShims.newTaskTempFile(
+      committer,
       taskAttemptContext,
       None,
       f"-c$fileCounter%03d" + ext)
@@ -591,9 +590,6 @@ class GpuDynamicPartitionDataSingleWriter(
    *                    currently does not support `bucketId`, it's always None
    * @param fileCounter integer indicating the number of files to be written to `partDir`
    */
-  @scala.annotation.nowarn(
-    "msg=method newTaskTempFile.* in class FileCommitProtocol is deprecated"
-  )
   def newWriter(partValues: Option[InternalRow], bucketId: Option[Int],
       fileCounter: Int): ColumnarOutputWriter = {
     val partDir = partValues.map(getPartitionPath(_))
@@ -610,9 +606,10 @@ class GpuDynamicPartitionDataSingleWriter(
     }
 
     val currentPath = if (customPath.isDefined) {
-      committer.newTaskTempFileAbsPath(taskAttemptContext, customPath.get, ext)
+      FileCommitProtocolShims.newTaskTempFileAbsPath(
+        committer, taskAttemptContext, customPath.get, ext)
     } else {
-      committer.newTaskTempFile(taskAttemptContext, partDir, ext)
+      FileCommitProtocolShims.newTaskTempFile(committer, taskAttemptContext, partDir, ext)
     }
 
     val debugOutputPath = debugOutputBasePath.map { base =>
