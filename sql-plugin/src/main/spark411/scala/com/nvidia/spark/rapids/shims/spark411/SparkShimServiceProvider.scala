@@ -22,7 +22,7 @@ package com.nvidia.spark.rapids.shims.spark410
 import com.nvidia.spark.rapids.SparkShimVersion
 
 object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(4, 1, 0)
+  val VERSION = SparkShimVersion(4, 1, 1)
   val VERSIONNAMES = Seq(s"$VERSION")
 }
 
