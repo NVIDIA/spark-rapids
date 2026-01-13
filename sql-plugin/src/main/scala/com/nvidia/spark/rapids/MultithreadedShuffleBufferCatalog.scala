@@ -187,6 +187,9 @@ class MultithreadedShuffleBufferCatalog extends Logging {
     val closedHandles = new HashSet[SpillablePartialFileHandle]()
     var bytesFromMemory = 0L
     var bytesFromDisk = 0L
+    var numExpansions = 0
+    var numSpills = 0
+    var numForcedFileOnly = 0
 
     toRemove.foreach { blockId =>
       val segments = partitionSegments.remove(blockId)
@@ -205,6 +208,13 @@ class MultithreadedShuffleBufferCatalog extends Logging {
               bytesFromDisk += totalBytes
             }
 
+            // Collect behavior counters
+            numExpansions += handle.getExpansionCount
+            numSpills += handle.getSpillCount
+            if (handle.isFileOnly) {
+              numForcedFileOnly += 1
+            }
+
             try {
               handle.close()
             } catch {
@@ -217,11 +227,14 @@ class MultithreadedShuffleBufferCatalog extends Logging {
     }
 
     logDebug(s"Unregistered shuffle $shuffleId: closed ${closedHandles.size()} handles, " +
-      s"bytesFromMemory=$bytesFromMemory, bytesFromDisk=$bytesFromDisk")
+      s"bytesFromMemory=$bytesFromMemory, bytesFromDisk=$bytesFromDisk, " +
+      s"numExpansions=$numExpansions, numSpills=$numSpills, numForcedFileOnly=$numForcedFileOnly")
 
     // Return statistics if we had any data
-    if (bytesFromMemory > 0 || bytesFromDisk > 0) {
-      Some(ShuffleCleanupStats(shuffleId, bytesFromMemory, bytesFromDisk))
+    if (bytesFromMemory > 0 || bytesFromDisk > 0 ||
+        numExpansions > 0 || numSpills > 0 || numForcedFileOnly > 0) {
+      Some(ShuffleCleanupStats(shuffleId, bytesFromMemory, bytesFromDisk,
+        numExpansions, numSpills, numForcedFileOnly))
     } else {
       None
     }

@@ -33,9 +33,15 @@ case class SparkRapidsBuildInfoEvent(
  * @param shuffleId The shuffle ID being unregistered
  * @param bytesFromMemory Bytes that were read from memory (never spilled to disk)
  * @param bytesFromDisk Bytes that were read from disk (spilled at some point)
+ * @param numExpansions Number of buffer expansions that occurred
+ * @param numSpills Number of buffers that were spilled to disk
+ * @param numForcedFileOnly Number of buffers that used forced file-only mode
  */
 case class SparkRapidsShuffleDiskSavingsEvent(
   shuffleId: Int,
   bytesFromMemory: Long,
-  bytesFromDisk: Long
+  bytesFromDisk: Long,
+  numExpansions: Int = 0,
+  numSpills: Int = 0,
+  numForcedFileOnly: Int = 0
 ) extends SparkListenerEvent

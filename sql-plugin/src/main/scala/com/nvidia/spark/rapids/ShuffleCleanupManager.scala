@@ -235,7 +235,8 @@ class ShuffleCleanupManager(
 
         try {
           TrampolineUtil.postEvent(sc,
-            SparkRapidsShuffleDiskSavingsEvent(shuffleId, stat.bytesFromMemory, stat.bytesFromDisk))
+            SparkRapidsShuffleDiskSavingsEvent(shuffleId, stat.bytesFromMemory, stat.bytesFromDisk,
+              stat.numExpansions, stat.numSpills, stat.numForcedFileOnly))
         } catch {
           case e: Exception =>
             logWarning(s"Failed to post shuffle disk savings event for shuffle $shuffleId", e)

@@ -89,6 +89,10 @@ class SpillablePartialFileHandle private (
   // Track if disk write savings have been recorded (to avoid double counting)
   @volatile private var diskWriteSavingsRecorded: Boolean = false
 
+  // Behavior counters for statistics reporting
+  @volatile private var expansionCount: Int = 0
+  @volatile private var spillCount: Int = 0
+
   // Write state
   private var writePosition: Long = 0L
   private var fileOutputStream: Option[FileOutputStream] = None
@@ -209,6 +213,7 @@ class SpillablePartialFileHandle private (
             currentBufferCapacity = newCapacity
             SpillFramework.stores.hostStore.trackNoSpill(this)
             
+            expansionCount += 1
             logDebug(s"Expanded buffer from $oldCapacity to $newCapacity bytes " +
               s"(required $requiredCapacity bytes)")
             true
@@ -256,6 +261,7 @@ class SpillablePartialFileHandle private (
     buffer.close()
     host = None
     spilledToDisk = true
+    spillCount += 1
 
     logDebug(s"Spilled buffer to ${file.getAbsolutePath} during write " +
       s"($writePosition bytes), continuing write to file")
@@ -524,6 +530,21 @@ class SpillablePartialFileHandle private (
   def isSpilled: Boolean = spilledToDisk
 
   /**
+   * Check if this handle was created in FILE_ONLY mode.
+   */
+  def isFileOnly: Boolean = storageMode == PartialFileStorageMode.FILE_ONLY
+
+  /**
+   * Get the number of buffer expansions that occurred.
+   */
+  def getExpansionCount: Int = expansionCount
+
+  /**
+   * Get the number of times data was spilled to disk.
+   */
+  def getSpillCount: Int = spillCount
+
+  /**
    * Override spillable to add write phase protection.
    * No lock needed: protectedFromSpill is volatile.
    */
@@ -608,6 +629,7 @@ class SpillablePartialFileHandle private (
       }
 
       spilledToDisk = true
+      spillCount += 1
       SpillFramework.removeFromHostStore(this)
       bufferToSpill.close()
       host = None

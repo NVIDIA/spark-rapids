@@ -52,11 +52,17 @@ trait RapidsShuffleHeartbeatHandler {
  * @param shuffleId the shuffle ID that was cleaned up
  * @param bytesFromMemory bytes that were read from memory (never spilled to disk)
  * @param bytesFromDisk bytes that were read from disk (spilled at some point)
+ * @param numExpansions number of buffer expansions that occurred
+ * @param numSpills number of buffers that were spilled to disk
+ * @param numForcedFileOnly number of buffers that used forced file-only mode
  */
 case class ShuffleCleanupStats(
     shuffleId: Int,
     bytesFromMemory: Long,
-    bytesFromDisk: Long) extends Serializable
+    bytesFromDisk: Long,
+    numExpansions: Int = 0,
+    numSpills: Int = 0,
+    numForcedFileOnly: Int = 0) extends Serializable
 
 /**
  * Executor polls driver for shuffles that need to be cleaned up.
