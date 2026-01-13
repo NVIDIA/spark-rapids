@@ -951,6 +951,21 @@ class ProtobufSimpleMessageRowGen(DataGen):
         kids = ",".join(["{}:{}#{}".format(n, str(g.data_type), num) for (n, num, g) in self._fields])
         return super()._cache_repr() + "(" + kids + "," + self._binary_col_name + ")"
 
+    def __eq__(self, other):
+        if not isinstance(other, ProtobufSimpleMessageRowGen):
+            return False
+        if len(self._fields) != len(other._fields):
+            return False
+        for (n1, num1, g1), (n2, num2, g2) in zip(self._fields, other._fields):
+            if n1 != n2 or num1 != num2 or g1.data_type != g2.data_type:
+                return False
+        return (self._binary_col_name == other._binary_col_name and
+                self.nullable == other.nullable)
+
+    def __hash__(self):
+        field_tuple = tuple((n, num, str(g.data_type)) for (n, num, g) in self._fields)
+        return hash((field_tuple, self._binary_col_name, self.nullable))
+
     def start(self, rand):
         for (_name, _num, gen) in self._fields:
             gen.start(rand)

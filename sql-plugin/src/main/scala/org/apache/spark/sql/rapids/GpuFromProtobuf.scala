@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -93,8 +93,13 @@ case class GpuFromProtobuf(
                 fullSchema.fields(i).dataType, numRows)
           }
         }
+        // cuDF's makeStruct increments the reference count of child columns, so the struct
+        // owns its own references. We must close our original references in the finally block
+        // regardless of whether makeStruct succeeds or fails.
         cudf.ColumnVector.makeStruct(numRows, fullChildren: _*)
       } finally {
+        // Safe to close: if loop failed mid-way, only non-null entries are closed.
+        // If makeStruct succeeded, struct has its own refs; if it failed, we clean up.
         fullChildren.foreach(c => if (c != null) c.close())
       }
     }
