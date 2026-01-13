@@ -835,7 +835,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   remaining -= bytesRead
                 } else {
                   throw new IOException(
-                    s"EOF reading partition $partitionId, " +
+                    s"EOF reading partition $partitionId " +
+                    s"from partial file ${partialFiles.indexOf(partialFile)}, " +
                     s"expected $partitionLength bytes, got ${partitionLength - remaining}")
                 }
               }

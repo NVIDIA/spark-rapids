@@ -154,7 +154,8 @@ class SpillablePartialFileHandle private (
         
         // Check for Int.MaxValue limit due to ByteBuffer constraints
         if (newCapacity > Int.MaxValue) {
-          logDebug(s"Buffer expansion would exceed ByteBuffer limit " +
+          logDebug(s"Buffer expansion would exceed ByteBuffer limit (Int.MaxValue) " +
+            s"required by buffer.asByteBuffer() used during spill " +
             s"(need $newCapacity bytes, limit is ${Int.MaxValue} bytes), spilling to disk")
           spillBufferToFileAndSwitch(currentBuffer)
           return false

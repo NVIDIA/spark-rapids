@@ -76,7 +76,9 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   def setForceFileOnlyMode(): Unit = {
     if (storageInitAttempted) {
       throw new IllegalStateException(
-        "Cannot set force file-only mode after storage has been initialized")
+        "Cannot set force file-only mode after storage has been initialized. " +
+        "Storage was initialized when getPartitionWriter() was called. " +
+        "Call setForceFileOnlyMode() before requesting any partition writers.")
     }
     forceFileOnly = true
   }
@@ -147,9 +149,10 @@ class RapidsLocalDiskShuffleMapOutputWriter(
     partialFileHandle.foreach { handle =>
       handle.finishWrite()
       
-      // If memory-based and not spilled yet, force spill to create file
+      // If memory-based, not spilled yet, and has data, force spill to create file
       // writeMetadataFileAndCommit requires a valid file
-      if (handle.isMemoryBased && !handle.isSpilled) {
+      // Skip spill for empty shuffle to avoid creating unnecessary empty files
+      if (handle.isMemoryBased && !handle.isSpilled && handle.getTotalBytesWritten > 0) {
         handle.spill()
       }
     }
