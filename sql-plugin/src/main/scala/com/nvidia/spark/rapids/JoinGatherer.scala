@@ -16,15 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NullEquality, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -268,6 +266,141 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
     wrapped.restore()
 
   override def toString: String = s"SPILL_ONLY $wrapped"
+}
+
+/**
+ * A wrapper around LazySpillableColumnarBatch that includes build-side join statistics.
+ * The stats are computed lazily on first access and cached for the lifetime of this wrapper.
+ * This ensures stats are computed only once per batch, even if the batch is used as the
+ * physical build side multiple times (e.g., against multiple stream batches).
+ *
+ * The stats remain valid even if the underlying batch is spilled and restored, since they
+ * are scalar values cached separately from the batch data.
+ *
+ * Stats computation is deferred until actually needed.
+ * The physical build side is determined dynamically per stream batch, so stats
+ * are only computed if that side ends up being the physical build side.
+ *
+ * Two levels of stats are supported:
+ * - Basic stats (distinctCount, magnification) via getOrComputeStats() - uses fast distinctCount()
+ * - Extended stats (adds maxDuplicateKeyCount) via getOrComputeMaxDupStats() - uses keyRemap()
+ */
+class LazySpillableColumnarBatchWithStats private(
+    val batch: LazySpillableColumnarBatch) {
+  
+  import org.apache.spark.sql.rapids.execution.{JoinBuildSideStats, JoinBuildSideStatsWithMaxDup}
+  
+  // Basic stats are computed lazily and cached along with the null equality
+  private var cachedStats: Option[(JoinBuildSideStats, NullEquality)] = None
+  
+  /**
+   * Get or compute basic build-side statistics for this batch.
+   * Uses Table.distinctCount() which is relatively fast.
+   * Stats are computed once and cached for subsequent calls.
+   *
+   * @param keysTable the join keys table
+   * @param nullEquality whether nulls should be considered equal
+   * @return basic build-side statistics
+   */
+  def getOrComputeStats(keysTable: Table, nullEquality: NullEquality): JoinBuildSideStats = {
+    cachedStats match {
+      case Some((stats, cachedNullEq)) =>
+        // Validate null equality matches
+        if (cachedNullEq != nullEquality) {
+          throw new IllegalStateException(
+            s"Cached stats were computed with $cachedNullEq but join is using $nullEquality. " +
+            s"This indicates a bug in the join stats caching logic.")
+        }
+        stats
+      case None =>
+        val stats = JoinBuildSideStats.fromTable(keysTable, nullEquality)
+        cachedStats = Some((stats, nullEquality))
+        stats
+    }
+  }
+  
+  /**
+   * Get or compute extended build-side statistics including max duplicate key count.
+   * Uses Table.keyRemap() which is more expensive but provides both distinctCount and
+   * maxDuplicateKeyCount in a single pass. If basic stats haven't been computed yet,
+   * this will also populate the basic stats cache to avoid duplicate work.
+   *
+   * @param keysTable the join keys table
+   * @param nullEquality whether nulls should be considered equal
+   * @return extended build-side statistics with max duplicate key count
+   */
+  def getOrComputeMaxDupStats(
+      keysTable: Table,
+      nullEquality: NullEquality): JoinBuildSideStatsWithMaxDup = {
+    cachedStats match {
+      case Some((stats: JoinBuildSideStatsWithMaxDup, cachedNullEq)) =>
+        // Already have extended stats with max-dup
+        if (cachedNullEq != nullEquality) {
+          throw new IllegalStateException(
+            s"Cached stats were computed with $cachedNullEq but join is using $nullEquality. " +
+            s"This indicates a bug in the join stats caching logic.")
+        }
+        stats
+      case Some((_, cachedNullEq)) if cachedNullEq != nullEquality =>
+        // Have basic stats but with wrong null equality - recompute
+        throw new IllegalStateException(
+          s"Cached stats were computed with $cachedNullEq but join is using $nullEquality. " +
+          s"This indicates a bug in the join stats caching logic.")
+      case _ =>
+        // Either no stats cached, or only basic stats cached (with correct null equality)
+        // Compute extended stats using KeyRemapping
+        val fullStats = JoinBuildSideStatsWithMaxDup.fromTable(keysTable, nullEquality)
+        // Cache as the most complete stats we have
+        cachedStats = Some((fullStats, nullEquality))
+        fullStats
+    }
+  }
+  
+  /**
+   * Get the cached max-dup stats if they exist, otherwise return None.
+   * This is used after selectStrategy has potentially computed max-dup stats
+   * to retrieve them for logging purposes.
+   *
+   * @return cached extended stats if available, None otherwise
+   */
+  def getCachedMaxDupStats: Option[JoinBuildSideStatsWithMaxDup] = {
+    cachedStats.flatMap {
+      case (stats: JoinBuildSideStatsWithMaxDup, _) => Some(stats)
+      case _ => None
+    }
+  }
+  
+  // Delegate LazySpillable methods to wrapped batch
+  def numRows: Int = batch.numRows
+  def numCols: Int = batch.numCols
+  def deviceMemorySize: Long = batch.deviceMemorySize
+  def dataTypes: Array[DataType] = batch.dataTypes
+  def getBatch: ColumnarBatch = batch.getBatch
+  def releaseBatch(): ColumnarBatch = batch.releaseBatch()
+  def allowSpilling(): Unit = batch.allowSpilling()
+  def checkpoint(): Unit = batch.checkpoint()
+  def restore(): Unit = batch.restore()
+  
+  override def toString: String = {
+    val statsStr = cachedStats match {
+      case Some((stats: JoinBuildSideStatsWithMaxDup, nullEq)) =>
+        s"cached-with-maxdup($nullEq, maxDup=${stats.maxDuplicateKeyCount})"
+      case Some((_, nullEq)) => s"cached-basic($nullEq)"
+      case None => "not-computed"
+    }
+    s"BatchWithStats($batch, stats=$statsStr)"
+  }
+}
+
+object LazySpillableColumnarBatchWithStats {
+  /**
+   * Wrap a LazySpillableColumnarBatch to add stats tracking capability.
+   * 
+   * @param batch the batch to wrap
+   */
+  def apply(batch: LazySpillableColumnarBatch): LazySpillableColumnarBatchWithStats = {
+    new LazySpillableColumnarBatchWithStats(batch)
+  }
 }
 
 /**
@@ -645,104 +778,6 @@ class JoinGathererImpl(
   override def close(): Unit = {
     gatherMap.close()
     data.close()
-  }
-}
-
-/**
- * JoinGatherer for the case where the gather produces the same table as the input table.
- */
-class JoinGathererSameTable(
-    private val data: LazySpillableColumnarBatch) extends JoinGatherer {
-
-  assert(data.numCols > 0, "data with no columns should have been filtered out already")
-
-  // How much of the gather map we have output so far
-  private var gatheredUpTo: Long = 0
-  private var gatheredUpToCheckpoint: Long = 0
-  private val totalRows: Long = data.numRows
-  private val fixedWidthRowSizeBits = {
-    val dts = data.dataTypes
-    JoinGathererImpl.fixedWidthRowSizeBits(dts)
-  }
-
-  override def checkpoint: Unit = {
-    gatheredUpToCheckpoint = gatheredUpTo
-    data.checkpoint()
-  }
-
-  override def restore: Unit = {
-    gatheredUpTo = gatheredUpToCheckpoint
-    data.restore()
-  }
-
-  override def toString: String = {
-    s"SAMEGATHER $gatheredUpTo/$totalRows $data"
-  }
-
-  override def realCheapPerRowSizeEstimate: Double = {
-    val totalInputRows: Int = data.numRows
-    val totalInputSize: Long = data.deviceMemorySize
-    // Avoid divide by 0 here and later on
-    if (totalInputRows > 0 && totalInputSize > 0) {
-      totalInputSize.toDouble / totalInputRows
-    } else {
-      1.0
-    }
-  }
-
-  override def getFixedWidthBitSize: Option[Int] = fixedWidthRowSizeBits
-
-  override def gatherNext(n: Int): ColumnarBatch = {
-    assert(gatheredUpTo + n <= totalRows)
-    val ret = sliceForGather(n)
-    gatheredUpTo += n
-    ret
-  }
-
-  override def isDone: Boolean =
-    gatheredUpTo >= totalRows
-
-  override def numRowsLeft: Long = totalRows - gatheredUpTo
-
-  override def allowSpilling(): Unit = {
-    data.allowSpilling()
-  }
-
-  override def getBitSizeMap(n: Int): ColumnView = {
-    withResource(sliceForGather(n)) { cb =>
-      withResource(GpuColumnVector.from(cb)) { table =>
-        withResource(table.rowBitCount()) { bits =>
-          bits.castTo(DType.INT64)
-        }
-      }
-    }
-  }
-
-  override def close(): Unit = {
-    data.close()
-  }
-
-  private def isFullBatchGather(n: Int): Boolean = gatheredUpTo == 0 && n == totalRows
-
-  private def sliceForGather(n: Int): ColumnarBatch = {
-    val cb = data.getBatch
-    if (isFullBatchGather(n)) {
-      GpuColumnVector.incRefCounts(cb)
-    } else {
-      val splitStart = gatheredUpTo.toInt
-      val splitEnd = splitStart + n
-      val inputColumns = GpuColumnVector.extractColumns(cb)
-      val outputColumns: Array[vectorized.ColumnVector] = inputColumns.safeMap { c =>
-        val views = c.getBase.splitAsViews(splitStart, splitEnd)
-        assert(views.length == 3, s"Unexpected number of views: ${views.length}")
-        views(0).safeClose()
-        views(2).safeClose()
-        withResource(views(1)) { v =>
-          GpuColumnVector.from(v.copyToColumnVector(), c.dataType())
-        }
-      }
-      new ColumnarBatch(outputColumns, splitEnd - splitStart)
-    }
   }
 }
 

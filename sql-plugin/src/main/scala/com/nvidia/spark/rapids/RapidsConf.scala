@@ -32,7 +32,7 @@ import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
-import org.apache.spark.sql.rapids.execution.{JoinBuildSideSelection, JoinOptions, JoinStrategy}
+import org.apache.spark.sql.rapids.execution.{JoinBuildSideSelection, JoinOptions, JoinStrategy, KeyRemappingMode}
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -737,15 +737,45 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(JoinBuildSideSelection.values.map(_.toString))
     .createWithDefault(JoinBuildSideSelection.AUTO.toString)
 
-  val LOG_JOIN_CARDINALITY = conf("spark.rapids.sql.join.logCardinality")
-    .doc("Enable logging of join cardinality statistics to help diagnose performance issues. " +
-      "When enabled, logs task context, key data types, join condition, row counts, and " +
-      "distinct key counts for both left and right sides of joins. This can help identify " +
-      "problematic join patterns but may impact performance due to the additional computation " +
-      "required to calculate distinct counts.")
+  val JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD =
+    conf("spark.rapids.sql.join.maxDuplicateKeyCountSortThreshold")
+      .doc("Threshold for maximum duplicate key count to trigger automatic switch from hash join " +
+        "to sort-merge join. When the join strategy is AUTO and the maximum number of duplicate " +
+        "keys in the build table exceeds this threshold, the join will use sort-merge join " +
+        "instead of hash join. This heuristic helps avoid poor performance from hash joins with " +
+        "highly skewed keys. Set to 0 or negative to disable the heuristic. The default value " +
+        "of 171609 was determined through extensive performance analysis.")
+      .internal()
+      .integerConf
+      .createWithDefault(171609)
+
+  val JOIN_MAX_DUPLICATE_KEY_COUNT_MIN_BUILD_ROWS =
+    conf("spark.rapids.sql.join.maxDuplicateKeyCountMinBuildRows")
+      .doc("Minimum number of rows in the build table to compute maximum duplicate key count. " +
+        "If the build table has fewer rows than this threshold, the max duplicate key count " +
+        "computation is skipped as an optimization, since small tables cannot exceed the " +
+        "sort threshold. This avoids unnecessary computation overhead for small joins. " +
+        "If not explicitly set, defaults to the value of " +
+        s"${JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD.key}.")
+      .internal()
+      .integerConf
+      .createOptional
+
+  val JOIN_KEY_REMAPPING_ENABLED = conf("spark.rapids.sql.join.keyRemapping.enabled")
+    .doc("Controls whether join key remapping is used for sort-merge joins. " +
+      "AUTO (default) - enable remapping when beneficial (multi-key joins, complex key types " +
+      "like STRING/ARRAY/STRUCT, or when remapping enables sort-merge join for otherwise " +
+      "unsupported key types); " +
+      "ALWAYS - always use remapping for sort-merge joins (primarily for testing/evaluation); " +
+      "NEVER - never use remapping, fall back to hash join if sort-merge join cannot handle " +
+      "the key types without remapping. When remapping is enabled, ARRAY and STRUCT join keys " +
+      "become supported for sort-merge joins by transforming multi-column or complex keys into " +
+      "single INT32 remapped keys.")
     .internal()
-    .booleanConf
-    .createWithDefault(false)
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(Set("AUTO", "ALWAYS", "NEVER"))
+    .createWithDefault("AUTO")
 
   val JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD =
     conf("spark.rapids.sql.join.gatherer.sizeEstimateThreshold")
@@ -3109,9 +3139,15 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     val strategy = JoinStrategy.withName(strategyStr)
     val buildSideStr = JOIN_BUILD_SIDE.get(conf)
     val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
-    val logCardinality = LOG_JOIN_CARDINALITY.get(conf)
     val sizeEstimateThreshold = JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
-    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
+    val maxDupThreshold =
+      JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD.get(conf).asInstanceOf[Int].toLong
+    val maxDupMinBuildRows = JOIN_MAX_DUPLICATE_KEY_COUNT_MIN_BUILD_ROWS.get(conf)
+      .asInstanceOf[Option[Int]].getOrElse(maxDupThreshold.toInt).toLong
+    val keyRemappingModeStr = JOIN_KEY_REMAPPING_ENABLED.get(conf)
+    val keyRemappingMode = KeyRemappingMode.withName(keyRemappingModeStr)
+    JoinOptions(strategy, buildSideSelection, targetSize, sizeEstimateThreshold,
+      maxDupThreshold, maxDupMinBuildRows, keyRemappingMode)
   }
 }
 
@@ -3194,9 +3230,18 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val bucketJoinIoPrefetch: Boolean = get(BUCKET_JOIN_IO_PREFETCH)
 
-  lazy val logJoinCardinality: Boolean = get(LOG_JOIN_CARDINALITY)
-
   lazy val joinGathererSizeEstimateThreshold: Double = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
+
+  lazy val joinMaxDuplicateKeyCountSortThreshold: Int =
+    get(JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD)
+
+  lazy val joinMaxDuplicateKeyCountMinBuildRows: Int = {
+    get(JOIN_MAX_DUPLICATE_KEY_COUNT_MIN_BUILD_ROWS)
+      .map(_.intValue())
+      .getOrElse(joinMaxDuplicateKeyCountSortThreshold)
+  }
+
+  lazy val joinKeyRemappingEnabled: String = get(JOIN_KEY_REMAPPING_ENABLED)
 
   /**
    * Get join options based on the current configuration.
@@ -3204,13 +3249,19 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * @return JoinOptions configured based on the join strategy and targetSize
    */
   def getJoinOptions(targetSize: Long): JoinOptions = {
-    val strategyStr = get(JOIN_STRATEGY)
+    val strategyStr: String = get(JOIN_STRATEGY)
     val strategy = JoinStrategy.withName(strategyStr)
-    val buildSideStr = get(JOIN_BUILD_SIDE)
+    val buildSideStr: String = get(JOIN_BUILD_SIDE)
     val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
-    val logCardinality = get(LOG_JOIN_CARDINALITY)
-    val sizeEstimateThreshold = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
-    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
+    val sizeEstimateThreshold: Double = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
+    val maxDupThreshold: Long =
+      get(JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD).asInstanceOf[Int].toLong
+    val maxDupMinBuildRows: Long = get(JOIN_MAX_DUPLICATE_KEY_COUNT_MIN_BUILD_ROWS)
+      .asInstanceOf[Option[Int]].getOrElse(maxDupThreshold.toInt).toLong
+    val keyRemappingModeStr: String = get(JOIN_KEY_REMAPPING_ENABLED)
+    val keyRemappingMode = KeyRemappingMode.withName(keyRemappingModeStr)
+    JoinOptions(strategy, buildSideSelection, targetSize, sizeEstimateThreshold,
+      maxDupThreshold, maxDupMinBuildRows, keyRemappingMode)
   }
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)

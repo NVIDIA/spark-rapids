@@ -34,7 +34,7 @@ import org.apache.iceberg.types.TypeUtil.getProjectedIds
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.ExprId
-import org.apache.spark.sql.rapids.execution.HashedExistenceJoinIterator
+import org.apache.spark.sql.rapids.execution.{HashedExistenceJoinIterator, JoinMetrics}
 import org.apache.spark.sql.types.{BooleanType, DataType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -396,23 +396,34 @@ private case class DeleteFilterContext(
     opTime: GpuMetric,
     joinTime: GpuMetric) {
   def filter(input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
-    val probeSide = input.map { cb =>
+    val probeIter = input.map { cb =>
       withResource(cb) {
         LazySpillableColumnarBatch(_, "Deletes probe")
       }
     }
 
+    // Create JoinMetrics with the available metrics, using NoopMetric for the rest
+    val metrics = JoinMetrics(
+      opTime = opTime,
+      joinTime = joinTime,
+      numDistinctJoins = NoopMetric,
+      numHashJoins = NoopMetric,
+      numSortMergeJoins = NoopMetric,
+      joinDistinctTime = NoopMetric,
+      joinHashTime = NoopMetric,
+      joinSortTime = NoopMetric,
+      joinKeyRemapTime = NoopMetric)
+
     // No condition, so buildSide doesn't affect anything, but GpuBuildRight matches
     // the join convention used in HashedExistenceJoinIterator (leftSemiHashJoinBuildRight)
     new HashedExistenceJoinIterator(buildBatch,
       buildKeys,
-      probeSide,
+      probeIter,
       probeKeys,
       None,
       GpuBuildRight,
       true,
-      opTime,
-      joinTime)
+      metrics)
   }
 }
 

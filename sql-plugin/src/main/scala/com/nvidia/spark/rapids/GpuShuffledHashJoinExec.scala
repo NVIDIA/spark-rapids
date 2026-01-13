@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.GpuOr
-import org.apache.spark.sql.rapids.execution.{GpuHashJoin, GpuSubPartitionHashJoin, JoinTypeChecks}
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, GpuSubPartitionHashJoin, JoinMetrics, JoinTypeChecks}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -178,7 +178,14 @@ case class GpuShuffledHashJoinExec(
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    NUM_DISTINCT_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_DISTINCT_JOINS),
+    NUM_HASH_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_HASH_JOINS),
+    NUM_SORT_MERGE_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_SORT_MERGE_JOINS),
+    JOIN_DISTINCT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_DISTINCT_TIME),
+    JOIN_HASH_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_HASH_TIME),
+    JOIN_SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_SORT_TIME),
+    JOIN_KEY_REMAP_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_KEY_REMAP_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -252,7 +259,8 @@ case class GpuShuffledHashJoinExec(
             }
             // doJoin will close singleBatch
             doJoin(singleBatch, maybeBufferedStreamIter, joinOptions,
-              numOutputRows, numOutputBatches, opTime, joinTime)
+              numOutputRows, numOutputBatches, 
+              JoinMetrics(gpuLongMetric))
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>

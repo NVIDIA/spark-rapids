@@ -334,35 +334,27 @@ abstract class SplittableJoinIterator(
       rightData: LazySpillableColumnarBatch,
       joinType: JoinType): Option[JoinGatherer] = {
     withResource(maps) { _ =>
-      val leftGatherer = joinType match {
-        case LeftOuter if !maps.hasLeft =>
-          // Distinct left outer joins only produce a single gather map since left table rows
-          // are not rearranged by the join.
-          new JoinGathererSameTable(leftData)
-        case _ =>
-          val lazyLeftMap = LazySpillableGatherMap(maps.left, "left_map")
-          // Inner joins -- manifest the intersection of both left and right sides. The gather maps
-          //   contain the number of rows that must be manifested, and every index
-          //   must be within bounds, so we can skip the bounds checking.
-          //
-          // Left outer  -- Left outer manifests all rows for the left table. The left gather map
-          //   must contain valid indices, so we skip the check for the left side.
-          val leftOutOfBoundsPolicy = joinType match {
-            case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
-            case _ => OutOfBoundsPolicy.NULLIFY
-          }
-          JoinGatherer(lazyLeftMap, leftData, leftOutOfBoundsPolicy)
+      val lazyLeftMap = LazySpillableGatherMap(maps.left, "left_map")
+      // Inner joins -- manifest the intersection of both left and right sides. The gather maps
+      //   contain the number of rows that must be manifested, and every index
+      //   must be within bounds, so we can skip the bounds checking.
+      //
+      // Left outer  -- Left outer manifests all rows for the left table. The left gather map
+      //   must contain valid indices, so we skip the check for the left side.
+      val leftOutOfBoundsPolicy = joinType match {
+        case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
+        case _ => OutOfBoundsPolicy.NULLIFY
       }
+      val leftGatherer = JoinGatherer(lazyLeftMap, leftData, leftOutOfBoundsPolicy)
+
+      // Check if we have a right map. For LeftSemi/LeftAnti joins, there is no right map.
+      // Also skip if rightData has no columns (e.g., count aggregations).
       val rightMap = if (rightData.numCols == 0 || !maps.hasRight) {
         None
       } else {
         Some(maps.right)
       }
       val gatherer = rightMap match {
-        case None if joinType == RightOuter && rightData.numCols > 0 =>
-          // Distinct right outer joins only produce a single gather map since right table rows
-          // are not rearranged by the join.
-          MultiJoinGather(leftGatherer, new JoinGathererSameTable(rightData))
         case None =>
           // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
           // In these cases, the map and the table are both the left side, and everything in the map
