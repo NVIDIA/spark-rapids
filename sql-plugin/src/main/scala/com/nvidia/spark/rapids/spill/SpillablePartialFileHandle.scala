@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.spill
 
 import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream, FileOutputStream, IOException}
 
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.HostAlloc
 
 import org.apache.spark.internal.Logging
@@ -172,7 +173,7 @@ class SpillablePartialFileHandle private (
         try {
           // Allocate new larger buffer
           val newBuffer = ai.rapids.cudf.HostMemoryBuffer.allocate(newCapacity, false)
-          try {
+          closeOnExcept(newBuffer) { _ =>
             // Copy existing data
             newBuffer.copyFromHostBuffer(0, currentBuffer, 0, writePosition)
             
@@ -185,12 +186,8 @@ class SpillablePartialFileHandle private (
             
             logDebug(s"Expanded buffer from $oldCapacity to $newCapacity bytes " +
               s"(required $requiredCapacity bytes)")
-            true
-          } catch {
-            case e: Exception =>
-              newBuffer.close()
-              throw e
           }
+          true
         } catch {
           case e: Exception =>
             logDebug(s"Failed to allocate buffer of $newCapacity bytes, " +
@@ -215,8 +212,7 @@ class SpillablePartialFileHandle private (
       s"Cannot spill buffer larger than Int.MaxValue: $writePosition bytes")
     
     // Write current buffer content to file
-    val fos = new FileOutputStream(file)
-    try {
+    withResource(new FileOutputStream(file)) { fos =>
       val channel = fos.getChannel
       val bb = buffer.asByteBuffer()
       bb.limit(writePosition.toInt)
@@ -226,8 +222,6 @@ class SpillablePartialFileHandle private (
       if (syncWrites) {
         channel.force(true)
       }
-    } finally {
-      fos.close()
     }
 
     // Release buffer and switch to file mode
