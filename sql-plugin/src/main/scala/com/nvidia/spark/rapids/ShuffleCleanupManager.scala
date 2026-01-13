@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.{Set => JSet}
 import java.util.concurrent.{ConcurrentHashMap, Executors, ScheduledExecutorService, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
@@ -144,7 +145,7 @@ class ShuffleCleanupManager(
    * Used to avoid sending cleanup requests multiple times to the same executor.
    */
   private val reportedExecutors =
-    new ConcurrentHashMap[Int, java.util.Set[String]]()
+    new ConcurrentHashMap[Int, JSet[String]]()
 
   /**
    * Scheduled executor for periodic stale entry cleanup.

@@ -701,19 +701,30 @@ class SpillablePartialFileHandle private (
     }
 
     // Close streams outside lock (IO operations can be slow)
-    bos.foreach { s => try { s.close() } catch { case _: Exception => } }
-    fos.foreach { s => try { s.close() } catch { case _: Exception => } }
-    bis.foreach { s => try { s.close() } catch { case _: Exception => } }
-    fis.foreach { s => try { s.close() } catch { case _: Exception => } }
-    fc.foreach { c => try { c.close() } catch { case _: Exception => } }
-    raf.foreach { r => try { r.close() } catch { case _: Exception => } }
+    tryClose(bos, "bufferedOutputStream")
+    tryClose(fos, "fileOutputStream")
+    tryClose(bis, "bufferedInputStream")
+    tryClose(fis, "fileInputStream")
+    tryClose(fc, "fileChannel")
+    tryClose(raf, "randomAccessFile")
 
     // Delete file if it exists
     if (file != null && file.exists()) {
       try {
         file.delete()
       } catch {
-        case _: Exception => // Ignore
+        case e: Exception =>
+          logWarning(s"Failed to delete file ${file.getAbsolutePath}", e)
+      }
+    }
+  }
+
+  private def tryClose(closeable: Option[AutoCloseable], name: String): Unit = {
+    closeable.foreach { c =>
+      try {
+        c.close()
+      } catch {
+        case e: Exception => logWarning(s"Failed to close $name", e)
       }
     }
   }

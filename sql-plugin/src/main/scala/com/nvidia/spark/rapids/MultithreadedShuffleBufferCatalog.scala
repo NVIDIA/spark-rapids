@@ -17,7 +17,9 @@
 package com.nvidia.spark.rapids
 
 import java.io.{InputStream, IOException}
+import java.lang.{Boolean => JBoolean}
 import java.nio.ByteBuffer
+import java.util.HashSet
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable.ArrayBuffer
@@ -63,7 +65,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
     new ConcurrentHashMap[ShuffleBlockId, ArrayBuffer[PartitionSegment]]()
 
   /** Track active shuffles for cleanup */
-  private val activeShuffles = new ConcurrentHashMap[Int, java.lang.Boolean]()
+  private val activeShuffles = new ConcurrentHashMap[Int, JBoolean]()
 
   /**
    * Register a shuffle as active.
@@ -182,7 +184,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
     }
 
     // Collect unique handles and gather statistics before closing
-    val closedHandles = new java.util.HashSet[SpillablePartialFileHandle]()
+    val closedHandles = new HashSet[SpillablePartialFileHandle]()
     var bytesFromMemory = 0L
     var bytesFromDisk = 0L
 
