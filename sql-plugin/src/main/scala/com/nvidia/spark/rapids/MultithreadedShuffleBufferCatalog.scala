@@ -337,6 +337,15 @@ class MultiSegmentInputStream(segments: Seq[PartitionSegment]) extends InputStre
       math.min(remaining, Int.MaxValue).toInt
     }
   }
+
+  /**
+   * Close is a no-op because the underlying SpillablePartialFileHandle resources
+   * are managed by MultithreadedShuffleBufferCatalog and will be closed when
+   * the shuffle is unregistered.
+   */
+  override def close(): Unit = {
+    // No-op: handles are managed by MultithreadedShuffleBufferCatalog
+  }
 }
 
 

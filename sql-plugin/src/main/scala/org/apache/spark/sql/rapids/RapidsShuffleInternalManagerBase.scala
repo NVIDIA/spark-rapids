@@ -363,7 +363,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     mapOutputWriter: ShuffleMapOutputWriter,
     partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
     partitionFutures: ConcurrentHashMap[Int,
-      CopyOnWriteArrayList[Future[(Long, Long)]]],
+      CopyOnWriteArrayList[Future[Long]]],
     partitionWrittenBytes: ConcurrentHashMap[Int, Long],
     partitionProcessedFutures: ConcurrentHashMap[Int, Int],
     maxPartitionIdQueued: AtomicInteger,
@@ -412,7 +412,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
     val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
     val partitionFutures = new ConcurrentHashMap[Int,
-      CopyOnWriteArrayList[Future[(Long, Long)]]]()
+      CopyOnWriteArrayList[Future[Long]]]()
     val partitionWrittenBytes = new ConcurrentHashMap[Int, Long]()
     val partitionProcessedFutures = new ConcurrentHashMap[Int, Int]()
     val maxPartitionIdQueued = new AtomicInteger(-1)
@@ -460,7 +460,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         while (currentPartitionToWrite < numPartitions && !Thread.currentThread().isInterrupted) {
           if (currentPartitionToWrite <= maxPartitionIdQueued.get()) {
             var containsLastForThisPartition = false
-            var futures: CopyOnWriteArrayList[Future[(Long, Long)]] = null
+            var futures: CopyOnWriteArrayList[Future[Long]] = null
 
             maxPartitionIdQueued.synchronized {
               futures = partitionFutures.get(currentPartitionToWrite)
@@ -479,9 +479,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 pair._2 >= processedCount
               }).foreach { future =>
                 newFutureTouched = true
-                // remainingQuota is the compressedSize that was held after Writer released
-                // the excess quota (recordSize - compressedSize)
-                val (remainingQuota, compressedSize) = future._1.get()
+                // compressedSize is the quota held after Writer released excess quota
+                val compressedSize = future._1.get()
 
                 // Write newly compressed data incrementally
                 val writtenBytes =
@@ -496,8 +495,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 partitionProcessedFutures.compute(currentPartitionToWrite,
                   (key, value) => { value + 1 })
 
-                // Release the remaining quota (compressedSize) after data is written to disk
-                limiter.release(remainingQuota)
+                // Release quota after data is written to disk
+                limiter.release(compressedSize)
               }
 
               if (containsLastForThisPartition) {
@@ -653,7 +652,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
         // Get or create futures queue for this partition in current batch
         val futures = currentBatch.partitionFutures.computeIfAbsent(reducePartitionId,
-          _ => new CopyOnWriteArrayList[Future[(Long, Long)]]())
+          _ => new CopyOnWriteArrayList[Future[Long]]())
 
         val (cb, recordSize) = incRefCountAndGetSize(value)
 
@@ -699,7 +698,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               }
 
               // Return compressedSize for Merger to release later
-              (compressedSize, compressedSize)
+              compressedSize
             }
           } catch {
             case e: Exception =>
@@ -881,14 +880,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // Disk write savings are recorded by the reducer when reading the data
       }
     } else {
-      // Single batch: extract handle and store in catalog
-      val (handle, lengths) = extractHandleAndLengthsFromWriter(
-        mapOutputWriters.head)
+      // Single batch: use handle already extracted in the write loop
+      // (partialFiles should have exactly one element in single-batch mode)
+      val pf = partialFiles.head
       var offset = 0L
       for (partId <- 0 until numPartitions) {
-        val length = lengths(partId)
+        val length = pf.partitionLengths(partId)
         if (length > 0) {
-          catalog.addPartition(shuffleId, mapId, partId, handle, offset, length)
+          catalog.addPartition(shuffleId, mapId, partId, pf.handle, offset, length)
         }
         accumulatedLengths(partId) = length
         offset += length

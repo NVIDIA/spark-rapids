@@ -3272,7 +3272,7 @@ class ParquetPartitionReader(
           CachedGpuBatchIterator(EmptyTableReader, colTypes)
         } else {
           val parseOpts = getParquetOptions(readDataSchema, clippedParquetSchema, useFieldId)
-          val allocTimeMetric = metrics.getOrElse(BG_ALLOC_TIME, NoopMetric)
+          val allocTimeMetric = metrics.getOrElse(PCR_BG_ALLOC_TIME, NoopMetric)
           val (dataBuffer, _, allocTime) = metrics(BUFFER_TIME).ns {
             readPartFile(currentChunkedBlocks, clippedParquetSchema, filePath)
           }

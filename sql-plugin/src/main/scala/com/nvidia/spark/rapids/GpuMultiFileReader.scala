@@ -910,7 +910,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           val bufGpuIdleTime = metrics.getOrElse(BUFFER_TIME_BUBBLE, NoopMetric)
           val filterGpuIdleTime = metrics.getOrElse(FILTER_TIME_BUBBLE, NoopMetric)
           val scheduleGpuIdleTime = metrics.getOrElse(SCHEDULE_TIME_BUBBLE, NoopMetric)
-          val allocTimeMetric = metrics.getOrElse(BG_ALLOC_TIME, NoopMetric)
+          val allocTimeMetric = metrics.getOrElse(PCR_BG_ALLOC_TIME, NoopMetric)
 
           val fileBufsAndMeta = {
             if (GpuMetric.isTimeMetric(bufTime) &&

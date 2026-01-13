@@ -152,7 +152,8 @@ object GpuMetric extends Logging {
   val PCR_WAIT_BG_TIME = "pcrWaitBgTime"
   val PCR_GET_BUFFER_EXCL_WAIT_TIME = "pcrGetBufferExclWaitTime"
   val PCR_BUFFER_TO_BATCHES_TIME = "pcrBufferToBatchesTime"
-  val BG_ALLOC_TIME = "bgAllocTime"
+  // BG alloc time is a subset of (filter + buffer) time, tracked separately
+  val PCR_BG_ALLOC_TIME = "pcrBgAllocTime"
   // Level 2 (L2) sub-metrics - breakdown of PCR_BUFFER_TO_BATCHES_TIME
   val PCR_L2_GET_PARQUET_OPTIONS_TIME = "pcrL2GetParquetOptionsTime"
   val PCR_L2_MATERIALIZE_HOST_BUFFER_TIME = "pcrL2MaterializeHostBufferTime"
@@ -233,7 +234,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_PCR_WAIT_BG_TIME = "pcr: wait bg"
   val DESCRIPTION_PCR_GET_BUFFER_EXCL_WAIT_TIME = "pcr: get buffer (excl. wait)"
   val DESCRIPTION_PCR_BUFFER_TO_BATCHES_TIME = "pcr: buffer to batches"
-  val DESCRIPTION_BG_ALLOC_TIME = "bg alloc host buffer time"
+  val DESCRIPTION_PCR_BG_ALLOC_TIME = "pcr: bg alloc host buffer"
   val DESCRIPTION_PCR_FINALIZE_BATCH_TIME = "pcr: finalize batch"
   // Level 2 (L2) sub-metric descriptions - breakdown of "buffer to batches"
   val DESCRIPTION_PCR_L2_GET_PARQUET_OPTIONS_TIME = "pcr L2: getParquetOptions"
