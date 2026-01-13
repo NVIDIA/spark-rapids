@@ -779,6 +779,7 @@
             </activation>
             <properties>
                 <buildver>411</buildver>
+                <java.major.version>17</java.major.version>
                 <scala.version>2.13.17</scala.version>
                 <spark.version>${spark411.version}</spark.version>
                 <spark.test.version>${spark411.version}</spark.test.version>
@@ -790,23 +791,25 @@
                 <enforcer.java.versionSpec>[17,)</enforcer.java.versionSpec>
                 <enforcer.java.message>Support for Spark ${spark.version} is only available with Java 17+</enforcer.java.message>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>net.alchim31.maven</groupId>
+                        <artifactId>scala-maven-plugin</artifactId>
+                        <configuration>
+                            <args combine.self="override">
+                                <arg>-release:17</arg>
+                                <arg>-feature</arg>
+                                <arg>-unchecked</arg>
+                                <arg>-deprecation</arg>
+                            </args>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>delta-lake/delta-stub</module>
             </modules>
-            <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>net.alchim31.maven</groupId>
-                            <artifactId>scala-maven-plugin</artifactId>
-                            <configuration>
-                                <release combine.self="override"/>
-                                <target>${java.major.version}</target>
-                            </configuration>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
-            </build>
         </profile>
         <!-- #endif scala-2.13 -->
         <profile>
