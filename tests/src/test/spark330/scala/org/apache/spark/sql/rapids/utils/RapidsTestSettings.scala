@@ -36,6 +36,12 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32828: cast from a derived user-defined type to a base type", WONT_FIX_ISSUE("User-defined types are not supported"))
     .exclude("cast string to timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/blob/main/docs/compatibility.md#string-to-timestamp"))
     .exclude("cast string to date", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10771"))
+  enableSuite[RapidsCollectionExpressionsSuite]
+    .exclude("Flatten", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14127"))
+    .exclude("MapFromEntries", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14128"))
+    .exclude("Array Intersect", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
+    .exclude("Array remove", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14129"))
+    .exclude("Shuffle", ADJUST_UT("Replaced by testRapids version that adjusts the expected results to match the running by --master local[2]."))
   enableSuite[RapidsDataFrameAggregateSuite]
     .exclude("collect functions", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("collect functions structs", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
