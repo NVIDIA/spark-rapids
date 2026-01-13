@@ -92,6 +92,8 @@ object GpuCpuBridgeThreadPool extends Logging {
   
   // Lazy initialization of the thread pool
   @volatile private var threadPool: Option[ThreadPoolExecutor] = None
+  @volatile private var hasShutdown: Boolean = false
+  @volatile private var shutdownHookRegistered: Boolean = false
   private val lock = new Object()
   
   /**
@@ -136,12 +138,22 @@ object GpuCpuBridgeThreadPool extends Logging {
   /**
    * Get the shared thread pool, creating it if necessary.
    * The pool size is based on configured task slots rather than CPU cores.
+   * 
+   * @throws IllegalStateException if the thread pool has been shut down
    */
   def getThreadPool: ThreadPoolExecutor = {
+    if (hasShutdown) {
+      throw new IllegalStateException("Cannot get thread pool after it has been shut down")
+    }
+    
     threadPool match {
       case Some(pool) => pool
       case None =>
         lock.synchronized {
+          if (hasShutdown) {
+            throw new IllegalStateException("Cannot get thread pool after it has been shut down")
+          }
+          
           threadPool match {
             case Some(pool) => pool
             case None =>
@@ -164,10 +176,13 @@ object GpuCpuBridgeThreadPool extends Logging {
               
               threadPool = Some(newPool)
               
-              // Register JVM shutdown hook to clean up the thread pool
-              Runtime.getRuntime.addShutdownHook(new Thread("gpu-cpu-bridge-shutdown") {
-                override def run(): Unit = shutdown()
-              })
+              // Register JVM shutdown hook only once
+              if (!shutdownHookRegistered) {
+                Runtime.getRuntime.addShutdownHook(new Thread("gpu-cpu-bridge-shutdown") {
+                  override def run(): Unit = shutdown()
+                })
+                shutdownHookRegistered = true
+              }
               
               newPool
           }
@@ -227,21 +242,31 @@ object GpuCpuBridgeThreadPool extends Logging {
   
   /**
    * Shutdown the thread pool gracefully.
+   * After calling this method, any attempts to get the thread pool will throw an exception.
    */
   def shutdown(): Unit = {
-    threadPool.foreach { pool =>
-      logInfo("Shutting down CPU bridge thread pool")
-      pool.shutdown()
-      try {
-        if (!pool.awaitTermination(5, TimeUnit.SECONDS)) {
-          logWarning("Thread pool did not terminate gracefully, forcing shutdown")
-          pool.shutdownNow()
-        }
-      } catch {
-        case _: InterruptedException =>
-          logWarning("Interrupted while waiting for thread pool shutdown")
-          pool.shutdownNow()
+    lock.synchronized {
+      if (hasShutdown) {
+        return // Already shut down
       }
+      
+      threadPool.foreach { pool =>
+        logInfo("Shutting down CPU bridge thread pool")
+        pool.shutdown()
+        try {
+          if (!pool.awaitTermination(5, TimeUnit.SECONDS)) {
+            logWarning("Thread pool did not terminate gracefully, forcing shutdown")
+            pool.shutdownNow()
+          }
+        } catch {
+          case _: InterruptedException =>
+            logWarning("Interrupted while waiting for thread pool shutdown")
+            pool.shutdownNow()
+        }
+      }
+      
+      threadPool = None
+      hasShutdown = true
     }
   }
 }

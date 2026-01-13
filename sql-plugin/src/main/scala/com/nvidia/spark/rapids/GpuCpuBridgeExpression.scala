@@ -285,14 +285,14 @@ case class GpuCpuBridgeExpression(
           // Time the actual CPU processing on this thread
           val processingStartTime = System.nanoTime()
           val result = try {
-            evaluationFunction(rowIterator, subBatchInput.numRows())
+            evaluationFunction(rowIterator, subBatchSize)
           } finally {
             val processingTime = System.nanoTime() - processingStartTime
             cpuBridgeProcessingTime.foreach(_.add(processingTime))
           }
 
           // Convert result to spillable format
-          val resultBatch = new ColumnarBatch(Array(result), subBatchInput.numRows())
+          val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
           SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         }
       }
@@ -326,14 +326,15 @@ case class GpuCpuBridgeExpression(
     var cleanupFailure: Option[Throwable] = None
     uncancelledFutures.foreach { case (future, _) =>
       try {
-        // Wait with a short timeout for the future to complete
-        // If it times out, we'll have to accept the potential leak
-        val spillableResult = future.get(100, TimeUnit.MILLISECONDS)
+        // Wait up to 1 second for the future to complete
+        // Sub-batches are small so should finish quickly
+        // If it times out, the leak will eventually be recovered
+        val spillableResult = future.get(1, TimeUnit.SECONDS)
         spillableResult.close() // Clean up the spillable result
       } catch {
         case _: java.util.concurrent.TimeoutException =>
           logWarning("Timed out waiting for future completion during cleanup. " +
-            "Potential resource leak.")
+            "Resource will be recovered eventually.")
         case _: java.util.concurrent.CancellationException =>
           // Future was cancelled after all, no cleanup needed
         case t: Throwable =>
