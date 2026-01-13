@@ -267,12 +267,14 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
     codec.foreach { expectedCodec =>
       assert(conf.get("spark.shuffle.compress", "true") == "true",
         "Shuffle compression should be enabled")
-      assert(conf.get("spark.io.compression.codec", "lz4") == expectedCodec,
-        s"Expected compression codec $expectedCodec but got ${conf.get("spark.io.compression.codec", "lz4")}")
+      val actualCodec = conf.get("spark.io.compression.codec", "lz4")
+      assert(actualCodec == expectedCodec,
+        s"Expected compression codec $expectedCodec but got $actualCodec")
     }
     if (codec.isEmpty) {
-      assert(conf.get("spark.shuffle.compress", "true") == "false",
-        s"Shuffle compression should be disabled, but got ${conf.get("spark.shuffle.compress", "true")}")
+      val compressEnabled = conf.get("spark.shuffle.compress", "true")
+      assert(compressEnabled == "false",
+        s"Shuffle compression should be disabled, but got $compressEnabled")
     }
 
     // Create data that will produce multiple batches when shuffled
