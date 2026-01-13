@@ -65,10 +65,9 @@ trait GpuPartitioning extends Partitioning {
 
   def sliceInternalOnGpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
-    // The first index will always be 0, and the last index is the total row count,
-    // so we need to skip both.
+    // The first index will always be 0, so we need to skip it.
     val batches = if (numRows > 0) {
-      val parts = partitionIndexes.slice(1, partitionIndexes.length - 1)
+      val parts = partitionIndexes.slice(1, partitionIndexes.length)
       closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
         val contiguousTables = withResource(partitionColumns) { _ =>
           withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
@@ -208,9 +207,8 @@ trait GpuPartitioning extends Partitioning {
     partitionColumns.foreach(_.getBase.getNullCount)
     val (dataHost, offsetsHost) = withResource(partitionColumns) { _ =>
       withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
-        // Drop first element (always 0) and last element (total row count)
-        val slicePoints = partitionIndexes.slice(1, partitionIndexes.length - 1)
-        withResource(gpuSplitAndSerialize(table, slicePoints: _*)) { dmbs =>
+        withResource(gpuSplitAndSerialize(table,
+          partitionIndexes.tail: _*)) { dmbs =>
           val data = dmbs(0)
           val offsets = dmbs(1)
           closeOnExcept(Seq(HostMemoryBuffer.allocate(data.getLength),

@@ -210,7 +210,9 @@ case class GpuRangePartitioner(
     }
 
     withResource(partedTable) { partedTable =>
-      val parts = partedTable.getPartitions
+      // Table.partition() returns numPartitions + 1 elements (last is total row count),
+      // but downstream code expects numPartitions elements, so drop the last one
+      val parts = partedTable.getPartitions.dropRight(1)
       val tp = partedTable.getTable
       val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(types).map {
         case (index, sparkType) =>
