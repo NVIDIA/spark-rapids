@@ -158,7 +158,7 @@ object AllocationRetryCoverageTracker extends Logging {
       // Not in any retry block - this is an uncovered allocation
       kind.toString
     } else if (retryDepth > 1) {
-      // In nested retry blocks (depth > 1) - this may cause repeated retries
+      // In nested retry blocks (depth > 1) - nested retries can cause cascading retry attempts and reduced performance
       "NESTED"
     } else {
       // Properly covered by exactly one retry block - no need to log
