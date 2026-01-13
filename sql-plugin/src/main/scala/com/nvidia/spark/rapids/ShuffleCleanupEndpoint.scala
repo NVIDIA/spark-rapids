@@ -80,21 +80,21 @@ class ShuffleCleanupEndpoint(
     
     // Add shutdown hook to ensure finalCleanup is called on JVM termination
     synchronized {
-      if (!shutdownHookAdded) {
-        shutdownHookAdded = true
-        Runtime.getRuntime.addShutdownHook(new Thread("rapids-shuffle-cleanup-shutdown") {
-          override def run(): Unit = {
-            if (!closed) {
-              logInfo("Shutdown hook triggered, performing final cleanup")
-              try {
-                finalCleanup()
-              } catch {
-                case e: Exception =>
-                  logWarning("Error during shutdown hook cleanup", e)
-              }
+    if (!shutdownHookAdded) {
+      shutdownHookAdded = true
+      Runtime.getRuntime.addShutdownHook(new Thread("rapids-shuffle-cleanup-shutdown") {
+        override def run(): Unit = {
+          if (!closed) {
+            logInfo("Shutdown hook triggered, performing final cleanup")
+            try {
+              finalCleanup()
+            } catch {
+              case e: Exception =>
+                logWarning("Error during shutdown hook cleanup", e)
             }
           }
-        })
+        }
+      })
       }
     }
   }

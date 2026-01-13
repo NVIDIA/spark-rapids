@@ -69,12 +69,15 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
    * Required because partialFileBufferMaxSize is .startupOnly() config.
    *
    * @param maxBufferSize The max buffer size (e.g., "1m", "6m")
-   * @param compressionCodec Optional shuffle compression codec (lz4, lzf, snappy, zstd)
+   * @param compressionCodec Compression setting:
+   *                         - null: use Spark default (compression enabled, default codec)
+   *                         - Some(codec): enable compression with specific codec
+   *                         - None: explicitly disable compression
    * @param batchSize GPU batch size (default "5m")
    */
   private def createSessionWithConfig(
       maxBufferSize: String,
-      compressionCodec: Option[String] = None,
+      compressionCodec: Option[String] = null,
       batchSize: String = "5m"): Unit = {
     if (spark != null) {
       spark.stop()
@@ -99,11 +102,18 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
       .set("spark.rapids.memory.host.partialFileBufferMaxSize", maxBufferSize)
       .set("spark.rapids.sql.batchSizeBytes", batchSize)
 
-    // Set compression codec if specified
-    compressionCodec.foreach { codec =>
-      conf.set("spark.shuffle.compress", "true")
-      conf.set("spark.io.compression.codec", codec)
+    // Set compression configuration
+    // null = use Spark default, Some(codec) = specific codec, None = disable compression
+    if (compressionCodec != null) {
+      compressionCodec match {
+        case Some(codec) =>
+          conf.set("spark.shuffle.compress", "true")
+          conf.set("spark.io.compression.codec", codec)
+        case None =>
+          conf.set("spark.shuffle.compress", "false")
+      }
     }
+    // When compressionCodec is null, don't set any compression config (use Spark defaults)
 
     spark = SparkSession.builder().config(conf).getOrCreate()
 
@@ -112,7 +122,7 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
     spark.sparkContext.addSparkListener(eventListener)
   }
 
-  /** Backwards-compatible helper */
+  /** Backwards-compatible helper - uses default compression */
   private def createSessionWithBufferConfig(maxBufferSize: String): Unit = {
     createSessionWithConfig(maxBufferSize)
   }
@@ -240,15 +250,30 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
   /**
    * Run a shuffle query that generates multiple segments (batches) and verify correctness.
    * Uses small batch size to force multiple batches per task.
+   *
+   * @param codec Compression codec name (lz4, snappy, zstd) or None for no compression
    */
-  private def runMultiSegmentShuffleTest(codec: String): Unit = {
+  private def runMultiSegmentShuffleTest(codec: Option[String]): Unit = {
     // Use small batch size (1MB) to force multiple segments per shuffle task
     // With 6MB max buffer, data will stay in memory
     createSessionWithConfig(
       maxBufferSize = "6m",
-      compressionCodec = Some(codec),
+      compressionCodec = codec,
       batchSize = "1m"  // Small batch = more segments
     )
+
+    // Assert the compression configuration is as expected
+    val conf = spark.sparkContext.getConf
+    codec.foreach { expectedCodec =>
+      assert(conf.get("spark.shuffle.compress", "true") == "true",
+        "Shuffle compression should be enabled")
+      assert(conf.get("spark.io.compression.codec", "lz4") == expectedCodec,
+        s"Expected compression codec $expectedCodec but got ${conf.get("spark.io.compression.codec", "lz4")}")
+    }
+    if (codec.isEmpty) {
+      assert(conf.get("spark.shuffle.compress", "true") == "false",
+        s"Shuffle compression should be disabled, but got ${conf.get("spark.shuffle.compress", "true")}")
+    }
 
     // Create data that will produce multiple batches when shuffled
     val df1 = spark.range(0, 1000000, 1, 4)
@@ -271,48 +296,32 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
       .collect()
 
     // Verify we got results (correctness check)
-    assert(result.length == 1000, s"Expected 1000 distinct str_col values with codec $codec")
+    val codecDesc = codec.getOrElse("no compression")
+    assert(result.length == 1000, s"Expected 1000 distinct str_col values with $codecDesc")
     assert(result.map(_.getLong(1)).sum == 1000000,
-      s"Total count should be 1M with codec $codec")
+      s"Total count should be 1M with $codecDesc")
 
     // Wait for events
     Thread.sleep(2000)
 
     val events = eventListener.getEvents
-    assert(events.nonEmpty, s"Should have shuffle events with codec $codec")
-  }
-
-  test("multi-segment shuffle with lz4 compression") {
-    runMultiSegmentShuffleTest("lz4")
-  }
-
-  test("multi-segment shuffle with snappy compression") {
-    runMultiSegmentShuffleTest("snappy")
-  }
-
-  test("multi-segment shuffle with zstd compression") {
-    runMultiSegmentShuffleTest("zstd")
+    assert(events.nonEmpty, s"Should have shuffle events with $codecDesc")
   }
 
   test("multi-segment shuffle without compression") {
-    // Test with compression disabled
-    createSessionWithConfig(
-      maxBufferSize = "6m",
-      compressionCodec = None,
-      batchSize = "1m"
-    )
-    spark.conf.set("spark.shuffle.compress", "false")
-
-    val df = spark.range(0, 500000, 1, 4)
-      .selectExpr("id", "id % 100 as group_key")
-      .groupBy("group_key")
-      .count()
-      .collect()
-
-    assert(df.length == 100, "Should have 100 groups")
-
-    Thread.sleep(2000)
-    val events = eventListener.getEvents
-    assert(events.nonEmpty, "Should have shuffle events without compression")
+    runMultiSegmentShuffleTest(None)
   }
+
+  test("multi-segment shuffle with lz4 compression") {
+    runMultiSegmentShuffleTest(Some("lz4"))
+  }
+
+  test("multi-segment shuffle with snappy compression") {
+    runMultiSegmentShuffleTest(Some("snappy"))
+  }
+
+  test("multi-segment shuffle with zstd compression") {
+    runMultiSegmentShuffleTest(Some("zstd"))
+  }
+
 }

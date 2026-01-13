@@ -363,7 +363,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     mapOutputWriter: ShuffleMapOutputWriter,
     partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
     partitionFutures: ConcurrentHashMap[Int,
-      CopyOnWriteArrayList[Future[Long]]],
+      CopyOnWriteArrayList[Future[(Long, Long)]]],
     partitionWrittenBytes: ConcurrentHashMap[Int, Long],
     partitionProcessedFutures: ConcurrentHashMap[Int, Int],
     maxPartitionIdQueued: AtomicInteger,
@@ -412,7 +412,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
     val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
     val partitionFutures = new ConcurrentHashMap[Int,
-      CopyOnWriteArrayList[Future[Long]]]()
+      CopyOnWriteArrayList[Future[(Long, Long)]]]()
     val partitionWrittenBytes = new ConcurrentHashMap[Int, Long]()
     val partitionProcessedFutures = new ConcurrentHashMap[Int, Int]()
     val maxPartitionIdQueued = new AtomicInteger(-1)
@@ -460,7 +460,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         while (currentPartitionToWrite < numPartitions && !Thread.currentThread().isInterrupted) {
           if (currentPartitionToWrite <= maxPartitionIdQueued.get()) {
             var containsLastForThisPartition = false
-            var futures: CopyOnWriteArrayList[Future[Long]] = null
+            var futures: CopyOnWriteArrayList[Future[(Long, Long)]] = null
 
             maxPartitionIdQueued.synchronized {
               futures = partitionFutures.get(currentPartitionToWrite)
@@ -479,8 +479,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 pair._2 >= processedCount
               }).foreach { future =>
                 newFutureTouched = true
-                // compressedSize is the quota held after Writer released excess quota
-                val compressedSize = future._1.get()
+                // Get (compressedSize, quotaToRelease) from compression task
+                val (compressedSize, quotaToRelease) = future._1.get()
 
                 // Write newly compressed data incrementally
                 val writtenBytes =
@@ -496,7 +496,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   (key, value) => { value + 1 })
 
                 // Release quota after data is written to disk
-                limiter.release(compressedSize)
+                limiter.release(quotaToRelease)
               }
 
               if (containsLastForThisPartition) {
@@ -652,7 +652,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
         // Get or create futures queue for this partition in current batch
         val futures = currentBatch.partitionFutures.computeIfAbsent(reducePartitionId,
-          _ => new CopyOnWriteArrayList[Future[Long]]())
+          _ => new CopyOnWriteArrayList[Future[(Long, Long)]]())
 
         val (cb, recordSize) = incRefCountAndGetSize(value)
 
@@ -689,16 +689,21 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               val compressedSize = (buffer.getCount - originLength).toLong
               totalCompressedSize.addAndGet(compressedSize)
 
-              // Release excess quota immediately after compression.
-              // Data is now in OpenByteArrayOutputStream (heap), only need to hold
-              // compressedSize quota until Merger writes to disk.
+              // Release excess quota immediately after compression if compression helped.
+              // Return (compressedSize, quotaToRelease) for Merger:
+              // - compressedSize: actual data size to write
+              // - quotaToRelease: remaining quota to release after disk write
               val excessQuota = recordSize - compressedSize
               if (excessQuota > 0) {
+                // Compression reduced size, release excess immediately
                 limiter.release(excessQuota)
+                // Merger will release compressedSize later
+                (compressedSize, compressedSize)
+              } else {
+                // Compression didn't help (or made it worse), no early release
+                // Merger will release full recordSize later
+                (compressedSize, recordSize)
               }
-
-              // Return compressedSize for Merger to release later
-              compressedSize
             }
           } catch {
             case e: Exception =>
