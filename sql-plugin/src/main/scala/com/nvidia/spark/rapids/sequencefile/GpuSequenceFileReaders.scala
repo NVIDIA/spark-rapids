@@ -176,6 +176,21 @@ class GpuSequenceFilePartitionReader(
     // Step 3: Parse on GPU using CUDA kernel
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
+    // Handle count-only queries (neither key nor value requested)
+    if (!wantsKey && !wantsValue) {
+      // Just count records - don't parse data
+      val numRows = withResource(deviceBuffer) { devBuf =>
+        decodeMetric.ns {
+          SequenceFile.countRecords(devBuf, dataSize, header.syncMarker).toInt
+        }
+      }
+      // Return batch with correct row count but no data columns
+      val cols: Array[SparkVector] = requiredSchema.fields.map { f =>
+        GpuColumnVector.fromNull(numRows, f.dataType)
+      }
+      return Some(new ColumnarBatch(cols, numRows))
+    }
+
     val columns = withResource(deviceBuffer) { devBuf =>
       decodeMetric.ns {
         SequenceFile.parseSequenceFile(
