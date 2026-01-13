@@ -1270,8 +1270,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
 
     metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
       metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
-        metrics.getOrElse(DEBUG_INIT_FILTER_TIME, NoopMetric).ns {
-          val metaAndFilesArr = if (numFilesFilterParallel > 0) {
+        val metaAndFilesArr = if (numFilesFilterParallel > 0) {
           val tc = TaskContext.get()
           val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
           files.grouped(numFilesFilterParallel).map { fileGroup =>
@@ -1306,7 +1305,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
               new ParquetExtraInfo(singleFileInfo.dateRebaseMode,
                 singleFileInfo.timestampRebaseMode,
                 singleFileInfo.hasInt96Timestamps)))
-        }
         }
       }
     }
@@ -2920,25 +2918,28 @@ class MultiFileCloudParquetPartitionReader(
 
       // we have to add partition values here for this batch, we already verified that
       // its not different for all the blocks in this batch
-      val addPartValuesMetric =
-        execMetrics.getOrElse(DEBUG_RBTB_ADD_PARTITION_VALUES_TIME, NoopMetric)
-      addPartValuesMetric.ns {
-        meta.allPartValues match {
-          case Some(partRowsAndValues) =>
-            val (rowsPerPart, partValues) = partRowsAndValues.unzip
-            BatchWithPartitionDataUtils.addPartitionValuesToBatch(origBatch, rowsPerPart,
-              partValues, partitionSchema, maxGpuColumnSizeBytes)
-          case None =>
-            BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(origBatch,
-              meta.partitionedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
-        }
+      val finalizeBatchMetric =
+        execMetrics.getOrElse(PCR_FINALIZE_BATCH_TIME, NoopMetric)
+      // Wrap the iterator to measure time for finalizing batch output
+      val inner = meta.allPartValues match {
+        case Some(partRowsAndValues) =>
+          val (rowsPerPart, partValues) = partRowsAndValues.unzip
+          BatchWithPartitionDataUtils.addPartitionValuesToBatch(origBatch, rowsPerPart,
+            partValues, partitionSchema, maxGpuColumnSizeBytes)
+        case None =>
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(origBatch,
+            meta.partitionedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+      }
+      new Iterator[ColumnarBatch] {
+        override def hasNext: Boolean = inner.hasNext
+        override def next(): ColumnarBatch = finalizeBatchMetric.ns { inner.next() }
       }
 
     case buffer: HostMemoryBuffersWithMetaData =>
       val memBuffersAndSize = buffer.memBuffersAndSizes
       val hmbAndInfo = memBuffersAndSize.head
       val debugReadBufferToBatchesMetric =
-        metrics.getOrElse(DEBUG_READ_BUFFER_TO_BATCHES_TIME, NoopMetric)
+        metrics.getOrElse(PCR_BUFFER_TO_BATCHES_TIME, NoopMetric)
       val batchIter = try {
         debugReadBufferToBatchesMetric.ns {
           readBufferToBatches(buffer.dateRebaseMode,
@@ -2975,7 +2976,7 @@ class MultiFileCloudParquetPartitionReader(
       allPartValues: Option[Array[(Long, InternalRow)]]): Iterator[ColumnarBatch] = {
 
     val debugGetParquetOptionsMetric =
-      metrics.getOrElse(DEBUG_RBTB_GET_PARQUET_OPTIONS_TIME, NoopMetric)
+      metrics.getOrElse(PCR_L2_GET_PARQUET_OPTIONS_TIME, NoopMetric)
     val parseOpts = debugGetParquetOptionsMetric.ns {
       closeOnExcept(hostBuffers) { _ =>
         getParquetOptions(readDataSchema, clippedSchema, useFieldId)
@@ -2986,7 +2987,7 @@ class MultiFileCloudParquetPartitionReader(
     withResource(hostBuffers) { _ =>
       RmmRapidsRetryIterator.withRetryNoSplit {
         // The MakeParquetTableProducer will close the input buffers
-        val hostBufs = metrics.getOrElse(DEBUG_RBTB_MATERIALIZE_HOST_BUFFER_TIME, NoopMetric).ns {
+        val hostBufs = metrics.getOrElse(PCR_L2_MATERIALIZE_HOST_BUFFER_TIME, NoopMetric).ns {
           hostBuffers.safeMap(_.getDataHostBuffer())
         }
         // Duplicate request is ok, and start to use the GPU just after the host
@@ -2994,7 +2995,7 @@ class MultiFileCloudParquetPartitionReader(
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         val debugMakeProducerMetric =
-          metrics.getOrElse(DEBUG_RBTB_MAKE_PRODUCER_TIME, NoopMetric)
+          metrics.getOrElse(PCR_L2_MAKE_PRODUCER_TIME, NoopMetric)
         val tableReader = debugMakeProducerMetric.ns {
           MakeParquetTableProducer(useChunkedReader,
             maxChunkedReaderMemoryUsageSizeBytes,
@@ -3006,29 +3007,32 @@ class MultiFileCloudParquetPartitionReader(
             debugDumpPrefix, debugDumpAlways)
         }
 
-        val tableToBatchMetric = metrics.getOrElse(DEBUG_RBTB_TABLE_TO_BATCH_TIME, NoopMetric)
+        val tableToBatchMetric = metrics.getOrElse(PCR_L2_TABLE_TO_BATCH_TIME, NoopMetric)
         val debugCachedIterApplyMetric =
-          metrics.getOrElse(DEBUG_RBTB_CACHED_ITER_APPLY_TIME, NoopMetric)
+          metrics.getOrElse(PCR_L2_CACHED_ITER_APPLY_TIME, NoopMetric)
         val batchIter = debugCachedIterApplyMetric.ns {
           CachedGpuBatchIterator(tableReader, colTypes, tableToBatchMetric)
         }
 
-        val addPartValuesMetric =
-          metrics.getOrElse(DEBUG_RBTB_ADD_PARTITION_VALUES_TIME, NoopMetric)
+        val finalizeBatchMetric =
+          metrics.getOrElse(PCR_FINALIZE_BATCH_TIME, NoopMetric)
         if (allPartValues.isDefined) {
           val allPartInternalRows = allPartValues.get.map(_._2)
           val rowsPerPartition = allPartValues.get.map(_._1)
           new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
-            rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes, addPartValuesMetric)
+            rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes, finalizeBatchMetric)
         } else {
           // this is a bit weird, we don't have number of rows when allPartValues isn't
           // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
           batchIter.flatMap { batch =>
             // we have to add partition values here for this batch, we already verified that
             // its not different for all the blocks in this batch
-            addPartValuesMetric.ns {
-              BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
-                partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+            // Wrap to measure finalize batch time
+            val inner = BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+              partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+            new Iterator[ColumnarBatch] {
+              override def hasNext: Boolean = inner.hasNext
+              override def next(): ColumnarBatch = finalizeBatchMetric.ns { inner.next() }
             }
           }
         }
@@ -3098,12 +3102,12 @@ object MakeParquetTableProducer extends Logging {
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
-      val evolveSchemaMetric = metrics.getOrElse(DEBUG_RBTB_EVOLVE_SCHEMA_TIME, NoopMetric)
+      val evolveSchemaMetric = metrics.getOrElse(PCR_L2_EVOLVE_SCHEMA_TIME, NoopMetric)
       val evolvedSchemaTable = evolveSchemaMetric.ns {
         ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
           clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
       }
-      val rebaseMetric = metrics.getOrElse(DEBUG_RBTB_REBASE_TIME, NoopMetric)
+      val rebaseMetric = metrics.getOrElse(PCR_L2_REBASE_TIME, NoopMetric)
       val outputTable = rebaseMetric.ns {
         GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode,
           timestampRebaseMode)
@@ -3163,12 +3167,12 @@ case class ParquetTableReader(
       }
     }
     metrics(NUM_OUTPUT_BATCHES) += 1
-    val evolveSchemaMetric = metrics.getOrElse(DEBUG_RBTB_EVOLVE_SCHEMA_TIME, NoopMetric)
+    val evolveSchemaMetric = metrics.getOrElse(PCR_L2_EVOLVE_SCHEMA_TIME, NoopMetric)
     val evolvedSchemaTable = evolveSchemaMetric.ns {
       ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
         clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
     }
-    val rebaseMetric = metrics.getOrElse(DEBUG_RBTB_REBASE_TIME, NoopMetric)
+    val rebaseMetric = metrics.getOrElse(PCR_L2_REBASE_TIME, NoopMetric)
     rebaseMetric.ns {
       GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode, timestampRebaseMode)
     }

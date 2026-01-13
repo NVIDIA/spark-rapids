@@ -141,28 +141,32 @@ object GpuMetric extends Logging {
   val ASYNC_READ_TIME = "shuffleAsyncReadTime"
 
   // ==========================================================================
-  // Debug metrics for scan time breakdown
-  // Scan Time = DEBUG_INIT_READERS_TIME + DEBUG_INIT_FILTER_TIME
-  //           + DEBUG_BATCH_ITER_NEXT_TIME + DEBUG_WAIT_BG_TIME
-  //           + DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME + DEBUG_READ_BUFFER_TO_BATCHES_TIME
+  // Debug metrics for scan time breakdown (Parquet Cloud Reader)
+  // Scan Time = PCR_INIT_READERS_TIME + PCR_BATCH_ITER_NEXT_TIME
+  //           + PCR_WAIT_BG_TIME + PCR_GET_BUFFER_EXCL_WAIT_TIME
+  //           + PCR_BUFFER_TO_BATCHES_TIME + PCR_FINALIZE_BATCH_TIME
   // ==========================================================================
-  // Top level metrics
-  val DEBUG_INIT_READERS_TIME = "debugInitReadersTime"
-  val DEBUG_INIT_FILTER_TIME = "debugInitFilterTime"
-  val DEBUG_BATCH_ITER_NEXT_TIME = "debugBatchIterNextTime"
-  val DEBUG_WAIT_BG_TIME = "debugWaitBgTime"
-  val DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME = "debugGetNextBufferExclWaitTime"
-  val DEBUG_READ_BUFFER_TO_BATCHES_TIME = "debugReadBufferToBatchesTime"
+  // Top level (L1) metrics for Parquet Cloud Reader (pcr)
+  val PCR_INIT_READERS_TIME = "pcrInitReadersTime"
+  val PCR_BATCH_ITER_NEXT_TIME = "pcrBatchIterNextTime"
+  val PCR_WAIT_BG_TIME = "pcrWaitBgTime"
+  val PCR_GET_BUFFER_EXCL_WAIT_TIME = "pcrGetBufferExclWaitTime"
+  val PCR_BUFFER_TO_BATCHES_TIME = "pcrBufferToBatchesTime"
   val BG_ALLOC_TIME = "bgAllocTime"
-  // Sub-metrics of DEBUG_READ_BUFFER_TO_BATCHES_TIME (RBTB = Read Buffer To Batches)
-  val DEBUG_RBTB_GET_PARQUET_OPTIONS_TIME = "debugRbtbGetParquetOptionsTime"
-  val DEBUG_RBTB_MATERIALIZE_HOST_BUFFER_TIME = "debugRbtbMaterializeHostBufferTime"
-  val DEBUG_RBTB_MAKE_PRODUCER_TIME = "debugRbtbMakeProducerTime"
-  val DEBUG_RBTB_CACHED_ITER_APPLY_TIME = "debugRbtbCachedIterApplyTime"
-  val DEBUG_RBTB_TABLE_TO_BATCH_TIME = "debugRbtbTableToBatchTime"
-  val DEBUG_RBTB_EVOLVE_SCHEMA_TIME = "debugRbtbEvolveSchemaTime"
-  val DEBUG_RBTB_REBASE_TIME = "debugRbtbRebaseTime"
-  val DEBUG_RBTB_ADD_PARTITION_VALUES_TIME = "debugRbtbAddPartitionValuesTime"
+  // Level 2 (L2) sub-metrics - breakdown of PCR_BUFFER_TO_BATCHES_TIME
+  val PCR_L2_GET_PARQUET_OPTIONS_TIME = "pcrL2GetParquetOptionsTime"
+  val PCR_L2_MATERIALIZE_HOST_BUFFER_TIME = "pcrL2MaterializeHostBufferTime"
+  val PCR_L2_MAKE_PRODUCER_TIME = "pcrL2MakeProducerTime"
+  val PCR_L2_CACHED_ITER_APPLY_TIME = "pcrL2CachedIterApplyTime"
+  val PCR_L2_TABLE_TO_BATCH_TIME = "pcrL2TableToBatchTime"
+  val PCR_L2_EVOLVE_SCHEMA_TIME = "pcrL2EvolveSchemaTime"
+  val PCR_L2_REBASE_TIME = "pcrL2RebaseTime"
+  // This metric tracks the time to finalize batch output, including:
+  // - getting batch from CachedGpuBatchIterator (may involve spill recovery)
+  // - computing partition values
+  // - merging partition data with batch
+  // Note: This happens AFTER readBufferToBatches returns (lazy evaluation)
+  val PCR_FINALIZE_BATCH_TIME = "pcrFinalizeBatchTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -219,27 +223,26 @@ object GpuMetric extends Logging {
   val DESCRIPTION_ASYNC_READ_TIME = "async read time"
 
   // ==========================================================================
-  // Debug metric descriptions for scan time breakdown
+  // Metric descriptions for Parquet Cloud Reader (pcr) time breakdown
+  // pcr = Parquet Cloud Reader (multi-threaded reader)
+  // L2 = Level 2 sub-metrics (breakdown of "buffer to batches")
   // ==========================================================================
-  // Top level descriptions
-  val DESCRIPTION_DEBUG_INIT_READERS_TIME = "debug: init readers time"
-  val DESCRIPTION_DEBUG_INIT_FILTER_TIME = "debug: init filter blocks time"
-  val DESCRIPTION_DEBUG_BATCH_ITER_NEXT_TIME = "debug: batch iter next time"
-  val DESCRIPTION_DEBUG_WAIT_BG_TIME = "debug: wait for background threads time"
-  val DESCRIPTION_DEBUG_GET_NEXT_BUFFER_EXCL_WAIT_TIME =
-    "debug: getNextBuffersAndMeta time (excl. wait)"
-  val DESCRIPTION_DEBUG_READ_BUFFER_TO_BATCHES_TIME = "debug: readBufferToBatches time"
+  // Top level (L1) descriptions
+  val DESCRIPTION_PCR_INIT_READERS_TIME = "pcr: init readers"
+  val DESCRIPTION_PCR_BATCH_ITER_NEXT_TIME = "pcr: batch iter next"
+  val DESCRIPTION_PCR_WAIT_BG_TIME = "pcr: wait bg"
+  val DESCRIPTION_PCR_GET_BUFFER_EXCL_WAIT_TIME = "pcr: get buffer (excl. wait)"
+  val DESCRIPTION_PCR_BUFFER_TO_BATCHES_TIME = "pcr: buffer to batches"
   val DESCRIPTION_BG_ALLOC_TIME = "bg alloc host buffer time"
-  // Sub-metric descriptions (RBTB = Read Buffer To Batches)
-  val DESCRIPTION_DEBUG_RBTB_GET_PARQUET_OPTIONS_TIME = "debug: rbtb: getParquetOptions time"
-  val DESCRIPTION_DEBUG_RBTB_MATERIALIZE_HOST_BUFFER_TIME =
-    "debug: rbtb: materialize host buffer time"
-  val DESCRIPTION_DEBUG_RBTB_MAKE_PRODUCER_TIME = "debug: rbtb: MakeParquetTableProducer time"
-  val DESCRIPTION_DEBUG_RBTB_CACHED_ITER_APPLY_TIME = "debug: rbtb: CachedGpuBatchIterator.apply"
-  val DESCRIPTION_DEBUG_RBTB_TABLE_TO_BATCH_TIME = "debug: rbtb: table to batch time"
-  val DESCRIPTION_DEBUG_RBTB_EVOLVE_SCHEMA_TIME = "debug: rbtb: evolveSchemaIfNeededAndClose"
-  val DESCRIPTION_DEBUG_RBTB_REBASE_TIME = "debug: rbtb: rebaseDateTime time"
-  val DESCRIPTION_DEBUG_RBTB_ADD_PARTITION_VALUES_TIME = "debug: rbtb: add partition values time"
+  val DESCRIPTION_PCR_FINALIZE_BATCH_TIME = "pcr: finalize batch"
+  // Level 2 (L2) sub-metric descriptions - breakdown of "buffer to batches"
+  val DESCRIPTION_PCR_L2_GET_PARQUET_OPTIONS_TIME = "pcr L2: getParquetOptions"
+  val DESCRIPTION_PCR_L2_MATERIALIZE_HOST_BUFFER_TIME = "pcr L2: materialize host buffer"
+  val DESCRIPTION_PCR_L2_MAKE_PRODUCER_TIME = "pcr L2: MakeParquetTableProducer"
+  val DESCRIPTION_PCR_L2_CACHED_ITER_APPLY_TIME = "pcr L2: CachedGpuBatchIterator.apply"
+  val DESCRIPTION_PCR_L2_TABLE_TO_BATCH_TIME = "pcr L2: table to batch"
+  val DESCRIPTION_PCR_L2_EVOLVE_SCHEMA_TIME = "pcr L2: evolveSchema"
+  val DESCRIPTION_PCR_L2_REBASE_TIME = "pcr L2: rebaseDateTime"
 
   /**
    * Determine if a GpuMetric wraps a TimingMetric or NanoTimingMetric.
