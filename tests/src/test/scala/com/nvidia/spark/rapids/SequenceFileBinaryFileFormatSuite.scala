@@ -33,29 +33,18 @@ import org.apache.spark.SparkException
 import org.apache.spark.sql.SparkSession
 
 /**
- * Unit tests for SequenceFileBinaryFileFormat.
+ * Unit tests for GPU SequenceFileBinaryFileFormat.
  *
- * Note: This test suite uses its own withSparkSession/withGpuSparkSession methods instead of
+ * All tests in this suite run with the RAPIDS GPU plugin enabled to verify GPU-accelerated
+ * SequenceFile parsing via CUDA kernels.
+ *
+ * Note: This test suite uses its own withGpuSparkSession method instead of
  * extending SparkQueryCompareTestSuite because:
  * 1. These tests need fresh SparkSession instances per test to avoid state pollution
- * 2. The tests don't need the compare-CPU-vs-GPU pattern from SparkQueryCompareTestSuite
+ * 2. The tests verify GPU execution path, not CPU-vs-GPU comparison
  * 3. The simpler session management makes the tests more self-contained
  */
 class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
-
-  private def withSparkSession(f: SparkSession => Unit): Unit = {
-    val spark = SparkSession.builder()
-      .appName("SequenceFileBinaryFileFormatSuite")
-      .master("local[1]")
-      .config("spark.ui.enabled", "false")
-      .config("spark.sql.shuffle.partitions", "1")
-      .getOrCreate()
-    try {
-      f(spark)
-    } finally {
-      spark.stop()
-    }
-  }
 
   private def withGpuSparkSession(f: SparkSession => Unit): Unit = {
     val spark = SparkSession.builder()
@@ -193,7 +182,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       )
       writeSequenceFileWithRawRecords(file, conf, payloads)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(file.getAbsolutePath)
@@ -226,7 +215,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       )
       writeSequenceFileWithRawRecords(file, conf, payloads)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         // File Scan Path
         val fileDf = spark.read
           .format("sequencefilebinary")
@@ -265,20 +254,23 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       )
       writeCompressedSequenceFile(file, conf, payloads)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(file.getAbsolutePath)
 
-        // Spark wraps the UnsupportedOperationException in a SparkException
+        // Spark wraps the UnsupportedOperationException in a SparkException (possibly multiple levels)
         val ex = intercept[SparkException] {
           df.collect()
         }
-        // Check that the root cause is UnsupportedOperationException with expected message
-        val cause = ex.getCause
-        assert(cause.isInstanceOf[UnsupportedOperationException],
-          s"Expected UnsupportedOperationException but got ${cause.getClass.getName}")
-        assert(cause.getMessage.contains("does not support compressed SequenceFiles"))
+        // Find the root cause through the exception chain
+        def findRootCause(t: Throwable): Throwable = {
+          if (t.getCause == null || t.getCause == t) t else findRootCause(t.getCause)
+        }
+        val rootCause = findRootCause(ex)
+        assert(rootCause.isInstanceOf[UnsupportedOperationException],
+          s"Expected UnsupportedOperationException but got ${rootCause.getClass.getName}: ${rootCause.getMessage}")
+        assert(rootCause.getMessage.contains("does not support compressed SequenceFiles"))
       }
     }
   }
@@ -300,7 +292,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val payloads3 = Array(Array[Byte](7, 8, 9))
       writeSequenceFileWithRawRecords(file3, conf, payloads3)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(tmpDir.getAbsolutePath)
@@ -332,7 +324,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val fileB = new File(partB, "file.seq")
       writeSequenceFileWithRawRecords(fileB, conf, Array(Array[Byte](4, 5, 6)))
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(tmpDir.getAbsolutePath)
@@ -358,7 +350,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val payloads = Array(Array[Byte](10, 20, 30))
       writeSequenceFileWithRawRecords(file, conf, payloads)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(file.getAbsolutePath)
@@ -379,7 +371,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val payloads = Array(Array[Byte](10, 20, 30))
       writeSequenceFileWithRawRecords(file, conf, payloads)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(file.getAbsolutePath)
@@ -399,7 +391,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val conf = new Configuration()
       writeEmptySequenceFile(file, conf)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(file.getAbsolutePath)
@@ -421,7 +413,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       }.toArray
       writeSequenceFileWithRawRecords(file, conf, payloads)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         val df = spark.read
           .format("sequencefilebinary")
           .load(file.getAbsolutePath)
@@ -442,7 +434,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }
   }
 
-  test("GPU execution path verification") {
+  test("Basic read with key and value columns") {
     withTempDir("seqfile-gpu-test") { tmpDir =>
       val file = new File(tmpDir, "test.seq")
       val conf = new Configuration()
@@ -458,7 +450,8 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
           .load(file.getAbsolutePath)
 
         val results = df.select("key", "value").collect()
-        assert(results.length == payloads.length)
+        assert(results.length == payloads.length,
+          s"Expected ${payloads.length} records but got ${results.length}")
 
         // Verify results
         val sortedResults = results
@@ -486,7 +479,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
       writeSequenceFileWithRawRecords(file, conf, payloads)
 
-      withSparkSession { spark =>
+      withGpuSparkSession { spark =>
         // Read entire file
         val df = spark.read
           .format("sequencefilebinary")

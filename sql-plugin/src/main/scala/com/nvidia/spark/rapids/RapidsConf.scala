@@ -1678,33 +1678,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
 
-  val SEQUENCEFILE_READER_TYPE = conf("spark.rapids.sql.format.sequencefile.reader.type")
-    .doc("Sets the SequenceFile reader type. Since SequenceFile decoding happens on the CPU " +
-      "(using Hadoop's SequenceFile.Reader), COALESCING mode is not supported and will throw " +
-      "an exception. Use PERFILE which individually reads files, or MULTITHREADED which uses " +
-      "multiple threads to read files in parallel, utilizing multiple CPU cores for I/O and " +
-      "decoding. MULTITHREADED is recommended when reading many files as it allows the CPU to " +
-      "keep reading while GPU is also doing work. " +
-      s"See $MULTITHREAD_READ_NUM_THREADS and " +
-      "spark.rapids.sql.format.sequencefile.multiThreadedRead.maxNumFilesParallel to control " +
-      "the number of threads and amount of memory used. " +
-      "By default this is set to AUTO which selects MULTITHREADED for cloud storage and " +
-      "PERFILE for local storage. See spark.rapids.cloudSchemes.")
-    .stringConf
-    .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(RapidsReaderType.values.map(_.toString))
-    .createWithDefault(RapidsReaderType.AUTO.toString)
-
-  val SEQUENCEFILE_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
-    conf("spark.rapids.sql.format.sequencefile.multiThreadedRead.maxNumFilesParallel")
-      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
-        "side before the file is sent to the GPU. This affects the amount of host memory used " +
-        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
-        s"$SEQUENCEFILE_READER_TYPE.")
-      .integerConf
-      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
-      .createWithDefault(Integer.MAX_VALUE)
-
   val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
       .doc("When set to false disables Delta Lake output acceleration.")
       .booleanConf
@@ -3574,26 +3547,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
-
-  lazy val isSequenceFilePerFileReadEnabled: Boolean = {
-    val readerType = RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE))
-    if (readerType == RapidsReaderType.COALESCING) {
-      throw new IllegalArgumentException(
-        s"COALESCING reader type is not supported for SequenceFile. " +
-        s"SequenceFile decoding happens on CPU, so coalescing provides no benefit. " +
-        s"Use PERFILE, MULTITHREADED, or AUTO instead.")
-    }
-    readerType == RapidsReaderType.PERFILE
-  }
-
-  lazy val isSequenceFileAutoReaderEnabled: Boolean =
-    RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE)) == RapidsReaderType.AUTO
-
-  lazy val isSequenceFileMultiThreadReadEnabled: Boolean = isSequenceFileAutoReaderEnabled ||
-    RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE)) == RapidsReaderType.MULTITHREADED
-
-  lazy val maxNumSequenceFilesParallel: Int = get(
-    SEQUENCEFILE_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isDeltaWriteEnabled: Boolean = get(ENABLE_DELTA_WRITE)
 
