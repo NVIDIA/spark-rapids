@@ -444,7 +444,11 @@ object ProtobufExprShims {
               // Check if the data type matches our full schema (struct type from protobuf)
               attr.dataType match {
                 case st: StructType => 
-                  // Compare field names and types - StructType equality can be tricky
+                  // Compare field names and types only. We intentionally do not compare
+                  // nullable flags because schema transformations (like projections or
+                  // certain optimizations) may change nullability while the underlying
+                  // schema structure remains the same. For schema projection detection,
+                  // matching names and types is sufficient to identify protobuf output.
                   st.fields.length == fullSchema.fields.length &&
                     st.fields.zip(fullSchema.fields).forall { case (a, b) =>
                       a.name == b.name && a.dataType == b.dataType
@@ -486,6 +490,10 @@ object ProtobufExprShims {
   private def writeTempDescFile(descBytes: Array[Byte]): String = {
     val tmp: Path = Files.createTempFile("spark-rapids-protobuf-desc-", ".desc")
     Files.write(tmp, descBytes)
+    // deleteOnExit() is not guaranteed to run on abnormal JVM termination, but these
+    // descriptor files are small (typically < 10KB) and only created when using
+    // binaryDescriptorSet (Spark 4.0+). The risk of temporary file accumulation is
+    // acceptable for this use case.
     tmp.toFile.deleteOnExit()
     tmp.toString
   }
