@@ -216,7 +216,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
       }
     }
 
-    logInfo(s"Unregistered shuffle $shuffleId: closed ${closedHandles.size()} handles, " +
+    logDebug(s"Unregistered shuffle $shuffleId: closed ${closedHandles.size()} handles, " +
       s"bytesFromMemory=$bytesFromMemory, bytesFromDisk=$bytesFromDisk")
 
     // Return statistics if we had any data

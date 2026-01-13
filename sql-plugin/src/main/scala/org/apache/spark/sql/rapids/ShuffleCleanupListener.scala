@@ -95,7 +95,7 @@ class ShuffleCleanupListener extends SparkListener with Logging {
     val shuffleIds = Option(executionShuffles.remove(event.executionId))
     shuffleIds.foreach { ids =>
       if (ids.nonEmpty) {
-        logInfo(s"SQL execution ${event.executionId} ended, triggering cleanup for " +
+        logDebug(s"SQL execution ${event.executionId} ended, triggering cleanup for " +
           s"${ids.size} shuffle(s): ${ids.mkString(", ")}")
 
         val cleanupManager = ShuffleCleanupManager.get

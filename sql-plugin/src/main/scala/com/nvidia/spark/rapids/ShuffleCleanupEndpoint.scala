@@ -171,7 +171,7 @@ class ShuffleCleanupEndpoint(
     try {
       val nonZeroStats = stats.filter(s => s.bytesFromMemory > 0 || s.bytesFromDisk > 0)
       if (nonZeroStats.nonEmpty) {
-        logInfo(s"Reporting cleanup stats to driver for ${nonZeroStats.length} shuffle(s)")
+        logDebug(s"Reporting cleanup stats to driver for ${nonZeroStats.length} shuffle(s)")
       }
       pluginContext.send(RapidsShuffleCleanupStatsMsg(executorId, stats))
     } catch {
@@ -234,7 +234,7 @@ class ShuffleCleanupEndpoint(
       try {
         val stats = mtCatalog.unregisterShuffle(shuffleId)
         stats.foreach { s =>
-          logInfo(s"Final cleanup: shuffle $shuffleId - " +
+          logDebug(s"Final cleanup: shuffle $shuffleId - " +
             s"bytesFromMemory=${s.bytesFromMemory}, bytesFromDisk=${s.bytesFromDisk}")
           statsBuffer += s
         }

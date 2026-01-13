@@ -179,7 +179,7 @@ class ShuffleCleanupManager(
    * @param shuffleId the shuffle ID to clean up
    */
   def registerForCleanup(shuffleId: Int): Unit = {
-    logInfo(s"Registering shuffle $shuffleId for cleanup")
+    logDebug(s"Registering shuffle $shuffleId for cleanup")
     pendingCleanup.put(shuffleId, System.currentTimeMillis())
     reportedExecutors.put(shuffleId, ConcurrentHashMap.newKeySet[String]())
   }
@@ -229,7 +229,7 @@ class ShuffleCleanupManager(
 
       // Immediately emit event if there are non-zero bytes
       if (stat.bytesFromMemory > 0 || stat.bytesFromDisk > 0) {
-        logInfo(s"Emitting SparkRapidsShuffleDiskSavingsEvent for shuffle $shuffleId " +
+        logDebug(s"Emitting SparkRapidsShuffleDiskSavingsEvent for shuffle $shuffleId " +
           s"from executor $executorId: " +
           s"bytesFromMemory=${stat.bytesFromMemory}, bytesFromDisk=${stat.bytesFromDisk}")
 
