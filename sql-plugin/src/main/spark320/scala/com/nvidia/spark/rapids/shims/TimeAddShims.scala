@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,33 +31,29 @@ import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
- * TimeAdd expression support for versions before it was renamed to TimestampAddInterval.
- * TimeAdd was renamed in Spark 4.1 (and likely backported to Databricks 17.3).
- * See: https://github.com/apache/spark/commit/059b395c8cbfe1b0bdc614e6006939e3ac538b13
+ * TimeAdd expression support for Spark 3.2.x (CalendarInterval only, no DayTimeIntervalType).
  */
 object TimeAddShims {
-  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    Seq(
-      GpuOverrides.expr[TimeAdd](
-        "Adds interval to timestamp",
-        ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
+  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[TimeAdd](
+      "Adds interval to timestamp",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("interval", TypeSig.lit(TypeEnum.CALENDAR)
             .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
             TypeSig.CALENDAR)),
-        (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
-              val intvl = lit.value.asInstanceOf[CalendarInterval]
-              if (intvl.months != 0) {
-                willNotWorkOnGpu("interval months isn't supported")
-              }
+      (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
+            val intvl = lit.value.asInstanceOf[CalendarInterval]
+            if (intvl.months != 0) {
+              willNotWorkOnGpu("interval months isn't supported")
             }
           }
+        }
 
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuTimeAdd(lhs, rhs)
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-  }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuTimeAdd(lhs, rhs)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 }

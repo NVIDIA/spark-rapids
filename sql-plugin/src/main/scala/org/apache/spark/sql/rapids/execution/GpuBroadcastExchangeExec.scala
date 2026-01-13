@@ -33,7 +33,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.lore.{GpuLoreDumpRDD, SimpleRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.LORE_DUMP_RDD_TAG
-import com.nvidia.spark.rapids.shims.{BroadcastExchangeShims, ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.BroadcastExchangeShims.MAX_BROADCAST_TABLE_BYTES
 
 import org.apache.spark.SparkException

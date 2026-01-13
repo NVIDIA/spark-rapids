@@ -52,7 +52,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase

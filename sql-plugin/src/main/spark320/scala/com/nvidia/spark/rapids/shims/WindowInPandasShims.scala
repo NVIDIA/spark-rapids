@@ -58,5 +58,5 @@ import org.apache.spark.sql.execution.python.WindowInPandasExec
  */
 trait WindowInPandasShims {
   def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] = 
-    winPy.projectList
+    winPy.windowExpression
 }

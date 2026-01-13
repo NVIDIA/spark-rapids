@@ -34,7 +34,6 @@ import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
 import org.apache.spark.sql.rapids.execution.python.shims.{GpuArrowPythonRunner, PythonArgumentUtils}
 import org.apache.spark.sql.rapids.execution.python.shims.WindowInPandasExecTypeShim.WindowInPandasExecType
