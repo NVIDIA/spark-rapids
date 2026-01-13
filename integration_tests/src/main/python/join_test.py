@@ -1727,6 +1727,87 @@ def test_join_gatherer_size_estimate_threshold(join_type, threshold, batch_size)
 
 
 @ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["Inner", "LeftOuter", "RightOuter"], ids=idfn)
+@pytest.mark.parametrize("build_side", ["AUTO", "FIXED", "SMALLEST"], ids=idfn)
+@pytest.mark.parametrize("is_left_smaller", [True, False], ids=["LEFT_SMALLER", "RIGHT_SMALLER"])
+def test_join_build_side_selection(join_type, build_side, is_left_smaller):
+    """Test that different build side selection strategies work correctly."""
+    join_conf = {
+        "spark.rapids.sql.join.buildSide": build_side,
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
+        "spark.rapids.sql.join.useShuffledAsymmetricHashJoin": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "1",
+    }
+    left_size, right_size = (512, 2048) if is_left_smaller else (2048, 512)
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("l_ints", int_gen),
+        ], left_size)
+        right_df = gen_df(spark, [
+            ("r_key", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("r_ints", int_gen),
+        ], right_size)
+        return left_df.join(right_df, left_df.l_key == right_df.r_key, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["Inner"], ids=idfn)
+@pytest.mark.parametrize("build_side", ["AUTO", "FIXED", "SMALLEST"], ids=idfn)
+@pytest.mark.parametrize("is_left_smaller", [True, False], ids=["LEFT_SMALLER", "RIGHT_SMALLER"])
+def test_join_build_side_selection_conditional(join_type, build_side, is_left_smaller):
+    """Test build side selection with conditional (AST) joins."""
+    join_conf = {
+        "spark.rapids.sql.join.buildSide": build_side,
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
+        "spark.rapids.sql.join.useShuffledAsymmetricHashJoin": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "1",
+    }
+    left_size, right_size = (512, 2048) if is_left_smaller else (2048, 512)
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("l_ints", RepeatSeqGen(IntegerGen(), length=5)),
+        ], left_size)
+        right_df = gen_df(spark, [
+            ("r_key", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("r_ints", RepeatSeqGen(IntegerGen(), length=5)),
+        ], right_size)
+        # Use an AST-supported inequality condition (comparing integers)
+        return left_df.join(right_df, 
+            (left_df.l_key == right_df.r_key) & (left_df.l_ints < right_df.r_ints), 
+            join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["Inner", "FullOuter"], ids=idfn)
+@pytest.mark.parametrize("build_side", ["AUTO", "FIXED", "SMALLEST"], ids=idfn)
+@pytest.mark.parametrize("batch_size", ["1024", "1g"], ids=idfn)
+def test_join_build_side_selection_symmetric(join_type, build_side, batch_size):
+    """Test build side selection for symmetric joins with different batch sizes."""
+    join_conf = {
+        "spark.rapids.sql.join.buildSide": build_side,
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "1",
+        "spark.rapids.sql.batchSizeBytes": batch_size,
+    }
+    left_size, right_size = (1024, 2048)
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("key1", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("ints", int_gen),
+        ], left_size)
+        right_df = gen_df(spark, [
+            ("key1", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("ints", int_gen),
+        ], right_size)
+        return left_df.join(right_df, ["key1"], join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
+
+
+@ignore_order(local=True)
 @pytest.mark.parametrize("join_type", ["LeftOuter", "RightOuter"], ids=idfn)
 def test_join_degenerate_outer(join_type):
     # A degenerate join shows up with one side of the join (build or probe) has no columns

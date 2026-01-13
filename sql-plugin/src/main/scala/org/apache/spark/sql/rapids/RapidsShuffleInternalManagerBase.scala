@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -225,7 +225,7 @@ trait RapidsShuffleWriterShimHelper {
   private var myPartitionLengths: Array[Long] = null
 
   // This is a Spark 3.2.0+ function, adding a default here for testing purposes
-  def getPartitionLengths: Array[Long] = myPartitionLengths
+  def getPartitionLengths(): Array[Long] = myPartitionLengths
 
   def commitAllPartitions(writer: ShuffleMapOutputWriter, emptyChecksums: Boolean): Array[Long] = {
     myPartitionLengths = doCommitAllPartitions(writer, emptyChecksums)

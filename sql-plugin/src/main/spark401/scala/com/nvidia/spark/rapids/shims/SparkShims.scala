@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,12 +31,12 @@ object SparkShimImpl extends Spark400PlusCommonShims {
       GpuOverrides.expr[CollationAwareMurmur3Hash](
         "Collation-aware murmur3 hash operator",
         HashExprChecks.murmur3ProjectChecks,
-        Murmur3HashExprMeta
+        Murmur3HashExprMeta.apply
       ),
       GpuOverrides.expr[CollationAwareXxHash64](
         "Collation-aware xxhash64 operator",
         HashExprChecks.xxhash64ProjectChecks,
-        XxHash64ExprMeta
+        XxHash64ExprMeta.apply
       )
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
