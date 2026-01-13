@@ -258,7 +258,7 @@ trait RapidsShuffleWriterShimHelper {
   private var myPartitionLengths: Array[Long] = null
 
   // This is a Spark 3.2.0+ function, adding a default here for testing purposes
-  def getPartitionLengths: Array[Long] = myPartitionLengths
+  def getPartitionLengths(): Array[Long] = myPartitionLengths
 
   def commitAllPartitions(writer: ShuffleMapOutputWriter, emptyChecksums: Boolean): Array[Long] = {
     myPartitionLengths = doCommitAllPartitions(writer, emptyChecksums)

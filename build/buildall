@@ -23,6 +23,9 @@ SKIP_CLEAN=1
 BUILD_ALL_DEBUG=0
 SCALA213=0
 
+function join_by { local IFS="$1"; shift; echo "$*"; }
+
+
 function print_usage() {
   echo "Usage: buildall [OPTION]"
   echo "Options:"
@@ -92,6 +95,7 @@ function versionsFromDistProfile() {
 }
 
 function versionsFromReleaseProfiles() {
+  [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
   versionRawStr=$(python build/get_buildvers.py $1 $2)
   versionStr=${versionRawStr//[$'\n',]/}
   echo -n $versionStr
@@ -125,7 +129,8 @@ case "$1" in
   ;;
 
 --debug)
-  BUILD_ALL_DEBUG=1
+  # access in called functions
+  export BUILD_ALL_DEBUG=1
   set -x
   ;;
 
@@ -205,7 +210,6 @@ case $DIST_PROFILE in
 
   [34]*)
     <<< $DIST_PROFILE IFS="," read -ra SPARK_SHIM_VERSIONS
-    INCLUDED_BUILDVERS_OPT="-Dincluded_buildvers=$DIST_PROFILE"
     unset DIST_PROFILE
     ;;
 
@@ -303,6 +307,7 @@ time (
   # where the build does not require it. Moving it to aggregator resolves this issue with
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
+  INCLUDED_BUILDVERS_OPT=-Dincluded_buildvers=$(join_by , "${SPARK_SHIM_VERSIONS[@]}")
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
   $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \

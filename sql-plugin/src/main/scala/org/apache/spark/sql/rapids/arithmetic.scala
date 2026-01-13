@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -792,7 +792,7 @@ case class GpuMultiply(
     if (!lhs.isValid || !rhs.isValid) {
       GpuColumnVector.columnVectorFromNull(numRows, lhs.dataType)
     } else {
-      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { lhs_cv =>
+      withResource(GpuColumnVector.from(lhs, numRows)) { lhs_cv =>
         doColumnar(lhs_cv, rhs)
       }
     }

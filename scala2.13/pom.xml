@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2025, NVIDIA CORPORATION.
+  Copyright (c) 2020-2026, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -1007,8 +1007,8 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <!--
-          Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
-          Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
+          Build and run unit tests on one specific version for each sub-version (e.g. 330)
+          Base shim version (330 currently) should be covered in default mvn verify command of premerge script,
           so base shim version is removed from the premergeUT list.
           Separate the versions to two parts: premergeUT1(2 shims' UT + 1/3 of the integration tests)
           and premergeUT2(1 shim's UT + 2/3 of the integration tests), for balancing the duration
@@ -1024,7 +1024,8 @@
             330
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
-            350
+            350,
+            401
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             331,
@@ -1235,7 +1236,7 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.3.0</version>
+                    <version>3.6.1</version>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
@@ -1469,16 +1470,13 @@ This will force full Scala code rebuild in downstream modules.
                             <!-- #if scala-2.13 -->
                             <arg>-Xsource:2.13</arg>
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
-                            <arg>-Wconf:cat=deprecation:wv,any:e</arg>
+                            <arg>-Wconf:cat=deprecation:e,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
                             <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
-                            <arg>-Wconf:cat=other-nullary-override:wv</arg>
+                            <arg>-Wconf:cat=other-nullary-override:e</arg>
                             <arg>-Wconf:msg=^(?=.*?method|value|type|object|trait|inheritance)(?=.*?deprecated)(?=.*?since 2.13).+$:s</arg>
                             <arg>-Wconf:msg=^(?=.*?Widening conversion from)(?=.*?is deprecated because it loses precision).+$:s</arg>
                             <arg>-Wconf:msg=Auto-application to \`\(\)\` is deprecated:s</arg>
-                            <arg>-Wconf:msg=method with a single empty parameter list overrides method without any parameter list:s</arg>
-                            <arg>-Wconf:msg=method without a parameter list overrides a method with a single empty one:s</arg>
-                            <arg>-Wconf:cat=deprecation&amp;msg=procedure syntax is deprecated:e</arg>
                             <arg>-Wconf:cat=unchecked&amp;msg=outer reference:s</arg>
                             <arg>-Wconf:cat=unchecked&amp;msg=eliminated by erasure:s</arg>
                             <arg>-Wconf:msg=^(?=.*?a value of type)(?=.*?cannot also be).+$:s</arg>
@@ -1821,45 +1819,42 @@ This will force full Scala code rebuild in downstream modules.
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>update-highest-source-dir</id>
+                        <id>regex-properties</id>
                         <goals>
-                            <goal>regex-property</goal>
+                            <goal>regex-properties</goal>
                         </goals>
                         <phase>initialize</phase>
                         <configuration>
-                            <name>spark.rapids.source.basedir</name>
-                            <value>${spark.rapids.project.basedir}</value>
-                            <regex>\/scala[0-9.]+</regex>
-                            <replacement></replacement>
-                            <failIfNoMatch>false</failIfNoMatch>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>update-base-source-dir</id>
-                        <goals>
-                            <goal>regex-property</goal>
-                        </goals>
-                        <phase>initialize</phase>
-                        <configuration>
-                            <name>origbasedir</name>
-                            <value>${project.basedir}</value>
-                            <regex>\/scala[0-9.]+</regex>
-                            <replacement></replacement>
-                            <failIfNoMatch>false</failIfNoMatch>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>update-shimplify-base-source-dir</id>
-                        <goals>
-                            <goal>regex-property</goal>
-                        </goals>
-                        <phase>initialize</phase>
-                        <configuration>
-                            <name>shimplify.src.basedir</name>
-                            <value>${project.basedir}</value>
-                            <regex>\/scala[0-9.]+</regex>
-                            <replacement></replacement>
-                            <failIfNoMatch>false</failIfNoMatch>
+                            <regexPropertySettings>
+                                <regexPropertySetting>
+                                    <name>spark.rapids.source.basedir</name>
+                                    <value>${spark.rapids.project.basedir}</value>
+                                    <regex>\/scala[0-9.]+</regex>
+                                    <replacement></replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                                <regexPropertySetting>
+                                    <name>origbasedir</name>
+                                    <value>${project.basedir}</value>
+                                    <regex>\/scala[0-9.]+</regex>
+                                    <replacement></replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                                <regexPropertySetting>
+                                    <name>shimplify.src.basedir</name>
+                                    <value>${project.basedir}</value>
+                                    <regex>\/scala[0-9.]+</regex>
+                                    <replacement></replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                                <regexPropertySetting>
+                                    <name>jdk9plus.args</name>
+                                    <value>${extraJavaTestArgs}</value>
+                                    <regex>[\r\n]+</regex>
+                                    <replacement> </replacement>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </regexPropertySetting>
+                            </regexPropertySettings>
                         </configuration>
                     </execution>
                     <execution>

@@ -60,13 +60,13 @@ case class SizeInBytes(value: jl.Long) {
       unitVal = nextUnitVal
       unitIndex += 1
     }
-    val finalVal = (unitVal + (remainVal.toDouble / 1024)).formatted("%.2f")
+    val finalVal = "%.2f".format(unitVal + (remainVal.toDouble / 1024))
     s"$finalVal${SizeInBytes.SizeUnitNames(unitIndex)} ($value bytes)"
   }
 }
 
 private object SizeInBytes {
-  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB")
+  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB", "PB", "EB")
 }
 
 class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
