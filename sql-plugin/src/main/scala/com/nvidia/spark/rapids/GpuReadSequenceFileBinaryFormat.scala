@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.sequencefile.GpuSequenceFileMultiFilePartitionReaderFactory
 import com.nvidia.spark.rapids.sequencefile.GpuSequenceFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -36,8 +35,11 @@ import org.apache.spark.util.SerializableConfiguration
  * A FileFormat that allows reading Hadoop SequenceFiles and returning raw key/value bytes as
  * Spark SQL BinaryType columns.
  *
- * This is a GPU-enabled scan format in the sense that it returns GPU-backed ColumnarBatch output
- * (the parsing itself is CPU-side IO + byte parsing).
+ * This is a GPU-accelerated scan format that uses CUDA kernels to parse SequenceFile records
+ * directly on the GPU, providing significant performance improvements over CPU-based parsing.
+ *
+ * Note: Only uncompressed SequenceFiles are supported. Compressed SequenceFiles will throw
+ * an UnsupportedOperationException.
  */
 class GpuReadSequenceFileBinaryFormat extends FileFormat with GpuReadFileFormatWithMetrics {
 
@@ -46,8 +48,7 @@ class GpuReadSequenceFileBinaryFormat extends FileFormat with GpuReadFileFormatW
       options: Map[String, String],
       files: Seq[FileStatus]): Option[StructType] = Some(SequenceFileBinaryFileFormat.dataSchema)
 
-  // TODO: Fix split boundary handling to enable multi-partition reads
-  // Currently disabled to ensure correct record counts
+  // GPU SequenceFile reader processes entire files at once
   override def isSplitable(
       sparkSession: SparkSession,
       options: Map[String, String],
@@ -78,21 +79,21 @@ class GpuReadSequenceFileBinaryFormat extends FileFormat with GpuReadFileFormatW
     PartitionReaderIterator.buildReader(factory)
   }
 
-  // Default to multi-file reads (recommended for many small files).
-  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = false
+  // GPU SequenceFile reader processes one file at a time
+  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = true
 
   override def createMultiFileReaderFactory(
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    GpuSequenceFileMultiFilePartitionReaderFactory(
+    GpuSequenceFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,
       fileScan.requiredSchema,
       fileScan.readPartitionSchema,
       fileScan.rapidsConf,
       fileScan.allMetrics,
-      fileScan.queryUsesInputFile)
+      Map.empty)
   }
 }
 
