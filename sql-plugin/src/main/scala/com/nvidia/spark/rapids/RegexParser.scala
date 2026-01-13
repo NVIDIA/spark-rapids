@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1949,7 +1949,7 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString(): String = s"$$$num"
+  override def toRegexString: String = s"$$$num"
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
