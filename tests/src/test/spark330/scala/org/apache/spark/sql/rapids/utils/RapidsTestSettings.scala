@@ -28,11 +28,16 @@ import org.apache.spark.sql.rapids.suites._
 class RapidsTestSettings extends BackendTestSettings {
 
   enableSuite[RapidsArithmeticExpressionSuite]
+  enableSuite[RapidsBitwiseExpressionsSuite]
   enableSuite[RapidsComplexTypeSuite]
     .exclude("CreateMap", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14140"))
+  enableSuite[RapidsConditionalExpressionSuite]
   enableSuite[RapidsHashExpressionsSuite]
   enableSuite[RapidsIntervalExpressionsSuite]
+  enableSuite[RapidsNullExpressionsSuite]
   enableSuite[RapidsPredicateSuite]
+  enableSuite[RapidsSubexpressionEliminationSuite]
+  enableSuite[RapidsTimeWindowSuite]
   enableSuite[RapidsCastSuite]
     .exclude("SPARK-35711: cast timestamp without time zone to timestamp with local time zone", WONT_FIX_ISSUE("https://issues.apache.org/jira/browse/SPARK-40851"))
     .exclude("SPARK-35719: cast timestamp with local time zone to timestamp without timezone", WONT_FIX_ISSUE("https://issues.apache.org/jira/browse/SPARK-40851"))
@@ -48,6 +53,14 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("Array Intersect", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
     .exclude("Array remove", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14129"))
     .exclude("Shuffle", ADJUST_UT("Replaced by testRapids version that adjusts the expected results to match the running by --master local[2]."))
+  enableSuite[RapidsDataFrameSuite]
+    .exclude("SPARK-28224: Aggregate sum big decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
+    .exclude("SPARK-28067: Aggregate sum should not return wrong results for decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
+    .exclude("SPARK-35955: Aggregate avg should not return wrong results for decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
+    .exclude("reuse exchange", ADJUST_UT("Replaced by testRapids version that uses GPU class name"))
+    .exclude("SPARK-22520: support code generation for large CaseWhen", WONT_FIX_ISSUE("It's a codegen related test, not applicable for GPU"))
+    .exclude("Uuid expressions should produce same results at retries in the same DataFrame", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14149"))
+    .exclude("SPARK-27439: Explain result should match collected result after view change", ADJUST_UT("Replaced by testRapids version that uses GPU class name"))
   enableSuite[RapidsDataFrameAggregateSuite]
     .exclude("collect functions", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("collect functions structs", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
