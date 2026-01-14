@@ -588,9 +588,19 @@ class SpillablePartialFileHandle private (
         return 0L
       }
 
-    host match {
-      case Some(buffer) =>
-        // Spill all written data to file
+      host match {
+        case Some(buffer) =>
+          spillInProgress = true
+          buffer
+        case None =>
+          return 0L  // Already spilled
+      }
+    }
+
+    // Perform IO outside lock - read() can still access buffer during this time
+    // Wrap with spillToDiskTime to track spill timing metrics
+    GpuTaskMetrics.get.spillToDiskTime {
+      try {
         val fos = new FileOutputStream(file)
         try {
           val channel = fos.getChannel

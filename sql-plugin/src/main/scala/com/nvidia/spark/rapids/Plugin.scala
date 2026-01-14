@@ -640,6 +640,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
             rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
           }
+          // Initialize ShuffleCleanupEndpoint for MULTITHREADED mode with ESS disabled
+          if (conf.isMultiThreadedShuffleManagerMode && !GpuShuffleEnv.isExternalShuffleEnabled) {
+            logInfo("Initializing shuffle cleanup endpoint for MULTITHREADED mode")
+            shuffleCleanupEndpoint = new ShuffleCleanupEndpoint(pluginContext)
+            shuffleCleanupEndpoint.start()
+          }
         }
       }
 

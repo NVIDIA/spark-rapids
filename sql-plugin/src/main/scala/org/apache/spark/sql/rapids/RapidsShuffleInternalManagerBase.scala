@@ -701,7 +701,21 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // Track total written data size (compressed size)
               val compressedSize = (buffer.getCount - originLength).toLong
               totalCompressedSize.addAndGet(compressedSize)
-              (recordSize, compressedSize)
+
+              // Release excess quota immediately after compression.
+              // Data is now in OpenByteArrayOutputStream (heap), only need to hold
+              // compressedSize quota until Merger writes to disk.
+
+              // Note: excessQuota can be 0 if compression doesn't reduce size (or expands)
+              val excessQuota = math.max(0L, recordSize - compressedSize)
+              if (excessQuota > 0) {
+                limiter.release(excessQuota)
+              }
+
+              // Return the quota that Merger should release later
+              // Total released = excessQuota + remainingQuota should equal recordSize
+              val remainingQuota = recordSize - excessQuota
+              (remainingQuota, compressedSize)
             }
           } catch {
             case e: Exception =>
