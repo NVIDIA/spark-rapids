@@ -259,8 +259,18 @@ class ShuffleCleanupManager(
       val shuffleId = entry.getKey
       val timestamp = entry.getValue
       if (now - timestamp > maxAgeMs) {
-        logWarning(s"Removing stale shuffle cleanup entry for shuffle $shuffleId " +
-          s"(registered ${maxAgeMs}ms ago)")
+        val reported = reportedExecutors.get(shuffleId)
+        val numReported = if (reported != null) reported.size() else 0
+        if (numReported > 0) {
+          // At least some executors reported cleanup - this is normal, just metadata cleanup
+          logDebug(s"Removing stale shuffle cleanup entry for shuffle $shuffleId " +
+            s"(registered ${now - timestamp}ms ago, $numReported executor(s) reported cleanup)")
+        } else {
+          // No executor ever reported cleanup - potential resource leak
+          logWarning(s"Removing stale shuffle cleanup entry for shuffle $shuffleId " +
+            s"with NO executor cleanup reported (registered ${now - timestamp}ms ago). " +
+            s"Shuffle resources may not have been cleaned up properly.")
+        }
         iter.remove()
         reportedExecutors.remove(shuffleId)
       }
