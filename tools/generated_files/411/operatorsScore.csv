@@ -127,6 +127,7 @@ DayOfYear,4
 DenseRank,4
 Discard,4
 Divide,4
+DivideDTInterval,4
 DivideYMInterval,4
 DynamicPruningExpression,4
 ElementAt,4
@@ -215,6 +216,7 @@ MonotonicallyIncreasingID,4
 Month,4
 MonthsBetween,4
 Multiply,4
+MultiplyDTInterval,4
 MultiplyYMInterval,4
 Murmur3Hash,4
 NaNvl,4

@@ -22,16 +22,59 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.shims.GpuTimestampAddInterval
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuMultiplyDTInterval,
+  GpuTimestampAddInterval}
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
- * DayTimeInterval shims for Spark 4.1.0+
+ * DayTimeInterval shims for Spark 4.1.1+
  * TimeAdd was renamed to TimestampAddInterval in Spark 4.1.0
  */
 object DayTimeIntervalShims {
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[Abs](
+      "Absolute value",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes,
+        TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
+        TypeSig.cpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes),
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST unary minus does not support ANSI mode.")
+          }
+        }
+
+        // ANSI support for ABS was added in 3.2.0 SPARK-33275
+        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
+      }),
+    GpuOverrides.expr[MultiplyDTInterval](
+      "Day-time interval * number",
+      ExprChecks.binaryProject(
+        TypeSig.DAYTIME,
+        TypeSig.DAYTIME,
+        ("lhs", TypeSig.DAYTIME, TypeSig.DAYTIME),
+        ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+      (a, conf, p, r) => new BinaryExprMeta[MultiplyDTInterval](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuMultiplyDTInterval(lhs, rhs)
+      }),
+    GpuOverrides.expr[DivideDTInterval](
+      "Day-time interval / number",
+      ExprChecks.binaryProject(
+        TypeSig.DAYTIME,
+        TypeSig.DAYTIME,
+        ("lhs", TypeSig.DAYTIME, TypeSig.DAYTIME),
+        ("rhs", TypeSig.gpuNumeric - TypeSig.DECIMAL_128, TypeSig.gpuNumeric)),
+      (a, conf, p, r) => new BinaryExprMeta[DivideDTInterval](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuDivideDTInterval(lhs, rhs)
+      }),
     GpuOverrides.expr[TimestampAddInterval](
       "Adds interval to timestamp",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
