@@ -26,6 +26,7 @@ import org.scalatestplus.mockito.MockitoSugar
 import org.apache.spark.sql.catalyst.expressions.{Ascending, CurrentRow, ExprId, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.rapids.aggregate.GpuCount
 import org.apache.spark.sql.types.{DataType, DataTypes, IntegerType, LongType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class WindowRetrySuite
     extends RmmSparkRetrySuiteBase
@@ -240,9 +241,10 @@ class WindowRetrySuite
     val spec = GpuWindowSpecDefinition(Seq.empty, Seq.empty, boundedFrame)
     val count = GpuWindowExpression(GpuCount(Seq(GpuLiteral.create(1, IntegerType))), spec)
 
+    var oomRetriedForCacheConcat = false
     // Create the iterator with bounded window (minPreceding=-2, maxFollowing=2)
     val it = new GpuBatchedBoundedWindowIterator(
-      input = Seq(buildLargeBatchForBoundedWindow()).iterator,
+      input = Seq(buildLargeBatchForBoundedWindow(), buildLargeBatchForBoundedWindow()).iterator,
       boundWindowOps = Seq(GpuAlias(count, "count")()),
       boundPartitionSpec = Seq.empty,
       boundOrderSpec = Seq.empty,
@@ -252,42 +254,78 @@ class WindowRetrySuite
       numOutputBatches = NoopMetric,
       numOutputRows = NoopMetric,
       opTime = NoopMetric
-    )
+    ) { // override the 3 methods who support oom-retry.
+      override def getNextInputBatchWithRetry: SpillableColumnarBatch = {
+        if (hasCache) {
+          // Inject a retry OOM when needing to concat the cache and the input batch.
+          RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+            RmmSpark.OomInjectionType.GPU.ordinal, 0)
+          oomRetriedForCacheConcat = true
+        }
+        super.getNextInputBatchWithRetry
+      }
+
+      override def computeWindowWithRetry(scb: SpillableColumnarBatch): SpillableColumnarBatch = {
+        // Inject a retry OOM for the window computation
+        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        super.computeWindowWithRetry(scb)
+      }
+
+      override def trimWithRetry(scb: SpillableColumnarBatch, offTheTop: Int,
+          offTheBottom: Int): ColumnarBatch = {
+        // Inject a retry OOM for the trimming operation
+        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        super.trimWithRetry(scb, offTheTop, offTheBottom)
+      }
+    }
 
     try {
-      // Inject a retry OOM - this tests the withRetryNoSplit wrapping
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
-
-      // Consume the output. Since this is the only input batch with noMoreInput=true,
-      // the iterator should produce results for all rows.
       withResource(it.next()) { batch =>
-        // With bounded window [2 PRECEDING, 2 FOLLOWING] and 8 rows,
-        // we expect 8 output rows since noMoreInput=true triggers full processing
-        assertResult(8)(batch.numRows())
+        // we expect 6 output rows for the first input batch
+        assertResult(6)(batch.numRows())
         assertResult(1)(batch.numCols())
-
         // Verify the count values for bounded window
         // Row 0: count of rows in range [max(0,0-2), min(7,0+2)] = [0,2] = 3 rows
         // Row 1: count of rows in range [max(0,1-2), min(7,1+2)] = [0,3] = 4 rows
         // Row 2: count of rows in range [max(0,2-2), min(7,2+2)] = [0,4] = 5 rows
         // Row 3-4: count of 5 rows (full window)
         // Row 5: count of rows in range [3,7] = 5 rows
-        // Row 6: count of rows in range [4,7] = 4 rows
-        // Row 7: count of rows in range [5,7] = 3 rows
+        // Row 6-7: unprocessed for next batch
         withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
-          assertResult(8)(hostCol.getRowCount)
-          val expectedCounts = Seq(3L, 4L, 5L, 5L, 5L, 5L, 4L, 3L)
+          assertResult(6)(hostCol.getRowCount)
+          val expectedCounts = Seq(3L, 4L, 5L, 5L, 5L, 5L)
+          (0 until hostCol.getRowCount.toInt).foreach { row =>
+            assertResult(expectedCounts(row))(hostCol.getLong(row))
+          }
+        }
+      }
+      withResource(it.next()) { batch => // second batch
+        // we expect 10 (=8+2) output rows for the second last) input batch.
+        assertResult(10)(batch.numRows())
+        assertResult(1)(batch.numCols())
+        // Verify the count values for bounded window,
+        // Row 0-1: count of 5 rows for rows from the cache (full window with
+        //          preceding and unprocessed rows from the previous rows)
+        // Row 2-6: count of 5 rows for rows from the input batch (full window with
+        //          preceding and unprocessed rows from the previous rows)
+        // Row 7: count of rows in range [5,9] = 5 rows
+        // Row 8: count of rows in range [6,9] = 4 rows
+        // Row 9: count of rows in range [7,9] = 3 rows
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          assertResult(10)(hostCol.getRowCount)
+          val expectedCounts = Seq(5L, 5L, 5L, 5L, 5L, 5L, 5L, 5L, 4L, 3L)
           (0 until hostCol.getRowCount.toInt).foreach { row =>
             assertResult(expectedCounts(row))(hostCol.getLong(row))
           }
         }
       }
 
-      // Iterator should be exhausted
-      assert(!it.hasNext)
+      assert(!it.hasNext) // Iterator should be exhausted
+      assert(oomRetriedForCacheConcat)
     } finally {
-      it.close()
+      it.clearCached()
     }
   }
 
@@ -322,7 +360,7 @@ class WindowRetrySuite
         it.next()
       }
     } finally {
-      it.close()
+      it.clearCached()
     }
   }
 }
