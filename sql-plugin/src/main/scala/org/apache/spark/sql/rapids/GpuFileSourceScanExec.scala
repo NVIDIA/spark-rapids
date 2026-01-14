@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -404,36 +404,7 @@ case class GpuFileSourceScanExec(
     SCHEDULE_TIME_BUBBLE -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SCHEDULE_TIME_BUBBLE),
     DELETION_VECTOR_SCATTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
       DESCRIPTION_DELETION_VECTOR_SCATTER_TIME),
-    DELETION_VECTOR_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_DELETION_VECTOR_SIZE),
-    // Debug metrics for Parquet Cloud Reader (pcr) time breakdown - top level (L1)
-    PCR_INIT_READERS_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_INIT_READERS_TIME),
-    PCR_BATCH_ITER_NEXT_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_BATCH_ITER_NEXT_TIME),
-    PCR_WAIT_BG_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_WAIT_BG_TIME),
-    PCR_BG_ALLOC_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_PCR_BG_ALLOC_TIME),
-    PCR_GET_BUFFER_EXCL_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_GET_BUFFER_EXCL_WAIT_TIME),
-    PCR_BUFFER_TO_BATCHES_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_BUFFER_TO_BATCHES_TIME),
-    // Level 2 (L2) sub-metrics - breakdown of PCR_BUFFER_TO_BATCHES_TIME
-    PCR_L2_GET_PARQUET_OPTIONS_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_GET_PARQUET_OPTIONS_TIME),
-    PCR_L2_MATERIALIZE_HOST_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_MATERIALIZE_HOST_BUFFER_TIME),
-    PCR_L2_MAKE_PRODUCER_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_MAKE_PRODUCER_TIME),
-    PCR_L2_CACHED_ITER_APPLY_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_CACHED_ITER_APPLY_TIME),
-    PCR_L2_TABLE_TO_BATCH_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_TABLE_TO_BATCH_TIME),
-    PCR_L2_EVOLVE_SCHEMA_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_EVOLVE_SCHEMA_TIME),
-    PCR_L2_REBASE_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_REBASE_TIME),
-    PCR_FINALIZE_BATCH_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_FINALIZE_BATCH_TIME)
+    DELETION_VECTOR_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_DELETION_VECTOR_SIZE)
   ) ++ fileCacheMetrics ++ {
     relation.fileFormat match {
       case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
@@ -508,11 +479,9 @@ case class GpuFileSourceScanExec(
         }
 
         override def next(): ColumnarBatch = {
-          scanTime.ns {
-            val batch = batches.next()
-            numOutputRows += batch.numRows()
-            batch
-          }
+          val batch = batches.next()
+          numOutputRows += batch.numRows()
+          batch
         }
       }
     }

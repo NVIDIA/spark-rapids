@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -144,35 +144,29 @@ class CachedGpuBatchIterator private(pending: mutable.Queue[SpillableColumnarBat
  */
 object CachedGpuBatchIterator {
   private[this] def makeSpillableAndClose(table: Table,
-      dataTypes: Array[DataType],
-      tableToBatchMetric: GpuMetric): SpillableColumnarBatch = {
+      dataTypes: Array[DataType]): SpillableColumnarBatch = {
     withResource(table) { _ =>
-      val batch = tableToBatchMetric.ns {
-        GpuColumnVector.from(table, dataTypes)
-      }
-      SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      SpillableColumnarBatch(GpuColumnVector.from(table, dataTypes),
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     }
   }
 
   def apply(producer: GpuDataProducer[Table],
-      dataTypes: Array[DataType],
-      tableToBatchMetric: GpuMetric = NoopMetric): GpuColumnarBatchIterator = {
+      dataTypes: Array[DataType]): GpuColumnarBatchIterator = {
     withResource(producer) { _ =>
       if (producer.hasNext) {
         // Special case for the first one.
         closeOnExcept(producer.next) { firstTable =>
           if (!producer.hasNext) {
-            val batch = tableToBatchMetric.ns {
-              GpuColumnVector.from(firstTable, dataTypes)
-            }
-            val ret = new SingleGpuColumnarBatchIterator(batch)
+            val ret =
+              new SingleGpuColumnarBatchIterator(GpuColumnVector.from(firstTable, dataTypes))
             firstTable.close()
             ret
           } else {
             val pending = mutable.Queue.empty[SpillableColumnarBatch]
-            pending += makeSpillableAndClose(firstTable, dataTypes, tableToBatchMetric)
+            pending += makeSpillableAndClose(firstTable, dataTypes)
             producer.foreach { t =>
-              pending += makeSpillableAndClose(t, dataTypes, tableToBatchMetric)
+              pending += makeSpillableAndClose(t, dataTypes)
             }
             new CachedGpuBatchIterator(pending)
           }
