@@ -365,7 +365,7 @@ case class GpuMultiplyYMInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -439,7 +439,7 @@ case class GpuMultiplyDTInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -503,7 +503,7 @@ case class GpuDivideYMInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -585,7 +585,7 @@ case class GpuDivideDTInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }

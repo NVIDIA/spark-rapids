@@ -102,7 +102,7 @@ class GroupingIterator(
     groupBatches.clear()
   }
 
-  override def hasNext(): Boolean = groupBatches.nonEmpty || wrapped.hasNext
+  override def hasNext: Boolean = groupBatches.nonEmpty || wrapped.hasNext
 
   override def next(): ColumnarBatch = {
     if (groupBatches.nonEmpty) {

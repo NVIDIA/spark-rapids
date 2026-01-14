@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -222,6 +222,8 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
           if (BOOKKEEP_MEMORY) {
             HostAlloc.bookkeepHostMemoryAlloc(buffer.getAddress, amount)
           }
+          // Check retry coverage for host memory allocation
+          AllocationRetryCoverageTracker.checkHostAllocation()
           logTrace(getHostAllocMetricsLogStr(metrics))
           RmmSpark.postCpuAllocSuccess(buffer.getAddress, amount, blocking, isRecursive)
         case None =>

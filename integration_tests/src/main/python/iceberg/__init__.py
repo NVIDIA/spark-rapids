@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,8 +27,8 @@ from spark_session import with_cpu_session
 
 # iceberg supported types
 iceberg_table_gen = MappingProxyType({
-    '_c0': byte_gen, '_c1': short_gen, '_c2': IntegerGen(nullable=False),
-    '_c3': LongGen(nullable=False), '_c4': float_gen, '_c5': double_gen, 
+    '_c0': byte_gen, '_c1': short_gen, '_c2': int_gen,
+    '_c3': long_gen, '_c4': float_gen, '_c5': double_gen,
     '_c6': string_gen,
     '_c7': boolean_gen, '_c8': date_gen, '_c9': timestamp_gen, '_c10': decimal_gen_32bit,
     '_c11': decimal_gen_64bit, '_c12': decimal_gen_128bit,
@@ -42,6 +42,7 @@ iceberg_table_gen = MappingProxyType({
 })
 iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
+
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
 # All data types of iceberg, not all of them are supported by spark-rapids for now

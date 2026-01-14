@@ -16,13 +16,9 @@
 
 package org.apache.iceberg.spark.functions
 
-import scala.util.{Success, Try}
-
-import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType}
 import com.nvidia.spark.rapids.{ExprMeta, GpuBinaryExpression, GpuColumnVector, GpuScalar}
-import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.Hash
-import org.apache.iceberg.spark.functions.GpuBucketExpression.cast
+import com.nvidia.spark.rapids.jni.iceberg.IcebergBucket
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
@@ -40,33 +36,19 @@ case class GpuBucketExpression(numBuckets: Expression, value: Expression)
 
   override def doColumnar(numBuckets: GpuScalar, rhs: GpuColumnVector): CudfColumnVector = {
     sanityCheckResult
+    val numBucketsInt = numBuckets.getValue.asInstanceOf[java.lang.Integer]
+    require(numBucketsInt != null, "numBuckets must be valid")
 
-    val hash = withResource(cast(rhs.getBase)) { castedValue =>
-      Hash.murmurHash32(0, Array(castedValue))
-    }
-
-    val nonNegativeHash = withResource(hash) { _ =>
-      withResource(Scalar.fromInt(Integer.MAX_VALUE)) { intMax =>
-        hash.bitAnd(intMax)
-      }
-    }
-
-    withResource(nonNegativeHash) { _ =>
-      nonNegativeHash.mod(numBuckets.getBase, DType.INT32)
-    }
+    IcebergBucket.computeBucket(rhs.getBase, numBucketsInt.intValue())
   }
 
   private def sanityCheck(): Unit = {
     require(numBuckets.dataType == DataTypes.IntegerType,
       s"buckets number must be an integer, got ${numBuckets.dataType}")
 
-    require(!value.nullable,
-      s"Bucket function does not support nullable values for type ${value.dataType}")
-
     require(GpuBucketExpression.isSupportedValueType(value.dataType),
       s"Bucket function does not support type ${value.dataType} as values")
   }
-
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): CudfColumnVector = {
     throw new IllegalStateException("GpuBucketExpression requires first argument to be scalar, " +
@@ -86,25 +68,51 @@ case class GpuBucketExpression(numBuckets: Expression, value: Expression)
 }
 
 object GpuBucketExpression {
-  private[functions] def cast(cv: CudfColumnVector): CudfColumnVector = {
-    cv.getType match {
-      case d if d.isBackedByInt => cv.castTo(DType.INT64)
-      case d if d.isBackedByLong => cv.incRefCount()
-      case u => throw new IllegalStateException(s"Unsupported type for bucketing: $u")
-    }
-  }
 
-  private lazy val supportedFunctionClasses: Try[Set[Class[_]]] = Try {
+  /**
+   * Supported Iceberg Bucket function classes and their corresponding Iceberg types:
+   *
+   * - BucketInt: INTEGER, DATE
+   * - BucketLong: LONG, TIMESTAMP
+   * - BucketString: STRING
+   * - BucketBinary: BINARY, FIXED, UUID
+   * - BucketDecimal: DECIMAL
+   *
+   * See Iceberg's Bucket.java canTransform() for the full list of supported types.
+   */
+  private lazy val supportedFunctionClasses: Set[Class[_]] =
     Set(
       classOf[BucketFunction.BucketInt],
-      classOf[BucketFunction.BucketLong]
+      classOf[BucketFunction.BucketLong],
+      classOf[BucketFunction.BucketString],
+      classOf[BucketFunction.BucketBinary],
+      classOf[BucketFunction.BucketDecimal]
     )
-  }
 
+  /**
+   * Check if the Spark DataType is supported for bucket transform.
+   *
+   * Iceberg type to Spark type mapping:
+   * - INTEGER -> IntegerType
+   * - LONG -> LongType
+   * - DATE -> DateType
+   * - TIMESTAMP -> TimestampType
+   * - STRING -> StringType
+   * - BINARY -> BinaryType
+   * - DECIMAL -> DecimalType (up to 128-bit precision)
+   */
   def isSupportedValueType(dataType: DataType): Boolean = {
     dataType match {
-      case ByteType |  ShortType | IntegerType | DateType |
-           LongType | TimestampType | TimestampNTZType => true
+      // Maps to BucketInt: INTEGER, DATE
+      case IntegerType | DateType => true
+      // Maps to BucketLong: LONG, TIMESTAMP
+      case LongType | TimestampType => true
+      // Maps to BucketString: STRING
+      case StringType => true
+      // Maps to BucketBinary: BINARY
+      case BinaryType => true
+      // Maps to BucketDecimal: DECIMAL
+      case dt: DecimalType => dt.precision <= DType.DECIMAL128_MAX_PRECISION
       case _ => false
     }
   }
@@ -114,15 +122,9 @@ object GpuBucketExpression {
       s"BucketFunction should have exactly two arguments, got ${meta.childExprs.length}")
     val exprCls = meta.wrapped.staticObject
 
-    supportedFunctionClasses match {
-      case Success(supported) =>
-        if (!supported.contains(exprCls)) {
-          meta.willNotWorkOnGpu(s"Supported iceberg partition function classes are: " +
-            s"${supported.mkString("[", ",", "]")},  actual: $exprCls")
-        }
-      case scala.util.Failure(e) =>
-        meta.willNotWorkOnGpu(s"Unable to load supported iceberg partition function classes: " +
-          s"${e.getMessage}")
+    if (!supportedFunctionClasses.contains(exprCls)) {
+      meta.willNotWorkOnGpu(s"Supported iceberg partition function classes are: " +
+        s"${supportedFunctionClasses.mkString("[", ",", "]")},  actual: $exprCls")
     }
 
     val bucketExpr = meta.wrapped.arguments.head
@@ -132,11 +134,6 @@ object GpuBucketExpression {
     }
 
     val valueExpr = meta.wrapped.arguments(1)
-    if (valueExpr.nullable) {
-      meta.willNotWorkOnGpu(s"Gpu bucket function does not support nullable values for type " +
-        s"${valueExpr.dataType}")
-    }
-
     if (!isSupportedValueType(valueExpr.dataType)) {
       meta.willNotWorkOnGpu(s"Gpu bucket function does not support type ${valueExpr.dataType} " +
         s"as values")

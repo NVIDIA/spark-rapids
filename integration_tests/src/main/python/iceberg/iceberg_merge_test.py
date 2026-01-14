@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,7 +35,9 @@ def create_iceberg_table_with_merge_data(
         table_properties=None,
         ensure_distinct_key=False,
         seed=None,
-        merge_mode='copy-on-write'):
+        merge_mode='copy-on-write',
+        iceberg_base_table_cols=iceberg_base_table_cols,
+        iceberg_gens_list=iceberg_gens_list):
     """
     Helper function to create and populate an Iceberg table for MERGE tests.
     
@@ -94,7 +96,9 @@ def do_merge_test(
         merge_sql_func,
         partition_col_sql=None,
         table_properties=None,
-        merge_mode='copy-on-write'):
+        merge_mode='copy-on-write',
+        iceberg_base_table_cols=iceberg_base_table_cols,
+        iceberg_gens_list=iceberg_gens_list):
     """
     Helper function to test MERGE operations by comparing CPU and GPU results.
     
@@ -114,14 +118,14 @@ def do_merge_test(
     source_table = f"{base_table_name}_source"
     
     # Create identical target tables for CPU and GPU (using runtime seed)
-    create_iceberg_table_with_merge_data(cpu_target_table, partition_col_sql, table_properties, merge_mode=merge_mode)
-    create_iceberg_table_with_merge_data(gpu_target_table, partition_col_sql, table_properties, merge_mode=merge_mode)
+    create_iceberg_table_with_merge_data(cpu_target_table, partition_col_sql, table_properties, merge_mode=merge_mode, iceberg_base_table_cols=iceberg_base_table_cols, iceberg_gens_list=iceberg_gens_list)
+    create_iceberg_table_with_merge_data(gpu_target_table, partition_col_sql, table_properties, merge_mode=merge_mode, iceberg_base_table_cols=iceberg_base_table_cols, iceberg_gens_list=iceberg_gens_list)
     
     # Create source table with different seed and distinct keys to satisfy MERGE cardinality constraint
     # (each target row matches at most one source row)
     # Using a fixed different seed ensures source data differs from target data
     create_iceberg_table_with_merge_data(source_table, partition_col_sql, table_properties,
-                                        ensure_distinct_key=True, seed=42, merge_mode=merge_mode)
+                                        ensure_distinct_key=True, seed=42, merge_mode=merge_mode, iceberg_base_table_cols=iceberg_base_table_cols, iceberg_gens_list=iceberg_gens_list)
     
     # Execute MERGE on GPU
     def do_gpu_merge(spark):
@@ -189,6 +193,14 @@ def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode):
     pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("bucket(16, _c3)", id="bucket(16, long_col)"),
+    pytest.param("bucket(16, _c8)", id="bucket(16, date_col)"),
+    pytest.param("bucket(16, _c9)", id="bucket(16, timestamp_col)"),
+    pytest.param("bucket(16, _c6)", id="bucket(16, string_col)"),
+    pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
+    pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
+    pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
 ])
 def test_iceberg_merge_full_coverage(spark_tmp_table_factory, partition_col_sql, merge_mode):
     """Full partition coverage test - skipped for remote catalogs."""
@@ -257,6 +269,30 @@ def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_co
         merge_mode=merge_mode
     )
 
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize('merge_mode', ['copy-on-write'])
+@pytest.mark.parametrize('partition_col_sql', [pytest.param("year(_c9)", id="year(timestamp_col)")])
+@pytest.mark.parametrize('merge_sql', [
+    pytest.param(
+        """
+        MERGE INTO {target} t USING {source} s ON t._c0 = s._c0
+        WHEN MATCHED AND t._c2 < 0 THEN DELETE
+        WHEN MATCHED AND t._c2 >= 0 THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        """,
+        id="multiple_matched_clauses"),
+])
+def test_iceberg_merge_additional_patterns_bug(spark_tmp_table_factory, partition_col_sql, merge_sql, merge_mode):
+    """Test additional MERGE patterns (conditional updates, deletes, not matched by source) on Iceberg tables."""
+    do_merge_test(
+        spark_tmp_table_factory,
+        lambda spark, target, source: spark.sql(merge_sql.format(target=target, source=source)),
+        partition_col_sql=partition_col_sql,
+        merge_mode=merge_mode
+    )
 
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
@@ -315,7 +351,6 @@ def test_iceberg_merge_fallback_write_disabled(spark_tmp_table_factory, merge_mo
 ])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("bucket(8, _c6)", id="bucket(8, string_col)"),
 ])
 def test_iceberg_merge_fallback_unsupported_partition_transform(
         spark_tmp_table_factory, partition_col_sql, merge_mode, fallback_exec):

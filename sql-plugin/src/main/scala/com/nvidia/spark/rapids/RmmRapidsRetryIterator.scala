@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -567,13 +567,21 @@ object RmmRapidsRetryIterator extends Logging {
       attemptIter: Spliterator[K])
       extends RmmRapidsRetryIterator[T, K](attemptIter) {
 
-    override def hasNext: Boolean = super.hasNext
+    override def hasNext: Boolean = {
+      try {
+        RetryStateTracker.enterRetryBlock()
+        super.hasNext
+      } finally {
+        RetryStateTracker.exitRetryBlock()
+      }
+    }
 
     override def next(): K = {
       if (!hasNext) {
         throw new NoSuchElementException("Closed called on an empty iterator.")
       }
       try {
+        RetryStateTracker.enterRetryBlock()
         super.next()
       } catch {
         case t: Throwable =>
@@ -581,6 +589,8 @@ object RmmRapidsRetryIterator extends Logging {
           // we close our attempts (which includes the item we last attempted)
           attemptIter.close()
           throw t
+      } finally {
+        RetryStateTracker.exitRetryBlock()
       }
     }
   }
@@ -619,7 +629,7 @@ object RmmRapidsRetryIterator extends Logging {
       }
     }
 
-    override def next(): K = {
+    override def next(): K = try {
       // this is set on the first exception, and we add suppressed if there are others
       // during the retry attempts
       var lastException: Throwable = null
@@ -701,7 +711,8 @@ object RmmRapidsRetryIterator extends Logging {
                 splitReason = SplitReason.CPU_OOM
               }
               logInfo("splitReason is set " +
-                s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:", ex)
+                s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:",
+                ex)
             }
 
             // handle any retries that are wrapped in a different top-level exception
@@ -747,12 +758,13 @@ object RmmRapidsRetryIterator extends Logging {
           // else another exception wrapped a retry. So we are going to try again
         }
       }
-      RetryStateTracker.clearCurThreadRetrying()
       if (result.isEmpty) {
         // then lastException must be set, throw it.
         throw lastException
       }
       result.get
+    } finally {
+      RetryStateTracker.clearCurThreadRetrying()
     }
   }
 
@@ -924,15 +936,60 @@ case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends Auto
  */
 object RetryStateTracker {
   private val localIsRetrying = new ThreadLocal[java.lang.Boolean]()
+  // Track if the current thread is executing inside a retry framework block (withRetry*).
+  // Use a depth counter to correctly handle nested retry blocks.
+  private val localRetryBlockDepth = new ThreadLocal[java.lang.Integer]()
+  // Gate retry-block tracking behind the retry coverage debug flag to avoid overhead when unused.
+  private val trackRetryBlock: Boolean = AllocationRetryCoverageTracker.ENABLED
 
   def isCurThreadRetrying: Boolean = {
     val ret = localIsRetrying.get()
     ret != null && ret
   }
 
+  /**
+   * True if the current thread is executing inside a retry framework block (e.g. withRetry).
+   */
+  def isInRetryBlock: Boolean = {
+    if (!trackRetryBlock) {
+      false
+    } else {
+      val depth = localRetryBlockDepth.get()
+      depth != null && depth.intValue() > 0
+    }
+  }
+
   def setCurThreadRetrying(retrying: Boolean): Unit = localIsRetrying.set(retrying)
 
   def clearCurThreadRetrying(): Unit = localIsRetrying.remove()
+
+  /**
+   * Mark entering a retry framework block on the current thread.
+   */
+  def enterRetryBlock(): Unit = {
+    if (trackRetryBlock) {
+      val depth = localRetryBlockDepth.get()
+      if (depth == null) {
+        localRetryBlockDepth.set(1)
+      } else {
+        localRetryBlockDepth.set(depth.intValue() + 1)
+      }
+    }
+  }
+
+  /**
+   * Mark leaving a retry framework block on the current thread.
+   */
+  def exitRetryBlock(): Unit = {
+    if (trackRetryBlock) {
+      val depth = localRetryBlockDepth.get()
+      if (depth == null || depth.intValue() <= 1) {
+        localRetryBlockDepth.remove()
+      } else {
+        localRetryBlockDepth.set(depth.intValue() - 1)
+      }
+    }
+  }
 }
 
 object SplitReason extends Enumeration {

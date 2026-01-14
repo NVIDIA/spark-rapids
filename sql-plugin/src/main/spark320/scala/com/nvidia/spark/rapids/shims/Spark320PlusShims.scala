@@ -139,7 +139,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with WindowInPandasS
       enableAddPartitions = true,
       enableDropPartitions = false)
 
-  override def shouldFailDivOverflow(): Boolean = SQLConf.get.ansiEnabled
+  override def shouldFailDivOverflow: Boolean = SQLConf.get.ansiEnabled
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     SparkSessionUtils.leafNodeDefaultParallelism(ss)

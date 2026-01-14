@@ -32,12 +32,12 @@ object SparkShimImpl extends Spark400PlusCommonShims {
       GpuOverrides.expr[CollationAwareMurmur3Hash](
         "Collation-aware murmur3 hash operator",
         HashExprChecks.murmur3ProjectChecks,
-        Murmur3HashExprMeta
+        Murmur3HashExprMeta.apply
       ),
       GpuOverrides.expr[CollationAwareXxHash64](
         "Collation-aware xxhash64 operator",
         HashExprChecks.xxhash64ProjectChecks,
-        XxHash64ExprMeta
+        XxHash64ExprMeta.apply
       )
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
