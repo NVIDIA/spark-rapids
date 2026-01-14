@@ -100,7 +100,8 @@ class RapidsDataFrameSuite
     }
   }
 
-  // GPU-specific test for "SPARK-27439: Explain result should match collected result after view change"
+  // GPU-specific test for "SPARK-27439: Explain result should match collected result
+  // after view change"
   // Original test: DataFrameSuite.scala lines 2557-2579
   testRapids("SPARK-27439: Explain result should match collected result after view change") {
     withTempView("test", "test2", "tmp") {
