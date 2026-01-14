@@ -291,6 +291,15 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
     // For network transfer, wrap ByteBuffer in Netty ByteBuf
     Unpooled.wrappedBuffer(nioByteBuffer())
   }
+
+  // Spark 4.0+ adds convertToNettyForSsl() abstract method.
+  // We provide this method for Spark 4.0+ compatibility. In Spark 3.x, this is just
+  // a regular method (parent class doesn't have it). In Spark 4.0+, this overrides
+  // the abstract method.
+  def convertToNettyForSsl(): AnyRef = {
+    // For SSL, return an InputStream which Netty will wrap in ChunkedStream
+    createInputStream()
+  }
 }
 
 /**
