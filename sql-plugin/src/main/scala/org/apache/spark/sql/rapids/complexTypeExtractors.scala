@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -159,7 +159,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
 
@@ -194,7 +194,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -240,13 +240,13 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -363,13 +363,13 @@ case class GpuArrayPosition(left: Expression, right: Expression)
   override def prettyName: String = "array_position"
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,16 +69,16 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   // Track completed partition count for predictive buffer sizing
   private var completedPartitionCount: Int = 0
   private var completedPartitionBytes: Long = 0L
-  
+
   /**
    * Provides capacity hints for buffer expansion based on partition write statistics.
-   * 
+   *
    * The prediction logic:
    * - If we have completed at least one partition, calculate average bytes per partition
    * - Estimate total bytes needed as: avgBytesPerPartition * numPartitions
    * - Add a safety margin (1.2x) to account for partition size variance
    * - If no partitions completed yet, fall back to doubling the required capacity
-   * 
+   *
    * @param currentBytesWritten Total bytes written so far (we use completed partition
    *                            statistics instead for more accurate prediction)
    * @param requiredCapacity The minimum capacity needed to continue writing
@@ -110,7 +110,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       suggested
     }
   }
-  
+
   /**
    * Force this writer to use file-only mode, bypassing memory-based buffering.
    * This is useful for scenarios where memory buffering is not beneficial,
@@ -121,7 +121,9 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   def setForceFileOnlyMode(): Unit = {
     if (storageInitAttempted) {
       throw new IllegalStateException(
-        "Cannot set force file-only mode after storage has been initialized")
+        "Cannot set force file-only mode after storage has been initialized. " +
+        "Storage was initialized when getPartitionWriter() was called. " +
+        "Call setForceFileOnlyMode() before requesting any partition writers.")
     }
     forceFileOnly = true
   }
@@ -192,11 +194,9 @@ class RapidsLocalDiskShuffleMapOutputWriter(
     // Finish write phase to enable spilling and finalize data
     partialFileHandle.foreach { handle =>
       handle.finishWrite()
-
-      // commitAllPartitions is only called when NOT using MultithreadedShuffleBufferCatalog.
-      // In that case, Spark's shuffle read path (including ESS) expects the data file to exist.
-      // So we must force spill to create the file if data is still in memory.
-      // When using catalog, this method is not called - data is served from catalog instead.
+      
+      // If memory-based and not spilled yet, force spill to create file
+      // writeMetadataFileAndCommit requires a valid file
       if (handle.isMemoryBased && !handle.isSpilled) {
         handle.spill()
       }
@@ -212,6 +212,12 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       s"${partitionLengths.length}")
     blockResolver.writeMetadataFileAndCommit(
       shuffleId, mapId, partitionLengths, checksums, resolvedTmp)
+
+    // Close the partial file handle to release any remaining resources
+    // (e.g., host buffer if spill() was not called due to empty partitions)
+    partialFileHandle.foreach(_.close())
+    partialFileHandle = None
+
     MapOutputCommitMessage.of(partitionLengths)
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.HostAlloc
 
 import org.apache.spark.internal.Logging
@@ -135,7 +136,7 @@ class SpillablePartialFileHandle private (
 
   /**
    * Expand host buffer capacity to meet required capacity.
-   * 
+   *
    * When a capacityHintProvider is available, it will be used to predict the optimal
    * capacity based on current write statistics. Otherwise, falls back to doubling
    * until reaching required size.
@@ -170,10 +171,10 @@ class SpillablePartialFileHandle private (
             }
             cap
         }
-        
+
         // Ensure newCapacity doesn't exceed maxBufferSize
         newCapacity = math.min(newCapacity, maxBufferSize)
-        
+
         // Check if new capacity is still insufficient after expansion
         if (newCapacity < requiredCapacity) {
           logDebug(s"Buffer expansion cannot meet required capacity " +
@@ -190,7 +191,16 @@ class SpillablePartialFileHandle private (
           spillBufferToFileAndSwitch(currentBuffer)
           return false
         }
-        
+
+        // Check for Int.MaxValue limit due to ByteBuffer constraints
+        if (newCapacity > Int.MaxValue) {
+          logDebug(s"Buffer expansion would exceed ByteBuffer limit (Int.MaxValue) " +
+            s"required by buffer.asByteBuffer() used during spill " +
+            s"(need $newCapacity bytes, limit is ${Int.MaxValue} bytes), spilling to disk")
+          spillBufferToFileAndSwitch(currentBuffer)
+          return false
+        }
+
         // Check if memory usage is still below threshold
         if (!HostAlloc.isUsageBelowThreshold(memoryThreshold)) {
           logDebug(s"Memory usage above ${memoryThreshold * 100}% threshold, " +
@@ -202,7 +212,7 @@ class SpillablePartialFileHandle private (
         try {
           // Allocate new larger buffer
           val newBuffer = ai.rapids.cudf.HostMemoryBuffer.allocate(newCapacity, false)
-          try {
+          closeOnExcept(newBuffer) { _ =>
             // Copy existing data
             newBuffer.copyFromHostBuffer(0, currentBuffer, 0, writePosition)
             
@@ -216,12 +226,8 @@ class SpillablePartialFileHandle private (
             expansionCount += 1
             logDebug(s"Expanded buffer from $oldCapacity to $newCapacity bytes " +
               s"(required $requiredCapacity bytes)")
-            true
-          } catch {
-            case e: Exception =>
-              newBuffer.close()
-              throw e
           }
+          true
         } catch {
           case e: Exception =>
             logDebug(s"Failed to allocate buffer of $newCapacity bytes, " +
@@ -240,9 +246,13 @@ class SpillablePartialFileHandle private (
    */
   private def spillBufferToFileAndSwitch(
       buffer: ai.rapids.cudf.HostMemoryBuffer): Unit = {
+    // Defensive check: writePosition should not exceed Int.MaxValue
+    // because expandBuffer() limits buffer size to Int.MaxValue
+    require(writePosition <= Int.MaxValue,
+      s"Cannot spill buffer larger than Int.MaxValue: $writePosition bytes")
+
     // Write current buffer content to file
-    val fos = new FileOutputStream(file)
-    try {
+    withResource(new FileOutputStream(file)) { fos =>
       val channel = fos.getChannel
       val bb = buffer.asByteBuffer()
       bb.limit(writePosition.toInt)
@@ -252,8 +262,6 @@ class SpillablePartialFileHandle private (
       if (syncWrites) {
         channel.force(true)
       }
-    } finally {
-      fos.close()
     }
 
     // Release buffer and switch to file mode
@@ -381,8 +389,8 @@ class SpillablePartialFileHandle private (
    * Read bytes from the partial file sequentially.
    * Returns number of bytes actually read, or -1 if EOF.
    * 
-   * This method is designed for single-threaded sequential reading.
-   * Synchronization is only needed to prevent concurrent spill from closing the buffer.
+   * Synchronization: Only needed for memory-based reads to prevent concurrent spill.
+   * Once we detect spill has happened, we can immediately release the lock.
    */
   def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
     if (!writeFinished) {
@@ -440,7 +448,7 @@ class SpillablePartialFileHandle private (
   /**
    * Read bytes from a specific position without modifying internal read state.
    * Thread-safe for concurrent reads from different positions.
-   * 
+   *
    * This method is designed for scenarios where multiple reducers need to
    * read different partitions from the same handle concurrently.
    *
@@ -545,11 +553,12 @@ class SpillablePartialFileHandle private (
   def getSpillCount: Int = spillCount
 
   /**
-   * Override spillable to add write phase protection.
+   * Override spillable to add write phase protection and actual state checks.
+   * Since approxSizeInBytes is now a fixed val, we need to check actual state here.
    * No lock needed: protectedFromSpill is volatile.
    */
   override private[spill] def spillable: Boolean = {
-    super.spillable && !protectedFromSpill
+    super.spillable && !protectedFromSpill && !spilledToDisk && host.nonEmpty
   }
 
   // Flag to prevent concurrent spill attempts
@@ -557,7 +566,7 @@ class SpillablePartialFileHandle private (
 
   /**
    * Spill memory buffer to disk.
-   * 
+   *
    * IO operations are performed outside the synchronized block to allow
    * concurrent read() access to the buffer during the file write.
    */
@@ -579,19 +588,9 @@ class SpillablePartialFileHandle private (
         return 0L
       }
 
-      host match {
-        case Some(buffer) =>
-          spillInProgress = true
-          buffer
-        case None =>
-          return 0L  // Already spilled
-      }
-    }
-
-    // Perform IO outside lock - read() can still access buffer during this time
-    // Wrap with spillToDiskTime to track spill timing metrics
-    GpuTaskMetrics.get.spillToDiskTime {
-      try {
+    host match {
+      case Some(buffer) =>
+        // Spill all written data to file
         val fos = new FileOutputStream(file)
         try {
           val channel = fos.getChannel

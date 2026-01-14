@@ -374,19 +374,31 @@ object JoinImpl {
   }
 
   /**
-   * Do an inner hash join and select the build table as the smaller table
-   * (in terms of row count). This can have a big performance improvement.
+   * Do an inner hash join with build side selection based on the config.
+   *
    * @param leftKeys the left equality join keys
    * @param rightKeys the right equality join keys
    * @param compareNullsEqual true if nulls should be compared as equal
+   * @param buildSideSelection the build side selection strategy (AUTO, FIXED, or SMALLEST)
+   * @param suggestedBuildSide the suggested build side from the query plan. This is only used
+   *                           directly when buildSideSelection is FIXED. For AUTO or SMALLEST
+   *                           strategies, this serves as a hint but the actual physical build side
+   *                           will be determined dynamically based on row counts. The returned
+   *                           gather maps maintain consistent left/right semantics regardless of
+   *                           which physical build side is chosen.
    * @return the gather maps to use
    */
-  def innerHashJoinBuildSmallest(leftKeys: Table, rightKeys: Table,
-                                 compareNullsEqual: Boolean): GatherMapsResult = {
-    if (leftKeys.getRowCount < rightKeys.getRowCount) {
-      innerHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
-    } else {
-      innerHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
+  def innerHashJoin(leftKeys: Table, rightKeys: Table,
+                    compareNullsEqual: Boolean,
+                    buildSideSelection: JoinBuildSideSelection.JoinBuildSideSelection,
+                    suggestedBuildSide: GpuBuildSide): GatherMapsResult = {
+    // Select the physical build side for the join algorithm based on the strategy.
+    // This may differ from suggestedBuildSide when using AUTO or SMALLEST strategies.
+    val selectedBuildSide = JoinBuildSideSelection.selectPhysicalBuildSide(
+      buildSideSelection, suggestedBuildSide, leftKeys.getRowCount, rightKeys.getRowCount)
+    selectedBuildSide match {
+      case GpuBuildLeft => innerHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
+      case GpuBuildRight => innerHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
     }
   }
 
@@ -422,20 +434,31 @@ object JoinImpl {
   }
 
   /**
-   * Do an inner sort join and select the build table as the smaller table
-   * (in terms of row count). This can have a performance improvement, but
-   * it is not as large as the hash join.
+   * Do an inner sort join with build side selection based on the config.
+   *
    * @param leftKeys the left equality join keys
    * @param rightKeys the right equality join keys
    * @param compareNullsEqual true if nulls should be compared as equal
+   * @param buildSideSelection the build side selection strategy (AUTO, FIXED, or SMALLEST)
+   * @param suggestedBuildSide the suggested build side from the query plan. This is only used
+   *                           directly when buildSideSelection is FIXED. For AUTO or SMALLEST
+   *                           strategies, this serves as a hint but the actual physical build side
+   *                           will be determined dynamically based on row counts. The returned
+   *                           gather maps maintain consistent left/right semantics regardless of
+   *                           which physical build side is chosen.
    * @return the gather maps to use
    */
-  def innerSortJoinBuildSmallest(leftKeys: Table, rightKeys: Table,
-                                 compareNullsEqual: Boolean): GatherMapsResult = {
-    if (leftKeys.getRowCount < rightKeys.getRowCount) {
-      innerSortJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
-    } else {
-      innerSortJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
+  def innerSortJoin(leftKeys: Table, rightKeys: Table,
+                    compareNullsEqual: Boolean,
+                    buildSideSelection: JoinBuildSideSelection.JoinBuildSideSelection,
+                    suggestedBuildSide: GpuBuildSide): GatherMapsResult = {
+    // Select the physical build side for the join algorithm based on the strategy.
+    // This may differ from suggestedBuildSide when using AUTO or SMALLEST strategies.
+    val selectedBuildSide = JoinBuildSideSelection.selectPhysicalBuildSide(
+      buildSideSelection, suggestedBuildSide, leftKeys.getRowCount, rightKeys.getRowCount)
+    selectedBuildSide match {
+      case GpuBuildLeft => innerSortJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
+      case GpuBuildRight => innerSortJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
     }
   }
 
@@ -799,12 +822,143 @@ object JoinStrategy extends Enumeration {
    * HASH_ONLY: Force the use of traditional hash join only.
    */
   val HASH_ONLY = Value("HASH_ONLY")
+
+  /**
+   * Select the effective join strategy based on heuristics.
+   *
+   * Heuristics applied when strategy is AUTO:
+   * 1. For conditional joins (with AST) when join type is INNER, LEFT_OUTER, or RIGHT_OUTER:
+   *    Use INNER_HASH_WITH_POST as it provides better performance.
+   * 2. For unconditional LEFT_OUTER/RIGHT_OUTER joins when build side selection is AUTO or 
+   *    SMALLEST:
+   *    If the smaller side is NOT the fixed build side, switch to INNER_HASH_WITH_POST
+   *    to enable dynamic build side selection.
+   *
+   * @param configuredStrategy the strategy from the config
+   * @param joinType the type of join being performed
+   * @param hasCondition whether the join has an AST condition
+   * @param buildSideSelection the build side selection strategy
+   * @param leftRowCount the row count of the left side
+   * @param rightRowCount the row count of the right side
+   * @return the effective strategy to use
+   */
+  def selectStrategy(
+      configuredStrategy: JoinStrategy,
+      joinType: JoinType,
+      hasCondition: Boolean,
+      buildSideSelection: JoinBuildSideSelection.JoinBuildSideSelection,
+      leftRowCount: Long,
+      rightRowCount: Long): JoinStrategy = {
+    if (configuredStrategy != AUTO) {
+      // If not AUTO, use the configured strategy as-is
+      configuredStrategy
+    } else if (hasCondition) {
+      // Conditional joins with INNER, LEFT_OUTER, or RIGHT_OUTER,
+      // INNER_HASH_WITH_POST provides better performance
+      joinType match {
+        case _: InnerLike | LeftOuter | RightOuter =>
+          INNER_HASH_WITH_POST
+        case _ =>
+          // Fall through to dynamic build side heuristic
+          selectStrategyForDynamicBuildSide(joinType, hasCondition, buildSideSelection, 
+            leftRowCount, rightRowCount)
+      }
+    } else {
+      selectStrategyForDynamicBuildSide(joinType, hasCondition, buildSideSelection, 
+        leftRowCount, rightRowCount)
+    }
+  }
+
+  /**
+   * Selects a join strategy that may enable dynamic build side selection for outer joins.
+   * For unconditional LEFT_OUTER/RIGHT_OUTER joins when build side selection is AUTO or SMALLEST,
+   * if the smaller side is not the fixed build side, switches to INNER_HASH_WITH_POST to allow
+   * the inner join to dynamically select the optimal (smaller) build side.
+   */
+  private def selectStrategyForDynamicBuildSide(
+      joinType: JoinType,
+      hasCondition: Boolean,
+      buildSideSelection: JoinBuildSideSelection.JoinBuildSideSelection,
+      leftRowCount: Long,
+      rightRowCount: Long): JoinStrategy = {
+    if (!hasCondition && 
+        (buildSideSelection == JoinBuildSideSelection.AUTO || 
+         buildSideSelection == JoinBuildSideSelection.SMALLEST)) {
+      joinType match {
+        case LeftOuter if leftRowCount < rightRowCount =>
+          // For LEFT OUTER, the data movement build side must be right (GpuBuildRight).
+          // But left is smaller, so we can benefit from dynamic physical build side selection.
+          INNER_HASH_WITH_POST
+        case RightOuter if rightRowCount < leftRowCount =>
+          // For RIGHT OUTER, the data movement build side must be left (GpuBuildLeft).
+          // But right is smaller, so we can benefit from dynamic physical build side selection.
+          INNER_HASH_WITH_POST
+        case _ =>
+          // Default: use HASH_ONLY (traditional hash join)
+          HASH_ONLY
+      }
+    } else {
+      // Default: use HASH_ONLY (traditional hash join)
+      HASH_ONLY
+    }
+  }
+}
+
+/**
+ * Enumeration of build side selection strategies for join operations.
+ */
+object JoinBuildSideSelection extends Enumeration {
+  type JoinBuildSideSelection = Value
+  /**
+   * AUTO: Use heuristics to automatically determine the best build side.
+   * Currently behaves the same as SMALLEST, but the heuristics may change in the future
+   * to consider factors beyond just row count.
+   */
+  val AUTO = Value("AUTO")
+  /**
+   * FIXED: Use the build side as specified by the query plan.
+   * This preserves the original Spark behavior without any dynamic selection.
+   */
+  val FIXED = Value("FIXED")
+  /**
+   * SMALLEST: Always select the side with the smallest row count as the build side.
+   * This is determined on a batch-by-batch basis at join time.
+   */
+  val SMALLEST = Value("SMALLEST")
+
+  /**
+   * Determine the physical build side for a join operation based on the selection strategy.
+   *
+   * This selects which side the join algorithm will use as its build table, which may differ
+   * from the data movement build side (which side was materialized/buffered/broadcast).
+   *
+   * @param selection the build side selection strategy (AUTO, FIXED, or SMALLEST)
+   * @param planBuildSide the build side from the query plan (used for FIXED, or as a hint for
+   *                      AUTO/SMALLEST strategies)
+   * @param leftRowCount the row count of the left side
+   * @param rightRowCount the row count of the right side
+   * @return the physical build side for the join algorithm to use
+   */
+  def selectPhysicalBuildSide(
+      selection: JoinBuildSideSelection,
+      planBuildSide: GpuBuildSide,
+      leftRowCount: Long,
+      rightRowCount: Long): GpuBuildSide = {
+    selection match {
+      case FIXED => planBuildSide
+      case AUTO | SMALLEST =>
+        // Both AUTO and SMALLEST currently select the smaller side
+        // AUTO may evolve to use additional heuristics in the future
+        if (leftRowCount < rightRowCount) GpuBuildLeft else GpuBuildRight
+    }
+  }
 }
 
 /**
  * Options to control join behavior.
  * @param strategy the join strategy to use (AUTO, INNER_HASH_WITH_POST, INNER_SORT_WITH_POST,
  *                 or HASH_ONLY)
+ * @param buildSideSelection the build side selection strategy (AUTO, FIXED, or SMALLEST)
  * @param targetSize the target batch size in bytes for the join operation
  * @param logCardinalityEnabled whether to log cardinality statistics for debugging
  * @param sizeEstimateThreshold the threshold used to decide when to skip the expensive join
@@ -812,6 +966,7 @@ object JoinStrategy extends Enumeration {
  */
 case class JoinOptions(
     strategy: JoinStrategy.JoinStrategy,
+    buildSideSelection: JoinBuildSideSelection.JoinBuildSideSelection,
     targetSize: Long,
     logCardinalityEnabled: Boolean,
     sizeEstimateThreshold: Double)
@@ -862,6 +1017,13 @@ object JoinBuildSideStats {
   }
 }
 
+/**
+ * Base iterator for hash joins.
+ *
+ * @param buildSide the side that was materialized/buffered for this join (data movement decision).
+ *                  This is distinct from the physical build side that the join algorithm selects
+ *                  when using AUTO or SMALLEST build side selection strategies.
+ */
 abstract class BaseHashJoinIterator(
     built: LazySpillableColumnarBatch,
     boundBuiltKeys: Seq[GpuExpression],
@@ -1277,7 +1439,16 @@ class HashJoinIterator(
       rightKeys: Table,
       leftData: LazySpillableColumnarBatch,
       rightData: LazySpillableColumnarBatch): GatherMapsResult = {
-    joinOptions.strategy match {
+    // Apply heuristics to select the effective strategy
+    val effectiveStrategy = JoinStrategy.selectStrategy(
+      joinOptions.strategy,
+      joinType,
+      hasCondition = false,  // This is called for unconditional joins
+      joinOptions.buildSideSelection,
+      leftKeys.getRowCount,
+      rightKeys.getRowCount)
+
+    effectiveStrategy match {
       case JoinStrategy.INNER_HASH_WITH_POST =>
         // Use composable JNI APIs: inner join -> convert to target join type
         computeNonCondInnerHashWithPost(leftKeys, rightKeys)
@@ -1297,7 +1468,7 @@ class HashJoinIterator(
           computeNonCondInnerHashWithPost(leftKeys, rightKeys, isFallback = true)
         }
       case _ =>
-        // Use existing hash join methods (for AUTO and HASH_ONLY strategies)
+        // Use existing hash join methods (for HASH_ONLY and when AUTO doesn't trigger heuristics)
         computeWithHashJoin(leftKeys, rightKeys)
     }
   }
@@ -1313,9 +1484,9 @@ class HashJoinIterator(
     }
     logJoinCardinality(leftKeys, rightKeys, implName)
 
-    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+    val innerMaps = JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
+      joinOptions.buildSideSelection, buildSide)
 
-    // Convert to target join type
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
@@ -1329,9 +1500,9 @@ class HashJoinIterator(
       rightKeys: Table): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, "INNER_SORT_WITH_POST")
     
-    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+    val innerMaps = JoinImpl.innerSortJoin(leftKeys, rightKeys, compareNullsEqual,
+      joinOptions.buildSideSelection, buildSide)
 
-    // Convert to target join type
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
@@ -1351,7 +1522,8 @@ class HashJoinIterator(
       case RightOuter =>
         JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
       case _: InnerLike =>
-        JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+        JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
+          joinOptions.buildSideSelection, buildSide)
       case LeftSemi =>
         JoinImpl.leftSemiHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual)
       case LeftAnti =>
@@ -1367,7 +1539,7 @@ class HashJoinIterator(
 
 /**
  * An iterator that does a hash join against a stream of batches with an inequality condition.
- * The compiled condition will be closed when this iterator is closed.
+ * The LazyCompiledCondition will be closed when this iterator is closed.
  */
 class ConditionalHashJoinIterator(
     built: LazySpillableColumnarBatch,
@@ -1376,7 +1548,7 @@ class ConditionalHashJoinIterator(
     stream: Iterator[LazySpillableColumnarBatch],
     boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
-    compiledCondition: CompiledExpression,
+    lazyCompiledCondition: LazyCompiledCondition,
     joinOptions: JoinOptions,
     joinType: JoinType,
     buildSide: GpuBuildSide,
@@ -1397,6 +1569,13 @@ class ConditionalHashJoinIterator(
       conditionForLogging,
       opTime = opTime,
       joinTime = joinTime) {
+
+  // The AST condition is compiled based on the data movement build side.
+  // For INNER_HASH_WITH_POST and INNER_SORT_WITH_POST strategies, the physical build side
+  // selection happens within the inner join, but the AST is always compiled for the data
+  // movement build side and used in post-filtering (where only left/right table order matters).
+  // For mixed join fallback with InnerLike joins, we compile dynamically based on the
+  // physical build side selected per-batch.
   override protected def joinGathererLeftRight(
       leftKeys: Table,
       leftData: LazySpillableColumnarBatch,
@@ -1406,8 +1585,17 @@ class ConditionalHashJoinIterator(
     NvtxIdWithMetrics(NvtxRegistry.HASH_JOIN_GATHER_MAP, joinTime) {
       withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
         withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
+          // Apply heuristics to select the effective strategy for conditional joins
+          val effectiveStrategy = JoinStrategy.selectStrategy(
+            joinOptions.strategy,
+            joinType,
+            hasCondition = true,  // This is a conditional join
+            joinOptions.buildSideSelection,
+            leftKeys.getRowCount,
+            rightKeys.getRowCount)
+
           // Join strategy dispatching for conditional joins:
-          val maps = joinOptions.strategy match {
+          val maps = effectiveStrategy match {
             case JoinStrategy.INNER_HASH_WITH_POST =>
               // Use composable JNI APIs: inner join -> filter -> convert to target join type
               computeInnerHashWithPost(leftKeys, rightKeys, leftTable, rightTable, nullEquality)
@@ -1426,7 +1614,7 @@ class ConditionalHashJoinIterator(
                   isFallback = true)
               }
             case _ =>
-              // Use existing mixed join methods (for AUTO and HASH_ONLY strategies)
+              // Use existing mixed join methods (for HASH_ONLY and when AUTO doesn't trigger)
               computeWithMixedJoin(leftKeys, rightKeys, leftTable, rightTable, nullEquality)
           }          
           makeGatherer(maps, leftData, rightData, joinType)
@@ -1449,20 +1637,19 @@ class ConditionalHashJoinIterator(
     }
     logJoinCardinality(leftKeys, rightKeys, implName)
     
-    // Perform inner hash join with smaller table on the right for better performance
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
 
-    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys,
-      nullEquality == NullEquality.EQUAL)
+    val innerMaps = JoinImpl.innerHashJoin(leftKeys, rightKeys,
+      nullEquality == NullEquality.EQUAL, joinOptions.buildSideSelection, buildSide)
 
-    // Filter by AST condition
+    val compiledCondition = lazyCompiledCondition.getForBuildSide(buildSide)
+
     val filteredMaps = withResource(innerMaps) { _ =>
       JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide(innerMaps, leftTable, rightTable,
         compiledCondition, joinType, buildSide)
     }
 
-    // Convert filtered inner maps to target join type
     val result = convertInnerJoinMapsToTargetType(filteredMaps, leftRowCount, rightRowCount,
       joinType, "INNER_HASH_WITH_POST strategy")
     logJoinCompletion()
@@ -1477,20 +1664,19 @@ class ConditionalHashJoinIterator(
       nullEquality: NullEquality): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, "INNER_SORT_WITH_POST (conditional)")
     
-    // Perform inner sort-merge join with smaller table on the right for better performance
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
 
-    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys,
-      nullEquality == NullEquality.EQUAL)
+    val innerMaps = JoinImpl.innerSortJoin(leftKeys, rightKeys,
+      nullEquality == NullEquality.EQUAL, joinOptions.buildSideSelection, buildSide)
 
-    // Filter by AST condition
+    val compiledCondition = lazyCompiledCondition.getForBuildSide(buildSide)
+
     val filteredMaps = withResource(innerMaps) { _ =>
       JoinImpl.filterInnerJoinWithASTSwapByJoinTypeAndBuildSide(innerMaps, leftTable, rightTable,
         compiledCondition, joinType, buildSide)
     }
 
-    // Convert filtered inner maps to target join type
     val result = convertInnerJoinMapsToTargetType(filteredMaps, leftRowCount, rightRowCount,
       joinType, "INNER_SORT_WITH_POST strategy")
     logJoinCompletion()
@@ -1506,24 +1692,31 @@ class ConditionalHashJoinIterator(
     logJoinCardinality(leftKeys, rightKeys, "mixed join (conditional)")
     
     val result = joinType match {
-      case _: InnerLike if buildSide == GpuBuildRight =>
-        JoinImpl.innerHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
-      case _: InnerLike if buildSide == GpuBuildLeft =>
-        JoinImpl.innerHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+      case _: InnerLike =>
+        // For inner joins, use dynamic build side selection
+        val selectedBuildSide = JoinBuildSideSelection.selectPhysicalBuildSide(
+          joinOptions.buildSideSelection, buildSide,
+          leftKeys.getRowCount, rightKeys.getRowCount)
+        selectedBuildSide match {
+          case GpuBuildLeft =>
+            JoinImpl.innerHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
+              lazyCompiledCondition.getForBuildLeft, nullEquality)
+          case GpuBuildRight =>
+            JoinImpl.innerHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
+              lazyCompiledCondition.getForBuildRight, nullEquality)
+        }
       case LeftOuter =>
         JoinImpl.leftOuterHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+          lazyCompiledCondition.getForBuildRight, nullEquality)
       case RightOuter =>
         JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+          lazyCompiledCondition.getForBuildLeft, nullEquality)
       case LeftSemi =>
         JoinImpl.leftSemiHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+          lazyCompiledCondition.getForBuildRight, nullEquality)
       case LeftAnti =>
         JoinImpl.leftAntiHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+          lazyCompiledCondition.getForBuildRight, nullEquality)
       case _ =>
         throw new NotImplementedError(s"Join $joinType $buildSide is not currently supported")
     }
@@ -1534,11 +1727,10 @@ class ConditionalHashJoinIterator(
   override def close(): Unit = {
     if (!closed) {
       super.close()
-      compiledCondition.close()
+      lazyCompiledCondition.close()
     }
   }
 }
-
 
 /**
  * An iterator that does the stream-side only of a hash join. Using full join as an example,
@@ -1573,7 +1765,7 @@ class HashJoinStreamSideIterator(
     stream: Iterator[LazySpillableColumnarBatch],
     boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
-    compiledCondition: Option[CompiledExpression],
+    lazyCompiledCondition: Option[LazyCompiledCondition],
     joinOptions: JoinOptions,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
@@ -1611,14 +1803,35 @@ class HashJoinStreamSideIterator(
 
   private val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
 
+  // The cudf API build side is determined by subJoinType, not the original buildSide:
+  // - LeftOuter uses leftOuterHashJoinBuildRight (expects BuildRight AST)
+  // - RightOuter uses rightOuterHashJoinBuildLeft (expects BuildLeft AST)
+  // - Inner uses innerHashJoinBuildRight (expects BuildRight AST)
+  private val cudfBuildSide: GpuBuildSide = subJoinType match {
+    case LeftOuter => GpuBuildRight
+    case RightOuter => GpuBuildLeft
+    case Inner => GpuBuildRight
+    case t => throw new IllegalStateException(s"unexpected subJoinType: $t")
+  }
+
   private[this] var builtSideTracker: Option[SpillableColumnarBatch] = buildSideTrackerInit
 
   private def unconditionalJoinGatherMaps(
       leftKeys: Table, rightKeys: Table): GatherMapsResult = {
     // Pass the original joinType if it was transformed to subJoinType
     val originalJoinType = if (joinType != subJoinType) Some(joinType) else None
+
+    // Apply heuristics to select the effective strategy for unconditional joins
+    // Note: subJoinType is used for strategy selection since that's what we're actually executing
+    val effectiveStrategy = JoinStrategy.selectStrategy(
+      joinOptions.strategy,
+      subJoinType,
+      hasCondition = false,
+      joinOptions.buildSideSelection,
+      leftKeys.getRowCount,
+      rightKeys.getRowCount)
     
-    joinOptions.strategy match {
+    effectiveStrategy match {
       case JoinStrategy.INNER_HASH_WITH_POST =>
         // Use composable JNI APIs
         computeUnconditionalInnerHashWithPost(leftKeys, rightKeys, originalJoinType)
@@ -1654,12 +1867,12 @@ class HashJoinStreamSideIterator(
     }
     logJoinCardinality(leftKeys, rightKeys, implName, originalJoinType)
 
-    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+    val innerMaps = JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
+      joinOptions.buildSideSelection, cudfBuildSide)
 
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
 
-    // Convert to target sub-join type
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
       subJoinType, "INNER_HASH_WITH_POST strategy")
     logJoinCompletion()
@@ -1673,12 +1886,12 @@ class HashJoinStreamSideIterator(
     logJoinCardinality(leftKeys, rightKeys, s"INNER_SORT_WITH_POST (outer: $joinType)", 
       originalJoinType)
 
-    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+    val innerMaps = JoinImpl.innerSortJoin(leftKeys, rightKeys, compareNullsEqual,
+      joinOptions.buildSideSelection, cudfBuildSide)
 
     val leftRowCount = leftKeys.getRowCount
     val rightRowCount = rightKeys.getRowCount
 
-    // Convert to target sub-join type
     val result = convertInnerJoinMapsToTargetType(innerMaps, leftRowCount, rightRowCount,
       subJoinType, "INNER_SORT_WITH_POST strategy")
     logJoinCompletion()
@@ -1697,7 +1910,8 @@ class HashJoinStreamSideIterator(
       case RightOuter =>
         JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual)
       case Inner =>
-        JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+        JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
+          joinOptions.buildSideSelection, cudfBuildSide)
       case t =>
         throw new IllegalStateException(s"unsupported join type: $t")
     }
@@ -1710,36 +1924,45 @@ class HashJoinStreamSideIterator(
       leftData: LazySpillableColumnarBatch,
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch,
-      compiledCondition: CompiledExpression): GatherMapsResult = {
+      lazyCondition: LazyCompiledCondition): GatherMapsResult = {
     // Pass the original joinType if it was transformed to subJoinType
     val originalJoinType = if (joinType != subJoinType) Some(joinType) else None
     
     withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
       withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
-        joinOptions.strategy match {
+        // Apply heuristics to select the effective strategy for conditional joins
+        val effectiveStrategy = JoinStrategy.selectStrategy(
+          joinOptions.strategy,
+          subJoinType,
+          hasCondition = true,
+          joinOptions.buildSideSelection,
+          leftKeys.getRowCount,
+          rightKeys.getRowCount)
+
+        effectiveStrategy match {
           case JoinStrategy.INNER_HASH_WITH_POST =>
             // Use composable JNI APIs
             computeConditionalInnerHashWithPost(leftKeys, rightKeys, leftTable, rightTable,
-              compiledCondition, originalJoinType)
+              lazyCondition, originalJoinType)
           case JoinStrategy.INNER_SORT_WITH_POST =>
             // Check if sort join is supported (no ARRAY/STRUCT types)
             val leftKeysSupported = isSortJoinSupported(boundBuiltKeys)
             val rightKeysSupported = isSortJoinSupported(boundStreamKeys)
             if (leftKeysSupported && rightKeysSupported) {
               computeConditionalInnerSortWithPost(leftKeys, rightKeys, leftTable, rightTable,
-                compiledCondition, originalJoinType)
+                lazyCondition, originalJoinType)
             } else {
               // Log warning and fall back to hash join
               logWarning(s"INNER_SORT_WITH_POST strategy requested but join keys contain " +
                 s"ARRAY or STRUCT types which are not supported for sort joins. " +
                 s"Falling back to INNER_HASH_WITH_POST strategy.")
               computeConditionalInnerHashWithPost(leftKeys, rightKeys, leftTable, rightTable,
-                compiledCondition, originalJoinType, isFallback = true)
+                lazyCondition, originalJoinType, isFallback = true)
             }
           case _ =>
             // Use existing mixed join methods
             computeConditionalMixedJoin(leftKeys, rightKeys, leftTable, rightTable,
-              compiledCondition, originalJoinType)
+              lazyCondition, originalJoinType)
         }
       }
     }
@@ -1750,7 +1973,7 @@ class HashJoinStreamSideIterator(
       rightKeys: Table,
       leftTable: Table,
       rightTable: Table,
-      compiledCondition: CompiledExpression,
+      lazyCondition: LazyCompiledCondition,
       originalJoinType: Option[JoinType],
       isFallback: Boolean = false): GatherMapsResult = {
     val implName = if (isFallback) {
@@ -1760,9 +1983,11 @@ class HashJoinStreamSideIterator(
     }
     logJoinCardinality(leftKeys, rightKeys, implName, originalJoinType)
 
-    val innerMaps = JoinImpl.innerHashJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+    val innerMaps = JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
+      joinOptions.buildSideSelection, cudfBuildSide)
 
-    // Filter by AST condition
+    val compiledCondition = lazyCondition.getForBuildSide(cudfBuildSide)
+
     val filteredMaps = withResource(innerMaps) { _ =>
       JoinImpl.filterInnerJoinWithASTSwapBySubJoinType(innerMaps, leftTable, rightTable,
         compiledCondition, subJoinType)
@@ -1771,7 +1996,6 @@ class HashJoinStreamSideIterator(
     val leftRowCount = leftTable.getRowCount
     val rightRowCount = rightTable.getRowCount
 
-    // Convert filtered inner maps to target sub-join type
     val result = convertInnerJoinMapsToTargetType(filteredMaps, leftRowCount, rightRowCount,
       subJoinType, "INNER_HASH_WITH_POST strategy")
     logJoinCompletion()
@@ -1783,14 +2007,16 @@ class HashJoinStreamSideIterator(
       rightKeys: Table,
       leftTable: Table,
       rightTable: Table,
-      compiledCondition: CompiledExpression,
+      lazyCondition: LazyCompiledCondition,
       originalJoinType: Option[JoinType]): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, s"INNER_SORT_WITH_POST (outer: $joinType, conditional)",
       originalJoinType)
 
-    val innerMaps = JoinImpl.innerSortJoinBuildSmallest(leftKeys, rightKeys, compareNullsEqual)
+    val innerMaps = JoinImpl.innerSortJoin(leftKeys, rightKeys, compareNullsEqual,
+      joinOptions.buildSideSelection, cudfBuildSide)
 
-    // Filter by AST condition
+    val compiledCondition = lazyCondition.getForBuildSide(cudfBuildSide)
+
     val filteredMaps = withResource(innerMaps) { _ =>
       JoinImpl.filterInnerJoinWithASTSwapBySubJoinType(innerMaps, leftTable, rightTable,
         compiledCondition, subJoinType)
@@ -1799,7 +2025,6 @@ class HashJoinStreamSideIterator(
     val leftRowCount = leftTable.getRowCount
     val rightRowCount = rightTable.getRowCount
 
-    // Convert filtered inner maps to target sub-join type
     val result = convertInnerJoinMapsToTargetType(filteredMaps, leftRowCount, rightRowCount,
       subJoinType, "INNER_SORT_WITH_POST strategy")
     logJoinCompletion()
@@ -1811,7 +2036,7 @@ class HashJoinStreamSideIterator(
       rightKeys: Table,
       leftTable: Table,
       rightTable: Table,
-      compiledCondition: CompiledExpression,
+      lazyCondition: LazyCompiledCondition,
       originalJoinType: Option[JoinType]): GatherMapsResult = {
     logJoinCardinality(leftKeys, rightKeys, s"mixed join (outer: $joinType, conditional)",
       originalJoinType)
@@ -1819,13 +2044,24 @@ class HashJoinStreamSideIterator(
     val result = subJoinType match {
       case LeftOuter =>
         JoinImpl.leftOuterHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+          lazyCondition.getForBuildRight, nullEquality)
       case RightOuter =>
         JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+          lazyCondition.getForBuildLeft, nullEquality)
       case Inner =>
-        JoinImpl.innerHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
-          compiledCondition, nullEquality)
+        // For inner sub-joins, use dynamic build side selection
+        // For sub-joins, the plan build side is cudfBuildSide (GpuBuildRight for Inner)
+        val selectedBuildSide = JoinBuildSideSelection.selectPhysicalBuildSide(
+          joinOptions.buildSideSelection, cudfBuildSide,
+          leftKeys.getRowCount, rightKeys.getRowCount)
+        selectedBuildSide match {
+          case GpuBuildLeft =>
+            JoinImpl.innerHashJoinBuildLeft(leftKeys, rightKeys, leftTable, rightTable,
+              lazyCondition.getForBuildLeft, nullEquality)
+          case GpuBuildRight =>
+            JoinImpl.innerHashJoinBuildRight(leftKeys, rightKeys, leftTable, rightTable,
+              lazyCondition.getForBuildRight, nullEquality)
+        }
       case t =>
         throw new IllegalStateException(s"unsupported join type: $t")
     }
@@ -1839,8 +2075,8 @@ class HashJoinStreamSideIterator(
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     NvtxIdWithMetrics(NvtxRegistry.FULL_HASH_JOIN_GATHER_MAP, joinTime) {
-      val maps = compiledCondition.map { condition =>
-        conditionalJoinGatherMaps(leftKeys, leftData, rightKeys, rightData, condition)
+      val maps = lazyCompiledCondition.map { lazyCondition =>
+        conditionalJoinGatherMaps(leftKeys, leftData, rightKeys, rightData, lazyCondition)
       }.getOrElse {
         unconditionalJoinGatherMaps(leftKeys, rightKeys)
       }
@@ -1891,6 +2127,7 @@ class HashJoinStreamSideIterator(
       super.close()
       builtSideTracker.foreach(_.close())
       builtSideTracker = None
+      lazyCompiledCondition.foreach(_.close())
     }
   }
 
@@ -1987,8 +2224,7 @@ class HashOuterJoinIterator(
     stream: Iterator[LazySpillableColumnarBatch],
     boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
-    boundCondition: Option[GpuExpression],
-    numFirstConditionTableColumns: Int,
+    lazyCompiledCondition: Option[LazyCompiledCondition],
     joinOptions: JoinOptions,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
@@ -1996,12 +2232,9 @@ class HashOuterJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
 
-  private val compiledCondition: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
-    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
-  }
-
   private val streamJoinIter = new HashJoinStreamSideIterator(joinType, built, boundBuiltKeys,
-    buildStats, buildSideTrackerInit, stream, boundStreamKeys, streamAttributes, compiledCondition,
+    buildStats, buildSideTrackerInit, stream, boundStreamKeys, streamAttributes, 
+    lazyCompiledCondition,
     joinOptions, buildSide, compareNullsEqual, conditionForLogging, opTime, joinTime)
 
   private var finalBatch: Option[ColumnarBatch] = None
@@ -2086,16 +2319,16 @@ class HashedExistenceJoinIterator(
   boundBuildKeys: Seq[GpuExpression],
   lazyStream: Iterator[LazySpillableColumnarBatch],
   boundStreamKeys: Seq[GpuExpression],
-  boundCondition: Option[GpuExpression],
-  numFirstConditionTableColumns: Int,
+  lazyCompiledCondition: Option[LazyCompiledCondition],
+  buildSide: GpuBuildSide,
   compareNullsEqual: Boolean,
   opTime: GpuMetric,
   joinTime: GpuMetric
 ) extends ExistenceJoinIterator(spillableBuiltBatch, lazyStream, opTime, joinTime) {
 
-  val compiledConditionRes: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
-    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
-  }
+  // Get the compiled condition for our build side
+  val compiledConditionRes: Option[CompiledExpression] = 
+    lazyCompiledCondition.map(_.getForBuildSide(buildSide))
 
   private def leftKeysTable(leftColumnarBatch: ColumnarBatch): Table = {
     withResource(GpuProjectExec.project(leftColumnarBatch, boundStreamKeys)) {
@@ -2154,6 +2387,13 @@ class HashedExistenceJoinIterator(
       }
     }
   }
+
+  override def close(): Unit = {
+    if (!closed) {
+      super.close()
+      lazyCompiledCondition.foreach(_.close())
+    }
+  }
 }
 
 trait GpuJoinExec extends ShimBinaryExecNode with GpuExec {
@@ -2165,6 +2405,18 @@ trait GpuJoinExec extends ShimBinaryExecNode with GpuExec {
 }
 
 trait GpuHashJoin extends GpuJoinExec {
+  /**
+   * The build side determines which side of the join is materialized/buffered/broadcast.
+   * This is a data movement decision made at query planning time.
+   *
+   * IMPORTANT: This is distinct from the physical build side that the join algorithm may select
+   * when buildSideSelection is AUTO or SMALLEST. When those strategies are used:
+   * - `buildSide` still determines which side to materialize (e.g., which to broadcast)
+   * - The join algorithm may independently choose which materialized data to use as the build
+   *   table based on runtime row counts
+   * - The join abstractions (GatherMapsResult) ensure correct semantics regardless of the
+   *   algorithm's internal choice
+   */
   def buildSide: GpuBuildSide
 
   protected lazy val (buildPlan, streamedPlan) = buildSide match {
@@ -2270,6 +2522,16 @@ trait GpuHashJoin extends GpuJoinExec {
     (streamOutput.size, boundCondition)
   }
 
+  /**
+   * Condition bound to left.output ++ right.output.
+   * LazyCompiledCondition will transform it for BuildLeft by rewriting ordinals.
+   */
+  protected lazy val boundConditionLeftRight: Option[GpuExpression] = {
+    condition.map { c =>
+      GpuBindReferences.bindGpuReference(c, left.output ++ right.output, allMetrics)
+    }
+  }
+
   def doJoin(
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
@@ -2304,28 +2566,39 @@ trait GpuHashJoin extends GpuJoinExec {
     // them when it is done
     val joinIterator = joinType match {
       case ExistenceJoin(_) =>
+        // Create a new LazyCompiledCondition for this iterator (it takes ownership)
+        val lazyCond = boundConditionLeftRight.map { cond =>
+          LazyCompiledCondition(cond, left.output.size, right.output.size)
+        }
         new HashedExistenceJoinIterator(
           spillableBuiltBatch,
           boundBuildKeys,
           lazyStream,
           boundStreamKeys,
-          boundCondition,
-          numFirstConditionTableColumns,
+          lazyCond,
+          buildSide,
           compareNullsEqual,
           opTime,
           joinTime)
       case FullOuter =>
+        // Create a new LazyCompiledCondition for this iterator (it takes ownership)
+        val lazyCond = boundConditionLeftRight.map { cond =>
+          LazyCompiledCondition(cond, left.output.size, right.output.size)
+        }
         new HashOuterJoinIterator(joinType, spillableBuiltBatch, boundBuildKeys, None, None,
           lazyStream, boundStreamKeys, streamedPlan.output,
-          boundCondition, numFirstConditionTableColumns, joinOptions, buildSide,
+          lazyCond, joinOptions, buildSide,
           compareNullsEqual, condition, opTime, joinTime)
       case _ =>
-        if (boundCondition.isDefined) {
-          // ConditionalHashJoinIterator will close the compiled condition
-          val compiledCondition =
-            boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
+        if (boundConditionLeftRight.isDefined) {
+          // ConditionalHashJoinIterator will close the LazyCompiledCondition
+          // Create a new LazyCompiledCondition for this iterator (it takes ownership)
+          val lazyCond = LazyCompiledCondition(
+            boundConditionLeftRight.get,
+            left.output.size,
+            right.output.size)
           new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, None,
-            lazyStream, boundStreamKeys, streamedPlan.output, compiledCondition,
+            lazyStream, boundStreamKeys, streamedPlan.output, lazyCond,
             joinOptions, joinType, buildSide,
             compareNullsEqual, condition, opTime, joinTime)
         } else {

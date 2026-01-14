@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * This file was derived from StatisticsCollection.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -110,7 +110,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
         case (_, _, false) => count(new Column("*"))
       }) ++ tightBoundsColOpt
 
-    struct(statCols: _*).as('stats)
+    struct(statCols: _*).as("stats")
   }
 
   /**

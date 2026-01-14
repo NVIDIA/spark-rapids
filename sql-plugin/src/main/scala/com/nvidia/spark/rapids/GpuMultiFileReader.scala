@@ -1473,7 +1473,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       logDebug(s"$getFileFormatShortName Coalescing reading estimates the initTotalSize:" +
         s" $initTotalSize, and the true size: $finalBufferSize")
       SpillableHostBuffer(finalBuffer,
-        finalBufferSize)
+        finalBufferSize,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     }
   }
 

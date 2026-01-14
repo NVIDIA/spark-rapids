@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,12 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32828: cast from a derived user-defined type to a base type", WONT_FIX_ISSUE("User-defined types are not supported"))
     .exclude("cast string to timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/blob/main/docs/compatibility.md#string-to-timestamp"))
     .exclude("cast string to date", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10771"))
+  enableSuite[RapidsCollectionExpressionsSuite]
+    .exclude("Flatten", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14127"))
+    .exclude("MapFromEntries", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14128"))
+    .exclude("Array Intersect", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
+    .exclude("Array remove", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14129"))
+    .exclude("Shuffle", ADJUST_UT("Replaced by testRapids version that adjusts the expected results to match the running by --master local[2]."))
   enableSuite[RapidsDataFrameAggregateSuite]
     .exclude("collect functions", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("collect functions structs", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
@@ -66,15 +72,9 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("MakeDecimal", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13816"))
   enableSuite[RapidsIntervalFunctionsSuite]
   enableSuite[RapidsJsonExpressionsSuite]
-    .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
-    .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))
-    .exclude("from_json - input=empty object, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10910"))
-    .exclude("SPARK-20549: from_json bad UTF-8", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10911"))
-    .exclude("SPARK-21513: to_json support map[struct, struct] to json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10918"))
-    .exclude("from_json missing fields", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10922"))
+    .exclude("from_json - invalid data", ADJUST_UT("Replaced by testRapids version that expects a SparkException instead of TestFailedException"))
   enableSuite[RapidsJsonFunctionsSuite]
-    .exclude("from_json invalid json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
-    .exclude("SPARK-33134: return partial results only for root JSON objects", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10901"))
+    .exclude("SPARK-33134: return partial results only for root JSON objects", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14088"))
   enableSuite[RapidsJsonSuite]
     .exclude("SPARK-32810: JSON data source should be able to read files with escaped glob metacharacter in the paths", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
     .exclude("SPARK-18352: Parse normal multi-line JSON files (uncompressed)", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
@@ -85,12 +85,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsMathExpressionsSuite]
     .exclude("round/bround/floor/ceil", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13747"))
   enableSuite[RapidsMathFunctionsSuite]
-    .exclude("SPARK-33428 conv function shouldn't raise error if input string is too big", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
-    .exclude("SPARK-36229 conv should return result equal to -1 in base of toBase", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
   enableSuite[RapidsMiscFunctionsSuite]
-  enableSuite[RapidsHashedRelationSuite]
-  enableSuite[RapidsInnerJoinSuite]
-  enableSuite[RapidsOuterJoinSuite]
   enableSuite[RapidsParquetAvroCompatibilitySuite]
     .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11592"))
   enableSuite[RapidsParquetColumnIndexSuite]
@@ -110,7 +105,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetFieldIdSchemaSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
     .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11454"))
-    .exclude("parquet timestamp conversion", ADJUST_UT("impala_timestamp cannot be found"))
+    .exclude("parquet timestamp conversion", ADJUST_UT("replaced by testRapids version which copies the impala_timestamp file from the resources directory"))
   enableSuite[RapidsParquetPartitionDiscoverySuite]
     .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11583"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
@@ -141,11 +136,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-22550: Elt should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22603: FormatString should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
   enableSuite[RapidsStringFunctionsSuite]
-  enableSuite[RapidsPercentileSuite]
-  enableSuite[RapidsHistogramNumericSuite]
-  enableSuite[RapidsFirstLastTestSuite]
   enableSuite[RapidsProductAggSuite]
-  enableSuite[RapidsApproximatePercentileSuite]
   enableSuite[RapidsComplexTypesSuite]
   enableSuite[RapidsCSVSuite]
     .exclude("parse unescaped quotes with maxCharsPerColumn", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13889"))
@@ -160,7 +151,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsCsvExpressionsSuite]
     .exclude("unsupported mode", ADJUST_UT("Replaced by a testRapids case which changed the expectation of SparkException instead of TestFailedException"))
   enableSuite[RapidsCsvFunctionsSuite]
-  enableSuite[RapidsCSVInferSchemaSuite]
   enableSuite[RapidsCSVReadSchemaSuite]
   enableSuite[RapidsHeaderCSVReadSchemaSuite]
   enableSuite[RapidsJsonReadSchemaSuite]
@@ -171,5 +161,25 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsVectorizedParquetReadSchemaSuite]
   enableSuite[RapidsMergedParquetReadSchemaSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
+  enableSuite[RapidsSQLQuerySuite]
+    .exclude("SPARK-6743: no columns from cache", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14098"))
+    .exclude("aggregation with codegen updates peak execution memory", WONT_FIX_ISSUE("Codegen and memory metrics not applicable for GPU"))
+    .exclude("external sorting updates peak execution memory", WONT_FIX_ISSUE("Memory metrics implementation differs on GPU"))
+    .exclude("run sql directly on files", ADJUST_UT("Replaced by testRapids version that expects \"Path does not exist\" instead of \"Hive built-in ORC data source must be used with Hive support\" because there's a spark-hive jar in the CLASSPATH in our UT running"))
+    .exclude("Common subexpression elimination", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14106"))
+    .exclude("SPARK-27619: When spark.sql.legacy.allowHashOnMapType is true, hash can be used on Maptype", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14108"))
+    .exclude("SPARK-17515: CollectLimit.execute() should perform per-partition limits", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14109"))
+    .exclude("SPARK-19650: An action on a Command should not trigger a Spark job", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14110"))
+    .exclude("SPARK-31594: Do not display the seed of rand/randn with no argument in output schema", ADJUST_UT("Replaced by testRapids version with a correct regex expression to match the projectExplainOutput, randn isn't supported now. See https://github.com/NVIDIA/spark-rapids/issues/11613"))
+    .exclude("normalize special floating numbers in subquery", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14116"))
+    .exclude("SPARK-33677: LikeSimplification should be skipped if pattern contains any escapeChar", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14117"))
+    .exclude("SPARK-33593: Vector reader got incorrect data with binary partition value", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14118"))
+    .exclude("SPARK-33084: Add jar support Ivy URI in SQL -- jar contains udf class", ADJUST_UT("Replaced by testRapids version that uses testFile() to access Spark test resources instead of getContextClassLoader"))
+    .exclude("SPARK-33482: Fix FileScan canonicalization", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14122"))
+    .exclude("SPARK-36093: RemoveRedundantAliases should not change expression's name", ADJUST_UT("Replaced by testRapids version that checks the partition column name of the GpuInsertIntoHadoopFsRelationCommand"))
+    .exclude("SPARK-39166: Query context of binary arithmetic should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
+    .exclude("SPARK-39175: Query context of Cast should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
+    .exclude("SPARK-39177: Query context of getting map value should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
+    .exclude("SPARK-39190,SPARK-39208,SPARK-39210: Query context of decimal overflow error should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
 }
 // scalastyle:on line.size.limit

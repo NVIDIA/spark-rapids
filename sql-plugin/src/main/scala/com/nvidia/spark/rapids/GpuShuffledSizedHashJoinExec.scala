@@ -72,21 +72,33 @@ object GpuShuffledSizedHashJoinExec {
       boundStreamKeys: Seq[GpuExpression],
       streamTypes: Array[DataType],
       streamOutput: Seq[Attribute],
+      // Condition bound to leftOutput ++ rightOutput
       boundCondition: Option[GpuExpression],
-      numFirstConditionTableColumns: Int,
+      numLeftColumns: Int,
+      numRightColumns: Int,
       compareNullsEqual: Boolean,
       buildSideNeedsNullFilter: Boolean) {
+
+    /**
+     * Create a LazyCompiledCondition for this join's condition, if one exists.
+     * The caller takes ownership and is responsible for closing the returned condition.
+     */
+    def createLazyCompiledCondition(): Option[LazyCompiledCondition] = {
+      boundCondition.map { cond =>
+        LazyCompiledCondition(cond, numLeftColumns, numRightColumns)
+      }
+    }
+
     def flipped(
         joinType: JoinType,
         buildSide: GpuBuildSide,
         condition: Option[Expression],
+        leftOutput: Seq[Attribute],
+        rightOutput: Seq[Attribute],
         metrics: Map[String, GpuMetric]): BoundJoinExprs = {
-      val (conditionLeftAttrs, conditionRightAttrs) = buildSide match {
-        case GpuBuildLeft => (streamOutput, buildOutput)
-        case GpuBuildRight => (buildOutput, streamOutput)
-      }
+      // Bind condition to leftOutput ++ rightOutput
       val flippedCondition = condition.map { c =>
-        GpuBindReferences.bindGpuReference(c, conditionLeftAttrs ++ conditionRightAttrs, metrics)
+        GpuBindReferences.bindGpuReference(c, leftOutput ++ rightOutput, metrics)
       }
 
       val treatNullsEqual = GpuHashJoin.compareNullsEqual(joinType, boundStreamKeys)
@@ -95,7 +107,7 @@ object GpuShuffledSizedHashJoinExec {
 
       BoundJoinExprs(boundStreamKeys, streamTypes, streamOutput,
         boundBuildKeys, buildTypes, buildOutput,
-        flippedCondition, conditionLeftAttrs.size, treatNullsEqual, needNullFilter)
+        flippedCondition, leftOutput.size, rightOutput.size, treatNullsEqual, needNullFilter)
     }
   }
 
@@ -125,8 +137,11 @@ object GpuShuffledSizedHashJoinExec {
           case GpuBuildLeft =>
             (boundLeftKeys, leftTypes, leftOutput, boundRightKeys, rightTypes, rightOutput)
       }
+      
+      // Bind condition to leftOutput ++ rightOutput.
+      // LazyCompiledCondition will transform it for BuildLeft by rewriting ordinals.
       val boundCondition = condition.map { c =>
-        GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput, metrics)
+        GpuBindReferences.bindGpuReference(c, leftOutput ++ rightOutput, metrics)
       }
 
       val treatNullsEqual = GpuHashJoin.compareNullsEqual(joinType, boundBuildKeys)
@@ -135,7 +150,8 @@ object GpuShuffledSizedHashJoinExec {
 
       BoundJoinExprs(boundBuildKeys, buildTypes, buildOutput,
         boundStreamKeys, streamTypes, streamOutput,
-        boundCondition, streamOutput.size, treatNullsEqual, needNullFilter)
+        boundCondition, leftOutput.size, rightOutput.size, 
+        treatNullsEqual, needNullFilter)
     }
   }
 
@@ -328,30 +344,30 @@ object GpuShuffledSizedHashJoinExec {
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
     info.joinType match {
       case FullOuter =>
+        // Create a LazyCompiledCondition for this iterator (it takes ownership)
+        val lazyCond = info.exprs.createLazyCompiledCondition()
         new HashOuterJoinIterator(FullOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          joinOptions, info.buildSide,
+          lazyCond, joinOptions, info.buildSide,
           info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
       case LeftOuter if info.buildSide == GpuBuildLeft =>
+        val lazyCond = info.exprs.createLazyCompiledCondition()
         new HashOuterJoinIterator(LeftOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          joinOptions, info.buildSide,
+          lazyCond, joinOptions, info.buildSide,
           info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
       case RightOuter if info.buildSide == GpuBuildRight =>
+        val lazyCond = info.exprs.createLazyCompiledCondition()
         new HashOuterJoinIterator(RightOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          info.exprs.boundCondition, info.exprs.numFirstConditionTableColumns,
-          joinOptions, info.buildSide,
+          lazyCond, joinOptions, info.buildSide,
           info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
       case _ if info.exprs.boundCondition.isDefined =>
-        // ConditionalHashJoinIterator will close the compiled condition
-        val compiledCondition = info.exprs.boundCondition.get.convertToAst(
-          info.exprs.numFirstConditionTableColumns).compile()
+        // ConditionalHashJoinIterator will close the LazyCompiledCondition
+        val lazyCond = info.exprs.createLazyCompiledCondition().get
         new ConditionalHashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
-          compiledCondition, joinOptions, info.joinType,
+          lazyCond, joinOptions, info.joinType,
           info.buildSide, info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
       case _ =>
         new HashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys, info.buildStats,
@@ -851,7 +867,7 @@ object GpuShuffledAsymmetricHashJoinExec {
       if (buildRows <= Int.MaxValue && buildSize <= gpuBatchSizeBytes) {
         getJoinInfoSmallBuildSide(joinType, buildSide, condition, exprs,
           baseBuildIter, buildRows, buildSize,
-          rawStreamIter, gpuBatchSizeBytes, metrics)
+          rawStreamIter, leftOutput, rightOutput, gpuBatchSizeBytes, metrics)
       } else {
         // The natural build side does not fit in a single batch, so use the stream side
         // as the hash table if we can fit it in a single batch.
@@ -869,7 +885,7 @@ object GpuShuffledAsymmetricHashJoinExec {
           metrics(BUILD_DATA_SIZE).set(streamSize)
           val flippedSide = flipped(buildSide)
           JoinInfo(joinType, flippedSide, streamIter, streamSize, None, baseBuildIter,
-            exprs.flipped(joinType, flippedSide, condition, metrics))
+            exprs.flipped(joinType, flippedSide, condition, leftOutput, rightOutput, metrics))
         } else {
           val buildIter = addNullFilterIfNecessary(baseBuildIter, exprs.boundBuildKeys,
             exprs.buildSideNeedsNullFilter, metrics)
@@ -888,6 +904,8 @@ object GpuShuffledAsymmetricHashJoinExec {
         buildRows: Long,
         buildSize: Long,
         rawStreamIter: Iterator[ColumnarBatch],
+        leftOutput: Seq[Attribute],
+        rightOutput: Seq[Attribute],
         gpuBatchSizeBytes: Long,
         metrics: Map[String, GpuMetric]) = {
       val streamIter = setupForJoin(mutable.Queue.empty, rawStreamIter, exprs.streamTypes,
@@ -945,13 +963,15 @@ object GpuShuffledAsymmetricHashJoinExec {
                   metrics(BUILD_DATA_SIZE).set(streamSize)
                   val flippedSide = flipped(buildSide)
                   JoinInfo(joinType, flippedSide, singleStreamIter, streamSize, Some(streamStats),
-                    buildIter, exprs.flipped(joinType, flippedSide, condition, metrics))
+                    buildIter, exprs.flipped(joinType, flippedSide, condition,
+                      leftOutput, rightOutput, metrics))
                 }
               } else {
                 metrics(BUILD_DATA_SIZE).set(streamSize)
                 val flippedSide = flipped(buildSide)
                 JoinInfo(joinType, flippedSide, streamBatchIter, streamSize, None,
-                  buildIter, exprs.flipped(joinType, flippedSide, condition, metrics))
+                  buildIter, exprs.flipped(joinType, flippedSide, condition,
+                    leftOutput, rightOutput, metrics))
               }
             } else {
               metrics(BUILD_DATA_SIZE).set(buildSize)
@@ -1133,7 +1153,7 @@ sealed trait SpillableHostConcatResult extends AutoCloseable {
   def getDataLen: Long
 
   protected var spillableBuffer = {
-    SpillableHostBuffer(hmb, hmb.getLength)
+    SpillableHostBuffer(hmb, hmb.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
   override def close(): Unit = if (spillableBuffer != null) {
@@ -1652,8 +1672,9 @@ class BigSizedJoinIterator(
   private val opTime = metrics(OP_TIME_LEGACY)
   private val joinTime = metrics(JOIN_TIME)
 
-  private lazy val compiledCondition = info.exprs.boundCondition.map { condExpr =>
-    use(opTime.ns(condExpr.convertToAst(info.exprs.numFirstConditionTableColumns).compile()))
+  private lazy val lazyCompiledCondition = info.exprs.createLazyCompiledCondition().map { cond =>
+    use(cond)
+    cond
   }
 
   override def hasNext: Boolean = {
@@ -1721,7 +1742,7 @@ class BigSizedJoinIterator(
             subIter = Some(new HashOuterJoinIterator(info.joinType,
               buildPartitioner.getBuildBatch(currentJoinGroupIndex), info.exprs.boundBuildKeys,
               info.buildStats, tracker, Iterator.empty, info.exprs.boundStreamKeys,
-              info.exprs.streamOutput, None, 0, joinOptions,
+              info.exprs.streamOutput, None, joinOptions,
               info.buildSide, info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime))
           }
         } else {
@@ -1766,7 +1787,7 @@ class BigSizedJoinIterator(
       buildSideRowTrackers(currentJoinGroupIndex) = None
       new HashJoinStreamSideIterator(info.joinType,
         builtBatch, info.exprs.boundBuildKeys, info.buildStats, buildRowTracker,
-        lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput, compiledCondition,
+        lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput, lazyCompiledCondition,
         joinOptions, info.buildSide,
         info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
     } else {

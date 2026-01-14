@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -348,7 +348,6 @@ trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
     }
   }
 }
-
 
 object SpillableHostBufferHandle extends Logging {
   def apply(hmb: HostMemoryBuffer): SpillableHostBufferHandle = {
@@ -1240,14 +1239,36 @@ class DiskHandle private(
     SpillFramework.stores.diskStore.deleteFile(blockId)
   }
 
+  /**
+   * Materialize the data from disk to the given host memory buffer.
+   *
+   * @param mb the host memory buffer to copy data into. The buffer's capacity
+   *           must be exactly equal to the decompressed data length. Note that this
+   *           may differ from `sizeInBytes` since data on disk may be compressed.
+   * @throws IllegalStateException if the actual bytes read from disk does not match
+   *                               the buffer's length
+   */
   def materializeToHostMemoryBuffer(mb: HostMemoryBuffer): Unit = {
     withInputWrappedStream { in =>
       withResource(new HostMemoryOutputStream(mb)) { out =>
-        IOUtils.copy(in, out)
+        val len = IOUtils.copy(in, out)
+        if (len != mb.getLength) {
+          throw new IllegalStateException(
+            s"Expected to read ${mb.getLength} bytes, but got $len bytes from disk")
+        }
       }
     }
   }
 
+  /**
+   * Materialize the data from disk to the given device memory buffer.
+   *
+   * @param dmb the device memory buffer to copy data into. The buffer's capacity
+   *            must be exactly equal to the decompressed data length. Note that this
+   *            may differ from `sizeInBytes` since data on disk may be compressed.
+   * @throws IllegalStateException if the actual bytes read from disk does not match
+   *                               the buffer's length
+   */
   def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
     var copyOffset = 0L
     withInputWrappedStream { in =>
@@ -1269,6 +1290,10 @@ class DiskHandle private(
           }
         }
       }
+    }
+    if (copyOffset != dmb.getLength) {
+      throw new IllegalStateException(
+        s"Expected to read ${dmb.getLength} bytes, but got $copyOffset bytes from disk")
     }
   }
 }

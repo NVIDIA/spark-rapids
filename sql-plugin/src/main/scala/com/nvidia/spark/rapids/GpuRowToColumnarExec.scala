@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   }
 }
 
-private[rapids] object GpuRowToColumnConverter {
+object GpuRowToColumnConverter {
   // Sizes estimates for different things
   /*
    * size of an offset entry.  In general we have 1 more offset entry than rows, so
@@ -78,24 +78,10 @@ private[rapids] object GpuRowToColumnConverter {
   private[this] val VALIDITY = 0.125 // 1/8th of a byte (1 bit)
   private[this] val VALIDITY_N_OFFSET = OFFSET + VALIDITY
 
-  private[rapids] abstract class TypeConverter extends Serializable {
-    /** Append row value to the column builder and return the number of data bytes written */
-    def append(row: SpecializedGetters,
-      column: Int,
-      builder: RapidsHostColumnBuilder): Double
-
-    /**
-     * This is here for structs.  When you append a null to a struct the size is not known
-     * ahead of time.  Also because structs push nulls down to the children this size should
-     * assume a validity even if the schema says it cannot be null.
-     */
-    def getNullSize: Double
-  }
-
   private def getConverterFor(field: StructField): TypeConverter =
     getConverterForType(field.dataType, field.nullable)
 
-  private[rapids] def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
+  def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
     (dataType, nullable) match {
       case (BooleanType, true) => BooleanConverter
       case (BooleanType, false) => NotNullBooleanConverter

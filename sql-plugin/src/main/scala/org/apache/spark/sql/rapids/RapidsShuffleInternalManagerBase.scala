@@ -264,6 +264,11 @@ object RapidsShuffleInternalManagerBase extends Logging {
 
     mergerSlots.values.foreach(_.shutdownNow())
     mergerSlots.clear()
+
+    // Reset slot counters to ensure clean state for next initialization
+    writerSlotNumber.set(0)
+    readerSlotNumber.set(0)
+    mergerSlotNumber.set(0)
   }
 
   def getNextWriterSlot: Int = Math.abs(writerSlotNumber.incrementAndGet())
@@ -280,7 +285,7 @@ trait RapidsShuffleWriterShimHelper {
   private var myPartitionLengths: Array[Long] = null
 
   // This is a Spark 3.2.0+ function, adding a default here for testing purposes
-  def getPartitionLengths: Array[Long] = myPartitionLengths
+  def getPartitionLengths(): Array[Long] = myPartitionLengths
 
   def commitAllPartitions(writer: ShuffleMapOutputWriter, emptyChecksums: Boolean): Array[Long] = {
     myPartitionLengths = doCommitAllPartitions(writer, emptyChecksums)
@@ -378,6 +383,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    *
    * @param value the value to process (typically a ColumnarBatch)
    * @return a tuple of (ColumnarBatch with incremented ref count, memory size)
+   * @throws IllegalStateException if value is not a ColumnarBatch or contains
+   *         unsupported column types
    */
   private def incRefCountAndGetSize(value: Any): (ColumnarBatch, Long) = {
     value match {
@@ -391,14 +398,18 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               (SlicedSerializedColumnVector.incRefCount(columnarBatch),
                 SlicedSerializedColumnVector.getTotalHostMemoryUsed(
                   columnarBatch))
-            case _ =>
-              (null, 0L)
+            case other =>
+              throw new IllegalStateException(
+                s"Unexpected column type in ColumnarBatch: ${other.getClass.getName}. " +
+                  "Expected SlicedGpuColumnVector or SlicedSerializedColumnVector.")
           }
         } else {
           (columnarBatch, 0L)
         }
-      case _ =>
-        (null, 0L)
+      case other =>
+        throw new IllegalStateException(
+          s"Unexpected value type: ${if (other == null) "null" else other.getClass.getName}. " +
+            "Expected ColumnarBatch.")
     }
   }
 
@@ -479,8 +490,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 pair._2 >= processedCount
               }).foreach { future =>
                 newFutureTouched = true
-                // Get (compressedSize, quotaToRelease) from compression task
-                val (compressedSize, quotaToRelease) = future._1.get()
+                // remainingQuota is the compressedSize that was held after Writer released
+                // the excess quota (recordSize - compressedSize)
+                val (remainingQuota, compressedSize) = future._1.get()
 
                 // Write newly compressed data incrementally
                 val writtenBytes =
@@ -495,8 +507,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 partitionProcessedFutures.compute(currentPartitionToWrite,
                   (key, value) => { value + 1 })
 
-                // Release quota after data is written to disk
-                limiter.release(quotaToRelease)
+                // Release the remaining quota (compressedSize) after data is written to disk
+                limiter.release(remainingQuota)
               }
 
               if (containsLastForThisPartition) {
@@ -618,8 +630,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val value = record._2
         val reducePartitionId: Int = partitioner.getPartition(key)
 
-        // Detect multi-batch: partition ID decreased means new batch started
-        if (reducePartitionId < previousMaxPartition) {
+        // Detect multi-batch: partition ID must be strictly increasing within a batch.
+        // If current partition ID <= previous max, it's a new batch.
+        if (reducePartitionId <= previousMaxPartition) {
           if (!isMultiBatch) {
             isMultiBatch = true
             logDebug(s"Detected multi-batch scenario for shuffle $shuffleId, " +
@@ -688,22 +701,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // Track total written data size (compressed size)
               val compressedSize = (buffer.getCount - originLength).toLong
               totalCompressedSize.addAndGet(compressedSize)
-
-              // Release excess quota immediately after compression if compression helped.
-              // Return (compressedSize, quotaToRelease) for Merger:
-              // - compressedSize: actual data size to write
-              // - quotaToRelease: remaining quota to release after disk write
-              val excessQuota = recordSize - compressedSize
-              if (excessQuota > 0) {
-                // Compression reduced size, release excess immediately
-                limiter.release(excessQuota)
-                // Merger will release compressedSize later
-                (compressedSize, compressedSize)
-              } else {
-                // Compression didn't help (or made it worse), no early release
-                // Merger will release full recordSize later
-                (compressedSize, recordSize)
-              }
+              (recordSize, compressedSize)
             }
           } catch {
             case e: Exception =>
@@ -946,7 +944,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   remaining -= bytesRead
                 } else {
                   throw new IOException(
-                    s"EOF reading partition $partitionId, " +
+                    s"EOF reading partition $partitionId " +
+                    s"from partial file ${partialFiles.indexOf(partialFile)}, " +
                     s"expected $partitionLength bytes, got ${partitionLength - remaining}")
                 }
               }

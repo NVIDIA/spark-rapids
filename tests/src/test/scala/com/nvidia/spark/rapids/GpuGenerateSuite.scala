@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -268,7 +268,7 @@ class GpuGenerateSuite
       var forceOOM: Boolean) extends SpillableColumnarBatch {
     override def numRows(): Int = spillable.numRows()
     override def setSpillPriority(priority: Long): Unit = spillable.setSpillPriority(priority)
-    override def getColumnarBatch: ColumnarBatch = {
+    override def getColumnarBatch(): ColumnarBatch = {
       if (forceOOM) {
         forceOOM = false
         throw new GpuSplitAndRetryOOM(s"mock split and retry")

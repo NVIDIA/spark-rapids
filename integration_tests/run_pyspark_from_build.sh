@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -389,6 +389,13 @@ else
                 "for new GPU memory requirements ####"
     fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
+
+    # Retry coverage tracking - detect memory allocations not covered by withRetry.
+    # Enable by setting SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true before running tests.
+    # See AllocationRetryCoverageTracker.scala and https://github.com/NVIDIA/spark-rapids/issues/13672
+    if [[ -n "${SPARK_RAPIDS_RETRY_COVERAGE_TRACKING}" ]]; then
+        export PYSP_TEST_spark_executorEnv_SPARK_RAPIDS_RETRY_COVERAGE_TRACKING="${SPARK_RAPIDS_RETRY_COVERAGE_TRACKING}"
+    fi
 
     # Turns on $LOAD_HYBRID_BACKEND and setup the filepath of hybrid backend jars, to activate the
     # hybrid backend while running subsequent integration tests.

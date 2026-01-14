@@ -526,19 +526,17 @@ object SpillableHostBuffer {
    *               must be <= than buffer.getLength, otherwise this function throws
    *               and closes `buffer`
    * @param buffer the buffer to make spillable
-   * @param overrideTaskPriority optional task priority to override the default task priority
+   * @param priority the initial spill priority of this buffer
    */
   def apply(buffer: HostMemoryBuffer,
             length: Long,
-            overrideTaskPriority: Option[Long] = None): SpillableHostBuffer = {
+            priority: Long): SpillableHostBuffer = {
     closeOnExcept(buffer) { _ =>
       require(length <= buffer.getLength,
         s"Attempted to add a host spillable with a length ${length} B which is " +
           s"greater than the backing host buffer length ${buffer.getLength} B")
     }
-    val handle = SpillableHostBufferHandle(buffer)
-    overrideTaskPriority.foreach(priority => handle.taskPriority = priority)
-    new SpillableHostBuffer(handle, length)
+    new SpillableHostBuffer(SpillableHostBufferHandle(buffer), length)
   }
 
   def sliceWithRetry(shb: SpillableHostBuffer, start: Long, len: Long): HostMemoryBuffer = {

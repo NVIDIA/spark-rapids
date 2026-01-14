@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
     batch
   }
 
-  override def hasNext(): Boolean = {
+  override def hasNext: Boolean = {
     // isDeckFilled means if there is unconverted source data remained on the deck.
     // hasProceedingBuilders means if there exists working target vectors not being flushed yet.
     val selfHoldData = Option(converterImpl).exists { c =>

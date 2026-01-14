@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -511,7 +511,8 @@ class SpillFrameworkSuite
 
   test("host originated: get host memory buffer") {
     val hmb = HostMemoryBuffer.allocate(1L * 1024)
-    val spillableBuffer = SpillableHostBuffer(hmb, hmb.getLength)
+    val spillableBuffer = SpillableHostBuffer(hmb, hmb.getLength,
+      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     withResource(spillableBuffer) { _ =>
       // the refcount of 1 is the store
       assertResult(1)(hmb.getRefCount)
@@ -527,7 +528,8 @@ class SpillFrameworkSuite
     val hmb = HostMemoryBuffer.allocate(1L * 1024)
     val spillableBuffer = SpillableHostBuffer(
       hmb,
-      hmb.getLength)
+      hmb.getLength,
+      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     assertResult(1)(hmb.getRefCount)
     //  we spill it
     SpillFramework.stores.hostStore.spill(hmb.getLength)
@@ -542,7 +544,8 @@ class SpillFrameworkSuite
 
   test("host originated: a buffer is not spillable when we leak it") {
     val hmb = HostMemoryBuffer.allocate(1L * 1024)
-    withResource(SpillableHostBuffer(hmb, hmb.getLength)) { spillableBuffer =>
+    withResource(SpillableHostBuffer(hmb, hmb.getLength,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)) { spillableBuffer =>
       withResource(spillableBuffer.getHostBuffer()) { _ =>
         assertResult(0)(SpillFramework.stores.hostStore.spill(hmb.getLength))
       }

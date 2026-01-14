@@ -33,10 +33,9 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
 
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)
-
     val memBuffers: Array[SingleHMBAndMeta] = {
-      val singleBuf = SpillableHostBuffer(HostMemoryBuffer.allocate(0), 0)
-
+      val singleBuf = SpillableHostBuffer(HostMemoryBuffer.allocate(0), 0,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
       Array(SingleHMBAndMeta(Array(singleBuf), 0L, 0, Seq.empty))
     }
     val poolConf = new ThreadPoolConfBuilder(
