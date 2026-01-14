@@ -494,6 +494,25 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     GpuCoreDumpHandler.driverInit(sc, conf)
     ProfilerOnDriver.init(sc, conf)
 
+    // Initialize ShuffleCleanupManager and listener for MULTITHREADED mode with skipMerge enabled
+    // and ESS disabled.
+    //
+    // Spark 4.x can call DriverPlugin.init before SparkEnv/shuffleManager are fully initialized,
+    // so we must avoid SparkEnv-based checks here and use SparkConf instead.
+    val isEssEnabledByConf = sparkConf.getBoolean("spark.shuffle.service.enabled", false)
+    if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled &&
+        !isEssEnabledByConf) {
+      ShuffleCleanupManager.init(sc)
+      shuffleCleanupListener = new ShuffleCleanupListener()
+      sc.addSparkListener(shuffleCleanupListener)
+      logInfo("ShuffleCleanupManager and listener initialized for MULTITHREADED shuffle mode " +
+        "(skipMerge enabled, ESS disabled)")
+    } else if (conf.isMultiThreadedShuffleManagerMode &&
+        conf.isMultithreadedShuffleSkipMergeEnabled && isEssEnabledByConf) {
+      logInfo("ShuffleCleanupManager disabled - ESS is enabled, " +
+        "MultithreadedShuffleBufferCatalog not available")
+    }
+
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
       if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
@@ -501,22 +520,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
           new RapidsShuffleHeartbeatManager(
             conf.shuffleTransportEarlyStartHeartbeatInterval,
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
-      }
-      // Initialize ShuffleCleanupManager and listener for MULTITHREADED mode with skipMerge enabled
-      // and ESS disabled. This matches the conditions for MultithreadedShuffleBufferCatalog
-      // initialization on Executor side (see GpuShuffleEnv.init).
-      if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled
-          && !GpuShuffleEnv.isExternalShuffleEnabled) {
-        ShuffleCleanupManager.init(sc)
-        shuffleCleanupListener = new ShuffleCleanupListener()
-        sc.addSparkListener(shuffleCleanupListener)
-        logInfo("ShuffleCleanupManager and listener initialized for MULTITHREADED shuffle mode " +
-          "(skipMerge enabled, ESS disabled)")
-      } else if (conf.isMultiThreadedShuffleManagerMode &&
-          conf.isMultithreadedShuffleSkipMergeEnabled &&
-          GpuShuffleEnv.isExternalShuffleEnabled) {
-        logInfo("ShuffleCleanupManager disabled - ESS is enabled, " +
-          "MultithreadedShuffleBufferCatalog not available")
       }
     }
 
