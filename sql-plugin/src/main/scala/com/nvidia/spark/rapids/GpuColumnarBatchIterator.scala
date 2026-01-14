@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,8 +104,7 @@ class GpuColumnarBatchWithPartitionValuesIterator(
     partValues: Array[InternalRow],
     partRowNums: Array[Long],
     partSchema: StructType,
-    maxGpuColumnSizeBytes: Long,
-    finalizeBatchMetric: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+    maxGpuColumnSizeBytes: Long) extends Iterator[ColumnarBatch] {
   assert(partValues.length == partRowNums.length)
 
   private var leftValues: Array[InternalRow] = partValues
@@ -118,26 +117,18 @@ class GpuColumnarBatchWithPartitionValuesIterator(
     if (!hasNext) {
       throw new NoSuchElementException()
     } else if (outputIter.hasNext) {
-      // outputIter already created, just get next batch with partition values merged
-      finalizeBatchMetric.ns { outputIter.next() }
+      outputIter.next()
     } else {
-      // Need to get batch from inputIter and prepare partition values
-      // Wrap entire block to capture all finalization time including:
-      // - getting batch from CachedGpuBatchIterator (may involve spill recovery)
-      // - computing partition values
-      // - creating iterator and merging partition data
-      finalizeBatchMetric.ns {
-        val batch = inputIter.next()
-        if (partSchema.nonEmpty) {
-          val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
-            computeValuesAndRowNumsForBatch(batch.numRows())
-          }
-          outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
-            readPartValues, partSchema, maxGpuColumnSizeBytes)
-          outputIter.next()
-        } else {
-          batch
+      val batch = inputIter.next()
+      if (partSchema.nonEmpty) {
+        val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
+          computeValuesAndRowNumsForBatch(batch.numRows())
         }
+        outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
+          readPartValues, partSchema, maxGpuColumnSizeBytes)
+        outputIter.next()
+      } else {
+        batch
       }
     }
   }

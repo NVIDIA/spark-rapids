@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,15 +40,6 @@ trait GpuBatchScanExecMetrics extends GpuExec {
     SCHEDULE_TIME_BUBBLE -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SCHEDULE_TIME_BUBBLE),
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
-    // Debug scan metrics for detailed breakdown
-    PCR_INIT_READERS_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_INIT_READERS_TIME),
-    PCR_L2_MATERIALIZE_HOST_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_MATERIALIZE_HOST_BUFFER_TIME),
-    PCR_L2_TABLE_TO_BATCH_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_L2_TABLE_TO_BATCH_TIME),
-    PCR_FINALIZE_BATCH_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
-      DESCRIPTION_PCR_FINALIZE_BATCH_TIME),
   ) ++ fileCacheMetrics ++ scanCustomMetrics
 
   lazy val fileCacheMetrics: Map[String, GpuMetric] = {
