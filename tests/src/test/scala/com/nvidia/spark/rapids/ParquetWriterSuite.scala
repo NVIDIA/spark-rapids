@@ -311,9 +311,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         spark.sql("DROP TABLE IF EXISTS tempmetricstable")
       }
     }, new SparkConf()
-      .set("spark.sql.sources.commitProtocolClass", slowCommitClass)
-      // OneRowRelationExec cannot run on GPU - it's a CPU-only leaf node for single-row SELECT
-      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "OneRowRelationExec"))
+      .set("spark.sql.sources.commitProtocolClass", slowCommitClass))
   }
 }
 

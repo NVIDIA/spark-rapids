@@ -7,6 +7,7 @@ FilterExec,2.8
 GenerateExec,3.0
 GlobalLimitExec,3.0
 LocalLimitExec,3.0
+OneRowRelationExec,3.0
 ProjectExec,3.0
 RangeExec,3.0
 SampleExec,3.0
