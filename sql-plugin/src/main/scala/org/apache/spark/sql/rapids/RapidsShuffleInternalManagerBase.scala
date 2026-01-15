@@ -644,8 +644,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val reducePartitionId: Int = partitioner.getPartition(key)
 
         // Detect multi-batch: partition ID must be strictly increasing within a batch.
-        // If current partition ID <= previous max, it's a new batch.
-        if (reducePartitionId <= previousMaxPartition) {
+        // If current partition ID < previous max, it means we've jumped back to an earlier
+        // partition, indicating a new upstream GPU batch. Note: we use < instead of <= because
+        // consecutive identical partition IDs can occur in two scenarios:
+        // 1. Reslicing: when a partition's data exceeds maxCpuBatchSize
+        // 2. Data skew: multiple GPU batches each containing only the same partition's data
+        // In both cases, merging them into a single shuffle batch is correct and more efficient
+        // (fewer partial files, less merge overhead).
+        if (reducePartitionId < previousMaxPartition) {
           if (!isMultiBatch) {
             isMultiBatch = true
             logDebug(s"Detected multi-batch scenario for shuffle $shuffleId, " +
