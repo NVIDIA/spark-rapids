@@ -779,9 +779,9 @@
             </activation>
             <properties>
                 <buildver>411</buildver>
+                <spark.version>${spark411.version}</spark.version>
                 <java.major.version>17</java.major.version>
                 <scala.version>2.13.17</scala.version>
-                <spark.version>${spark411.version}</spark.version>
                 <spark.test.version>${spark411.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
