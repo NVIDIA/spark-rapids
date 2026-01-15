@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -267,14 +267,23 @@ def test_hash_repartition_exact_fallback(gen, num_parts, kudo_enabled):
         conf = {'spark.rapids.sql.partitioning.hashFunction.enabled': False,
                 kudo_enabled_conf_key: kudo_enabled})
 
-@allow_non_gpu("ProjectExec")
+@allow_non_gpu("ProjectExec", "Murmur3Hash")
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('b1', long_gen)]))], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_hash_fallback(data_gen, kudo_enabled):
+def test_hash_fallback_bridge(data_gen, kudo_enabled):
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, data_gen, length=1024) \
-            .selectExpr('*', 'hash(a) as h'), "ProjectExec",
-        conf = {kudo_enabled_conf_key: kudo_enabled})
+            .selectExpr('*', 'hash(a) as h'), "Murmur3Hash",
+        conf = {kudo_enabled_conf_key: kudo_enabled,
+                "spark.rapids.sql.expression.cpuBridge.enabled": True})
+
+@allow_non_gpu("ProjectExec")
+@pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('b1', long_gen)]))], ids=idfn)
+def test_hash_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, data_gen, length=1024) \
+            .selectExpr('*', 'hash(a) as h'), "Murmur3Hash",
+        conf = {"spark.rapids.sql.expression.cpuBridge.enabled": False})
 
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)

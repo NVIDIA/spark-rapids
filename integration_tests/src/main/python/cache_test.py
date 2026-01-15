@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -211,7 +211,7 @@ def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
 
 @pytest.mark.parametrize('enable_vectorized', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
-@allow_non_gpu("ProjectExec", "Alias", "Literal", "DateAddInterval", "MakeInterval", "Cast",
+@allow_non_gpu("ProjectExec", "Alias", "DateAddInterval", "MakeInterval", "Cast",
                "ExtractIntervalYears", "Year", "Month", "Second", "ExtractIntervalMonths",
                "ExtractIntervalSeconds", "SecondWithFraction", "ColumnarToRowExec")
 @pytest.mark.parametrize('select_expr', [("NULL as d", "d"),

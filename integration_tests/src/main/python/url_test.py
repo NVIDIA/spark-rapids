@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2025, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -229,7 +229,7 @@ def test_parse_url_query_with_key_regex_fallback(key):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen)
             .selectExpr("a", "parse_url(a, 'QUERY', '" + key + "')"),
-            'ProjectExec')
+            'ParseUrl')
 
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
 def test_parse_url_with_key(part):
@@ -243,7 +243,7 @@ def test_parse_url_with_key(part):
 def test_parse_url_with_key_fallback(part):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"),
-        'ProjectExec')
+        'ParseUrl')
 
 # Test for invalid URLs with different parts in ANSI mode
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
