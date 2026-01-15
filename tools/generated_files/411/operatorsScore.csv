@@ -42,6 +42,7 @@ BroadcastNestedLoopJoinExec,3.0
 CartesianProductExec,3.0
 ShuffledHashJoinExec,3.0
 SortMergeJoinExec,22.7
+ArrowAggregatePythonExec,3.0
 ArrowEvalPythonExec,1.2
 ArrowWindowPythonExec,3.0
 FlatMapCoGroupsInPandasExec,3.0

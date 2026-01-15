@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,42 +15,25 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "400"}
-{"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import org.apache.spark.api.python.ChainedPythonFunctions
+import org.apache.spark.sql.rapids.execution.python.GpuArrowOutput
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * Factory for creating Python runners for grouped UDFs in Spark 4.1.x.
+ * 
+ * In Spark 4.1.x, the Python worker uses GroupPandasUDFSerializer for grouped/window UDFs,
+ * which expects the grouped protocol:
+ *   - Send 1 before each batch
+ *   - Create new Arrow stream for each batch
+ *   - Send 0 to indicate end of data
+ */
 case class GpuGroupedPythonRunnerFactory(
     conf: org.apache.spark.sql.internal.SQLConf,
     chainedFunc: Seq[(ChainedPythonFunctions, Long)],
@@ -62,8 +45,9 @@ case class GpuGroupedPythonRunnerFactory(
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
-  def getRunner(): GpuBasePythonRunner[ColumnarBatch] = {
-    new GpuArrowPythonRunner(
+  def getRunner(): GpuBasePythonRunner[ColumnarBatch] with GpuArrowOutput = {
+    // Use the grouped protocol runner for Spark 4.1.x
+    new GpuWindowArrowPythonRunner(
       chainedFunc,
       evalType,
       argOffsets,
