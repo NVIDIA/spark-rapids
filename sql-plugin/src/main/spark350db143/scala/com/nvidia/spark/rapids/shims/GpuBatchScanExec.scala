@@ -24,7 +24,6 @@ package com.nvidia.spark.rapids.shims
 
 import com.google.common.base.Objects
 import com.nvidia.spark.rapids.GpuScan
-import com.nvidia.spark.rapids.shims.StoragePartitionJoinShims
 
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
