@@ -61,6 +61,13 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-22520: support code generation for large CaseWhen", WONT_FIX_ISSUE("It's a codegen related test, not applicable for GPU"))
     .exclude("Uuid expressions should produce same results at retries in the same DataFrame", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14149"))
     .exclude("SPARK-27439: Explain result should match collected result after view change", ADJUST_UT("Replaced by testRapids version that uses GPU class name"))
+  enableSuite[RapidsDatasetSuite]
+    .exclude("groupBy single field class, count", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("SPARK-34806: observation on datasets", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14152"))
+    .exclude("SPARK-37203: Fix NotSerializableException when observe with TypedImperativeAggregate", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14152"))
+    .exclude("dropDuplicates", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("dropDuplicates: columns with same column name", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("SPARK-24762: typed agg on Option[Product] type", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
   enableSuite[RapidsDataFrameAggregateSuite]
     .exclude("collect functions", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("collect functions structs", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
