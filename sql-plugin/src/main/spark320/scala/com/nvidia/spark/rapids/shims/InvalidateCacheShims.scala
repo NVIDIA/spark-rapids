@@ -29,11 +29,15 @@
 {"spark": "341"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
