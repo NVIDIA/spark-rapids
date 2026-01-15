@@ -21,13 +21,41 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.python.ArrowWindowPythonExec
+import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
 
 /**
- * WindowInPandasExec was renamed to ArrowWindowPythonExec in Spark 4.1.
- * This shim provides an empty implementation for 4.1+.
+ * Exec rules for ArrowWindowPythonExec (Spark 4.1+ - renamed from WindowInPandasExec).
  */
 object WindowInPandasExecShims {
-  // Empty map - WindowInPandasExec doesn't exist in Spark 4.1+
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map.empty
+  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    Seq(
+      GpuOverrides.exec[ArrowWindowPythonExec](
+        "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
+          " the Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled. For now it only supports row based window frame.",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
+          TypeSig.all),
+        (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
+          override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
+            SparkShimImpl.getWindowExpressions(winPy).map(
+              GpuOverrides.wrapExpr(_, this.conf, Some(this)))
+
+          override def convertToGpu(): GpuExec = {
+            val windowExprGpu = windowExpressions.map(_.convertToGpu())
+            val partitionGpu = partitionSpec.map(_.convertToGpu())
+            GpuWindowInPandasExec(
+              windowExprGpu,
+              partitionGpu,
+              // leave ordering expression on the CPU, it's not used for GPU computation
+              winPy.orderSpec,
+              childPlans.head.convertIfNeeded()
+            )(winPy.partitionSpec)
+          }
+        }).disabledByDefault("it only supports row based frame for now")
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  }
 }
