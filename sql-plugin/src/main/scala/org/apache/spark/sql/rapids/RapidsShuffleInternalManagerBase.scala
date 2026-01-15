@@ -412,7 +412,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     //
     // mergerCondition: Condition variable for merger thread to wait on.
     //   - Main thread: calls notifyAll() after queuing new tasks or completing batch
-    //   - Merger thread: calls wait(1) when no work available, with short timeout
+    //   - Merger thread: calls wait(100) when no work available, with timeout
     //     as defensive measure against missed notifications
     val maxPartitionIdQueued = new AtomicInteger(-1)
     val mergerCondition = new Object()
@@ -516,10 +516,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               } else {
                 if (!newFutureTouched) {
                   // No new futures were processed in this iteration, wait for main thread
-                  // to queue more compression tasks. Use short timeout (1ms) as defensive
+                  // to queue more compression tasks. Use timeout (100ms) as defensive
                   // measure to avoid potential deadlock if a notify is missed.
                   mergerCondition.synchronized {
-                    mergerCondition.wait(1)
+                    mergerCondition.wait(100)
                   }
                 }
               }
@@ -530,10 +530,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             }
           } else {
             // Current partition hasn't been queued yet by main thread, wait for it.
-            // Use short timeout (1ms) as defensive measure to avoid potential deadlock
+            // Use timeout (100ms) as defensive measure to avoid potential deadlock
             // if a notify is missed.
             mergerCondition.synchronized {
-              mergerCondition.wait(1)
+              mergerCondition.wait(100)
             }
           }
         }
