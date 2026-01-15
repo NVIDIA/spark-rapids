@@ -15,6 +15,25 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "350"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
 {"spark": "400"}
 {"spark": "401"}
 spark-rapids-shim-json-lines ***/
@@ -24,8 +43,8 @@ import org.apache.spark.sql.connector.catalog.{Identifier, Table, TableCatalog}
 
 /**
  * Shim for invalidateCache callback signature differences between Spark versions.
- * In Spark 4.0.x: (TableCatalog, Table, Identifier) => Unit
- * In Spark 4.1.0: (TableCatalog, Identifier) => Unit
+ * In Spark 3.x and 4.0.x: (TableCatalog, Table, Identifier) => Unit
+ * In Spark 4.1.x: (TableCatalog, Identifier) => Unit
  */
 object InvalidateCacheShims {
   type InvalidateCacheType = (TableCatalog, Table, Identifier) => Unit
