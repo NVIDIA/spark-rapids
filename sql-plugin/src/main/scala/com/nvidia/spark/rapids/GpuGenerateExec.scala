@@ -22,7 +22,7 @@ import ai.rapids.cudf.{ColumnVector, DType, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.extractLit
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, splitTargetSizeInHalfGpu, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
@@ -902,49 +902,38 @@ case class GpuGenerateExec(
       val projectedInput = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
         SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
         othersProjectList ++ genProjectList)
-      getSplits(projectedInput, othersProjectList, new RapidsConf(conf).gpuTargetBatchSizeBytes)
+      GpuGenerateUtils.getSplitsWithRetryAndClose(projectedInput, generator,
+        othersProjectList.length, outer, new RapidsConf(conf).gpuTargetBatchSizeBytes)
     }
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
       numOutputRows, numOutputBatches, opTime)
   }
-
-  // Split up the input batch and call generate on each split.
-  private def getSplits(cb: ColumnarBatch,
-      othersProjectList: Seq[GpuExpression],
-      targetSize: Long): Seq[SpillableColumnarBatch] = {
-    GpuGenerateExec.getSplitsWithRetry(cb, generator, othersProjectList.length, outer, targetSize)
-  }
 }
 
-object GpuGenerateExec {
+object GpuGenerateUtils {
   /**
-   * Split up the input batch with retry support for OOM handling.
-   * On OOM, the target size is halved, producing more (smaller) splits.
+   * Split up the input batch to call generate on each split.
+   * (Move it out of the GpuGenerateExec class for unit tests)
    */
-  def getSplitsWithRetry(
-      cb: ColumnarBatch,
-      generator: GpuGenerator,
-      generatorOffset: Int,
-      outer: Boolean,
+  private[rapids] def getSplitsWithRetryAndClose(cb: ColumnarBatch, generator: GpuGenerator,
+      generatorOffset: Int, outer: Boolean,
       targetSize: Long): Seq[SpillableColumnarBatch] = {
-    val spillableBatch = SpillableColumnarBatch(cb,
-      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-    withResource(spillableBatch) { _ =>
-      // Use a minimum target size to prevent infinite splitting
-      val minTargetSize = Math.min(targetSize, 64L * 1024 * 1024)
-      val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
-      // Wrap the split computation in withRetry to handle OOM.
-      // On OOM, the target size is halved and the split computation is retried with the smaller
-      // target size, which may produce more splits.
-      withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
-        withResource(spillableBatch.getColumnarBatch()) { cb =>
-          // compute split indices of input batch
-          val splitIndices = generator.inputSplitIndices(
-            cb, generatorOffset, outer, attempt.targetSize)
-          // split up input batch with indices
-          makeSplits(cb, splitIndices)
-        }
-      }.next
+    val spillableBatch = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val iter = withRetry(spillableBatch, splitSpillableInHalfByRows) { attempt =>
+      // compute split indices of input batch
+      withResource(attempt.getColumnarBatch()) { attemptCB =>
+        val splitIndices = generator.inputSplitIndices(attemptCB,
+          generatorOffset, outer, targetSize)
+        // split up input batch with indices
+        makeSplits(attemptCB, splitIndices)
+      }
+    }
+    // Safely flatten to an output array.
+    closeOnExcept(new AutoClosableArrayBuffer[SpillableColumnarBatch]) { outBuf =>
+      while (iter.hasNext) {
+        iter.next().foreach(outBuf.append)
+      }
+      outBuf.toSeq
     }
   }
 
