@@ -15,34 +15,10 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "400"}
-{"spark": "401"}
+{"spark": "330db"}
+{"spark": "332db"}
+{"spark": "341db"}
+{"spark": "350db143"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -50,9 +26,10 @@ import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 
 /**
- * Trait providing getWindowExpressions method for versions where WindowInPandasExec exists.
+ * Trait providing getWindowExpressions method for Databricks versions.
+ * On Databricks, WindowInPandasExec uses projectList instead of windowExpression.
  */
 trait WindowInPandasShims {
   def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] = 
-    winPy.windowExpression
+    winPy.projectList
 }
