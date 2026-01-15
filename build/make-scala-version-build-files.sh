@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -91,11 +91,12 @@ for f in $(git ls-files '**pom.xml'); do
 done
 
 # Update spark.version to spark350.version for Scala 2.13
+# Only update the default spark.version in main <properties> section (after spark-rapids-jni.version),
+# not the ones inside <profile> sections
+# The pattern matches spark330.version (from 2.12 pom) and replaces with spark350.version
 SPARK_VERSION=${DEFAULT_SPARK[$TO_VERSION]}
-sed_i '/<java\.major\.version>/,/<spark\.version>\${spark[0-9]\+\.version}</s/<spark\.version>\${spark[0-9]\+\.version}</<spark.version>\${'$SPARK_VERSION'.version}</' \
-  "$TO_DIR/pom.xml"
-
-sed_i '/<java\.major\.version>/,/<spark\.version>\${spark[0-9]\+\.version}</s/<spark\.version>\${spark[0-9]\+\.version}</<spark.version>\${'$SPARK_VERSION'.version}</' \
+FROM_SPARK_VERSION=${DEFAULT_SPARK[$FROM_VERSION]}
+sed_i '/<spark-rapids-jni\.version>/,/<spark\.version>\${'$FROM_SPARK_VERSION'\.version}</s/<spark\.version>\${'$FROM_SPARK_VERSION'\.version}</<spark.version>\${'$SPARK_VERSION'.version}</' \
   "$TO_DIR/pom.xml"
 
 # Update <scala.binary.version> in parent POM
