@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -177,6 +177,7 @@ def test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sq
     pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
     pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
     pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
+    pytest.param("_c6", id="identity(string_col)"),
 ])
 def test_insert_into_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
