@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,11 +27,13 @@ import org.apache.spark.internal.Logging
 class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
+  private var multithreadedCatalog: MultithreadedShuffleBufferCatalog = _
 
-  private lazy val conf = SparkEnv.get.conf
-
-  private lazy val isRapidsShuffleConfigured: Boolean =
-    GpuShuffleEnv.isRapidsShuffleConfigured(conf)
+  private lazy val isRapidsShuffleConfigured: Boolean = {
+    val conf = SparkEnv.get.conf
+    conf.contains("spark.shuffle.manager") &&
+      conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
+  }
 
   lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
     val codecName = rapidsConf.shuffleCompressionCodec.toLowerCase(Locale.ROOT)
@@ -49,6 +51,23 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
           new ShuffleBufferCatalog()
       shuffleReceivedBufferCatalog =
           new ShuffleReceivedBufferCatalog()
+      // Initialize MultithreadedShuffleBufferCatalog for MULTITHREADED mode
+      // when External Shuffle Service is disabled and skipMerge is enabled.
+      // With ESS disabled, all shuffle fetch requests go through GpuShuffleBlockResolverBase
+      // which can serve data from the catalog. With ESS enabled, remote fetches go through
+      // the external shuffle service process which cannot access our in-memory catalog.
+      if (rapidsConf.isMultiThreadedShuffleManagerMode) {
+        if (!rapidsConf.isMultithreadedShuffleSkipMergeEnabled) {
+          logInfo("MultithreadedShuffleBufferCatalog disabled - " +
+            "spark.rapids.shuffle.multithreaded.skipMerge is false")
+        } else if (!GpuShuffleEnv.isExternalShuffleEnabled) {
+          multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
+          logInfo("MultithreadedShuffleBufferCatalog enabled (ESS disabled)")
+        } else {
+          logInfo("MultithreadedShuffleBufferCatalog disabled - " +
+            "ESS is enabled, using disk-based shuffle files")
+        }
+      }
     }
   }
 
@@ -56,8 +75,12 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = shuffleReceivedBufferCatalog
 
+  def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
+    Option(multithreadedCatalog)
+  }
+
   def getShuffleFetchTimeoutSeconds: Long = {
-    conf.getTimeAsSeconds("spark.network.timeout", "120s")
+    SparkEnv.get.conf.getTimeAsSeconds("spark.network.timeout", "120s")
   }
 }
 
@@ -174,6 +197,10 @@ object GpuShuffleEnv extends Logging {
     null
   } else {
     env.getCatalog
+  }
+
+  def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
+    Option(env).flatMap(_.getMultithreadedCatalog)
   }
 
   private def validateRapidsShuffleManager(shuffManagerClassName: String): Unit = {
