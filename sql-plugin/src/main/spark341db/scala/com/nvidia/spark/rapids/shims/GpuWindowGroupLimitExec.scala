@@ -40,10 +40,10 @@ import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuRank, GpuRowNumber}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, DenseRank, Expression, Rank, RowNumber, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, DenseRank, Expression, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, Literal, NamedExpression, Rank, RowNumber, SortOrder, WindowExpression, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.window.{Final, Partial, WindowGroupLimitExec, WindowGroupLimitMode}
+import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
+import org.apache.spark.sql.execution.window.{Final, Partial, WindowExec, WindowGroupLimitExec, WindowGroupLimitMode}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -54,7 +54,7 @@ case object RowNumberFunction extends RankFunctionType
 
 class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
                                   conf: RapidsConf,
-                                  parent:Option[RapidsMeta[_, _, _]],
+                                  parent: Option[RapidsMeta[_, _, _]],
                                   rule: DataFromReplacementRule)
     extends SparkPlanMeta[WindowGroupLimitExec](limitExec, conf, parent, rule) {
 
@@ -78,11 +78,173 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
     wrapped.mode match {
       case Partial =>
       case Final =>
+        // Check if this Final limit is redundant because it will be followed by
+        // a WindowExec + FilterExec that does the same work
+        if (conf.isWindowGroupLimitOptEnabled && isFinalLimitRedundant) {
+          shouldBeRemoved("redundant Final WindowGroupLimit: subsequent WindowExec and " +
+            "FilterExec will perform the same rank computation and filtering")
+        }
       case _ => willNotWorkOnGpu("Unsupported WindowGroupLimitMode: " +
                                  s"${wrapped.mode.getClass.getName}")
     }
   }
 
+  /**
+   * Checks if this Final WindowGroupLimitExec is redundant.
+   *
+   * The Final limit is redundant when:
+   * 1. The parent is a WindowExec that computes the same rank function with same specs
+   * 2. The grandparent is a FilterExec that filters on the rank result
+   *
+   * When both conditions are met, the WindowExec + FilterExec will do the same
+   * rank computation and filtering that this Final limit would do, making this
+   * operator a no-op that we can skip.
+   */
+  private def isFinalLimitRedundant: Boolean = {
+    // Get the parent's wrapped plan (should be WindowExec)
+    val parentWindowExecOpt = parent.flatMap { p =>
+      p.wrapped match {
+        case w: WindowExec => Some(w)
+        case _ => None
+      }
+    }
+
+    parentWindowExecOpt.exists { windowExec =>
+      // Check if WindowExec has matching partition and order specs
+      val specsMatch = 
+        windowExec.partitionSpec.map(_.semanticHash()) == 
+          limitExec.partitionSpec.map(_.semanticHash()) &&
+        windowExec.orderSpec.map(_.semanticHash()) == 
+          limitExec.orderSpec.map(_.semanticHash())
+
+      if (!specsMatch) {
+        return false
+      }
+
+      // Check if WindowExec contains a matching rank function
+      val hasMatchingRankFunction = findMatchingRankExpression(windowExec).isDefined
+
+      if (!hasMatchingRankFunction) {
+        return false
+      }
+
+      // Check if grandparent is a FilterExec
+      val grandparentFilterOpt = parent.flatMap(_.parent).flatMap { gp =>
+        gp.wrapped match {
+          case f: FilterExec => Some(f)
+          case _ => None
+        }
+      }
+
+      // For the optimization to be safe, we need a FilterExec as grandparent
+      // The filter should reference the rank output and enforce the limit
+      grandparentFilterOpt.exists { filterExec =>
+        findMatchingRankExpression(windowExec).exists { case (rankExprId, _) =>
+          filterReferencesRankWithLimit(filterExec, rankExprId, limitExec.limit)
+        }
+      }
+    }
+  }
+
+  /**
+   * Finds a window expression in the WindowExec that matches the rank function
+   * in this WindowGroupLimitExec.
+   *
+   * @return Option of (expression id, rank function type) if found
+   */
+  private def findMatchingRankExpression(windowExec: WindowExec): 
+      Option[(Long, Expression)] = {
+    // Get window expressions from WindowExec
+    val windowExprs = try {
+      val method = windowExec.getClass.getMethod("windowExpression")
+      method.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+    } catch {
+      case _: NoSuchMethodException =>
+        try {
+          val method = windowExec.getClass.getMethod("projectList")
+          method.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+        } catch {
+          case _: NoSuchMethodException => return None
+        }
+    }
+
+    // Find window expression with matching rank function
+    windowExprs.collectFirst {
+      case alias @ Alias(WindowExpression(rankFunc, spec: WindowSpecDefinition), _)
+          if matchesRankFunction(rankFunc) && matchesWindowSpec(spec) =>
+        (alias.exprId.id, rankFunc)
+    }
+  }
+
+  /**
+   * Checks if the given expression matches the rank function type in this limit.
+   */
+  private def matchesRankFunction(expr: Expression): Boolean = {
+    (expr, limitExec.rankLikeFunction) match {
+      case (_: Rank, _: Rank) => true
+      case (_: DenseRank, _: DenseRank) => true
+      case (_: RowNumber, _: RowNumber) => true
+      case _ => false
+    }
+  }
+
+  /**
+   * Checks if the window spec matches the partition and order specs of this limit.
+   */
+  private def matchesWindowSpec(spec: WindowSpecDefinition): Boolean = {
+    spec.partitionSpec.map(_.semanticHash()) == 
+      limitExec.partitionSpec.map(_.semanticHash()) &&
+    spec.orderSpec.map(_.semanticHash()) == 
+      limitExec.orderSpec.map(_.semanticHash())
+  }
+
+  /**
+   * Checks if the filter condition references the rank column and enforces
+   * a limit that is compatible with (same or more restrictive than) this limit.
+   *
+   * We look for patterns like:
+   *   - rank <= limit
+   *   - rank < limit + 1
+   *   - limit >= rank
+   *   - limit + 1 > rank
+   */
+  private def filterReferencesRankWithLimit(
+      filterExec: FilterExec,
+      rankExprId: Long,
+      limit: Int): Boolean = {
+    
+    def referencesRankColumn(expr: Expression): Boolean = {
+      expr.references.exists(_.exprId.id == rankExprId)
+    }
+
+    def extractLiteralInt(expr: Expression): Option[Int] = expr match {
+      case Literal(value: Int, _) => Some(value)
+      case Literal(value: Long, _) if value.isValidInt => Some(value.toInt)
+      case _ => None
+    }
+
+    // Check if the condition is a comparison that references the rank column
+    // and has a limit value that is >= our limit (so it's at least as restrictive)
+    filterExec.condition match {
+      // rank <= n  where n >= limit
+      case LessThanOrEqual(left, right) if referencesRankColumn(left) =>
+        extractLiteralInt(right).exists(_ >= limit)
+      
+      // rank < n  where n > limit (equivalent to rank <= n-1 where n-1 >= limit)
+      case LessThan(left, right) if referencesRankColumn(left) =>
+        extractLiteralInt(right).exists(_ > limit)
+      
+      // n >= rank  where n >= limit
+      case GreaterThanOrEqual(left, right) if referencesRankColumn(right) =>
+        extractLiteralInt(left).exists(_ >= limit)
+      
+      // n > rank  where n > limit
+      case GreaterThan(left, right) if referencesRankColumn(right) =>
+        extractLiteralInt(left).exists(_ > limit)
+
+      case _ => false
+    }
+  }
 
   override def convertToGpu(): GpuExec = {
     GpuWindowGroupLimitExec(partitionSpec.map(_.convertToGpu()),
