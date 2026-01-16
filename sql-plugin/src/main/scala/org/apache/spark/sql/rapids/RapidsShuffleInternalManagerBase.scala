@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{IOException, OutputStream}
 import java.util.concurrent.{Callable, ConcurrentHashMap, CopyOnWriteArrayList, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -347,6 +347,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     partitionProcessedFutures: ConcurrentHashMap[Int, Int],
     maxPartitionIdQueued: AtomicInteger,
     mergerCondition: Object,
+    // Flag for classic wait/notify pattern: set to true when new work is available,
+    // reset to false after merger thread wakes up and checks actual data state.
+    // This avoids busy-loop polling and provides clear signal for debugging.
+    hasNewWork: AtomicBoolean,
     mergerSlotNum: Int,
     mergerFuture: Future[_])
 
@@ -411,11 +415,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     //     has been queued)
     //
     // mergerCondition: Condition variable for merger thread to wait on.
-    //   - Main thread: calls notifyAll() after queuing new tasks or completing batch
-    //   - Merger thread: calls wait(100) when no work available, with timeout
-    //     as defensive measure against missed notifications
+    //   - Main thread: sets hasNewWork=true and calls notifyAll() after queuing new tasks
+    //   - Merger thread: uses classic flag pattern (while !hasNewWork wait()) to avoid
+    //     busy-loop polling and provide clear debugging signal
     val maxPartitionIdQueued = new AtomicInteger(-1)
     val mergerCondition = new Object()
+    val hasNewWork = new AtomicBoolean(false)
 
     // Assign a merger slot for this batch
     val mergerSlotNum = RapidsShuffleInternalManagerBase.getNextMergerSlot
@@ -516,10 +521,13 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               } else {
                 if (!newFutureTouched) {
                   // No new futures were processed in this iteration, wait for main thread
-                  // to queue more compression tasks. Use timeout (100ms) as defensive
-                  // measure to avoid potential deadlock if a notify is missed.
+                  // to queue more compression tasks. Use classic condition flag pattern
+                  // to avoid busy-loop polling and provide clear debugging signal.
                   mergerCondition.synchronized {
-                    mergerCondition.wait(100)
+                    while (!hasNewWork.get()) {
+                      mergerCondition.wait()
+                    }
+                    hasNewWork.set(false)
                   }
                 }
               }
@@ -530,10 +538,13 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             }
           } else {
             // Current partition hasn't been queued yet by main thread, wait for it.
-            // Use timeout (100ms) as defensive measure to avoid potential deadlock
-            // if a notify is missed.
+            // Use classic condition flag pattern to avoid busy-loop polling and
+            // provide clear debugging signal.
             mergerCondition.synchronized {
-              mergerCondition.wait(100)
+              while (!hasNewWork.get()) {
+                mergerCondition.wait()
+              }
+              hasNewWork.set(false)
             }
           }
         }
@@ -555,6 +566,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       partitionProcessedFutures,
       maxPartitionIdQueued,
       mergerCondition,
+      hasNewWork,
       mergerSlotNum,
       mergerFuture)
   }
@@ -665,6 +677,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           // Note: We don't block here - the merger runs in parallel while we start next batch.
           currentBatch.maxPartitionIdQueued.set(numPartitions)
           currentBatch.mergerCondition.synchronized {
+            currentBatch.hasNewWork.set(true)
             currentBatch.mergerCondition.notifyAll()
           }
 
@@ -762,6 +775,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // This enables pipeline parallelism: main thread continues to next record
         // while merger thread processes completed compressions in parallel.
         currentBatch.mergerCondition.synchronized {
+          currentBatch.hasNewWork.set(true)
           currentBatch.mergerCondition.notifyAll()
         }
       }
@@ -771,6 +785,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       // Notify ensures merger wakes up to finish any remaining work.
       currentBatch.maxPartitionIdQueued.set(numPartitions)
       currentBatch.mergerCondition.synchronized {
+        currentBatch.hasNewWork.set(true)
         currentBatch.mergerCondition.notifyAll()
       }
 
