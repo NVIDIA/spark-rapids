@@ -448,22 +448,39 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   def getCudfSchema(dataSchema: StructType): Schema = {
-    // read boolean and numeric columns as strings in cuDF
-    val dataSchemaWithStrings = StructType(dataSchema.fields
-        .map(f => {
-          f.dataType match {
-            case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
-                 DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
-                 DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
-                 DataTypes.TimestampType =>
-              f.copy(dataType = DataTypes.StringType)
-            case other if GpuTypeShims.supportCsvRead(other) =>
-              f.copy(dataType = DataTypes.StringType)
-            case _ =>
-              f
-          }
-        }))
-    GpuColumnVector.from(dataSchemaWithStrings)
+    GpuColumnVector.from(cudfOutTypes(dataSchema))
+  }
+
+  private def cudfOutTypes(dataSchema: StructType): StructType = StructType(
+    dataSchema.fields.map(f => {
+      // read boolean and numeric columns as strings in cuDF
+      f.dataType match {
+        case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
+             DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
+             DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
+             DataTypes.TimestampType =>
+          f.copy(dataType = DataTypes.StringType)
+        case other if GpuTypeShims.supportCsvRead(other) =>
+          f.copy(dataType = DataTypes.StringType)
+        case _ =>
+          f
+      }
+    })
+  )
+
+  // accessible to children for OOM unit tests
+  protected def castToOutputTypesWithRetryAndClose(table: Table, tableSchema: StructType,
+      readSchema: StructType): Table = {
+    val scb = withResource(table) { _ =>
+      val tableTypes = GpuColumnVector.extractTypes(tableSchema)
+      closeOnExcept(GpuColumnVector.from(table, tableTypes)) { cb =>
+        SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+      }
+    }
+    withRetryNoSplit(scb) { attempt =>
+      val attemptTbl = withResource(attempt.getColumnarBatch())(GpuColumnVector.from)
+      withResource(attemptTbl)(castTableToDesiredTypes(_, readSchema))
+    }
   }
 
   def castTableToDesiredTypes(table: Table, readSchema: StructType): Table = {
@@ -524,7 +541,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
         }
 
         val cudfSchema = getCudfSchema(dataSchema)
-        val cudfReadSchema = getCudfSchema(newReadDataSchema)
+        val cudfOutSchema = cudfOutTypes(newReadDataSchema)
+        val cudfReadSchema = GpuColumnVector.from(cudfOutSchema)
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -534,9 +552,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
-        val castTable = withResource(table) { _ =>
-          castTableToDesiredTypes(table, newReadDataSchema)
-        }
+        val castTable =
+          castToOutputTypesWithRetryAndClose(table, cudfOutSchema, newReadDataSchema)
 
         handleResult(newReadDataSchema, castTable)
       }
