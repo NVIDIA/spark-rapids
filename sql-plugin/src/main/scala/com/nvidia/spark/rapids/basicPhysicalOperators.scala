@@ -1584,11 +1584,11 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
 
-    sparkContext.union(children.map(_.executeColumnar())).map { batch =>
-      numOutputBatches += 1
-      numOutputRows += batch.numRows
-      batch
-    }
+    GpuUnionExecShim.unionColumnarRdds(
+      sparkContext,
+      children.map(_.executeColumnar()),
+      numOutputRows,
+      numOutputBatches)
   }
 }
 
