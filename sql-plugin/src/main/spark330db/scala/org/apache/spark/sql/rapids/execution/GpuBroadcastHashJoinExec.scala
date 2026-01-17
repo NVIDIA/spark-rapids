@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -201,12 +201,12 @@ case class GpuBroadcastHashJoinExec(
               boundStreamKeys)
           }
           doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
-            numOutputBatches, opTime, joinTime)
+            numOutputBatches, JoinMetrics(gpuLongMetric))
         }
       } else {
         // builtBatch will be closed in doJoin
-        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
-          joinTime)
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches,
+          JoinMetrics(gpuLongMetric))
       }
     }
   }
