@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -650,8 +650,10 @@ object JoinImpl {
       buildKeys: Table,
       probeKeys: Table,
       nullEquality: NullEquality): (Table, Table) = {
-    // Create KeyRemapping with computeMetrics=false since metrics were already computed
-    // in Phase 2 for the max-dup heuristic
+    // KeyRemapping metrics (distinctCount, maxDuplicateKeyCount) are not needed for the
+    // remapping operation itself, so we pass computeMetrics=false to avoid the overhead.
+    // If these metrics were needed for join strategy selection, they would have been
+    // computed earlier during planning. They don't need to be recomputed here.
     withResource(new KeyRemapping(buildKeys, nullEquality, false)) { keyRemap =>
       val remappedBuild = withResource(keyRemap.remapBuildKeys()) { remappedCol =>
         new Table(remappedCol)
@@ -1797,7 +1799,7 @@ object KeyRemappingMode extends Enumeration {
    * - Not supported: LEFT SEMI, LEFT ANTI, EXISTENCE (these never use sort-merge join)
    * 
    * '''How to Disable:'''
-   * - Set spark.rapids.sql.join.keyRemapping.enabled=NEVER (disables remapping)
+   * - Set spark.rapids.sql.join.keyRemapping.mode=NEVER (disables remapping)
    * - Set spark.rapids.sql.join.strategy=HASH_ONLY (avoids sort-merge entirely)
    */
   val AUTO = Value("AUTO")
@@ -1835,15 +1837,29 @@ object KeyRemappingMode extends Enumeration {
       case NEVER => false
       case ALWAYS => true
       case AUTO =>
+        // AUTO mode remaps keys when it improves sort-merge join performance.
+        // Key remapping converts original join keys into compact INT32 remapped keys.
+        //
+        // Benefits of key remapping:
+        // 1. Enables fast radix sort: GPU can use highly optimized radix sort for single
+        //    fixed-width INT32 columns, but must use slower comparison-based sort for
+        //    multi-key columns or complex types (STRING, ARRAY, STRUCT). Remapping enables
+        //    the fast path by converting any key configuration to a single INT32 column.
+        // 2. Reduces data movement: Sorting and comparing a single INT32 column requires
+        //    less memory bandwidth than multi-column or variable-width data.
+        // 3. Eliminates expensive null comparisons: The remapped INT32 values encode
+        //    null handling, avoiding expensive null checks during sort and merge.
+        // 4. Transforms join: This effectively converts the sort-merge join into a
+        //    grouped-merge join where the faster sort algorithm pays for remapping cost.
         val numKeys = leftKeys.getNumberOfColumns
         
-        // Remap if multiple keys
+        // Remap if multiple keys (enables radix sort instead of comparison sort)
         if (numKeys > 1) {
           return true
         }
         
-        // Remap if any key is complex (STRING, ARRAY, STRUCT)
-        // Check both left and right keys (should be same types but be defensive)
+        // Remap if any key is complex type (STRING, ARRAY, STRUCT)
+        // These require slow comparison-based sort; remapping enables fast radix sort
         val hasComplexKey = (0 until numKeys).exists { i =>
           val leftType = leftKeys.getColumn(i).getType
           val rightType = rightKeys.getColumn(i).getType
@@ -1886,8 +1902,8 @@ case class JoinOptions(
     buildSideSelection: JoinBuildSideSelection.JoinBuildSideSelection,
     targetSize: Long,
     sizeEstimateThreshold: Double,
-    maxDuplicateKeyCountSortThreshold: Long,
-    maxDuplicateKeyCountMinBuildRows: Long,
+    maxDuplicateKeyCountSortThreshold: Int,
+    maxDuplicateKeyCountMinBuildRows: Int,
     keyRemappingMode: KeyRemappingMode.KeyRemappingMode)
 
 /**
@@ -2152,7 +2168,7 @@ abstract class BaseHashJoinIterator(
       logWarning(s"INNER_SORT_WITH_POST strategy requested but join keys contain " +
         s"ARRAY or STRUCT types which are not supported for sort joins without key remapping. " +
         s"Falling back to INNER_HASH_WITH_POST strategy. " +
-        s"To enable ARRAY/STRUCT key support, set ${RapidsConf.JOIN_KEY_REMAPPING_ENABLED.key} " +
+        s"To enable ARRAY/STRUCT key support, set ${RapidsConf.JOIN_KEY_REMAPPING_MODE.key} " +
         s"to AUTO (default) or ALWAYS.")
     }
     leftKeysSupported && rightKeysSupported

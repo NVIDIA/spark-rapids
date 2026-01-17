@@ -744,7 +744,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "keys in the build table exceeds this threshold, the join will use sort-merge join " +
         "instead of hash join. This heuristic helps avoid poor performance from hash joins with " +
         "highly skewed keys. Set to 0 or negative to disable the heuristic. The default value " +
-        "of 171609 was determined through extensive performance analysis.")
+        "of 171609 is an empirically chosen heuristic derived from internal benchmarks on " +
+        "contemporary NVIDIA GPU hardware. It is not a theoretical limit. Users should consider " +
+        "tuning this threshold based on their own workloads and hardware if they observe " +
+        "different performance characteristics.")
       .internal()
       .integerConf
       .createWithDefault(171609)
@@ -761,8 +764,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .createOptional
 
-  val JOIN_KEY_REMAPPING_ENABLED = conf("spark.rapids.sql.join.keyRemapping.enabled")
-    .doc("Controls whether join key remapping is used for sort-merge joins. " +
+  val JOIN_KEY_REMAPPING_MODE = conf("spark.rapids.sql.join.keyRemapping.mode")
+    .doc("Controls the mode for join key remapping in sort-merge joins. " +
       "AUTO (default) - enable remapping when beneficial (multi-key joins, complex key types " +
       "like STRING/ARRAY/STRUCT, or when remapping enables sort-merge join for otherwise " +
       "unsupported key types); " +
@@ -3140,11 +3143,10 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     val buildSideStr = JOIN_BUILD_SIDE.get(conf)
     val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
     val sizeEstimateThreshold = JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
-    val maxDupThreshold =
-      JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD.get(conf).asInstanceOf[Int].toLong
+    val maxDupThreshold = JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD.get(conf)
     val maxDupMinBuildRows = JOIN_MAX_DUPLICATE_KEY_COUNT_MIN_BUILD_ROWS.get(conf)
-      .asInstanceOf[Option[Int]].getOrElse(maxDupThreshold.toInt).toLong
-    val keyRemappingModeStr = JOIN_KEY_REMAPPING_ENABLED.get(conf)
+      .getOrElse(maxDupThreshold)
+    val keyRemappingModeStr = JOIN_KEY_REMAPPING_MODE.get(conf)
     val keyRemappingMode = KeyRemappingMode.withName(keyRemappingModeStr)
     JoinOptions(strategy, buildSideSelection, targetSize, sizeEstimateThreshold,
       maxDupThreshold, maxDupMinBuildRows, keyRemappingMode)
@@ -3241,7 +3243,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       .getOrElse(joinMaxDuplicateKeyCountSortThreshold)
   }
 
-  lazy val joinKeyRemappingEnabled: String = get(JOIN_KEY_REMAPPING_ENABLED)
+  lazy val joinKeyRemappingMode: String = get(JOIN_KEY_REMAPPING_MODE)
 
   /**
    * Get join options based on the current configuration.
@@ -3253,15 +3255,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     val strategy = JoinStrategy.withName(strategyStr)
     val buildSideStr: String = get(JOIN_BUILD_SIDE)
     val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
-    val sizeEstimateThreshold: Double = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
-    val maxDupThreshold: Long =
-      get(JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD).asInstanceOf[Int].toLong
-    val maxDupMinBuildRows: Long = get(JOIN_MAX_DUPLICATE_KEY_COUNT_MIN_BUILD_ROWS)
-      .asInstanceOf[Option[Int]].getOrElse(maxDupThreshold.toInt).toLong
-    val keyRemappingModeStr: String = get(JOIN_KEY_REMAPPING_ENABLED)
+    val keyRemappingModeStr: String = get(JOIN_KEY_REMAPPING_MODE)
     val keyRemappingMode = KeyRemappingMode.withName(keyRemappingModeStr)
-    JoinOptions(strategy, buildSideSelection, targetSize, sizeEstimateThreshold,
-      maxDupThreshold, maxDupMinBuildRows, keyRemappingMode)
+    JoinOptions(strategy, buildSideSelection, targetSize, joinGathererSizeEstimateThreshold,
+      joinMaxDuplicateKeyCountSortThreshold, joinMaxDuplicateKeyCountMinBuildRows,
+      keyRemappingMode)
   }
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)

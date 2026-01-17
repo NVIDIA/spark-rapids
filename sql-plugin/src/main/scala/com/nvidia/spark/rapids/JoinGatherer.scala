@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -286,7 +287,7 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
  * - Extended stats (adds maxDuplicateKeyCount) via getOrComputeMaxDupStats() - uses keyRemap()
  */
 class LazySpillableColumnarBatchWithStats private(
-    val batch: LazySpillableColumnarBatch) {
+    val batch: LazySpillableColumnarBatch) extends Logging {
   
   import org.apache.spark.sql.rapids.execution.{JoinBuildSideStats, JoinBuildSideStatsWithMaxDup}
   
@@ -333,24 +334,27 @@ class LazySpillableColumnarBatchWithStats private(
       keysTable: Table,
       nullEquality: NullEquality): JoinBuildSideStatsWithMaxDup = {
     cachedStats match {
-      case Some((stats: JoinBuildSideStatsWithMaxDup, cachedNullEq)) =>
-        // Already have extended stats with max-dup
-        if (cachedNullEq != nullEquality) {
-          throw new IllegalStateException(
-            s"Cached stats were computed with $cachedNullEq but join is using $nullEquality. " +
-            s"This indicates a bug in the join stats caching logic.")
-        }
+      case Some((stats: JoinBuildSideStatsWithMaxDup, cachedNullEq))
+          if cachedNullEq == nullEquality =>
+        // Already have extended stats with correct null equality - return them
         stats
       case Some((_, cachedNullEq)) if cachedNullEq != nullEquality =>
-        // Have basic stats but with wrong null equality - recompute
+        // Have stats (basic or extended) with wrong null equality - this is a bug
         throw new IllegalStateException(
           s"Cached stats were computed with $cachedNullEq but join is using $nullEquality. " +
           s"This indicates a bug in the join stats caching logic.")
-      case _ =>
-        // Either no stats cached, or only basic stats cached (with correct null equality)
-        // Compute extended stats using KeyRemapping
+      case Some((basicStats, _)) =>
+        // Have basic stats, need to upgrade to extended stats with max duplicate count
+        // The work from computing basic stats is essentially thrown away, but this is rare
+        logInfo(s"Upgrading from basic stats to extended stats with max duplicate count. " +
+          s"Basic stats: distinctCount=${basicStats.distinctCount}, " +
+          s"rows=${basicStats.buildRowCount}")
         val fullStats = JoinBuildSideStatsWithMaxDup.fromTable(keysTable, nullEquality)
-        // Cache as the most complete stats we have
+        cachedStats = Some((fullStats, nullEquality))
+        fullStats
+      case None =>
+        // No stats cached, compute extended stats directly
+        val fullStats = JoinBuildSideStatsWithMaxDup.fromTable(keysTable, nullEquality)
         cachedStats = Some((fullStats, nullEquality))
         fullStats
     }
