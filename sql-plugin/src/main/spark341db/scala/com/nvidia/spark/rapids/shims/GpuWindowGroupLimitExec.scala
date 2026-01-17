@@ -90,6 +90,48 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
   }
 
   /**
+   * Helper method to check if two sequences of expressions are semantically equal.
+   */
+  private def specsMatchSemantically[T <: Expression](
+      left: Seq[T],
+      right: Seq[T]): Boolean = {
+    left.length == right.length &&
+    left.zip(right).forall { case (l, r) => l.semanticEquals(r) }
+  }
+
+  /**
+   * Helper method to find a parent plan of a specific type in the plan hierarchy.
+   */
+  private def findParentOfType[T <: SparkPlan : Manifest]: Option[T] = {
+    parent.flatMap { p =>
+      p.wrapped match {
+        case plan: T => Some(plan)
+        case _ => None
+      }
+    }
+  }
+
+  /**
+   * Helper method to find a grandparent plan of a specific type in the plan hierarchy.
+   */
+  private def findGrandparentOfType[T <: SparkPlan : Manifest]: Option[T] = {
+    parent.flatMap(_.parent).flatMap { gp =>
+      gp.wrapped match {
+        case plan: T => Some(plan)
+        case _ => None
+      }
+    }
+  }
+
+  /**
+   * Checks if both partition and order specs match semantically.
+   */
+  private def specsMatchCompletely(windowExec: WindowExec): Boolean = {
+    specsMatchSemantically(windowExec.partitionSpec, limitExec.partitionSpec) &&
+    specsMatchSemantically(windowExec.orderSpec, limitExec.orderSpec)
+  }
+
+  /**
    * Checks if this Final WindowGroupLimitExec is redundant.
    *
    * The Final limit is redundant when:
@@ -101,66 +143,66 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
    * operator a no-op that we can skip.
    */
   private def isFinalLimitRedundant: Boolean = {
-    // Get the parent's wrapped plan (should be WindowExec)
-    val parentWindowExecOpt = parent.flatMap { p =>
-      p.wrapped match {
-        case w: WindowExec => Some(w)
-        case _ => None
-      }
+    findParentOfType[WindowExec] match {
+      case Some(windowExec) => checkWindowExecRedundancy(windowExec)
+      case None => false
+    }
+  }
+
+  /**
+   * Checks if the given WindowExec makes this Final limit redundant.
+   * This is broken out as a separate method for clarity and to allow early returns.
+   */
+  private def checkWindowExecRedundancy(windowExec: WindowExec): Boolean = {
+    // Check if WindowExec has matching partition and order specs
+    if (!specsMatchCompletely(windowExec)) {
+      return false
     }
 
-    parentWindowExecOpt.exists { windowExec =>
-      // Check if WindowExec has matching partition and order specs
-      val specsMatch = 
-        windowExec.partitionSpec.map(_.semanticHash()) == 
-          limitExec.partitionSpec.map(_.semanticHash()) &&
-        windowExec.orderSpec.map(_.semanticHash()) == 
-          limitExec.orderSpec.map(_.semanticHash())
-
-      if (!specsMatch) {
-        return false
-      }
-
-      // Check if WindowExec contains a matching rank function
-      val hasMatchingRankFunction = findMatchingRankExpression(windowExec).isDefined
-
-      if (!hasMatchingRankFunction) {
-        return false
-      }
-
-      // Check if grandparent is a FilterExec
-      val grandparentFilterOpt = parent.flatMap(_.parent).flatMap { gp =>
-        gp.wrapped match {
-          case f: FilterExec => Some(f)
-          case _ => None
-        }
-      }
-
-      // For the optimization to be safe, we need a FilterExec as grandparent
-      // The filter should reference the rank output and enforce the limit
-      grandparentFilterOpt.exists { filterExec =>
-        findMatchingRankExpression(windowExec).exists { case (rankExprId, _) =>
-          filterReferencesRankWithLimit(filterExec, rankExprId, limitExec.limit)
-        }
-      }
+    // Find the matching rank expression once and cache it
+    val matchingRankExprOpt = findMatchingRankExpression(windowExec)
+    if (matchingRankExprOpt.isEmpty) {
+      return false
     }
+
+    // Check if grandparent is a FilterExec
+    val grandparentFilterOpt = findGrandparentOfType[FilterExec]
+    if (grandparentFilterOpt.isEmpty) {
+      return false
+    }
+
+    // For the optimization to be safe, we need a FilterExec as grandparent
+    // The filter should reference the rank output and enforce the limit
+    val (rankExprId, _) = matchingRankExprOpt.get
+    filterReferencesRankWithLimit(grandparentFilterOpt.get, rankExprId, limitExec.limit)
   }
 
   /**
    * Finds a window expression in the WindowExec that matches the rank function
    * in this WindowGroupLimitExec.
    *
+   * Uses reflection to access WindowExec's window expressions because different Spark
+   * versions use different method names:
+   * - Apache Spark versions (3.5.0, 4.0.0, etc.) use `windowExpression`
+   * - Databricks versions (3.4.1db, 3.5.0db143, etc.) use `projectList`
+   *
+   * This shim covers both Apache Spark and Databricks versions, so reflection is
+   * necessary to handle both cases. This follows the same pattern as
+   * GpuWindowExecMeta.getWindowExpression.
+   *
    * @return Option of (expression id, rank function type) if found
    */
   private def findMatchingRankExpression(windowExec: WindowExec): 
       Option[(Long, Expression)] = {
-    // Get window expressions from WindowExec
+    // Get window expressions from WindowExec via reflection
     val windowExprs = try {
+      // Apache Spark versions use windowExpression
       val method = windowExec.getClass.getMethod("windowExpression")
       method.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
     } catch {
       case _: NoSuchMethodException =>
         try {
+          // Databricks versions use projectList
           val method = windowExec.getClass.getMethod("projectList")
           method.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
         } catch {
@@ -192,10 +234,8 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
    * Checks if the window spec matches the partition and order specs of this limit.
    */
   private def matchesWindowSpec(spec: WindowSpecDefinition): Boolean = {
-    spec.partitionSpec.map(_.semanticHash()) == 
-      limitExec.partitionSpec.map(_.semanticHash()) &&
-    spec.orderSpec.map(_.semanticHash()) == 
-      limitExec.orderSpec.map(_.semanticHash())
+    specsMatchSemantically(spec.partitionSpec, limitExec.partitionSpec) &&
+    specsMatchSemantically(spec.orderSpec, limitExec.orderSpec)
   }
 
   /**
