@@ -46,7 +46,8 @@ private[shims] class GpuPartitionerAwareUnionRDD(
   }
 
   override def compute(partition: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
-    val parentPartitions = partition.asInstanceOf[GpuPartitionerAwareUnionPartition].parentPartitions
+    val parentPartitions = partition.asInstanceOf[
+        GpuPartitionerAwareUnionPartition].parentPartitions
     rdds.iterator.zip(parentPartitions.iterator).flatMap { case (rdd, parentPartition) =>
       rdd.iterator(parentPartition, context).map { batch =>
         numOutputBatches += 1

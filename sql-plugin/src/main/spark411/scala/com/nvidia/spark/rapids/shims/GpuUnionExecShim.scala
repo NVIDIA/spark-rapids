@@ -45,7 +45,7 @@ object GpuUnionExecShim {
         numOutputRows, numOutputBatches)
     } else {
       // Fall back to concatenation similar to pre-4.1 implementation
-      sc.union(rdds).map { batch =>
+      sc.union(nonEmptyRdds).map { batch =>
         numOutputBatches += 1
         numOutputRows += batch.numRows
         batch
