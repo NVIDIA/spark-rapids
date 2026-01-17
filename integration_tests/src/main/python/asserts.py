@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -95,6 +95,9 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) decimal values are different at {path}"
     elif isinstance(cpu, bytearray):
         assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) bytearray values are different at {path}"
+    elif isinstance(cpu, bytes):
+        # Spark 4.1.0+ returns bytes instead of bytearray for binary data
+        assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) bytes values are different at {path}"
     elif isinstance(cpu, timedelta):
         # Used by interval type DayTimeInterval for Pyspark 3.3.0+
         assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) timedelta values are different at {path}"

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,6 +49,8 @@ from typing import Iterator, Tuple
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
     'spark.rapids.sql.exec.WindowInPandasExec': 'true',
+    # ArrowWindowPythonExec is the new name for WindowInPandasExec in Spark 4.1+
+    'spark.rapids.sql.exec.ArrowWindowPythonExec': 'true',
     'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true'
 }
 
