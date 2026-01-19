@@ -40,7 +40,7 @@ import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuRank, GpuRowNumber}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, DenseRank, Expression, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, Literal, NamedExpression, Rank, RowNumber, SortOrder, WindowExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{Alias, And, Attribute, AttributeReference, DenseRank, EqualTo, Expression, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, Literal, NamedExpression, Rank, RowNumber, SortOrder, WindowExpression, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
 import org.apache.spark.sql.execution.window.{Final, Partial, WindowExec, WindowGroupLimitExec, WindowGroupLimitMode}
@@ -174,7 +174,8 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
     // For the optimization to be safe, we need a FilterExec as grandparent
     // The filter should reference the rank output and enforce the limit
     val (rankExprId, _) = matchingRankExprOpt.get
-    filterReferencesRankWithLimit(grandparentFilterOpt.get, rankExprId, limitExec.limit)
+    WindowGroupLimitFilterMatcher.filterIsAtLeastAsRestrictive(
+      grandparentFilterOpt.get.condition, rankExprId, limitExec.limit)
   }
 
   /**
@@ -236,54 +237,6 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
   private def matchesWindowSpec(spec: WindowSpecDefinition): Boolean = {
     specsMatchSemantically(spec.partitionSpec, limitExec.partitionSpec) &&
     specsMatchSemantically(spec.orderSpec, limitExec.orderSpec)
-  }
-
-  /**
-   * Checks if the filter condition references the rank column and enforces
-   * a limit that is compatible with (same or more restrictive than) this limit.
-   *
-   * We look for patterns like:
-   *   - rank <= limit
-   *   - rank < limit + 1
-   *   - limit >= rank
-   *   - limit + 1 > rank
-   */
-  private def filterReferencesRankWithLimit(
-      filterExec: FilterExec,
-      rankExprId: Long,
-      limit: Int): Boolean = {
-    
-    def referencesRankColumn(expr: Expression): Boolean = {
-      expr.references.exists(_.exprId.id == rankExprId)
-    }
-
-    def extractLiteralInt(expr: Expression): Option[Int] = expr match {
-      case Literal(value: Int, _) => Some(value)
-      case Literal(value: Long, _) if value.isValidInt => Some(value.toInt)
-      case _ => None
-    }
-
-    // Check if the condition is a comparison that references the rank column
-    // and has a limit value that is >= our limit (so it's at least as restrictive)
-    filterExec.condition match {
-      // rank <= n  where n >= limit
-      case LessThanOrEqual(left, right) if referencesRankColumn(left) =>
-        extractLiteralInt(right).exists(_ >= limit)
-      
-      // rank < n  where n > limit (equivalent to rank <= n-1 where n-1 >= limit)
-      case LessThan(left, right) if referencesRankColumn(left) =>
-        extractLiteralInt(right).exists(_ > limit)
-      
-      // n >= rank  where n >= limit
-      case GreaterThanOrEqual(left, right) if referencesRankColumn(right) =>
-        extractLiteralInt(left).exists(_ >= limit)
-      
-      // n > rank  where n > limit
-      case GreaterThan(left, right) if referencesRankColumn(right) =>
-        extractLiteralInt(left).exists(_ > limit)
-
-      case _ => false
-    }
   }
 
   override def convertToGpu(): GpuExec = {
@@ -541,4 +494,109 @@ case class GpuWindowGroupLimitExec(
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new UnsupportedOperationException("Row-wise execution unsupported!")
+}
+
+/**
+ * Utility object for checking if a filter condition on a rank column is at least
+ * as restrictive as a WindowGroupLimit. This is extracted to allow unit testing.
+ *
+ * For the optimization to be safe, the filter must keep the same or fewer rows
+ * than the WindowGroupLimit. The WindowGroupLimit keeps rows where rank <= limit.
+ *
+ * Supports patterns matching Spark's InferWindowGroupLimit.extractLimits:
+ * - rank <= n, rank < n, rank = n
+ * - n >= rank, n > rank, n = rank
+ * - AND conditions (extracts minimum limit)
+ */
+object WindowGroupLimitFilterMatcher {
+
+  /**
+   * Checks if the given filter condition limits the rank column to at most `limit` rows.
+   *
+   * @param condition The filter condition expression
+   * @param rankExprId The expression ID of the rank column
+   * @param limit The WindowGroupLimit's limit value
+   * @return true if the filter is at least as restrictive as rank <= limit
+   */
+  def filterIsAtLeastAsRestrictive(
+      condition: Expression,
+      rankExprId: Long,
+      limit: Int): Boolean = {
+
+    // Check if expr IS the rank column directly (not just contains it).
+    // Spark's InferWindowGroupLimit uses semanticEquals(attr), which checks identity.
+    // Using references.exists would incorrectly match COALESCE(rank, 0) or CAST(rank).
+    def isRankColumn(expr: Expression): Boolean = expr match {
+      case attr: AttributeReference => attr.exprId.id == rankExprId
+      case _ => false
+    }
+
+    def extractLiteralInt(expr: Expression): Option[Int] = expr match {
+      case Literal(value: Int, _) => Some(value)
+      case Literal(value: Long, _) if value.isValidInt => Some(value.toInt)
+      case _ => None
+    }
+
+    /**
+     * Extract the effective limit from a single predicate.
+     * Returns Some(effectiveLimit) if this predicate limits the rank, None otherwise.
+     *
+     * Following Spark's InferWindowGroupLimit.extractLimits logic:
+     * - EqualTo: limit = value (keeps only that rank)
+     * - LessThan: limit = value - 1 (rank < n means rank <= n-1)
+     * - LessThanOrEqual: limit = value
+     * - GreaterThan (reversed): limit = value - 1
+     * - GreaterThanOrEqual (reversed): limit = value
+     */
+    def extractLimit(predicate: Expression): Option[Int] = predicate match {
+      // rank = n: keeps only rank n. Effective limit is n.
+      case EqualTo(left, right) if isRankColumn(left) =>
+        extractLiteralInt(right)
+      case EqualTo(left, right) if isRankColumn(right) =>
+        extractLiteralInt(left)
+
+      // rank <= n: keeps ranks 1..n. Effective limit is n.
+      case LessThanOrEqual(left, right) if isRankColumn(left) =>
+        extractLiteralInt(right)
+
+      // rank < n: equivalent to rank <= n-1. Effective limit is n-1.
+      case LessThan(left, right) if isRankColumn(left) =>
+        extractLiteralInt(right).map(_ - 1)
+
+      // n >= rank: same as rank <= n. Effective limit is n.
+      case GreaterThanOrEqual(left, right) if isRankColumn(right) =>
+        extractLiteralInt(left)
+
+      // n > rank: same as rank < n, equivalent to rank <= n-1. Effective limit is n-1.
+      case GreaterThan(left, right) if isRankColumn(right) =>
+        extractLiteralInt(left).map(_ - 1)
+
+      case _ => None
+    }
+
+    /**
+     * Split a condition into conjunctive predicates (AND conditions).
+     * For example: "a AND b AND c" becomes Seq(a, b, c)
+     * A simple condition "a" becomes Seq(a)
+     */
+    def splitConjunctivePredicates(cond: Expression): Seq[Expression] = {
+      cond match {
+        case And(left, right) =>
+          splitConjunctivePredicates(left) ++ splitConjunctivePredicates(right)
+        case other => Seq(other)
+      }
+    }
+
+    // Split the filter condition into conjunctive predicates and extract limits
+    val predicates = splitConjunctivePredicates(condition)
+    val limits = predicates.flatMap(extractLimit)
+
+    // If we found any rank-limiting predicates, use the minimum (most restrictive)
+    // The filter is safe if this minimum limit is <= the WindowGroupLimit's limit
+    if (limits.nonEmpty) {
+      limits.min <= limit
+    } else {
+      false
+    }
+  }
 }
