@@ -351,7 +351,7 @@ object GpuTextBasedPartitionReader {
   def infer(col: ColumnView): DataType = col.getType match {
     case DType.LIST =>
       val childType = withResource(col.getChildColumnView(0))(infer)
-      ArrayType(childType, col.getNullCount > 0)
+      ArrayType(childType)
     case DType.STRUCT =>
       val fields = (0 until col.getNumChildren).map { i =>
         withResource(col.getChildColumnView(i)) { chdView =>
