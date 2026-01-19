@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -312,7 +312,7 @@ trait GpuExec extends SparkPlan with Logging {
 
   // For GpuShuffleExchangeExecBase and GpuCustomShuffleReaderExec,
   // we want the op time metrics to be called:
-  // - "op time (shuffle write partition & serial)" for shuffle write, and
+  // - "op time (shuffle write partition)" for shuffle write, and
   // - "op time (shuffle read)" for shuffle read.
   // That's why we have this separate method to get the metric.
   def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW)
