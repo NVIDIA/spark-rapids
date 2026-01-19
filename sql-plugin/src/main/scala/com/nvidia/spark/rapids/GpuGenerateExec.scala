@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -902,22 +902,38 @@ case class GpuGenerateExec(
       val projectedInput = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
         SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
         othersProjectList ++ genProjectList)
-      getSplits(projectedInput, othersProjectList, new RapidsConf(conf).gpuTargetBatchSizeBytes)
+      GpuGenerateUtils.getSplitsWithRetryAndClose(projectedInput, generator,
+        othersProjectList.length, outer, new RapidsConf(conf).gpuTargetBatchSizeBytes)
     }
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
       numOutputRows, numOutputBatches, opTime)
   }
+}
 
-  // Split up the input batch and call generate on each split.
-  private def getSplits(cb: ColumnarBatch,
-      othersProjectList: Seq[GpuExpression],
+object GpuGenerateUtils {
+  /**
+   * Split up the input batch to call generate on each split.
+   * (Move it out of the GpuGenerateExec class for unit tests)
+   */
+  private[rapids] def getSplitsWithRetryAndClose(cb: ColumnarBatch, generator: GpuGenerator,
+      generatorOffset: Int, outer: Boolean,
       targetSize: Long): Seq[SpillableColumnarBatch] = {
-    withResource(cb) { _ =>
+    val spillableBatch = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val iter = withRetry(spillableBatch, splitSpillableInHalfByRows) { attempt =>
       // compute split indices of input batch
-      val splitIndices = generator.inputSplitIndices(
-      cb, othersProjectList.length, outer, targetSize)
-      // split up input batch with indices
-      makeSplits(cb, splitIndices)
+      withResource(attempt.getColumnarBatch()) { attemptCB =>
+        val splitIndices = generator.inputSplitIndices(attemptCB,
+          generatorOffset, outer, targetSize)
+        // split up input batch with indices
+        makeSplits(attemptCB, splitIndices)
+      }
+    }
+    // Safely flatten to an output array.
+    closeOnExcept(new AutoClosableArrayBuffer[SpillableColumnarBatch]) { outBuf =>
+      while (iter.hasNext) {
+        iter.next().foreach(outBuf.append)
+      }
+      outBuf.toSeq
     }
   }
 
