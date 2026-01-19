@@ -349,7 +349,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   test("multi-batch: batch2 fills batch1 gaps") {
     // Batch1: 1,3,5 (odd partitions)
-    // Batch2: 0,2,4 (even partitions, triggered by 0 <= 5)
+    // Batch2: 0,2,4 (even partitions, triggered by 0 < 5)
     // Result: partition 6 empty
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(1, 3, 5, 0, 2, 4)))
@@ -360,7 +360,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   test("multi-batch: extreme jump max to min") {
     // Batch1: 6 (max partition only)
-    // Batch2: 0 (min partition only, triggered by 0 <= 6)
+    // Batch2: 0 (min partition only, triggered by 0 < 6)
     // Result: partitions 1-5 empty
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(6, 0)))
@@ -373,7 +373,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   test("multi-batch: partitions overlap between batches") {
     // Batch1: 1,3,5
-    // Batch2: 3,4,5 (triggered by 3 <= 5, partitions 3,5 written again)
+    // Batch2: 3,4,5 (triggered by 3 < 5, partitions 3,5 written again)
     // Partitions 3,5 have data from BOTH batches
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(1, 3, 5, 3, 4, 5)))
@@ -386,7 +386,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   test("multi-batch: batch2 fully within batch1 range") {
     // Batch1: 0,1,2,3,4,5,6 (all partitions)
-    // Batch2: 2,3,4 (triggered by 2 <= 6, subset of batch1)
+    // Batch2: 2,3,4 (triggered by 2 < 6, subset of batch1)
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(0, 1, 2, 3, 4, 5, 6, 2, 3, 4)))
     writer.stop(true)
@@ -397,21 +397,26 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   // ==================== Multi-batch: Repeated Partitions ====================
 
-  test("multi-batch: same partition repeated creates many batches") {
-    // Each record triggers new batch: 0 <= 0
-    // 5 batches, each with only partition 0
+  test("single batch: same partition repeated") {
+    // Consecutive identical partition IDs can occur in two scenarios:
+    // 1. Reslicing: a large partition is split into multiple smaller batches
+    // 2. Data skew: multiple GPU batches each containing only the same partition's data
+    // In both cases, they should be merged into a single shuffle batch (more efficient,
+    // fewer partial files). This does NOT affect correctness since shuffle write only
+    // cares about final data completeness per partition.
+    // Input: 0,0,0,0,0 -> all in one batch
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(0, 0, 0, 0, 0)))
     writer.stop(true)
-    // Only partition 0 has data (from all 5 batches)
-    // Verify partition 0 was written 5 times, not just once
+    // Only partition 0 has data, all 5 records in a single batch
+    // Verify partition 0 was written 5 times
     verifyWrite(writer, expectedRecords = 5, partitionsWithData = Set(0),
       minWritesPerPartition = Map(0 -> 5))
   }
 
   test("multi-batch: strictly decreasing creates one batch per record") {
     // Input: 5,4,3,2,1,0
-    // Each partition ID <= previous max, so 6 batches total
+    // Each partition ID < previous max, so 6 batches total
     // Batch1:5, Batch2:4, Batch3:3, Batch4:2, Batch5:1, Batch6:0
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(5, 4, 3, 2, 1, 0)))
@@ -436,7 +441,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   test("multi-batch: batch1 sparse, batch2 full") {
     // Batch1: 0,6 (only first and last)
-    // Batch2: 0,1,2,3,4,5,6 (all partitions, triggered by 0 <= 6)
+    // Batch2: 0,1,2,3,4,5,6 (all partitions, triggered by 0 < 6)
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(0, 6, 0, 1, 2, 3, 4, 5, 6)))
     writer.stop(true)
@@ -448,7 +453,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   test("multi-batch: batch2 extends beyond batch1 range") {
     // Batch1: 2,3 (middle partitions)
-    // Batch2: 0,1,4,5,6 (triggered by 0 <= 3, covers both sides)
+    // Batch2: 0,1,4,5,6 (triggered by 0 < 3, covers both sides)
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(2, 3, 0, 1, 4, 5, 6)))
     writer.stop(true)
@@ -460,8 +465,8 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
   test("multi-batch: three batches interleaved") {
     // Batch1: 2,4,6
-    // Batch2: 1,3,5 (triggered by 1 <= 6)
-    // Batch3: 0 (triggered by 0 <= 5)
+    // Batch2: 1,3,5 (triggered by 1 < 6)
+    // Batch3: 0 (triggered by 0 < 5)
     val writer = createWriter()
     writer.write(createTestRecords(Iterator(2, 4, 6, 1, 3, 5, 0)))
     writer.stop(true)

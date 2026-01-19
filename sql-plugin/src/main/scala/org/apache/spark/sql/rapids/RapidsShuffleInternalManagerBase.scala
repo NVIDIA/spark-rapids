@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{IOException, OutputStream}
 import java.util.concurrent.{Callable, ConcurrentHashMap, CopyOnWriteArrayList, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -341,8 +341,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    * ShuffleMapOutputWriter requires sequential partition writes.
    *
    * @param batchId Unique identifier for this batch (for debugging/logging)
-   * @param mapOutputWriter Spark's shuffle output writer for this batch. Each batch writes
-   *                        to a separate temp file, later merged into final output.
+   * @param mapOutputWriter Shuffle output writer for this batch. When using
+   *                        RapidsLocalDiskShuffleMapOutputWriter, data may be buffered
+   *                        in memory first (via SpillablePartialFileHandle) and only
+   *                        written to disk on spill or commit. For fallback writers,
+   *                        data is written directly to temp files.
    * @param partitionBuffers Maps partitionId -> compressed data buffer. Compression tasks
    *                         append data here; merger thread reads and writes to disk.
    * @param partitionFutures Maps partitionId -> list of compression task futures.
@@ -373,6 +376,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     partitionProcessedFutures: ConcurrentHashMap[Int, Int],
     maxPartitionIdQueued: AtomicInteger,
     mergerCondition: Object,
+    // Flag for classic wait/notify pattern: set to true when new work is available,
+    // reset to false after merger thread wakes up and checks actual data state.
+    // This avoids busy-loop polling and provides clear signal for debugging.
+    hasNewWork: AtomicBoolean,
     mergerSlotNum: Int,
     mergerFuture: Future[_])
 
@@ -426,15 +433,36 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       CopyOnWriteArrayList[Future[(Long, Long)]]]()
     val partitionWrittenBytes = new ConcurrentHashMap[Int, Long]()
     val partitionProcessedFutures = new ConcurrentHashMap[Int, Int]()
+    
+    // Synchronization strategy for maxPartitionIdQueued and mergerCondition:
+    //
+    // maxPartitionIdQueued: Tracks the highest partition ID queued by main thread.
+    //   - Main thread: updates via set() after adding futures, synchronized with
+    //     maxPartitionIdQueued to ensure atomic update with futures.add()
+    //   - Merger thread: reads via get() to check if current partition is complete
+    //     (currentPartition < maxPartitionIdQueued means all data for currentPartition
+    //     has been queued)
+    //
+    // mergerCondition: Condition variable for merger thread to wait on.
+    //   - Main thread: sets hasNewWork=true and calls notifyAll() after queuing new tasks
+    //   - Merger thread: uses classic flag pattern (while !hasNewWork wait()) to avoid
+    //     busy-loop polling and provide clear debugging signal
     val maxPartitionIdQueued = new AtomicInteger(-1)
     val mergerCondition = new Object()
+    val hasNewWork = new AtomicBoolean(false)
 
     // Assign a merger slot for this batch
     val mergerSlotNum = RapidsShuffleInternalManagerBase.getNextMergerSlot
 
     var unfinishedStream: Option[OutputStream] = None
 
-    // Helper to write the buffer for a single partition
+    // Helper to write the buffer for a single partition.
+    // Buffer lifecycle:
+    // - doCleanUp=false: incremental write, buffer stays open for more data from same partition
+    // - doCleanUp=true: final write, closes buffer and streams (called when partition is complete)
+    // Normal path: merger calls with doCleanUp=false for each compression task, then calls
+    // with doCleanUp=true when containsLastForThisPartition=true (all data for partition queued).
+    // Exception path: buffers are closed in the finally block of writePartitionedGpuBatches.
     def writeBufferForSinglePartition(
         partitionId: Int,
         start: Long,
@@ -507,7 +535,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 partitionProcessedFutures.compute(currentPartitionToWrite,
                   (key, value) => { value + 1 })
 
-                // Release the remaining quota (compressedSize) after data is written to disk
+                // Release the remaining quota after data is written to output stream.
+                // The limiter controls heap memory pressure from deserialization and
+                // OpenByteArrayOutputStream. Once data is written to output stream (which may
+                // buffer in SpillablePartialFileHandle or write to disk), the heap buffer
+                // becomes eligible for GC. Releasing quota here allows more compression
+                // tasks to proceed without causing heap OOM.
                 limiter.release(remainingQuota)
               }
 
@@ -516,8 +549,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 currentPartitionToWrite += 1
               } else {
                 if (!newFutureTouched) {
+                  // No new futures were processed in this iteration, wait for main thread
+                  // to queue more compression tasks. Use classic condition flag pattern
+                  // to avoid busy-loop polling and provide clear debugging signal.
                   mergerCondition.synchronized {
-                    mergerCondition.wait(1)
+                    while (!hasNewWork.get()) {
+                      mergerCondition.wait()
+                    }
+                    hasNewWork.set(false)
                   }
                 }
               }
@@ -527,8 +566,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               currentPartitionToWrite += 1
             }
           } else {
+            // Current partition hasn't been queued yet by main thread, wait for it.
+            // Use classic condition flag pattern to avoid busy-loop polling and
+            // provide clear debugging signal.
             mergerCondition.synchronized {
-              mergerCondition.wait(1)
+              while (!hasNewWork.get()) {
+                mergerCondition.wait()
+              }
+              hasNewWork.set(false)
             }
           }
         }
@@ -550,6 +595,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       partitionProcessedFutures,
       maxPartitionIdQueued,
       mergerCondition,
+      hasNewWork,
       mergerSlotNum,
       mergerFuture)
   }
@@ -578,6 +624,18 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   /**
    * Unified write path that handles both single batch and multi-batch tasks.
    * Uses streaming parallel processing with pipelined partition writing.
+   *
+   * Data flow for each record:
+   * 1. ColumnarBatch (already copied to host memory, may be split from GPU batches based on
+   *    spark.rapids.shuffle.partitioning.maxCpuBatchSize) -> Main thread acquires limiter quota
+   * 2. Writer thread: serialize + compress -> OpenByteArrayOutputStream (JVM heap)
+   * 3. Writer thread: release excess quota (recordSize - compressedSize)
+   * 4. Merger thread: heap buffer -> ShuffleMapOutputWriter (via SpillablePartialFileHandle)
+   *    - If MEMORY_WITH_SPILL mode: data may stay in host memory until spill/commit
+   *    - If FILE_ONLY mode or spilled: data goes to disk
+   * 5. Merger thread: release remaining quota after writing to output stream
+   * 6. (Multi-batch only) Main thread: mergePartialFiles() combines all batch outputs into
+   *    final shuffle file, reading from each SpillablePartialFileHandle sequentially
    *
    * Threading model (same for both scenarios):
    * - Main thread: Processes all records without blocking, queues compression tasks
@@ -631,17 +689,28 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val reducePartitionId: Int = partitioner.getPartition(key)
 
         // Detect multi-batch: partition ID must be strictly increasing within a batch.
-        // If current partition ID <= previous max, it's a new batch.
-        if (reducePartitionId <= previousMaxPartition) {
+        // If current partition ID < previous max, it means we've jumped back to an earlier
+        // partition, indicating a new upstream GPU batch. Note: we use < instead of <= because
+        // consecutive identical partition IDs can occur in two scenarios:
+        // 1. Reslicing: when a partition's data exceeds maxCpuBatchSize
+        // 2. Data skew: multiple GPU batches each containing only the same partition's data
+        // In both cases, merging them into a single shuffle batch is correct and more efficient
+        // (fewer partial files, less merge overhead).
+        if (reducePartitionId < previousMaxPartition) {
           if (!isMultiBatch) {
             isMultiBatch = true
             logDebug(s"Detected multi-batch scenario for shuffle $shuffleId, " +
               s"transitioning to pipeline mode")
           }
 
-          // Signal current batch is complete (but don't block next batch!)
+          // Signal current batch is complete by setting maxPartitionIdQueued to numPartitions.
+          // This tells the merger thread that all partitions (0 to numPartitions-1) have been
+          // queued, so it can finish writing remaining partitions without waiting.
+          // We notify the merger thread in case it's waiting for more work.
+          // Note: We don't block here - the merger runs in parallel while we start next batch.
           currentBatch.maxPartitionIdQueued.set(numPartitions)
           currentBatch.mergerCondition.synchronized {
+            currentBatch.hasNewWork.set(true)
             currentBatch.mergerCondition.notifyAll()
           }
 
@@ -657,6 +726,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           mapOutputWriters += newWriter  // Track for cleanup
           currentBatch = createBatchState(currentBatchId, newWriter)
 
+          // Reset to -1 for new batch. This ensures the first record of the new batch
+          // (with any valid partition ID >= 0) won't trigger another batch switch,
+          // since reducePartitionId > -1 will always be true.
           previousMaxPartition = -1
         }
 
@@ -731,8 +803,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             math.max(currentBatch.maxPartitionIdQueued.get(), reducePartitionId))
         }
 
-        // Wake up merger thread for current batch
+        // Wake up merger thread to process newly queued compression task.
+        // This enables pipeline parallelism: main thread continues to next record
+        // while merger thread processes completed compressions in parallel.
         currentBatch.mergerCondition.synchronized {
+          currentBatch.hasNewWork.set(true)
           currentBatch.mergerCondition.notifyAll()
         }
 
@@ -742,9 +817,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       // Account for the final hasNext call that returned false
       inputFetchTimeNs += System.nanoTime() - inputFetchStart
 
-      // Mark end of last batch - ensure all partitions are processed
+      // Mark end of last batch by setting maxPartitionIdQueued to numPartitions.
+      // This signals the merger thread that all partitions have been queued.
+      // Notify ensures merger wakes up to finish any remaining work.
       currentBatch.maxPartitionIdQueued.set(numPartitions)
       currentBatch.mergerCondition.synchronized {
+        currentBatch.hasNewWork.set(true)
         currentBatch.mergerCondition.notifyAll()
       }
 
@@ -1827,12 +1905,12 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     val rapidsPlugin = "org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleDataIO"
     
     if (configuredPlugin.nonEmpty && !configuredPlugin.endsWith("RapidsLocalDiskShuffleDataIO")) {
-      logWarning(s"User configured shuffle plugin '$configuredPlugin' but " +
-        s"RapidsShuffleManager requires '$rapidsPlugin'. " +
-        s"Overriding to use RAPIDS plugin for optimal performance.")
+      throw new IllegalArgumentException(
+        s"RapidsShuffleManager requires 'spark.shuffle.sort.io.plugin.class' to be " +
+        s"'$rapidsPlugin' or unset, but found '$configuredPlugin'. " +
+        s"Please update your configuration.")
     }
     
-    // Force RAPIDS ShuffleDataIO since we're using RapidsShuffleManager
     val rapidsDataIO = new RapidsLocalDiskShuffleDataIO(conf)
     val executorComponents = rapidsDataIO.executor()
     
