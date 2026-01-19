@@ -46,6 +46,28 @@ abstract class GpuBroadcastHashJoinMetaBase(
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val buildSide: GpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
 
+  /**
+   * Compute column indices for gather optimization. This analyzes the parent node to determine
+   * which columns are actually needed from the join output.
+   *
+   * @param postJoinFilterCondition optional post-join filter condition whose referenced
+   *                                columns must be preserved
+   * @return tuple of (leftColumnIndices, rightColumnIndices), each None if all columns needed
+   */
+  protected def computeGatherColumnIndices(
+      postJoinFilterCondition: Option[Expression]
+  ): (Option[Array[Int]], Option[Array[Int]]) = {
+    if (!conf.joinOptimizeColumnGather) {
+      return (None, None)
+    }
+    // Compute full join output to analyze what parent needs
+    val fullOutput = GpuHashJoin.output(join.joinType, join.left.output, join.right.output)
+    val requiredExprIds = JoinOutputAnalysis.getRequiredOutputColumns(
+      this, fullOutput, postJoinFilterCondition)
+    JoinOutputAnalysis.computeGatherIndices(
+      requiredExprIds, join.left.output, join.right.output)
+  }
+
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
@@ -102,7 +124,10 @@ abstract class GpuBroadcastHashJoinExecBase(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
-    isNullAwareAntiJoin: Boolean) extends ShimBinaryExecNode with GpuHashJoin {
+    isNullAwareAntiJoin: Boolean,
+    override val leftGatherColumnIndices: Option[Array[Int]] = None,
+    override val rightGatherColumnIndices: Option[Array[Int]] = None)
+    extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   // Same checks as Spark

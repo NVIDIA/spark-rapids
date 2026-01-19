@@ -330,14 +330,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case x@GpuShuffledHashJoinExec(
           _, _, _, buildSide, _,
           left: GpuShuffleCoalesceExec,
-          GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _), _, _)
+          GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _), _, _, _, _)
           if buildSide == GpuBuildRight && rapidsConf.shuffledHashJoinOptimizeShuffle =>
         x.withNewChildren(
           Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
       case x@GpuShuffledHashJoinExec(
           _, _, _, buildSide, _,
           GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
-          right: GpuShuffleCoalesceExec, _, _)
+          right: GpuShuffleCoalesceExec, _, _, _, _)
           if buildSide == GpuBuildLeft && rapidsConf.shuffledHashJoinOptimizeShuffle =>
         x.withNewChildren(
           Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))

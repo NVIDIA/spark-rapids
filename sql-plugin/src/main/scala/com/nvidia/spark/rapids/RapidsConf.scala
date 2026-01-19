@@ -838,6 +838,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValue(v => v >= 0.0 && v <= 2.0, "The threshold must be between 0.0 and 2.0.")
     .createWithDefault(0.75)
 
+  val JOIN_OPTIMIZE_COLUMN_GATHER =
+    conf("spark.rapids.sql.join.optimizeColumnGather")
+      .doc("When enabled, the GPU join will analyze the parent node to determine which columns " +
+        "are actually needed and skip gathering columns that will be immediately dropped. " +
+        "This optimization is especially beneficial for operations like COUNT(*) after a join " +
+        "where no columns are actually needed from the join output.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE =
     conf("spark.rapids.sql.shuffledHashJoin.optimizeShuffle")
       .doc("Enable or disable an optimization where shuffled build side batches are kept " +
@@ -3277,6 +3287,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val bucketJoinIoPrefetch: Boolean = get(BUCKET_JOIN_IO_PREFETCH)
 
   lazy val joinGathererSizeEstimateThreshold: Double = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
+
+  lazy val joinOptimizeColumnGather: Boolean = get(JOIN_OPTIMIZE_COLUMN_GATHER)
 
   lazy val joinMaxDuplicateKeyCountSortThreshold: Int =
     get(JOIN_MAX_DUPLICATE_KEY_COUNT_SORT_THRESHOLD)

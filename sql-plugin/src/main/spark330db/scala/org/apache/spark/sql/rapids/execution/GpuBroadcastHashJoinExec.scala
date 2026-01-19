@@ -58,6 +58,10 @@ class GpuBroadcastHashJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
+
+    // Compute column indices for gather optimization
+    val (leftColIndices, rightColIndices) = computeGatherColumnIndices(filterCondition)
+
     val joinExec = GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
@@ -67,7 +71,9 @@ class GpuBroadcastHashJoinMeta(
       left,
       right,
       join.isNullAwareAntiJoin,
-      join.isExecutorBroadcast)
+      join.isExecutorBroadcast,
+      leftColIndices,
+      rightColIndices)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
     filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
@@ -83,9 +89,12 @@ case class GpuBroadcastHashJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     isNullAwareAntiJoin: Boolean,
-    executorBroadcast: Boolean)
+    executorBroadcast: Boolean,
+    override val leftGatherColumnIndices: Option[Array[Int]] = None,
+    override val rightGatherColumnIndices: Option[Array[Int]] = None)
       extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin) {
+      leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin,
+      leftGatherColumnIndices, rightGatherColumnIndices) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(

@@ -88,6 +88,24 @@ class GpuShuffledHashJoinMeta(
     tagBuildSide(this, join.joinType, buildSide)
   }
 
+  /**
+   * Compute column indices for gather optimization. This analyzes the parent node to determine
+   * which columns are actually needed from the join output.
+   */
+  protected def computeGatherColumnIndices(
+      postJoinFilterCondition: Option[Expression]
+  ): (Option[Array[Int]], Option[Array[Int]]) = {
+    if (!conf.joinOptimizeColumnGather) {
+      return (None, None)
+    }
+    import org.apache.spark.sql.rapids.execution.GpuHashJoin
+    val fullOutput = GpuHashJoin.output(join.joinType, join.left.output, join.right.output)
+    val requiredExprIds = JoinOutputAnalysis.getRequiredOutputColumns(
+      this, fullOutput, postJoinFilterCondition)
+    JoinOutputAnalysis.computeGatherIndices(
+      requiredExprIds, join.left.output, join.right.output)
+  }
+
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
     val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
@@ -99,6 +117,10 @@ class GpuShuffledHashJoinMeta(
     val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
       join.leftKeys, join.rightKeys)
     val readOpt = CoalesceReadOption(conf)
+
+    // Compute column indices for gather optimization
+    val (leftColIndices, rightColIndices) = computeGatherColumnIndices(filterCondition)
+
     val joinExec = join.joinType match {
       case LeftOuter | RightOuter if useSizedJoin =>
         GpuShuffledAsymmetricHashJoinExec(
@@ -112,7 +134,9 @@ class GpuShuffledHashJoinMeta(
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
           readOpt,
-          isSkewJoin = false)(
+          isSkewJoin = false,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys,
           conf.joinOuterMagnificationThreshold)
@@ -128,7 +152,9 @@ class GpuShuffledHashJoinMeta(
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
           readOpt,
-          isSkewJoin = false)(
+          isSkewJoin = false,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys)
       case _ =>
@@ -141,7 +167,9 @@ class GpuShuffledHashJoinMeta(
           left,
           right,
           readOpt,
-          isSkewJoin = false)(
+          isSkewJoin = false,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys)
     }
@@ -161,7 +189,9 @@ case class GpuShuffledHashJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     readOption: CoalesceReadOption,
-    override val isSkewJoin: Boolean)(
+    override val isSkewJoin: Boolean,
+    override val leftGatherColumnIndices: Option[Array[Int]] = None,
+    override val rightGatherColumnIndices: Option[Array[Int]] = None)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
   with GpuSubPartitionHashJoin {

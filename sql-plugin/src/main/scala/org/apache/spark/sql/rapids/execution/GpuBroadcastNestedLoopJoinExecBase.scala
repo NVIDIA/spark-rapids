@@ -177,14 +177,14 @@ class CrossJoinIterator(
         case (_, 0) =>
           rightBatch.close()
           rightMap.close()
-          JoinGatherer(leftMap, leftBatch, OutOfBoundsPolicy.DONT_CHECK)
+          JoinGatherer(leftMap, leftBatch, OutOfBoundsPolicy.DONT_CHECK, None)
         case (0, _) =>
           leftBatch.close()
           leftMap.close()
-          JoinGatherer(rightMap, rightBatch, OutOfBoundsPolicy.DONT_CHECK)
+          JoinGatherer(rightMap, rightBatch, OutOfBoundsPolicy.DONT_CHECK, None)
         case (_, _) =>
           JoinGatherer(leftMap, leftBatch, rightMap, rightBatch,
-            OutOfBoundsPolicy.DONT_CHECK, OutOfBoundsPolicy.DONT_CHECK)
+            OutOfBoundsPolicy.DONT_CHECK, OutOfBoundsPolicy.DONT_CHECK, None, None)
       }
       if (joinGatherer.isDone) {
         joinGatherer.close()

@@ -1838,3 +1838,145 @@ def test_join_degenerate_outer(join_type):
         else:
             return temp_df.selectExpr("r_key", "r_value")
     assert_gpu_and_cpu_are_equal_collect(do_join)
+
+
+# Tests for join column gather optimization
+# These tests verify that the optimization works correctly when columns are dropped after a join
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['Inner', 'LeftOuter', 'RightOuter'], ids=idfn)
+def test_join_count_star_optimization(join_type):
+    """Test COUNT(*) after join - no columns should be gathered."""
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", IntegerGen()),
+            ("l_value1", StringGen()),
+            ("l_value2", LongGen()),
+        ], 100)
+        right_df = gen_df(spark, [
+            ("r_key", IntegerGen()),
+            ("r_value1", StringGen()),
+            ("r_value2", LongGen()),
+        ], 100)
+        return left_df.join(right_df, left_df.l_key == right_df.r_key, join_type) \
+            .selectExpr("COUNT(*)")
+    conf = {
+        "spark.sql.autoBroadcastJoinThreshold": "-1",  # Force shuffle hash join
+    }
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['Inner', 'LeftOuter', 'RightOuter'], ids=idfn)
+def test_join_partial_column_projection(join_type):
+    """Test projection of subset of columns after join."""
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", IntegerGen()),
+            ("l_value1", StringGen()),
+            ("l_value2", LongGen()),
+            ("l_value3", DoubleGen()),
+        ], 100)
+        right_df = gen_df(spark, [
+            ("r_key", IntegerGen()),
+            ("r_value1", StringGen()),
+            ("r_value2", LongGen()),
+            ("r_value3", DoubleGen()),
+        ], 100)
+        # Only select one column from each side
+        return left_df.join(right_df, left_df.l_key == right_df.r_key, join_type) \
+            .select("l_value1", "r_value2")
+    conf = {
+        "spark.sql.autoBroadcastJoinThreshold": "-1",
+    }
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['Inner', 'LeftOuter', 'RightOuter'], ids=idfn)
+def test_join_filter_then_projection(join_type):
+    """Test join -> filter -> project pattern."""
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", IntegerGen(min_val=0, max_val=100)),
+            ("l_value1", StringGen()),
+            ("l_value2", LongGen(min_val=0, max_val=1000)),
+        ], 100)
+        right_df = gen_df(spark, [
+            ("r_key", IntegerGen(min_val=0, max_val=100)),
+            ("r_value1", StringGen()),
+            ("r_value2", LongGen(min_val=0, max_val=1000)),
+        ], 100)
+        return left_df.join(right_df, left_df.l_key == right_df.r_key, join_type) \
+            .filter("l_value2 > 500") \
+            .select("l_value1", "r_value1")
+    conf = {
+        "spark.sql.autoBroadcastJoinThreshold": "-1",
+    }
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['Inner', 'LeftOuter'], ids=idfn)
+def test_join_aggregate_optimization(join_type):
+    """Test aggregate after join - only grouped columns should be gathered."""
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", IntegerGen()),
+            ("l_group", RepeatSeqGen([1, 2, 3, 4, 5], data_type=IntegerType())),
+            ("l_value", LongGen()),
+        ], 100)
+        right_df = gen_df(spark, [
+            ("r_key", IntegerGen()),
+            ("r_value", LongGen()),
+        ], 100)
+        return left_df.join(right_df, left_df.l_key == right_df.r_key, join_type) \
+            .groupBy("l_group") \
+            .count()
+    conf = {
+        "spark.sql.autoBroadcastJoinThreshold": "-1",
+    }
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['Inner'], ids=idfn)
+def test_broadcast_hash_join_count_star(join_type):
+    """Test COUNT(*) after broadcast hash join."""
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", IntegerGen()),
+            ("l_value1", StringGen()),
+            ("l_value2", LongGen()),
+        ], 100)
+        right_df = gen_df(spark, [
+            ("r_key", IntegerGen()),
+            ("r_value1", StringGen()),
+        ], 25)
+        return left_df.join(broadcast(right_df), left_df.l_key == right_df.r_key, join_type) \
+            .selectExpr("COUNT(*)")
+    assert_gpu_and_cpu_are_equal_collect(do_join)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['LeftSemi', 'LeftAnti'], ids=idfn)
+def test_semi_anti_join_column_optimization(join_type):
+    """Test column optimization for semi/anti joins which only output left side."""
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("l_key", IntegerGen()),
+            ("l_value1", StringGen()),
+            ("l_value2", LongGen()),
+            ("l_value3", DoubleGen()),
+        ], 100)
+        right_df = gen_df(spark, [
+            ("r_key", IntegerGen()),
+            ("r_value1", StringGen()),
+        ], 50)
+        # Semi/Anti joins only output left side, project to subset
+        return left_df.join(right_df, left_df.l_key == right_df.r_key, join_type) \
+            .select("l_value1")
+    conf = {
+        "spark.sql.autoBroadcastJoinThreshold": "-1",
+    }
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)

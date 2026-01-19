@@ -1247,6 +1247,35 @@ object JoinImpl {
 }
 
 object GpuHashJoin {
+  import org.apache.spark.sql.catalyst.expressions.Attribute
+  import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, LeftExistence}
+
+  /**
+   * Compute the output attributes for a join given the join type and child outputs.
+   * This is a static version used during planning when we don't have an exec instance yet.
+   */
+  def output(
+      joinType: JoinType,
+      leftOutput: Seq[Attribute],
+      rightOutput: Seq[Attribute]): Seq[Attribute] = {
+    joinType match {
+      case _: InnerLike =>
+        leftOutput ++ rightOutput
+      case LeftOuter =>
+        leftOutput ++ rightOutput.map(_.withNullability(true))
+      case RightOuter =>
+        leftOutput.map(_.withNullability(true)) ++ rightOutput
+      case j: ExistenceJoin =>
+        leftOutput :+ j.exists
+      case LeftExistence(_) =>
+        leftOutput
+      case FullOuter =>
+        leftOutput.map(_.withNullability(true)) ++ rightOutput.map(_.withNullability(true))
+      case x =>
+        throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
+    }
+  }
+
   // Designed for the null-aware anti-join in GpuBroadcastHashJoin.
   def anyNullInKey(cb: ColumnarBatch, boundKeys: Seq[GpuExpression]): Boolean = {
     withResource(GpuProjectExec.project(cb, boundKeys)) { keysCb =>
@@ -2295,6 +2324,9 @@ abstract class BaseHashJoinIterator(
 
 /**
  * An iterator that does a hash join against a stream of batches.
+ *
+ * @param leftColumnIndices optional column indices to gather from left side (None = all)
+ * @param rightColumnIndices optional column indices to gather from right side (None = all)
  */
 class HashJoinIterator(
     built: LazySpillableColumnarBatch,
@@ -2309,7 +2341,9 @@ class HashJoinIterator(
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     conditionForLogging: Option[Expression],
-    metrics: JoinMetrics)
+    metrics: JoinMetrics,
+    leftColumnIndices: Option[Array[Int]] = None,
+    rightColumnIndices: Option[Array[Int]] = None)
     extends BaseHashJoinIterator(
       built,
       boundBuiltKeys,
@@ -2322,6 +2356,10 @@ class HashJoinIterator(
       buildSide,
       conditionForLogging,
       metrics) {
+
+  // Initialize column filtering from constructor parameters
+  leftGatherColumnIndices = leftColumnIndices
+  rightGatherColumnIndices = rightColumnIndices
 
   override protected def joinGathererLeftRight(
       leftKeys: Table,
@@ -2464,7 +2502,9 @@ class HashJoinStreamSideIterator(
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     conditionForLogging: Option[Expression],
-    metrics: JoinMetrics)
+    metrics: JoinMetrics,
+    leftColumnIndices: Option[Array[Int]] = None,
+    rightColumnIndices: Option[Array[Int]] = None)
     extends BaseHashJoinIterator(
       built,
       boundBuiltKeys,
@@ -2477,6 +2517,10 @@ class HashJoinStreamSideIterator(
       buildSide,
       conditionForLogging,
       metrics) {
+
+  // Initialize column filtering from constructor parameters
+  leftGatherColumnIndices = leftColumnIndices
+  rightGatherColumnIndices = rightColumnIndices
 
   // Determine the type of join to use as we iterate through the stream-side batches.
   // Each of these outer joins can be implemented in terms of another join as we iterate
@@ -2612,7 +2656,8 @@ class HashJoinStreamSideIterator(
           case t => throw new IllegalStateException(s"unsupported join type $t")
         }
         val gatherer = JoinGatherer(lazyLeftMap, leftData, lazyRightMap,
-          rightData, leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
+          rightData, leftOutOfBoundsPolicy, rightOutOfBoundsPolicy,
+          leftGatherColumnIndices, rightGatherColumnIndices)
         if (gatherer.isDone) {
           // Nothing matched...
           gatherer.close()
@@ -2744,12 +2789,16 @@ class HashOuterJoinIterator(
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     conditionForLogging: Option[Expression],
-    metrics: JoinMetrics) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
+    metrics: JoinMetrics,
+    leftColumnIndices: Option[Array[Int]] = None,
+    rightColumnIndices: Option[Array[Int]] = None)
+    extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
 
   private val streamJoinIter = new HashJoinStreamSideIterator(joinType, built, boundBuiltKeys,
     buildStats, buildSideTrackerInit, stream, boundStreamKeys, streamAttributes, 
     lazyCompiledCondition,
-    joinOptions, buildSide, compareNullsEqual, conditionForLogging, metrics)
+    joinOptions, buildSide, compareNullsEqual, conditionForLogging, metrics,
+    leftColumnIndices, rightColumnIndices)
   
   // Unpack joinTime for use in this iterator
   private val joinTime = metrics.joinTime
@@ -2808,18 +2857,49 @@ class HashOuterJoinIterator(
             }
           }
           // Combine build-side columns with null columns for stream side
+          // Apply column filtering if indices are specified
           withResource(filteredBatch) { builtBatch =>
             val numFilterRows = builtBatch.numRows()
             if (numFilterRows > 0) {
-              val streamColumns = streamAttributes.safeMap { attr =>
+              // Determine which column indices to use based on build side
+              val (buildIndices, streamIndices) = buildSide match {
+                case GpuBuildLeft => (leftColumnIndices, rightColumnIndices)
+                case GpuBuildRight => (rightColumnIndices, leftColumnIndices)
+              }
+
+              // Filter build batch columns if indices are specified
+              val filteredBuiltBatch = buildIndices match {
+                case Some(indices) if indices.length < builtBatch.numCols =>
+                  val filteredCols = indices.map { i =>
+                    builtBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount()
+                  }
+                  new ColumnarBatch(filteredCols.toArray, numFilterRows)
+                case _ =>
+                  // No filtering needed, increment ref counts for all columns
+                  val cols = (0 until builtBatch.numCols).map { i =>
+                    builtBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount()
+                  }
+                  new ColumnarBatch(cols.toArray, numFilterRows)
+              }
+
+              // Create null columns for the filtered stream side
+              val filteredStreamAttrs: Seq[Attribute] = streamIndices match {
+                case Some(indices) => indices.map(streamAttributes(_)).toSeq
+                case None => streamAttributes
+              }
+              val streamColumns = filteredStreamAttrs.safeMap { attr =>
                 GpuColumnVector.fromNull(numFilterRows, attr.dataType)
               }
-              withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) { streamBatch =>
-                buildSide match {
-                  case GpuBuildRight =>
-                    Some(GpuColumnVector.combineColumns(streamBatch, builtBatch))
-                  case GpuBuildLeft =>
-                    Some(GpuColumnVector.combineColumns(builtBatch, streamBatch))
+
+              withResource(filteredBuiltBatch) { builtBatchFiltered =>
+                withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) {
+                  streamBatch =>
+                    buildSide match {
+                      case GpuBuildRight =>
+                        Some(GpuColumnVector.combineColumns(streamBatch, builtBatchFiltered))
+                      case GpuBuildLeft =>
+                        Some(GpuColumnVector.combineColumns(builtBatchFiltered, streamBatch))
+                    }
                 }
               }
             } else {
@@ -2918,6 +2998,20 @@ trait GpuJoinExec extends ShimBinaryExecNode with GpuExec {
   def leftKeys: Seq[Expression]
   def rightKeys: Seq[Expression]
   def isSkewJoin: Boolean = false
+
+  /**
+   * Optional column indices to gather from the left side of the join.
+   * None means gather all columns, Some(Array.empty) means no columns needed.
+   * These are used to optimize joins by skipping columns that will be
+   * immediately dropped after the join.
+   */
+  def leftGatherColumnIndices: Option[Array[Int]] = None
+
+  /**
+   * Optional column indices to gather from the right side of the join.
+   * None means gather all columns, Some(Array.empty) means no columns needed.
+   */
+  def rightGatherColumnIndices: Option[Array[Int]] = None
 }
 
 trait GpuHashJoin extends GpuJoinExec {
@@ -2952,7 +3046,10 @@ trait GpuHashJoin extends GpuJoinExec {
     }
   }
 
-  override def output: Seq[Attribute] = {
+  /**
+   * Compute the full join output (before any column filtering).
+   */
+  protected def fullJoinOutput: Seq[Attribute] = {
     joinType match {
       case _: InnerLike =>
         left.output ++ right.output
@@ -2966,6 +3063,37 @@ trait GpuHashJoin extends GpuJoinExec {
         left.output
       case FullOuter =>
         left.output.map(_.withNullability(true)) ++ right.output.map(_.withNullability(true))
+      case x =>
+        throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
+    }
+  }
+
+  override def output: Seq[Attribute] = {
+    // If column indices are provided, filter the output accordingly
+    val leftFiltered: Seq[Attribute] = leftGatherColumnIndices match {
+      case Some(indices) => indices.map(left.output(_)).toSeq
+      case None => left.output
+    }
+    val rightFiltered: Seq[Attribute] = rightGatherColumnIndices match {
+      case Some(indices) => indices.map(right.output(_)).toSeq
+      case None => right.output
+    }
+
+    joinType match {
+      case _: InnerLike =>
+        leftFiltered ++ rightFiltered
+      case LeftOuter =>
+        leftFiltered ++ rightFiltered.map(_.withNullability(true))
+      case RightOuter =>
+        leftFiltered.map(_.withNullability(true)) ++ rightFiltered
+      case j: ExistenceJoin =>
+        // Existence join always outputs left + exists, column filtering not applicable to right
+        leftFiltered :+ j.exists
+      case LeftExistence(_) =>
+        // Semi/Anti joins only output left side
+        leftFiltered
+      case FullOuter =>
+        leftFiltered.map(_.withNullability(true)) ++ rightFiltered.map(_.withNullability(true))
       case x =>
         throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
     }
@@ -3085,6 +3213,7 @@ trait GpuHashJoin extends GpuJoinExec {
         val lazyCond = boundConditionLeftRight.map { cond =>
           LazyCompiledCondition(cond, left.output.size, right.output.size)
         }
+        // Note: ExistenceJoin output is left + exists column, column filtering not applicable
         new HashedExistenceJoinIterator(
           spillableBuiltBatch,
           boundBuildKeys,
@@ -3102,7 +3231,8 @@ trait GpuHashJoin extends GpuJoinExec {
         new HashOuterJoinIterator(joinType, spillableBuiltBatch, boundBuildKeys, None, None,
           lazyStream, boundStreamKeys, streamedPlan.output,
           lazyCond, joinOptions, buildSide,
-          compareNullsEqual, condition, metrics)
+          compareNullsEqual, condition, metrics,
+          leftGatherColumnIndices, rightGatherColumnIndices)
       case _ =>
         if (boundConditionLeftRight.isDefined) {
           // HashJoinIterator will close the LazyCompiledCondition
@@ -3113,11 +3243,13 @@ trait GpuHashJoin extends GpuJoinExec {
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, None,
             lazyStream, boundStreamKeys, streamedPlan.output, Some(lazyCond),
             joinOptions, joinType, buildSide,
-            compareNullsEqual, condition, metrics)
+            compareNullsEqual, condition, metrics,
+            leftGatherColumnIndices, rightGatherColumnIndices)
         } else {
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, None,
             lazyStream, boundStreamKeys, streamedPlan.output, None, joinOptions,
-            joinType, buildSide, compareNullsEqual, condition, metrics)
+            joinType, buildSide, compareNullsEqual, condition, metrics,
+            leftGatherColumnIndices, rightGatherColumnIndices)
         }
     }
 

@@ -203,6 +203,11 @@ abstract class SplittableJoinIterator(
   // If the join explodes this holds batches from the stream side split into smaller pieces.
   private val pendingSplits = scala.collection.mutable.Queue[LazySpillableColumnarBatch]()
 
+  // Optional column indices to gather from each side. None means gather all columns.
+  // Subclasses can set these to enable column filtering optimization.
+  protected var leftGatherColumnIndices: Option[Array[Int]] = None
+  protected var rightGatherColumnIndices: Option[Array[Int]] = None
+
   protected def computeNumJoinRows(cb: LazySpillableColumnarBatch): Long
 
   /**
@@ -326,13 +331,23 @@ abstract class SplittableJoinIterator(
    * @param maps gather maps produced from a cudf join
    * @param leftData batch corresponding to the left table in the join
    * @param rightData batch corresponding to the right table in the join
+   * @param joinType the type of join being performed
+   * @param leftColumnIndices optional column indices to gather from left (None = all).
+   *                          If not provided, uses the instance field leftGatherColumnIndices.
+   * @param rightColumnIndices optional column indices to gather from right (None = all).
+   *                           If not provided, uses the instance field rightGatherColumnIndices.
    * @return some gatherer or None if there are no rows to gather in this join batch
    */
   protected def makeGatherer(
       maps: GatherMapsResult,
       leftData: LazySpillableColumnarBatch,
       rightData: LazySpillableColumnarBatch,
-      joinType: JoinType): Option[JoinGatherer] = {
+      joinType: JoinType,
+      leftColumnIndices: Option[Array[Int]] = None,
+      rightColumnIndices: Option[Array[Int]] = None): Option[JoinGatherer] = {
+    // Use provided indices or fall back to instance fields
+    val effectiveLeftIndices = leftColumnIndices.orElse(leftGatherColumnIndices)
+    val effectiveRightIndices = rightColumnIndices.orElse(rightGatherColumnIndices)
     withResource(maps) { _ =>
       val lazyLeftMap = LazySpillableGatherMap(maps.left, "left_map")
       // Inner joins -- manifest the intersection of both left and right sides. The gather maps
@@ -345,7 +360,6 @@ abstract class SplittableJoinIterator(
         case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
         case _ => OutOfBoundsPolicy.NULLIFY
       }
-      val leftGatherer = JoinGatherer(lazyLeftMap, leftData, leftOutOfBoundsPolicy)
 
       // Check if we have a right map. For LeftSemi/LeftAnti joins, there is no right map.
       // Also skip if rightData has no columns (e.g., count aggregations).
@@ -360,7 +374,7 @@ abstract class SplittableJoinIterator(
           // In these cases, the map and the table are both the left side, and everything in the map
           // is a match on the left table, so we don't want to check for bounds.
           rightData.close()
-          leftGatherer
+          JoinGatherer(lazyLeftMap, leftData, leftOutOfBoundsPolicy, effectiveLeftIndices)
         case Some(right) =>
           // Inner joins -- manifest the intersection of both left and right sides. The gather maps
           //   contain the number of rows that must be manifested, and every index
@@ -372,8 +386,9 @@ abstract class SplittableJoinIterator(
             case _ => OutOfBoundsPolicy.NULLIFY
           }
           val lazyRightMap = LazySpillableGatherMap(right, "right_map")
-          val rightGatherer = JoinGatherer(lazyRightMap, rightData, rightOutOfBoundsPolicy)
-          MultiJoinGather(leftGatherer, rightGatherer)
+          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
+            leftOutOfBoundsPolicy, rightOutOfBoundsPolicy,
+            effectiveLeftIndices, effectiveRightIndices)
       }
       if (gatherer.isDone) {
         // Nothing matched...
