@@ -254,6 +254,7 @@ Round,4
 RoundCeil,4
 RoundFloor,4
 RowNumber,4
+ScalaUDAF,4
 ScalaUDF,4
 ScalarSubquery,4
 Second,4
