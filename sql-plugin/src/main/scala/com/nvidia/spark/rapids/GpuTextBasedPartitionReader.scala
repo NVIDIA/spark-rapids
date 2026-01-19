@@ -356,7 +356,7 @@ object GpuTextBasedPartitionReader {
       val fields = (0 until col.getNumChildren).map { i =>
         withResource(col.getChildColumnView(i)) { chdView =>
           val chdType = infer(chdView)
-          StructField(s"_cudf_${chdView.getType}_$i", chdType, chdView.getNullCount > 0)
+          StructField(s"_cudf_${chdView.getType}_$i", chdType, true)
         }
       }
       StructType(fields)
