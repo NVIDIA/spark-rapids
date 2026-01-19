@@ -25,7 +25,7 @@ import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, ColumnView, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.DateUtils.{TimestampFormatConversionException, toStrf}
+import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
