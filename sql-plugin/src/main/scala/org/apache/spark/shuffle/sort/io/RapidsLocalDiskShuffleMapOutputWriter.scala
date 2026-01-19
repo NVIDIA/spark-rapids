@@ -57,7 +57,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   private val initialBufferSize = rapidsConf.partialFileBufferInitialSize
   private val maxBufferSize = rapidsConf.partialFileBufferMaxSize
   private val memoryThreshold = rapidsConf.partialFileBufferMemoryThreshold
-  
+
   // Read Spark's shuffle sync configuration to maintain compatibility
   private val syncWrites = sparkConf.get("spark.shuffle.sync", "false").toBoolean
 
@@ -65,7 +65,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   private var partialFileHandle: Option[SpillablePartialFileHandle] = None
   private var storageInitAttempted: Boolean = false
   private var forceFileOnly: Boolean = false
-  
+
   // Track completed partition count for predictive buffer sizing
   private var completedPartitionCount: Int = 0
   private var completedPartitionBytes: Long = 0L
@@ -115,25 +115,25 @@ class RapidsLocalDiskShuffleMapOutputWriter(
    * Force this writer to use file-only mode, bypassing memory-based buffering.
    * This is useful for scenarios where memory buffering is not beneficial,
    * such as final merge operations.
-   * 
+   *
    * This method must be called before any partition writer is requested.
    */
   def setForceFileOnlyMode(): Unit = {
     if (storageInitAttempted) {
       throw new IllegalStateException(
         "Cannot set force file-only mode after storage has been initialized. " +
-        "Storage was initialized when getPartitionWriter() was called. " +
-        "Call setForceFileOnlyMode() before requesting any partition writers.")
+          "Storage was initialized when getPartitionWriter() was called. " +
+          "Call setForceFileOnlyMode() before requesting any partition writers.")
     }
     forceFileOnly = true
   }
-  
+
   // Try to initialize storage on first partition write
   private def ensureStorageInitialized(): Unit = {
     if (!storageInitAttempted) {
       storageInitAttempted = true
       outputTempFile = Utils.tempFileWith(outputFile)
-      
+
       // Check if file-only mode is forced
       if (forceFileOnly) {
         // Force file-only mode (e.g., for final merge operations)
@@ -181,7 +181,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
         "Partitions should be requested in increasing order.")
     }
     lastPartitionId = reducePartitionId
-    
+
     // Initialize storage on first partition
     ensureStorageInitialized()
 
@@ -194,7 +194,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
     // Finish write phase to enable spilling and finalize data
     partialFileHandle.foreach { handle =>
       handle.finishWrite()
-      
+
       // If memory-based and not spilled yet, force spill to create file
       // writeMetadataFileAndCommit requires a valid file
       if (handle.isMemoryBased && !handle.isSpilled) {
@@ -234,12 +234,12 @@ class RapidsLocalDiskShuffleMapOutputWriter(
    * Get the partial file handle for accessing data.
    */
   def getPartialFileHandle(): Option[SpillablePartialFileHandle] = partialFileHandle
-  
+
   /**
    * Get partition lengths array directly (for extracting without reflection).
    */
   def getPartitionLengths(): Array[Long] = partitionLengths
-  
+
   /**
    * Finish write phase to finalize data (called before extraction).
    */
@@ -313,9 +313,9 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   }
 
   // Unified channel writer using SpillablePartialFileHandle
-  private class PartitionWriterChannel(partitionId: Int) 
+  private class PartitionWriterChannel(partitionId: Int)
     extends WritableByteChannelWrapper {
-    
+
     private val startPosition = currChannelPosition
 
     def getCount: Long = {

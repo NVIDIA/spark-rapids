@@ -79,7 +79,7 @@ class SpillablePartialFileHandle private (
   @volatile private var spilledToDisk: Boolean = false
   override private[spill] var host: Option[ai.rapids.cudf.HostMemoryBuffer] = None
   override val approxSizeInBytes: Long = initialCapacity
-  
+
   // Track current buffer capacity (can grow via expansion)
   private var currentBufferCapacity: Long = initialCapacity
 
@@ -140,11 +140,11 @@ class SpillablePartialFileHandle private (
    * When a capacityHintProvider is available, it will be used to predict the optimal
    * capacity based on current write statistics. Otherwise, falls back to doubling
    * until reaching required size.
-   * 
+   *
    * Conditions checked before expansion:
    * 1. New capacity does not exceed configured max buffer size limit
    * 2. Current memory usage is below configured threshold
-   * 
+   *
    * @param requiredCapacity The minimum capacity needed
    * @return true if successfully expanded, false if spilled to file instead
    */
@@ -152,7 +152,7 @@ class SpillablePartialFileHandle private (
     host match {
       case Some(currentBuffer) =>
         val oldCapacity = currentBufferCapacity
-        
+
         // Calculate new capacity using hint provider if available, otherwise double
         var newCapacity = capacityHintProvider match {
           case Some(provider) =>
@@ -183,7 +183,7 @@ class SpillablePartialFileHandle private (
           spillBufferToFileAndSwitch(currentBuffer)
           return false
         }
-        
+
         // Check if new capacity exceeds limit (should not happen due to math.min)
         if (newCapacity > maxBufferSize) {
           logDebug(s"Buffer expansion would exceed configured limit " +
@@ -208,21 +208,21 @@ class SpillablePartialFileHandle private (
           spillBufferToFileAndSwitch(currentBuffer)
           return false
         }
-        
+
         try {
           // Allocate new larger buffer
           val newBuffer = ai.rapids.cudf.HostMemoryBuffer.allocate(newCapacity, false)
           closeOnExcept(newBuffer) { _ =>
             // Copy existing data
             newBuffer.copyFromHostBuffer(0, currentBuffer, 0, writePosition)
-            
+
             // Remove old buffer tracking and track new one
             SpillFramework.removeFromHostStore(this)
             currentBuffer.close()
             host = Some(newBuffer)
             currentBufferCapacity = newCapacity
             SpillFramework.stores.hostStore.trackNoSpill(this)
-            
+
             expansionCount += 1
             logDebug(s"Expanded buffer from $oldCapacity to $newCapacity bytes " +
               s"(required $requiredCapacity bytes)")
@@ -388,9 +388,13 @@ class SpillablePartialFileHandle private (
   /**
    * Read bytes from the partial file sequentially.
    * Returns number of bytes actually read, or -1 if EOF.
-   * 
-   * Synchronization: Only needed for memory-based reads to prevent concurrent spill.
-   * Once we detect spill has happened, we can immediately release the lock.
+   *
+   * Note: This method is NOT thread-safe. Concurrent reads from multiple threads
+   * are not supported. This class is designed for single-threaded sequential reads
+   * in the shuffle merge phase (see RapidsShuffleInternalManagerBase.mergePartialFiles).
+   *
+   * Internal synchronization only protects against concurrent spill operations,
+   * not concurrent read operations.
    */
   def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
     if (!writeFinished) {
@@ -707,7 +711,7 @@ class SpillablePartialFileHandle private (
       // an intermediate disk write. The task is still running during merge, so
       // GpuTaskMetrics.get is valid.
       if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
-          !spilledToDisk && totalBytesWritten > 0 && !diskWriteSavingsRecorded) {
+        !spilledToDisk && totalBytesWritten > 0 && !diskWriteSavingsRecorded) {
         GpuTaskMetrics.get.addDiskWriteSaved(totalBytesWritten)
         diskWriteSavingsRecorded = true
         logDebug(s"Recorded disk write savings in doClose: $totalBytesWritten bytes")
@@ -771,7 +775,7 @@ object SpillablePartialFileHandle extends Logging {
    * @param syncWrites Whether to force outstanding writes to disk
    */
   def createFileOnly(file: File, syncWrites: Boolean = false):
-      SpillablePartialFileHandle = {
+  SpillablePartialFileHandle = {
     new SpillablePartialFileHandle(
       storageMode = PartialFileStorageMode.FILE_ONLY,
       file = file,
@@ -811,7 +815,7 @@ object SpillablePartialFileHandle extends Logging {
       priority: Long = Long.MinValue,
       syncWrites: Boolean = false,
       capacityHintProvider: Option[(Long, Long) => Long] = None):
-      SpillablePartialFileHandle = {
+  SpillablePartialFileHandle = {
     new SpillablePartialFileHandle(
       storageMode = PartialFileStorageMode.MEMORY_WITH_SPILL,
       file = spillFile,
