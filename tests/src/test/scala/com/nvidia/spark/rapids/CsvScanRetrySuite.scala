@@ -62,13 +62,13 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase {
           1024, 128 * 1024,
           Map[String, GpuMetric]().withDefaultValue(NoopMetric)) {
 
-        override def castToOutputTypesWithRetryAndClose(table: Table, tableSchema: StructType,
+        override def castToOutputTypesWithRetryAndClose(table: Table,
             readSchema: StructType): Table = {
           // inject a GPU OOM before running into the actual operation.
           RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
             RmmSpark.OomInjectionType.GPU.ordinal, 0)
 
-          super.castToOutputTypesWithRetryAndClose(table, tableSchema, readSchema)
+          super.castToOutputTypesWithRetryAndClose(table, readSchema)
         }
       }
       assert(reader.next())
