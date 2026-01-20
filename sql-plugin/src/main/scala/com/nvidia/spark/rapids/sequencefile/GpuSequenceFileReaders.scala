@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.sequencefile
 
 import java.io.IOException
 import java.net.URI
-import java.nio.channels.Channels
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
@@ -28,8 +27,6 @@ import com.nvidia.spark.rapids.jni.SequenceFile
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.io.DataOutputBuffer
-import org.apache.hadoop.io.SequenceFile.{Reader => HadoopSeqReader}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -118,11 +115,10 @@ class GpuSequenceFilePartitionReader(
     val fs = path.getFileSystem(conf)
     val fileStatus = fs.getFileStatus(path)
     val fileSize = fileStatus.getLen
-    val (dataStart, dataSize) = computeSplitDataRange(path, conf, header, fileSize)
+    val dataSize = fileSize - header.headerSize
 
     logInfo(s"SequenceFile $path: fileSize=$fileSize, headerSize=${header.headerSize}, " +
-      s"dataStart=$dataStart, dataSize=$dataSize, " +
-      s"syncMarker=${header.syncMarker.map(b => f"$b%02x").mkString}")
+      s"dataSize=$dataSize, syncMarker=${header.syncMarker.map(b => f"$b%02x").mkString}")
 
     if (dataSize <= 0) {
       // Empty file - no records to return
@@ -131,55 +127,33 @@ class GpuSequenceFilePartitionReader(
       return None
     }
 
-    // OPTIMIZATION: For count-only queries, use CPU to avoid H2D transfer overhead
-    // SequenceFile parsing is inherently sequential, and GPU offers no advantage
-    // for just counting records.
-    if (!wantsKey && !wantsValue) {
-      val numRows = readMetric.ns {
-        countRecordsOnCpu(path, conf, dataStart, dataStart + dataSize)
-      }
-      val cols: Array[SparkVector] = requiredSchema.fields.map { f =>
-        GpuColumnVector.fromNull(numRows, f.dataType)
-      }
-      return Some(new ColumnarBatch(cols, numRows))
-    }
-
     // Read data portion into device memory
-    // Use pinned memory for efficient DMA transfers (H2D copy)
-    // Use larger read buffer (64MB) to reduce loop iterations
     var firstBytesDebug: String = ""
     val deviceBuffer = readMetric.ns {
-      // Prefer pinned memory for faster H2D transfers via DMA
-      val hostBuffer = closeOnExcept(HostAlloc.alloc(dataSize, preferPinned = true)) { hostBuf =>
+      val hostBuffer = closeOnExcept(HostMemoryBuffer.allocate(dataSize)) { hostBuf =>
         val in = fs.open(path)
         try {
-          // Seek to split-aligned start
-          in.seek(dataStart)
-          // Read directly into pinned host buffer to avoid extra copy
-          val channel = Channels.newChannel(in)
+          // Skip header
+          in.seek(header.headerSize)
+          // Read into host buffer
+          val bytes = new Array[Byte](math.min(dataSize, 8 * 1024 * 1024).toInt)
           var remaining = dataSize
           var offset = 0L
           while (remaining > 0) {
-            val toRead = math.min(remaining, 64L * 1024 * 1024).toInt
-            val bb = hostBuf.asByteBuffer(offset, toRead)
-            var bytesReadTotal = 0
-            while (bytesReadTotal < toRead) {
-              val bytesRead = channel.read(bb)
-              if (bytesRead < 0) {
-                throw new IOException(
-                  s"Unexpected end of file at offset $offset, expected $dataSize bytes")
-              }
-              bytesReadTotal += bytesRead
+            val toRead = math.min(remaining, bytes.length).toInt
+            val bytesRead = in.read(bytes, 0, toRead)
+            if (bytesRead < 0) {
+              throw new IOException(
+                s"Unexpected end of file at offset $offset, expected $dataSize bytes")
             }
+            hostBuf.setBytes(offset, bytes, 0, bytesRead)
             // Store first bytes for debugging
-            if (offset == 0 && toRead >= 20) {
-              val debugBytes = new Array[Byte](math.min(60, toRead))
-              bb.position(0)
-              bb.get(debugBytes)
-              firstBytesDebug = debugBytes.map(b => f"$b%02x").mkString(" ")
+            if (offset == 0 && bytesRead >= 20) {
+              firstBytesDebug = bytes.take(math.min(60, bytesRead))
+                .map(b => f"$b%02x").mkString(" ")
             }
-            offset += toRead
-            remaining -= toRead
+            offset += bytesRead
+            remaining -= bytesRead
           }
           hostBuf
         } finally {
@@ -187,7 +161,7 @@ class GpuSequenceFilePartitionReader(
         }
       }
 
-      // Copy to device (faster with pinned memory due to DMA)
+      // Copy to device
       closeOnExcept(hostBuffer) { _ =>
         withResource(hostBuffer) { hb =>
           val db = DeviceMemoryBuffer.allocate(dataSize)
@@ -201,6 +175,21 @@ class GpuSequenceFilePartitionReader(
 
     // Step 3: Parse on GPU using CUDA kernel
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    // Handle count-only queries (neither key nor value requested)
+    if (!wantsKey && !wantsValue) {
+      // Just count records - don't parse data
+      val numRows = withResource(deviceBuffer) { devBuf =>
+        decodeMetric.ns {
+          SequenceFile.countRecords(devBuf, dataSize, header.syncMarker).toInt
+        }
+      }
+      // Return batch with correct row count but no data columns
+      val cols: Array[SparkVector] = requiredSchema.fields.map { f =>
+        GpuColumnVector.fromNull(numRows, f.dataType)
+      }
+      return Some(new ColumnarBatch(cols, numRows))
+    }
 
     val columns = withResource(deviceBuffer) { devBuf =>
       decodeMetric.ns {
@@ -283,61 +272,6 @@ class GpuSequenceFilePartitionReader(
         }
       }
     }
-  }
-
-  /**
-   * Count records using CPU-based Hadoop SequenceFile.Reader.
-   * This avoids H2D transfer overhead for count-only queries where
-   * SequenceFile's sequential parsing doesn't benefit from GPU.
-   */
-  private def countRecordsOnCpu(filePath: Path,
-                                hadoopConf: Configuration,
-                                start: Long,
-                                end: Long): Int = {
-    var count = 0
-    val reader = new HadoopSeqReader(hadoopConf, HadoopSeqReader.file(filePath))
-    try {
-      // Use nextRawKey() to skip deserialization overhead
-      // We only need to count records, not read their contents
-      val keyBuffer = new DataOutputBuffer()
-      if (start > 0) {
-        reader.sync(start - 1)
-      }
-      while (reader.getPosition < end && reader.nextRawKey(keyBuffer) >= 0) {
-        count += 1
-        keyBuffer.reset()
-      }
-    } finally {
-      reader.close()
-    }
-    count
-  }
-
-  private def computeSplitDataRange(path: Path,
-                                    conf: Configuration,
-                                    header: SequenceFileHeader,
-                                    fileSize: Long): (Long, Long) = {
-    val splitStart = partFile.start
-    val splitEnd = math.min(partFile.start + partFile.length, fileSize)
-    val headerEnd = header.headerSize.toLong
-    if (splitEnd <= headerEnd) {
-      return (headerEnd, 0L)
-    }
-
-    var dataStart = math.max(splitStart, headerEnd)
-    if (dataStart > headerEnd) {
-      val reader = new HadoopSeqReader(conf, HadoopSeqReader.file(path))
-      try {
-        reader.sync(dataStart - 1)
-        dataStart = reader.getPosition
-      } finally {
-        reader.close()
-      }
-    }
-
-    val dataEnd = splitEnd
-    val dataSize = math.max(0L, dataEnd - dataStart)
-    (dataStart, dataSize)
   }
 
   override def close(): Unit = {

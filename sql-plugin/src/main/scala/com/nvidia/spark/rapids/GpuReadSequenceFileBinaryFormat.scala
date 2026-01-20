@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.sequencefile.{GpuSequenceFileMultiFileReaderFactory, GpuSequenceFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.sequencefile.GpuSequenceFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 
@@ -48,10 +48,11 @@ class GpuReadSequenceFileBinaryFormat extends FileFormat with GpuReadFileFormatW
       options: Map[String, String],
       files: Seq[FileStatus]): Option[StructType] = Some(SequenceFileBinaryFileFormat.dataSchema)
 
+  // GPU SequenceFile reader processes entire files at once
   override def isSplitable(
       sparkSession: SparkSession,
       options: Map[String, String],
-      path: Path): Boolean = true
+      path: Path): Boolean = false
 
   override def buildReaderWithPartitionValuesAndMetrics(
       sparkSession: SparkSession,
@@ -78,20 +79,21 @@ class GpuReadSequenceFileBinaryFormat extends FileFormat with GpuReadFileFormatW
     PartitionReaderIterator.buildReader(factory)
   }
 
-  // GPU SequenceFile reader uses multi-file batching for better GPU parallelism
-  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = false
+  // GPU SequenceFile reader processes one file at a time
+  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = true
 
   override def createMultiFileReaderFactory(
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    GpuSequenceFileMultiFileReaderFactory(
+    GpuSequenceFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,
       fileScan.requiredSchema,
       fileScan.readPartitionSchema,
       fileScan.rapidsConf,
-      fileScan.allMetrics)
+      fileScan.allMetrics,
+      Map.empty)
   }
 }
 
@@ -99,10 +101,6 @@ object GpuReadSequenceFileBinaryFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     val required = fsse.requiredSchema
-    if (!meta.conf.isSequenceFileEnabled) {
-      meta.willNotWorkOnGpu("SequenceFile input has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_SEQUENCEFILE} to true")
-    }
     // Only support reading BinaryType columns named "key" and/or "value".
     required.fields.foreach { f =>
       val isKey = f.name.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD)
