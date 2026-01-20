@@ -1884,8 +1884,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   }
 
   override def registerShuffle[K, V, C](
-                                           shuffleId: Int,
-                                           dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
+      shuffleId: Int,
+      dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
     // Always register with the wrapped handler so we can write to it ourselves if needed
     val orig = wrapped.registerShuffle(shuffleId, dependency)
 
@@ -1937,8 +1937,10 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   }
 
   override def getWriter[K, V](
-                                  handle: ShuffleHandle, mapId: Long, context: TaskContext,
-                                  metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
+      handle: ShuffleHandle,
+      mapId: Long,
+      context: TaskContext,
+      metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         registerGpuShuffle(handle.shuffleId)
