@@ -16,8 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import java.io.{IOException, OutputStream}
-import java.util.concurrent.{Callable, ConcurrentHashMap, CopyOnWriteArrayList, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
+import java.io.IOException
+import java.util.concurrent.{Callable, ConcurrentHashMap, ConcurrentLinkedQueue, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong}
 
 import scala.collection.JavaConverters._
@@ -300,51 +300,52 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     mapOutputWriter: ShuffleMapOutputWriter)
 
   /**
+   * Represents a single compressed record ready to be written to disk.
+   * Each record has its own independent buffer, avoiding the 2GB limit issue
+   * that occurs when multiple records share a single buffer.
+   *
+   * @param buffer The compressed data buffer (owned by this record, closed after writing)
+   * @param compressedSize The actual size of compressed data in buffer
+   * @param remainingQuota The quota to release after writing to disk
+   */
+  private case class CompressedRecord(
+    buffer: OpenByteArrayOutputStream,
+    compressedSize: Long,
+    remainingQuota: Long)
+
+  /**
    * Encapsulates all state for processing one GPU batch in the multi-batch shuffle write.
    *
    * In multi-batch mode, each GPU batch gets its own BatchState with independent buffers,
    * futures, and a dedicated merger thread. This enables pipeline parallelism where:
    * - Main thread: processes records and queues compression tasks (non-blocking)
-   * - Writer threads: execute compression tasks in parallel
+   * - Writer threads: execute compression tasks in parallel (each record gets its own buffer)
    * - Merger thread: waits for completed compressions and writes partitions sequentially
+   *
+   * Key design: Each record uses an INDEPENDENT buffer to avoid the 2GB array limit.
+   * When a partition has many records, instead of accumulating in one giant buffer,
+   * each record's compressed data is in its own small buffer that gets written and
+   * released immediately by the merger thread.
    *
    * The merger thread writes partitions in order (0, 1, 2, ...) because Spark's
    * ShuffleMapOutputWriter requires sequential partition writes.
    *
    * @param batchId Unique identifier for this batch (for debugging/logging)
-   * @param mapOutputWriter Shuffle output writer for this batch. When using
-   *                        RapidsLocalDiskShuffleMapOutputWriter, data may be buffered
-   *                        in memory first (via SpillablePartialFileHandle) and only
-   *                        written to disk on spill or commit. For fallback writers,
-   *                        data is written directly to temp files.
-   * @param partitionBuffers Maps partitionId -> compressed data buffer. Compression tasks
-   *                         append data here; merger thread reads and writes to disk.
-   * @param partitionFutures Maps partitionId -> list of compression task futures.
-   *                         Each future returns (uncompressedSize, compressedSize).
-   *                         One future per record, so multiple futures when partition has
-   *                         multiple records.
-   * @param partitionWrittenBytes Maps partitionId -> bytes already written to output stream.
-   *                              Used for incremental writes as compression tasks complete.
-   * @param partitionProcessedFutures Maps partitionId -> count of futures already processed.
-   *                                   Merger thread skips already-processed futures.
+   * @param mapOutputWriter Shuffle output writer for this batch
+   * @param partitionRecords Maps partitionId -> queue of compressed record futures.
+   *                         Each future completes with an independent CompressedRecord.
    * @param maxPartitionIdQueued Highest partition ID that main thread has queued tasks for.
-   *                             Merger thread uses this to know when a partition is complete:
-   *                             if currentPartition < maxPartitionIdQueued, all data for
-   *                             currentPartition has been queued. This typically happens at
-   *                             batch boundaries when partition ID wraps back to a lower value.
+   *                             Merger thread uses this to know when a partition is complete.
    * @param mergerCondition Condition variable for main thread to wake up merger thread
-   *                        when new compression tasks are queued or batch is complete.
+   * @param hasNewWork Flag for wait/notify pattern
    * @param mergerSlotNum The merger thread pool slot assigned to this batch.
    * @param mergerFuture Future representing the merger task, used to wait for completion.
    */
   private case class BatchState(
     batchId: Int,
     mapOutputWriter: ShuffleMapOutputWriter,
-    partitionBuffers: ConcurrentHashMap[Int, OpenByteArrayOutputStream],
-    partitionFutures: ConcurrentHashMap[Int,
-      CopyOnWriteArrayList[Future[(Long, Long)]]],
-    partitionWrittenBytes: ConcurrentHashMap[Int, Long],
-    partitionProcessedFutures: ConcurrentHashMap[Int, Int],
+    partitionRecords: ConcurrentHashMap[Int,
+      ConcurrentLinkedQueue[Future[CompressedRecord]]],
     maxPartitionIdQueued: AtomicInteger,
     mergerCondition: Object,
     // Flag for classic wait/notify pattern: set to true when new work is available,
@@ -399,17 +400,15 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       batchId: Int,
       writer: ShuffleMapOutputWriter): BatchState = {
 
-    val partitionBuffers = new ConcurrentHashMap[Int, OpenByteArrayOutputStream]()
-    val partitionFutures = new ConcurrentHashMap[Int,
-      CopyOnWriteArrayList[Future[(Long, Long)]]]()
-    val partitionWrittenBytes = new ConcurrentHashMap[Int, Long]()
-    val partitionProcessedFutures = new ConcurrentHashMap[Int, Int]()
-    
+    // Each partition has a queue of compressed record futures.
+    // Key insight: each record gets its own independent buffer, avoiding the 2GB limit.
+    val partitionRecords = new ConcurrentHashMap[Int,
+      ConcurrentLinkedQueue[Future[CompressedRecord]]]()
+
     // Synchronization strategy for maxPartitionIdQueued and mergerCondition:
     //
     // maxPartitionIdQueued: Tracks the highest partition ID queued by main thread.
-    //   - Main thread: updates via set() after adding futures, synchronized with
-    //     maxPartitionIdQueued to ensure atomic update with futures.add()
+    //   - Main thread: updates via set() after adding futures
     //   - Merger thread: reads via get() to check if current partition is complete
     //     (currentPartition < maxPartitionIdQueued means all data for currentPartition
     //     has been queued)
@@ -425,121 +424,83 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     // Assign a merger slot for this batch
     val mergerSlotNum = RapidsShuffleInternalManagerBase.getNextMergerSlot
 
-    var unfinishedStream: Option[OutputStream] = None
-
-    // Helper to write the buffer for a single partition.
-    // Buffer lifecycle:
-    // - doCleanUp=false: incremental write, buffer stays open for more data from same partition
-    // - doCleanUp=true: final write, closes buffer and streams (called when partition is complete)
-    // Normal path: merger calls with doCleanUp=false for each compression task, then calls
-    // with doCleanUp=true when containsLastForThisPartition=true (all data for partition queued).
-    // Exception path: buffers are closed in the finally block of writePartitionedGpuBatches.
-    def writeBufferForSinglePartition(
-        partitionId: Int,
-        start: Long,
-        end: Long,
-        doCleanUp: Boolean): Unit = {
-      Option(partitionBuffers.get(partitionId)) match {
-        case Some(buffer) =>
-          if (unfinishedStream.isEmpty) {
-            unfinishedStream = Some(writer.getPartitionWriter(partitionId).openStream())
-          }
-          if (end - start > 0) {
-            unfinishedStream.get.write(buffer.getBuf, start.toInt, (end - start).toInt)
-          }
-          if (doCleanUp) {
-            buffer.close()
-            partitionBuffers.remove(partitionId)
-            unfinishedStream.get.close()
-            unfinishedStream = None
-            partitionFutures.remove(partitionId)
-            partitionProcessedFutures.remove(partitionId)
-            partitionWrittenBytes.remove(partitionId)
-          }
-        case None =>
-          throw new IllegalStateException(
-            s"No buffer found for partition $partitionId in batch $batchId")
-      }
-    }
-
     // Merger task for this batch
+    // Simplified design: each record has its own buffer, so we just:
+    // 1. Poll records from the queue
+    // 2. Write buffer content to output stream
+    // 3. Close buffer immediately (no accumulation!)
+    // 4. Release quota
     val mergerTask = new Runnable {
       override def run(): Unit = {
         var currentPartitionToWrite = 0
         // Check for thread interruption to allow graceful shutdown
         while (currentPartitionToWrite < numPartitions && !Thread.currentThread().isInterrupted) {
+          // Check if this partition has been queued by main thread
           if (currentPartitionToWrite <= maxPartitionIdQueued.get()) {
-            var containsLastForThisPartition = false
-            var futures: CopyOnWriteArrayList[Future[(Long, Long)]] = null
+            val recordQueue = partitionRecords.get(currentPartitionToWrite)
 
-            maxPartitionIdQueued.synchronized {
-              futures = partitionFutures.get(currentPartitionToWrite)
-              if (currentPartitionToWrite < maxPartitionIdQueued.get()) {
-                containsLastForThisPartition = true
-              }
-            }
-
-            if (futures != null) {
-              // Track if any new future was processed in this iteration
-              var newFutureTouched = false
-              val processedCount =
-                 partitionProcessedFutures.getOrDefault(currentPartitionToWrite, 0)
-              // Process only futures that haven't been processed yet
-              futures.asScala.zipWithIndex.filter(pair => {
-                pair._2 >= processedCount
-              }).foreach { future =>
-                newFutureTouched = true
-                // remainingQuota is the compressedSize that was held after Writer released
-                // the excess quota (recordSize - compressedSize)
-                val (remainingQuota, compressedSize) = future._1.get()
-
-                // Write newly compressed data incrementally
-                val writtenBytes =
-                  partitionWrittenBytes.getOrDefault(currentPartitionToWrite, 0L)
-                writeBufferForSinglePartition(currentPartitionToWrite,
-                  writtenBytes,
-                  writtenBytes + compressedSize,
-                  doCleanUp = false)
-
-                partitionWrittenBytes.put(
-                  currentPartitionToWrite, writtenBytes + compressedSize)
-                partitionProcessedFutures.compute(currentPartitionToWrite,
-                  (key, value) => { value + 1 })
-
-                // Release the remaining quota after data is written to output stream.
-                // The limiter controls heap memory pressure from deserialization and
-                // OpenByteArrayOutputStream. Once data is written to output stream (which may
-                // buffer in SpillablePartialFileHandle or write to disk), the heap buffer
-                // becomes eligible for GC. Releasing quota here allows more compression
-                // tasks to proceed without causing heap OOM.
-                limiter.release(remainingQuota)
-              }
-
-              if (containsLastForThisPartition) {
-                writeBufferForSinglePartition(currentPartitionToWrite, 0, 0, doCleanUp = true)
-                currentPartitionToWrite += 1
-              } else {
-                if (!newFutureTouched) {
-                  // No new futures were processed in this iteration, wait for main thread
-                  // to queue more compression tasks. Use classic condition flag pattern
-                  // to avoid busy-loop polling and provide clear debugging signal.
-                  mergerCondition.synchronized {
-                    while (!hasNewWork.get()) {
-                      mergerCondition.wait()
-                    }
-                    hasNewWork.set(false)
+            if (recordQueue != null) {
+              // Open output stream for this partition (one stream per partition)
+              val outputStream = writer.getPartitionWriter(currentPartitionToWrite).openStream()
+              try {
+                // Process records until partition is complete
+                var partitionComplete = false
+                while (!partitionComplete && !Thread.currentThread().isInterrupted) {
+                  // Check if all data for this partition has been queued
+                  val isLastForPartition = maxPartitionIdQueued.synchronized {
+                    currentPartitionToWrite < maxPartitionIdQueued.get()
                   }
+
+                  // Process all available records in the queue
+                  var madeProgress = false
+                  var future = recordQueue.poll()
+                  while (future != null) {
+                    madeProgress = true
+                    // Wait for compression to complete and get the record
+                    val record = future.get()
+
+                    // Write compressed data to output stream
+                    if (record.compressedSize > 0) {
+                      outputStream.write(record.buffer.getBuf, 0, record.compressedSize.toInt)
+                    }
+
+                    // Close buffer immediately - this is the key to avoiding 2GB limit!
+                    record.buffer.close()
+
+                    // Release quota after data is written to output stream
+                    limiter.release(record.remainingQuota)
+
+                    // Get next record
+                    future = recordQueue.poll()
+                  }
+
+                  if (isLastForPartition && recordQueue.isEmpty) {
+                    // All records for this partition have been processed
+                    partitionComplete = true
+                  } else if (!madeProgress) {
+                    // No records were processed, wait for main thread to queue more
+                    mergerCondition.synchronized {
+                      while (!hasNewWork.get()) {
+                        mergerCondition.wait()
+                      }
+                      hasNewWork.set(false)
+                    }
+                  }
+                  // If madeProgress, loop back to process more records
                 }
+              } finally {
+                outputStream.close()
               }
+              partitionRecords.remove(currentPartitionToWrite)
+              currentPartitionToWrite += 1
             } else {
+              // No records for this partition, write empty partition
               val partWriter = writer.getPartitionWriter(currentPartitionToWrite)
               partWriter.openStream().close()
               currentPartitionToWrite += 1
             }
           } else {
             // Current partition hasn't been queued yet by main thread, wait for it.
-            // Use classic condition flag pattern to avoid busy-loop polling and
-            // provide clear debugging signal.
             mergerCondition.synchronized {
               while (!hasNewWork.get()) {
                 mergerCondition.wait()
@@ -560,10 +521,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     BatchState(
       batchId,
       writer,
-      partitionBuffers,
-      partitionFutures,
-      partitionWrittenBytes,
-      partitionProcessedFutures,
+      partitionRecords,
       maxPartitionIdQueued,
       mergerCondition,
       hasNewWork,
@@ -702,9 +660,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         recordsWritten += 1
         previousMaxPartition = math.max(previousMaxPartition, reducePartitionId)
 
-        // Get or create futures queue for this partition in current batch
-        val futures = currentBatch.partitionFutures.computeIfAbsent(reducePartitionId,
-          _ => new CopyOnWriteArrayList[Future[(Long, Long)]]())
+        // Get or create record queue for this partition in current batch
+        val recordQueue = currentBatch.partitionRecords.computeIfAbsent(reducePartitionId,
+          _ => new ConcurrentLinkedQueue[Future[CompressedRecord]]())
 
         val (cb, recordSize) = incRefCountAndGetSize(value)
 
@@ -717,14 +675,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         // all tasks for the same partition run serially in the same slot
         val slotNum = partitionSlots.computeIfAbsent(reducePartitionId,
           _ => RapidsShuffleInternalManagerBase.getNextWriterSlot)
-        val currentBatchFinalRef = currentBatch
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           try {
             withResource(cb) { _ =>
-              // Get or create buffer for this partition in current batch
-              val buffer = currentBatchFinalRef.partitionBuffers.computeIfAbsent(
-                reducePartitionId, _ => new OpenByteArrayOutputStream())
-              val originLength = buffer.getCount
+              // Each record gets its own INDEPENDENT buffer to avoid the 2GB limit.
+              // The buffer is created here and closed by the merger after writing.
+              val buffer = new OpenByteArrayOutputStream()
 
               // Serialize + compress + encryption to memory buffer
               val compressedOutputStream = blockManager.serializerManager.wrapStream(
@@ -738,24 +694,22 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               }
 
               // Track total written data size (compressed size)
-              val compressedSize = (buffer.getCount - originLength).toLong
+              val compressedSize = buffer.getCount.toLong
               totalCompressedSize.addAndGet(compressedSize)
 
               // Release excess quota immediately after compression.
               // Data is now in OpenByteArrayOutputStream (heap), only need to hold
               // compressedSize quota until Merger writes to disk.
-
-
               // Note: excessQuota can be 0 if compression doesn't reduce size (or expands)
               val excessQuota = math.max(0L, recordSize - compressedSize)
               if (excessQuota > 0) {
                 limiter.release(excessQuota)
               }
 
-              // Return the quota that Merger should release later
+              // Return CompressedRecord with buffer and remaining quota for Merger
               // Total released = excessQuota + remainingQuota should equal recordSize
               val remainingQuota = recordSize - excessQuota
-              (remainingQuota, compressedSize)
+              CompressedRecord(buffer, compressedSize, remainingQuota)
             }
           } catch {
             case e: Exception =>
@@ -766,7 +720,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         })
 
         currentBatch.maxPartitionIdQueued.synchronized {
-          futures.add(future)
+          recordQueue.add(future)
           currentBatch.maxPartitionIdQueued.set(
             math.max(currentBatch.maxPartitionIdQueued.get(), reducePartitionId))
         }
@@ -824,27 +778,36 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       serializationWaitTimeMetric.foreach(_ += totalSerializationWaitTimeNs)
 
     } finally {
-      // Cleanup all batch states
-      batchStates.foreach { batch =>
-        // Cancel writer future if still running
+      // Helper to cleanup a single batch
+      def cleanupBatch(batch: BatchState): Unit = {
+        // Cancel merger future if still running
         batch.mergerFuture.cancel(true)
 
-        // Cancel pending futures
-        batch.partitionFutures.values().asScala.foreach { futuresQueue =>
-          futuresQueue.asScala.foreach(_.cancel(true))
-          futuresQueue.clear()
-        }
-
-        // Clean up buffers
-        val iter = batch.partitionBuffers.values().iterator()
-        while (iter.hasNext()) {
-          try {
-            iter.next().close()
-          } catch {
-            case e: Exception =>
-              logWarning(s"Failed to close partition buffer during cleanup", e)
+        // Cancel pending futures and close their buffers
+        batch.partitionRecords.values().asScala.foreach { recordQueue =>
+          var future = recordQueue.poll()
+          while (future != null) {
+            future.cancel(true)
+            // If future already completed, try to close the buffer
+            if (future.isDone && !future.isCancelled) {
+              try {
+                future.get().buffer.close()
+              } catch {
+                case _: Exception => // Ignore cleanup errors
+              }
+            }
+            future = recordQueue.poll()
           }
         }
+      }
+
+      // Cleanup all tracked batch states
+      batchStates.foreach(cleanupBatch)
+
+      // Also cleanup currentBatch if it was never added to batchStates
+      // (exception occurred before batchStates += currentBatch)
+      if (currentBatch != null && !batchStates.contains(currentBatch)) {
+        cleanupBatch(currentBatch)
       }
     }
 
