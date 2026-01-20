@@ -378,9 +378,9 @@ object GpuTextBasedPartitionReader {
     case DType.UINT64 => GpuUnsignedLongType
     case dType if dType.isDecimalType =>
       val precision = dType.getTypeId match {
-        case DType.DTypeEnum.DECIMAL32 => 9
-        case DType.DTypeEnum.DECIMAL64 => 18
-        case DType.DTypeEnum.DECIMAL128 => 38
+        case DType.DTypeEnum.DECIMAL32 => DType.DECIMAL32_MAX_PRECISION
+        case DType.DTypeEnum.DECIMAL64 => DType.DECIMAL64_MAX_PRECISION
+        case DType.DTypeEnum.DECIMAL128 => DType.DECIMAL128_MAX_PRECISION
         case _ => throw new IllegalArgumentException(s"Unsupported decimal type: $dType")
       }
       DecimalType(precision, -dType.getScale)
