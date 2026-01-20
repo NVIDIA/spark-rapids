@@ -39,9 +39,12 @@ import java.nio.file.{Files, Path}
 import scala.collection.mutable
 import scala.util.Try
 
+import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, GetStructField, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{
+  AttributeReference, Expression, GetStructField, UnaryExpression
+}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.types._
@@ -97,7 +100,9 @@ object ProtobufExprShims {
         // Indices into fullSchema for fields that will be decoded by GPU
         private var decodedFieldIndices: Array[Int] = _
         private var fieldNumbers: Array[Int] = _
+        // cudfTypeIds contains type IDs for ALL fields in fullSchema (for the new optimized API)
         private var cudfTypeIds: Array[Int] = _
+        // cudfTypeScales: encodings for decoded fields (parallel to decodedFieldIndices)
         private var cudfTypeScales: Array[Int] = _
         private var failOnErrors: Boolean = _
 
@@ -181,21 +186,26 @@ object ProtobufExprShims {
           }
           decodedFieldIndices = indicesToDecode
 
-          // Step 5: Build arrays for the fields to decode (parallel to decodedFieldIndices)
+          // Step 5: Build cudfTypeIds for ALL fields in fullSchema
+          // For unsupported types (nested struct, array, etc.), use INT8 as placeholder.
+          // These placeholder columns will be replaced with properly typed null columns in Scala.
+          cudfTypeIds = fullSchema.fields.map { sf =>
+            GpuFromProtobuf.sparkTypeToCudfIdOpt(sf.dataType)
+              .getOrElse(DType.INT8.getTypeId.getNativeId)  // placeholder for unsupported types
+          }
+
+          // Step 6: Build arrays for decoded fields only (parallel to decodedFieldIndices)
           val fnums = new Array[Int](indicesToDecode.length)
-          val typeIds = new Array[Int](indicesToDecode.length)
           val scales = new Array[Int](indicesToDecode.length)
 
           indicesToDecode.zipWithIndex.foreach { case (schemaIdx, arrIdx) =>
             val sf = fullSchema.fields(schemaIdx)
             val info = fieldsInfoMap(sf.name)
             fnums(arrIdx) = info.fieldNumber
-            typeIds(arrIdx) = GpuFromProtobuf.sparkTypeToCudfId(sf.dataType)
             scales(arrIdx) = info.encoding
           }
 
           fieldNumbers = fnums
-          cudfTypeIds = typeIds
           cudfTypeScales = scales
         }
 
