@@ -599,20 +599,8 @@ class MultiFileSequenceFilePartitionReader(
       if (start > 0) {
         reader.sync(start - 1)
       }
-      // Check position BEFORE reading, and handle EOF gracefully
-      var continue = true
-      while (continue && reader.getPosition < end) {
-        try {
-          if (reader.next(key, value)) {
-            count += 1
-          } else {
-            continue = false
-          }
-        } catch {
-          case _: java.io.EOFException =>
-            // EOF reached - this can happen at split boundaries
-            continue = false
-        }
+      while (reader.getPosition < end && reader.next(key, value)) {
+        count += 1
       }
     } finally {
       reader.close()
