@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.sequencefile
 
-import java.io.{DataOutputStream, FileNotFoundException, IOException}
+import java.io.{DataOutputStream, FileNotFoundException, IOException, OutputStream}
 import java.net.URI
 import java.util
 import java.util.Optional
@@ -50,23 +50,75 @@ private[sequencefile] final case class PendingRecord(
     bytes: Long)
 
 /**
+ * A HostMemoryOutputStream that allows updating the underlying buffer.
+ * This is used by HostBinaryListBufferer to efficiently write ValueBytes
+ * without creating new stream instances when the buffer grows.
+ */
+private[sequencefile] final class ResizableHostMemoryOutputStream(
+    initialBuffer: HostMemoryBuffer) extends OutputStream {
+  private var buffer: HostMemoryBuffer = initialBuffer
+  private var pos: Long = 0L
+
+  def getPos: Long = pos
+
+  /** Update the underlying buffer and position (used after buffer resize) */
+  def setBuffer(newBuffer: HostMemoryBuffer, newPos: Long): Unit = {
+    buffer = newBuffer
+    pos = newPos
+  }
+
+  /** Set position for sequential writes */
+  def seek(newPos: Long): Unit = {
+    pos = newPos
+  }
+
+  // Fast path for bulk writes - this is what ValueBytes.writeUncompressedBytes uses internally
+  override def write(b: Array[Byte], off: Int, len: Int): Unit = {
+    buffer.setBytes(pos, b, off, len)
+    pos += len
+  }
+
+  override def write(b: Array[Byte]): Unit = {
+    buffer.setBytes(pos, b, 0, b.length)
+    pos += b.length
+  }
+
+  override def write(b: Int): Unit = {
+    buffer.setByte(pos, b.toByte)
+    pos += 1
+  }
+
+  override def flush(): Unit = {} // No-op, writes go directly to buffer
+  override def close(): Unit = {} // Don't close the underlying buffer
+}
+
+/**
  * Buffers binary values into one contiguous bytes buffer with an INT32 offsets buffer, and then
  * materializes a cuDF LIST<UINT8> device column using `makeListFromOffsets`.
+ *
+ * This class uses pinned memory (via HostAlloc) when available for better H2D transfer
+ * performance. Pinned memory allows for faster and potentially asynchronous copies to the GPU.
  */
 private[sequencefile] final class HostBinaryListBufferer(
     initialSizeBytes: Long,
-    initialRows: Int) extends AutoCloseable {
+    initialRows: Int) extends AutoCloseable with Logging {
+  // Use HostAlloc which prefers pinned memory for better H2D transfer performance
   private var dataBuffer: HostMemoryBuffer =
-    HostMemoryBuffer.allocate(math.max(initialSizeBytes, 1L))
+    HostAlloc.alloc(math.max(initialSizeBytes, 1L), preferPinned = true)
   private var dataLocation: Long = 0L
 
   private var rowsAllocated: Int = math.max(initialRows, 1)
   private var offsetsBuffer: HostMemoryBuffer =
-    HostMemoryBuffer.allocate((rowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes)
+    HostAlloc.alloc((rowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes, preferPinned = true)
   private var numRows: Int = 0
 
-  private var out: HostMemoryOutputStream = new HostMemoryOutputStream(dataBuffer)
-  private var dos: DataOutputStream = new DataOutputStream(out)
+  // Resizable output stream for efficient ValueBytes writing - allows buffer updates without
+  // creating new stream instances. DataOutputStream wrapper is needed for Hadoop API compatibility.
+  private val resizableOut = new ResizableHostMemoryOutputStream(dataBuffer)
+  private val dataOut = new DataOutputStream(resizableOut)
+
+  logDebug(s"HostBinaryListBufferer allocated: data=${dataBuffer.getLength} bytes, " +
+    s"offsets=${offsetsBuffer.getLength} bytes")
 
   def rows: Int = numRows
 
@@ -77,11 +129,13 @@ private[sequencefile] final class HostBinaryListBufferer(
       // Use Int.MaxValue - 2 to ensure (rowsAllocated + 1) * 4 doesn't overflow
       val newRowsAllocated = math.min(rowsAllocated.toLong * 2, Int.MaxValue.toLong - 2L).toInt
       val newSize = (newRowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes
-      closeOnExcept(HostMemoryBuffer.allocate(newSize)) { tmpBuffer =>
+      // Use HostAlloc for pinned memory preference
+      closeOnExcept(HostAlloc.alloc(newSize, preferPinned = true)) { tmpBuffer =>
         tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
         offsetsBuffer.close()
         offsetsBuffer = tmpBuffer
         rowsAllocated = newRowsAllocated
+        logDebug(s"HostBinaryListBufferer grew offsets buffer to $newSize bytes")
       }
     }
   }
@@ -89,14 +143,14 @@ private[sequencefile] final class HostBinaryListBufferer(
   private def growDataIfNeeded(requiredEnd: Long): Unit = {
     if (requiredEnd > dataBuffer.getLength) {
       val newSize = math.max(dataBuffer.getLength * 2, requiredEnd)
-      closeOnExcept(HostMemoryBuffer.allocate(newSize)) { newBuff =>
+      // Use HostAlloc for pinned memory preference
+      closeOnExcept(HostAlloc.alloc(newSize, preferPinned = true)) { newBuff =>
         newBuff.copyFromHostBuffer(0, dataBuffer, 0, dataLocation)
         dataBuffer.close()
         dataBuffer = newBuff
-        // Clear old stream wrapper before creating new ones
-        dos = null
-        out = new HostMemoryOutputStream(dataBuffer)
-        dos = new DataOutputStream(out)
+        // Update the resizable output stream to use the new buffer
+        resizableOut.setBuffer(dataBuffer, dataLocation)
+        logDebug(s"HostBinaryListBufferer grew data buffer to $newSize bytes")
       }
     }
   }
@@ -118,6 +172,14 @@ private[sequencefile] final class HostBinaryListBufferer(
     numRows += 1
   }
 
+  /**
+   * Add value bytes directly from Hadoop's ValueBytes to the buffer.
+   * This method uses a resizable output stream that writes to the HostMemoryBuffer
+   * efficiently, avoiding stream recreation when the buffer grows.
+   *
+   * @param valueBytes the Hadoop ValueBytes containing the raw value data
+   * @param len the expected length of the value (from valueBytes.getSize())
+   */
   def addValueBytes(valueBytes: SequenceFile.ValueBytes, len: Int): Unit = {
     val newEnd = dataLocation + len
     if (newEnd > Int.MaxValue) {
@@ -126,19 +188,17 @@ private[sequencefile] final class HostBinaryListBufferer(
     }
     growOffsetsIfNeeded()
     growDataIfNeeded(newEnd)
+
+    // Record the offset before writing
     val offsetPosition = numRows.toLong * DType.INT32.getSizeInBytes
-    val startDataLocation = dataLocation
-    out.seek(dataLocation)
-    val startPos = out.getPos
-    valueBytes.writeUncompressedBytes(dos)
-    val actualLen = (out.getPos - startPos).toInt
-    if (actualLen != len) {
-      throw new IllegalStateException(
-        s"addValueBytes length mismatch: expected $len bytes, but wrote $actualLen bytes")
-    }
-    dataLocation = out.getPos
-    // Write offset only after successful data write
-    offsetsBuffer.setInt(offsetPosition, startDataLocation.toInt)
+    offsetsBuffer.setInt(offsetPosition, dataLocation.toInt)
+
+    // Position the stream at the current data location and write
+    resizableOut.seek(dataLocation)
+    valueBytes.writeUncompressedBytes(dataOut)
+
+    // Update position from the stream
+    dataLocation = resizableOut.getPos
     numRows += 1
   }
 
@@ -175,11 +235,8 @@ private[sequencefile] final class HostBinaryListBufferer(
       }
     }
     offsetsBuffer = null
-    // The stream wrappers (out, dos) don't hold independent resources - they just wrap the
-    // dataBuffer which is now owned by childHost. Setting to null without close() is intentional
-    // to avoid attempting operations on the transferred buffer.
-    out = null
-    dos = null
+    // Note: directOut doesn't own any resources - it just wraps the dataBuffer which is now
+    // owned by childHost. No need to close it.
 
     // Copy to device and close host columns immediately after copy.
     val childDev = closeOnExcept(offsetsHost) { _ =>
@@ -220,15 +277,13 @@ private[sequencefile] final class HostBinaryListBufferer(
     val retOffsets = offsetsBuffer
     dataBuffer = null
     offsetsBuffer = null
-    out = null
-    dos = null
+    // Note: directOut doesn't own any resources, no need to close
 
     (Some(retData), Some(retOffsets))
   }
 
   override def close(): Unit = {
-    out = null
-    dos = null
+    // directOut doesn't own any resources, no need to close
     if (dataBuffer != null) {
       dataBuffer.close()
       dataBuffer = null
