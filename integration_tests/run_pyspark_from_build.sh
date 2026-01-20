@@ -47,6 +47,9 @@
 #   To run all tests, including Avro tests:
 #     INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh
 #
+#   To run tests WITHOUT Protobuf tests (protobuf is included by default):
+#     INCLUDE_SPARK_PROTOBUF_JAR=false ./run_pyspark_from_build.sh
+#
 #   To run a specific test:
 #     TEST=my_test ./run_pyspark_from_build.sh
 #
