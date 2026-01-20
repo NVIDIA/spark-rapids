@@ -92,7 +92,8 @@ class RapidsJoinSuite
               case j if j.getClass.getName.contains("ShuffledHashJoin") => true
             }.size == 1
             assert(hasGpuHashJoin, 
-              s"Expected GpuShuffledHashJoinExec or ShuffledHashJoinExec for ignoreDuplicatedKey=$ignoreDuplicatedKey")
+              "Expected GpuShuffledHashJoinExec or ShuffledHashJoinExec " +
+              s"for ignoreDuplicatedKey=$ignoreDuplicatedKey")
           }
       }
     }

@@ -71,6 +71,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-26893: Allow pushdown of partition pruning subquery filters to file source", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14172 - partition pruning with subquery not working on GPU"))
     .exclude("SPARK-27279: Reuse Subquery", ADJUST_UT("Replaced by testRapids version for GPU execution"))
     .exclude("SPARK-36280: Remove redundant aliases after RewritePredicateSubquery", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU shuffle exchange"))
+  enableSuite[RapidsSQLViewSuite]
   enableSuite[RapidsDataFrameSuite]
     .exclude("SPARK-28224: Aggregate sum big decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
     .exclude("SPARK-28067: Aggregate sum should not return wrong results for decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
