@@ -21,8 +21,8 @@ from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_ro
                      assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_sql)
 from conftest import is_emr_runtime
 from data_gen import *
-from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
-from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime
+from marks import ignore_order, allow_non_gpu, allow_non_gpu_conditional, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
+from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime, is_spark_411_or_later
 from src.main.python.spark_session import with_gpu_session
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -1439,6 +1439,7 @@ def test_bloom_filter_join_cpu_probe(is_multi_column, kudo_enabled):
                             is_multi_column=is_multi_column)
 
 @allow_non_gpu("ObjectHashAggregateExec", "ShuffleExchangeExec")
+@allow_non_gpu_conditional(is_spark_411_or_later(), "FilterExec")
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
@@ -1447,11 +1448,21 @@ def test_bloom_filter_join_cpu_probe(is_multi_column, kudo_enabled):
 def test_bloom_filter_join_cpu_build(is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.expression.BloomFilterAggregate": "false",
             kudo_enabled_conf_key: kudo_enabled}
+    # For Spark 4.1.1+, when BloomFilterAggregate is disabled, BloomFilterMightContain
+    # also falls back to CPU due to V1/V2 format incompatibility.
+    # So we expect both CPU classes.
+    # For older Spark versions, only BloomFilterAggregate is on CPU,
+    # BloomFilterMightContain runs on GPU (as GpuBloomFilterMightContain).
+    if is_spark_411_or_later():
+        expected = "BloomFilterAggregate,BloomFilterMightContain"
+    else:
+        expected = "BloomFilterAggregate,GpuBloomFilterMightContain"
     check_bloom_filter_join(confs=conf,
-                            expected_classes="GpuBloomFilterMightContain,BloomFilterAggregate",
+                            expected_classes=expected,
                             is_multi_column=is_multi_column)
 
 @allow_non_gpu("ObjectHashAggregateExec", "ProjectExec", "ShuffleExchangeExec")
+@allow_non_gpu_conditional(is_spark_411_or_later(), "FilterExec")
 @ignore_order(local=True)
 @pytest.mark.parametrize("agg_replace_mode", ["partial", "final"])
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
@@ -1461,8 +1472,16 @@ def test_bloom_filter_join_cpu_build(is_multi_column, kudo_enabled):
 def test_bloom_filter_join_split_cpu_build(agg_replace_mode, is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.hashAgg.replaceMode": agg_replace_mode,
             kudo_enabled_conf_key: kudo_enabled}
+    # For Spark 4.1.1+, when replaceMode is not "all", both BloomFilterAggregate and
+    # BloomFilterMightContain fall back to CPU due to V1/V2 format incompatibility.
+    # For older Spark versions, only BloomFilterAggregate is on CPU,
+    # BloomFilterMightContain runs on GPU (as GpuBloomFilterMightContain).
+    if is_spark_411_or_later():
+        expected = "BloomFilterAggregate,BloomFilterMightContain"
+    else:
+        expected = "GpuBloomFilterMightContain,BloomFilterAggregate,GpuBloomFilterAggregate"
     check_bloom_filter_join(confs=conf,
-                            expected_classes="GpuBloomFilterMightContain,BloomFilterAggregate,GpuBloomFilterAggregate",
+                            expected_classes=expected,
                             is_multi_column=is_multi_column)
 
 @ignore_order(local=True)

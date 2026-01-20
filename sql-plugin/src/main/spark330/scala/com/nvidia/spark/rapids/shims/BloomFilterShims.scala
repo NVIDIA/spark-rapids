@@ -61,6 +61,13 @@ object BloomFilterShims {
           ("lhs", TypeSig.BINARY + TypeSig.NULL, TypeSig.BINARY + TypeSig.NULL),
           ("rhs", TypeSig.LONG + TypeSig.NULL, TypeSig.LONG + TypeSig.NULL)),
         (a, conf, p, r) => new BinaryExprMeta[BloomFilterMightContain](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            // Check if we need to fall back to CPU
+            if (BloomFilterFallbackShim.mustFallbackToCpu(this.conf)) {
+              BloomFilterFallbackShim.fallbackMessage.foreach(willNotWorkOnGpu)
+            }
+          }
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuBloomFilterMightContain(lhs, rhs)
         }),
@@ -75,6 +82,13 @@ object BloomFilterShims {
                 ParamCheck("numBits",
                   TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))))))),
         (a, conf, p, r) => new ExprMeta[BloomFilterAggregate](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            // Check if we need to fall back to CPU
+            if (BloomFilterFallbackShim.mustFallbackToCpu(this.conf)) {
+              BloomFilterFallbackShim.fallbackMessage.foreach(willNotWorkOnGpu)
+            }
+          }
+
           override def convertToGpuImpl(): GpuExpression = {
             GpuBloomFilterAggregate(
               childExprs.head.convertToGpu(),
