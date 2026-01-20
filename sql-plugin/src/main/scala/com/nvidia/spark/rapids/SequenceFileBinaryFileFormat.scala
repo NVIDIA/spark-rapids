@@ -62,10 +62,12 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
       options: Map[String, String],
       files: Seq[FileStatus]): Option[StructType] = Some(dataSchema)
 
+  // TODO: Fix split boundary handling to enable multi-partition reads
+  // Currently disabled to ensure correct record counts
   override def isSplitable(
       sparkSession: SparkSession,
       options: Map[String, String],
-      path: Path): Boolean = true
+      path: Path): Boolean = false
 
   override def buildReaderWithPartitionValues(
       sparkSession: SparkSession,

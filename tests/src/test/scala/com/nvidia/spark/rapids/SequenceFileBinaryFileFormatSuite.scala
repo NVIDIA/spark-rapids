@@ -259,6 +259,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
           .format("sequencefilebinary")
           .load(file.getAbsolutePath)
 
+        // Spark wraps the UnsupportedOperationException in a SparkException (possibly multiple levels)
         val ex = intercept[SparkException] {
           df.collect()
         }
@@ -268,8 +269,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
         }
         val rootCause = findRootCause(ex)
         assert(rootCause.isInstanceOf[UnsupportedOperationException],
-          s"Expected UnsupportedOperationException but got ${rootCause.getClass.getName}:" +
-          s" ${rootCause.getMessage}")
+          s"Expected UnsupportedOperationException but got ${rootCause.getClass.getName}: ${rootCause.getMessage}")
         assert(rootCause.getMessage.contains("does not support compressed SequenceFiles"))
       }
     }

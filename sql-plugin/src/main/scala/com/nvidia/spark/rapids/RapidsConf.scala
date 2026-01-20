@@ -1600,11 +1600,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_SEQUENCEFILE = conf("spark.rapids.sql.format.sequencefile.enabled")
-    .doc("When set to false disables sequencefile input acceleration")
-    .booleanConf
-    .createWithDefault(true)
-
   val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
     .doc("JSON reading is not 100% compatible when reading floats.")
     .booleanConf
@@ -1682,34 +1677,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
-
-  // SEQUENCEFILE CONFIGS
-
-  val SEQUENCEFILE_READ_BUFFER_SIZE =
-    conf("spark.rapids.sql.format.sequencefile.readBufferSize")
-      .doc("The size of the buffer in bytes used for reading SequenceFile data from disk. " +
-        "Larger buffers can improve I/O throughput but use more memory.")
-      .bytesConf(ByteUnit.BYTE)
-      .checkValue(v => v >= 1024 * 1024 && v <= 512 * 1024 * 1024,
-        "Buffer size must be between 1MB and 512MB")
-      .createWithDefault(64 * 1024 * 1024)  // 64MB default
-
-  val SEQUENCEFILE_ASYNC_PIPELINE_ENABLED =
-    conf("spark.rapids.sql.format.sequencefile.asyncPipeline.enabled")
-      .doc("Enable asynchronous I/O pipelining for SequenceFile reading. When enabled, " +
-        "the reader will start reading the next batch of files while GPU is processing " +
-        "the current batch, improving overall throughput.")
-      .booleanConf
-      .createWithDefault(true)
-
-  val SEQUENCEFILE_BATCH_SIZE_BYTES =
-    conf("spark.rapids.sql.format.sequencefile.batchSizeBytes")
-      .doc("Target size in bytes for each batch of files sent to GPU for processing. " +
-        "Smaller batches enable better pipelining but may have more overhead. " +
-        "Larger batches maximize GPU utilization but reduce pipelining opportunities.")
-      .bytesConf(ByteUnit.BYTE)
-      .checkValue(v => v >= 1024 * 1024, "Batch size must be at least 1MB")
-      .createWithDefault(256 * 1024 * 1024)  // 256MB default
 
   val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
       .doc("When set to false disables Delta Lake output acceleration.")
@@ -3555,8 +3522,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isJsonReadEnabled: Boolean = get(ENABLE_JSON_READ)
 
-  lazy val isSequenceFileEnabled: Boolean = get(ENABLE_SEQUENCEFILE)
-
   lazy val isJsonFloatReadEnabled: Boolean = get(ENABLE_READ_JSON_FLOATS)
 
   lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
@@ -3582,13 +3547,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
-
-  // SequenceFile configs
-  lazy val sequenceFileReadBufferSize: Long = get(SEQUENCEFILE_READ_BUFFER_SIZE)
-
-  lazy val isSequenceFileAsyncPipelineEnabled: Boolean = get(SEQUENCEFILE_ASYNC_PIPELINE_ENABLED)
-
-  lazy val sequenceFileBatchSizeBytes: Long = get(SEQUENCEFILE_BATCH_SIZE_BYTES)
 
   lazy val isDeltaWriteEnabled: Boolean = get(ENABLE_DELTA_WRITE)
 
