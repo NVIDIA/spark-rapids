@@ -21,8 +21,6 @@ import java.net.URI
 import java.util
 import java.util.Optional
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -195,6 +193,37 @@ private[sequencefile] final class HostBinaryListBufferer(
         childDev.makeListFromOffsets(numRows, offsetsDev)
       }
     }
+  }
+
+  /**
+   * Returns the host memory buffers (data and offsets) and releases ownership.
+   * The caller is responsible for closing the returned buffers.
+   * This is used by the multi-file reader which needs host buffers for later GPU transfer.
+   *
+   * @return a tuple of (Some(dataBuffer), Some(offsetsBuffer)) if there is data,
+   *         or (None, None) if empty
+   */
+  def getHostBuffersAndRelease(): (Option[HostMemoryBuffer], Option[HostMemoryBuffer]) = {
+    if (numRows == 0) {
+      return (None, None)
+    }
+
+    if (dataLocation > Int.MaxValue) {
+      throw new IllegalStateException(
+        s"Binary column child size $dataLocation exceeds INT32 offset limit")
+    }
+    // Write the final offset
+    offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataLocation.toInt)
+
+    // Transfer ownership - the caller is now responsible for closing these buffers
+    val retData = dataBuffer
+    val retOffsets = offsetsBuffer
+    dataBuffer = null
+    offsetsBuffer = null
+    out = null
+    dos = null
+
+    (Some(retData), Some(retOffsets))
   }
 
   override def close(): Unit = {
@@ -647,104 +676,84 @@ class MultiFileCloudSequenceFilePartitionReader(
         }
         val end = partFile.start + partFile.length
 
-        // Buffers for reading
-        val keyBuf = new DataOutputBuffer()
+        // Buffers for reading - reuse these across all records
+        val keyDataOut = new DataOutputBuffer()
         val valueBytes = reader.createValueBytes()
-        val valueOut = new DataOutputBuffer()
-        val valueDos = new DataOutputStream(valueOut)
 
-        // Collect all records from this file/split
-        val keyDataList = if (wantsKey) new ArrayBuffer[Array[Byte]]() else null
-        val valueDataList = if (wantsValue) new ArrayBuffer[Array[Byte]]() else null
-        var totalKeyBytes = 0L
-        var totalValueBytes = 0L
-        var numRows = 0
+        // Use streaming buffers to avoid holding all data in Java heap.
+        // Start with reasonable initial sizes that will grow as needed.
+        val initialSize = math.min(partFile.length, 1024L * 1024L) // 1MB or file size
+        val initialRows = 1024
 
-        var reachedEof = false
-        while (reader.getPosition < end && !reachedEof) {
-          keyBuf.reset()
-          val recLen = reader.nextRaw(keyBuf, valueBytes)
-          if (recLen < 0) {
-            // End of file reached
-            reachedEof = true
-          } else {
-            if (wantsKey) {
-              val keyLen = keyBuf.getLength
-              val keyArr = util.Arrays.copyOf(keyBuf.getData, keyLen)
-              keyDataList += keyArr
-              totalKeyBytes += keyLen
-            }
-            if (wantsValue) {
-              valueOut.reset()
-              valueBytes.writeUncompressedBytes(valueDos)
-              val valueLen = valueOut.getLength
-              val valueArr = util.Arrays.copyOf(valueOut.getData, valueLen)
-              valueDataList += valueArr
-              totalValueBytes += valueLen
-            }
-            numRows += 1
-          }
+        val keyBufferer = if (wantsKey) {
+          Some(new HostBinaryListBufferer(initialSize, initialRows))
+        } else None
+
+        val valueBufferer = closeOnExcept(keyBufferer) { _ =>
+          if (wantsValue) {
+            Some(new HostBinaryListBufferer(initialSize, initialRows))
+          } else None
         }
 
-        val bytesRead = fileSystemBytesRead() - startingBytesRead
+        withResource(keyBufferer) { keyBuf =>
+          withResource(valueBufferer) { valBuf =>
+            var numRows = 0
+            var reachedEof = false
 
-        if (numRows == 0) {
-          SequenceFileEmptyMetaData(partFile, bytesRead)
-        } else {
-          // Build host memory buffers
-          val (keyBuffer, keyOffsets) = if (wantsKey && keyDataList.nonEmpty) {
-            buildHostBuffers(keyDataList.toArray, totalKeyBytes)
-          } else (None, None)
+            while (reader.getPosition < end && !reachedEof) {
+              keyDataOut.reset()
+              val recLen = reader.nextRaw(keyDataOut, valueBytes)
+              if (recLen < 0) {
+                // End of file reached
+                reachedEof = true
+              } else {
+                if (wantsKey) {
+                  val keyLen = keyDataOut.getLength
+                  keyBuf.foreach(_.addBytes(keyDataOut.getData, 0, keyLen))
+                }
+                if (wantsValue) {
+                  val valueLen = valueBytes.getSize
+                  valBuf.foreach(_.addValueBytes(valueBytes, valueLen))
+                }
+                numRows += 1
+              }
+            }
 
-          val (valueBuffer, valueOffsets) = closeOnExcept(keyBuffer) { _ =>
-            closeOnExcept(keyOffsets) { _ =>
-              if (wantsValue && valueDataList.nonEmpty) {
-                buildHostBuffers(valueDataList.toArray, totalValueBytes)
-              } else (None, None)
+            val bytesRead = fileSystemBytesRead() - startingBytesRead
+
+            if (numRows == 0) {
+              SequenceFileEmptyMetaData(partFile, bytesRead)
+            } else {
+              // Extract host memory buffers from the streaming bufferers
+              val (keyBuffer, keyOffsets) = keyBuf.map { kb =>
+                kb.getHostBuffersAndRelease()
+              }.getOrElse((None, None))
+
+              val (valueBuffer, valueOffsets) = closeOnExcept(keyBuffer) { _ =>
+                closeOnExcept(keyOffsets) { _ =>
+                  valBuf.map { vb =>
+                    vb.getHostBuffersAndRelease()
+                  }.getOrElse((None, None))
+                }
+              }
+
+              SequenceFileHostBuffersWithMetaData(
+                partitionedFile = partFile,
+                memBuffersAndSizes = Array(SingleHMBAndMeta.empty(numRows)),
+                bytesRead = bytesRead,
+                keyBuffer = keyBuffer,
+                valueBuffer = valueBuffer,
+                keyOffsets = keyOffsets,
+                valueOffsets = valueOffsets,
+                numRows = numRows,
+                wantsKey = wantsKey,
+                wantsValue = wantsValue)
             }
           }
-
-          SequenceFileHostBuffersWithMetaData(
-            partitionedFile = partFile,
-            memBuffersAndSizes = Array(SingleHMBAndMeta.empty(numRows)),
-            bytesRead = bytesRead,
-            keyBuffer = keyBuffer,
-            valueBuffer = valueBuffer,
-            keyOffsets = keyOffsets,
-            valueOffsets = valueOffsets,
-            numRows = numRows,
-            wantsKey = wantsKey,
-            wantsValue = wantsValue)
         }
       } finally {
         reader.close()
       }
-    }
-
-    private def buildHostBuffers(
-        dataArrays: Array[Array[Byte]],
-        totalBytes: Long): (Option[HostMemoryBuffer], Option[HostMemoryBuffer]) = {
-      val numRows = dataArrays.length
-      val dataBuffer = HostMemoryBuffer.allocate(totalBytes)
-      val offsetsBuffer = HostMemoryBuffer.allocate((numRows + 1L) * DType.INT32.getSizeInBytes)
-
-      closeOnExcept(dataBuffer) { _ =>
-        closeOnExcept(offsetsBuffer) { _ =>
-          var dataOffset = 0L
-          var i = 0
-          while (i < numRows) {
-            val arr = dataArrays(i)
-            offsetsBuffer.setInt(i.toLong * DType.INT32.getSizeInBytes, dataOffset.toInt)
-            dataBuffer.setBytes(dataOffset, arr, 0, arr.length)
-            dataOffset += arr.length
-            i += 1
-          }
-          // Final offset
-          offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataOffset.toInt)
-        }
-      }
-
-      (Some(dataBuffer), Some(offsetsBuffer))
     }
   }
 }
