@@ -66,6 +66,11 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("test SortMergeJoin (with spill)", WONT_FIX_ISSUE("The case is to test spill in SortMergeJoin, which is not applicable for GPU."))
     .exclude("SPARK-32649: Optimize BHJ/SHJ inner/semi join with empty hashed relation", WONT_FIX_ISSUE("The case is to test the codegen behavior for BHJ/SHJ inner/semi join, which is not applicable for GPU."))
     .exclude("SPARK-36794: Ignore duplicated key when building relation for semi/anti hash join", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU join operators"))
+  enableSuite[RapidsSubquerySuite]
+    .exclude("runtime error when the number of rows is greater than 1", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14158"))
+    .exclude("SPARK-26893: Allow pushdown of partition pruning subquery filters to file source", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14172 - partition pruning with subquery not working on GPU"))
+    .exclude("SPARK-27279: Reuse Subquery", ADJUST_UT("Replaced by testRapids version for GPU execution"))
+    .exclude("SPARK-36280: Remove redundant aliases after RewritePredicateSubquery", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU shuffle exchange"))
   enableSuite[RapidsDataFrameSuite]
     .exclude("SPARK-28224: Aggregate sum big decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
     .exclude("SPARK-28067: Aggregate sum should not return wrong results for decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
