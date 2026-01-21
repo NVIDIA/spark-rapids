@@ -46,12 +46,12 @@ class GpuReadSequenceFileBinaryFormat extends FileFormat with GpuReadFileFormatW
       options: Map[String, String],
       files: Seq[FileStatus]): Option[StructType] = Some(SequenceFileBinaryFileFormat.dataSchema)
 
-  // TODO: Fix split boundary handling to enable multi-partition reads
-  // Currently disabled to ensure correct record counts
+  // SequenceFile supports splitting at sync markers. The reader handles split boundaries
+  // by checking position BEFORE reading each record, ensuring records are not double-counted.
   override def isSplitable(
       sparkSession: SparkSession,
       options: Map[String, String],
-      path: Path): Boolean = false
+      path: Path): Boolean = true
 
   override def buildReaderWithPartitionValuesAndMetrics(
       sparkSession: SparkSession,
