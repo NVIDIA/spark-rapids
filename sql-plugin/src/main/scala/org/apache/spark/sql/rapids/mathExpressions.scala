@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, RoundMode}
+import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, ExceptionWithRowIndex, RoundMode}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -611,7 +611,11 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
 }
 
 // Due to SPARK-39226, the dataType of round-like functions differs by Spark versions.
-abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: DataType)
+abstract class GpuRoundBase(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    val ansiEnabled: Boolean = false)
   extends GpuBinaryExpressionArgsAnyScalar with Serializable with ImplicitCastInputTypes {
 
   override def left: Expression = child
@@ -632,7 +636,16 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
       case DecimalType.Fixed(_, s) =>
         // Only needs to perform round when required scale < input scale
         val rounded = if (scaleVal < s) {
-          Arithmetic.round(lhsValue, scaleVal, roundMode)
+          try {
+            Arithmetic.round(lhsValue, scaleVal, roundMode, ansiEnabled)
+          } catch {
+            // ANSI mode throws ExceptionWithRowIndex if overflow would occur
+            case rowException: ExceptionWithRowIndex =>
+              val errorRowIndex = rowException.getRowIndex
+              val inputValue = ColumnViewUtils.getElementStringFromColumnView(lhsValue, errorRowIndex)
+              throw new ArithmeticException(
+                s"Rounding decimal $inputValue to scale $scaleVal with mode $roundMode caused overflow in ANSI mode")
+          }
         } else {
           lhsValue.incRefCount()
         }
@@ -804,13 +817,21 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
   }
 }
 
-case class GpuBRound(child: Expression, scale: Expression, outputType: DataType) extends
-  GpuRoundBase(child, scale, outputType) {
+case class GpuBRound(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    override val ansiEnabled: Boolean = false) extends
+  GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_EVEN
 }
 
-case class GpuRound(child: Expression, scale: Expression, outputType: DataType) extends
-  GpuRoundBase(child, scale, outputType) {
+case class GpuRound(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    override val ansiEnabled: Boolean = false) extends
+  GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_UP
 }
 

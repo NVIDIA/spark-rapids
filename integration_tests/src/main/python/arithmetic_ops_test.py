@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -798,6 +798,60 @@ def test_non_decimal_round_overflow():
             'bround(float_c, 38)', 'bround(float_c, 39)',
             'bround(double_c, -308)', 'bround(double_c, -309)',
             'bround(double_c, 308)', 'bround(double_c, 309)'))
+
+# ANSI mode tests for round/bround - no overflow cases
+@pytest.mark.parametrize('data_gen', [
+    ByteGen(min_val=-120, max_val=120, special_cases=[]),
+    ShortGen(min_val=-30000, max_val=30000, special_cases=[]),
+    IntegerGen(min_val=-2000000000, max_val=2000000000, special_cases=[]),
+    LongGen(min_val=-9000000000000000000, max_val=9000000000000000000, special_cases=[])
+], ids=idfn)
+def test_round_ansi_no_overflow_integral(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'round(a, -1)',
+            'round(a, -2)'),
+        conf=ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', [
+    ByteGen(min_val=-120, max_val=120, special_cases=[]),
+    ShortGen(min_val=-30000, max_val=30000, special_cases=[]),
+    IntegerGen(min_val=-2000000000, max_val=2000000000, special_cases=[]),
+    LongGen(min_val=-9000000000000000000, max_val=9000000000000000000, special_cases=[])
+], ids=idfn)
+def test_bround_ansi_no_overflow_integral(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'bround(a, -1)',
+            'bround(a, -2)'),
+        conf=ansi_enabled_conf)
+
+# ANSI mode tests - overflow cases
+@pytest.mark.skipif(is_before_spark_340(), reason='ANSI mode for round/bround is only supported in Spark 3.4.0+')
+@pytest.mark.parametrize('data_gen,scale', [
+    (ByteGen(min_val=125, max_val=127, special_cases=[]), -1),    # 125-127 overflow at scale -1 for HALF_UP
+    (ShortGen(min_val=32760, max_val=32767, special_cases=[]), -1),  # near Short.MAX_VALUE
+    (IntegerGen(min_val=2147483640, max_val=2147483647, special_cases=[]), -1),  # near Int.MAX_VALUE
+    (LongGen(min_val=9223372036854775800, max_val=9223372036854775807, special_cases=[]), -1),  # near Long.MAX_VALUE
+], ids=idfn)
+def test_round_ansi_overflow_integral(data_gen, scale):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(f'round(a, {scale})').collect(),
+        conf=ansi_enabled_conf,
+        error_message=_arithmetic_exception_string)
+
+@pytest.mark.skipif(is_before_spark_340(), reason='ANSI mode for round/bround is only supported in Spark 3.4.0+')
+@pytest.mark.parametrize('data_gen,scale', [
+    (ByteGen(min_val=125, max_val=127, special_cases=[]), -1),    # 126-127 overflow at scale -1 for HALF_EVEN
+    (ShortGen(min_val=32765, max_val=32767, special_cases=[]), -1),  # near Short.MAX_VALUE
+    (IntegerGen(min_val=2147483645, max_val=2147483647, special_cases=[]), -1),  # near Int.MAX_VALUE
+    (LongGen(min_val=9223372036854775805, max_val=9223372036854775807, special_cases=[]), -1),  # near Long.MAX_VALUE
+], ids=idfn)
+def test_bround_ansi_overflow_integral(data_gen, scale):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(f'bround(a, {scale})').collect(),
+        conf=ansi_enabled_conf,
+        error_message=_arithmetic_exception_string)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

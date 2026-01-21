@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2461,8 +2461,16 @@ object GpuOverrides extends Logging {
             case _ => // NOOP
           }
         }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuBRound(lhs, rhs, a.dataType)
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          val ansiEnabled = if (VersionUtils.cmpSparkVersion(3, 4, 0) >= 0) {
+            // From Spark 340+, use ANSI mode.
+            SQLConf.get.ansiEnabled
+          } else {
+            // For Spark versions < 340, disable ANSI.
+            false
+          }
+          GpuBRound(lhs, rhs, a.dataType, ansiEnabled)
+        }
       }),
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
@@ -2482,8 +2490,16 @@ object GpuOverrides extends Logging {
             case _ => // NOOP
           }
         }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuRound(lhs, rhs, a.dataType)
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          val ansiEnabled = if (VersionUtils.cmpSparkVersion(3, 4, 0) >= 0) {
+            // From Spark 340+, use ANSI mode.
+            SQLConf.get.ansiEnabled
+          } else {
+            // For Spark versions < 340, disable ANSI.
+            false
+          }
+          GpuRound(lhs, rhs, a.dataType, ansiEnabled)
+        }
       }),
     expr[PythonUDF](
       "UDF run in an external python process. Does not actually run on the GPU, but " +
