@@ -838,7 +838,7 @@ def test_round_ansi_overflow_integral(data_gen, scale):
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(f'round(a, {scale})').collect(),
         conf=ansi_enabled_conf,
-        error_message=_arithmetic_exception_string)
+        error_message="ArithmeticException")
 
 @pytest.mark.skipif(is_before_spark_340(), reason='ANSI mode for round/bround is only supported in Spark 3.4.0+')
 @pytest.mark.parametrize('data_gen,scale', [
@@ -851,7 +851,7 @@ def test_bround_ansi_overflow_integral(data_gen, scale):
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(f'bround(a, {scale})').collect(),
         conf=ansi_enabled_conf,
-        error_message=_arithmetic_exception_string)
+        error_message="ArithmeticException")
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

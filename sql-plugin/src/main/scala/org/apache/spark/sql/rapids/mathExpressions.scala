@@ -636,16 +636,7 @@ abstract class GpuRoundBase(
       case DecimalType.Fixed(_, s) =>
         // Only needs to perform round when required scale < input scale
         val rounded = if (scaleVal < s) {
-          try {
-            Arithmetic.round(lhsValue, scaleVal, roundMode, ansiEnabled)
-          } catch {
-            // ANSI mode throws ExceptionWithRowIndex if overflow would occur
-            case rowException: ExceptionWithRowIndex =>
-              val errorRowIndex = rowException.getRowIndex
-              val inputValue = ColumnViewUtils.getElementStringFromColumnView(lhsValue, errorRowIndex)
-              throw new ArithmeticException(
-                s"Rounding decimal $inputValue to scale $scaleVal with mode $roundMode caused overflow in ANSI mode")
-          }
+          Arithmetic.round(lhsValue, scaleVal, roundMode)
         } else {
           lhsValue.incRefCount()
         }
@@ -709,7 +700,16 @@ abstract class GpuRoundBase(
         }
       }
     } else {
-      Arithmetic.round(lhs, scale, roundMode)
+      try {
+        Arithmetic.round(lhs, scale, roundMode, ansiEnabled)
+      } catch {
+        // ANSI mode throws ExceptionWithRowIndex if overflow would occur
+        case rowException: ExceptionWithRowIndex =>
+          val errorRowIndex = rowException.getRowIndex
+          val inputValue = ColumnViewUtils.getElementStringFromColumnView(lhs, errorRowIndex)
+          throw new ArithmeticException(
+            s"Rounding decimal $inputValue to scale $scale with mode $roundMode caused overflow in ANSI mode")
+      }
     }
   }
 
