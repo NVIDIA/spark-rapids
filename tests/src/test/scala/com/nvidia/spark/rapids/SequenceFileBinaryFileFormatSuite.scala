@@ -745,9 +745,11 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
         // Compare results
         assert(cpuKeyValueHashes.length == gpuKeyValueHashes.length,
-          s"CPU returned ${cpuKeyValueHashes.length} records, GPU returned ${gpuKeyValueHashes.length}")
+          s"CPU returned ${cpuKeyValueHashes.length} records," +
+          s"GPU returned ${gpuKeyValueHashes.length} records")
 
-        cpuKeyValueHashes.zip(gpuKeyValueHashes).foreach { case ((cpuKeyHash, cpuValHash), (gpuKeyHash, gpuValHash)) =>
+        cpuKeyValueHashes.zip(gpuKeyValueHashes).foreach { 
+          case ((cpuKeyHash, cpuValHash), (gpuKeyHash, gpuValHash)) =>
           assert(cpuKeyHash == gpuKeyHash, s"Key hash mismatch: CPU=$cpuKeyHash, GPU=$gpuKeyHash")
           assert(cpuValHash == gpuValHash, s"Value hash mismatch at key hash $cpuKeyHash")
         }
