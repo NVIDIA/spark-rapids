@@ -423,12 +423,23 @@ class SequenceFilePartitionReader(
             }
           }
 
-          // Read new records
+          // Read new records.
+          // Hadoop SequenceFile split boundary logic (matches SequenceFileRecordReader):
+          // 1. Get position BEFORE reading
+          // 2. Read the record
+          // 3. If posBeforeRead >= end AND syncSeen (from this read), DISCARD the record
+          // This ensures each record is processed by exactly one split.
           var keepReading = true
-          while (keepReading && rows < maxRowsPerBatch && reader.getPosition < end) {
+          while (keepReading && rows < maxRowsPerBatch) {
+            val posBeforeRead = reader.getPosition
             this.keyBuf.reset()
             val recLen = reader.nextRaw(this.keyBuf, valueBytes)
             if (recLen < 0) {
+              exhausted = true
+              keepReading = false
+            } else if (posBeforeRead >= end && reader.syncSeen()) {
+              // We were already past the split end, and this read crossed a sync marker.
+              // This record belongs to the next split - discard it.
               exhausted = true
               keepReading = false
             } else {
@@ -436,7 +447,7 @@ class SequenceFilePartitionReader(
               val valueLen = valueBytes.getSize
               val recBytes = recordBytes(keyLen, valueLen)
 
-              // If this record doesn't fit, keep it for the next batch (unless it's the first row)
+              // If this record doesn't fit, keep it for next batch (unless it's the first row)
               if (rows > 0 && bytes + recBytes > maxBytesPerBatch) {
                 pending = Some(makePending(keyLen, valueLen))
                 keepReading = false
@@ -447,10 +458,6 @@ class SequenceFilePartitionReader(
                 bytes += recBytes
               }
             }
-          }
-          // Mark as exhausted if we've reached the end of this split
-          if (!exhausted && reader.getPosition >= end) {
-            exhausted = true
           }
         }
 
@@ -755,11 +762,21 @@ class MultiFileCloudSequenceFilePartitionReader(
             var numRows = 0
             var reachedEof = false
 
-            while (reader.getPosition < end && !reachedEof) {
+            // Hadoop SequenceFile split boundary logic (matches SequenceFileRecordReader):
+            // 1. Get position BEFORE reading
+            // 2. Read the record
+            // 3. If posBeforeRead >= end AND syncSeen (from this read), DISCARD the record
+            // This ensures each record is processed by exactly one split.
+            while (!reachedEof) {
+              val posBeforeRead = reader.getPosition
               keyDataOut.reset()
               val recLen = reader.nextRaw(keyDataOut, valueBytes)
               if (recLen < 0) {
                 // End of file reached
+                reachedEof = true
+              } else if (posBeforeRead >= end && reader.syncSeen()) {
+                // We were already past the split end, and this read crossed a sync marker.
+                // This record belongs to the next split - discard it.
                 reachedEof = true
               } else {
                 if (wantsKey) {

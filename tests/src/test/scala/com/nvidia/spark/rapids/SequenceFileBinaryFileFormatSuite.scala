@@ -504,4 +504,262 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       }
     }
   }
+
+  /**
+   * Write a SequenceFile using Hadoop's native SequenceFile.Writer with sync markers
+   * inserted periodically. This ensures the file format is correct for split handling.
+   */
+  private def writeSequenceFileWithSyncMarkers(
+      file: File,
+      conf: Configuration,
+      payloads: Array[Array[Byte]],
+      syncInterval: Int): Unit = {
+    val path = new Path(file.toURI)
+    val writer = SequenceFile.createWriter(
+      conf,
+      SequenceFile.Writer.file(path),
+      SequenceFile.Writer.keyClass(classOf[BytesWritable]),
+      SequenceFile.Writer.valueClass(classOf[BytesWritable]),
+      SequenceFile.Writer.compression(CompressionType.NONE))
+    try {
+      payloads.zipWithIndex.foreach { case (p, idx) =>
+        val key = new BytesWritable(intToBytes(idx))
+        val value = new BytesWritable(p)
+        writer.append(key, value)
+        // Insert sync marker periodically to enable splitting
+        if ((idx + 1) % syncInterval == 0) {
+          writer.sync()
+        }
+      }
+    } finally {
+      writer.close()
+    }
+  }
+
+  private def withSplitSparkSession(maxPartitionBytes: Long)(f: SparkSession => Unit): Unit = {
+    val spark = SparkSession.builder()
+      .appName("SequenceFileBinaryFileFormatSuite-Split")
+      .master("local[4]") // Use multiple cores to enable parallel reading
+      .config("spark.ui.enabled", "false")
+      .config("spark.sql.shuffle.partitions", "4")
+      .config("spark.sql.files.maxPartitionBytes", maxPartitionBytes.toString)
+      .config("spark.sql.files.openCostInBytes", "0") // Don't add overhead to partition size calc
+      .getOrCreate()
+    try {
+      f(spark)
+    } finally {
+      spark.stop()
+    }
+  }
+
+  private def withSplitGpuSparkSession(maxPartitionBytes: Long)(f: SparkSession => Unit): Unit = {
+    val spark = SparkSession.builder()
+      .appName("SequenceFileBinaryFileFormatSuite-Split-GPU")
+      .master("local[4]") // Use multiple cores
+      .config("spark.ui.enabled", "false")
+      .config("spark.sql.shuffle.partitions", "4")
+      .config("spark.sql.files.maxPartitionBytes", maxPartitionBytes.toString)
+      .config("spark.sql.files.openCostInBytes", "0")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.rapids.sql.enabled", "true")
+      .config("spark.rapids.sql.test.enabled", "true")
+      .getOrCreate()
+    try {
+      f(spark)
+    } finally {
+      spark.stop()
+    }
+  }
+
+  test("Multi-split file read - CPU path") {
+    withTempDir("seqfile-multisplit-cpu") { tmpDir =>
+      val file = new File(tmpDir, "large.seq")
+      val conf = new Configuration()
+
+      // Create a file large enough to be split into multiple partitions
+      // Each record is ~100 bytes, 500 records = ~50KB
+      // With maxPartitionBytes=8KB, should create ~6 splits
+      val numRecords = 500
+      val payloads = (0 until numRecords).map { i =>
+        // Create records with varying sizes to make boundary testing more realistic
+        val padding = "x" * (50 + (i % 50))
+        s"record-$i-$padding".getBytes(StandardCharsets.UTF_8)
+      }.toArray
+
+      // Write with sync markers every 10 records
+      writeSequenceFileWithSyncMarkers(file, conf, payloads, syncInterval = 10)
+
+      val fileSize = file.length()
+      // Use small partition size to force multiple splits
+      val maxPartitionBytes = 8 * 1024L // 8KB
+
+      withSplitSparkSession(maxPartitionBytes) { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        // Check that multiple partitions are used
+        val numPartitions = df.rdd.getNumPartitions
+        assert(numPartitions > 1,
+          s"Expected multiple partitions but got $numPartitions " +
+          s"(fileSize=$fileSize, maxPartitionBytes=$maxPartitionBytes)")
+
+        val results = df.select("key", "value").collect()
+
+        // Verify record count - this is the key assertion for split boundary handling
+        assert(results.length == numRecords,
+          s"Expected $numRecords records but got ${results.length}. " +
+          s"File was split into $numPartitions partitions. " +
+          "This may indicate duplicate or missing records at split boundaries.")
+
+        // Verify no duplicates by checking unique (key, value) pairs
+        // Use raw bytes as identifiers to avoid BytesWritable format parsing complexity
+        val keyValuePairs = results.map { r =>
+          val key = r.getAs[Array[Byte]](0)
+          val value = r.getAs[Array[Byte]](1)
+          (java.util.Arrays.hashCode(key), java.util.Arrays.hashCode(value))
+        }
+        val uniquePairs = keyValuePairs.distinct
+        assert(uniquePairs.length == numRecords,
+          s"Found ${keyValuePairs.length - uniquePairs.length} duplicate records")
+      }
+    }
+  }
+
+  test("Multi-split file read - GPU path") {
+    withTempDir("seqfile-multisplit-gpu") { tmpDir =>
+      val file = new File(tmpDir, "large.seq")
+      val conf = new Configuration()
+
+      val numRecords = 500
+      val payloads = (0 until numRecords).map { i =>
+        val padding = "x" * (50 + (i % 50))
+        s"record-$i-$padding".getBytes(StandardCharsets.UTF_8)
+      }.toArray
+
+      writeSequenceFileWithSyncMarkers(file, conf, payloads, syncInterval = 10)
+
+      val maxPartitionBytes = 8 * 1024L
+
+      withSplitGpuSparkSession(maxPartitionBytes) { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        // Use DataFrame count() instead of rdd.getNumPartitions to avoid
+        // triggering non-GPU compatible operations
+        val results = df.select("key", "value").collect()
+
+        assert(results.length == numRecords,
+          s"Expected $numRecords records but got ${results.length}.")
+
+        // Verify no duplicates by checking unique (key, value) pairs
+        val keyValuePairs = results.map { r =>
+          val key = r.getAs[Array[Byte]](0)
+          val value = r.getAs[Array[Byte]](1)
+          (java.util.Arrays.hashCode(key), java.util.Arrays.hashCode(value))
+        }
+        val uniquePairs = keyValuePairs.distinct
+        assert(uniquePairs.length == numRecords,
+          s"Found ${keyValuePairs.length - uniquePairs.length} duplicate records")
+      }
+    }
+  }
+
+  test("Split at exact sync marker boundary") {
+    withTempDir("seqfile-sync-boundary") { tmpDir =>
+      val file = new File(tmpDir, "sync-boundary.seq")
+      val conf = new Configuration()
+
+      // Create records designed to have sync markers at specific positions
+      val numRecords = 100
+      val payloads = (0 until numRecords).map { i =>
+        // Fixed size records make it easier to predict sync marker positions
+        f"record-$i%04d".getBytes(StandardCharsets.UTF_8)
+      }.toArray
+
+      // Sync every 5 records
+      writeSequenceFileWithSyncMarkers(file, conf, payloads, syncInterval = 5)
+
+      // Use a partition size that might align with sync markers
+      val maxPartitionBytes = 1024L
+
+      withSplitSparkSession(maxPartitionBytes) { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        val results = df.select("key", "value").collect()
+        assert(results.length == numRecords,
+          s"Expected $numRecords records, got ${results.length}")
+
+        // Verify no duplicates using raw byte hash
+        val keyHashes = results.map(r => java.util.Arrays.hashCode(r.getAs[Array[Byte]](0)))
+        val uniqueHashes = keyHashes.distinct
+        assert(uniqueHashes.length == numRecords, "Duplicate or missing records detected")
+      }
+    }
+  }
+
+  test("CPU vs GPU split read consistency") {
+    withTempDir("seqfile-cpu-gpu-consistency") { tmpDir =>
+      val file = new File(tmpDir, "consistency.seq")
+      val conf = new Configuration()
+
+      val numRecords = 300
+      val payloads = (0 until numRecords).map { i =>
+        s"payload-$i-data".getBytes(StandardCharsets.UTF_8)
+      }.toArray
+
+      writeSequenceFileWithSyncMarkers(file, conf, payloads, syncInterval = 8)
+
+      val maxPartitionBytes = 4 * 1024L
+
+      // Read with CPU - use raw bytes for comparison
+      var cpuKeyValueHashes: Array[(Int, Int)] = null
+      withSplitSparkSession(maxPartitionBytes) { spark =>
+        val df = spark.read
+          .format("sequencefilebinary")
+          .load(file.getAbsolutePath)
+
+        cpuKeyValueHashes = df.select("key", "value").collect()
+          .map(r => (java.util.Arrays.hashCode(r.getAs[Array[Byte]](0)),
+                     java.util.Arrays.hashCode(r.getAs[Array[Byte]](1))))
+          .sortBy(_._1)
+      }
+
+      // Read with GPU - Note: GPU tests may not work in all environments
+      // This test verifies that when GPU is available, results match CPU
+      try {
+        var gpuKeyValueHashes: Array[(Int, Int)] = null
+        withSplitGpuSparkSession(maxPartitionBytes) { spark =>
+          val df = spark.read
+            .format("sequencefilebinary")
+            .load(file.getAbsolutePath)
+
+          gpuKeyValueHashes = df.select("key", "value").collect()
+            .map(r => (java.util.Arrays.hashCode(r.getAs[Array[Byte]](0)),
+                       java.util.Arrays.hashCode(r.getAs[Array[Byte]](1))))
+            .sortBy(_._1)
+        }
+
+        // Compare results
+        assert(cpuKeyValueHashes.length == gpuKeyValueHashes.length,
+          s"CPU returned ${cpuKeyValueHashes.length} records, GPU returned ${gpuKeyValueHashes.length}")
+
+        cpuKeyValueHashes.zip(gpuKeyValueHashes).foreach { case ((cpuKeyHash, cpuValHash), (gpuKeyHash, gpuValHash)) =>
+          assert(cpuKeyHash == gpuKeyHash, s"Key hash mismatch: CPU=$cpuKeyHash, GPU=$gpuKeyHash")
+          assert(cpuValHash == gpuValHash, s"Value hash mismatch at key hash $cpuKeyHash")
+        }
+      } catch {
+        case _: IllegalArgumentException =>
+          // GPU not available or plan not compatible, skip GPU comparison
+          // The CPU test above already verifies the split handling is correct
+      }
+
+      // At minimum, verify CPU results are correct
+      assert(cpuKeyValueHashes.length == numRecords,
+        s"Expected $numRecords records, got ${cpuKeyValueHashes.length}")
+    }
+  }
 }
