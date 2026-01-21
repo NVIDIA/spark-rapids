@@ -176,7 +176,7 @@ class GpuCheckDeltaInvariantMeta(
     }
   }
 
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val child = childExprs.head.convertToGpu()
     // Delta 4.0 provides columnExtractors as Seq[(String, Expression)] while older
     // versions provide Map[String, Expression]. Normalize to Map for GPU version.

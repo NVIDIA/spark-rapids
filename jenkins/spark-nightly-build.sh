@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,15 +22,16 @@ export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentC
 
 . jenkins/version-def.sh
 
+# Set JDK 17 as the default for nightly builds across both:
+# scala2.12 and scala2.13 (with maven.compiler.source as 1.8)
+export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+update-java-alternatives --set $JAVA_HOME
+mvn -version
+
 DIST_PL="dist"
 DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
-    # Run scala2.13 build and test against JDK17
-    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
-    update-java-alternatives --set $JAVA_HOME
-    java -version
-
     export MVN="$MVN -f scala2.13/"
     DIST_PATH="scala2.13/$DIST_PL"
 fi
@@ -42,7 +43,7 @@ export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 export DEV_MODE=${DEV_MODE:-'false'}
 
 function mvnEval {
-    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease320 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
+    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease330 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
 }
 
 ART_ID=$(mvnEval project.artifactId)
@@ -230,7 +231,7 @@ installDistArtifact ${DEFAULT_CUDA_CLASSIFIER}
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
-    # this deploys selected submodules that is unconditionally built with Spark 3.2.0
+    # this deploys selected submodules that is unconditionally built with default Spark shim
     $MVN -B deploy -pl "!${DIST_PL}" \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         -DskipTests -Drat.skip=true \

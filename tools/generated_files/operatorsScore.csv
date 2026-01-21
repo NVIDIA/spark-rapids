@@ -38,6 +38,7 @@ ArrowEvalPythonExec,1.2
 FlatMapCoGroupsInPandasExec,3.0
 FlatMapGroupsInPandasExec,1.2
 MapInPandasExec,1.2
+PythonMapInArrowExec,3.0
 WindowInPandasExec,1.2
 WindowExec,3.0
 HiveTableScanExec,3.0
@@ -84,6 +85,8 @@ BitwiseCount,4
 BitwiseNot,4
 BitwiseOr,4
 BitwiseXor,4
+BloomFilterAggregate,4
+BloomFilterMightContain,4
 BoundReference,4
 CaseWhen,4
 Cbrt,4
@@ -114,6 +117,8 @@ DayOfWeek,4
 DayOfYear,4
 DenseRank,4
 Divide,4
+DivideDTInterval,4
+DivideYMInterval,4
 DynamicPruningExpression,4
 ElementAt,4
 EndsWith,4
@@ -146,6 +151,7 @@ Hypot,4
 If,4
 In,4
 InSet,4
+InSubqueryExec,4
 InitCap,4
 InputFileBlockLength,4
 InputFileBlockStart,4
@@ -196,6 +202,8 @@ MonotonicallyIncreasingID,4
 Month,4
 MonthsBetween,4
 Multiply,4
+MultiplyDTInterval,4
+MultiplyYMInterval,4
 Murmur3Hash,4
 NaNvl,4
 NamedLambdaVariable,4
@@ -227,6 +235,8 @@ ReplicateRows,4
 Reverse,4
 Rint,4
 Round,4
+RoundCeil,4
+RoundFloor,4
 RowNumber,4
 ScalaUDF,4
 ScalarSubquery,4
@@ -234,6 +244,7 @@ Second,4
 SecondsToTimestamp,4
 Sequence,4
 Sha1,4
+Sha2,4
 ShiftLeft,4
 ShiftRight,4
 ShiftRightUnsigned,4

@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda12.0.1' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
-def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
+def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME_V2}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
@@ -69,12 +69,16 @@ pipeline {
     environment {
         JENKINS_ROOT = 'jenkins'
         PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
-        MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
-        ARTIFACTORY_NAME = "${common.ARTIFACTORY_NAME}"
         GITHUB_TOKEN = credentials("github-token")
-        URM_CREDS = credentials("urm_creds")
+
+        // v1 instance for maven mirror only, will be migrated to v2 soon
         URM_URL = "https://${common.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
+        MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
+        // v2 instance for CI images usage
+        URM_CREDS = credentials("urm_creds_v2")
+        ARTIFACTORY_NAME = "${common.ARTIFACTORY_NAME_V2}"
+
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CLASSIFIER = 'cuda12'

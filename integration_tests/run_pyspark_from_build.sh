@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -390,6 +390,13 @@ else
     fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
+    # Retry coverage tracking - detect memory allocations not covered by withRetry.
+    # Enable by setting SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true before running tests.
+    # See AllocationRetryCoverageTracker.scala and https://github.com/NVIDIA/spark-rapids/issues/13672
+    if [[ -n "${SPARK_RAPIDS_RETRY_COVERAGE_TRACKING}" ]]; then
+        export PYSP_TEST_spark_executorEnv_SPARK_RAPIDS_RETRY_COVERAGE_TRACKING="${SPARK_RAPIDS_RETRY_COVERAGE_TRACKING}"
+    fi
+
     # Turns on $LOAD_HYBRID_BACKEND and setup the filepath of hybrid backend jars, to activate the
     # hybrid backend while running subsequent integration tests.
     if [[ "$LOAD_HYBRID_BACKEND" -eq 1 ]]; then
@@ -626,6 +633,11 @@ PY
         unset PYSP_TEST_spark_jars_packages
         unset PYSP_TEST_spark_jars_repositories
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+
+
+        # Comment this out if you want to run remote debug this local mode spark process
+        # Don't forget to set TEST_PARALLEL=1 to ensure local mode spark 
+        # export SPARK_SUBMIT_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$driverJavaOpts" \

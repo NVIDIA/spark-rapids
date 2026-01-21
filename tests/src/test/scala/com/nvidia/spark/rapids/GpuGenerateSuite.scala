@@ -268,7 +268,7 @@ class GpuGenerateSuite
       var forceOOM: Boolean) extends SpillableColumnarBatch {
     override def numRows(): Int = spillable.numRows()
     override def setSpillPriority(priority: Long): Unit = spillable.setSpillPriority(priority)
-    override def getColumnarBatch: ColumnarBatch = {
+    override def getColumnarBatch(): ColumnarBatch = {
       if (forceOOM) {
         forceOOM = false
         throw new GpuSplitAndRetryOOM(s"mock split and retry")

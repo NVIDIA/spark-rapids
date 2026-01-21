@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,6 +133,8 @@ object GpuMetric extends Logging {
   val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
   val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
+  val CPU_BRIDGE_PROCESSING_TIME = "cpuBridgeProcessingTime"
+  val CPU_BRIDGE_WAIT_TIME = "cpuBridgeWaitTime"
   val COPY_TO_HOST_TIME = "d2hMemCopyTime"
   val READ_THROTTLING_TIME = "readThrottlingTime"
   val SMALL_JOIN_COUNT = "sizedSmallJoin"
@@ -153,7 +155,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME_LEGACY = "op time (legacy)"
   val DESCRIPTION_OP_TIME_NEW = "op time"
-  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partition & serial)"
+  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partitioning)"
   val DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ = "op time (shuffle read)"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
@@ -186,6 +188,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
   val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
+  val DESCRIPTION_CPU_BRIDGE_PROCESSING_TIME = "CPU bridge processing time"
+  val DESCRIPTION_CPU_BRIDGE_WAIT_TIME = "CPU bridge wait time"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
   val DESCRIPTION_READ_THROTTLING_TIME = "read throttling time"
 
@@ -246,6 +250,37 @@ object GpuMetric extends Logging {
       initedMetrics.foreach { case (m, isTrack) =>
         if (isTrack) m.deactivateTimer(taken, excludeMetrics)
       }
+    }
+  }
+
+  /**
+   * Time a block of code with an optional metric. If the metric is None, the code
+   * is executed without timing.
+   * 
+   * @param metric Optional metric to record timing to
+   * @param f The code block to execute and time
+   * @return The result of executing f
+   */
+  def nsOption[T](metric: Option[GpuMetric])(f: => T): T = {
+    metric match {
+      case Some(m) => m.ns(f)
+      case None => f
+    }
+  }
+
+  /**
+   * Time a block of code with an optional metric, excluding time from other metrics.
+   * If the metric is None, the code is executed without timing.
+   * 
+   * @param metric Optional metric to record timing to
+   * @param excludeMetrics Metrics whose time should be excluded from the timing
+   * @param f The code block to execute and time
+   * @return The result of executing f
+   */
+  def nsOption[T](metric: Option[GpuMetric], excludeMetrics: Seq[GpuMetric])(f: => T): T = {
+    metric match {
+      case Some(m) => m.ns(excludeMetrics)(f)
+      case None => f
     }
   }
 

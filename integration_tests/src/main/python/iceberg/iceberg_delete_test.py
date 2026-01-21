@@ -156,7 +156,6 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
@@ -169,6 +168,14 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col
     pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("bucket(16, _c3)", id="bucket(16, long_col)"),
+    pytest.param("bucket(16, _c8)", id="bucket(16, date_col)"),
+    pytest.param("bucket(16, _c9)", id="bucket(16, timestamp_col)"),
+    pytest.param("bucket(16, _c6)", id="bucket(16, string_col)"),
+    pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
+    pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
+    pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
 ])
 @pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
 def test_iceberg_delete_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql, delete_mode):
@@ -240,7 +247,6 @@ def test_iceberg_delete_fallback_write_disabled(spark_tmp_table_factory, delete_
 ])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_iceberg_delete_fallback_unsupported_partition_transform(spark_tmp_table_factory, delete_mode, fallback_exec, partition_col_sql):
     """Test DELETE falls back with unsupported partition transforms (both modes use same fallback)"""

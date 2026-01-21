@@ -108,7 +108,7 @@ class GpuStackMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = stack.children
       .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     // There is no need to implement convertToGpu() here, because GpuGenerateExec will handle
     // stack logic in terms of GpuExpandExec, no convertToGpu() will be called during the process
     throw new UnsupportedOperationException(s"Should not be here: $this")
@@ -134,7 +134,7 @@ abstract class ReplicateRowsExprMeta[INPUT <: ReplicateRows](
     rule: DataFromReplacementRule)
     extends GeneratorExprMeta[INPUT](gen, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
+  override final def convertToGpuImpl(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression

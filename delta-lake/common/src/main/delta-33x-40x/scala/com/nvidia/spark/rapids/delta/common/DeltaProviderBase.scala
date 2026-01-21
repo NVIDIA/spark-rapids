@@ -44,7 +44,7 @@ case class GpuIncrementMetricMeta(
   override val conf: RapidsConf,
   p: Option[RapidsMeta[_, _, _]],
   r: DataFromReplacementRule) extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) {
-  override def convertToGpu(): GpuExpression = {
+  override def convertToGpuImpl(): GpuExpression = {
     val gpuChild = childExprs.head.convertToGpu()
     GpuIncrementMetric(cpuInc, gpuChild)
   }
@@ -162,6 +162,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
             dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
               .withNewChildren(Seq(
                 fsse.copy(
+                  originalOutput =
+                    fsse.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
                   requiredSchema = StructType(
                     fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
                   ))(fsse.rapidsConf)))))))

@@ -49,7 +49,7 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}"
     do
         echo "Spark version: $version"
-        # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
+        # build and run unit tests on one specific version for each sub-version (e.g. 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
         match=1
         for element in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}"; do
@@ -90,12 +90,12 @@ mvn_verify() {
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
     # things we care about
-    SPK_VER=${JACOCO_SPARK_VER:-"320"}
+    SPK_VER=${JACOCO_SPARK_VER:-"330"}
     mkdir -p target/jacoco_classes/
     FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
     UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
     pushd target/jacoco_classes/
-    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-320}/"
+    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-330}/"
     # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
     # because the class files in udf jar will be modified in aggregator's shade phase
     jar xf "$UDF_JAR" com/nvidia/spark/udf
@@ -125,7 +125,8 @@ mvn_verify() {
 }
 
 rapids_shuffle_smoke_test() {
-    echo "Run rapids_shuffle_smoke_test..."
+    local SPARK_VER=${1:-${SPARK_VER}}
+    echo "Run rapids_shuffle_smoke_test for Spark version: $SPARK_VER..."
 
     # basic ucx check
     ucx_info -d
@@ -136,38 +137,11 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
-    invoke_shuffle_integration_test() {
-      # check out what else is on the GPU
-      nvidia-smi
-
-      # because the RapidsShuffleManager smoke tests work against a standalone cluster
-      # we do not want the integration tests to launch N different applications, just one app
-      # is what is expected.
-      TEST_PARALLEL=0 \
-      PYSP_TEST_spark_master=$SPARK_MASTER \
-        PYSP_TEST_spark_cores_max=2 \
-        PYSP_TEST_spark_executor_cores=1 \
-        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-        PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
-        PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
-        PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
-        ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
-    }
-
     # using UCX shuffle
-    # The UCX_TLS=^posix config is removing posix from the list of memory transports
-    # so that IPC regions are obtained using SysV API instead. This was done because of
-    # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
-    PYSP_TEST_spark_rapids_shuffle_mode=UCX \
-    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
-    PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
-        invoke_shuffle_integration_test
+    invoke_shuffle_integration_test UCX ./integration_tests/run_pyspark_from_build.sh premerge $SPARK_VER
 
     # using MULTITHREADED shuffle
-    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-        invoke_shuffle_integration_test
+    invoke_shuffle_integration_test MULTITHREADED ./integration_tests/run_pyspark_from_build.sh premerge $SPARK_VER
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
@@ -204,9 +178,6 @@ ci_scala213() {
     update-java-alternatives --set $JAVA_HOME
     java -version
 
-    # Download a Scala 2.13 version of Spark
-    prepare_spark 3.3.0 2.13
-
     # build Scala 2.13 versions
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
     do
@@ -219,7 +190,14 @@ ci_scala213() {
             -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
     done
 
-    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
+    # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
+    # don't leak the new version here, it's only for use within this function
+    local SPARK_VER=4.0.1
+    local buildver="${SPARK_VER//./}"
+    prepare_spark $SPARK_VER 2.13
+
+    # We are going to run integration tests against Spark 4.0.1
+    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$buildver clean package $MVN_BUILD_ARGS -DskipTests=true
 
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
@@ -232,10 +210,13 @@ ci_scala213() {
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    # Trigger the RapidsShuffleManager tests for scala 2.13
+    rapids_shuffle_smoke_test $SPARK_VER
 }
 
 prepare_spark() {
-    spark_version=${1:-'3.2.0'}
+    spark_version=${1:-'3.3.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"
@@ -256,6 +237,7 @@ prepare_spark() {
 nvidia-smi
 
 . jenkins/version-def.sh
+. jenkins/shuffle-common.sh
 
 PREMERGE_PROFILES="-Ppre-merge"
 

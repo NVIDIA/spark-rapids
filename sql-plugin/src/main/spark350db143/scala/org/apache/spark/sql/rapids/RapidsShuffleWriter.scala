@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
-import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleServer, RapidsShuffleTransport}
@@ -28,13 +28,17 @@ import com.nvidia.spark.rapids.shuffle.{RapidsShuffleServer, RapidsShuffleTransp
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.MapStatusWithStats
 import org.apache.spark.shuffle.ShuffleWriter
+import org.apache.spark.shuffle.api.ShuffleMapOutputWriter
 import org.apache.spark.storage._
 
 abstract class RapidsShuffleWriter[K, V]()
       extends ShuffleWriter[K, V]
         with Logging {
   protected var myMapStatus: Option[MapStatusWithStats] = None
-  protected val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
+  
+  // Track all ShuffleMapOutputWriters created during write
+  // Needed for proper cleanup on error or for partial files
+  protected val mapOutputWriters = new ArrayBuffer[ShuffleMapOutputWriter]()
   /**
    * Are we in the process of stopping? Because map tasks can call stop() with success = true
    * and then call stop() with success = false if they get an exception, we want to make sure
@@ -67,17 +71,18 @@ abstract class RapidsShuffleWriter[K, V]()
       }
     }
   }
-
+  
   private def cleanupTempData(): Unit = {
-    // The map task failed, so delete our output data.
-    try {
-      diskBlockObjectWriters.values.foreach { case (_, writer) =>
-        val file = writer.revertPartialWritesAndClose()
-        if (!file.delete()) logError(s"Error while deleting file ${file.getAbsolutePath()}")
+    // Abort all map output writers to clean up temp files
+    mapOutputWriters.foreach { writer =>
+      try {
+        writer.abort(null)
+      } catch {
+        case e: Exception =>
+          logWarning(s"Failed to abort map output writer: ${e.getMessage}")
       }
-    } finally {
-      diskBlockObjectWriters.clear()
     }
+    mapOutputWriters.clear()
   }
 }
 

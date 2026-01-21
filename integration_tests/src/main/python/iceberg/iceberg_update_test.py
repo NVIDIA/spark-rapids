@@ -182,6 +182,14 @@ def test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory,
     pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("bucket(16, _c3)", id="bucket(16, long_col)"),
+    pytest.param("bucket(16, _c8)", id="bucket(16, date_col)"),
+    pytest.param("bucket(16, _c9)", id="bucket(16, timestamp_col)"),
+    pytest.param("bucket(16, _c6)", id="bucket(16, string_col)"),
+    pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
+    pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
+    pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
 ])
 def test_iceberg_update_partitioned_table_single_column_full_coverage(spark_tmp_table_factory, update_mode, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
@@ -295,7 +303,6 @@ def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, update_
 ])
 @pytest.mark.parametrize("partition_col_sql", [
     pytest.param("_c2", id="identity"),
-    pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
 ])
 def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table_factory, partition_col_sql, update_mode, fallback_exec):
     """Test UPDATE falls back with unsupported partition transforms"""

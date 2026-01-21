@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import scala.concurrent.Future
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{DEBUG_LEVEL, ESSENTIAL_LEVEL, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -288,8 +290,6 @@ object GpuShuffleExchangeExecBase {
   val METRIC_DESC_DATA_SIZE = "data size"
   val METRIC_DATA_READ_SIZE = "dataReadSize"
   val METRIC_DESC_DATA_READ_SIZE = "data read size"
-  val METRIC_SHUFFLE_SERIALIZATION_TIME = "rapidsShuffleSerializationTime"
-  val METRIC_DESC_SHUFFLE_SERIALIZATION_TIME = "RAPIDS shuffle serialization time"
   val METRIC_SHUFFLE_SER_STREAM_TIME = "rapidsShuffleSerializationStreamTime"
   val METRIC_DESC_SHUFFLE_SER_STREAM_TIME = "RAPIDS shuffle serialization to output stream time"
   val METRIC_SHUFFLE_DESERIALIZATION_TIME = "rapidsShuffleDeserializationTime"
@@ -299,12 +299,6 @@ object GpuShuffleExchangeExecBase {
     "RAPIDS shuffle deserialization from input stream time"
   val METRIC_SHUFFLE_PARTITION_TIME = "rapidsShufflePartitionTime"
   val METRIC_DESC_SHUFFLE_PARTITION_TIME = "RAPIDS shuffle partition time"
-  val METRIC_SHUFFLE_WRITE_TIME = "rapidsShuffleWriteTime"
-  val METRIC_DESC_SHUFFLE_WRITE_TIME = "RAPIDS shuffle shuffle write time"
-  val METRIC_SHUFFLE_COMBINE_TIME = "rapidsShuffleCombineTime"
-  val METRIC_DESC_SHUFFLE_COMBINE_TIME = "RAPIDS shuffle shuffle combine time"
-  val METRIC_SHUFFLE_WRITE_IO_TIME = "rapidsShuffleWriteIoTime"
-  val METRIC_DESC_SHUFFLE_WRITE_IO_TIME = "RAPIDS shuffle shuffle write io time"
   val METRIC_SHUFFLE_READ_TIME = "rapidsShuffleReadTime"
   val METRIC_DESC_SHUFFLE_READ_TIME = "RAPIDS shuffle shuffle read time"
   val METRIC_SHUFFLE_SER_COPY_BUFFER_TIME = "rapidsShuffleSerializationCopyBufferTime"
@@ -312,13 +306,18 @@ object GpuShuffleExchangeExecBase {
   val METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM = "rapidsShuffleStalledByInputStream"
   val METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM =
     "RAPIDS shuffle time stalled by input stream operations"
+  val METRIC_THREADED_WRITER_LIMITER_WAIT_TIME = "rapidsThreadedWriterLimiterWaitTime"
+  val METRIC_DESC_THREADED_WRITER_LIMITER_WAIT_TIME =
+    "threaded writer limiter wait time"
+  val METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME =
+    "rapidsThreadedWriterSerializationWaitTime"
+  val METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME =
+    "threaded writer serialization wait time"
 
   def createAdditionalExchangeMetrics(gpu: GpuExec): Map[String, GpuMetric] = Map(
     // dataSize and dataReadSize are uncompressed, one is on write and the other on read
     METRIC_DATA_SIZE -> gpu.createSizeMetric(ESSENTIAL_LEVEL, METRIC_DESC_DATA_SIZE),
     METRIC_DATA_READ_SIZE -> gpu.createSizeMetric(MODERATE_LEVEL, METRIC_DESC_DATA_READ_SIZE),
-    METRIC_SHUFFLE_SERIALIZATION_TIME ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL,METRIC_DESC_SHUFFLE_SERIALIZATION_TIME),
     METRIC_SHUFFLE_SER_STREAM_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_STREAM_TIME),
     METRIC_SHUFFLE_DESERIALIZATION_TIME  ->
@@ -327,18 +326,18 @@ object GpuShuffleExchangeExecBase {
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_DESER_STREAM_TIME),
     METRIC_SHUFFLE_PARTITION_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_PARTITION_TIME),
-    METRIC_SHUFFLE_WRITE_TIME ->
-        gpu.createNanoTimingMetric(ESSENTIAL_LEVEL, METRIC_DESC_SHUFFLE_WRITE_TIME),
-    METRIC_SHUFFLE_COMBINE_TIME ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_COMBINE_TIME),
-    METRIC_SHUFFLE_WRITE_IO_TIME ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_WRITE_IO_TIME),
     METRIC_SHUFFLE_READ_TIME ->
         gpu.createNanoTimingMetric(ESSENTIAL_LEVEL, METRIC_DESC_SHUFFLE_READ_TIME),
     METRIC_SHUFFLE_SER_COPY_BUFFER_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_COPY_BUFFER_TIME),
     METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM)
+        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_STALLED_BY_INPUT_STREAM),
+    METRIC_THREADED_WRITER_LIMITER_WAIT_TIME ->
+        gpu.createNanoTimingMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_WRITER_LIMITER_WAIT_TIME),
+    METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME ->
+        gpu.createNanoTimingMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME)
   )
 
   def prepareBatchShuffleDependency(
@@ -400,7 +399,9 @@ object GpuShuffleExchangeExecBase {
       newRdd.mapPartitions { iter =>
         val getParts = getPartitioned
         new AbstractIterator[Product2[Int, ColumnarBatch]] {
-          private var partitioned : Array[(ColumnarBatch, Int)] = _
+          private var partitionedIter: Iterator[Array[(ColumnarBatch, Int)]] =
+            Iterator.empty
+          private var partitioned: Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
           private def partNextBatch(): Unit = {
@@ -409,7 +410,8 @@ object GpuShuffleExchangeExecBase {
               partitioned = null
               at = 0
             }
-            if (iter.hasNext) {
+            // Try to fill partitionedIter from iter if it's empty
+            if (!partitionedIter.hasNext && iter.hasNext) {
               var batch = iter.next()
               while (batch.numRows == 0 && iter.hasNext) {
                 batch.close()
@@ -418,15 +420,25 @@ object GpuShuffleExchangeExecBase {
               // Get a non-empty batch or the last batch. So still need to
               // check if it is empty for the later case.
               if (batch.numRows > 0) {
-                partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-                partitioned.foreach(batches => {
-                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-                })
-                metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-                at = 0
+                val spillableBatch = SpillableColumnarBatch(batch,
+                    ACTIVE_ON_DECK_PRIORITY)
+                partitionedIter = withRetry(spillableBatch,
+                    splitSpillableInHalfByRows) { spillable =>
+                  val cb = spillable.getColumnarBatch()
+                  getParts(cb).asInstanceOf[Array[(ColumnarBatch, Int)]]
+                }
               } else {
                 batch.close()
               }
+            }
+            // Process the next partitioned array from the iterator
+            if (partitionedIter.hasNext) {
+              partitioned = partitionedIter.next()
+              partitioned.foreach(batches => {
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+              })
+              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+              at = 0
             }
           }
 
