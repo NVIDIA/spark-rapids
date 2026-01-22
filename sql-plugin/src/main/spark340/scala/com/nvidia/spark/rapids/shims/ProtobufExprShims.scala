@@ -142,7 +142,7 @@ object ProtobufExprShims {
 
           val msgDesc = try {
             // Spark 3.4.x: buildDescriptor(messageName, descFilePath: Option[String])
-            // Spark 3.5+:  buildDescriptor(messageName, binaryFileDescriptorSet: Option[Array[Byte]])
+            // Spark 3.5+:  buildDescriptor(messageName, binaryFileDescriptorSet)
             buildMessageDescriptorWithSparkProtobuf(messageName, descFilePathOrBytes.get)
           } catch {
             case t: Throwable =>
@@ -526,7 +526,7 @@ object ProtobufExprShims {
         val m = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
         m.invoke(module, messageName, Some(filePath)).asInstanceOf[AnyRef]
       case Right(bytes) =>
-        // Spark 3.5+: buildDescriptor(messageName: String, binaryFileDescriptorSet: Option[Array[Byte]])
+        // Spark 3.5+: buildDescriptor(messageName, binaryFileDescriptorSet)
         val m = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
         m.invoke(module, messageName, Some(bytes)).asInstanceOf[AnyRef]
     }
