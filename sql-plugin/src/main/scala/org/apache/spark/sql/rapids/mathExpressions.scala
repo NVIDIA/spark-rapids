@@ -708,7 +708,7 @@ abstract class GpuRoundBase(
           val errorRowIndex = rowException.getRowIndex
           val inputValue = ColumnViewUtils.getElementStringFromColumnView(lhs, errorRowIndex)
           throw new ArithmeticException(
-            s"Rounding decimal $inputValue to scale $scale with mode $roundMode caused " +
+            s"Rounding $inputValue to scale $scale with mode $roundMode caused " +
               s"overflow in ANSI mode")
       }
     }
