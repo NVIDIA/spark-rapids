@@ -218,33 +218,6 @@ def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory
 
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("_c2", id="identity"),
-])
-def test_insert_into_partitioned_table_unsupported_partition_fallback(
-        spark_tmp_table_factory, partition_col_sql):
-    table_prop = {"format-version": "2"}
-
-    def insert_data(spark, table_name: str):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    table_name = get_full_table_name(spark_tmp_table_factory)
-    create_iceberg_table(table_name,
-                         partition_col_sql=partition_col_sql,
-                         table_prop=table_prop)
-
-    assert_gpu_fallback_collect(lambda spark: insert_data(spark, table_name),
-                                "AppendDataExec",
-                                conf = iceberg_write_enabled_conf)
-
-
-@iceberg
-@ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")

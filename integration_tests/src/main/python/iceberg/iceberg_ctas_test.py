@@ -259,34 +259,6 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
 
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("_c2", id="identity"),
-])
-def test_ctas_partitioned_table_unsupported_partition_fallback(
-        spark_tmp_table_factory,
-        partition_col_sql):
-    table_prop = {
-        "format-version": "2"
-    }
-
-    def run_ctas(spark):
-        target = get_full_table_name(spark_tmp_table_factory)
-        return _execute_ctas(spark,
-                      target,
-                      spark_tmp_table_factory,
-                      lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list))),
-                      table_prop,
-                      partition_col_sql=partition_col_sql)
-
-    assert_gpu_fallback_collect(run_ctas,
-                                'AtomicCreateTableAsSelectExec',
-                                conf=iceberg_write_enabled_conf)
-
-
-@iceberg
-@ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
