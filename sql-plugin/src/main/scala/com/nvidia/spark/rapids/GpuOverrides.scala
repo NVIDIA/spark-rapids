@@ -2452,7 +2452,7 @@ object GpuOverrides extends Logging {
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
-      (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
+      (a, conf, p, r) => new GpuBRoundMeta(a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.child.dataType match {
             case FloatType | DoubleType if !this.conf.isIncompatEnabled =>
@@ -2460,16 +2460,6 @@ object GpuOverrides extends Logging {
                   s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
             case _ => // NOOP
           }
-        }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          val ansiEnabled = if (VersionUtils.cmpSparkVersion(3, 4, 0) >= 0) {
-            // From Spark 340+, use ANSI mode.
-            SQLConf.get.ansiEnabled
-          } else {
-            // For Spark versions < 340, disable ANSI.
-            false
-          }
-          GpuBRound(lhs, rhs, a.dataType, ansiEnabled)
         }
       }),
     expr[Round](
@@ -2481,7 +2471,7 @@ object GpuOverrides extends Logging {
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
-      (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
+      (a, conf, p, r) => new GpuRoundMeta(a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.child.dataType match {
             case FloatType | DoubleType if !this.conf.isIncompatEnabled =>
@@ -2489,16 +2479,6 @@ object GpuOverrides extends Logging {
                   s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
             case _ => // NOOP
           }
-        }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          val ansiEnabled = if (VersionUtils.cmpSparkVersion(3, 4, 0) >= 0) {
-            // From Spark 340+, use ANSI mode.
-            SQLConf.get.ansiEnabled
-          } else {
-            // For Spark versions < 340, disable ANSI.
-            false
-          }
-          GpuRound(lhs, rhs, a.dataType, ansiEnabled)
         }
       }),
     expr[PythonUDF](

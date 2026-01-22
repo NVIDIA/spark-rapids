@@ -615,7 +615,7 @@ abstract class GpuRoundBase(
     child: Expression,
     scale: Expression,
     outputType: DataType,
-    val ansiEnabled: Boolean = false)
+    val ansiEnabled: Boolean)
   extends GpuBinaryExpressionArgsAnyScalar with Serializable with ImplicitCastInputTypes {
 
   override def left: Expression = child
@@ -821,7 +821,7 @@ case class GpuBRound(
     child: Expression,
     scale: Expression,
     outputType: DataType,
-    override val ansiEnabled: Boolean = false) extends
+    override val ansiEnabled: Boolean) extends
   GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_EVEN
 }
@@ -830,7 +830,7 @@ case class GpuRound(
     child: Expression,
     scale: Expression,
     outputType: DataType,
-    override val ansiEnabled: Boolean = false) extends
+    override val ansiEnabled: Boolean) extends
   GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_UP
 }
