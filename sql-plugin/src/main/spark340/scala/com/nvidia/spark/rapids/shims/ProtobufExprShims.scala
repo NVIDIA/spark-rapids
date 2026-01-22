@@ -34,8 +34,6 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
-import java.nio.file.{Files, Path}
-
 import scala.collection.mutable
 import scala.util.Try
 
@@ -128,23 +126,24 @@ object ProtobufExprShims {
           val enumsAsInts = options.getOrElse("enums.as.ints", "false").toBoolean
           failOnErrors = options.getOrElse("mode", "PERMISSIVE").equalsIgnoreCase("FAILFAST")
           val messageName = getMessageName(e)
-          val descFilePathOpt = getDescFilePath(e).orElse {
-            // Newer Spark may embed a descriptor set (binaryDescriptorSet). Write it to a temp file
-            // so we can reuse Spark's ProtobufUtils (and its shaded protobuf classes) to resolve
-            // the descriptor.
-            getDescriptorBytes(e).map(writeTempDescFile)
-          }
-          if (descFilePathOpt.isEmpty) {
+
+          // Try to get descriptor: either file path (Spark 3.4.x) or binary bytes (Spark 3.5+)
+          val descFilePathOrBytes: Option[Either[String, Array[Byte]]] =
+            getDescFilePath(e).map(Left(_)).orElse {
+              getDescriptorBytes(e).map(Right(_))
+            }
+
+          if (descFilePathOrBytes.isEmpty) {
             willNotWorkOnGpu(
               "from_protobuf requires a descriptor set " +
-                "(descFilePath or binaryDescriptorSet)")
+                "(descFilePath or binaryFileDescriptorSet)")
             return
           }
 
           val msgDesc = try {
-            // Spark 3.4.x builds the descriptor as:
-            // ProtobufUtils.buildDescriptor(messageName, descFilePathOpt)
-            buildMessageDescriptorWithSparkProtobuf(messageName, descFilePathOpt)
+            // Spark 3.4.x: buildDescriptor(messageName, descFilePath: Option[String])
+            // Spark 3.5+:  buildDescriptor(messageName, binaryFileDescriptorSet)
+            buildMessageDescriptorWithSparkProtobuf(messageName, descFilePathOrBytes.get)
           } catch {
             case t: Throwable =>
               willNotWorkOnGpu(
@@ -482,40 +481,55 @@ object ProtobufExprShims {
     invoke0[String](e, "messageName")
 
   /**
-   * Newer Spark versions may carry an in-expression descriptor set payload
-   * (e.g. binaryDescriptorSet).
-   * Spark 3.4.x does not, so callers should fall back to descFilePath().
+   * Newer Spark versions may carry an in-expression descriptor set payload.
+   * - Spark 3.5.x: binaryFileDescriptorSet: Option[Array[Byte]]
+   * - Spark 4.x: binaryDescriptorSet (may be Array[Byte] or Option[Array[Byte]])
+   * Spark 3.4.x does not have this, so callers should fall back to descFilePath().
    */
   private def getDescriptorBytes(e: Expression): Option[Array[Byte]] = {
-    // Spark 4.x/3.5+ (depending on the API): may be Array[Byte] or Option[Array[Byte]].
-    val direct = Try(invoke0[Array[Byte]](e, "binaryDescriptorSet")).toOption
-    direct.orElse {
-      Try(invoke0[Option[Array[Byte]]](e, "binaryDescriptorSet")).toOption.flatten
+    // Spark 3.5.x: binaryFileDescriptorSet (note: "File" in the name)
+    val spark35Result = Try(invoke0[Option[Array[Byte]]](e, "binaryFileDescriptorSet"))
+      .toOption.flatten
+    spark35Result.orElse {
+      // Spark 4.x: binaryDescriptorSet - may be Array[Byte] or Option[Array[Byte]]
+      val direct = Try(invoke0[Array[Byte]](e, "binaryDescriptorSet")).toOption
+      direct.orElse {
+        Try(invoke0[Option[Array[Byte]]](e, "binaryDescriptorSet")).toOption.flatten
+      }
     }
   }
 
+  /**
+   * Get descriptor file path from expression.
+   * Only available in Spark 3.4.x. Spark 3.5+ uses binaryFileDescriptorSet instead.
+   */
   private def getDescFilePath(e: Expression): Option[String] =
     Try(invoke0[Option[String]](e, "descFilePath")).toOption.flatten
 
-  private def writeTempDescFile(descBytes: Array[Byte]): String = {
-    val tmp: Path = Files.createTempFile("spark-rapids-protobuf-desc-", ".desc")
-    Files.write(tmp, descBytes)
-    // deleteOnExit() is not guaranteed to run on abnormal JVM termination, but these
-    // descriptor files are small (typically < 10KB) and only created when using
-    // binaryDescriptorSet (Spark 4.0+). The risk of temporary file accumulation is
-    // acceptable for this use case.
-    tmp.toFile.deleteOnExit()
-    tmp.toString
-  }
-
+  /**
+   * Build message descriptor using Spark's ProtobufUtils.
+   * Supports both Spark 3.4.x (descFilePath: Option[String]) and
+   * Spark 3.5+ (binaryFileDescriptorSet: Option[Array[Byte]]).
+   *
+   * @param messageName The protobuf message name
+   * @param descFilePathOrBytes Either a file path (String) or binary descriptor bytes (Array[Byte])
+   */
   private def buildMessageDescriptorWithSparkProtobuf(
       messageName: String,
-      descFilePathOpt: Option[String]): AnyRef = {
+      descFilePathOrBytes: Either[String, Array[Byte]]): AnyRef = {
     val cls = ShimReflectionUtils.loadClass(sparkProtobufUtilsObjectClassName)
     val module = cls.getField("MODULE$").get(null)
-    // buildDescriptor(messageName: String, descFilePath: Option[String])
-    val m = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
-    m.invoke(module, messageName, descFilePathOpt).asInstanceOf[AnyRef]
+
+    descFilePathOrBytes match {
+      case Left(filePath) =>
+        // Spark 3.4.x: buildDescriptor(messageName: String, descFilePath: Option[String])
+        val m = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
+        m.invoke(module, messageName, Some(filePath)).asInstanceOf[AnyRef]
+      case Right(bytes) =>
+        // Spark 3.5+: buildDescriptor(messageName, binaryFileDescriptorSet)
+        val m = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
+        m.invoke(module, messageName, Some(bytes)).asInstanceOf[AnyRef]
+    }
   }
 
   private def typeName(t: AnyRef): String = {
