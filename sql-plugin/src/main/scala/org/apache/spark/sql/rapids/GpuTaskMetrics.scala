@@ -278,6 +278,9 @@ class GpuTaskMetrics extends Serializable with Logging {
 
   private val maxGpuFootprint = new SizeInBytesAccumulator
 
+  // Disk write savings from SpillablePartialFileHandle
+  private val diskWriteSavedBytes = new LongAccumulator
+
   private var maxHostBytesAllocated: Long = 0
   private var maxPageableBytesAllocated: Long = 0
   private var maxPinnedBytesAllocated: Long = 0
@@ -339,7 +342,8 @@ class GpuTaskMetrics extends Serializable with Logging {
     "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
     "gpuMaxTaskFootprint" -> maxGpuFootprint,
     "multithreadReaderMaxParallelism" -> multithreadReaderMaxParallelism,
-    "gpuMaxConcurrentGpuTasks" -> maxConcurrentGpuTasks
+    "gpuMaxConcurrentGpuTasks" -> maxConcurrentGpuTasks,
+    "gpuDiskWriteSavedBytes" -> diskWriteSavedBytes
   )
 
   def register(sc: SparkContext): Unit = {
@@ -488,6 +492,10 @@ class GpuTaskMetrics extends Serializable with Logging {
 
   def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = {
     multithreadReaderMaxParallelism.add(parallelism)
+  }
+
+  def addDiskWriteSaved(bytes: Long): Unit = {
+    diskWriteSavedBytes.add(bytes)
   }
 }
 

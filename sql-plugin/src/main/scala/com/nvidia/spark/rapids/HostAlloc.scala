@@ -42,6 +42,16 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
   private val isUnlimited = nonPinnedLimit < 0
   private val isPinnedOnly = nonPinnedLimit == 0
 
+  // Expose for usage ratio calculation
+  def getCurrentAllocated: Long = synchronized {
+    currentNonPinnedAllocated + currentPinnedAllocated
+  }
+
+  def getTotalLimit: Long = {
+    if (isUnlimited) Long.MaxValue
+    else pinnedLimit + nonPinnedLimit
+  }
+
   /**
    * A callback class so we know when a non-pinned host buffer was released
    */
@@ -295,6 +305,28 @@ object HostAlloc extends Logging {
 
   def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
     getSingleton.alloc(amount, preferPinned)
+  }
+
+  /**
+   * Get current host memory usage ratio (0.0 to 1.0).
+   * Returns current allocated / limit.
+   */
+  def getUsageRatio(): Double = {
+    val alloc = getSingleton
+    val currentAllocated = alloc.getCurrentAllocated
+    val totalLimit = alloc.getTotalLimit
+    if (totalLimit == Long.MaxValue) {
+      0.0  // Unlimited, consider as 0% used
+    } else {
+      currentAllocated.toDouble / totalLimit.toDouble
+    }
+  }
+
+  /**
+   * Check if host memory usage is below the given threshold (0.0 to 1.0).
+   */
+  def isUsageBelowThreshold(threshold: Double): Boolean = {
+    getUsageRatio() < threshold
   }
 
   def addEventHandler(buff: HostMemoryBuffer,
