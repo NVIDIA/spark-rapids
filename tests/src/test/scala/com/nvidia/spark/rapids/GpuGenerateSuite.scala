@@ -331,7 +331,8 @@ class GpuGenerateSuite
     (1 until 3).foreach { numRows =>
       val (expected, _) = makeBatchFn(numRows, includeNulls)
       val itNoFailures = new GpuGenerateIterator(
-        Seq(SpillableColumnarBatch(expected, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)),
+        Iterator.single(Array(
+          SpillableColumnarBatch(expected, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))),
         generator = generate,
         generatorOffset,
         outer,
@@ -357,7 +358,7 @@ class GpuGenerateSuite
             SpillableColumnarBatch(actual, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
 
           val it = new GpuGenerateIterator(
-            Seq(actualSpillable),
+            Iterator.single(Array(actualSpillable)),
             generator = failingGenerate,
             generatorOffset,
             outer,
@@ -827,11 +828,14 @@ class GpuGenerateSuite
     val splits = GpuGenerateUtils.getSplitsWithRetryAndClose(batch, generator,
       generatorOffset, outer = false, largeTargetSize)
 
-    withResource(splits) { _ =>
-      assert(splits.length == 2) // There are two batches due to split-retry
-      splits.foreach { split =>
-        assertResult(50)(split.numRows()) // each has 100/2 rows
+    var count = 0
+    while(splits.hasNext) {
+      withResource(splits.next()) { scbs =>
+        assert(scbs.length == 1) // Only one batch for each bundle
+        assertResult(50)(scbs.head.numRows()) // each has 100/2 rows
       }
+      count = count + 1
     }
+    assert(count == 2) // iterator contains two batches due to split-retry
   }
 }

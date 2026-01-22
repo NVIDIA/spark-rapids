@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expre
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuCreateArray
+import org.apache.spark.sql.rapids.execution.GpuSubPartitionHashJoin.safeIteratorFromSeq
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -917,9 +918,9 @@ object GpuGenerateUtils {
    */
   private[rapids] def getSplitsWithRetryAndClose(cb: ColumnarBatch, generator: GpuGenerator,
       generatorOffset: Int, outer: Boolean,
-      targetSize: Long): Seq[SpillableColumnarBatch] = {
+      targetSize: Long): Iterator[Array[SpillableColumnarBatch]] = {
     val spillableBatch = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-    val iter = withRetry(spillableBatch, splitSpillableInHalfByRows) { attempt =>
+    withRetry(spillableBatch, splitSpillableInHalfByRows) { attempt =>
       // compute split indices of input batch
       withResource(attempt.getColumnarBatch()) { attemptCB =>
         val splitIndices = generator.inputSplitIndices(attemptCB,
@@ -927,13 +928,6 @@ object GpuGenerateUtils {
         // split up input batch with indices
         makeSplits(attemptCB, splitIndices)
       }
-    }
-    // Safely flatten to an output array.
-    closeOnExcept(new AutoClosableArrayBuffer[SpillableColumnarBatch]) { outBuf =>
-      while (iter.hasNext) {
-        iter.next().foreach(outBuf.append)
-      }
-      outBuf.toSeq
     }
   }
 
@@ -973,24 +967,29 @@ class BatchToGenerate(val fixUpOffset: Long, val spillable: SpillableColumnarBat
 }
 
 class GpuGenerateIterator(
-    inputs: Seq[SpillableColumnarBatch],
+    inputs: Iterator[Array[SpillableColumnarBatch]],
     generator: GpuGenerator,
     generatorOffset: Int,
     outer: Boolean,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    opTime: GpuMetric) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
-  // Need to ensure these are closed in case of failure.
-  inputs.foreach(scb => use(scb))
+    opTime: GpuMetric) extends Iterator[ColumnarBatch] {
+  private var generateIter: Iterator[ColumnarBatch] = Iterator.empty
 
-  // apply generation on each (sub)batch
-  private val generateIter = {
-    generator.generate(inputs.iterator, generatorOffset, outer)
+  override def hasNext: Boolean = generateIter.hasNext || {
+    // generateIter is empty, try to get the next bundle of batches
+    if (inputs.hasNext) {
+      val scbs = inputs.next()
+      generateIter = generator.generate(
+        safeIteratorFromSeq(scbs.toSeq), generatorOffset, outer)
+    }
+    generateIter.hasNext
   }
 
-  override def hasNext: Boolean = generateIter.hasNext
-
   override def next(): ColumnarBatch = {
+    if (!this.hasNext) {
+      throw new NoSuchElementException("no more batches")
+    }
     NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_ITERATOR, opTime) {
       val cb = generateIter.next()
       numOutputBatches += 1
