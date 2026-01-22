@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,8 +36,6 @@ class AutoClosableArrayBuffer[T <: AutoCloseable] extends AutoCloseable {
   def map[U](f: T => U): Seq[U] = data.map(f).toSeq
 
   def toArray[B >: T : ClassTag]: Array[B] = data.toArray
-
-  def toSeq: Seq[T] = data.toSeq
 
   def size(): Int = data.size
 
