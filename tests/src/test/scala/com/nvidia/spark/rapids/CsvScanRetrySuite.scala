@@ -77,7 +77,7 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase {
         assert(cb.numCols() == 2)
       }
     } finally {
-      if(reader != null) {
+      if (reader != null) {
         reader.close()
         reader = null
       }
