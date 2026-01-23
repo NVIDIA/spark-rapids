@@ -77,6 +77,8 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("dropDuplicates", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
     .exclude("dropDuplicates: columns with same column name", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
     .exclude("SPARK-24762: typed agg on Option[Product] type", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("Check RelationalGroupedDataset toString: Single data", ADJUST_UT("Replaced by testRapids version becuase the RelationalGroupedDataset.toString method returns an empty string for the type on JDK 11+"))
+    .exclude("Check RelationalGroupedDataset toString: over length schema ", ADJUST_UT("Replaced by testRapids version fbecuase the RelationalGroupedDataset.toString method returns an empty string for the type on JDK 11+"))
   enableSuite[RapidsDataFrameAggregateSuite]
     .exclude("collect functions", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("collect functions structs", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
