@@ -116,9 +116,9 @@ class RapidsDatasetSuite
   // In JDK 11+ the RelationalGroupedDataset.toString method returns an empty string for the type.
   testRapids("Check RelationalGroupedDataset toString: Single data") {
     val kvDataset = (1 to 3).toDF("id").groupBy("id")
-    val expected_type_string = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
+    val expectedTypeString = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
     val expected = "RelationalGroupedDataset: [" +
-      s"grouping expressions: [id: int], value: [id: int], type: ${expected_type_string}]"
+      s"grouping expressions: [id: int], value: [id: int], type: ${expectedTypeString}]"
       val actual = kvDataset.toString
       assert(expected === actual)
     }
@@ -128,11 +128,11 @@ class RapidsDatasetSuite
   testRapids("Check RelationalGroupedDataset toString: over length schema ") {
     val kvDataset = (1 to 3).map( x => (x, x.toString, x.toLong))
       .toDF("id", "val1", "val2").groupBy("id")
-    val expected_type_string = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
+    val expectedTypeString = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
     val expected = "RelationalGroupedDataset:" +
       " [grouping expressions: [id: int]," +
       " value: [id: int, val1: string ... 1 more field]," +
-      s" type: ${expected_type_string}]"
+      s" type: ${expectedTypeString}]"
     val actual = kvDataset.toString
     assert(expected === actual)
   }
