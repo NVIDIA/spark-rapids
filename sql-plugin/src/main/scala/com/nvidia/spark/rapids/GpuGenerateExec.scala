@@ -896,16 +896,16 @@ case class GpuGenerateExec(
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
-    val splits = NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_PROJECT_SPLIT, opTime) {
-      // Project input columns, setting other columns ahead of generator's input columns.
-      // With the projected batches and an offset, generators can extract input columns or
-      // other required columns separately.
-      val projectedInput = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+    // Project input columns, setting other columns ahead of generator's input columns.
+    // With the projected batches and an offset, generators can extract input columns or
+    // other required columns separately.
+    val projectedInput = NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_PROJECT_SPLIT, opTime) {
+      GpuProjectExec.projectAndCloseWithRetrySingleBatch(
         SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
         othersProjectList ++ genProjectList)
-      GpuGenerateUtils.getSplitsWithRetryAndClose(projectedInput, generator,
-        othersProjectList.length, outer, new RapidsConf(conf).gpuTargetBatchSizeBytes)
     }
+    val splits = GpuGenerateUtils.getSplitsWithRetryAndClose(projectedInput, generator,
+      othersProjectList.length, outer, new RapidsConf(conf).gpuTargetBatchSizeBytes, opTime)
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
       numOutputRows, numOutputBatches, opTime)
   }
@@ -917,16 +917,18 @@ object GpuGenerateUtils {
    * (Move it out of the GpuGenerateExec class for unit tests)
    */
   private[rapids] def getSplitsWithRetryAndClose(cb: ColumnarBatch, generator: GpuGenerator,
-      generatorOffset: Int, outer: Boolean,
-      targetSize: Long): Iterator[Array[SpillableColumnarBatch]] = {
+      generatorOffset: Int, outer: Boolean, targetSize: Long,
+      opTime: GpuMetric): Iterator[Array[SpillableColumnarBatch]] = {
     val spillableBatch = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     withRetry(spillableBatch, splitSpillableInHalfByRows) { attempt =>
-      // compute split indices of input batch
-      withResource(attempt.getColumnarBatch()) { attemptCB =>
-        val splitIndices = generator.inputSplitIndices(attemptCB,
-          generatorOffset, outer, targetSize)
-        // split up input batch with indices
-        makeSplits(attemptCB, splitIndices)
+      NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_PROJECT_SPLIT, opTime) {
+        // compute split indices of input batch
+        withResource(attempt.getColumnarBatch()) { attemptCB =>
+          val splitIndices = generator.inputSplitIndices(attemptCB,
+            generatorOffset, outer, targetSize)
+          // split up input batch with indices
+          makeSplits(attemptCB, splitIndices)
+        }
       }
     }
   }

@@ -826,7 +826,7 @@ class GpuGenerateSuite
     }
     // Test getSplitsWithRetryAndClose that should handle the OOM and retry
     val splits = GpuGenerateUtils.getSplitsWithRetryAndClose(batch, generator,
-      generatorOffset, outer = false, largeTargetSize)
+      generatorOffset, outer = false, largeTargetSize, NoopMetric)
 
     var count = 0
     while(splits.hasNext) {
