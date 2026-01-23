@@ -1705,6 +1705,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
 
+  val SEQUENCEFILE_RDD_CONVERSION_ENABLED =
+    conf("spark.rapids.sql.sequenceFile.rddConversion.enabled")
+      .doc("When enabled, automatically converts RDD-based SequenceFile scans " +
+        "(e.g., sc.newAPIHadoopFile with SequenceFileInputFormat) to FileFormat-based scans " +
+        "that can be GPU-accelerated. " +
+        "This is disabled by default because: " +
+        "(1) Compressed SequenceFiles will cause runtime failures since compression can only " +
+        "be detected by reading file headers, not at plan time; " +
+        "(2) Complex RDD transformations between the HadoopRDD and toDF() cannot be converted. " +
+        "If conversion fails or GPU doesn't support the operation, the original RDD scan " +
+        "is preserved (no fallback to CPU FileFormat).")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
       .doc("When set to false disables Delta Lake output acceleration.")
       .booleanConf
@@ -3594,6 +3608,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumSequenceFilesParallel: Int = get(
     SEQUENCEFILE_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val isSequenceFileRDDConversionEnabled: Boolean = get(SEQUENCEFILE_RDD_CONVERSION_ENABLED)
 
   lazy val isDeltaWriteEnabled: Boolean = get(ENABLE_DELTA_WRITE)
 

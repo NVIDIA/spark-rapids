@@ -31,12 +31,13 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, UnsafeProjection}
 import org.apache.spark.sql.execution.datasources.{FileFormat, OutputWriterFactory, PartitionedFile}
-import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
+import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{BinaryType, StructField, StructType}
 import org.apache.spark.util.SerializableConfiguration
 
 /**
- * A Spark SQL file format that reads Hadoop SequenceFiles and returns raw bytes for key/value.
+ * An internal Spark SQL file format that reads Hadoop SequenceFiles and returns raw bytes
+ * for key/value.
  *
  * The default inferred schema is:
  *  - key: BinaryType
@@ -45,17 +46,14 @@ import org.apache.spark.util.SerializableConfiguration
  * This format is intended to support protobuf payloads stored as raw bytes in the SequenceFile
  * record value bytes. It currently only supports uncompressed SequenceFiles.
  *
- * Usage:
- * {{{
- *   val df = spark.read
- *     .format("sequencefilebinary")
- *     .load("path/to/sequencefiles")
- * }}}
+ * INTERNAL USE ONLY: This class is not registered as a public DataSource. It is used internally
+ * by [[SequenceFileRDDConversionRule]] to convert RDD-based SequenceFile scans to FileFormat
+ * scans that can be GPU-accelerated.
+ *
+ * Compressed SequenceFiles are not supported and will cause runtime failures.
  */
-class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister with Serializable {
+class SequenceFileBinaryFileFormat extends FileFormat with Serializable {
   import SequenceFileBinaryFileFormat._
-
-  override def shortName(): String = SHORT_NAME
 
   override def inferSchema(
       sparkSession: SparkSession,
@@ -100,10 +98,10 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
         tc.addTaskCompletionListener[Unit](_ => reader.close())
       }
 
-      // Compressed SequenceFiles are not supported, fail fast since the format is Rapids-only.
+      // Compressed SequenceFiles are not supported, fail fast.
       if (reader.isCompressed || reader.isBlockCompressed) {
         val compressionType = reader.getCompressionType
-        val msg = s"$SHORT_NAME does not support compressed SequenceFiles " +
+        val msg = s"SequenceFileBinaryFileFormat does not support compressed SequenceFiles " +
           s"(compressionType=$compressionType), " +
           s"file=$path, keyClass=${reader.getKeyClassName}, " +
           s"valueClass=${reader.getValueClassName}"
@@ -186,16 +184,16 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
           while (i < reqLen) {
             fieldInfos(i) match {
               case 1 =>
-                val keyLen = keyBuf.getLength
-                row.update(i, util.Arrays.copyOf(keyBuf.getData, keyLen))
+                // Key is serialized as BytesWritable: 4-byte length prefix + payload
+                row.update(i, extractBytesWritablePayload(keyBuf.getData, keyBuf.getLength))
               case 2 =>
                 if (!valueCopied) {
                   valueOut.reset()
                   valueBytes.writeUncompressedBytes(valueDos)
                   valueCopied = true
                 }
-                val valueLen = valueOut.getLength
-                row.update(i, util.Arrays.copyOf(valueOut.getData, valueLen))
+                // Value is serialized as BytesWritable: 4-byte length prefix + payload
+                row.update(i, extractBytesWritablePayload(valueOut.getData, valueOut.getLength))
               case _ =>
                 row.setNullAt(i)
             }
@@ -211,6 +209,29 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
           }
           // Spark expects UnsafeRow for downstream serialization.
           unsafeProj.apply(row).copy()
+        }
+
+        /**
+         * Extract the payload from BytesWritable serialized format.
+         * BytesWritable serialization: 4-byte big-endian length + payload bytes
+         */
+        private def extractBytesWritablePayload(data: Array[Byte], totalLen: Int): Array[Byte] = {
+          if (totalLen < 4) {
+            // Invalid or empty BytesWritable
+            Array.emptyByteArray
+          } else {
+            // Read the 4-byte big-endian length prefix
+            val payloadLen = ((data(0) & 0xFF) << 24) |
+                            ((data(1) & 0xFF) << 16) |
+                            ((data(2) & 0xFF) << 8) |
+                            (data(3) & 0xFF)
+            // Extract the payload (skip the 4-byte length prefix)
+            if (payloadLen > 0 && payloadLen <= totalLen - 4) {
+              util.Arrays.copyOfRange(data, 4, 4 + payloadLen)
+            } else {
+              Array.emptyByteArray
+            }
+          }
         }
 
         private def close(): Unit = {
@@ -231,12 +252,17 @@ class SequenceFileBinaryFileFormat extends FileFormat with DataSourceRegister wi
 }
 
 object SequenceFileBinaryFileFormat {
-  final val SHORT_NAME: String = "sequencefilebinary"
   final val KEY_FIELD: String = "key"
   final val VALUE_FIELD: String = "value"
 
+  /** Schema with both key and value fields */
   final val dataSchema: StructType = StructType(Seq(
     StructField(KEY_FIELD, BinaryType, nullable = true),
+    StructField(VALUE_FIELD, BinaryType, nullable = true)
+  ))
+
+  /** Schema with only value field (common for protobuf payloads) */
+  final val valueOnlySchema: StructType = StructType(Seq(
     StructField(VALUE_FIELD, BinaryType, nullable = true)
   ))
 }

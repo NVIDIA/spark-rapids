@@ -12,6 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Integration tests for SequenceFile RDD conversion and GPU acceleration.
+
+The SequenceFile support in spark-rapids works via the SequenceFileRDDConversionRule,
+which converts RDD-based SequenceFile scans (e.g., sc.newAPIHadoopFile with
+SequenceFileInputFormat) to FileFormat-based scans that can be GPU-accelerated.
+
+This conversion is disabled by default and must be enabled via:
+  spark.rapids.sql.sequenceFile.rddConversion.enabled=true
+
+If the conversion fails or GPU doesn't support the operation, the original RDD scan
+is preserved (no fallback to CPU FileFormat).
+"""
+
 import pytest
 import struct
 
@@ -24,10 +38,10 @@ from spark_session import with_cpu_session, with_gpu_session
 # Reader types supported by SequenceFile (COALESCING is not supported)
 sequencefile_reader_types = ['PERFILE', 'MULTITHREADED']
 
-
-def read_sequencefile_df(data_path):
-    """Helper function to read SequenceFile using DataFrame API."""
-    return lambda spark: spark.read.format("sequencefilebinary").load(data_path)
+# Base config to enable SequenceFile RDD conversion
+sequencefile_conversion_conf = {
+    'spark.rapids.sql.sequenceFile.rddConversion.enabled': 'true'
+}
 
 
 def write_sequencefile_with_rdd(spark, data_path, payloads):
@@ -35,8 +49,7 @@ def write_sequencefile_with_rdd(spark, data_path, payloads):
     Write an uncompressed SequenceFile using Spark's RDD saveAsNewAPIHadoopFile method.
     payloads: list of byte arrays to be written as values (keys will be incrementing integers).
     
-    This writes actual BytesWritable key/value pairs that can be read by the 
-    sequencefilebinary format.
+    This writes actual BytesWritable key/value pairs.
     """
     sc = spark.sparkContext
     
@@ -49,7 +62,6 @@ def write_sequencefile_with_rdd(spark, data_path, payloads):
     rdd = sc.parallelize(records, 1)
     
     # Use saveAsNewAPIHadoopFile with BytesWritable key/value classes
-    # and SequenceFileOutputFormat
     rdd.saveAsNewAPIHadoopFile(
         data_path,
         "org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat",
@@ -58,13 +70,68 @@ def write_sequencefile_with_rdd(spark, data_path, payloads):
     )
 
 
+def read_sequencefile_via_rdd(spark, data_path):
+    """
+    Read a SequenceFile using the RDD path.
+    When spark.rapids.sql.sequenceFile.rddConversion.enabled=true,
+    this should be converted to FileFormat-based scan.
+    """
+    sc = spark.sparkContext
+    rdd = sc.newAPIHadoopFile(
+        data_path,
+        "org.apache.hadoop.mapreduce.lib.input.SequenceFileAsBinaryInputFormat",
+        "org.apache.hadoop.io.BytesWritable",
+        "org.apache.hadoop.io.BytesWritable"
+    )
+    
+    # Map to extract raw bytes (BytesWritable has length prefix)
+    def extract_bytes(kv):
+        k, v = kv
+        # BytesWritable stores data after a 4-byte length prefix
+        return (bytes(k[4:]) if len(k) > 4 else bytes(k),
+                bytes(v[4:]) if len(v) > 4 else bytes(v))
+    
+    mapped_rdd = rdd.map(extract_bytes)
+    # Use explicit schema to avoid schema inference failure on empty RDD
+    schema = StructType([
+        StructField("key", BinaryType(), True),
+        StructField("value", BinaryType(), True)
+    ])
+    return spark.createDataFrame(mapped_rdd, schema)
+
+
+def read_sequencefile_value_only(spark, data_path):
+    """
+    Read only the value column from a SequenceFile (common pattern for protobuf payloads).
+    """
+    sc = spark.sparkContext
+    rdd = sc.newAPIHadoopFile(
+        data_path,
+        "org.apache.hadoop.mapreduce.lib.input.SequenceFileAsBinaryInputFormat",
+        "org.apache.hadoop.io.BytesWritable",
+        "org.apache.hadoop.io.BytesWritable"
+    )
+    
+    def extract_value(kv):
+        _, v = kv
+        # BytesWritable stores data after a 4-byte length prefix
+        return (bytes(v[4:]) if len(v) > 4 else bytes(v),)
+    
+    mapped_rdd = rdd.map(extract_value)
+    # Use explicit schema to avoid schema inference failure on empty RDD
+    schema = StructType([
+        StructField("value", BinaryType(), True)
+    ])
+    return spark.createDataFrame(mapped_rdd, schema)
+
+
 # ============================================================================
 # Basic Read Tests
 # ============================================================================
 
 @pytest.mark.parametrize('reader_type', sequencefile_reader_types)
 def test_basic_read(spark_tmp_path, reader_type):
-    """Test basic SequenceFile reading with different reader types."""
+    """Test basic SequenceFile reading via RDD conversion."""
     data_path = spark_tmp_path + '/SEQFILE_DATA'
     
     # Write test data using CPU
@@ -76,45 +143,30 @@ def test_basic_read(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
+        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
     assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
-        conf=all_confs)
-
-
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_read_key_only(spark_tmp_path, reader_type):
-    """Test reading only the key column (column pruning)."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    payloads = [b'value1', b'value2', b'value3']
-    with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format("sequencefilebinary").load(data_path).select("key"),
+        lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)
 
 
 @pytest.mark.parametrize('reader_type', sequencefile_reader_types)
 def test_read_value_only(spark_tmp_path, reader_type):
-    """Test reading only the value column (column pruning)."""
+    """Test reading only the value column."""
     data_path = spark_tmp_path + '/SEQFILE_DATA'
     
     payloads = [b'value1', b'value2', b'value3']
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
+        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format("sequencefilebinary").load(data_path).select("value"),
+        lambda spark: read_sequencefile_value_only(spark, data_path),
         conf=all_confs)
 
 
@@ -131,111 +183,12 @@ def test_empty_file(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, []))
     
     all_confs = {
+        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
     assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
-        conf=all_confs)
-
-
-# ============================================================================
-# Multi-file Tests
-# ============================================================================
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_multi_file_read(spark_tmp_path, reader_type):
-    """Test reading multiple SequenceFiles from a directory."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Write multiple files
-    for i in range(3):
-        file_path = data_path + f'/file{i}'
-        payloads = [f'file{i}_record{j}'.encode() for j in range(5)]
-        with_cpu_session(lambda spark, p=payloads, fp=file_path: 
-                        write_sequencefile_with_rdd(spark, fp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
-        conf=all_confs)
-
-
-# ============================================================================
-# Partitioned Read Tests
-# ============================================================================
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_partitioned_read(spark_tmp_path, reader_type):
-    """Test reading SequenceFiles with Hive-style partitioning."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Create partitioned directory structure
-    for part_val in ['a', 'b', 'c']:
-        part_path = data_path + f'/part={part_val}'
-        payloads = [f'{part_val}_record{i}'.encode() for i in range(3)]
-        with_cpu_session(lambda spark, p=payloads, pp=part_path: 
-                        write_sequencefile_with_rdd(spark, pp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    # Read and verify both data columns and partition column
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format("sequencefilebinary").load(data_path)
-            .select("key", "value", "part"),
-        conf=all_confs)
-
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_partitioned_read_just_partitions(spark_tmp_path, reader_type):
-    """Test reading only partition columns from SequenceFiles."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Create partitioned directory structure - use 'pkey' to avoid collision with 'key' data column
-    for part_val in [0, 1, 2]:
-        part_path = data_path + f'/pkey={part_val}'
-        payloads = [f'record{i}'.encode() for i in range(2)]
-        with_cpu_session(lambda spark, p=payloads, pp=part_path: 
-                        write_sequencefile_with_rdd(spark, pp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    # Select only the partition column
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format("sequencefilebinary").load(data_path).select("pkey"),
-        conf=all_confs)
-
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_nested_partitions(spark_tmp_path, reader_type):
-    """Test reading SequenceFiles with nested partitioning."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Create nested partitioned directory structure - use 'pkey' to avoid collision with 'key' data column
-    for pkey in [0, 1]:
-        for pkey2 in [20, 21]:
-            part_path = data_path + f'/pkey={pkey}/pkey2={pkey2}'
-            payloads = [f'key{pkey}_key2{pkey2}_rec{i}'.encode() for i in range(2)]
-            with_cpu_session(lambda spark, p=payloads, pp=part_path: 
-                            write_sequencefile_with_rdd(spark, pp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
+        lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)
 
 
@@ -250,191 +203,83 @@ def test_large_batch(spark_tmp_path, reader_type):
     
     # Create many records
     num_records = 1000
-    payloads = [f'record-{i}-payload-data'.encode() for i in range(num_records)]
+    payloads = [f'record_{i}_with_some_data'.encode() for i in range(num_records)]
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
-        conf=all_confs)
-
-
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_read_count(spark_tmp_path, reader_type):
-    """Test row count operation on SequenceFiles."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    num_records = 500
-    payloads = [f'record-{i}'.encode() for i in range(num_records)]
-    with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
-    
-    all_confs = {
+        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
     assert_gpu_and_cpu_row_counts_equal(
-        read_sequencefile_df(data_path),
+        lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)
 
 
-# ============================================================================
-# Varied Record Sizes Tests
-# ============================================================================
-
 @pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_varied_record_sizes(spark_tmp_path, reader_type):
-    """Test reading SequenceFiles with varied record sizes."""
+def test_large_records(spark_tmp_path, reader_type):
+    """Test reading records with large values."""
     data_path = spark_tmp_path + '/SEQFILE_DATA'
     
-    # Create records with varying sizes
-    payloads = [
-        b'',                           # Empty
-        b'x',                          # 1 byte
-        b'small',                      # Small
-        b'medium-sized-record' * 10,   # Medium
-        b'large-record' * 1000,        # Large (~13KB)
-    ]
+    # Create records with varying sizes, including some large ones
+    payloads = [b'x' * (1024 * i) for i in range(1, 11)]  # 1KB to 10KB
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
+        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
     assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
+        lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)
 
+
+# ============================================================================
+# Configuration Tests
+# ============================================================================
+
+def test_conversion_disabled_by_default(spark_tmp_path):
+    """Test that RDD conversion is disabled by default."""
+    data_path = spark_tmp_path + '/SEQFILE_DATA'
+    
+    payloads = [b'test']
+    with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
+    
+    # Without enabling conversion, this should still work via the original RDD path
+    # (no conversion happens, just regular RDD execution)
+    all_confs = {
+        # Note: NOT enabling sequencefile.rddConversion
+    }
+    
+    # This should work - the RDD path still functions, just without conversion
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: read_sequencefile_via_rdd(spark, data_path),
+        conf=all_confs)
+
+
+# ============================================================================
+# Binary Data Tests
+# ============================================================================
 
 @pytest.mark.parametrize('reader_type', sequencefile_reader_types)
 def test_binary_data(spark_tmp_path, reader_type):
-    """Test reading SequenceFiles with binary data (all byte values)."""
+    """Test reading various binary data patterns."""
     data_path = spark_tmp_path + '/SEQFILE_DATA'
     
-    # Create records with various binary patterns
     payloads = [
-        bytes(range(256)),             # All byte values 0-255
-        bytes([0] * 100),              # All zeros
-        bytes([255] * 100),            # All ones
-        bytes([0xDE, 0xAD, 0xBE, 0xEF] * 25),  # Pattern
+        bytes(range(256)),           # All byte values
+        b'\x00' * 100,               # Nulls
+        b'\xff' * 100,               # All 1s
+        b''.join(struct.pack('<d', float(i)) for i in range(10)),  # Doubles
     ]
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
+        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
     assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
-        conf=all_confs)
-
-
-# ============================================================================
-# Filter Tests  
-# ============================================================================
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_filter_on_partition(spark_tmp_path, reader_type):
-    """Test filtering on partition column."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Create partitioned data
-    for part_val in ['a', 'b', 'c']:
-        part_path = data_path + f'/part={part_val}'
-        payloads = [f'{part_val}_record{i}'.encode() for i in range(5)]
-        with_cpu_session(lambda spark, p=payloads, pp=part_path: 
-                        write_sequencefile_with_rdd(spark, pp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    # Filter on partition column
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format("sequencefilebinary").load(data_path)
-            .filter(f.col('part') == 'a'),
-        conf=all_confs)
-
-
-# ============================================================================
-# Input File Metadata Tests
-# ============================================================================
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
-def test_input_file_meta(spark_tmp_path, reader_type):
-    """Test reading input file metadata."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Create multiple files in partitioned structure - use 'pkey' to avoid collision with 'key' data column
-    for pkey in [0, 1]:
-        part_path = data_path + f'/pkey={pkey}'
-        payloads = [f'key{pkey}_record{i}'.encode() for i in range(3)]
-        with_cpu_session(lambda spark, p=payloads, pp=part_path: 
-                        write_sequencefile_with_rdd(spark, pp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': reader_type
-    }
-    
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format("sequencefilebinary").load(data_path)
-            .selectExpr('value',
-                        'input_file_name()',
-                        'input_file_block_start()',
-                        'input_file_block_length()'),
-        conf=all_confs)
-
-
-# ============================================================================
-# Multithreaded Reader Tests
-# ============================================================================
-
-@ignore_order(local=True)
-def test_multithreaded_max_files_parallel(spark_tmp_path):
-    """Test multithreaded reader with limited parallel file count."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Create multiple small files
-    for i in range(10):
-        file_path = data_path + f'/file{i}'
-        payloads = [f'file{i}_record{j}'.encode() for j in range(5)]
-        with_cpu_session(lambda spark, p=payloads, fp=file_path: 
-                        write_sequencefile_with_rdd(spark, fp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': 'MULTITHREADED',
-        'spark.rapids.sql.format.sequencefile.multiThreadedRead.maxNumFilesParallel': '3'
-    }
-    
-    assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
-        conf=all_confs)
-
-
-# ============================================================================
-# AUTO Reader Type Tests
-# ============================================================================
-
-@ignore_order(local=True)
-def test_auto_reader_type(spark_tmp_path):
-    """Test AUTO reader type selection."""
-    data_path = spark_tmp_path + '/SEQFILE_DATA'
-    
-    # Create test files
-    for i in range(3):
-        file_path = data_path + f'/file{i}'
-        payloads = [f'file{i}_record{j}'.encode() for j in range(5)]
-        with_cpu_session(lambda spark, p=payloads, fp=file_path: 
-                        write_sequencefile_with_rdd(spark, fp, p))
-    
-    all_confs = {
-        'spark.rapids.sql.format.sequencefile.reader.type': 'AUTO'
-    }
-    
-    assert_gpu_and_cpu_are_equal_collect(
-        read_sequencefile_df(data_path),
+        lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)

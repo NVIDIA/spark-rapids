@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.sequencefile
 
-import java.io.{DataOutputStream, FileNotFoundException, IOException, OutputStream}
+import java.io.{DataOutputStream, FileNotFoundException, IOException}
 import java.net.URI
 import java.util
 import java.util.Optional
@@ -50,49 +50,6 @@ private[sequencefile] final case class PendingRecord(
     bytes: Long)
 
 /**
- * A HostMemoryOutputStream that allows updating the underlying buffer.
- * This is used by HostBinaryListBufferer to efficiently write ValueBytes
- * without creating new stream instances when the buffer grows.
- */
-private[sequencefile] final class ResizableHostMemoryOutputStream(
-    initialBuffer: HostMemoryBuffer) extends OutputStream {
-  private var buffer: HostMemoryBuffer = initialBuffer
-  private var pos: Long = 0L
-
-  def getPos: Long = pos
-
-  /** Update the underlying buffer and position (used after buffer resize) */
-  def setBuffer(newBuffer: HostMemoryBuffer, newPos: Long): Unit = {
-    buffer = newBuffer
-    pos = newPos
-  }
-
-  /** Set position for sequential writes */
-  def seek(newPos: Long): Unit = {
-    pos = newPos
-  }
-
-  // Fast path for bulk writes - this is what ValueBytes.writeUncompressedBytes uses internally
-  override def write(b: Array[Byte], off: Int, len: Int): Unit = {
-    buffer.setBytes(pos, b, off, len)
-    pos += len
-  }
-
-  override def write(b: Array[Byte]): Unit = {
-    buffer.setBytes(pos, b, 0, b.length)
-    pos += b.length
-  }
-
-  override def write(b: Int): Unit = {
-    buffer.setByte(pos, b.toByte)
-    pos += 1
-  }
-
-  override def flush(): Unit = {} // No-op, writes go directly to buffer
-  override def close(): Unit = {} // Don't close the underlying buffer
-}
-
-/**
  * Buffers binary values into one contiguous bytes buffer with an INT32 offsets buffer, and then
  * materializes a cuDF LIST<UINT8> device column using `makeListFromOffsets`.
  *
@@ -111,11 +68,6 @@ private[sequencefile] final class HostBinaryListBufferer(
   private var offsetsBuffer: HostMemoryBuffer =
     HostAlloc.alloc((rowsAllocated.toLong + 1L) * DType.INT32.getSizeInBytes, preferPinned = true)
   private var numRows: Int = 0
-
-  // Resizable output stream for efficient ValueBytes writing - allows buffer updates without
-  // creating new stream instances. DataOutputStream wrapper is needed for Hadoop API compatibility.
-  private val resizableOut = new ResizableHostMemoryOutputStream(dataBuffer)
-  private val dataOut = new DataOutputStream(resizableOut)
 
   logDebug(s"HostBinaryListBufferer allocated: data=${dataBuffer.getLength} bytes, " +
     s"offsets=${offsetsBuffer.getLength} bytes")
@@ -148,8 +100,6 @@ private[sequencefile] final class HostBinaryListBufferer(
         newBuff.copyFromHostBuffer(0, dataBuffer, 0, dataLocation)
         dataBuffer.close()
         dataBuffer = newBuff
-        // Update the resizable output stream to use the new buffer
-        resizableOut.setBuffer(dataBuffer, dataLocation)
         logDebug(s"HostBinaryListBufferer grew data buffer to $newSize bytes")
       }
     }
@@ -173,15 +123,70 @@ private[sequencefile] final class HostBinaryListBufferer(
   }
 
   /**
+   * Add bytes from a BytesWritable serialized format, extracting only the payload.
+   * BytesWritable serialization: 4-byte big-endian length prefix + payload bytes
+   * This method skips the length prefix and only stores the actual payload.
+   *
+   * @param bytes the raw BytesWritable serialized bytes
+   * @param offset the starting offset in the array
+   * @param totalLen the total length of the serialized data (including length prefix)
+   */
+  def addBytesWritablePayload(bytes: Array[Byte], offset: Int, totalLen: Int): Unit = {
+    if (totalLen < 4) {
+      // Invalid or empty BytesWritable - add empty bytes
+      addBytes(bytes, offset, 0)
+    } else {
+      // Read the 4-byte big-endian length prefix
+      val payloadLen = ((bytes(offset) & 0xFF) << 24) |
+                      ((bytes(offset + 1) & 0xFF) << 16) |
+                      ((bytes(offset + 2) & 0xFF) << 8) |
+                      (bytes(offset + 3) & 0xFF)
+      // Extract the payload (skip the 4-byte length prefix)
+      if (payloadLen > 0 && payloadLen <= totalLen - 4) {
+        addBytes(bytes, offset + 4, payloadLen)
+      } else {
+        addBytes(bytes, offset, 0) // Empty payload
+      }
+    }
+  }
+
+  /**
    * Add value bytes directly from Hadoop's ValueBytes to the buffer.
-   * This method uses a resizable output stream that writes to the HostMemoryBuffer
-   * efficiently, avoiding stream recreation when the buffer grows.
+   * This extracts the payload from BytesWritable serialization format, skipping the
+   * 4-byte length prefix.
    *
    * @param valueBytes the Hadoop ValueBytes containing the raw value data
    * @param len the expected length of the value (from valueBytes.getSize())
    */
   def addValueBytes(valueBytes: SequenceFile.ValueBytes, len: Int): Unit = {
-    val newEnd = dataLocation + len
+    if (len < 4) {
+      // Invalid or empty BytesWritable - add empty bytes
+      growOffsetsIfNeeded()
+      val offsetPosition = numRows.toLong * DType.INT32.getSizeInBytes
+      offsetsBuffer.setInt(offsetPosition, dataLocation.toInt)
+      numRows += 1
+      return
+    }
+
+    // Write to a temporary buffer first to read the length prefix
+    val tempOut = new java.io.ByteArrayOutputStream(len)
+    val tempDos = new java.io.DataOutputStream(tempOut)
+    valueBytes.writeUncompressedBytes(tempDos)
+    val rawBytes = tempOut.toByteArray
+
+    // Extract payload from BytesWritable format: 4-byte length prefix + payload
+    val payloadLen = ((rawBytes(0) & 0xFF) << 24) |
+                    ((rawBytes(1) & 0xFF) << 16) |
+                    ((rawBytes(2) & 0xFF) << 8) |
+                    (rawBytes(3) & 0xFF)
+    
+    val actualPayloadLen = if (payloadLen > 0 && payloadLen <= rawBytes.length - 4) {
+      payloadLen
+    } else {
+      0
+    }
+
+    val newEnd = dataLocation + actualPayloadLen
     if (newEnd > Int.MaxValue) {
       throw new IllegalStateException(
         s"Binary column child size $newEnd would exceed INT32 offset limit")
@@ -193,12 +198,11 @@ private[sequencefile] final class HostBinaryListBufferer(
     val offsetPosition = numRows.toLong * DType.INT32.getSizeInBytes
     offsetsBuffer.setInt(offsetPosition, dataLocation.toInt)
 
-    // Position the stream at the current data location and write
-    resizableOut.seek(dataLocation)
-    valueBytes.writeUncompressedBytes(dataOut)
-
-    // Update position from the stream
-    dataLocation = resizableOut.getPos
+    // Write only the payload (skip the 4-byte length prefix)
+    if (actualPayloadLen > 0) {
+      dataBuffer.setBytes(dataLocation, rawBytes, 4, actualPayloadLen)
+      dataLocation = newEnd
+    }
     numRows += 1
   }
 
@@ -321,7 +325,7 @@ class SequenceFilePartitionReader(
       // (Record- and block-compressed files can be added later.)
       if (r.isCompressed || r.isBlockCompressed) {
         val compressionType = r.getCompressionType
-        val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
+        val msg = s"SequenceFileBinaryFileFormat does not support " +
           s"compressed SequenceFiles (compressionType=$compressionType), " +
           s"file=$path, keyClass=${r.getKeyClassName}, " +
           s"valueClass=${r.getValueClassName}"
@@ -415,8 +419,8 @@ class SequenceFilePartitionReader(
           // infinite loops when a single record is larger than the batch size limit.
           pending.foreach { p =>
             if (rows == 0 || bytes + p.bytes <= maxBytesPerBatch) {
-              p.key.foreach { k => keyBuf.foreach(_.addBytes(k, 0, k.length)) }
-              p.value.foreach { v => valBuf.foreach(_.addBytes(v, 0, v.length)) }
+              p.key.foreach { k => keyBuf.foreach(_.addBytesWritablePayload(k, 0, k.length)) }
+              p.value.foreach { v => valBuf.foreach(_.addBytesWritablePayload(v, 0, v.length)) }
               rows += 1
               bytes += p.bytes
               pending = None
@@ -452,7 +456,7 @@ class SequenceFilePartitionReader(
                 pending = Some(makePending(keyLen, valueLen))
                 keepReading = false
               } else {
-                keyBuf.foreach(_.addBytes(this.keyBuf.getData, 0, keyLen))
+                keyBuf.foreach(_.addBytesWritablePayload(this.keyBuf.getData, 0, keyLen))
                 valBuf.foreach(_.addValueBytes(valueBytes, valueLen))
                 rows += 1
                 bytes += recBytes
@@ -726,7 +730,7 @@ class MultiFileCloudSequenceFilePartitionReader(
         closeOnExcept(reader) { _ =>
           if (reader.isCompressed || reader.isBlockCompressed) {
             val compressionType = reader.getCompressionType
-            val msg = s"${SequenceFileBinaryFileFormat.SHORT_NAME} does not support " +
+            val msg = s"SequenceFileBinaryFileFormat does not support " +
               s"compressed SequenceFiles (compressionType=$compressionType), file=$path"
             throw new UnsupportedOperationException(msg)
           }
@@ -781,7 +785,7 @@ class MultiFileCloudSequenceFilePartitionReader(
               } else {
                 if (wantsKey) {
                   val keyLen = keyDataOut.getLength
-                  keyBuf.foreach(_.addBytes(keyDataOut.getData, 0, keyLen))
+                  keyBuf.foreach(_.addBytesWritablePayload(keyDataOut.getData, 0, keyLen))
                 }
                 if (wantsValue) {
                   val valueLen = valueBytes.getSize
