@@ -125,8 +125,8 @@ class RapidsDatasetSuite
 
   // GPU-specific test for "Check RelationalGroupedDataset toString: over length schema"
   // Original test: DatasetSuite.scala lines 1666-1675
-  testRapids("Check RelationalGroupedDataset toString: over length schema ") {
-    val kvDataset = (1 to 3).map( x => (x, x.toString, x.toLong))
+  testRapids("Check RelationalGroupedDataset toString: over length schema") {
+    val kvDataset = (1 to 3).map(x => (x, x.toString, x.toLong))
       .toDF("id", "val1", "val2").groupBy("id")
     val expectedTypeString = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
     val expected = "RelationalGroupedDataset:" +
