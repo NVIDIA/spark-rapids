@@ -653,7 +653,15 @@ class PreProjectSplitIterator(
   // of a SQL query. This is the highest level we can cache at without getting it
   // passed in from the Exec that instantiates this split iterator.
   // NOTE: this is overwritten by tests to trigger various corner cases
-  private lazy val splitUntilSize: Double = PreProjectSplitIterator.getSplitUntilSize.toDouble
+  private lazy val splitUntilSize = PreProjectSplitIterator.getSplitUntilSize
+
+  private def ceilDiv(a: Long, b: Long): Long = {
+    if (a % b == 0) {
+      a / b
+    } else {
+      a / b + 1
+    }
+  }
 
   /**
    * calcNumSplit will return the number of splits that we need for the input, in the case
@@ -670,13 +678,11 @@ class PreProjectSplitIterator(
       val sizeEstimator = new PreSplitOutSizeEstimator(cb, boundExprs)
       // If the minimum size is too large we will split before doing the project, to help avoid
       // extreme cases where the output size is so large that we cannot split it afterwards.
-      val splitsForOut = math.max(1,
-        math.ceil(sizeEstimator.calcMinOutputSize() / splitUntilSize).toInt)
+      val splitsForOut = math.max(1, ceilDiv(sizeEstimator.calcMinOutputSize(), splitUntilSize))
       // Need to consider individual column size limit. If a cudf column has an
       // offset buffer, its size should be <= Int.MaxValue (~2G). See
       // https://github.com/NVIDIA/spark-rapids/issues/14099
-      math.max(splitsForOut,
-        math.ceil(sizeEstimator.getMaxOffsetColumnSize / Int.MaxValue.toDouble).toInt)
+      math.max(splitsForOut, ceilDiv(sizeEstimator.getMaxOffsetColumnSize, Int.MaxValue)).toInt
     }
   }
 }
