@@ -119,9 +119,9 @@ class RapidsDatasetSuite
     val expectedTypeString = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
     val expected = "RelationalGroupedDataset: [" +
       s"grouping expressions: [id: int], value: [id: int], type: ${expectedTypeString}]"
-      val actual = kvDataset.toString
-      assert(expected === actual)
-    }
+    val actual = kvDataset.toString
+    assert(expected === actual)
+  }
 
   // GPU-specific test for "Check RelationalGroupedDataset toString: over length schema"
   // Original test: DatasetSuite.scala lines 1666-1675
