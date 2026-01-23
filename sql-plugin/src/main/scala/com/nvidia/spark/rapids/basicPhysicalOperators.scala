@@ -393,7 +393,7 @@ object PreProjectSplitIterator {
         case glit: GpuLiteral =>
           val ret = calcSizeForLiteral(glit.value, glit.dataType, rowsNum, nullable, exprAmount)
           glit.dataType match {
-            case _: ArrayType | StringType => updateOffsetColumnSize(ret)
+            case _: ArrayType | StringType | _: BinaryType => updateOffsetColumnSize(ret)
             case _ => // noop
           }
           ret
