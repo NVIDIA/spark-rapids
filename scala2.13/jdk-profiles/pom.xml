@@ -81,19 +81,19 @@
                     <value>411</value>
                 </property>
             </activation>
-            <properties>
-                <!--
-                IMPOTANT: we must not pass release but the plugin always sets if target is defined
-                https://github.com/davidB/scala-maven-plugin/blame/6e324d29443c1cb6d5b997c11fc00a416e969a9e/src/main/java/scala_maven/ScalaMojoSupport.java#L635-L640
-                -->
-                <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-target|${java.major.version}</scala.javac.args>
-            </properties>
             <build>
                 <pluginManagement>
                     <plugins>
                         <plugin>
                             <groupId>net.alchim31.maven</groupId>
                             <artifactId>scala-maven-plugin</artifactId>
+                            <configuration>
+                                 <!--
+                                IMPORTANT: we must not pass release but the plugin always sets if target is defined
+                                https://github.com/davidB/scala-maven-plugin/blame/6e324d29443c1cb6d5b997c11fc00a416e969a9e/src/main/java/scala_maven/ScalaMojoSupport.java#L635-L640
+                                -->
+                                <addJavacArgs conf.combine="override">-Xlint:all,-serial,-path,-try,-processing|-target|${java.major.version}</addJavacArgs>
+                            </configuration>
                         </plugin>
                     </plugins>
                 </pluginManagement>
