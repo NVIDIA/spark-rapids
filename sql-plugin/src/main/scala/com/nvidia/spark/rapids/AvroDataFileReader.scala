@@ -185,7 +185,7 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
     var l = vin.readMapStart().toInt
     if (l > 0) {
       do {
-        for (i <- 1 to l) {
+        for (_ <- 1 to l) {
           val key = vin.readString(null).toString
           val value = vin.readBytes(null)
           val bb = new Array[Byte](value.remaining())

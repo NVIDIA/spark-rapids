@@ -37,12 +37,12 @@ object SparkShimImpl extends Spark400PlusCommonShims with RebaseShims {
       GpuOverrides.expr[CollationAwareMurmur3Hash](
         "Collation-aware murmur3 hash operator",
         HashExprChecks.murmur3ProjectChecks,
-        Murmur3HashExprMeta
+        Murmur3HashExprMeta.apply
       ),
       GpuOverrides.expr[CollationAwareXxHash64](
         "Collation-aware xxhash64 operator",
         HashExprChecks.xxhash64ProjectChecks,
-        XxHash64ExprMeta
+        XxHash64ExprMeta.apply
       )
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     // Include TimeAddShims for TimestampAddInterval support in 4.1.0
