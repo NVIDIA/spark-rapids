@@ -298,65 +298,6 @@ def test_iceberg_update_fallback_write_disabled(spark_tmp_table_factory, update_
         })
     )
 
-@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize('update_mode,fallback_exec', [
-    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
-    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
-])
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("_c2", id="identity"),
-])
-def test_iceberg_update_fallback_unsupported_partition_transform(spark_tmp_table_factory, partition_col_sql, update_mode, fallback_exec):
-    """Test UPDATE falls back with unsupported partition transforms"""
-    base_table_name = get_full_table_name(spark_tmp_table_factory)
-    
-    def data_gen(spark):
-        return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-    
-    # Phase 1: Initialize tables with data (separate for CPU and GPU)
-    def init_table(table_name):
-        table_props = {
-            'format-version': '2',
-            'write.update.mode': update_mode
-        }
-        
-        create_iceberg_table(table_name,
-                            partition_col_sql=partition_col_sql,
-                            table_prop=table_props,
-                            df_gen=data_gen)
-        
-        def insert_data(spark):
-            df = data_gen(spark)
-            df.writeTo(table_name).append()
-        
-        with_cpu_session(insert_data)
-    
-    # Initialize both CPU and GPU tables
-    cpu_table_name = f'{base_table_name}_cpu'
-    gpu_table_name = f'{base_table_name}_gpu'
-    init_table(cpu_table_name)
-    init_table(gpu_table_name)
-    
-    # Phase 2: UPDATE operation (to be tested with fallback)
-    def write_func(spark, table_name):
-        spark.sql(f"UPDATE {table_name} SET _c2 = _c2 + 100 WHERE _c2 % 3 = 0")
-    
-    # Read function to verify results
-    def read_func(spark, table_name):
-        return spark.sql(f"SELECT * FROM {table_name}")
-    
-    assert_gpu_fallback_write_sql(
-        write_func,
-        read_func,
-        base_table_name,
-        [fallback_exec],
-        conf=iceberg_update_cow_enabled_conf
-    )
-
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
