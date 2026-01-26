@@ -473,4 +473,81 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     // batch1: 2,4,6; batch2: 1,3,5; batch3: 0 -> all partitions
     verifyWrite(writer, expectedRecords = 7, partitionsWithData = Set(0, 1, 2, 3, 4, 5, 6))
   }
+
+  // ==================== Cancellation Tests ====================
+
+  test("merger thread responds to cancellation during write") {
+    // Test that merger thread properly exits when task is cancelled.
+    // This validates the fix for zombie merger thread issue where
+    // merger could get stuck in wait() when task is killed.
+    val writer = createWriter()
+
+    // Start writing in a separate thread to simulate async operation
+    val writeThread = new Thread(() => {
+      try {
+        // Write some data that will keep merger busy
+        writer.write(createTestRecords(Iterator(0, 1, 2, 3, 4, 5, 6)))
+      } catch {
+        case _: Exception => // Expected if cancelled
+      }
+    })
+    writeThread.start()
+
+    // Give writer time to start processing
+    Thread.sleep(100)
+
+    // Simulate task cancellation by calling stop(false)
+    // This should trigger cleanup and cancel merger futures
+    val stopStartTime = System.currentTimeMillis()
+    writer.stop(false)
+    val stopDuration = System.currentTimeMillis() - stopStartTime
+
+    // Wait for write thread to finish
+    writeThread.join(5000)
+
+    // Verify stop() completed in reasonable time (not stuck waiting for merger)
+    // If merger thread was stuck in wait(), stop() would hang
+    assert(stopDuration < 3000,
+      s"stop() took ${stopDuration}ms, suggesting merger thread may be stuck")
+    assert(!writeThread.isAlive, "Write thread should have finished")
+  }
+
+  test("merger thread handles interrupt flag correctly") {
+    // Verify that merger thread checks interrupt flag and exits gracefully
+    // when interrupted, rather than getting stuck in wait()
+    val writer = createWriter()
+
+    // Create a slow iterator that allows time for interruption
+    val slowIterator = new Iterator[(Int, ColumnarBatch)] {
+      private var count = 0
+      override def hasNext: Boolean = count < 100
+      override def next(): (Int, ColumnarBatch) = {
+        count += 1
+        Thread.sleep(10) // Slow down to allow interruption
+        (count % 7, createTestBatch(count))
+      }
+    }
+
+    // Start writing in background
+    @volatile var writeException: Throwable = null
+    val writeThread = new Thread(() => {
+      try {
+        writer.write(slowIterator)
+      } catch {
+        case e: Throwable => writeException = e
+      }
+    })
+    writeThread.start()
+
+    // Let it process a few records
+    Thread.sleep(200)
+
+    // Cancel the write operation
+    writer.stop(false)
+
+    // Write thread should finish quickly after stop()
+    writeThread.join(3000)
+    assert(!writeThread.isAlive,
+      "Write thread should exit after stop(), merger thread may be stuck")
+  }
 }

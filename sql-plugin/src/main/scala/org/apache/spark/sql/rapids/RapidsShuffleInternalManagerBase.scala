@@ -502,8 +502,17 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           } else {
             // Current partition hasn't been queued yet by main thread, wait for it.
             mergerCondition.synchronized {
-              while (!hasNewWork.get()) {
-                mergerCondition.wait()
+              while (!hasNewWork.get() && !Thread.currentThread().isInterrupted) {
+                try {
+                  mergerCondition.wait()
+                } catch {
+                  case _: InterruptedException =>
+                    Thread.currentThread().interrupt()
+                    return
+                }
+              }
+              if (Thread.currentThread().isInterrupted) {
+                return
               }
               hasNewWork.set(false)
             }

@@ -201,6 +201,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 timeout(time: 6, unit: 'HOURS') { // step only timeout for test run
                                     try {
                                         common.pvcM2Cache(this, PVC_MOUNT_PATH)
+                                        common.prepareArtNetrc(this)
                                         sh "$PREMERGE_SCRIPT mvn_verify"
                                         step([$class                : 'JacocoPublisher',
                                               execPattern           : '**/target/jacoco.exec',
@@ -241,6 +242,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 timeout(time: 6, unit: 'HOURS') {
                                     try {
                                         common.pvcM2Cache(this, PVC_MOUNT_PATH)
+                                        common.prepareArtNetrc(this)
                                         sh "$PREMERGE_SCRIPT ci_2"
                                     } catch(e) {
                                         common.syncDir(this, "${env.CUSTOM_WORKSPACE}-ci-2", "${env.PVC_WORKSPACE}-ci-2", false, ['.m2/'])
@@ -275,6 +277,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 timeout(time: 6, unit: 'HOURS') {
                                     try {
                                         common.pvcM2Cache(this, PVC_MOUNT_PATH)
+                                        common.prepareArtNetrc(this)
                                         sh "$PREMERGE_SCRIPT ci_scala213"
                                     } catch(e) {
                                         common.syncDir(this, "${env.CUSTOM_WORKSPACE}-scala-213", "${env.PVC_WORKSPACE}-scala-213", false, ['.m2/'])

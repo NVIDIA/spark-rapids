@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -185,6 +185,12 @@ def test_insert_overwrite_partitioned_table(spark_tmp_table_factory, partition_c
     pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
     pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
     pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
+    pytest.param("_c0", id="identity(byte)"),
+    pytest.param("_c2", id="identity(int)"),
+    pytest.param("_c3", id="identity(long)"),
+    pytest.param("_c6", id="identity(string)"),
+    pytest.param("_c8", id="identity(date)"),
+    pytest.param("_c10", id="identity(decimal)"),
 ])
 def test_insert_overwrite_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
@@ -312,45 +318,6 @@ def test_insert_overwrite_partitioned_table_all_cols_fallback(spark_tmp_table_fa
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
-
-    # Initial insert (not tested for fallback)
-    with_cpu_session(lambda spark: insert_initial_data(spark, table_name),
-                     conf = iceberg_static_overwrite_conf)
-
-    # Assert that overwrite falls back to CPU
-    assert_gpu_fallback_collect(lambda spark: overwrite_data(spark, table_name),
-                                "OverwriteByExpressionExec",
-                                conf = iceberg_static_overwrite_conf)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('OverwriteByExpressionExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("_c2", id="identity"),
-])
-def test_insert_overwrite_partitioned_table_unsupported_partition_fallback(
-        spark_tmp_table_factory, partition_col_sql):
-    """Test that unsupported partition transforms fall back to CPU."""
-    table_prop = {"format-version": "2"}
-
-    def insert_initial_data(spark, table_name: str):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=INITIAL_INSERT_SEED)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-    
-    def overwrite_data(spark, table_name: str):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
-
-    table_name = get_full_table_name(spark_tmp_table_factory)
-    create_iceberg_table(table_name,
-                         partition_col_sql=partition_col_sql,
-                         table_prop=table_prop)
 
     # Initial insert (not tested for fallback)
     with_cpu_session(lambda spark: insert_initial_data(spark, table_name),

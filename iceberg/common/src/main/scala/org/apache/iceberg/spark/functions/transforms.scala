@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,10 @@ case class GpuTruncate(width: Int) extends GpuTransform {
     GpuTruncateExpression.isSupportedValueType(inputType)
 }
 
+case object GpuIdentity extends GpuTransform {
+  override def support(inputType: DataType, nullable: Boolean): Boolean = true
+}
+
 object GpuTransform {
   def apply(transform: String): GpuTransform = {
     if (transform.startsWith("bucket")) {
@@ -76,6 +80,8 @@ object GpuTransform {
     } else if (transform.startsWith("truncate")) {
       val width = transform.substring("truncate[".length, transform.length - 1).toInt
       GpuTruncate(width)
+    } else if (transform.startsWith("identity")) {
+      GpuIdentity
     } else {
       throw new IllegalArgumentException(s"Unsupported transform: $transform")
     }
