@@ -210,50 +210,62 @@ private[sequencefile] final class HostBinaryListBufferer(
    * Builds a cuDF LIST<UINT8> device column (Spark BinaryType equivalent) and releases host
    * buffers.
    * The returned ColumnVector owns its device memory and must be closed by the caller.
+   *
+   * This method builds a proper nested HostColumnVector (LIST containing UINT8 child) and
+   * uses a single copyToDevice() call, which is more efficient than the alternative approach
+   * of copying child and offsets separately then calling makeListFromOffsets().
+   *
+   * The makeListFromOffsets() approach has a performance issue: it internally creates new
+   * cudf::column objects from column_view, which copies GPU memory. This results in:
+   *   - 2 H2D transfers (child + offsets)
+   *   - 2 extra GPU memory copies inside makeListFromOffsets()
+   *
+   * By using a proper nested HostColumnVector structure and single copyToDevice(), we get:
+   *   - 1 logical H2D transfer (the nested structure handles all buffers)
+   *   - 0 extra GPU memory copies
    */
   def getDeviceListColumnAndRelease(): ColumnVector = {
     if (dataLocation > Int.MaxValue) {
       throw new IllegalStateException(
         s"Binary column child size $dataLocation exceeds INT32 offset limit")
     }
+    // Write the final offset
     offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataLocation.toInt)
 
-    val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
     val childRowCount = dataLocation.toInt
-    val offsetsRowCount = numRows + 1
 
-    // Transfer ownership of the host buffers to the HostColumnVectors.
-    // closeOnExcept ensures buffers are closed if HostColumnVector construction fails.
-    val childHost = closeOnExcept(dataBuffer) { _ =>
+    // Create the child HostColumnVectorCore (UINT8 data) - this will be nested inside the LIST
+    val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
+    val childCore = closeOnExcept(dataBuffer) { _ =>
       closeOnExcept(offsetsBuffer) { _ =>
-        new HostColumnVector(DType.UINT8, childRowCount,
+        new HostColumnVectorCore(DType.UINT8, childRowCount,
           Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
       }
     }
     dataBuffer = null
 
-    val offsetsHost = closeOnExcept(childHost) { _ =>
+    // Create the children list for the LIST column
+    val listChildren = new util.ArrayList[HostColumnVectorCore]()
+    listChildren.add(childCore)
+
+    // Create the LIST HostColumnVector with proper nested structure
+    // For LIST type: data buffer is null, offsets buffer contains the list offsets,
+    // and the child column (UINT8) is in the nestedChildren list
+    val listHost = closeOnExcept(childCore) { _ =>
       closeOnExcept(offsetsBuffer) { _ =>
-        new HostColumnVector(DType.INT32, offsetsRowCount,
-          Optional.of[java.lang.Long](0L), offsetsBuffer, null, null, emptyChildren)
+        new HostColumnVector(DType.LIST, numRows,
+          Optional.of[java.lang.Long](0L), // nullCount = 0
+          null, // no data buffer for LIST type
+          null, // no validity buffer (no nulls)
+          offsetsBuffer, // offsets buffer
+          listChildren) // nested children containing the UINT8 child
       }
     }
     offsetsBuffer = null
-    // Note: directOut doesn't own any resources - it just wraps the dataBuffer which is now
-    // owned by childHost. No need to close it.
 
-    // Copy to device and close host columns immediately after copy.
-    val childDev = closeOnExcept(offsetsHost) { _ =>
-      withResource(childHost)(_.copyToDevice())
-    }
-    val offsetsDev = closeOnExcept(childDev) { _ =>
-      withResource(offsetsHost)(_.copyToDevice())
-    }
-    withResource(childDev) { _ =>
-      withResource(offsetsDev) { _ =>
-        childDev.makeListFromOffsets(numRows, offsetsDev)
-      }
-    }
+    // Single copyToDevice() call handles the entire nested structure efficiently
+    // This avoids the extra GPU memory copies that makeListFromOffsets() would cause
+    withResource(listHost)(_.copyToDevice())
   }
 
   /**
@@ -660,36 +672,37 @@ class MultiFileCloudSequenceFilePartitionReader(
     }
   }
 
+  /**
+   * Build a device column (LIST<UINT8>) from host memory buffers.
+   * Uses proper nested HostColumnVector structure for efficient single copyToDevice().
+   */
   private def buildDeviceColumnFromHostBuffers(
       dataBuffer: HostMemoryBuffer,
       offsetsBuffer: HostMemoryBuffer,
       numRows: Int): ColumnVector = {
     val dataLen = dataBuffer.getLength.toInt
 
+    // Create the child HostColumnVectorCore (UINT8 data)
     val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
-
-    // Create host column vectors (they take ownership of buffers)
-    val childHost = new HostColumnVector(DType.UINT8, dataLen,
+    val childCore = new HostColumnVectorCore(DType.UINT8, dataLen,
       Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
 
-    val offsetsHost = closeOnExcept(childHost) { _ =>
-      new HostColumnVector(DType.INT32, numRows + 1,
-        Optional.of[java.lang.Long](0L), offsetsBuffer, null, null, emptyChildren)
+    // Create the children list for the LIST column
+    val listChildren = new util.ArrayList[HostColumnVectorCore]()
+    listChildren.add(childCore)
+
+    // Create the LIST HostColumnVector with proper nested structure
+    val listHost = closeOnExcept(childCore) { _ =>
+      new HostColumnVector(DType.LIST, numRows,
+        Optional.of[java.lang.Long](0L), // nullCount = 0
+        null, // no data buffer for LIST type
+        null, // no validity buffer (no nulls)
+        offsetsBuffer, // offsets buffer
+        listChildren) // nested children containing the UINT8 child
     }
 
-    // Copy to device
-    val childDev = closeOnExcept(offsetsHost) { _ =>
-      withResource(childHost)(_.copyToDevice())
-    }
-    val offsetsDev = closeOnExcept(childDev) { _ =>
-      withResource(offsetsHost)(_.copyToDevice())
-    }
-
-    withResource(childDev) { _ =>
-      withResource(offsetsDev) { _ =>
-        childDev.makeListFromOffsets(numRows, offsetsDev)
-      }
-    }
+    // Single copyToDevice() handles the entire nested structure efficiently
+    withResource(listHost)(_.copyToDevice())
   }
 
   /**
