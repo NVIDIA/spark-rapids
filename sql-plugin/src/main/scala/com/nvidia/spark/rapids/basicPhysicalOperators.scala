@@ -231,7 +231,16 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
-  override def outputPartitioning: Partitioning = child.outputPartitioning
+  override def outputPartitioning: Partitioning = {
+    val attributeMap = child.output.zip(output).toMap
+    child.outputPartitioning match {
+      case e: Expression =>
+        e.transform {
+          case a: Attribute if attributeMap.contains(a) => attributeMap(a)
+        }.asInstanceOf[Partitioning]
+      case other => other
+    }
+  }
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -1573,6 +1582,9 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     }
   }
 
+  override def outputPartitioning: Partitioning =
+    GpuUnionExecShim.getOutputPartitioning(children, output, conf)
+
   // The smallest of our children
   override def outputBatching: CoalesceGoal =
     children.map(GpuExec.outputBatching).reduce(CoalesceGoal.minProvided)
@@ -1587,6 +1599,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     GpuUnionExecShim.unionColumnarRdds(
       sparkContext,
       children.map(_.executeColumnar()),
+      outputPartitioning,
       numOutputRows,
       numOutputBatches)
   }

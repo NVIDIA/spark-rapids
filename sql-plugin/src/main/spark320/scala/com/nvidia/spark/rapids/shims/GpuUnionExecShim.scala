@@ -54,15 +54,21 @@ import com.nvidia.spark.rapids.GpuMetric
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Pre-Spark 4.1 implementation: uses sparkContext.union() which concatenates partitions.
  */
 object GpuUnionExecShim {
+
   def unionColumnarRdds(
       sc: SparkContext,
       rdds: Seq[RDD[ColumnarBatch]],
+      outputPartitioning: Partitioning,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
     sc.union(rdds).map { batch =>
@@ -71,5 +77,11 @@ object GpuUnionExecShim {
       batch
     }
   }
-}
 
+  def getOutputPartitioning(
+      children: Seq[SparkPlan],
+      unionOutput: Seq[Attribute],
+      conf: SQLConf): Partitioning = {
+    UnknownPartitioning(0)
+  }
+}
