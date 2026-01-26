@@ -98,6 +98,9 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
       .set("spark.shuffle.manager", shuffleManagerClass)
       .set("spark.shuffle.sort.io.plugin.class",
         "org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleDataIO")
+      // Enable skipMerge to use MultithreadedShuffleBufferCatalog, which emits
+      // SparkRapidsShuffleDiskSavingsEvent that this test suite depends on for verification.
+      .set("spark.rapids.shuffle.multithreaded.skipMerge", "true")
       .set("spark.rapids.memory.host.partialFileBufferInitialSize", "1m")
       .set("spark.rapids.memory.host.partialFileBufferMaxSize", maxBufferSize)
       .set("spark.rapids.sql.batchSizeBytes", batchSize)
