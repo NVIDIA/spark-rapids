@@ -401,7 +401,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       writer: ShuffleMapOutputWriter): BatchState = {
 
     // Each partition has a queue of compressed record futures.
-    // Key insight: each record gets its own independent buffer, avoiding the 2GB limit.
+    // Each record has its own independent buffer for memory isolation.
     val partitionRecords = new ConcurrentHashMap[Int,
       ConcurrentLinkedQueue[Future[CompressedRecord]]]()
 
@@ -424,12 +424,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     // Assign a merger slot for this batch
     val mergerSlotNum = RapidsShuffleInternalManagerBase.getNextMergerSlot
 
-    // Merger task for this batch
-    // Simplified design: each record has its own buffer, so we just:
-    // 1. Poll records from the queue
+    // Merger task: writes compressed records to disk in partition order.
+    // Each record has its own buffer. For each partition, we:
+    // 1. Poll compressed records from the queue
     // 2. Write buffer content to output stream
-    // 3. Close buffer immediately (no accumulation!)
-    // 4. Release quota
+    // 3. Close buffer immediately after writing
+    // 4. Release quota to allow more compression tasks to proceed
     val mergerTask = new Runnable {
       override def run(): Unit = {
         var currentPartitionToWrite = 0
@@ -464,7 +464,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                       outputStream.write(record.buffer.getBuf, 0, record.compressedSize.toInt)
                     }
 
-                    // Close buffer immediately - this is the key to avoiding 2GB limit!
+                    // Close buffer immediately after writing to release memory
                     record.buffer.close()
 
                     // Release quota after data is written to output stream
@@ -478,10 +478,21 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                     // All records for this partition have been processed
                     partitionComplete = true
                   } else if (!madeProgress) {
-                    // No records were processed, wait for main thread to queue more
+                    // No records were processed, wait for main thread to queue more.
+                    // Use classic condition flag pattern to avoid busy-loop polling.
+                    // Also check interrupt flag to handle task cancellation gracefully.
                     mergerCondition.synchronized {
-                      while (!hasNewWork.get()) {
-                        mergerCondition.wait()
+                      while (!hasNewWork.get() && !Thread.currentThread().isInterrupted) {
+                        try {
+                          mergerCondition.wait()
+                        } catch {
+                          case _: InterruptedException =>
+                            Thread.currentThread().interrupt()
+                            return
+                        }
+                      }
+                      if (Thread.currentThread().isInterrupted) {
+                        return
                       }
                       hasNewWork.set(false)
                     }
@@ -687,8 +698,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
           try {
             withResource(cb) { _ =>
-              // Each record gets its own INDEPENDENT buffer to avoid the 2GB limit.
-              // The buffer is created here and closed by the merger after writing.
+              // Create a new buffer for this record.
+              // The buffer is closed by the merger thread after writing to disk.
               val buffer = new OpenByteArrayOutputStream()
 
               // Serialize + compress + encryption to memory buffer
