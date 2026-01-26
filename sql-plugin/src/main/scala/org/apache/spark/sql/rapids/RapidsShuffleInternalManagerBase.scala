@@ -895,8 +895,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
       val result = mtCatalog match {
         case Some(catalog) =>
-          // Store data in MultithreadedShuffleBufferCatalog instead of merging
-          // Handles are now managed by the catalog
+          // Store data in MultithreadedShuffleBufferCatalog instead of merging.
+          // The catalog takes ownership of the handles.
           val lengths = storePartialFilesInCatalog(catalog, partialFiles.toSeq, isMultiBatch)
           handlesTransferred = true
           lengths
@@ -2096,15 +2096,15 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       catalog.unregisterShuffle(shuffleId)
     }
     // For MultithreadedShuffleBufferCatalog:
-    // Cleanup is now triggered by ShuffleCleanupListener on job end, not here.
-    // The ShuffleCleanupEndpoint will poll for shuffles to clean and call
+    // Cleanup is triggered by ShuffleCleanupListener on job end, not here.
+    // The ShuffleCleanupEndpoint polls the driver for shuffles to clean and calls
     // mtCatalog.unregisterShuffle on executors.
     //
     // Note: This method is called via GC-triggered ContextCleaner.doCleanupShuffle().
-    // We don't register for cleanup here anymore because:
+    // We do not register for cleanup here because:
     // 1. GC timing is unpredictable and often happens too late (at app shutdown)
     // 2. By that time, executors may already be shutting down
-    // 3. Instead, ShuffleCleanupListener triggers cleanup proactively on job end
+    // 3. ShuffleCleanupListener triggers cleanup proactively on job end
   }
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {

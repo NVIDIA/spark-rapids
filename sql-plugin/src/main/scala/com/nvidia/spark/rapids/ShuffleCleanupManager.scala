@@ -37,51 +37,8 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * but unregisterShuffle is called on the driver. By using a polling mechanism,
  * executors can learn about shuffles that need cleanup and report their statistics.
  *
- * == Aggregating SparkRapidsShuffleDiskSavingsEvent ==
- *
- * Each executor posts its own SparkRapidsShuffleDiskSavingsEvent when it cleans up shuffle data.
- * This means a single shuffle may have multiple events in the eventlog (one per executor that
- * participated in the shuffle write). To get the total disk I/O savings for a shuffle or the
- * entire application, you need to aggregate these events.
- *
- * Event format in eventlog (JSON):
- * {{{
- * {"Event":"com.nvidia.spark.rapids.SparkRapidsShuffleDiskSavingsEvent",
- *  "shuffleId":0,"bytesFromMemory":7868,"bytesFromDisk":0}
- * }}}
- *
- *
- * To get application-wide totals:
- * {{{
- * grep "SparkRapidsShuffleDiskSavingsEvent" eventlog | \
- *   jq -s '{
- *     totalBytesFromMemory: (map(.bytesFromMemory) | add),
- *     totalBytesFromDisk: (map(.bytesFromDisk) | add),
- *     diskSavingsBytes: (map(.bytesFromMemory) | add)
- *   }'
- * }}}
- *
- * The `bytesFromMemory` field represents bytes that were kept in memory and never written to
- * disk, which is the actual disk I/O savings. The `bytesFromDisk` field represents bytes that
- * were spilled to disk due to memory pressure. The sum of `bytesFromMemory` across all events
- * should match the total "Shuffle Bytes Written" reported in task metrics.
- *
- * == Timing Considerations ==
- *
- * The cleanup mechanism uses a polling model where executors poll the driver every 1 second
- * (configurable via pollIntervalMs in ShuffleCleanupEndpoint). For short-running applications
- * or scripts, the session may exit before executors have a chance to poll and report their
- * statistics. To ensure all events are captured, add a short delay (e.g., 2 seconds) before
- * exiting the Spark session:
- *
- * {{{
- * // After your last query completes
- * Thread.sleep(2000)  // Wait for executor cleanup polling
- * spark.stop()
- * }}}
- *
- * For long-running applications or interactive sessions (spark-shell, notebooks), this is
- * typically not an issue as there is enough time between queries for cleanup to complete.
+ * For information on aggregating SparkRapidsShuffleDiskSavingsEvent from eventlogs,
+ * see docs/dev/shuffle-metrics.md.
  *
  * == Design Rationale: Why Pull (Polling) Instead of Push ==
  *

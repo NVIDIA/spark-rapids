@@ -484,11 +484,11 @@ When a buffer needs to grow:
 
 ### 10.2 External Shuffle Service (ESS)
 
-**Limitation**: This feature only works when ESS is **disabled**.
+**Limitation**: Skip-merge only works when ESS is **disabled**.
 
 **Why**: ESS runs in a separate JVM process. It cannot access our in-memory catalog. When ESS is enabled, remote shuffle fetches bypass executors entirely and go to the ESS process, which can only read disk files.
 
-**When ESS is enabled**: We fall back to the original merge behavior.
+**Default behavior**: `spark.rapids.shuffle.multithreaded.skipMerge` defaults to `false`, so the original merge behavior is used by default. Users must explicitly enable skip-merge after ensuring ESS is disabled.
 
 ## 11. Configuration
 
@@ -496,8 +496,7 @@ When a buffer needs to grow:
 
 | Config | Default | Description |
 |--------|---------|-------------|
-| `spark.rapids.shuffle.catalog.enabled` | `true` | Enable skip-merge catalog |
-| `spark.rapids.shuffle.cleanup.pollInterval` | `1s` | How often executors poll for cleanup |
+| `spark.rapids.shuffle.multithreaded.skipMerge` | `false` | Skip merging partial files and serve data from catalog. Requires ESS disabled. Set to `true` for better performance when shuffle data is not reused across SQL queries. |
 
 ### Changed Defaults (Phase 2)
 

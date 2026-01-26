@@ -450,11 +450,13 @@ class SpillablePartialFileHandle private (
   }
 
   /**
-   * Read bytes from a specific position without modifying internal read state.
+   * Read bytes from a specific position into a byte array.
    * Thread-safe for concurrent reads from different positions.
    *
-   * This method is designed for scenarios where multiple reducers need to
-   * read different partitions from the same handle concurrently.
+   * This is the primary read interface for this handle, used by:
+   * - MultiSegmentInputStream for streaming reads
+   * - MultiSegmentFileRegion for network transfer
+   * - nioByteBuffer() for ManagedBuffer interface
    *
    * @param position starting position to read from (0-based)
    * @param bytes destination buffer
@@ -565,12 +567,13 @@ class SpillablePartialFileHandle private (
     super.spillable && !protectedFromSpill && !spilledToDisk && host.nonEmpty
   }
 
-  // Flag to prevent concurrent spill attempts
-  @volatile private var spillInProgress: Boolean = false
+  // Flag to prevent concurrent spill attempts (only accessed within synchronized blocks)
+  private var spillInProgress: Boolean = false
 
   /**
    * Spill memory buffer to disk.
    *
+   * Following SpillFramework pattern: all state checks inside synchronized block.
    * IO operations are performed outside the synchronized block to allow
    * concurrent read() access to the buffer during the file write.
    */
@@ -579,16 +582,9 @@ class SpillablePartialFileHandle private (
       return 0L  // Nothing to spill for FILE_ONLY mode
     }
 
-    // Fast path check without lock
-    // writeFinished only transitions false->true, so no need to double-check in lock
-    if (spilledToDisk || spillInProgress || !writeFinished) {
-      return 0L
-    }
-
-    // Acquire buffer reference and set spilling flag under lock
+    // Check all conditions under lock (following SpillFramework pattern)
     val bufferToSpill = synchronized {
-      // Double check after acquiring lock (except writeFinished which only goes false->true)
-      if (spilledToDisk || spillInProgress) {
+      if (spilledToDisk || spillInProgress || !writeFinished) {
         return 0L
       }
 

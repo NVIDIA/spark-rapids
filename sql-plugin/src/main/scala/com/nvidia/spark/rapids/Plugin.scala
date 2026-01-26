@@ -499,7 +499,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     //
     // Spark 4.x can call DriverPlugin.init before SparkEnv/shuffleManager are fully initialized,
     // so we must avoid SparkEnv-based checks here and use SparkConf instead.
-    val isEssEnabledByConf = sparkConf.getBoolean("spark.shuffle.service.enabled", false)
+    val isEssEnabledByConf =
+      sparkConf.getBoolean(TrampolineUtil.shuffleServiceEnabledKey, false)
     if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled &&
         !isEssEnabledByConf) {
       ShuffleCleanupManager.init(sc)

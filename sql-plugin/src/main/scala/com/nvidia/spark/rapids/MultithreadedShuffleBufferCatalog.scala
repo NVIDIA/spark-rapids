@@ -19,16 +19,18 @@ package com.nvidia.spark.rapids
 import java.io.{InputStream, IOException}
 import java.lang.{Boolean => JBoolean}
 import java.nio.ByteBuffer
+import java.nio.channels.WritableByteChannel
 import java.util.HashSet
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable.ArrayBuffer
 
-import _root_.io.netty.buffer.Unpooled
+import _root_.io.netty.handler.stream.ChunkedStream
 import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
+import org.apache.spark.network.util.AbstractFileRegion
 import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
 
 /**
@@ -219,7 +221,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
               handle.close()
             } catch {
               case e: Exception =>
-                logWarning(s"Failed to close handle for shuffle $shuffleId", e)
+                logError(s"Failed to close handle for shuffle $shuffleId", e)
             }
           }
         }
@@ -253,7 +255,10 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
   override def size(): Long = segments.map(_.length).sum
 
   override def nioByteBuffer(): ByteBuffer = {
-    // Read all data into a single ByteBuffer
+    // This method loads all data into memory. It's required by the ManagedBuffer interface
+    // but is NOT used in the network transfer path - Spark's network layer uses
+    // convertToNetty() which returns our streaming MultiSegmentFileRegion.
+    // This method may be called by other code paths (e.g., local block reading).
     val totalSize = size().toInt
     val buffer = ByteBuffer.allocate(totalSize)
     val bytes = new Array[Byte](8192) // Read buffer
@@ -288,17 +293,22 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
   override def release(): ManagedBuffer = this
 
   override def convertToNetty(): AnyRef = {
-    // For network transfer, wrap ByteBuffer in Netty ByteBuf
-    Unpooled.wrappedBuffer(nioByteBuffer())
+    // Return a custom FileRegion that streams data in chunks, avoiding loading all
+    // data into memory at once. This addresses concerns about large shuffle blocks.
+    new MultiSegmentFileRegion(segments)
   }
 
   // Spark 4.0+ adds convertToNettyForSsl() abstract method.
   // We provide this method for Spark 4.0+ compatibility. In Spark 3.x, this is just
   // a regular method (parent class doesn't have it). In Spark 4.0+, this overrides
   // the abstract method.
+  //
+  // SSL mode cannot use FileRegion (zero-copy) because data must be encrypted.
+  // Return ChunkedStream for streaming encryption, consistent with Spark's
+  // FileSegmentManagedBuffer.convertToNettyForSsl() implementation.
+  // Chunk size 64KB matches Spark's default (spark.network.ssl.maxEncryptedBlockSize).
   def convertToNettyForSsl(): AnyRef = {
-    // For SSL, return an InputStream which Netty will wrap in ChunkedStream
-    createInputStream()
+    new ChunkedStream(createInputStream(), 64 * 1024)
   }
 }
 
@@ -318,33 +328,33 @@ class MultiSegmentInputStream(segments: Seq[PartitionSegment]) extends InputStre
   }
 
   override def read(b: Array[Byte], off: Int, len: Int): Int = {
-    if (currentSegmentIndex >= segments.size) {
-      return -1 // EOF
-    }
+    // Use loop instead of recursion to avoid StackOverflowError with many segments
+    while (currentSegmentIndex < segments.size) {
+      val segment = segments(currentSegmentIndex)
+      val remainingInSegment = segment.length - bytesReadInCurrentSegment
 
-    val segment = segments(currentSegmentIndex)
-    val remainingInSegment = segment.length - bytesReadInCurrentSegment
-    
-    if (remainingInSegment <= 0) {
-      // Move to next segment
-      currentSegmentIndex += 1
-      if (currentSegmentIndex >= segments.size) {
-        return -1 // EOF
+      if (remainingInSegment <= 0) {
+        // Move to next segment
+        currentSegmentIndex += 1
+        if (currentSegmentIndex < segments.size) {
+          currentPosition = segments(currentSegmentIndex).offset
+          bytesReadInCurrentSegment = 0
+        }
+        // Continue loop to try next segment
+      } else {
+        val toRead = math.min(len, remainingInSegment).toInt
+        val bytesRead = segment.handle.readAt(currentPosition, b, off, toRead)
+
+        if (bytesRead > 0) {
+          currentPosition += bytesRead
+          bytesReadInCurrentSegment += bytesRead
+        }
+
+        return bytesRead
       }
-      currentPosition = segments(currentSegmentIndex).offset
-      bytesReadInCurrentSegment = 0
-      return read(b, off, len) // Recursive call for next segment
     }
 
-    val toRead = math.min(len, remainingInSegment).toInt
-    val bytesRead = segment.handle.readAt(currentPosition, b, off, toRead)
-    
-    if (bytesRead > 0) {
-      currentPosition += bytesRead
-      bytesReadInCurrentSegment += bytesRead
-    }
-    
-    bytesRead
+    -1 // EOF - all segments exhausted
   }
 
   override def available(): Int = {
@@ -372,4 +382,99 @@ class MultiSegmentInputStream(segments: Seq[PartitionSegment]) extends InputStre
   }
 }
 
+/**
+ * A FileRegion implementation that streams data from multiple partition segments.
+ *
+ * This class enables network transfer of shuffle data by reading from segments
+ * via readAt() and writing to the target channel. Data is read in chunks (64KB)
+ * to limit memory usage during transfer.
+ *
+ * Spark's MessageWithHeader only accepts ByteBuf or FileRegion. By implementing
+ * FileRegion, we can provide streaming transfer while remaining compatible with
+ * Spark's network layer.
+ */
+class MultiSegmentFileRegion(segments: Seq[PartitionSegment]) extends AbstractFileRegion {
 
+  private val totalSize: Long = segments.map(_.length).sum
+  private var totalTransferred: Long = 0
+
+  // Buffer size for each transferTo call (64KB chunks)
+  private val CHUNK_SIZE = 64 * 1024
+
+  // Reusable buffer for reading data (avoids allocation per transferTo call)
+  private val readBuffer = new Array[Byte](CHUNK_SIZE)
+
+  // Track current position within the logical data stream
+  private var currentSegmentIndex: Int = 0
+  private var bytesTransferredInCurrentSegment: Long = 0
+
+  override def count(): Long = totalSize
+
+  override def position(): Long = 0
+
+  override def transferred(): Long = totalTransferred
+
+  /**
+   * Transfer data to the target channel in chunks.
+   *
+   * This method reads data from segments using readAt() and writes to the channel.
+   * Each call transfers up to CHUNK_SIZE bytes.
+   *
+   * @param target the channel to write data to
+   * @param position the current transfer position (should equal totalTransferred)
+   * @return the number of bytes transferred in this call
+   */
+  override def transferTo(target: WritableByteChannel, position: Long): Long = {
+    if (position != totalTransferred) {
+      throw new IllegalArgumentException(
+        s"Invalid position: expected $totalTransferred but got $position")
+    }
+
+    if (totalTransferred >= totalSize) {
+      return 0 // All data transferred
+    }
+
+    // Find the current segment and read data
+    while (currentSegmentIndex < segments.size) {
+      val segment = segments(currentSegmentIndex)
+      val remainingInSegment = segment.length - bytesTransferredInCurrentSegment
+
+      if (remainingInSegment <= 0) {
+        // Move to next segment
+        currentSegmentIndex += 1
+        bytesTransferredInCurrentSegment = 0
+      } else {
+        // Read from current segment using readAt
+        val toRead = math.min(remainingInSegment, CHUNK_SIZE).toInt
+        val handlePosition = segment.offset + bytesTransferredInCurrentSegment
+        val bytesRead = segment.handle.readAt(handlePosition, readBuffer, 0, toRead)
+
+        if (bytesRead > 0) {
+          // Write to target channel
+          val writeBuffer = ByteBuffer.wrap(readBuffer, 0, bytesRead)
+          var written = 0
+          while (writeBuffer.hasRemaining) {
+            val w = target.write(writeBuffer)
+            if (w < 0) {
+              throw new IOException("Failed to write to target channel")
+            }
+            written += w
+          }
+
+          bytesTransferredInCurrentSegment += written
+          totalTransferred += written
+          return written
+        } else if (bytesRead < 0) {
+          throw new IOException(
+            s"Unexpected EOF reading segment at position $handlePosition")
+        }
+      }
+    }
+
+    0 // All segments exhausted
+  }
+
+  override protected def deallocate(): Unit = {
+    // No resources to release - handles are managed by MultithreadedShuffleBufferCatalog
+  }
+}
