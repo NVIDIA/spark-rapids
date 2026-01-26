@@ -443,6 +443,7 @@ def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory
     )
 
 
+
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
