@@ -78,8 +78,12 @@ class GpuReadSequenceFileBinaryFormat extends FileFormat with GpuReadFileFormatW
     PartitionReaderIterator.buildReader(factory)
   }
 
-  // Default to multi-file reads (recommended for many small files).
-  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = false
+  // Respect the reader type configuration.
+  // Default is AUTO which selects MULTITHREADED for cloud storage and PERFILE for local.
+  // MULTITHREADED is recommended when reading many files as it allows CPU to keep reading
+  // while GPU is also doing work.
+  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = 
+      conf.isSequenceFilePerFileReadEnabled
 
   override def createMultiFileReaderFactory(
       broadcastedConf: Broadcast[SerializableConfiguration],
