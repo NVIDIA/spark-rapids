@@ -590,6 +590,8 @@ object SpillableTable {
    */
   def apply(table: Table, priority: Long): SpillableTable = {
     Cuda.DEFAULT_STREAM.sync()
-    new SpillableTable(SpillableTableHandle(table), table.getRowCount, table.getNumberOfColumns)
+    val handle = SpillableTableHandle(table)
+    // TODO: handle.setSpillPriority(priority) when priority support is implemented
+    new SpillableTable(handle, table.getRowCount, table.getNumberOfColumns)
   }
 }
