@@ -1337,11 +1337,23 @@ trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
     handles.remove(handle)
   }
 
-  override def close(): Unit = synchronized {
-    handles.forEach(handle => {
-      handle.close()
-    })
-    handles.clear()
+  /**
+   * Close all handles in the store.
+   *
+   * Lock ordering: To avoid AB-BA deadlock between store lock and handle lock,
+   * we copy the handles list under the store lock, then close handles outside
+   * the lock. This ensures we always acquire handle locks without holding the
+   * store lock, matching the lock order in handle.spill() which acquires
+   * handle lock first, then store lock via removeFromXxxStore().
+   */
+  override def close(): Unit = {
+    val handlesToClose = synchronized {
+      val list = new util.ArrayList[T](handles)
+      handles.clear()
+      list
+    }
+    // Close handles outside the store lock to avoid deadlock
+    handlesToClose.forEach(_.close())
   }
 }
 
@@ -1436,19 +1448,29 @@ trait SpillableStore[T <: SpillableHandle]
     }
   }
 
+  /**
+   * Get a summary of spillable handles in the store.
+   *
+   * Lock ordering: To avoid AB-BA deadlock between store lock and handle lock,
+   * we copy the handles list under the store lock, then check spillable status
+   * outside the lock. The handle.spillable check acquires the handle lock,
+   * so we must not hold the store lock while calling it.
+   */
   def spillableSummary(): String = {
+    val handlesCopy = synchronized {
+      new util.ArrayList[T](handles)
+    }
     var spillableHandleCount = 0L
     var spillableHandleBytes = 0L
     var totalHandleBytes = 0L
-    synchronized {
-      handles.forEach(handle => {
-        totalHandleBytes += handle.approxSizeInBytes
-        if (handle.spillable) {
-          spillableHandleCount += 1
-          spillableHandleBytes += handle.approxSizeInBytes
-        }
-      })
-    }
+    // Iterate outside the store lock to avoid deadlock
+    handlesCopy.forEach(handle => {
+      totalHandleBytes += handle.approxSizeInBytes
+      if (handle.spillable) {
+        spillableHandleCount += 1
+        spillableHandleBytes += handle.approxSizeInBytes
+      }
+    })
     s"SpillableStore: ${this.getClass.getSimpleName}, " +
       s"Total Handles: $numHandles, " +
       s"Spillable Handles: $spillableHandleCount, " +
