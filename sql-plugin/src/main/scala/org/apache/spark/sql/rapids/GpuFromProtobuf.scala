@@ -45,6 +45,15 @@ import org.apache.spark.sql.types._
  * @param fieldNumbers Protobuf field numbers for decoded fields (parallel to decodedFieldIndices)
  * @param cudfTypeIds cuDF type IDs for ALL fields in fullSchema
  * @param cudfTypeScales Encodings for decoded fields (parallel to decodedFieldIndices)
+ * @param isRequired Whether each decoded field is required (parallel to decodedFieldIndices).
+ *                   Required fields missing in failOnErrors mode will cause an exception.
+ * @param hasDefaultValue Whether each decoded field has a default value (parallel to decodedFieldIndices)
+ * @param defaultInts Default values for int/long/enum fields (parallel to decodedFieldIndices)
+ * @param defaultFloats Default values for float/double fields (parallel to decodedFieldIndices)
+ * @param defaultBools Default values for bool fields (parallel to decodedFieldIndices)
+ * @param defaultStrings Default values for string/bytes fields as UTF-8 bytes (parallel to decodedFieldIndices)
+ * @param enumValidValues Valid enum values for each field (null if not an enum). Unknown values
+ *                        will be set to null to match Spark CPU PERMISSIVE mode behavior.
  * @param failOnErrors If true, throw exception on malformed data; if false, return null
  */
 case class GpuFromProtobuf(
@@ -53,6 +62,13 @@ case class GpuFromProtobuf(
     fieldNumbers: Array[Int],
     cudfTypeIds: Array[Int],
     cudfTypeScales: Array[Int],
+    isRequired: Array[Boolean],
+    hasDefaultValue: Array[Boolean],
+    defaultInts: Array[Long],
+    defaultFloats: Array[Double],
+    defaultBools: Array[Boolean],
+    defaultStrings: Array[Array[Byte]],
+    enumValidValues: Array[Array[Int]],
     failOnErrors: Boolean,
     child: Expression)
   extends GpuUnaryExpression with ExpectsInputTypes with NullIntolerantShim {
@@ -78,6 +94,8 @@ case class GpuFromProtobuf(
     // 1. Uses fused kernel to scan all fields in one pass
     // 2. Creates LIST<INT8> directly for bytes fields (no intermediate strings column)
     // 3. Returns struct with decoded fields + null columns for supported types
+    // 4. Validates required fields are present (in failOnErrors mode)
+    // 5. Fills default values for missing fields with hasDefaultValue=true
     val jniResult = try {
       Protobuf.decodeToStruct(
         input.getBase,
@@ -86,6 +104,13 @@ case class GpuFromProtobuf(
         fieldNumbers,              // protobuf field numbers
         cudfTypeIds,               // types for ALL fields (INT8 placeholder for unsupported)
         cudfTypeScales,            // encodings for decoded fields
+        isRequired,                // whether each decoded field is required
+        hasDefaultValue,           // whether each decoded field has a default value
+        defaultInts,               // default values for int/long/enum fields
+        defaultFloats,             // default values for float/double fields
+        defaultBools,              // default values for bool fields
+        defaultStrings,            // default values for string/bytes fields
+        enumValidValues,           // valid enum values for each field (null if not enum)
         failOnErrors)
     } catch {
       case e: CudfException if failOnErrors =>

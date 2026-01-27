@@ -370,3 +370,512 @@ def test_from_protobuf_schema_projection_simple_fields_only(spark_tmp_path):
         )
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_enum_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for a message with enum field:
+      package test;
+      syntax = "proto2";
+      message WithEnum {
+        enum Color {
+          RED = 0;
+          GREEN = 1;
+          BLUE = 2;
+        }
+        optional Color color = 1;
+        optional int32 count = 2;
+        optional string name = 3;
+      }
+    """
+    jvm = spark.sparkContext._jvm
+    D = jvm.com.google.protobuf.DescriptorProtos
+
+    fd = D.FileDescriptorProto.newBuilder() \
+        .setName("enum.proto") \
+        .setPackage("test")
+    try:
+        fd = fd.setSyntax("proto2")
+    except Exception:
+        pass
+
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    # Define WithEnum message with nested enum
+    msg = D.DescriptorProto.newBuilder().setName("WithEnum")
+
+    # Add enum type definition
+    enum_type = D.EnumDescriptorProto.newBuilder().setName("Color")
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("RED").setNumber(0).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("GREEN").setNumber(1).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BLUE").setNumber(2).build())
+    msg.addEnumType(enum_type.build())
+
+    # Add color field (enum type)
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("color")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
+            .setTypeName(".test.WithEnum.Color")
+            .build()
+    )
+    # Add count field (int32)
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("count")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    # Add name field (string)
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("name")
+            .setNumber(3)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
+            .build()
+    )
+
+    fd.addMessageType(msg.build())
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_enum_as_int(spark_tmp_path):
+    """
+    Test enum field decoded as integer with enums.as.ints=true option.
+    GPU should decode enum fields as INT32 values matching CPU behavior.
+    """
+    from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(_spark_protobuf_jvm_available):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
+    desc_path = spark_tmp_path + "/enum.desc"
+    message_name = "test.WithEnum"
+
+    desc_bytes = with_cpu_session(_build_enum_descriptor_set_bytes)
+    with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+
+    # Create test data with various enum values:
+    # Row 0: color=GREEN(1), count=42, name="test"
+    # Row 1: color=RED(0), count=100, name missing
+    # Row 2: color missing, count=200, name="hello"
+    # Row 3: null input
+    test_data_row0 = bytes([
+        0x08, 0x01,  # color = GREEN (1)
+        0x10, 0x2A,  # count = 42
+        0x1A, 0x04, 0x74, 0x65, 0x73, 0x74,  # name = "test"
+    ])
+    test_data_row1 = bytes([
+        0x08, 0x00,  # color = RED (0)
+        0x10, 0x64,  # count = 100
+    ])
+    test_data_row2 = bytes([
+        0x10, 0xC8, 0x01,  # count = 200
+        0x1A, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F,  # name = "hello"
+    ])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(test_data_row0,), (test_data_row1,), (test_data_row2,), (None,)],
+            schema="bin binary",
+        )
+        sig = inspect.signature(from_protobuf)
+        options = {"enums.as.ints": "true"}
+        if "binaryDescriptorSet" in sig.parameters:
+            decoded = from_protobuf(
+                f.col("bin"),
+                message_name,
+                binaryDescriptorSet=bytearray(desc_bytes),
+                options=options
+            )
+        else:
+            decoded = from_protobuf(f.col("bin"), message_name, desc_path, options)
+        return df.select(
+            decoded.getField("color").alias("color"),
+            decoded.getField("count").alias("count"),
+            decoded.getField("name").alias("name")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_enum_unknown_value(spark_tmp_path):
+    """
+    Test that unknown enum values (not defined in enum) null the entire struct row.
+    Both GPU and CPU implementations (PERMISSIVE mode) null the entire row when
+    an unknown enum value is encountered.
+    """
+    from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(_spark_protobuf_jvm_available):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
+    desc_path = spark_tmp_path + "/enum_unknown.desc"
+    message_name = "test.WithEnum"
+
+    desc_bytes = with_cpu_session(_build_enum_descriptor_set_bytes)
+    with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+
+    # Create test data with unknown enum value (999 is not defined in Color enum)
+    # 999 encoded as varint: 0xE7 0x07
+    test_data = bytes([
+        0x08, 0xE7, 0x07,  # color = 999 (unknown value)
+        0x10, 0x2A,  # count = 42
+    ])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(test_data,)],
+            schema="bin binary",
+        )
+        sig = inspect.signature(from_protobuf)
+        # Use PERMISSIVE mode to allow unknown enum values to pass through
+        options = {"enums.as.ints": "true", "mode": "PERMISSIVE"}
+        if "binaryDescriptorSet" in sig.parameters:
+            decoded = from_protobuf(
+                f.col("bin"),
+                message_name,
+                binaryDescriptorSet=bytearray(desc_bytes),
+                options=options
+            )
+        else:
+            decoded = from_protobuf(f.col("bin"), message_name, desc_path, options)
+        return df.select(
+            decoded.getField("color").alias("color"),
+            decoded.getField("count").alias("count")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_required_field_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for a message with required fields (proto2):
+      package test;
+      syntax = "proto2";
+      message WithRequired {
+        required int64 id = 1;
+        optional string name = 2;
+        optional int32 count = 3;
+      }
+    """
+    jvm = spark.sparkContext._jvm
+    D = jvm.com.google.protobuf.DescriptorProtos
+
+    fd = D.FileDescriptorProto.newBuilder() \
+        .setName("required.proto") \
+        .setPackage("test")
+    try:
+        fd = fd.setSyntax("proto2")
+    except Exception:
+        pass
+
+    label_required = D.FieldDescriptorProto.Label.LABEL_REQUIRED
+    label_optional = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    msg = D.DescriptorProto.newBuilder().setName("WithRequired")
+    
+    # id field (required)
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id")
+            .setNumber(1)
+            .setLabel(label_required)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT64)
+            .build()
+    )
+    # name field (optional)
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("name")
+            .setNumber(2)
+            .setLabel(label_optional)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
+            .build()
+    )
+    # count field (optional)
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("count")
+            .setNumber(3)
+            .setLabel(label_optional)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+
+    fd.addMessageType(msg.build())
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_required_field_present(spark_tmp_path):
+    """
+    Test that required fields decode correctly when present.
+    GPU should produce same results as CPU.
+    """
+    from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(_spark_protobuf_jvm_available):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
+    desc_path = spark_tmp_path + "/required.desc"
+    message_name = "test.WithRequired"
+
+    desc_bytes = with_cpu_session(_build_required_field_descriptor_set_bytes)
+    with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+
+    # Create test data with required field present
+    # Row 0: id=100, name="test", count=42
+    # Row 1: id=200, name missing, count missing
+    test_data_row0 = bytes([
+        0x08, 0x64,  # id = 100
+        0x12, 0x04, 0x74, 0x65, 0x73, 0x74,  # name = "test"
+        0x18, 0x2A,  # count = 42
+    ])
+    test_data_row1 = bytes([
+        0x08, 0xC8, 0x01,  # id = 200
+    ])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(test_data_row0,), (test_data_row1,)],
+            schema="bin binary",
+        )
+        sig = inspect.signature(from_protobuf)
+        if "binaryDescriptorSet" in sig.parameters:
+            decoded = from_protobuf(
+                f.col("bin"),
+                message_name,
+                binaryDescriptorSet=bytearray(desc_bytes)
+            )
+        else:
+            decoded = from_protobuf(f.col("bin"), message_name, desc_path)
+        return df.select(
+            decoded.getField("id").alias("id"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("count").alias("count")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_default_value_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for a message with default values (proto2):
+      package test;
+      syntax = "proto2";
+      message WithDefaults {
+        optional int32 count = 1 [default = 42];
+        optional string name = 2 [default = "unknown"];
+        optional bool flag = 3 [default = true];
+      }
+    Note: Setting explicit defaults requires using FieldOptions which may not be
+    available via the simple DescriptorProtos API. For testing, we rely on proto2
+    implicit behavior where hasDefaultValue() returns true for optional fields.
+    """
+    jvm = spark.sparkContext._jvm
+    D = jvm.com.google.protobuf.DescriptorProtos
+
+    fd = D.FileDescriptorProto.newBuilder() \
+        .setName("defaults.proto") \
+        .setPackage("test")
+    try:
+        fd = fd.setSyntax("proto2")
+    except Exception:
+        pass
+
+    label_optional = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    msg = D.DescriptorProto.newBuilder().setName("WithDefaults")
+    
+    # count field with default
+    count_field = D.FieldDescriptorProto.newBuilder() \
+        .setName("count") \
+        .setNumber(1) \
+        .setLabel(label_optional) \
+        .setType(D.FieldDescriptorProto.Type.TYPE_INT32) \
+        .setDefaultValue("42")
+    msg.addField(count_field.build())
+    
+    # name field with default
+    name_field = D.FieldDescriptorProto.newBuilder() \
+        .setName("name") \
+        .setNumber(2) \
+        .setLabel(label_optional) \
+        .setType(D.FieldDescriptorProto.Type.TYPE_STRING) \
+        .setDefaultValue("unknown")
+    msg.addField(name_field.build())
+    
+    # flag field with default
+    flag_field = D.FieldDescriptorProto.newBuilder() \
+        .setName("flag") \
+        .setNumber(3) \
+        .setLabel(label_optional) \
+        .setType(D.FieldDescriptorProto.Type.TYPE_BOOL) \
+        .setDefaultValue("true")
+    msg.addField(flag_field.build())
+
+    fd.addMessageType(msg.build())
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_default_values_field_present(spark_tmp_path):
+    """
+    Test that when fields with defaults are present, the actual values are used.
+    This validates the GPU correctly decodes present values (not using defaults).
+    """
+    from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(_spark_protobuf_jvm_available):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
+    desc_path = spark_tmp_path + "/defaults.desc"
+    message_name = "test.WithDefaults"
+
+    desc_bytes = with_cpu_session(_build_default_value_descriptor_set_bytes)
+    with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+
+    # Create test data where all fields are present (actual values, not defaults)
+    test_data = bytes([
+        0x08, 0x64,  # count = 100 (not the default 42)
+        0x12, 0x04, 0x74, 0x65, 0x73, 0x74,  # name = "test" (not "unknown")
+        0x18, 0x00,  # flag = false (not true)
+    ])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(test_data,)],
+            schema="bin binary",
+        )
+        sig = inspect.signature(from_protobuf)
+        if "binaryDescriptorSet" in sig.parameters:
+            decoded = from_protobuf(
+                f.col("bin"),
+                message_name,
+                binaryDescriptorSet=bytearray(desc_bytes)
+            )
+        else:
+            decoded = from_protobuf(f.col("bin"), message_name, desc_path)
+        return df.select(
+            decoded.getField("count").alias("count"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("flag").alias("flag")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_default_values_missing_fields(spark_tmp_path):
+    """
+    Test that when fields with defaults are missing, the default values are filled in.
+    This validates the GPU correctly fills default values for missing fields.
+    """
+    from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(_spark_protobuf_jvm_available):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
+    desc_path = spark_tmp_path + "/defaults.desc"
+    message_name = "test.WithDefaults"
+
+    desc_bytes = with_cpu_session(_build_default_value_descriptor_set_bytes)
+    with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+
+    # Create test data where all fields are MISSING (should use defaults)
+    # Empty protobuf message
+    test_data_empty = bytes([])
+    
+    # Partial message: only count field is present
+    test_data_partial = bytes([
+        0x08, 0x64,  # count = 100
+    ])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(test_data_empty,), (test_data_partial,)],
+            schema="bin binary",
+        )
+        sig = inspect.signature(from_protobuf)
+        if "binaryDescriptorSet" in sig.parameters:
+            decoded = from_protobuf(
+                f.col("bin"),
+                message_name,
+                binaryDescriptorSet=bytearray(desc_bytes)
+            )
+        else:
+            decoded = from_protobuf(f.col("bin"), message_name, desc_path)
+        return df.select(
+            decoded.getField("count").alias("count"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("flag").alias("flag")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_string_default_value(spark_tmp_path):
+    """
+    Test string default value specifically.
+    """
+    from_protobuf = _try_import_from_protobuf()
+    if from_protobuf is None:
+        pytest.skip("pyspark.sql.protobuf.functions.from_protobuf is not available")
+    if not with_cpu_session(_spark_protobuf_jvm_available):
+        pytest.skip("spark-protobuf JVM module is not available on the classpath")
+
+    desc_path = spark_tmp_path + "/defaults.desc"
+    message_name = "test.WithDefaults"
+
+    desc_bytes = with_cpu_session(_build_default_value_descriptor_set_bytes)
+    with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+
+    # Create test data where only non-string fields are present
+    # name field is missing, should use default "unknown"
+    test_data = bytes([
+        0x08, 0x2A,  # count = 42
+        0x18, 0x01,  # flag = true
+    ])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(test_data,)],
+            schema="bin binary",
+        )
+        sig = inspect.signature(from_protobuf)
+        if "binaryDescriptorSet" in sig.parameters:
+            decoded = from_protobuf(
+                f.col("bin"),
+                message_name,
+                binaryDescriptorSet=bytearray(desc_bytes)
+            )
+        else:
+            decoded = from_protobuf(f.col("bin"), message_name, desc_path)
+        return df.select(
+            decoded.getField("name").alias("name")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)

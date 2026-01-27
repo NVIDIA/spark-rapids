@@ -56,7 +56,11 @@ private[shims] case class ProtobufFieldInfo(
     sparkType: DataType,
     encoding: Int,
     isSupported: Boolean,
-    unsupportedReason: Option[String]
+    unsupportedReason: Option[String],
+    isRequired: Boolean,
+    hasDefaultValue: Boolean,
+    defaultValue: Option[Any],  // Stored as protobuf-java type, will be converted for JNI
+    enumValues: Option[Set[Int]] = None  // Valid enum values (only for ENUM fields with enumsAsInts)
 )
 
 /**
@@ -102,6 +106,20 @@ object ProtobufExprShims {
         private var cudfTypeIds: Array[Int] = _
         // cudfTypeScales: encodings for decoded fields (parallel to decodedFieldIndices)
         private var cudfTypeScales: Array[Int] = _
+        // isRequired: whether each decoded field is required (parallel to decodedFieldIndices)
+        private var isRequired: Array[Boolean] = _
+        // hasDefaultValue: whether each decoded field has a default value
+        private var hasDefaultValue: Array[Boolean] = _
+        // defaultInts: default values for int/long/enum fields (0 if no default)
+        private var defaultInts: Array[Long] = _
+        // defaultFloats: default values for float/double fields (0.0 if no default)
+        private var defaultFloats: Array[Double] = _
+        // defaultBools: default values for bool fields (false if no default)
+        private var defaultBools: Array[Boolean] = _
+        // defaultStrings: default values for string/bytes fields (null if no default)
+        private var defaultStrings: Array[Array[Byte]] = _
+        // enumValidValues: valid enum values for each decoded field (null if not an enum)
+        private var enumValidValues: Array[Array[Int]] = _
         private var failOnErrors: Boolean = _
 
         override def tagExprForGpu(): Unit = {
@@ -196,16 +214,76 @@ object ProtobufExprShims {
           // Step 6: Build arrays for decoded fields only (parallel to decodedFieldIndices)
           val fnums = new Array[Int](indicesToDecode.length)
           val scales = new Array[Int](indicesToDecode.length)
+          val required = new Array[Boolean](indicesToDecode.length)
+          val hasDefaults = new Array[Boolean](indicesToDecode.length)
+          val defInts = new Array[Long](indicesToDecode.length)
+          val defFloats = new Array[Double](indicesToDecode.length)
+          val defBools = new Array[Boolean](indicesToDecode.length)
+          val defStrings = new Array[Array[Byte]](indicesToDecode.length)
+          val enumVals = new Array[Array[Int]](indicesToDecode.length)
 
           indicesToDecode.zipWithIndex.foreach { case (schemaIdx, arrIdx) =>
             val sf = fullSchema.fields(schemaIdx)
             val info = fieldsInfoMap(sf.name)
             fnums(arrIdx) = info.fieldNumber
             scales(arrIdx) = info.encoding
+            required(arrIdx) = info.isRequired
+            hasDefaults(arrIdx) = info.hasDefaultValue
+
+            // Convert default value to the appropriate JNI type
+            if (info.hasDefaultValue && info.defaultValue.isDefined) {
+              val defVal = info.defaultValue.get
+              sf.dataType match {
+                case BooleanType =>
+                  defBools(arrIdx) = defVal.asInstanceOf[java.lang.Boolean]
+                case IntegerType | LongType =>
+                  // Protobuf returns Integer for int32, Long for int64
+                  defInts(arrIdx) = defVal match {
+                    case i: java.lang.Integer => i.longValue()
+                    case l: java.lang.Long => l.longValue()
+                    case _ => 0L
+                  }
+                case FloatType =>
+                  defFloats(arrIdx) = defVal.asInstanceOf[java.lang.Float].doubleValue()
+                case DoubleType =>
+                  defFloats(arrIdx) = defVal.asInstanceOf[java.lang.Double]
+                case StringType =>
+                  // Protobuf returns String, convert to UTF-8 bytes
+                  val str = defVal.asInstanceOf[String]
+                  defStrings(arrIdx) = if (str != null) str.getBytes("UTF-8") else null
+                case BinaryType =>
+                  // Protobuf returns ByteString, convert to byte array
+                  defStrings(arrIdx) = Try {
+                    invoke0[Array[Byte]](defVal.asInstanceOf[AnyRef], "toByteArray")
+                  }.getOrElse(null)
+                case _ =>
+                  // For other types (enums as ints, etc.)
+                  defVal match {
+                    case enumVal: AnyRef if info.protoTypeName == "ENUM" =>
+                      defInts(arrIdx) = Try {
+                        invoke0[java.lang.Integer](enumVal, "getNumber").longValue()
+                      }.getOrElse(0L)
+                    case _ => // leave as default (0)
+                  }
+              }
+            }
+
+            // Store enum valid values if this is an enum field
+            info.enumValues match {
+              case Some(values) => enumVals(arrIdx) = values.toArray.sorted
+              case None => enumVals(arrIdx) = null
+            }
           }
 
           fieldNumbers = fnums
           cudfTypeScales = scales
+          isRequired = required
+          hasDefaultValue = hasDefaults
+          defaultInts = defInts
+          defaultFloats = defFloats
+          defaultBools = defBools
+          defaultStrings = defStrings
+          enumValidValues = enumVals
         }
 
         /**
@@ -231,6 +309,23 @@ object ProtobufExprShims {
               invoke0[java.lang.Boolean](fd, "isRepeated").booleanValue()
             }.getOrElse(false)
 
+            // Check if field is required (proto2 required fields)
+            val isFieldRequired = Try {
+              invoke0[java.lang.Boolean](fd, "isRequired").booleanValue()
+            }.getOrElse(false)
+
+            // Check if field has a default value (proto2 [default = xxx])
+            val hasDefault = Try {
+              invoke0[java.lang.Boolean](fd, "hasDefaultValue").booleanValue()
+            }.getOrElse(false)
+
+            // Get the default value if it exists
+            val defaultVal = if (hasDefault) {
+              Try(Some(invoke0[AnyRef](fd, "getDefaultValue"))).getOrElse(None)
+            } else {
+              None
+            }
+
             val protoType = invoke0[AnyRef](fd, "getType")
             val protoTypeName = typeName(protoType)
             val fieldNumber = invoke0[java.lang.Integer](fd, "getNumber").intValue()
@@ -239,13 +334,32 @@ object ProtobufExprShims {
             val (isSupported, unsupportedReason, encoding) =
               checkFieldSupport(sf.dataType, protoTypeName, isRepeated, enumsAsInts)
 
+            // Extract enum values if this is an enum field with enumsAsInts enabled
+            val enumVals: Option[Set[Int]] = if (protoTypeName == "ENUM" && enumsAsInts) {
+              Try {
+                val enumType = invoke0[AnyRef](fd, "getEnumType")
+                val values = invoke0[java.util.List[_]](enumType, "getValues")
+                import scala.collection.JavaConverters._
+                val intSet: Set[Int] = values.asScala.map { v =>
+                  invoke0[java.lang.Integer](v.asInstanceOf[AnyRef], "getNumber").intValue()
+                }.toSet
+                intSet
+              }.toOption
+            } else {
+              None
+            }
+
             result(sf.name) = ProtobufFieldInfo(
               fieldNumber = fieldNumber,
               protoTypeName = protoTypeName,
               sparkType = sf.dataType,
               encoding = encoding,
               isSupported = isSupported,
-              unsupportedReason = unsupportedReason
+              unsupportedReason = unsupportedReason,
+              isRequired = isFieldRequired,
+              hasDefaultValue = hasDefault,
+              defaultValue = defaultVal,
+              enumValues = enumVals
             )
           }
 
@@ -471,7 +585,8 @@ object ProtobufExprShims {
         override def convertToGpu(child: Expression): GpuExpression = {
           GpuFromProtobuf(
             fullSchema, decodedFieldIndices, fieldNumbers, cudfTypeIds, cudfTypeScales,
-            failOnErrors, child)
+            isRequired, hasDefaultValue, defaultInts, defaultFloats, defaultBools,
+            defaultStrings, enumValidValues, failOnErrors, child)
         }
       }
     )

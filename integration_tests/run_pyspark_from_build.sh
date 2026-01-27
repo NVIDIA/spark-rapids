@@ -144,9 +144,61 @@ else
         AVRO_JARS=""
     fi
 
-    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
+    # Protobuf support: Include spark-protobuf jar by default for protobuf_test.py
+    # Set INCLUDE_SPARK_PROTOBUF_JAR=false to disable
+    PROTOBUF_JARS=""
+    if [[ $( echo ${INCLUDE_SPARK_PROTOBUF_JAR} | tr '[:upper:]' '[:lower:]' ) != "false" ]];
+    then
+        export INCLUDE_SPARK_PROTOBUF_JAR=true
+        mkdir -p "${TARGET_DIR}/dependency"
+        
+        # Download spark-protobuf jar if not already in target/dependency
+        PROTOBUF_JAR_NAME="spark-protobuf_${SCALA_VERSION}-${VERSION_STRING}.jar"
+        PROTOBUF_JAR_PATH="${TARGET_DIR}/dependency/${PROTOBUF_JAR_NAME}"
+        
+        if [[ ! -f "$PROTOBUF_JAR_PATH" ]]; then
+            echo "Downloading spark-protobuf jar..."
+            PROTOBUF_MAVEN_URL="https://repo1.maven.org/maven2/org/apache/spark/spark-protobuf_${SCALA_VERSION}/${VERSION_STRING}/${PROTOBUF_JAR_NAME}"
+            if curl -sL -o "$PROTOBUF_JAR_PATH" "$PROTOBUF_MAVEN_URL"; then
+                echo "Downloaded spark-protobuf jar to $PROTOBUF_JAR_PATH"
+            else
+                echo "WARNING: Failed to download spark-protobuf jar from $PROTOBUF_MAVEN_URL"
+                rm -f "$PROTOBUF_JAR_PATH"
+            fi
+        fi
+        
+        # Also download protobuf-java jar (required dependency)
+        # Spark 3.5.x uses protobuf-java 3.25.1
+        PROTOBUF_JAVA_VERSION="3.25.1"
+        PROTOBUF_JAVA_JAR_NAME="protobuf-java-${PROTOBUF_JAVA_VERSION}.jar"
+        PROTOBUF_JAVA_JAR_PATH="${TARGET_DIR}/dependency/${PROTOBUF_JAVA_JAR_NAME}"
+        
+        if [[ ! -f "$PROTOBUF_JAVA_JAR_PATH" ]]; then
+            echo "Downloading protobuf-java jar..."
+            PROTOBUF_JAVA_MAVEN_URL="https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/${PROTOBUF_JAVA_VERSION}/${PROTOBUF_JAVA_JAR_NAME}"
+            if curl -sL -o "$PROTOBUF_JAVA_JAR_PATH" "$PROTOBUF_JAVA_MAVEN_URL"; then
+                echo "Downloaded protobuf-java jar to $PROTOBUF_JAVA_JAR_PATH"
+            else
+                echo "WARNING: Failed to download protobuf-java jar from $PROTOBUF_JAVA_MAVEN_URL"
+                rm -f "$PROTOBUF_JAVA_JAR_PATH"
+            fi
+        fi
+        
+        if [[ -f "$PROTOBUF_JAR_PATH" ]]; then
+            PROTOBUF_JARS="$PROTOBUF_JAR_PATH"
+            echo "Including spark-protobuf jar: $PROTOBUF_JAR_PATH"
+        fi
+        if [[ -f "$PROTOBUF_JAVA_JAR_PATH" ]]; then
+            PROTOBUF_JARS="$PROTOBUF_JARS $PROTOBUF_JAVA_JAR_PATH"
+            echo "Including protobuf-java jar: $PROTOBUF_JAVA_JAR_PATH"
+        fi
+    else
+        export INCLUDE_SPARK_PROTOBUF_JAR=false
+    fi
+
+    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar protobuf.jar if they exist
     # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
-    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS $PROTOBUF_JARS || true)
     # `:` separated jars
     ALL_JARS="${ALL_JARS//$'\n'/:}"
 
@@ -406,6 +458,7 @@ else
       export PYSP_TEST_spark_memory_offHeap_size=512M
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
     fi
+
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
