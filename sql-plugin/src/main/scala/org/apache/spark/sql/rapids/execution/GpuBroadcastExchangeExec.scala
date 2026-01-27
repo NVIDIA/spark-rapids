@@ -520,6 +520,12 @@ abstract class GpuBroadcastExchangeExecBase(
       rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
   }
 
+  override def resetMetrics(): Unit = {
+    // no-op
+    // BroadcastExchangeExec after materialized won't be materialized again, so we should not
+    // reset the metrics. Otherwise, we will lose the metrics collected in the broadcast job.
+  }
+
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
         s" mismatch:\n$this")

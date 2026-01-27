@@ -43,11 +43,9 @@ jobs:
         github.actor == 'kuhushukla' ||
         github.actor == 'mythrocks' ||
         github.actor == 'nartal1' ||
-        github.actor == 'nvdbaranec' ||
         github.actor == 'NvTimLiu' ||
         github.actor == 'razajafri' ||
         github.actor == 'revans2' ||
-        github.actor == 'rwlee' ||
         github.actor == 'sameerz' ||
         github.actor == 'tgravescs' ||
         github.actor == 'wbo4958' ||
