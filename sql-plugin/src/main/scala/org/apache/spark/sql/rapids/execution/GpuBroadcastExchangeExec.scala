@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -518,6 +518,12 @@ abstract class GpuBroadcastExchangeExecBase(
     Statistics(
       sizeInBytes = metrics("dataSize").value,
       rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
+  }
+
+  override def resetMetrics(): Unit = {
+    // no-op
+    // BroadcastExchangeExec after materialized won't be materialized again, so we should not
+    // reset the metrics. Otherwise, we will lose the metrics collected in the broadcast job.
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {

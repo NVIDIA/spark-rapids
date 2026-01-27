@@ -110,4 +110,30 @@ class RapidsDatasetSuite
     assert(count2.toSeq ===
       Seq((Some((1, 2)), 1), (Some((1, 3)), 1), (Some((2, 3)), 1)))
   }
+
+  // GPU-specific test for "Check RelationalGroupedDataset toString: Single data"
+  // Original test: DatasetSuite.scala lines 1658-1664
+  // In JDK 11+ the RelationalGroupedDataset.toString method returns an empty string for the type.
+  testRapids("Check RelationalGroupedDataset toString: Single data") {
+    val kvDataset = (1 to 3).toDF("id").groupBy("id")
+    val expectedTypeString = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
+    val expected = "RelationalGroupedDataset: [" +
+      s"grouping expressions: [id: int], value: [id: int], type: ${expectedTypeString}]"
+    val actual = kvDataset.toString
+    assert(expected === actual)
+  }
+
+  // GPU-specific test for "Check RelationalGroupedDataset toString: over length schema"
+  // Original test: DatasetSuite.scala lines 1666-1675
+  testRapids("Check RelationalGroupedDataset toString: over length schema") {
+    val kvDataset = (1 to 3).map(x => (x, x.toString, x.toLong))
+      .toDF("id", "val1", "val2").groupBy("id")
+    val expectedTypeString = if (getJavaMajorVersion() >= 11) "" else "GroupBy"
+    val expected = "RelationalGroupedDataset:" +
+      " [grouping expressions: [id: int]," +
+      " value: [id: int, val1: string ... 1 more field]," +
+      s" type: ${expectedTypeString}]"
+    val actual = kvDataset.toString
+    assert(expected === actual)
+  }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expre
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuCreateArray
+import org.apache.spark.sql.rapids.execution.GpuSubPartitionHashJoin.safeIteratorFromSeq
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -895,29 +896,40 @@ case class GpuGenerateExec(
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
-    val splits = NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_PROJECT_SPLIT, opTime) {
-      // Project input columns, setting other columns ahead of generator's input columns.
-      // With the projected batches and an offset, generators can extract input columns or
-      // other required columns separately.
-      val projectedInput = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+    // Project input columns, setting other columns ahead of generator's input columns.
+    // With the projected batches and an offset, generators can extract input columns or
+    // other required columns separately.
+    val projectedInput = NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_PROJECT_SPLIT, opTime) {
+      GpuProjectExec.projectAndCloseWithRetrySingleBatch(
         SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
         othersProjectList ++ genProjectList)
-      getSplits(projectedInput, othersProjectList, new RapidsConf(conf).gpuTargetBatchSizeBytes)
     }
+    val splits = GpuGenerateUtils.getSplitsWithRetryAndClose(projectedInput, generator,
+      othersProjectList.length, outer, new RapidsConf(conf).gpuTargetBatchSizeBytes, opTime)
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
       numOutputRows, numOutputBatches, opTime)
   }
+}
 
-  // Split up the input batch and call generate on each split.
-  private def getSplits(cb: ColumnarBatch,
-      othersProjectList: Seq[GpuExpression],
-      targetSize: Long): Seq[SpillableColumnarBatch] = {
-    withResource(cb) { _ =>
-      // compute split indices of input batch
-      val splitIndices = generator.inputSplitIndices(
-      cb, othersProjectList.length, outer, targetSize)
-      // split up input batch with indices
-      makeSplits(cb, splitIndices)
+object GpuGenerateUtils {
+  /**
+   * Split up the input batch to call generate on each split.
+   * (Move it out of the GpuGenerateExec class for unit tests)
+   */
+  private[rapids] def getSplitsWithRetryAndClose(cb: ColumnarBatch, generator: GpuGenerator,
+      generatorOffset: Int, outer: Boolean, targetSize: Long,
+      opTime: GpuMetric): Iterator[Array[SpillableColumnarBatch]] = {
+    val spillableBatch = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    withRetry(spillableBatch, splitSpillableInHalfByRows) { attempt =>
+      NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_PROJECT_SPLIT, opTime) {
+        // compute split indices of input batch
+        withResource(attempt.getColumnarBatch()) { attemptCB =>
+          val splitIndices = generator.inputSplitIndices(attemptCB,
+            generatorOffset, outer, targetSize)
+          // split up input batch with indices
+          makeSplits(attemptCB, splitIndices)
+        }
+      }
     }
   }
 
@@ -957,24 +969,29 @@ class BatchToGenerate(val fixUpOffset: Long, val spillable: SpillableColumnarBat
 }
 
 class GpuGenerateIterator(
-    inputs: Seq[SpillableColumnarBatch],
+    inputs: Iterator[Array[SpillableColumnarBatch]],
     generator: GpuGenerator,
     generatorOffset: Int,
     outer: Boolean,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    opTime: GpuMetric) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
-  // Need to ensure these are closed in case of failure.
-  inputs.foreach(scb => use(scb))
+    opTime: GpuMetric) extends Iterator[ColumnarBatch] {
+  private var generateIter: Iterator[ColumnarBatch] = Iterator.empty
 
-  // apply generation on each (sub)batch
-  private val generateIter = {
-    generator.generate(inputs.iterator, generatorOffset, outer)
+  override def hasNext: Boolean = generateIter.hasNext || {
+    // generateIter is empty, try to get the next bundle of batches
+    if (inputs.hasNext) {
+      val scbs = inputs.next()
+      generateIter = generator.generate(
+        safeIteratorFromSeq(scbs.toSeq), generatorOffset, outer)
+    }
+    generateIter.hasNext
   }
 
-  override def hasNext: Boolean = generateIter.hasNext
-
   override def next(): ColumnarBatch = {
+    if (!this.hasNext) {
+      throw new NoSuchElementException("no more batches")
+    }
     NvtxIdWithMetrics(NvtxRegistry.GPU_GENERATE_ITERATOR, opTime) {
       val cb = generateIter.next()
       numOutputBatches += 1
