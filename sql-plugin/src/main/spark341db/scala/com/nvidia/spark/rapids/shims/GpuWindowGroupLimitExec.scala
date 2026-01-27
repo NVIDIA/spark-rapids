@@ -40,10 +40,10 @@ import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuRank, GpuRowNumber}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, DenseRank, Expression, Rank, RowNumber, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, And, Attribute, AttributeReference, DenseRank, EqualTo, Expression, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, Literal, NamedExpression, Rank, RowNumber, SortOrder, WindowExpression, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.window.{Final, Partial, WindowGroupLimitExec, WindowGroupLimitMode}
+import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
+import org.apache.spark.sql.execution.window.{Final, Partial, WindowExec, WindowGroupLimitExec, WindowGroupLimitMode}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -54,7 +54,7 @@ case object RowNumberFunction extends RankFunctionType
 
 class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
                                   conf: RapidsConf,
-                                  parent:Option[RapidsMeta[_, _, _]],
+                                  parent: Option[RapidsMeta[_, _, _]],
                                   rule: DataFromReplacementRule)
     extends SparkPlanMeta[WindowGroupLimitExec](limitExec, conf, parent, rule) {
 
@@ -78,11 +78,166 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
     wrapped.mode match {
       case Partial =>
       case Final =>
+        // Check if this Final limit is redundant because it will be followed by
+        // a WindowExec + FilterExec that does the same work
+        if (conf.isWindowGroupLimitOptEnabled && isFinalLimitRedundant) {
+          shouldBeRemoved("redundant Final WindowGroupLimit: subsequent WindowExec and " +
+            "FilterExec will perform the same rank computation and filtering")
+        }
       case _ => willNotWorkOnGpu("Unsupported WindowGroupLimitMode: " +
                                  s"${wrapped.mode.getClass.getName}")
     }
   }
 
+  /**
+   * Helper method to check if two sequences of expressions are semantically equal.
+   */
+  private def specsMatchSemantically[T <: Expression](
+      left: Seq[T],
+      right: Seq[T]): Boolean = {
+    left.length == right.length &&
+    left.zip(right).forall { case (l, r) => l.semanticEquals(r) }
+  }
+
+  /**
+   * Helper method to find a parent plan of a specific type in the plan hierarchy.
+   */
+  private def findParentOfType[T <: SparkPlan : Manifest]: Option[T] = {
+    parent.flatMap { p =>
+      p.wrapped match {
+        case plan: T => Some(plan)
+        case _ => None
+      }
+    }
+  }
+
+  /**
+   * Helper method to find a grandparent plan of a specific type in the plan hierarchy.
+   */
+  private def findGrandparentOfType[T <: SparkPlan : Manifest]: Option[T] = {
+    parent.flatMap(_.parent).flatMap { gp =>
+      gp.wrapped match {
+        case plan: T => Some(plan)
+        case _ => None
+      }
+    }
+  }
+
+  /**
+   * Checks if both partition and order specs match semantically.
+   */
+  private def specsMatchCompletely(windowExec: WindowExec): Boolean = {
+    specsMatchSemantically(windowExec.partitionSpec, limitExec.partitionSpec) &&
+    specsMatchSemantically(windowExec.orderSpec, limitExec.orderSpec)
+  }
+
+  /**
+   * Checks if this Final WindowGroupLimitExec is redundant.
+   *
+   * The Final limit is redundant when:
+   * 1. The parent is a WindowExec that computes the same rank function with same specs
+   * 2. The grandparent is a FilterExec that filters on the rank result
+   *
+   * When both conditions are met, the WindowExec + FilterExec will do the same
+   * rank computation and filtering that this Final limit would do, making this
+   * operator a no-op that we can skip.
+   */
+  private def isFinalLimitRedundant: Boolean = {
+    findParentOfType[WindowExec] match {
+      case Some(windowExec) => checkWindowExecRedundancy(windowExec)
+      case None => false
+    }
+  }
+
+  /**
+   * Checks if the given WindowExec makes this Final limit redundant.
+   * This is broken out as a separate method for clarity and to allow early returns.
+   */
+  private def checkWindowExecRedundancy(windowExec: WindowExec): Boolean = {
+    // Check if WindowExec has matching partition and order specs
+    if (!specsMatchCompletely(windowExec)) {
+      return false
+    }
+
+    // Find the matching rank expression once and cache it
+    val matchingRankExprOpt = findMatchingRankExpression(windowExec)
+    if (matchingRankExprOpt.isEmpty) {
+      return false
+    }
+
+    // Check if grandparent is a FilterExec
+    val grandparentFilterOpt = findGrandparentOfType[FilterExec]
+    if (grandparentFilterOpt.isEmpty) {
+      return false
+    }
+
+    // For the optimization to be safe, we need a FilterExec as grandparent
+    // The filter should reference the rank output and enforce the limit
+    val (rankExprId, _) = matchingRankExprOpt.get
+    WindowGroupLimitFilterMatcher.filterIsAtLeastAsRestrictive(
+      grandparentFilterOpt.get.condition, rankExprId, limitExec.limit)
+  }
+
+  /**
+   * Finds a window expression in the WindowExec that matches the rank function
+   * in this WindowGroupLimitExec.
+   *
+   * Uses reflection to access WindowExec's window expressions because different Spark
+   * versions use different method names:
+   * - Apache Spark versions (3.5.0, 4.0.0, etc.) use `windowExpression`
+   * - Databricks versions (3.4.1db, 3.5.0db143, etc.) use `projectList`
+   *
+   * This shim covers both Apache Spark and Databricks versions, so reflection is
+   * necessary to handle both cases. This follows the same pattern as
+   * GpuWindowExecMeta.getWindowExpression.
+   *
+   * @return Option of (expression id, rank function type) if found
+   */
+  private def findMatchingRankExpression(windowExec: WindowExec): 
+      Option[(Long, Expression)] = {
+    // Get window expressions from WindowExec via reflection
+    val windowExprs = try {
+      // Apache Spark versions use windowExpression
+      val method = windowExec.getClass.getMethod("windowExpression")
+      method.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+    } catch {
+      case _: NoSuchMethodException =>
+        try {
+          // Databricks versions use projectList
+          val method = windowExec.getClass.getMethod("projectList")
+          method.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
+        } catch {
+          case _: NoSuchMethodException => return None
+        }
+    }
+
+    // Find window expression with matching rank function
+    windowExprs.collectFirst {
+      case alias @ Alias(WindowExpression(rankFunc, spec: WindowSpecDefinition), _)
+          if matchesRankFunction(rankFunc) && matchesWindowSpec(spec) =>
+        (alias.exprId.id, rankFunc)
+    }
+  }
+
+  /**
+   * Checks if the given expression matches the rank function type in this limit.
+   */
+  private def matchesRankFunction(expr: Expression): Boolean = {
+    (expr, limitExec.rankLikeFunction) match {
+      case (_: Rank, _: Rank) => true
+      case (_: DenseRank, _: DenseRank) => true
+      case (_: RowNumber, _: RowNumber) => true
+      case _ => false
+    }
+  }
+
+  /**
+   * Checks if the window spec matches the partition and order specs of this limit.
+   */
+  private def matchesWindowSpec(spec: WindowSpecDefinition): Boolean = {
+    specsMatchSemantically(spec.partitionSpec, limitExec.partitionSpec) &&
+    specsMatchSemantically(spec.orderSpec, limitExec.orderSpec)
+  }
 
   override def convertToGpu(): GpuExec = {
     GpuWindowGroupLimitExec(partitionSpec.map(_.convertToGpu()),
@@ -339,4 +494,109 @@ case class GpuWindowGroupLimitExec(
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new UnsupportedOperationException("Row-wise execution unsupported!")
+}
+
+/**
+ * Utility object for checking if a filter condition on a rank column is at least
+ * as restrictive as a WindowGroupLimit. This is extracted to allow unit testing.
+ *
+ * For the optimization to be safe, the filter must keep the same or fewer rows
+ * than the WindowGroupLimit. The WindowGroupLimit keeps rows where rank <= limit.
+ *
+ * Supports patterns matching Spark's InferWindowGroupLimit.extractLimits:
+ * - rank <= n, rank < n, rank = n
+ * - n >= rank, n > rank, n = rank
+ * - AND conditions (extracts minimum limit)
+ */
+object WindowGroupLimitFilterMatcher {
+
+  /**
+   * Checks if the given filter condition limits the rank column to at most `limit` rows.
+   *
+   * @param condition The filter condition expression
+   * @param rankExprId The expression ID of the rank column
+   * @param limit The WindowGroupLimit's limit value
+   * @return true if the filter is at least as restrictive as rank <= limit
+   */
+  def filterIsAtLeastAsRestrictive(
+      condition: Expression,
+      rankExprId: Long,
+      limit: Int): Boolean = {
+
+    // Check if expr IS the rank column directly (not just contains it).
+    // Spark's InferWindowGroupLimit uses semanticEquals(attr), which checks identity.
+    // Using references.exists would incorrectly match COALESCE(rank, 0) or CAST(rank).
+    def isRankColumn(expr: Expression): Boolean = expr match {
+      case attr: AttributeReference => attr.exprId.id == rankExprId
+      case _ => false
+    }
+
+    def extractLiteralInt(expr: Expression): Option[Int] = expr match {
+      case Literal(value: Int, _) => Some(value)
+      case Literal(value: Long, _) if value.isValidInt => Some(value.toInt)
+      case _ => None
+    }
+
+    /**
+     * Extract the effective limit from a single predicate.
+     * Returns Some(effectiveLimit) if this predicate limits the rank, None otherwise.
+     *
+     * Following Spark's InferWindowGroupLimit.extractLimits logic:
+     * - EqualTo: limit = value (keeps only that rank)
+     * - LessThan: limit = value - 1 (rank < n means rank <= n-1)
+     * - LessThanOrEqual: limit = value
+     * - GreaterThan (reversed): limit = value - 1
+     * - GreaterThanOrEqual (reversed): limit = value
+     */
+    def extractLimit(predicate: Expression): Option[Int] = predicate match {
+      // rank = n: keeps only rank n. Effective limit is n.
+      case EqualTo(left, right) if isRankColumn(left) =>
+        extractLiteralInt(right)
+      case EqualTo(left, right) if isRankColumn(right) =>
+        extractLiteralInt(left)
+
+      // rank <= n: keeps ranks 1..n. Effective limit is n.
+      case LessThanOrEqual(left, right) if isRankColumn(left) =>
+        extractLiteralInt(right)
+
+      // rank < n: equivalent to rank <= n-1. Effective limit is n-1.
+      case LessThan(left, right) if isRankColumn(left) =>
+        extractLiteralInt(right).map(_ - 1)
+
+      // n >= rank: same as rank <= n. Effective limit is n.
+      case GreaterThanOrEqual(left, right) if isRankColumn(right) =>
+        extractLiteralInt(left)
+
+      // n > rank: same as rank < n, equivalent to rank <= n-1. Effective limit is n-1.
+      case GreaterThan(left, right) if isRankColumn(right) =>
+        extractLiteralInt(left).map(_ - 1)
+
+      case _ => None
+    }
+
+    /**
+     * Split a condition into conjunctive predicates (AND conditions).
+     * For example: "a AND b AND c" becomes Seq(a, b, c)
+     * A simple condition "a" becomes Seq(a)
+     */
+    def splitConjunctivePredicates(cond: Expression): Seq[Expression] = {
+      cond match {
+        case And(left, right) =>
+          splitConjunctivePredicates(left) ++ splitConjunctivePredicates(right)
+        case other => Seq(other)
+      }
+    }
+
+    // Split the filter condition into conjunctive predicates and extract limits
+    val predicates = splitConjunctivePredicates(condition)
+    val limits = predicates.flatMap(extractLimit)
+
+    // If we found any rank-limiting predicates, use the minimum (most restrictive)
+    // The filter is safe if this minimum limit is <= the WindowGroupLimit's limit
+    if (limits.nonEmpty) {
+      limits.min <= limit
+    } else {
+      false
+    }
+  }
 }

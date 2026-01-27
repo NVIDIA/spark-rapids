@@ -2452,7 +2452,7 @@ object GpuOverrides extends Logging {
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
-      (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
+      (a, conf, p, r) => new GpuBRoundMeta(a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.child.dataType match {
             case FloatType | DoubleType if !this.conf.isIncompatEnabled =>
@@ -2461,8 +2461,6 @@ object GpuOverrides extends Logging {
             case _ => // NOOP
           }
         }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuBRound(lhs, rhs, a.dataType)
       }),
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
@@ -2473,7 +2471,7 @@ object GpuOverrides extends Logging {
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.cpuNumeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
-      (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
+      (a, conf, p, r) => new GpuRoundMeta(a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.child.dataType match {
             case FloatType | DoubleType if !this.conf.isIncompatEnabled =>
@@ -2482,8 +2480,6 @@ object GpuOverrides extends Logging {
             case _ => // NOOP
           }
         }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuRound(lhs, rhs, a.dataType)
       }),
     expr[PythonUDF](
       "UDF run in an external python process. Does not actually run on the GPU, but " +

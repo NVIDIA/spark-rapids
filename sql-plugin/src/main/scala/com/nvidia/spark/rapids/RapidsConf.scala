@@ -1132,6 +1132,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_WINDOW_GROUP_LIMIT_OPT = conf("spark.rapids.sql.window.groupLimit.opt.enabled")
+      .doc("When enabled, the plugin will skip redundant Final WindowGroupLimit operators " +
+          "when they are followed by a WindowExec and FilterExec that perform the same " +
+          "rank computation and filtering. This avoids computing the rank twice and " +
+          "improves performance for queries with rank-based window limits.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -3043,7 +3052,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -3427,6 +3436,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isWindowCollectSetEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_SET)
 
   lazy val isWindowUnboundedAggEnabled: Boolean = get(ENABLE_WINDOW_UNBOUNDED_AGG)
+
+  lazy val isWindowGroupLimitOptEnabled: Boolean = get(ENABLE_WINDOW_GROUP_LIMIT_OPT)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
