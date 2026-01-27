@@ -2338,6 +2338,111 @@ def test_window_group_limits_for_ranking_functions(data_gen, batch_size, rank_cl
         conf=conf)
 
 
+@pytest.mark.skipif(condition=not (is_spark_350_or_later() or is_databricks133_or_later()),
+                    reason="WindowGroupLimit not available for spark.version < 3.5 "
+                           "and Databricks version < 13.3")
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1k', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls], ids=idfn)
+@pytest.mark.parametrize('rank_clause', [
+                            'ROW_NUMBER() OVER (PARTITION BY a ORDER BY b, c)',
+                            'RANK() OVER (PARTITION BY a ORDER BY b, c)',
+                            'DENSE_RANK() OVER (PARTITION BY a ORDER BY b, c)',
+])
+@pytest.mark.parametrize('filter_clause', [
+                            # LessThan variants
+                            'rnk < 5',
+                            '5 > rnk',
+                            # LessThanOrEqual variants
+                            'rnk <= 5',
+                            '5 >= rnk',
+                            # EqualTo variants - Spark supports WHERE rn = 5 and 5 = rn
+                            'rnk = 3',
+                            '3 = rnk',
+                            # AND conditions - Spark uses splitConjunctivePredicates
+                            'rnk > 1 AND rnk <= 5',
+                            'rnk >= 2 AND rnk < 6',
+                            'rnk > 0 AND rnk <= 3 AND a IS NOT NULL',
+])
+def test_window_group_limits_filter_patterns(data_gen, batch_size, rank_clause, filter_clause):
+    """
+    This test verifies that all filter patterns supported by Spark's InferWindowGroupLimit
+    produce correct results on GPU.
+    
+    Spark's InferWindowGroupLimit.extractLimits supports:
+    - EqualTo: rn = 5, 5 = rn
+    - LessThan: rn < 5, 5 > rn
+    - LessThanOrEqual: rn <= 5, 5 >= rn
+    - AND conditions via splitConjunctivePredicates
+    
+    We don't validate that WindowGroupLimit is in the plan - we just ensure
+    correct results for all these query patterns.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    query = """
+        SELECT * FROM (
+          SELECT *, {} AS rnk
+          FROM window_agg_table
+        )
+        WHERE {}
+     """.format(rank_clause, filter_clause)
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=4096),
+        "window_agg_table",
+        query,
+        conf=conf)
+
+
+@pytest.mark.skipif(condition=not (is_spark_350_or_later() or is_databricks133_or_later()),
+                    reason="WindowGroupLimit not available for spark.version < 3.5 "
+                           "and Databricks version < 13.3")
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1k'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls], ids=idfn)
+def test_window_group_limits_row_number_equals(data_gen, batch_size):
+    """
+    Specifically tests row_number() = N pattern which is commonly used to get the Nth row.
+    This is a pattern explicitly shown in Spark's InferWindowGroupLimit documentation.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    # Test row_number = 5 (get the 5th row per partition)
+    query_rn_equals = """
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b, c) AS rn
+          FROM window_agg_table
+        )
+        WHERE rn = 5
+     """
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=4096),
+        "window_agg_table",
+        query_rn_equals,
+        conf=conf)
+
+    # Test reversed: 5 = row_number
+    query_equals_rn = """
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b, c) AS rn
+          FROM window_agg_table
+        )
+        WHERE 5 = rn
+     """
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=4096),
+        "window_agg_table",
+        query_equals_rn,
+        conf=conf)
+
+
 def test_lru_cache_datagen():
     # log cache info at the end of integration tests, not related to window functions
     info = gen_df_help.cache_info()
