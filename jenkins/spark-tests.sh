@@ -425,13 +425,18 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
 
   # As '--packages' only works on the default cuda12 jar, it does not support classifiers
   # refer to issue : https://issues.apache.org/jira/browse/SPARK-20075
-  # "$CLASSIFIER" == ''" is usally for the case running by developers,
+  # "$CLASSIFIER" == ''" is usually for the case run by developers,
   # while "$CLASSIFIER" == "cuda12" is for the case running on CI.
   # We expect to run packages test for both cases
-  if [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda12" ]]; then
-    SPARK_SHELL_SMOKE_TEST=1 \
+  SKIP_PACKAGES_TESTS=${SKIP_PACKAGES_TESTS:-"false"}
+  if { [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda12" ]]; } && [[ "$SKIP_PACKAGES_TESTS" == "false" ]]; then
+    # Add the ivysettings.xml file to support --packages downloads from Artifactory using credentials
+    # Get the HOST_NAME variable for ivysettings.xml (e.g., from https://usr:psw@HOST_NAME/path/to/repo)
+    HOST_NAME=$(sed -E 's#.*://([^/@]*@)?([^/:]+).*#\2#' <<< "$PROJECT_REPO")
+    SPARK_SHELL_SMOKE_TEST=1 HOST_NAME=$HOST_NAME \
     PYSP_TEST_spark_jars_packages=com.nvidia:rapids-4-spark_${SCALA_BINARY_VER}:${PROJECT_VER} \
     PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
+    PYSP_TEST_spark_jars_ivySettings=jenkins/ivysettings.xml \
       ./run_pyspark_from_build.sh
   fi
 
