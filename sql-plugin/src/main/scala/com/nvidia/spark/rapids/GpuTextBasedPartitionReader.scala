@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,10 @@ import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, ColumnView, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
@@ -39,7 +40,7 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
-import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -334,6 +335,57 @@ object GpuTextBasedPartitionReader {
       }
     }
   }
+
+  /**
+   * Infer the Spark type from a given cuDF ColumnView.
+   *
+   * The type returned can not be used to interact with the Spark world, only for
+   * the GPU process internally when asking for a ColumnarBatch without given the
+   * Spark type. Because it may not always reflect the original Spark type.
+   * e.g.
+   * A List of Struct column in cuDF may be either from MapType or a real List
+   * of Struct type in Spark.
+   * A INT32 column in cuDF may be from either YearMonthIntervalType or IntegerType
+   * in Spark.
+   */
+  def infer(col: ColumnView): DataType = col.getType match {
+    case DType.LIST =>
+      val childType = withResource(col.getChildColumnView(0))(infer)
+      ArrayType(childType)
+    case DType.STRUCT =>
+      val fields = (0 until col.getNumChildren).map { i =>
+        withResource(col.getChildColumnView(i)) { chdView =>
+          val chdType = infer(chdView)
+          StructField(s"_cudf_${chdView.getType}_$i", chdType, true)
+        }
+      }
+      StructType(fields)
+    case nonNested => fromNonNested(nonNested)
+  }
+
+  private def fromNonNested(dType: DType): DataType = dType match {
+    case DType.BOOL8 => BooleanType
+    case DType.INT8 => ByteType
+    case DType.INT16 => ShortType
+    case DType.INT32 => IntegerType
+    case DType.INT64 => LongType
+    case DType.FLOAT32 => FloatType
+    case DType.FLOAT64 => DoubleType
+    case DType.TIMESTAMP_DAYS => DateType
+    case DType.TIMESTAMP_MICROSECONDS => TimestampType
+    case DType.STRING => StringType
+    case DType.UINT32 => GpuUnsignedIntegerType
+    case DType.UINT64 => GpuUnsignedLongType
+    case dType if dType.isDecimalType =>
+      val precision = dType.getTypeId match {
+        case DType.DTypeEnum.DECIMAL32 => DType.DECIMAL32_MAX_PRECISION
+        case DType.DTypeEnum.DECIMAL64 => DType.DECIMAL64_MAX_PRECISION
+        case DType.DTypeEnum.DECIMAL128 => DType.DECIMAL128_MAX_PRECISION
+        case _ => throw new IllegalArgumentException(s"Unsupported decimal type: $dType")
+      }
+      DecimalType(precision, -dType.getScale)
+    case _ => throw new IllegalArgumentException(s"Unsupported DType: $dType")
+  }
 }
 
 /**
@@ -465,6 +517,25 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     GpuColumnVector.from(dataSchemaWithStrings)
   }
 
+  // accessible to children for OOM unit tests
+  protected def castToOutputTypesWithRetryAndClose(table: Table,
+      readSchema: StructType): Table = {
+    val scb = withResource(table) { _ =>
+      // Infer the schema from the table. Since for some cases, it is not easy
+      // to know the exact cudf output types for the JSON reader in advance.
+      val tableTypes = (0 until table.getNumberOfColumns).map( i =>
+        GpuTextBasedPartitionReader.infer(table.getColumn(i))
+      ).toArray
+      closeOnExcept(GpuColumnVector.from(table, tableTypes)) { cb =>
+        SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+      }
+    }
+    withRetryNoSplit(scb) { attempt =>
+      val attemptTbl = withResource(attempt.getColumnarBatch())(GpuColumnVector.from)
+      withResource(attemptTbl)(castTableToDesiredTypes(_, readSchema))
+    }
+  }
+
   def castTableToDesiredTypes(table: Table, readSchema: StructType): Table = {
     val columns = new ListBuffer[ColumnVector]()
     // Table increases the ref counts on the columns so we have
@@ -531,9 +602,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
-        val castTable = withResource(table) { _ =>
-          castTableToDesiredTypes(table, newReadDataSchema)
-        }
+        val castTable =
+          castToOutputTypesWithRetryAndClose(table, newReadDataSchema)
 
         handleResult(newReadDataSchema, castTable)
       }

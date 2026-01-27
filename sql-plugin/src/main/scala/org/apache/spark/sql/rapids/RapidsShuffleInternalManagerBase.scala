@@ -523,9 +523,19 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   // No new futures were processed in this iteration, wait for main thread
                   // to queue more compression tasks. Use classic condition flag pattern
                   // to avoid busy-loop polling and provide clear debugging signal.
+                  // Also check interrupt flag to handle task cancellation gracefully.
                   mergerCondition.synchronized {
-                    while (!hasNewWork.get()) {
-                      mergerCondition.wait()
+                    while (!hasNewWork.get() && !Thread.currentThread().isInterrupted) {
+                      try {
+                        mergerCondition.wait()
+                      } catch {
+                        case _: InterruptedException =>
+                          Thread.currentThread().interrupt()
+                          return
+                      }
+                    }
+                    if (Thread.currentThread().isInterrupted) {
+                      return
                     }
                     hasNewWork.set(false)
                   }
@@ -540,9 +550,19 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // Current partition hasn't been queued yet by main thread, wait for it.
             // Use classic condition flag pattern to avoid busy-loop polling and
             // provide clear debugging signal.
+            // Also check interrupt flag to handle task cancellation gracefully.
             mergerCondition.synchronized {
-              while (!hasNewWork.get()) {
-                mergerCondition.wait()
+              while (!hasNewWork.get() && !Thread.currentThread().isInterrupted) {
+                try {
+                  mergerCondition.wait()
+                } catch {
+                  case _: InterruptedException =>
+                    Thread.currentThread().interrupt()
+                    return
+                }
+              }
+              if (Thread.currentThread().isInterrupted) {
+                return
               }
               hasNewWork.set(false)
             }
