@@ -29,7 +29,6 @@ import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
-import org.scalatest.prop.TableDrivenPropertyChecks
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId}
@@ -159,8 +158,7 @@ object GpuKudoWritePartitioningSuite {
   }
 }
 
-class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach
-    with TableDrivenPropertyChecks {
+class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach {
   var rapidsConf = new RapidsConf(Map[String, String]())
 
   override def beforeEach(): Unit = {
@@ -499,49 +497,61 @@ class GpuKudoWritePartitioningSuite extends AnyFunSuite with BeforeAndAfterEach
   }
 
 
-  val partitionCounts = Table("numPartitions", 1, 2, 4, 20)
+  private def testSplitRetryWithPartitions(numPartitions: Int): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+    val conf = createKudoSparkConf()
+    TestUtils.withGpuSparkSession(conf) { spark =>
+      GpuShuffleEnv.init(new RapidsConf(conf))
 
-  test("GPU Kudo write partitioning and serialization - with split retry") {
-    forAll(partitionCounts) { numPartitions =>
-      TrampolineUtil.cleanupAnyExistingSession()
-      val conf = createKudoSparkConf()
-      TestUtils.withGpuSparkSession(conf) { spark =>
-        GpuShuffleEnv.init(new RapidsConf(conf))
+      val serializer = createSerializer()
+      val inputRDD = createInputRDD(spark)
+      val dependency = setupShuffleDependency(spark, inputRDD, serializer, numPartitions)
 
-        val serializer = createSerializer()
-        val inputRDD = createInputRDD(spark)
-        val dependency = setupShuffleDependency(spark, inputRDD, serializer, numPartitions)
+      // Part 1: Run without split to establish baseline batch data
+      val (baselineBatches, baselineTotalRowsSeen) =
+        collectBatches(dependency, injectOOM = false)
 
-        // Part 1: Run without split to establish baseline batch data
-        val (baselineBatches, baselineTotalRowsSeen) =
-          collectBatches(dependency, injectOOM = false)
+      verifyBatchContents(baselineBatches, baselineTotalRowsSeen, serializer)
 
-        verifyBatchContents(baselineBatches, baselineTotalRowsSeen, serializer)
+      // Extract and save baseline batch data with partition IDs
+      val baselinePartitionIds = baselineBatches.map(_._1).toSeq
+      val slicedBaselineBatches = baselineBatches.map(_._2).toSeq
+      val baselineBatchDataSeq =
+        extractBatchDataFromSlicedBatches(slicedBaselineBatches, serializer)
+      val baselineBatchData = baselinePartitionIds.zip(baselineBatchDataSeq)
 
-        // Extract and save baseline batch data with partition IDs
-        val baselinePartitionIds = baselineBatches.map(_._1).toSeq
-        val slicedBaselineBatches = baselineBatches.map(_._2).toSeq
-        val baselineBatchDataSeq =
-          extractBatchDataFromSlicedBatches(slicedBaselineBatches, serializer)
-        val baselineBatchData = baselinePartitionIds.zip(baselineBatchDataSeq)
+      baselineBatches.foreach(_._2.close())
 
-        baselineBatches.foreach(_._2.close())
+      // Part 2: Run with OOM injection to trigger split retry
+      val inputRDD2 = createInputRDD(spark)
+      val dependency2 = setupShuffleDependency(spark, inputRDD2, serializer, numPartitions)
 
-        // Part 2: Run with OOM injection to trigger split retry
-        val inputRDD2 = createInputRDD(spark)
-        val dependency2 = setupShuffleDependency(spark, inputRDD2, serializer, numPartitions)
+      val (splitBatches, splitTotalRowsSeen) =
+        collectBatches(dependency2, injectOOM = true)
 
-        val (splitBatches, splitTotalRowsSeen) =
-          collectBatches(dependency2, injectOOM = true)
+      val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
+      assert(retryCount > 0,
+        s"Expected at least one split retry, but saw $retryCount retries")
 
-        val retryCount = RmmSpark.getAndResetNumSplitRetryThrow(1)
-        assert(retryCount > 0,
-          s"Expected at least one split retry, but saw $retryCount retries")
-
-        verifyBatchContents(splitBatches, splitTotalRowsSeen, serializer)
-        verifySplitRetryStructure(baselineBatchData, splitBatches, serializer)
-        splitBatches.foreach(_._2.close())
-      }
+      verifyBatchContents(splitBatches, splitTotalRowsSeen, serializer)
+      verifySplitRetryStructure(baselineBatchData, splitBatches, serializer)
+      splitBatches.foreach(_._2.close())
     }
+  }
+
+  test("GPU Kudo write partitioning and serialization - with split retry - 1 partition") {
+    testSplitRetryWithPartitions(1)
+  }
+
+  test("GPU Kudo write partitioning and serialization - with split retry - 2 partitions") {
+    testSplitRetryWithPartitions(2)
+  }
+
+  test("GPU Kudo write partitioning and serialization - with split retry - 4 partitions") {
+    testSplitRetryWithPartitions(4)
+  }
+
+  test("GPU Kudo write partitioning and serialization - with split retry - 20 partitions") {
+    testSplitRetryWithPartitions(20)
   }
 }
