@@ -16,7 +16,6 @@
 
 package org.apache.iceberg.spark.source
 
-import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids._
@@ -63,14 +62,6 @@ abstract class GpuSparkScan(val cpuScan: SparkScan,
   protected def groupingKeyType(): Types.StructType
 
   protected def taskGroups(): Seq[_ <: ScanTaskGroup[_]]
-
-  def hasNestedType: Boolean = {
-    cpuScan.expectedSchema()
-      .asStruct()
-      .fields()
-      .asScala
-      .exists { field => field.`type`().isNestedType }
-  }
 }
 
 
@@ -116,11 +107,7 @@ object GpuSparkScan {
     }
 
     gpuScan match {
-      case Success(s) =>
-        if (s.hasNestedType) {
-          meta.willNotWorkOnGpu(s"Iceberg current doesn't support nested types: " +
-            s"${s.cpuScan.readSchema()}")
-        }
+      case Success(_) =>
       case Failure(e) => meta.willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
     }
   }
