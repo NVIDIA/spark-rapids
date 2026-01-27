@@ -18,7 +18,7 @@
 <ivysettings>
   <settings defaultResolver="artifactory"/>
   <properties environment="env"/>
-  <!-- The realm must be exactly "GitHub Package Registry" (case-sensitive). -->
+  <!-- The realm must match the authentication realm returned by the server. -->
   <!-- You can get the realm name via the command below -->
   <!-- sh "curl -v REPO_URL 2>&1 | grep -i 'WWW-Authenticate'" -->
   <credentials
