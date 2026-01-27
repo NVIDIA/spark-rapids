@@ -26,8 +26,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
-import com.nvidia.spark.rapids.GpuMetric.{OP_TIME_NEW_SHUFFLE_READ, OP_TIME_NEW_SHUFFLE_WRITE}
-import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE, MODERATE_LEVEL}
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
@@ -60,7 +59,6 @@ case class GpuOptimizeWriteExchangeExec(
     partitioning: GpuPartitioning,
     override val child: SparkPlan,
     @transient deltaLog: DeltaLog) extends Exchange with GpuExec with DeltaLogging {
-  import GpuMetric._
 
   // Use 150% of target file size hint config considering parquet compression.
   // Still the result file can be smaller/larger than the config due to data skew or

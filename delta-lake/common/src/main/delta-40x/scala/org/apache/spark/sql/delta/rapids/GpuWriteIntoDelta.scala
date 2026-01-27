@@ -45,8 +45,6 @@ import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.functions.{array, col, explode, lit, struct}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.nvidia.DFUDFShims
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.StructType
 
 /** GPU version of Delta Lake's WriteIntoDelta. */

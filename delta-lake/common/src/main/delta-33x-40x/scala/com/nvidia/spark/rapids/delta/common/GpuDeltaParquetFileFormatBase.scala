@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.delta.common
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.HostColumnVector._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._

@@ -21,8 +21,6 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.unsafe.types.VariantVal
-
 
 final class CudfUnsafeRow(
    attributes: Array[Attribute],

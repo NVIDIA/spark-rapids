@@ -23,11 +23,8 @@ package org.apache.spark.sql.delta.hooks
 
 import org.apache.spark.internal.MDC
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.commands.DeltaOptimizeContext
-import org.apache.spark.sql.delta.commands.optimize._
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
 import org.apache.spark.sql.delta.stats.AutoCompactPartitionStats

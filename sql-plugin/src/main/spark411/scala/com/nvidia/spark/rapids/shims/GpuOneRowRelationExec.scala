@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, GpuMetric, RapidsConf,
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf,
   RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.GpuMetric.NUM_OUTPUT_ROWS
 

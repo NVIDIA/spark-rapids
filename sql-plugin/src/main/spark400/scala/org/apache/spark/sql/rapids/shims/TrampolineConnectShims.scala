@@ -26,30 +26,30 @@ import org.apache.avro.NameValidator
 import org.apache.avro.Schema
 
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.classic.{DataFrame, Dataset, SparkSession}
-
 object TrampolineConnectShims {
 
   type SparkSession = org.apache.spark.sql.classic.SparkSession
   type DataFrame = org.apache.spark.sql.classic.DataFrame
   type Dataset = org.apache.spark.sql.classic.Dataset[org.apache.spark.sql.Row]
 
-  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
-
-  def createDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
-    Dataset.ofRows(spark, plan)
+  def cleanupAnyExistingSession(): Unit = {
+    org.apache.spark.sql.classic.SparkSession.cleanupAnyExistingSession()
   }
 
-  def getBuilder(): SparkSession.Builder = {
-    SparkSession.builder()
+  def createDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
+    org.apache.spark.sql.classic.Dataset.ofRows(spark, plan)
+  }
+
+  def getBuilder(): org.apache.spark.sql.classic.SparkSession.Builder = {
+    org.apache.spark.sql.classic.SparkSession.builder()
   }
 
   def hasActiveSession: Boolean = {
-    SparkSession.getActiveSession.isDefined
+    org.apache.spark.sql.classic.SparkSession.getActiveSession.isDefined
   }
 
   def getActiveSession: SparkSession = {
-    SparkSession.getActiveSession.getOrElse(
+    org.apache.spark.sql.classic.SparkSession.getActiveSession.getOrElse(
       throw new IllegalStateException("No active SparkSession found")
     )
   }

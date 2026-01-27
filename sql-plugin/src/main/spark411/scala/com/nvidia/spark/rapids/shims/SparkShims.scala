@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.{HashExprChecks, Murmur3HashExprMeta, XxHash64Exp
 import org.apache.spark.sql.catalyst.expressions.{CollationAwareMurmur3Hash, CollationAwareXxHash64,
   Expression}
 import org.apache.spark.sql.execution.{OneRowRelationExec, SparkPlan}
-import org.apache.spark.sql.rapids.{GpuMurmur3Hash, GpuXxHash64}
 
 /**
  * SparkShimImpl for Spark 4.1.1
