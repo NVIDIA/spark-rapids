@@ -894,7 +894,7 @@ case class GpuGenerateExec(
   private def doGenerateAndClose(input: ColumnarBatch,
       genProjectList: Seq[GpuExpression],
       othersProjectList: Seq[GpuExpression],
-      batchTargetSiz: Long,
+      batchTargetSize: Long,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
@@ -907,7 +907,7 @@ case class GpuGenerateExec(
         othersProjectList ++ genProjectList)
     }
     val splits = GpuGenerateUtils.getSplitsWithRetryAndClose(projectedInput, generator,
-      othersProjectList.length, outer, batchTargetSiz, opTime)
+      othersProjectList.length, outer, batchTargetSize, opTime)
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
       numOutputRows, numOutputBatches, opTime)
   }
