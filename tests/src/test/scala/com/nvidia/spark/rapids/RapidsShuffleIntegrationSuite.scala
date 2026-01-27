@@ -104,6 +104,7 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
       .set("spark.rapids.shuffle.multithreaded.skipMerge", "true")
       .set("spark.rapids.memory.host.offHeapLimit.enabled", "true")
       .set("spark.rapids.memory.host.offHeapLimit.size", "10g")
+
       .set("spark.rapids.memory.host.partialFileBufferInitialSize", "1m")
       .set("spark.rapids.memory.host.partialFileBufferMaxSize", maxBufferSize)
       .set("spark.rapids.sql.batchSizeBytes", batchSize)
