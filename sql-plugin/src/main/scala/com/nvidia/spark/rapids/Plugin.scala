@@ -494,24 +494,30 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     GpuCoreDumpHandler.driverInit(sc, conf)
     ProfilerOnDriver.init(sc, conf)
 
-    // Initialize ShuffleCleanupManager and listener for MULTITHREADED mode with skipMerge enabled
-    // and ESS disabled.
+    // Initialize ShuffleCleanupManager and listener for MULTITHREADED mode when:
+    // 1. skipMerge is enabled
+    // 2. ESS is disabled
+    // 3. Off-heap memory limits are enabled
     //
     // Spark 4.x can call DriverPlugin.init before SparkEnv/shuffleManager are fully initialized,
     // so we must avoid SparkEnv-based checks here and use SparkConf instead.
     val isEssEnabledByConf =
       sparkConf.getBoolean(TrampolineUtil.shuffleServiceEnabledKey, false)
     if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled &&
-        !isEssEnabledByConf) {
+        !isEssEnabledByConf && conf.offHeapLimitEnabled) {
       ShuffleCleanupManager.init(sc)
       shuffleCleanupListener = new ShuffleCleanupListener()
       sc.addSparkListener(shuffleCleanupListener)
       logInfo("ShuffleCleanupManager and listener initialized for MULTITHREADED shuffle mode " +
-        "(skipMerge enabled, ESS disabled)")
+        "(skipMerge enabled, ESS disabled, off-heap limits on)")
     } else if (conf.isMultiThreadedShuffleManagerMode &&
         conf.isMultithreadedShuffleSkipMergeEnabled && isEssEnabledByConf) {
-      logInfo("ShuffleCleanupManager disabled - ESS is enabled, " +
-        "MultithreadedShuffleBufferCatalog not available")
+      logWarning("ShuffleCleanupManager disabled - External Shuffle Service (ESS) is enabled. " +
+        "Disable ESS (spark.shuffle.service.enabled=false) to use skipMerge feature.")
+    } else if (conf.isMultiThreadedShuffleManagerMode &&
+        conf.isMultithreadedShuffleSkipMergeEnabled && !conf.offHeapLimitEnabled) {
+      logWarning("ShuffleCleanupManager disabled - off-heap memory limits are disabled. " +
+        "Set spark.rapids.memory.host.offHeapLimit.enabled=true to use skipMerge feature.")
     }
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
@@ -654,17 +660,20 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
           }
           // Initialize ShuffleCleanupEndpoint for MULTITHREADED mode when
-          // MultithreadedShuffleBufferCatalog is enabled (skipMerge=true and ESS disabled).
-          // Uses same condition as GpuShuffleEnv.init for catalog initialization.
+          // MultithreadedShuffleBufferCatalog is enabled (skipMerge=true, ESS disabled,
+          // off-heap limits on). Uses same condition as GpuShuffleEnv.init.
           if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled
-              && !GpuShuffleEnv.isExternalShuffleEnabled) {
+              && !GpuShuffleEnv.isExternalShuffleEnabled && conf.offHeapLimitEnabled) {
             logInfo("Initializing shuffle cleanup endpoint for MULTITHREADED mode")
             shuffleCleanupEndpoint = new ShuffleCleanupEndpoint(pluginContext)
             shuffleCleanupEndpoint.start()
           } else if (conf.isMultiThreadedShuffleManagerMode &&
               conf.isMultithreadedShuffleSkipMergeEnabled &&
               GpuShuffleEnv.isExternalShuffleEnabled) {
-            logInfo("ShuffleCleanupEndpoint disabled - ESS is enabled")
+            logWarning("ShuffleCleanupEndpoint disabled - ESS is enabled")
+          } else if (conf.isMultiThreadedShuffleManagerMode &&
+              conf.isMultithreadedShuffleSkipMergeEnabled && !conf.offHeapLimitEnabled) {
+            logWarning("ShuffleCleanupEndpoint disabled - off-heap memory limits are disabled")
           }
         }
       }

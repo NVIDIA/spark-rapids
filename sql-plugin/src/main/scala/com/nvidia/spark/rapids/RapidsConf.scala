@@ -2130,11 +2130,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val MULTITHREADED_SHUFFLE_SKIP_MERGE = conf("spark.rapids.shuffle.multithreaded.skipMerge")
     .doc("When using MULTITHREADED shuffle mode, skip merging partial shuffle files and " +
       "instead serve data directly from the MultithreadedShuffleBufferCatalog. " +
-      "This avoids I/O overhead from merging but requires External Shuffle Service (ESS) " +
-      "to be disabled. When set to false (default), partial files will be merged into a single " +
+      "This avoids I/O overhead from merging but requires: (1) External Shuffle Service (ESS) " +
+      "to be disabled, and (2) spark.rapids.memory.host.offHeapLimit.enabled=true (off-heap " +
+      "memory limits enabled) to prevent OOM from unbounded buffer growth. " +
+      "When set to false (default), partial files will be merged into a single " +
       "shuffle file per map task as in standard Spark shuffle. " +
-      "Set to true for better performance when ESS is disabled and shuffle data is not " +
-      "reused across SQL queries (e.g., not on Databricks with shuffle reuse enabled).")
+      "Set to true when both requirements are met and shuffle data is not reused across " +
+      "SQL queries (e.g., avoid on Databricks with shuffle reuse enabled).")
     .startupOnly()
     .booleanConf
     .createWithDefault(false)

@@ -51,21 +51,26 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
           new ShuffleBufferCatalog()
       shuffleReceivedBufferCatalog =
           new ShuffleReceivedBufferCatalog()
-      // Initialize MultithreadedShuffleBufferCatalog for MULTITHREADED mode
-      // when External Shuffle Service is disabled and skipMerge is enabled.
-      // With ESS disabled, all shuffle fetch requests go through GpuShuffleBlockResolverBase
-      // which can serve data from the catalog. With ESS enabled, remote fetches go through
-      // the external shuffle service process which cannot access our in-memory catalog.
+      // Initialize MultithreadedShuffleBufferCatalog for MULTITHREADED mode when:
+      // 1. skipMerge is enabled
+      // 2. External Shuffle Service is disabled (ESS cannot access in-memory catalog)
+      // 3. Off-heap memory limits are enabled (prevents OOM from unbounded buffer growth)
       if (rapidsConf.isMultiThreadedShuffleManagerMode) {
         if (!rapidsConf.isMultithreadedShuffleSkipMergeEnabled) {
           logInfo("MultithreadedShuffleBufferCatalog disabled - " +
             "spark.rapids.shuffle.multithreaded.skipMerge is false")
-        } else if (!GpuShuffleEnv.isExternalShuffleEnabled) {
-          multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
-          logInfo("MultithreadedShuffleBufferCatalog enabled (ESS disabled)")
+        } else if (GpuShuffleEnv.isExternalShuffleEnabled) {
+          logWarning("MultithreadedShuffleBufferCatalog disabled - " +
+            "External Shuffle Service (ESS) is enabled. ESS cannot access in-memory catalog. " +
+            "Disable ESS (spark.shuffle.service.enabled=false) to use skipMerge feature.")
+        } else if (!rapidsConf.offHeapLimitEnabled) {
+          logWarning("MultithreadedShuffleBufferCatalog disabled - " +
+            "spark.rapids.memory.host.offHeapLimit.enabled is false. " +
+            "Without off-heap memory limits, shuffle buffers could grow unbounded and cause OOM. " +
+            "Set spark.rapids.memory.host.offHeapLimit.enabled=true to use skipMerge feature.")
         } else {
-          logInfo("MultithreadedShuffleBufferCatalog disabled - " +
-            "ESS is enabled, using disk-based shuffle files")
+          multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
+          logInfo("MultithreadedShuffleBufferCatalog enabled (ESS disabled, off-heap limits on)")
         }
       }
     }

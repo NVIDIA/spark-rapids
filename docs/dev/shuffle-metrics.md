@@ -15,6 +15,14 @@ Event format in eventlog (JSON):
  "shuffleId":0,"bytesFromMemory":7868,"bytesFromDisk":0}
 ```
 
+## Why Custom Events Instead of Task Metrics
+
+Spark task metrics are committed when a task completes. However, shuffle data lifecycle
+extends beyond task completion - buffers may be spilled to disk after a task finishes but
+before the shuffle data is read. The final `bytesFromMemory` vs `bytesFromDisk` statistics
+can only be determined when shuffle cleanup occurs (after the SQL query completes), at
+which point task metrics are no longer updatable.
+
 ## Field Descriptions
 
 | Field | Description |
