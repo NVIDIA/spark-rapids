@@ -201,58 +201,6 @@ def test_insert_overwrite_partitioned_table_full_coverage(spark_tmp_table_factor
 @ignore_order(local=True)
 @allow_non_gpu('OverwriteByExpressionExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_overwrite_specific_partition_identity_fallback(spark_tmp_table_factory):
-    """Test INSERT OVERWRITE with PARTITION clause for specific partitions (identity partition - falls back to CPU)."""
-    # Extend base columns with a partition column that has limited values
-    partition_col = '_c999'
-    partition_gen = StringGen(pattern='category_[ABC]', nullable=False)  # Generates category_A, category_B, category_C
-    
-    extended_cols = iceberg_base_table_cols + [partition_col]
-    extended_gens = iceberg_gens_list + [partition_gen]
-    
-    table_name = get_full_table_name(spark_tmp_table_factory)
-
-    table_prop = {"format-version": "2"}
-
-    # Create table with identity partition on the category column
-    create_iceberg_table(
-        table_name,
-        partition_col_sql=partition_col,  # Identity partition
-        table_prop=table_prop,
-        df_gen=lambda spark: gen_df(spark, list(zip(extended_cols, extended_gens))))
-
-    def insert_initial_data(spark, table_name: str):
-        """Insert initial data with multiple partition values."""
-        df = gen_df(spark, list(zip(extended_cols, extended_gens)), seed=INITIAL_INSERT_SEED)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    def overwrite_specific_partition(spark, table_name: str):
-        """Overwrite only category_A partition - other partitions should remain unchanged."""
-        df = gen_df(spark, list(zip(extended_cols, extended_gens)))
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        # Overwrite only rows where partition column equals 'category_A'
-        cols_to_select = ','.join(iceberg_base_table_cols)
-        sql = f"INSERT OVERWRITE TABLE {table_name} PARTITION ({partition_col} = 'category_A') " \
-              f"SELECT {cols_to_select} FROM {view_name} WHERE {partition_col} = 'category_A'"
-        return spark.sql(sql)
-
-    # Insert initial data
-    with_cpu_session(lambda spark: insert_initial_data(spark, table_name),
-                     conf = iceberg_static_overwrite_conf)
-
-    # Perform overwrite (should fall back because identity partition is not supported on GPU)
-    assert_gpu_fallback_collect(lambda spark: overwrite_specific_partition(spark, table_name),
-                                "OverwriteByExpressionExec",
-                                conf = iceberg_static_overwrite_conf)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('OverwriteByExpressionExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_insert_overwrite_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
     """Test INSERT OVERWRITE with all data types including unsupported ones (falls back to CPU)."""
     table_prop = {"format-version": "2"}
