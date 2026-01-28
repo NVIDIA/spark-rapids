@@ -436,7 +436,7 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
     SPARK_SHELL_SMOKE_TEST=1 HOST_NAME=$HOST_NAME \
     PYSP_TEST_spark_jars_packages=com.nvidia:rapids-4-spark_${SCALA_BINARY_VER}:${PROJECT_VER} \
     PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
-    PYSP_TEST_spark_jars_ivySettings=jenkins/ivysettings.xml \
+    PYSP_TEST_spark_jars_ivySettings=${WORKSPACE}/jenkins/ivysettings.xml \
       ./run_pyspark_from_build.sh
   fi
 

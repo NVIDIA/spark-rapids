@@ -16,7 +16,7 @@
 -->
 
 <ivysettings>
-  <settings defaultResolver="artifactory"/>
+  <settings defaultResolver="art-chain"/>
   <properties environment="env"/>
   <!-- The realm must match the authentication realm returned by the server. -->
   <!-- You can get the realm name via the command below -->
@@ -27,9 +27,15 @@
     username="${env.URM_CREDS_USR}"
     passwd="${env.URM_CREDS_PSW}"/>
   <resolvers>
-    <ibiblio
-      name="artifactory"
-      m2compatible="true"
-      root="${env.URM_URL}"/>
+    <chain name="art-chain" returnFirst="true">
+      <ibiblio
+        name="artifactory"
+        m2compatible="true"
+        root="${env.URM_URL}"/>
+      <!-- Default: Maven Central -->
+      <ibiblio
+        name="maven-central"
+        m2compatible="true"/>
+    </chain>
   </resolvers>
 </ivysettings>
