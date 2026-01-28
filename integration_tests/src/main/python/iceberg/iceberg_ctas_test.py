@@ -328,3 +328,66 @@ def test_ctas_aqe(spark_tmp_table_factory, partition_col_sql):
                                 table_prop,
                                 partition_col_sql=partition_col_sql,
                                 conf=conf)
+
+
+CTAS_PARTITION_EVOLUTION_SEED = 42
+CTAS_PARTITION_EVOLUTION_REASON = "Ensure reproducible test data for CTAS partition evolution test"
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@datagen_overrides(seed=CTAS_PARTITION_EVOLUTION_SEED, reason=CTAS_PARTITION_EVOLUTION_REASON)
+def test_ctas_from_table_after_drop_partition_field(spark_tmp_table_factory):
+    """Test CTAS with partitioned target after source table drops a partition field (void transform).
+    
+    When a partition field is dropped, Iceberg creates a 'void transform' - 
+    the field remains in the partition spec but no longer affects partitioning.
+    This test verifies CTAS still runs correctly on GPU after partition evolution.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+    
+    table_prop = {"format-version": "2"}
+    # Use two partition columns so after dropping one, we still have at least one
+    partition_col_sql = "bucket(8, _c2), bucket(8, _c3)"
+    
+    # Create partitioned tables with initial data
+    create_iceberg_table(cpu_table_name, partition_col_sql=partition_col_sql, table_prop=table_prop)
+    create_iceberg_table(gpu_table_name, partition_col_sql=partition_col_sql, table_prop=table_prop)
+    
+    # Insert initial data into tables before partition evolution
+    def insert_initial_data(spark, table_name):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=CTAS_PARTITION_EVOLUTION_SEED)
+        df.writeTo(table_name).append()
+    
+    with_cpu_session(lambda spark: insert_initial_data(spark, cpu_table_name))
+    with_cpu_session(lambda spark: insert_initial_data(spark, gpu_table_name))
+    
+    # Drop one partition field on both tables (creates void transform)
+    def drop_partition_field(spark, table_name):
+        spark.sql(f"ALTER TABLE {table_name} DROP PARTITION FIELD bucket(8, _c2)")
+    
+    with_cpu_session(lambda spark: drop_partition_field(spark, cpu_table_name))
+    with_cpu_session(lambda spark: drop_partition_field(spark, gpu_table_name))
+    
+    # CTAS after partition evolution - generate data inline with same seed
+    def execute_ctas(spark, target_table):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=CTAS_PARTITION_EVOLUTION_SEED + 1)
+        view_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(view_name)
+        spark.sql(f"DROP TABLE IF EXISTS {target_table}")
+        props_sql = _props_to_sql(table_prop)
+        spark.sql(
+            f"CREATE TABLE {target_table} USING ICEBERG "
+            f"TBLPROPERTIES ({props_sql}) AS SELECT * FROM {view_name}")
+    
+    with_gpu_session(lambda spark: execute_ctas(spark, gpu_table_name),
+                     conf=iceberg_write_enabled_conf)
+    with_cpu_session(lambda spark: execute_ctas(spark, cpu_table_name),
+                     conf=iceberg_write_enabled_conf)
+    
+    # Compare results
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
