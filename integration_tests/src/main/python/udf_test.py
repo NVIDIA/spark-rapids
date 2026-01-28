@@ -150,7 +150,7 @@ def test_group_aggregate_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .agg(pandas_sum(f.col('b'))),
-            conf=arrow_udf_conf)
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
