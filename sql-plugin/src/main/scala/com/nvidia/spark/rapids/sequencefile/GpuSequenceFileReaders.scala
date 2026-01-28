@@ -21,6 +21,8 @@ import java.net.URI
 import java.util
 import java.util.Optional
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -534,41 +536,81 @@ class SequenceFilePartitionReader(
 }
 
 /**
+ * Represents a single chunk of SequenceFile binary data with its offsets.
+ * Used for GPU concat optimization - each file becomes one chunk.
+ *
+ * @param dataBuffer host memory buffer containing binary data
+ * @param offsetsBuffer host memory buffer containing INT32 offsets
+ * @param numRows number of rows in this chunk
+ */
+private[sequencefile] case class SequenceFileChunk(
+    dataBuffer: HostMemoryBuffer,
+    offsetsBuffer: HostMemoryBuffer,
+    numRows: Int) extends AutoCloseable {
+  override def close(): Unit = {
+    dataBuffer.close()
+    offsetsBuffer.close()
+  }
+}
+
+/**
  * Host memory buffer metadata for SequenceFile multi-thread reader.
+ *
+ * Supports two modes:
+ * 1. Single file mode: keyChunks/valueChunks have one element
+ * 2. Combined mode (GPU concat): keyChunks/valueChunks have multiple elements,
+ *    which will be concatenated on GPU for better performance (zero CPU copy)
+ *
+ * @param partitionedFile the partitioned file info
+ * @param memBuffersAndSizes array of buffer metadata
+ * @param bytesRead total bytes read from the file
+ * @param keyChunks array of key data chunks (one per file when combined)
+ * @param valueChunks array of value data chunks (one per file when combined)
+ * @param totalRows total number of rows across all chunks
+ * @param wantsKey whether the key column is requested
+ * @param wantsValue whether the value column is requested
+ * @param allPartValues optional array of (rowCount, partitionValues) when combining
  */
 private[sequencefile] case class SequenceFileHostBuffersWithMetaData(
     override val partitionedFile: PartitionedFile,
     override val memBuffersAndSizes: Array[SingleHMBAndMeta],
     override val bytesRead: Long,
-    keyBuffer: Option[HostMemoryBuffer],
-    valueBuffer: Option[HostMemoryBuffer],
-    keyOffsets: Option[HostMemoryBuffer],
-    valueOffsets: Option[HostMemoryBuffer],
-    numRows: Int,
+    keyChunks: Array[SequenceFileChunk],
+    valueChunks: Array[SequenceFileChunk],
+    totalRows: Int,
     wantsKey: Boolean,
-    wantsValue: Boolean) extends HostMemoryBuffersWithMetaDataBase {
+    wantsValue: Boolean,
+    override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
+  extends HostMemoryBuffersWithMetaDataBase {
 
   override def close(): Unit = {
-    keyBuffer.foreach(_.close())
-    valueBuffer.foreach(_.close())
-    keyOffsets.foreach(_.close())
-    valueOffsets.foreach(_.close())
+    keyChunks.foreach(_.close())
+    valueChunks.foreach(_.close())
     super.close()
   }
 }
 
 /**
  * Empty metadata returned when a file has no records.
+ *
+ * @param partitionedFile the partitioned file info
+ * @param bytesRead total bytes read from the file
+ * @param numRows number of rows (usually 0 for empty files, but may be > 0 when combining)
+ * @param allPartValues optional array of (rowCount, partitionValues) when combining multiple files
  */
 private[sequencefile] case class SequenceFileEmptyMetaData(
     override val partitionedFile: PartitionedFile,
-    override val bytesRead: Long) extends HostMemoryBuffersWithMetaDataBase {
+    override val bytesRead: Long,
+    numRows: Long = 0,
+    override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
+  extends HostMemoryBuffersWithMetaDataBase {
   override def memBuffersAndSizes: Array[SingleHMBAndMeta] = Array(SingleHMBAndMeta.empty())
 }
 
 /**
  * Multi-threaded cloud reader for SequenceFile format.
  * Reads multiple files in parallel using a thread pool.
+ * Supports combining small files into larger batches for better GPU efficiency.
  */
 class MultiFileCloudSequenceFilePartitionReader(
     conf: Configuration,
@@ -583,10 +625,11 @@ class MultiFileCloudSequenceFilePartitionReader(
     execMetrics: Map[String, GpuMetric],
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
-    queryUsesInputFile: Boolean)
+    queryUsesInputFile: Boolean,
+    combineConf: CombineConf = CombineConf(-1, -1))
   extends MultiFileCloudPartitionReaderBase(conf, files, poolConf, maxNumFileProcessed,
     Array.empty[Filter], execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
-    ignoreCorruptFiles) with MultiFileReaderFunctions with Logging {
+    ignoreCorruptFiles, combineConf = combineConf) with MultiFileReaderFunctions with Logging {
 
   private val wantsKey = requiredSchema.fieldNames.exists(
     _.equalsIgnoreCase(SequenceFileBinaryFileFormat.KEY_FIELD))
@@ -594,6 +637,120 @@ class MultiFileCloudSequenceFilePartitionReader(
     _.equalsIgnoreCase(SequenceFileBinaryFileFormat.VALUE_FIELD))
 
   override def getFileFormatShortName: String = "SequenceFileBinary"
+
+  /**
+   * Whether to use combine mode to merge multiple small files into larger batches.
+   * This improves GPU efficiency by reducing the number of small batches.
+   */
+  override def canUseCombine: Boolean = {
+    if (queryUsesInputFile) {
+      logDebug("Can't use combine mode because query uses 'input_file_xxx' function(s)")
+      false
+    } else {
+      val canUse = combineConf.combineThresholdSize > 0
+      if (!canUse) {
+        logDebug("Cannot use combine mode because the threshold size <= 0")
+      }
+      canUse
+    }
+  }
+
+  /**
+   * Combines multiple SequenceFile host memory buffers into a single buffer.
+   * This reduces the number of batches sent to the GPU, improving performance.
+   */
+  override def combineHMBs(
+      buffers: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
+    if (buffers.length == 1) {
+      logDebug("No need to combine because there is only one buffer.")
+      buffers.head
+    } else {
+      assert(buffers.length > 1)
+      logDebug(s"Got ${buffers.length} buffers, combining them")
+      doCombineHmbs(buffers)
+    }
+  }
+
+  /**
+   * Performs the actual combining of multiple SequenceFile buffers.
+   *
+   * OPTIMIZATION: Uses zero-copy approach similar to Parquet!
+   * Instead of copying data on CPU, we just collect buffer references
+   * and let GPU concatenate handle the merging (much faster due to high bandwidth).
+   */
+  private def doCombineHmbs(
+      input: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
+    val startCombineTime = System.currentTimeMillis()
+
+    // Separate empty and non-empty buffers
+    val (emptyBuffers, nonEmptyBuffers) = input.partition {
+      case _: SequenceFileEmptyMetaData => true
+      case meta: SequenceFileHostBuffersWithMetaData => meta.totalRows == 0
+      case _ => false
+    }
+
+    // Collect partition values from all buffers (including empty ones)
+    val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
+    input.foreach { buf =>
+      val partValues = buf.partitionedFile.partitionValues
+      buf match {
+        case empty: SequenceFileEmptyMetaData =>
+          if (empty.numRows > 0) {
+            allPartValues.append((empty.numRows, partValues))
+          }
+        case meta: SequenceFileHostBuffersWithMetaData =>
+          allPartValues.append((meta.totalRows.toLong, partValues))
+        case _ =>
+      }
+    }
+
+    // If all buffers are empty, return an empty combined result
+    if (nonEmptyBuffers.isEmpty) {
+      val totalBytesRead = input.map(_.bytesRead).sum
+      val firstPart = input.head.partitionedFile
+      emptyBuffers.foreach(_.close())
+      return SequenceFileEmptyMetaData(
+        firstPart,
+        totalBytesRead,
+        numRows = allPartValues.map(_._1).sum,
+        allPartValues = if (allPartValues.nonEmpty) Some(allPartValues.toArray) else None)
+    }
+
+    // Close empty buffers since we don't need them
+    emptyBuffers.foreach(_.close())
+
+    // Cast non-empty buffers to the correct type
+    val toCombine = nonEmptyBuffers.map(_.asInstanceOf[SequenceFileHostBuffersWithMetaData])
+
+    logDebug(s"Using zero-copy Combine mode, collecting ${toCombine.length} non-empty files, " +
+      s"files: ${toCombine.map(_.partitionedFile.filePath).mkString(",")}")
+
+    // ZERO-COPY: Just collect all chunks without copying data!
+    // The actual concatenation will happen on GPU (much faster)
+    val allKeyChunks = toCombine.flatMap(_.keyChunks)
+    val allValueChunks = toCombine.flatMap(_.valueChunks)
+    val totalRows = toCombine.map(_.totalRows).sum
+    val totalBytesRead = input.map(_.bytesRead).sum
+    val firstMeta = toCombine.head
+
+    val result = SequenceFileHostBuffersWithMetaData(
+      partitionedFile = firstMeta.partitionedFile,
+      memBuffersAndSizes = Array(SingleHMBAndMeta.empty(totalRows)),
+      bytesRead = totalBytesRead,
+      keyChunks = allKeyChunks,
+      valueChunks = allValueChunks,
+      totalRows = totalRows,
+      wantsKey = wantsKey,
+      wantsValue = wantsValue,
+      allPartValues = if (allPartValues.nonEmpty) Some(allPartValues.toArray) else None)
+
+    logDebug(s"Zero-copy combine took ${System.currentTimeMillis() - startCombineTime} ms, " +
+      s"collected ${toCombine.length} files with ${allKeyChunks.length} key chunks, " +
+      s"${allValueChunks.length} value chunks, total ${totalRows} rows, " +
+      s"task id: ${TaskContext.get().taskAttemptId()}")
+
+    result
+  }
 
   override def getBatchRunner(
       tc: TaskContext,
@@ -609,23 +766,48 @@ class MultiFileCloudSequenceFilePartitionReader(
       case empty: SequenceFileEmptyMetaData =>
         // No data, but we might need to emit partition values
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        val emptyBatch = new ColumnarBatch(Array.empty, 0)
-        BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
-          emptyBatch,
-          empty.partitionedFile.partitionValues,
-          partitionSchema,
-          maxGpuColumnSizeBytes)
+        val emptyBatch = new ColumnarBatch(Array.empty, empty.numRows.toInt)
+        empty.allPartValues match {
+          case Some(partRowsAndValues) =>
+            // Combined empty result with multiple partition values
+            val (rowsPerPart, partValues) = partRowsAndValues.unzip
+            BatchWithPartitionDataUtils.addPartitionValuesToBatch(
+              emptyBatch,
+              rowsPerPart,
+              partValues,
+              partitionSchema,
+              maxGpuColumnSizeBytes)
+          case None =>
+            // Single file empty result
+            BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
+              emptyBatch,
+              empty.partitionedFile.partitionValues,
+              partitionSchema,
+              maxGpuColumnSizeBytes)
+        }
 
       case meta: SequenceFileHostBuffersWithMetaData =>
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val batch = buildColumnarBatchFromHostBuffers(meta)
-        val partValues = meta.partitionedFile.partitionValues
         closeOnExcept(batch) { _ =>
-          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
-            batch,
-            partValues,
-            partitionSchema,
-            maxGpuColumnSizeBytes)
+          meta.allPartValues match {
+            case Some(partRowsAndValues) =>
+              // Combined result with multiple partition values
+              val (rowsPerPart, partValues) = partRowsAndValues.unzip
+              BatchWithPartitionDataUtils.addPartitionValuesToBatch(
+                batch,
+                rowsPerPart,
+                partValues,
+                partitionSchema,
+                maxGpuColumnSizeBytes)
+            case None =>
+              // Single file result
+              BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
+                batch,
+                meta.partitionedFile.partitionValues,
+                partitionSchema,
+                maxGpuColumnSizeBytes)
+          }
         }
 
       case other =>
@@ -635,22 +817,21 @@ class MultiFileCloudSequenceFilePartitionReader(
 
   private def buildColumnarBatchFromHostBuffers(
       meta: SequenceFileHostBuffersWithMetaData): ColumnarBatch = {
-    val numRows = meta.numRows
+    val numRows = meta.totalRows
 
     if (numRows == 0 || requiredSchema.isEmpty) {
       return new ColumnarBatch(Array.empty, numRows)
     }
 
     // Build device columns from host buffers
-    val keyCol: Option[ColumnVector] = if (meta.wantsKey && meta.keyBuffer.isDefined) {
-      Some(buildDeviceColumnFromHostBuffers(
-        meta.keyBuffer.get, meta.keyOffsets.get, numRows))
+    // If multiple chunks exist (combined mode), concatenate on GPU for better performance
+    val keyCol: Option[ColumnVector] = if (meta.wantsKey && meta.keyChunks.nonEmpty) {
+      Some(buildDeviceColumnFromChunks(meta.keyChunks))
     } else None
 
     val valueCol: Option[ColumnVector] = closeOnExcept(keyCol) { _ =>
-      if (meta.wantsValue && meta.valueBuffer.isDefined) {
-        Some(buildDeviceColumnFromHostBuffers(
-          meta.valueBuffer.get, meta.valueOffsets.get, numRows))
+      if (meta.wantsValue && meta.valueChunks.nonEmpty) {
+        Some(buildDeviceColumnFromChunks(meta.valueChunks))
       } else None
     }
 
@@ -668,6 +849,33 @@ class MultiFileCloudSequenceFilePartitionReader(
         closeOnExcept(cols) { _ =>
           new ColumnarBatch(cols, numRows)
         }
+      }
+    }
+  }
+
+  /**
+   * Build a device column from multiple chunks using GPU concatenation.
+   * This is the key optimization: instead of copying on CPU, we transfer each chunk
+   * to GPU separately and use cudf::concatenate which is much faster.
+   */
+  private def buildDeviceColumnFromChunks(chunks: Array[SequenceFileChunk]): ColumnVector = {
+    if (chunks.length == 1) {
+      // Single chunk: use the original fast path
+      val chunk = chunks.head
+      buildDeviceColumnFromHostBuffers(chunk.dataBuffer, chunk.offsetsBuffer, chunk.numRows)
+    } else {
+      // Multiple chunks: transfer each to GPU and concatenate
+      // GPU concat is much faster than CPU copy + offset adjustment
+      val gpuCols = new ArrayBuffer[ColumnVector]()
+      try {
+        chunks.foreach { chunk =>
+          gpuCols += buildDeviceColumnFromHostBuffers(
+            chunk.dataBuffer, chunk.offsetsBuffer, chunk.numRows)
+        }
+        // Use cudf concatenate - this is highly optimized and uses GPU memory bandwidth
+        ColumnVector.concatenate(gpuCols: _*)
+      } finally {
+        gpuCols.foreach(_.close())
       }
     }
   }
@@ -814,27 +1022,34 @@ class MultiFileCloudSequenceFilePartitionReader(
               SequenceFileEmptyMetaData(partFile, bytesRead)
             } else {
               // Extract host memory buffers from the streaming bufferers
-              val (keyBuffer, keyOffsets) = keyBuf.map { kb =>
-                kb.getHostBuffersAndRelease()
-              }.getOrElse((None, None))
-
-              val (valueBuffer, valueOffsets) = closeOnExcept(keyBuffer) { _ =>
-                closeOnExcept(keyOffsets) { _ =>
-                  valBuf.map { vb =>
-                    vb.getHostBuffersAndRelease()
-                  }.getOrElse((None, None))
+              // Create SequenceFileChunk for each column (key/value)
+              val keyChunks: Array[SequenceFileChunk] = keyBuf.map { kb =>
+                val (dataOpt, offsetsOpt) = kb.getHostBuffersAndRelease()
+                (dataOpt, offsetsOpt) match {
+                  case (Some(data), Some(offsets)) =>
+                    Array(SequenceFileChunk(data, offsets, numRows))
+                  case _ => Array.empty[SequenceFileChunk]
                 }
+              }.getOrElse(Array.empty)
+
+              val valueChunks: Array[SequenceFileChunk] = closeOnExcept(keyChunks) { _ =>
+                valBuf.map { vb =>
+                  val (dataOpt, offsetsOpt) = vb.getHostBuffersAndRelease()
+                  (dataOpt, offsetsOpt) match {
+                    case (Some(data), Some(offsets)) =>
+                      Array(SequenceFileChunk(data, offsets, numRows))
+                    case _ => Array.empty[SequenceFileChunk]
+                  }
+                }.getOrElse(Array.empty)
               }
 
               SequenceFileHostBuffersWithMetaData(
                 partitionedFile = partFile,
                 memBuffersAndSizes = Array(SingleHMBAndMeta.empty(numRows)),
                 bytesRead = bytesRead,
-                keyBuffer = keyBuffer,
-                valueBuffer = valueBuffer,
-                keyOffsets = keyOffsets,
-                valueOffsets = valueOffsets,
-                numRows = numRows,
+                keyChunks = keyChunks,
+                valueChunks = valueChunks,
+                totalRows = numRows,
                 wantsKey = wantsKey,
                 wantsValue = wantsValue)
             }
@@ -892,6 +1107,7 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
 
   // COALESCING mode is not beneficial for SequenceFile since decoding happens on CPU
   // (using Hadoop's SequenceFile.Reader). There's no GPU-side decoding to amortize.
+  // However, COMBINE mode is supported to merge multiple small files into larger batches.
   override val canUseCoalesceFilesReader: Boolean = false
 
   override val canUseMultiThreadReader: Boolean =
@@ -902,12 +1118,17 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
   private val poolConf = ThreadPoolConfBuilder(rapidsConf).build
 
+  // Combine configuration for merging small files into larger batches
+  private val combineThresholdSize = rapidsConf.getMultithreadedCombineThreshold
+  private val combineWaitTime = rapidsConf.getMultithreadedCombineWaitTime
+
   override protected def getFileFormatShortName: String = "SequenceFileBinary"
 
   override protected def buildBaseColumnarReaderForCloud(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    // Multi-threaded reader for cloud/parallel file reading
+    val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
+    // Multi-threaded reader for cloud/parallel file reading with optional combining
     new PartitionReaderWithBytesRead(
       new MultiFileCloudSequenceFilePartitionReader(
         conf,
@@ -922,7 +1143,8 @@ case class GpuSequenceFileMultiFilePartitionReaderFactory(
         metrics,
         ignoreMissingFiles,
         ignoreCorruptFiles,
-        queryUsesInputFile))
+        queryUsesInputFile,
+        combineConf))
   }
 
   override protected def buildBaseColumnarReaderForCoalescing(
