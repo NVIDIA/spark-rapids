@@ -174,8 +174,9 @@ if [[ "$DIST_PROFILE" == *Scala213 ]]; then
   SCALA213=1
 fi
 
+MVN=${MVN:-"mvn"}
 # include options to mvn command
-export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
+export MVN="$MVN -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
 
 if [[ "$SCALA213" == "1" ]]; then
   POM_FILE="scala2.13/pom.xml"
