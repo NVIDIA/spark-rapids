@@ -655,6 +655,8 @@ class PreProjectSplitIterator(
   // NOTE: this is overwritten by tests to trigger various corner cases
   private lazy val splitUntilSize = PreProjectSplitIterator.getSplitUntilSize
 
+  // The Java "ceilDiv" is introduced in JDK-18, so we create one ourselves for earlier
+  // versions, e.g. JDK-8 and JDK-11.
   private def ceilDiv(a: Long, b: Long): Long = {
     if (a % b == 0) {
       a / b
