@@ -46,7 +46,7 @@ import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.internal.StaticSQLConf
-import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleCleanupListener}
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class PluginException(msg: String) extends RuntimeException(msg)
@@ -443,7 +443,6 @@ object RapidsPluginUtils extends Logging {
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
-  var shuffleCleanupListener: ShuffleCleanupListener = null
   private lazy val extraDriverPlugins =
     RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
 
@@ -466,20 +465,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
       case m: GpuCoreDumpMsg => GpuCoreDumpHandler.handleMsg(m)
       case m: ProfileMsg => ProfilerOnDriver.handleMsg(m)
-      // Shuffle cleanup RPC messages
-      case RapidsShuffleCleanupPollMsg(executorId) =>
-        val manager = ShuffleCleanupManager.get
-        if (manager != null) {
-          manager.handlePoll(executorId)
-        } else {
-          RapidsShuffleCleanupResponseMsg(Array.empty)
-        }
-      case RapidsShuffleCleanupStatsMsg(executorId, stats) =>
-        val manager = ShuffleCleanupManager.get
-        if (manager != null) {
-          manager.handleStats(executorId, stats)
-        }
-        null // No response needed for stats report
       case m => throw new IllegalStateException(s"Unknown message $m")
     }
   }
@@ -494,40 +479,18 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     GpuCoreDumpHandler.driverInit(sc, conf)
     ProfilerOnDriver.init(sc, conf)
 
-    // Initialize ShuffleCleanupManager and listener for MULTITHREADED mode when:
-    // 1. skipMerge is enabled
-    // 2. ESS is disabled
-    // 3. Off-heap memory limits are enabled
-    //
-    // Spark 4.x can call DriverPlugin.init before SparkEnv/shuffleManager are fully initialized,
-    // so we must avoid SparkEnv-based checks here and use SparkConf instead.
-    val isEssEnabledByConf =
-      sparkConf.getBoolean(TrampolineUtil.shuffleServiceEnabledKey, false)
-    if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled &&
-        !isEssEnabledByConf && conf.offHeapLimitEnabled) {
-      ShuffleCleanupManager.init(sc)
-      shuffleCleanupListener = new ShuffleCleanupListener()
-      sc.addSparkListener(shuffleCleanupListener)
-      logInfo("ShuffleCleanupManager and listener initialized for MULTITHREADED shuffle mode " +
-        "(skipMerge enabled, ESS disabled, off-heap limits on)")
-    } else if (conf.isMultiThreadedShuffleManagerMode &&
-        conf.isMultithreadedShuffleSkipMergeEnabled && isEssEnabledByConf) {
-      logWarning("ShuffleCleanupManager disabled - External Shuffle Service (ESS) is enabled. " +
-        "Disable ESS (spark.shuffle.service.enabled=false) to use skipMerge feature.")
-    } else if (conf.isMultiThreadedShuffleManagerMode &&
-        conf.isMultithreadedShuffleSkipMergeEnabled && !conf.offHeapLimitEnabled) {
-      logWarning("ShuffleCleanupManager disabled - off-heap memory limits are disabled. " +
-        "Set spark.rapids.memory.host.offHeapLimit.enabled=true to use skipMerge feature.")
-    }
-
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
-      if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
-        rapidsShuffleHeartbeatManager =
-          new RapidsShuffleHeartbeatManager(
-            conf.shuffleTransportEarlyStartHeartbeatInterval,
-            conf.shuffleTransportEarlyStartHeartbeatTimeout)
-      }
+    }
+
+    // Enable heartbeats if RAPIDS shuffle is configured for this shim and early start is enabled.
+    // This check doesn't require the shuffle manager to be instantiated yet.
+    if (GpuShuffleEnv.isRapidsShuffleConfigured(sparkConf) &&
+        GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
+      rapidsShuffleHeartbeatManager =
+        new RapidsShuffleHeartbeatManager(
+          conf.shuffleTransportEarlyStartHeartbeatInterval,
+          conf.shuffleTransportEarlyStartHeartbeatTimeout)
     }
 
     FileCacheLocalityManager.init(sc)
@@ -546,9 +509,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def shutdown(): Unit = {
     extraDriverPlugins.foreach(_.shutdown())
     FileCacheLocalityManager.shutdown()
-    // Shutdown listener first to trigger cleanup for any remaining jobs
-    Option(shuffleCleanupListener).foreach(_.shutdown())
-    ShuffleCleanupManager.shutdown()
   }
 }
 
@@ -583,7 +543,6 @@ case class ActiveTaskMetrics(
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
-  var shuffleCleanupEndpoint: ShuffleCleanupEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
 
@@ -654,27 +613,16 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           numCores)
         if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
-          if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
-            logInfo("Initializing shuffle manager heartbeats")
-            rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
-            rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
-          }
-          // Initialize ShuffleCleanupEndpoint for MULTITHREADED mode when
-          // MultithreadedShuffleBufferCatalog is enabled (skipMerge=true, ESS disabled,
-          // off-heap limits on). Uses same condition as GpuShuffleEnv.init.
-          if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled
-              && !GpuShuffleEnv.isExternalShuffleEnabled && conf.offHeapLimitEnabled) {
-            logInfo("Initializing shuffle cleanup endpoint for MULTITHREADED mode")
-            shuffleCleanupEndpoint = new ShuffleCleanupEndpoint(pluginContext)
-            shuffleCleanupEndpoint.start()
-          } else if (conf.isMultiThreadedShuffleManagerMode &&
-              conf.isMultithreadedShuffleSkipMergeEnabled &&
-              GpuShuffleEnv.isExternalShuffleEnabled) {
-            logWarning("ShuffleCleanupEndpoint disabled - ESS is enabled")
-          } else if (conf.isMultiThreadedShuffleManagerMode &&
-              conf.isMultithreadedShuffleSkipMergeEnabled && !conf.offHeapLimitEnabled) {
-            logWarning("ShuffleCleanupEndpoint disabled - off-heap memory limits are disabled")
-          }
+        }
+
+        // Enable heartbeats if RAPIDS shuffle is configured for this shim and
+        // early start is enabled.
+        // This check doesn't require the shuffle manager to be instantiated yet.
+        if (GpuShuffleEnv.isRapidsShuffleConfigured(sparkConf) &&
+            GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
+          logInfo("Initializing shuffle manager heartbeats")
+          rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
         }
       }
 
@@ -793,7 +741,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       AsyncProfilerOnExecutor.shutdown()
     }
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
-    Option(shuffleCleanupEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
     GpuCoreDumpHandler.shutdown()
