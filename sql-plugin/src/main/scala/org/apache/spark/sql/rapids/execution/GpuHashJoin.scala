@@ -614,27 +614,19 @@ object JoinImpl {
     }
     
     // Perform sort-merge join on remapped INT32 keys (not timed under keyRemapTime)
-    // Call sortMergeInnerJoin with argument order based on build side
-    val arrayRet = if (swapJoinOrder) {
-      // Build is right: pass (probe, build) order to sortMergeInnerJoin
-      withResource(remappedProbeTable) { probe =>
-        withResource(remappedBuildTable) { build =>
-          JoinPrimitives.sortMergeInnerJoin(probe, build,
-            false, false, compareNullsEqual)
-        }
-      }
-    } else {
-      // Build is left: pass (build, probe) order to sortMergeInnerJoin
+    // sortMergeInnerJoin always expects the build table as the second argument
+    withResource(remappedProbeTable) { probe =>
       withResource(remappedBuildTable) { build =>
-        withResource(remappedProbeTable) { probe =>
-          JoinPrimitives.sortMergeInnerJoin(build, probe,
-            false, false, compareNullsEqual)
+        val arrayRet = JoinPrimitives.sortMergeInnerJoin(probe, build,
+          false, false, compareNullsEqual)
+        // Return gather maps - swap when build is left to match expected left/right semantics
+        if (swapJoinOrder) {
+          GatherMapsResult(arrayRet(0), arrayRet(1))
+        } else {
+          GatherMapsResult(arrayRet(1), arrayRet(0))
         }
       }
     }
-    
-    // Return gather maps in the same order as sortMergeInnerJoin returned them
-    GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
   /**
