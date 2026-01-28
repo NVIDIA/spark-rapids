@@ -854,6 +854,7 @@ case class GpuGenerateExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
+    val cbTargetSize = new RapidsConf(conf).gpuTargetBatchSizeBytes
 
     generator.fixedLenLazyExpressions match {
       // If lazy expressions can be extracted from generator,
@@ -884,7 +885,7 @@ case class GpuGenerateExec(
           GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output, allMetrics)
 
         child.executeColumnar().flatMap { inputFromChild =>
-          doGenerateAndClose(inputFromChild, genProjectList, othersProjectList,
+          doGenerateAndClose(inputFromChild, genProjectList, othersProjectList, cbTargetSize,
             numOutputRows, numOutputBatches, opTime)
         }
     }
@@ -893,6 +894,7 @@ case class GpuGenerateExec(
   private def doGenerateAndClose(input: ColumnarBatch,
       genProjectList: Seq[GpuExpression],
       othersProjectList: Seq[GpuExpression],
+      batchTargetSize: Long,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
@@ -905,7 +907,7 @@ case class GpuGenerateExec(
         othersProjectList ++ genProjectList)
     }
     val splits = GpuGenerateUtils.getSplitsWithRetryAndClose(projectedInput, generator,
-      othersProjectList.length, outer, new RapidsConf(conf).gpuTargetBatchSizeBytes, opTime)
+      othersProjectList.length, outer, batchTargetSize, opTime)
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
       numOutputRows, numOutputBatches, opTime)
   }
