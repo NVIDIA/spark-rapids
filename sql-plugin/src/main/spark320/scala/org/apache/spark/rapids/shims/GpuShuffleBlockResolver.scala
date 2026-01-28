@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,9 +58,7 @@ import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.sql.rapids.GpuShuffleBlockResolverBase
 import org.apache.spark.storage.ShuffleMergedBlockId
 
-class GpuShuffleBlockResolver(
-    resolver: IndexShuffleBlockResolver,
-    catalog: ShuffleBufferCatalog)
+class GpuShuffleBlockResolver(resolver: IndexShuffleBlockResolver, catalog: ShuffleBufferCatalog)
     extends GpuShuffleBlockResolverBase(resolver, catalog) {
 
   /**
