@@ -561,20 +561,22 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
-  val PARTIAL_FILE_BUFFER_INITIAL_SIZE = 
+  val PARTIAL_FILE_BUFFER_INITIAL_SIZE =
     conf("spark.rapids.memory.host.partialFileBufferInitialSize")
     .doc("The initial size in bytes for a host memory buffer used by " +
         "SpillablePartialFileHandle during shuffle write. This buffer allows shuffle " +
         "data to be kept in memory instead of writing to disk immediately, reducing " +
         "I/O overhead. The buffer can expand dynamically up to partialFileBufferMaxSize. " +
         "A smaller initial size reduces upfront memory allocation but may require more " +
-        "expansions.")
+        "expansions. When used with " +
+        "RapidsLocalDiskShuffleMapOutputWriter, the buffer expansion uses predictive " +
+        "sizing based on partition write statistics to minimize expansion operations.")
     .startupOnly()
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(128L * 1024 * 1024)  // 128MB default
+    .createWithDefault(32L * 1024 * 1024)  // 32MB default, expanded predictively
 
-  val PARTIAL_FILE_BUFFER_MAX_SIZE = 
+  val PARTIAL_FILE_BUFFER_MAX_SIZE =
     conf("spark.rapids.memory.host.partialFileBufferMaxSize")
     .doc("The maximum size in bytes for a single host memory buffer used by " +
         "SpillablePartialFileHandle during shuffle write. When a buffer needs to " +
@@ -2133,6 +2135,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
     .createWithDefault(RapidsShuffleManagerMode.MULTITHREADED.toString)
+
+  val MULTITHREADED_SHUFFLE_SKIP_MERGE = conf("spark.rapids.shuffle.multithreaded.skipMerge")
+    .doc("When using MULTITHREADED shuffle mode, skip merging partial shuffle files and " +
+      "instead serve data directly from the MultithreadedShuffleBufferCatalog. " +
+      "This avoids I/O overhead from merging but requires: (1) External Shuffle Service (ESS) " +
+      "to be disabled, and (2) spark.rapids.memory.host.offHeapLimit.enabled=true (off-heap " +
+      "memory limits enabled) to prevent OOM from unbounded buffer growth. " +
+      "When set to false (default), partial files will be merged into a single " +
+      "shuffle file per map task as in standard Spark shuffle. " +
+      "Set to true when both requirements are met and shuffle data is not reused across " +
+      "SQL queries (e.g., avoid on Databricks with shuffle reuse enabled).")
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
@@ -3784,6 +3800,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def isMultiThreadedShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTITHREADED
+
+  def isMultithreadedShuffleSkipMergeEnabled: Boolean = get(MULTITHREADED_SHUFFLE_SKIP_MERGE)
 
   def isCacheOnlyShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
