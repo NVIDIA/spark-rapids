@@ -75,6 +75,23 @@ class GpuSortMergeJoinMeta(
     }
   }
 
+  /**
+   * Compute column indices for gather optimization. This analyzes the parent node to determine
+   * which columns are actually needed from the join output.
+   */
+  protected def computeGatherColumnIndices(
+      postJoinFilterCondition: Option[org.apache.spark.sql.catalyst.expressions.Expression]
+  ): (Option[Array[Int]], Option[Array[Int]]) = {
+    if (!conf.joinOptimizeColumnGather) {
+      return (None, None)
+    }
+    val fullOutput = GpuHashJoin.output(join.joinType, join.left.output, join.right.output)
+    val requiredExprIds = JoinOutputAnalysis.getRequiredOutputColumns(
+      this, fullOutput, postJoinFilterCondition)
+    JoinOutputAnalysis.computeGatherIndices(
+      requiredExprIds, join.left.output, join.right.output)
+  }
+
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
     val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
@@ -86,6 +103,10 @@ class GpuSortMergeJoinMeta(
     val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
       join.leftKeys, join.rightKeys)
     val readOpt = CoalesceReadOption(conf)
+
+    // Compute column indices for gather optimization
+    val (leftColIndices, rightColIndices) = computeGatherColumnIndices(filterCondition)
+
     val joinExec = join.joinType match {
       case LeftOuter | RightOuter if useSizedJoin =>
         GpuShuffledAsymmetricHashJoinExec(
@@ -99,7 +120,9 @@ class GpuSortMergeJoinMeta(
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
           readOpt,
-          join.isSkewJoin)(
+          join.isSkewJoin,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys,
           conf.joinOuterMagnificationThreshold)
@@ -115,7 +138,9 @@ class GpuSortMergeJoinMeta(
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
           readOpt,
-          join.isSkewJoin)(
+          join.isSkewJoin,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys)
       case _ =>
@@ -128,7 +153,9 @@ class GpuSortMergeJoinMeta(
           left,
           right,
           readOpt,
-          join.isSkewJoin)(
+          join.isSkewJoin,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys)
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,28 @@ abstract class GpuBroadcastHashJoinMetaBase(
   val conditionMeta: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val buildSide: GpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
+
+  /**
+   * Compute column indices for gather optimization. This analyzes the parent node to determine
+   * which columns are actually needed from the join output.
+   *
+   * @param postJoinFilterCondition optional post-join filter condition whose referenced
+   *                                columns must be preserved
+   * @return tuple of (leftColumnIndices, rightColumnIndices), each None if all columns needed
+   */
+  protected def computeGatherColumnIndices(
+      postJoinFilterCondition: Option[Expression]
+  ): (Option[Array[Int]], Option[Array[Int]]) = {
+    if (!conf.joinOptimizeColumnGather) {
+      return (None, None)
+    }
+    // Compute full join output to analyze what parent needs
+    val fullOutput = GpuHashJoin.output(join.joinType, join.left.output, join.right.output)
+    val requiredExprIds = JoinOutputAnalysis.getRequiredOutputColumns(
+      this, fullOutput, postJoinFilterCondition)
+    JoinOutputAnalysis.computeGatherIndices(
+      requiredExprIds, join.left.output, join.right.output)
+  }
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
@@ -102,7 +124,10 @@ abstract class GpuBroadcastHashJoinExecBase(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
-    isNullAwareAntiJoin: Boolean) extends ShimBinaryExecNode with GpuHashJoin {
+    isNullAwareAntiJoin: Boolean,
+    override val leftGatherColumnIndices: Option[Array[Int]] = None,
+    override val rightGatherColumnIndices: Option[Array[Int]] = None)
+    extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   // Same checks as Spark
@@ -119,7 +144,14 @@ abstract class GpuBroadcastHashJoinExecBase(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    NUM_DISTINCT_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_DISTINCT_JOINS),
+    NUM_HASH_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_HASH_JOINS),
+    NUM_SORT_MERGE_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_SORT_MERGE_JOINS),
+    JOIN_DISTINCT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_DISTINCT_TIME),
+    JOIN_HASH_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_HASH_TIME),
+    JOIN_SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_SORT_TIME),
+    JOIN_KEY_REMAP_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_KEY_REMAP_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -147,9 +179,7 @@ abstract class GpuBroadcastHashJoinExecBase(
   protected def doColumnarBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
-    val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
@@ -185,12 +215,12 @@ abstract class GpuBroadcastHashJoinExecBase(
               boundStreamKeys)
           }
           doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
-            numOutputBatches, opTime, joinTime)
+            numOutputBatches, JoinMetrics(gpuLongMetric))
         }
       } else {
         // builtBatch will be closed in doJoin
-        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
-          joinTime)
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches,
+          JoinMetrics(gpuLongMetric))
       }
     }
   }

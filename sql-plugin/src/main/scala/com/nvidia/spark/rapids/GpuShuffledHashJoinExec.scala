@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.GpuOr
-import org.apache.spark.sql.rapids.execution.{GpuHashJoin, GpuSubPartitionHashJoin, JoinTypeChecks}
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, GpuSubPartitionHashJoin, JoinMetrics, JoinTypeChecks}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -88,6 +88,24 @@ class GpuShuffledHashJoinMeta(
     tagBuildSide(this, join.joinType, buildSide)
   }
 
+  /**
+   * Compute column indices for gather optimization. This analyzes the parent node to determine
+   * which columns are actually needed from the join output.
+   */
+  protected def computeGatherColumnIndices(
+      postJoinFilterCondition: Option[Expression]
+  ): (Option[Array[Int]], Option[Array[Int]]) = {
+    if (!conf.joinOptimizeColumnGather) {
+      return (None, None)
+    }
+    import org.apache.spark.sql.rapids.execution.GpuHashJoin
+    val fullOutput = GpuHashJoin.output(join.joinType, join.left.output, join.right.output)
+    val requiredExprIds = JoinOutputAnalysis.getRequiredOutputColumns(
+      this, fullOutput, postJoinFilterCondition)
+    JoinOutputAnalysis.computeGatherIndices(
+      requiredExprIds, join.left.output, join.right.output)
+  }
+
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
     val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
@@ -99,6 +117,10 @@ class GpuShuffledHashJoinMeta(
     val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
       join.leftKeys, join.rightKeys)
     val readOpt = CoalesceReadOption(conf)
+
+    // Compute column indices for gather optimization
+    val (leftColIndices, rightColIndices) = computeGatherColumnIndices(filterCondition)
+
     val joinExec = join.joinType match {
       case LeftOuter | RightOuter if useSizedJoin =>
         GpuShuffledAsymmetricHashJoinExec(
@@ -112,7 +134,9 @@ class GpuShuffledHashJoinMeta(
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
           readOpt,
-          isSkewJoin = false)(
+          isSkewJoin = false,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys,
           conf.joinOuterMagnificationThreshold)
@@ -128,7 +152,9 @@ class GpuShuffledHashJoinMeta(
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
           readOpt,
-          isSkewJoin = false)(
+          isSkewJoin = false,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys)
       case _ =>
@@ -141,7 +167,9 @@ class GpuShuffledHashJoinMeta(
           left,
           right,
           readOpt,
-          isSkewJoin = false)(
+          isSkewJoin = false,
+          leftColIndices,
+          rightColIndices)(
           join.leftKeys,
           join.rightKeys)
     }
@@ -161,7 +189,9 @@ case class GpuShuffledHashJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     readOption: CoalesceReadOption,
-    override val isSkewJoin: Boolean)(
+    override val isSkewJoin: Boolean,
+    override val leftGatherColumnIndices: Option[Array[Int]] = None,
+    override val rightGatherColumnIndices: Option[Array[Int]] = None)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
   with GpuSubPartitionHashJoin {
@@ -178,7 +208,14 @@ case class GpuShuffledHashJoinExec(
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    NUM_DISTINCT_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_DISTINCT_JOINS),
+    NUM_HASH_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_HASH_JOINS),
+    NUM_SORT_MERGE_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_SORT_MERGE_JOINS),
+    JOIN_DISTINCT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_DISTINCT_TIME),
+    JOIN_HASH_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_HASH_TIME),
+    JOIN_SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_SORT_TIME),
+    JOIN_KEY_REMAP_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_KEY_REMAP_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -252,7 +289,8 @@ case class GpuShuffledHashJoinExec(
             }
             // doJoin will close singleBatch
             doJoin(singleBatch, maybeBufferedStreamIter, joinOptions,
-              numOutputRows, numOutputBatches, opTime, joinTime)
+              numOutputRows, numOutputBatches, 
+              JoinMetrics(gpuLongMetric))
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>

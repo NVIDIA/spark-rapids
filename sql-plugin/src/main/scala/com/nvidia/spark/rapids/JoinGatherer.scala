@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,14 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NullEquality, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -142,20 +141,99 @@ trait JoinGatherer extends LazySpillable {
 }
 
 object JoinGatherer {
-  def apply(gatherMap: LazySpillableGatherMap,
+  /**
+   * Create a JoinGatherer for a single side.
+   *
+   * OWNERSHIP: This method takes ownership of both `gatherMap` and `inputData`.
+   * The returned JoinGatherer is responsible for closing them. If `inputData` is not needed
+   * (e.g., when columnIndicesToGather is empty), it will be closed immediately by this method.
+   *
+   * @param gatherMap the gather map for this side (ownership transferred)
+   * @param inputData the input batch to gather from (ownership transferred)
+   * @param outOfBoundsPolicy policy for out-of-bounds indices
+   * @param columnIndicesToGather optional array of column indices to gather. None means gather
+   *                              all columns. Some(empty) means no columns needed (row count only).
+   *                              Some(indices) means gather only those column indices.
+   */
+  def apply(
+      gatherMap: LazySpillableGatherMap,
       inputData: LazySpillableColumnarBatch,
-      outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
-    new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
+      outOfBoundsPolicy: OutOfBoundsPolicy,
+      columnIndicesToGather: Option[Array[Int]]): JoinGatherer = {
+    columnIndicesToGather match {
+      case Some(indices) if indices.isEmpty =>
+        // No columns needed - create a row-count-only gatherer
+        // Extract row count and close resources since we won't use them
+        val rowCount = gatherMap.getRowCount
+        gatherMap.close()
+        inputData.close()
+        new RowCountOnlyJoinGatherer(rowCount)
+      case Some(indices) if indices.length == inputData.numCols =>
+        // All columns needed - use the regular implementation
+        new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
+      case Some(indices) =>
+        // Subset of columns needed - create a column-filtering gatherer
+        new ColumnFilteringJoinGatherer(gatherMap, inputData, outOfBoundsPolicy, indices)
+      case None =>
+        // All columns needed - use existing implementation
+        new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
+    }
+  }
 
-  def apply(leftMap: LazySpillableGatherMap,
+  /**
+   * Create a JoinGatherer for joining left and right sides.
+   *
+   * OWNERSHIP: This method takes ownership of all provided maps and batches.
+   * The returned JoinGatherer is responsible for closing them. Resources that are not needed
+   * (e.g., when column indices are empty for a side) will be closed immediately by this method.
+   *
+   * @param leftMap gather map for left side (ownership transferred)
+   * @param leftData batch for left side (ownership transferred)
+   * @param rightMap gather map for right side (ownership transferred)
+   * @param rightData batch for right side (ownership transferred)
+   * @param outOfBoundsPolicyLeft policy for left side
+   * @param outOfBoundsPolicyRight policy for right side
+   * @param leftColumnIndices optional column indices to gather from left (None = all)
+   * @param rightColumnIndices optional column indices to gather from right (None = all)
+   */
+  def apply(
+      leftMap: LazySpillableGatherMap,
       leftData: LazySpillableColumnarBatch,
       rightMap: LazySpillableGatherMap,
       rightData: LazySpillableColumnarBatch,
       outOfBoundsPolicyLeft: OutOfBoundsPolicy,
-      outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
-    val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
-    val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight)
-    MultiJoinGather(left, right)
+      outOfBoundsPolicyRight: OutOfBoundsPolicy,
+      leftColumnIndices: Option[Array[Int]],
+      rightColumnIndices: Option[Array[Int]]): JoinGatherer = {
+    // Check if we need to gather any columns from either side
+    val leftColCount = leftColumnIndices.map(_.length).getOrElse(leftData.numCols)
+    val rightColCount = rightColumnIndices.map(_.length).getOrElse(rightData.numCols)
+
+    if (leftColCount == 0 && rightColCount == 0) {
+      // No columns from either side - just need row count
+      // Extract row count and close all resources
+      val rowCount = leftMap.getRowCount
+      leftMap.close()
+      leftData.close()
+      rightMap.close()
+      rightData.close()
+      new RowCountOnlyJoinGatherer(rowCount)
+    } else if (leftColCount == 0) {
+      // Only right side has columns
+      leftData.close()
+      leftMap.close()
+      JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight, rightColumnIndices)
+    } else if (rightColCount == 0) {
+      // Only left side has columns
+      rightData.close()
+      rightMap.close()
+      JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft, leftColumnIndices)
+    } else {
+      // Both sides have columns
+      val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft, leftColumnIndices)
+      val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight, rightColumnIndices)
+      MultiJoinGather(left, right)
+    }
   }
 
   def getRowsInNextBatch(gatherer: JoinGatherer, targetSize: Long,
@@ -163,6 +241,10 @@ object JoinGatherer {
     NvtxRegistry.CALC_GATHER_SIZE {
       val rowsLeft = gatherer.numRowsLeft
       val rowEstimate: Long = gatherer.getFixedWidthBitSize match {
+        case Some(0) =>
+          // No columns means 0 bits per row - can return all remaining rows
+          // (e.g., RowCountOnlyJoinGatherer for COUNT(*) optimization)
+          rowsLeft
         case Some(fixedBitSize) =>
           // Odd corner cases for tests, make sure we do at least one row
           Math.max(1, (targetSize / fixedBitSize) * 8)
@@ -268,6 +350,144 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
     wrapped.restore()
 
   override def toString: String = s"SPILL_ONLY $wrapped"
+}
+
+/**
+ * A wrapper around LazySpillableColumnarBatch that includes build-side join statistics.
+ * The stats are computed lazily on first access and cached for the lifetime of this wrapper.
+ * This ensures stats are computed only once per batch, even if the batch is used as the
+ * physical build side multiple times (e.g., against multiple stream batches).
+ *
+ * The stats remain valid even if the underlying batch is spilled and restored, since they
+ * are scalar values cached separately from the batch data.
+ *
+ * Stats computation is deferred until actually needed.
+ * The physical build side is determined dynamically per stream batch, so stats
+ * are only computed if that side ends up being the physical build side.
+ *
+ * Two levels of stats are supported:
+ * - Basic stats (distinctCount, magnification) via getOrComputeStats() - uses fast distinctCount()
+ * - Extended stats (adds maxDuplicateKeyCount) via getOrComputeMaxDupStats() - uses keyRemap()
+ */
+class LazySpillableColumnarBatchWithStats private(
+    val batch: LazySpillableColumnarBatch) extends Logging {
+  
+  import org.apache.spark.sql.rapids.execution.{JoinBuildSideStats, JoinBuildSideStatsWithMaxDup}
+  
+  // Basic stats are computed lazily and cached along with the null equality
+  private var cachedStats: Option[(JoinBuildSideStats, NullEquality)] = None
+  
+  /**
+   * Get or compute basic build-side statistics for this batch.
+   * Uses Table.distinctCount() which is relatively fast.
+   * Stats are computed once and cached for subsequent calls.
+   *
+   * @param keysTable the join keys table
+   * @param nullEquality whether nulls should be considered equal
+   * @return basic build-side statistics
+   */
+  def getOrComputeStats(keysTable: Table, nullEquality: NullEquality): JoinBuildSideStats = {
+    cachedStats match {
+      case Some((stats, cachedNullEq)) =>
+        // Validate null equality matches
+        if (cachedNullEq != nullEquality) {
+          throw new IllegalStateException(
+            s"Cached stats were computed with $cachedNullEq but join is using $nullEquality. " +
+            s"This indicates a bug in the join stats caching logic.")
+        }
+        stats
+      case None =>
+        val stats = JoinBuildSideStats.fromTable(keysTable, nullEquality)
+        cachedStats = Some((stats, nullEquality))
+        stats
+    }
+  }
+  
+  /**
+   * Get or compute extended build-side statistics including max duplicate key count.
+   * Uses Table.keyRemap() which is more expensive but provides both distinctCount and
+   * maxDuplicateKeyCount in a single pass. If basic stats haven't been computed yet,
+   * this will also populate the basic stats cache to avoid duplicate work.
+   *
+   * @param keysTable the join keys table
+   * @param nullEquality whether nulls should be considered equal
+   * @return extended build-side statistics with max duplicate key count
+   */
+  def getOrComputeMaxDupStats(
+      keysTable: Table,
+      nullEquality: NullEquality): JoinBuildSideStatsWithMaxDup = {
+    cachedStats match {
+      case Some((stats: JoinBuildSideStatsWithMaxDup, cachedNullEq))
+          if cachedNullEq == nullEquality =>
+        // Already have extended stats with correct null equality - return them
+        stats
+      case Some((_, cachedNullEq)) if cachedNullEq != nullEquality =>
+        // Have stats (basic or extended) with wrong null equality - this is a bug
+        throw new IllegalStateException(
+          s"Cached stats were computed with $cachedNullEq but join is using $nullEquality. " +
+          s"This indicates a bug in the join stats caching logic.")
+      case Some((basicStats, _)) =>
+        // Have basic stats, need to upgrade to extended stats with max duplicate count
+        // The work from computing basic stats is essentially thrown away, but this is rare
+        logInfo(s"Upgrading from basic stats to extended stats with max duplicate count. " +
+          s"Basic stats: distinctCount=${basicStats.distinctCount}, " +
+          s"rows=${basicStats.buildRowCount}")
+        val fullStats = JoinBuildSideStatsWithMaxDup.fromTable(keysTable, nullEquality)
+        cachedStats = Some((fullStats, nullEquality))
+        fullStats
+      case None =>
+        // No stats cached, compute extended stats directly
+        val fullStats = JoinBuildSideStatsWithMaxDup.fromTable(keysTable, nullEquality)
+        cachedStats = Some((fullStats, nullEquality))
+        fullStats
+    }
+  }
+  
+  /**
+   * Get the cached max-dup stats if they exist, otherwise return None.
+   * This is used after selectStrategy has potentially computed max-dup stats
+   * to retrieve them for logging purposes.
+   *
+   * @return cached extended stats if available, None otherwise
+   */
+  def getCachedMaxDupStats: Option[JoinBuildSideStatsWithMaxDup] = {
+    cachedStats.flatMap {
+      case (stats: JoinBuildSideStatsWithMaxDup, _) => Some(stats)
+      case _ => None
+    }
+  }
+  
+  // Delegate LazySpillable methods to wrapped batch
+  def numRows: Int = batch.numRows
+  def numCols: Int = batch.numCols
+  def deviceMemorySize: Long = batch.deviceMemorySize
+  def dataTypes: Array[DataType] = batch.dataTypes
+  def getBatch: ColumnarBatch = batch.getBatch
+  def releaseBatch(): ColumnarBatch = batch.releaseBatch()
+  def allowSpilling(): Unit = batch.allowSpilling()
+  def checkpoint(): Unit = batch.checkpoint()
+  def restore(): Unit = batch.restore()
+  
+  override def toString: String = {
+    val statsStr = cachedStats match {
+      case Some((stats: JoinBuildSideStatsWithMaxDup, nullEq)) =>
+        s"cached-with-maxdup($nullEq, maxDup=${stats.maxDuplicateKeyCount})"
+      case Some((_, nullEq)) => s"cached-basic($nullEq)"
+      case None => "not-computed"
+    }
+    s"BatchWithStats($batch, stats=$statsStr)"
+  }
+}
+
+object LazySpillableColumnarBatchWithStats {
+  /**
+   * Wrap a LazySpillableColumnarBatch to add stats tracking capability.
+   * 
+   * @param batch the batch to wrap
+   */
+  def apply(batch: LazySpillableColumnarBatch): LazySpillableColumnarBatchWithStats = {
+    new LazySpillableColumnarBatchWithStats(batch)
+  }
 }
 
 /**
@@ -533,23 +753,38 @@ object JoinGathererImpl {
 }
 
 /**
- * JoinGatherer for a single map/table
+ * Abstract base class for JoinGatherer implementations that gather from a single side.
+ * This handles the common logic for checkpoint/restore, progress tracking, spilling, and closing.
+ *
+ * Subclasses must implement:
+ * - `outputDataTypes`: the data types of the columns being gathered
+ * - `getTableForGather`: how to get/create the table to gather from
+ * - `realCheapPerRowSizeEstimate`: size estimation (may vary based on column filtering)
+ * - `gatherName`: a name for toString
  */
-class JoinGathererImpl(
-    private val gatherMap: LazySpillableGatherMap,
-    private val data: LazySpillableColumnarBatch,
+abstract class SingleSideJoinGathererBase(
+    protected val gatherMap: LazySpillableGatherMap,
+    protected val data: LazySpillableColumnarBatch,
     boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
-
-  assert(data.numCols > 0, "data with no columns should have been filtered out already")
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
   private var gatheredUpToCheckpoint: Long = 0
-  private val totalRows: Long = gatherMap.getRowCount
-  private val (fixedWidthRowSizeBits, nullRowSizeBits) = {
-    val dts = data.dataTypes
-    val fw = JoinGathererImpl.fixedWidthRowSizeBits(dts)
-    val nullVal = JoinGathererImpl.nullRowSizeBits(dts)
+  protected val totalRows: Long = gatherMap.getRowCount
+
+  /** The data types of the columns being output (may be filtered) */
+  protected def outputDataTypes: Array[DataType]
+
+  /** Get or create the table to gather from. Caller is responsible for closing. */
+  protected def getTableForGather(batch: ColumnarBatch): Table
+
+  /** Name for toString */
+  protected def gatherName: String
+
+  // Compute size metrics based on output data types
+  private lazy val (fixedWidthRowSizeBits, nullRowSizeBits) = {
+    val fw = JoinGathererImpl.fixedWidthRowSizeBits(outputDataTypes)
+    val nullVal = JoinGathererImpl.nullRowSizeBits(outputDataTypes)
     (fw, nullVal)
   }
 
@@ -566,18 +801,7 @@ class JoinGathererImpl(
   }
 
   override def toString: String = {
-    s"GATHERER $gatheredUpTo/$totalRows $gatherMap $data"
-  }
-
-  override def realCheapPerRowSizeEstimate: Double = {
-    val totalInputRows: Int = data.numRows
-    val totalInputSize: Long = data.deviceMemorySize
-    // Avoid divide by 0 here and later on
-    if (totalInputRows > 0 && totalInputSize > 0) {
-      totalInputSize.toDouble / totalInputRows
-    } else {
-      1.0
-    }
+    s"$gatherName $gatheredUpTo/$totalRows $data"
   }
 
   override def getFixedWidthBitSize: Option[Int] = fixedWidthRowSizeBits
@@ -587,19 +811,18 @@ class JoinGathererImpl(
     assert((start + n) <= totalRows)
     val ret = withResource(gatherMap.toColumnView(start, n)) { gatherView =>
       val batch = data.getBatch
-      val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
+      val gatheredTable = withResource(getTableForGather(batch)) { table =>
         table.gather(gatherView, boundsCheckPolicy)
       }
       withResource(gatheredTable) { gt =>
-        GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
+        GpuColumnVector.from(gt, outputDataTypes)
       }
     }
     gatheredUpTo += n
     ret
   }
 
-  override def isDone: Boolean =
-    gatheredUpTo >= totalRows
+  override def isDone: Boolean = gatheredUpTo >= totalRows
 
   override def numRowsLeft: Long = totalRows - gatheredUpTo
 
@@ -610,7 +833,7 @@ class JoinGathererImpl(
 
   override def getBitSizeMap(n: Int): ColumnView = {
     val cb = data.getBatch
-    val inputBitCounts = withResource(GpuColumnVector.from(cb)) { table =>
+    val inputBitCounts = withResource(getTableForGather(cb)) { table =>
       withResource(table.rowBitCount()) { bits =>
         bits.castTo(DType.INT64)
       }
@@ -649,35 +872,23 @@ class JoinGathererImpl(
 }
 
 /**
- * JoinGatherer for the case where the gather produces the same table as the input table.
+ * JoinGatherer for a single map/table - gathers all columns.
  */
-class JoinGathererSameTable(
-    private val data: LazySpillableColumnarBatch) extends JoinGatherer {
+class JoinGathererImpl(
+    gatherMap: LazySpillableGatherMap,
+    data: LazySpillableColumnarBatch,
+    boundsCheckPolicy: OutOfBoundsPolicy)
+    extends SingleSideJoinGathererBase(gatherMap, data, boundsCheckPolicy) {
 
   assert(data.numCols > 0, "data with no columns should have been filtered out already")
 
-  // How much of the gather map we have output so far
-  private var gatheredUpTo: Long = 0
-  private var gatheredUpToCheckpoint: Long = 0
-  private val totalRows: Long = data.numRows
-  private val fixedWidthRowSizeBits = {
-    val dts = data.dataTypes
-    JoinGathererImpl.fixedWidthRowSizeBits(dts)
+  override protected def outputDataTypes: Array[DataType] = data.dataTypes
+
+  override protected def getTableForGather(batch: ColumnarBatch): Table = {
+    GpuColumnVector.from(batch)
   }
 
-  override def checkpoint: Unit = {
-    gatheredUpToCheckpoint = gatheredUpTo
-    data.checkpoint()
-  }
-
-  override def restore: Unit = {
-    gatheredUpTo = gatheredUpToCheckpoint
-    data.restore()
-  }
-
-  override def toString: String = {
-    s"SAMEGATHER $gatheredUpTo/$totalRows $data"
-  }
+  override protected def gatherName: String = "GATHERER"
 
   override def realCheapPerRowSizeEstimate: Double = {
     val totalInputRows: Int = data.numRows
@@ -689,59 +900,99 @@ class JoinGathererSameTable(
       1.0
     }
   }
+}
 
-  override def getFixedWidthBitSize: Option[Int] = fixedWidthRowSizeBits
+/**
+ * A JoinGatherer that produces empty batches (no columns) with just the row count.
+ * This is used when no columns are needed from the join, e.g., for COUNT(*) after a join.
+ *
+ * This gatherer does not hold any GPU resources - the row count is extracted from the
+ * gather map and then the map is closed before this object is created.
+ *
+ * @param totalRows the total number of rows to "gather" (really just count)
+ */
+class RowCountOnlyJoinGatherer(totalRows: Long) extends JoinGatherer {
 
-  override def gatherNext(n: Int): ColumnarBatch = {
-    assert(gatheredUpTo + n <= totalRows)
-    val ret = sliceForGather(n)
-    gatheredUpTo += n
-    ret
+  private var gatheredUpTo: Long = 0
+  private var gatheredUpToCheckpoint: Long = 0
+
+  override def checkpoint: Unit = {
+    gatheredUpToCheckpoint = gatheredUpTo
   }
 
-  override def isDone: Boolean =
-    gatheredUpTo >= totalRows
+  override def restore: Unit = {
+    gatheredUpTo = gatheredUpToCheckpoint
+  }
+
+  override def toString: String = s"ROW_COUNT_ONLY_GATHERER $gatheredUpTo/$totalRows"
+
+  override def realCheapPerRowSizeEstimate: Double = 0.0
+
+  override def getFixedWidthBitSize: Option[Int] = Some(0)
+
+  override def gatherNext(n: Int): ColumnarBatch = {
+    assert((gatheredUpTo + n) <= totalRows)
+    gatheredUpTo += n
+    // Return an empty batch with just the row count
+    new ColumnarBatch(Array.empty, n)
+  }
+
+  override def isDone: Boolean = gatheredUpTo >= totalRows
 
   override def numRowsLeft: Long = totalRows - gatheredUpTo
 
   override def allowSpilling(): Unit = {
-    data.allowSpilling()
+    // Nothing to spill - we don't hold any GPU resources
   }
 
   override def getBitSizeMap(n: Int): ColumnView = {
-    withResource(sliceForGather(n)) { cb =>
-      withResource(GpuColumnVector.from(cb)) { table =>
-        withResource(table.rowBitCount()) { bits =>
-          bits.castTo(DType.INT64)
-        }
-      }
+    // No columns means 0 bits per row
+    withResource(GpuScalar.from(0L, LongType)) { zeroScalar =>
+      ai.rapids.cudf.ColumnVector.fromScalar(zeroScalar, n)
     }
   }
 
   override def close(): Unit = {
-    data.close()
+    // Nothing to close - we don't hold any GPU resources
+  }
+}
+
+/**
+ * A JoinGatherer that gathers only a subset of columns from the input data.
+ * This is used when some columns are not needed after the join.
+ */
+class ColumnFilteringJoinGatherer(
+    gatherMap: LazySpillableGatherMap,
+    data: LazySpillableColumnarBatch,
+    boundsCheckPolicy: OutOfBoundsPolicy,
+    columnIndices: Array[Int])
+    extends SingleSideJoinGathererBase(gatherMap, data, boundsCheckPolicy) {
+
+  require(columnIndices.nonEmpty, "Use RowCountOnlyJoinGatherer for empty column indices")
+  require(columnIndices.length < data.numCols,
+    "Use JoinGathererImpl when all columns are needed")
+
+  override protected def outputDataTypes: Array[DataType] = columnIndices.map(data.dataTypes(_))
+
+  override protected def getTableForGather(batch: ColumnarBatch): Table = {
+    // Create a table with only the columns we need
+    withResource(GpuColumnVector.from(batch)) { fullTable =>
+      val filteredColumns = columnIndices.map(fullTable.getColumn(_))
+      new Table(filteredColumns: _*)
+    }
   }
 
-  private def isFullBatchGather(n: Int): Boolean = gatheredUpTo == 0 && n == totalRows
+  override protected def gatherName: String = s"COLUMN_FILTERING_GATHERER[${columnIndices.length}]"
 
-  private def sliceForGather(n: Int): ColumnarBatch = {
-    val cb = data.getBatch
-    if (isFullBatchGather(n)) {
-      GpuColumnVector.incRefCounts(cb)
+  override def realCheapPerRowSizeEstimate: Double = {
+    val totalInputRows: Int = data.numRows
+    val totalInputSize: Long = data.deviceMemorySize
+    if (totalInputRows > 0 && totalInputSize > 0) {
+      // Estimate based on ratio of columns we're keeping
+      val ratio = columnIndices.length.toDouble / data.numCols
+      (totalInputSize.toDouble / totalInputRows) * ratio
     } else {
-      val splitStart = gatheredUpTo.toInt
-      val splitEnd = splitStart + n
-      val inputColumns = GpuColumnVector.extractColumns(cb)
-      val outputColumns: Array[vectorized.ColumnVector] = inputColumns.safeMap { c =>
-        val views = c.getBase.splitAsViews(splitStart, splitEnd)
-        assert(views.length == 3, s"Unexpected number of views: ${views.length}")
-        views(0).safeClose()
-        views(2).safeClose()
-        withResource(views(1)) { v =>
-          GpuColumnVector.from(v.copyToColumnVector(), c.dataType())
-        }
-      }
-      new ColumnarBatch(outputColumns, splitEnd - splitStart)
+      1.0
     }
   }
 }

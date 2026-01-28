@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +58,10 @@ class GpuBroadcastHashJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
+
+    // Compute column indices for gather optimization
+    val (leftColIndices, rightColIndices) = computeGatherColumnIndices(filterCondition)
+
     val joinExec = GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
@@ -67,7 +71,9 @@ class GpuBroadcastHashJoinMeta(
       left,
       right,
       join.isNullAwareAntiJoin,
-      join.isExecutorBroadcast)
+      join.isExecutorBroadcast,
+      leftColIndices,
+      rightColIndices)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
     filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
@@ -83,9 +89,12 @@ case class GpuBroadcastHashJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     isNullAwareAntiJoin: Boolean,
-    executorBroadcast: Boolean)
+    executorBroadcast: Boolean,
+    override val leftGatherColumnIndices: Option[Array[Int]] = None,
+    override val rightGatherColumnIndices: Option[Array[Int]] = None)
       extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin) {
+      leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin,
+      leftGatherColumnIndices, rightGatherColumnIndices) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -157,9 +166,7 @@ case class GpuBroadcastHashJoinExec(
   private[this] def doColumnarExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
-    val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
@@ -201,12 +208,12 @@ case class GpuBroadcastHashJoinExec(
               boundStreamKeys)
           }
           doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
-            numOutputBatches, opTime, joinTime)
+            numOutputBatches, JoinMetrics(gpuLongMetric))
         }
       } else {
         // builtBatch will be closed in doJoin
-        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
-          joinTime)
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches,
+          JoinMetrics(gpuLongMetric))
       }
     }
   }
