@@ -28,11 +28,6 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 # Base configuration for Iceberg MERGE tests
 iceberg_merge_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
-# Fixed seed for reproducible test data
-MERGE_TEST_SEED = 42
-MERGE_TEST_SEED_OVERRIDE_REASON = "Ensure reproducible test data for MERGE operations"
-
-
 def create_iceberg_table_with_merge_data(
         table_name: str,
         partition_col_sql=None,
@@ -650,7 +645,6 @@ def test_merge_aqe(spark_tmp_table_factory, partition_col_sql):
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.datagen_overrides(seed=MERGE_TEST_SEED, reason=MERGE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
 def test_iceberg_merge_after_drop_partition_field(spark_tmp_table_factory, merge_mode):
     """Test MERGE on table after dropping a partition field (void transform).
@@ -669,12 +663,12 @@ def test_iceberg_merge_after_drop_partition_field(spark_tmp_table_factory, merge
     
     # Create partitioned target tables with data - use same seed for both to ensure same data
     create_iceberg_table_with_merge_data(cpu_target_table, partition_col_sql=partition_col_sql, 
-                                         merge_mode=merge_mode, seed=MERGE_TEST_SEED)
+                                         merge_mode=merge_mode, seed=42)
     create_iceberg_table_with_merge_data(gpu_target_table, partition_col_sql=partition_col_sql, 
-                                         merge_mode=merge_mode, seed=MERGE_TEST_SEED)
+                                         merge_mode=merge_mode, seed=42)
     # Source table needs distinct keys for MERGE cardinality constraint, with different seed
     create_iceberg_table_with_merge_data(source_table, partition_col_sql=partition_col_sql,
-                                         ensure_distinct_key=True, seed=MERGE_TEST_SEED + 1, merge_mode=merge_mode)
+                                         ensure_distinct_key=True, seed=43, merge_mode=merge_mode)
     
     # Drop one partition field on target tables and source table (creates void transform)
     def drop_partition_field(spark, table_name):

@@ -310,14 +310,9 @@ def test_insert_into_aqe(spark_tmp_table_factory, partition_col_sql):
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
-INSERT_PARTITION_EVOLUTION_SEED = 42
-INSERT_PARTITION_EVOLUTION_REASON = "Ensure reproducible test data for INSERT partition evolution test"
-
-
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@datagen_overrides(seed=INSERT_PARTITION_EVOLUTION_SEED, reason=INSERT_PARTITION_EVOLUTION_REASON)
 def test_insert_after_drop_partition_field(spark_tmp_table_factory):
     """Test INSERT on table after dropping a partition field (void transform).
     
@@ -339,8 +334,7 @@ def test_insert_after_drop_partition_field(spark_tmp_table_factory):
     
     # Insert initial data before partition evolution using same seed for both tables
     def insert_initial_data(spark, table_name):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)),
-                    seed=INSERT_PARTITION_EVOLUTION_SEED)
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=42)
         df.writeTo(table_name).append()
     
     with_cpu_session(lambda spark: insert_initial_data(spark, cpu_table_name))
@@ -354,10 +348,9 @@ def test_insert_after_drop_partition_field(spark_tmp_table_factory):
     with_cpu_session(lambda spark: drop_partition_field(spark, gpu_table_name))
     
     # Insert data after partition evolution - this is the operation we're testing on GPU
-    # Use same seed (+1) for both sessions to ensure identical data
+    # Use same seed for both sessions to ensure identical data
     def insert_data(spark, table_name):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)),
-                    seed=INSERT_PARTITION_EVOLUTION_SEED + 1)
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=43)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")

@@ -383,13 +383,9 @@ def test_rtas_aqe(spark_tmp_table_factory, partition_col_sql):
                                 conf=conf)
 
 
-RTAS_PARTITION_EVOLUTION_SEED = 42
-RTAS_PARTITION_EVOLUTION_REASON = "Ensure reproducible test data for RTAS partition evolution test"
-
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@datagen_overrides(seed=RTAS_PARTITION_EVOLUTION_SEED, reason=RTAS_PARTITION_EVOLUTION_REASON)
 def test_rtas_after_drop_partition_field(spark_tmp_table_factory):
     """Test REPLACE TABLE AS SELECT on table after dropping a partition field (void transform).
     
@@ -411,7 +407,7 @@ def test_rtas_after_drop_partition_field(spark_tmp_table_factory):
     
     # Insert initial data into tables before partition evolution
     def insert_initial_data(spark, table_name):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=RTAS_PARTITION_EVOLUTION_SEED)
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=42)
         df.writeTo(table_name).append()
     
     with_cpu_session(lambda spark: insert_initial_data(spark, cpu_table_name))
@@ -427,7 +423,7 @@ def test_rtas_after_drop_partition_field(spark_tmp_table_factory):
     # REPLACE TABLE AS SELECT after partition evolution
     # Generate data inline with same seed to ensure identical data for both sessions
     def execute_rtas(spark, table_name):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=RTAS_PARTITION_EVOLUTION_SEED + 1)
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=43)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         props_sql = _props_to_sql(table_prop)
