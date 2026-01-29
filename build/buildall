@@ -38,7 +38,7 @@ function print_usage() {
   echo "   -gb, --generate-bloop"
   echo "        generate projects for Bloop clients: IDE (Scala Metals, IntelliJ) or Bloop CLI"
   echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
-  echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
+  echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots,"
   echo "        snapshotsWithDatabricks, noSnapshotsWithDatabricks"
   echo "        NOTE: the Databricks-related spark3XYdb shims are not built locally, the jars are fetched prebuilt from a"
   echo " .      remote Maven repo. You can also supply a comma-separated list of build versions. E.g., --profile=330,331 will"
@@ -154,7 +154,7 @@ case "$1" in
   ;;
 
 -o=*|--option=*)
-  MVN_OPT="${1#*=}"
+  export MVN_OPT="${1#*=}"
   ;;
 
 *)
@@ -180,11 +180,12 @@ export MVN="$MVN -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
 
 if [[ "$SCALA213" == "1" ]]; then
   POM_FILE="scala2.13/pom.xml"
-  MVN="$MVN -f scala2.13/"
+  export MVN="$MVN -f scala2.13/"
   $(dirname $0)/make-scala-version-build-files.sh 2.13
 else 
   POM_FILE="pom.xml"
 fi
+
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 
 
@@ -201,9 +202,7 @@ case $DIST_PROFILE in
     SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" $POM_FILE))
     ;;
 
-  minimumFeatureVersionMix)
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "minimumFeatureVersionMix"))
-    ;;
+
 
   [34]*)
     <<< $DIST_PROFILE IFS="," read -ra SPARK_SHIM_VERSIONS

@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.delta.DeltaProbe
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
@@ -30,11 +29,6 @@ object ShimLoaderTemp {
 
   def newOptimizerClass(className: String): Optimizer = {
     ShimReflectionUtils.newInstanceOf[Optimizer](className)
-  }
-
-  def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
-    ShimReflectionUtils.newInstanceOf(
-      "com.nvidia.spark.rapids.parquet.ParquetCachedBatchSerializer")
   }
 
   def newExplainPlan(): ExplainPlanBase = {

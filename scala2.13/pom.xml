@@ -784,8 +784,6 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <slf4j.version>2.0.7</slf4j.version>
-                <enforcer.java.versionSpec>[17,)</enforcer.java.versionSpec>
-                <enforcer.java.message>Support for Spark ${spark.version} is only available with Java 17+</enforcer.java.message>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
