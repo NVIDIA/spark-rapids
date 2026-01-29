@@ -390,7 +390,7 @@ def test_insert_overwrite_static_after_drop_partition_field(spark_tmp_table_fact
     
     # INSERT OVERWRITE after partition evolution - this is the operation we're testing on GPU
     def overwrite_data(spark, table_name):
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=INITIAL_INSERT_SEED + 1)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
