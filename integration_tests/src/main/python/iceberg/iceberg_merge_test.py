@@ -28,7 +28,6 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 # Base configuration for Iceberg MERGE tests
 iceberg_merge_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})
 
-
 def create_iceberg_table_with_merge_data(
         table_name: str,
         partition_col_sql=None,
@@ -639,4 +638,61 @@ def test_merge_aqe(spark_tmp_table_factory, partition_col_sql):
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_target).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_target).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize('merge_mode', ['copy-on-write', 'merge-on-read'])
+def test_iceberg_merge_after_drop_partition_field(spark_tmp_table_factory, merge_mode):
+    """Test MERGE on table after dropping a partition field (void transform).
+    
+    When a partition field is dropped, Iceberg creates a 'void transform' - 
+    the field remains in the partition spec but no longer affects partitioning.
+    This test verifies MERGE still runs correctly on GPU after partition evolution.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_target_table = f"{base_table_name}_target_cpu"
+    gpu_target_table = f"{base_table_name}_target_gpu"
+    source_table = f"{base_table_name}_source"
+    
+    # Use two partition columns so after dropping one, we still have at least one
+    partition_col_sql = "bucket(8, _c2), bucket(8, _c3)"
+    
+    # Create partitioned target tables with data - use same seed for both to ensure same data
+    create_iceberg_table_with_merge_data(cpu_target_table, partition_col_sql=partition_col_sql, 
+                                         merge_mode=merge_mode, seed=42)
+    create_iceberg_table_with_merge_data(gpu_target_table, partition_col_sql=partition_col_sql, 
+                                         merge_mode=merge_mode, seed=42)
+    # Source table needs distinct keys for MERGE cardinality constraint, with different seed
+    create_iceberg_table_with_merge_data(source_table, partition_col_sql=partition_col_sql,
+                                         ensure_distinct_key=True, seed=43, merge_mode=merge_mode)
+    
+    # Drop one partition field on target tables and source table (creates void transform)
+    def drop_partition_field(spark, table_name):
+        spark.sql(f"ALTER TABLE {table_name} DROP PARTITION FIELD bucket(8, _c2)")
+    
+    with_cpu_session(lambda spark: drop_partition_field(spark, cpu_target_table))
+    with_cpu_session(lambda spark: drop_partition_field(spark, gpu_target_table))
+    with_cpu_session(lambda spark: drop_partition_field(spark, source_table))
+    
+    # Execute MERGE after partition evolution - this is the operation we're testing on GPU
+    def do_merge(spark, target_table):
+        spark.sql(f"""
+            MERGE INTO {target_table} t
+            USING {source_table} s
+            ON t._c0 = s._c0
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
+    
+    with_gpu_session(lambda spark: do_merge(spark, gpu_target_table), 
+                     conf=iceberg_merge_enabled_conf)
+    with_cpu_session(lambda spark: do_merge(spark, cpu_target_table))
+    
+    # Compare results
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_target_table).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_target_table).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
