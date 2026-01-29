@@ -62,7 +62,13 @@ object TrampolineUtil {
   def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
 
   /** Get a human-readable string, e.g.: "4.0 MiB", for a value in bytes. */
-  def bytesToString(size: Long): String = Utils.bytesToString(size)
+  def bytesToString(size: Long): String = {
+    if (size >= 0) {
+      Utils.bytesToString(size)
+    } else {
+      "-" + Utils.bytesToString(-size)
+    }
+  }
 
   /** Returns true if called from code running on the Spark driver. */
   def isDriver(env: SparkEnv): Boolean = {
