@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import java.lang.invoke.SerializedLambda
+
+import scala.reflect.ClassTag
 
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids._
@@ -51,7 +53,7 @@ object GpuScalaUDFMeta {
       repeatingParamCheck =
         Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
     (expr, conf, p, r) => new ExprMeta(expr, conf, p, r) {
-      lazy val opRapidsFunc = GpuScalaUDF.getRapidsUDFInstance(expr.function)
+      lazy val opRapidsFunc = GpuScalaUDF.getRapidsUDFInstance[RapidsUDF](expr.function)
 
       override def tagExprForGpu(): Unit = {
         if (opRapidsFunc.isEmpty && !this.conf.isCpuBasedUDFEnabled) {
@@ -617,9 +619,9 @@ object GpuScalaUDF {
    * returning the instance if it does. The lambda wrapper that Spark applies to Java UDFs will be
    * inspected if necessary to locate the user's UDF instance.
    */
-  def getRapidsUDFInstance(function: AnyRef): Option[RapidsUDF] = {
+  def getRapidsUDFInstance[F: ClassTag](function: AnyRef): Option[F] = {
     function match {
-      case f: RapidsUDF => Some(f)
+      case f: F => Some(f)
       case f =>
         try {
           // This may be a lambda that Spark's UDFRegistration wrapped around a Java UDF instance.
@@ -634,7 +636,7 @@ object GpuScalaUDF {
             val serializedLambda = writeReplace.invoke(f).asInstanceOf[SerializedLambda]
             if (serializedLambda.getCapturedArgCount == 1) {
               serializedLambda.getCapturedArg(0) match {
-                case c: RapidsUDF => Some(c)
+                case c: F => Some(c)
                 case _ => None
               }
             } else {
