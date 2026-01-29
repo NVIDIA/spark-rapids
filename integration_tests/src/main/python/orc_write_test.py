@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -357,7 +357,8 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
         conf={'spark.rapids.sql.format.orc.write.enabled': True})
 
 @ignore_order(local=True)
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
+@allow_non_gpu('DataWritingCommandExec','ExecutedCommandExec','WriteFilesExec', 'SortExec', 
+  'Murmur3Hash')
 def test_buckets_write_fallback_unsupported_types(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/ORC_DATA'
     gen_list = [["id", binary_gen], ["data", long_gen]]

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1425,7 +1425,8 @@ def test_bloom_filter_join(batch_size, is_multi_column, kudo_enabled):
                             expected_classes="GpuBloomFilterMightContain,GpuBloomFilterAggregate",
                             is_multi_column=is_multi_column)
 
-@allow_non_gpu("FilterExec", "ShuffleExchangeExec")
+@allow_non_gpu("FilterExec", "ShuffleExchangeExec", "And", "BloomFilterMightContain", "GetStructField", 
+  "ScalarSubquery", "XxHash64", "Remainder")
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")

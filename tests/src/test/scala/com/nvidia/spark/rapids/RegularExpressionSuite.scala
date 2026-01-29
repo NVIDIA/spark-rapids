@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,8 +49,9 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     "String regexp_replace replace str columnar fall back",
     "RegExpReplace",
     nullableStringsFromCsv,
+    // The ProjectExec is needed only if the gpu cpu bridge is disabled.
     execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
+      "RegExpReplace", "AttributeReference"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'a',strings)")
   }
 
@@ -74,8 +75,9 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   testGpuFallback("String regexp_replace input empty cpu fall back",
     "RegExpReplace",
+    // The ProjectExec is needed only if the gpu cpu bridge is disabled.
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
+      "RegExpReplace", "AttributeReference"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'','D')")
   }
 
