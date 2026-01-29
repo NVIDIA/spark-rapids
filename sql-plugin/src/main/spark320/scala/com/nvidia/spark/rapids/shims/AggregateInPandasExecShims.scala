@@ -59,7 +59,7 @@ import org.apache.spark.sql.execution.python.AggregateInPandasExec
 object AggregateInPandasExecShims {
   val execRule: Option[ExecRule[_ <: SparkPlan]] = Some(
     GpuOverrides.exec[AggregateInPandasExec](
-      "The backend for an ideAggregateInPandasExec Aggregation Pandas UDF." +
+      "The backend for an Aggregation Pandas UDF." +
         " This accelerates the data transfer between the Java process and the Python process." +
         " It also supports scheduling GPU resources for the Python process" +
         " when enabled.",
