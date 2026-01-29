@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -310,7 +310,8 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         spark.sql("DROP TABLE IF EXISTS t")
         spark.sql("DROP TABLE IF EXISTS tempmetricstable")
       }
-    }, new SparkConf().set("spark.sql.sources.commitProtocolClass", slowCommitClass))
+    }, new SparkConf()
+      .set("spark.sql.sources.commitProtocolClass", slowCommitClass))
   }
 }
 

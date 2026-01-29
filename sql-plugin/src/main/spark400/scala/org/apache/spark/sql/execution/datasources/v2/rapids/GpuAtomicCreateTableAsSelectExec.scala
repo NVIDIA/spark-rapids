@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,11 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
+import scala.annotation.nowarn
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.GpuExec
@@ -66,9 +68,10 @@ case class GpuAtomicCreateTableAsSelectExec(
 
       throw QueryCompilationErrors.tableAlreadyExistsError(ident)
     }
-    val stagedTable = catalog.stageCreate(
+    val stagedTable = (catalog.stageCreate(
       ident, getV2Columns(query.schema, catalog.useNullableQuerySchema),
-      partitioning.toArray, properties.asJava)
+      partitioning.toArray,
+      properties.asJava): @nowarn("msg=stageCreate in trait StagingTableCatalog is deprecated"))
     writeToTable(catalog, stagedTable, writeOptions, ident, query, overwrite = false)
   }
 

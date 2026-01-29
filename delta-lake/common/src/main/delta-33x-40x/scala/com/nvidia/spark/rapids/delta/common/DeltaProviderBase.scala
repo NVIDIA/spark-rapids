@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.{DeltaIOProvider, GpuDeltaDataSource, RapidsDeltaUtils}
 import com.nvidia.spark.rapids.shims._
+import com.nvidia.spark.rapids.shims.InvalidateCacheShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
@@ -132,7 +133,7 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.orCreate,
-      cpuExec.invalidateCache)
+      InvalidateCacheShims.getInvalidateCache(cpuExec.invalidateCache))
   }
 
 

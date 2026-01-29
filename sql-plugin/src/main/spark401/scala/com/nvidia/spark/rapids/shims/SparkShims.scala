@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.{HashExprChecks, Murmur3HashExprMeta, XxHash64ExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{CollationAwareMurmur3Hash, CollationAwareXxHash64, Expression}
-import org.apache.spark.sql.rapids.{GpuMurmur3Hash, GpuXxHash64}
 
 object SparkShimImpl extends Spark400PlusCommonShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {

@@ -33,7 +33,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.lore.{GpuLoreDumpRDD, SimpleRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.LORE_DUMP_RDD_TAG
-import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{BroadcastExchangeShims, ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -46,7 +46,6 @@ import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
-import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
@@ -412,7 +411,7 @@ abstract class GpuBroadcastExchangeExecBase(
             }
             emptyRelation.getOrElse {
               GpuBroadcastExchangeExecBase.makeBroadcastBatch(
-                collected, output, numOutputBatches, numOutputRows, dataSize)
+                collected, output, numOutputBatches, numOutputRows, dataSize, conf)
             }
           }
         }
@@ -549,12 +548,13 @@ object GpuBroadcastExchangeExecBase {
     }
   }
 
-  protected def checkSizeLimit(sizeInBytes: Long) = {
-    // Spark restricts the size of broadcast relations to be less than 8GB
-    if (sizeInBytes >= MAX_BROADCAST_TABLE_BYTES) {
+  protected def checkSizeLimit(sizeInBytes: Long, conf: SQLConf) = {
+    // Spark restricts the size of broadcast relations
+    val maxBytes = BroadcastExchangeShims.getMaxBroadcastTableBytes(conf)
+    if (sizeInBytes >= maxBytes) {
       throw new SparkException(
         s"Cannot broadcast the table that is larger than" +
-            s"${MAX_BROADCAST_TABLE_BYTES >> 30}GB: ${sizeInBytes >> 30} GB")
+            s"${maxBytes >> 30}GB: ${sizeInBytes >> 30} GB")
     }
   }
 
@@ -569,7 +569,8 @@ object GpuBroadcastExchangeExecBase {
       output: Seq[Attribute],
       numOutputBatches: GpuMetric,
       numOutputRows: GpuMetric,
-      dataSize: GpuMetric): SerializeConcatHostBuffersDeserializeBatch = {
+      dataSize: GpuMetric,
+      conf: SQLConf): SerializeConcatHostBuffersDeserializeBatch = {
     val rowsOnly = buffers.isEmpty || buffers.head.header.getNumColumns == 0
     var numRows = 0
     var dataLen: Long = 0
@@ -589,7 +590,7 @@ object GpuBroadcastExchangeExecBase {
       }
       closeOnExcept(hostConcatResult) { _ =>
         checkRowLimit(hostConcatResult.getTableHeader.getNumRows)
-        checkSizeLimit(hostConcatResult.getTableHeader.getDataLen)
+        checkSizeLimit(hostConcatResult.getTableHeader.getDataLen, conf)
       }
       // this result will be GC'ed later, so we mark it as such
       hostConcatResult.getHostBuffer.noWarnLeakExpected()
