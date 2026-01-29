@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,10 +51,19 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
+import org.apache.spark.sql.internal.SQLConf
 
 /**
  * Shim for MAX_BROADCAST_TABLE_BYTES which was removed in Spark 4.1.0
  */
 object BroadcastExchangeShims {
   val MAX_BROADCAST_TABLE_BYTES: Long = BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
+
+  /**
+   * Get the maximum broadcast table size in bytes.
+   * In Spark <= 4.0.x, this returns the hardcoded constant.
+   */
+  def getMaxBroadcastTableBytes(conf: SQLConf): Long = {
+    MAX_BROADCAST_TABLE_BYTES
+  }
 }
