@@ -512,8 +512,9 @@ case class GpuTransformKeys(
 
   override def prettyName: String = "transform_keys"
 
-  private def exceptionOnDupKeys = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-    SQLConf.MapKeyDedupPolicy.EXCEPTION.toString
+  // Spark 4.1+ returns an enum value instead of String, so use toString first
+  private def exceptionOnDupKeys =
+    SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toString.toUpperCase == "EXCEPTION"
 
   override lazy val hasSideEffects: Boolean =
     function.nullable || exceptionOnDupKeys || super.hasSideEffects

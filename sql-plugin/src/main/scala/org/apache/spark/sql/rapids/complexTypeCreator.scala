@@ -139,9 +139,9 @@ object GpuCreateMap {
       SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
   }
 
+  // Spark 4.1+ returns an enum value instead of String, so use toString first
   def exceptionOnDupKeys: Boolean =
-    SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-        SQLConf.MapKeyDedupPolicy.EXCEPTION.toString
+    SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toString.toUpperCase == "EXCEPTION"
 
   def createMapFromKeysValuesAsStructs(dataType: MapType,
                                        listsOfKeyValueStructs : ColumnView): GpuColumnVector = {
