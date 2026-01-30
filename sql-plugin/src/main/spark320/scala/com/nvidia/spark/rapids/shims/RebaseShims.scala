@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@
 {"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -61,14 +62,15 @@ trait RebaseShims {
     SQLConf.AVRO_REBASE_MODE_IN_READ.key
   final def avroRebaseWriteKey: String =
     SQLConf.AVRO_REBASE_MODE_IN_WRITE.key
+  // Spark 4.1+ returns an enum value instead of String, so use toString
   final def parquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_READ)
+    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_READ).toString
   final def parquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
+    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE).toString
   def int96ParquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ)
+    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ).toString
   def int96ParquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE)
+    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE).toString
   def int96ParquetRebaseReadKey: String =
     SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ.key
   def int96ParquetRebaseWriteKey: String =

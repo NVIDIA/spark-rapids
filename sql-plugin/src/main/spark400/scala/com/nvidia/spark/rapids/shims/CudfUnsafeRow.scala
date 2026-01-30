@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,26 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.unsafe.types.VariantVal
-
 
 final class CudfUnsafeRow(
    attributes: Array[Attribute],
    remapping: Array[Int]) extends CudfUnsafeRowBase(attributes, remapping) {
   def getVariant(ordinal: Int) = {
     throw new UnsupportedOperationException("VariantVal is not supported")
+  }
+
+  // Added in Spark 4.1.0 for spatial types
+  def getGeography(ordinal: Int) = {
+    throw new UnsupportedOperationException("GeographyVal is not supported")
+  }
+
+  def getGeometry(ordinal: Int) = {
+    throw new UnsupportedOperationException("GeometryVal is not supported")
   }
 }
 

@@ -782,8 +782,9 @@ case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with 
     // Check for null keys
     GpuMapUtils.assertNoNullKeys(inputBase)
     
-    // Handle duplicate keys based on the policy
-    mapKeyDedupPolicy.toUpperCase match {
+    // Handle duplicate keys based on the policy.
+    // Spark 4.1+ returns an enum value instead of String, so use toString first.
+    mapKeyDedupPolicy.toString.toUpperCase match {
       case "EXCEPTION" =>
         // Check if there are any duplicate keys
         withResource(inputBase.dropListDuplicatesWithKeysValues()) { deduped =>
@@ -1621,7 +1622,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     withResource(sanitizedLhsBase) { sanitizedLhsBase =>
       withResource(sanitizedRhsBase) { sanitizedRhsBase =>
 
-        if(mapKeyDedupPolicy == "EXCEPTION") {
+        if(mapKeyDedupPolicy.toString == "EXCEPTION") {
           val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
           require(!containsDuplicates,
             "[DUPLICATED_MAP_KEY] Duplicate map key was found")
@@ -1641,7 +1642,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
         val mapCol = constructMapColumn(sanitizedLhsBase, sanitizedRhsBase)
 
         val result = withResource(mapCol) { mapCol =>
-          mapKeyDedupPolicy match {
+          mapKeyDedupPolicy.toString match {
             case "LAST_WIN" if rowContainsDuplicates(sanitizedLhsBase) =>
                 mapCol.dropListDuplicatesWithKeysValues
             case _ =>
