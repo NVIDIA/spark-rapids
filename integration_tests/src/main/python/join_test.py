@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_ro
 from conftest import is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
-from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime
+from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime, is_spark_400_or_later, is_spark_411_or_later
 from src.main.python.spark_session import with_gpu_session
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -1838,3 +1838,37 @@ def test_join_degenerate_outer(join_type):
         else:
             return temp_df.selectExpr("r_key", "r_value")
     assert_gpu_and_cpu_are_equal_collect(do_join)
+
+
+# Struct keys with different field names should fall back to CPU
+# https://github.com/NVIDIA/spark-rapids/issues/13100
+@ignore_order(local=True)
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastHashJoinExec', 'ShuffleExchangeExec',
+               'ShuffledHashJoinExec', 'SortMergeJoinExec', 'EqualTo')
+@pytest.mark.skipif(not is_spark_400_or_later(),
+                    reason="SPARK-51738 relaxed struct field name matching only in Spark 4.0+")
+@pytest.mark.parametrize('join_type', ['Inner', 'LeftOuter', 'RightOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_hash_join_struct_keys_different_field_names_fallback(join_type):
+    """
+    Test that joins with struct keys having different field names fall back to CPU.
+
+    Spark 4.0+ (SPARK-51738) allows struct comparisons where field names differ but types match.
+    The GPU implementation currently requires matching field names, so we fall back to CPU.
+    This test ensures no crash occurs and results are correct.
+    """
+    def do_join(spark):
+        # Create left table with struct key having field names 'a' and 'b'
+        left_df = spark.range(1, 5).selectExpr(
+            "id as left_id",
+            "struct(id as a, id * 10 as b) as key"
+        )
+        # Create right table with struct key having field names 'x' and 'y'
+        # (different names but same types)
+        right_df = spark.range(2, 6).selectExpr(
+            "id as right_id",
+            "struct(id as x, id * 10 as y) as key"
+        )
+        return left_df.join(right_df, left_df.key == right_df.key, join_type)
+
+    # The join should fall back to CPU due to different struct field names
+    assert_gpu_fallback_collect(do_join, 'BroadcastHashJoinExec')
