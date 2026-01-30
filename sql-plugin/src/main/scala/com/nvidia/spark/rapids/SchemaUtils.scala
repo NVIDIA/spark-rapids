@@ -32,10 +32,22 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.{Metadata, MetadataBuilder}
 
 object SchemaUtils {
   // Parquet field ID metadata key
   private val FIELD_ID_METADATA_KEY = "parquet.field.id"
+  // Additional metadata keys for nested type field IDs (used by Iceberg)
+  private val MAP_KEY_FIELD_ID_METADATA_KEY = "parquet.field.id.map.key"
+  private val MAP_VALUE_FIELD_ID_METADATA_KEY = "parquet.field.id.map.value"
+  private val ARRAY_ELEMENT_FIELD_ID_METADATA_KEY = "parquet.field.id.array.element"
+
+  /**
+   * Create metadata with just a field ID.
+   */
+  private def metadataWithFieldId(fieldId: Long): Metadata = {
+    new MetadataBuilder().putLong(FIELD_ID_METADATA_KEY, fieldId).build()
+  }
 
   /**
    * Convert a TypeDescription to a Catalyst StructType.
@@ -271,39 +283,64 @@ object SchemaUtils {
           writeInt96,
           parquetFieldIdWriteEnabled).build())
       case a: ArrayType =>
+        // For arrays, check if there's an element field ID in the parent's metadata
+        val elementMeta = if (fieldMeta.contains(ARRAY_ELEMENT_FIELD_ID_METADATA_KEY)) {
+          metadataWithFieldId(fieldMeta.getLong(ARRAY_ELEMENT_FIELD_ID_METADATA_KEY))
+        } else {
+          Metadata.empty
+        }
+        val listB = if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          listBuilder(name, nullable, parquetFieldId.get)
+        } else {
+          listBuilder(name, nullable)
+        }
         builder.withListColumn(
           writerOptionsFromField(
-            listBuilder(name, nullable),
+            listB,
             a.elementType,
             name,
             a.containsNull,
-            writeInt96, fieldMeta, parquetFieldIdWriteEnabled).build())
+            writeInt96, elementMeta, parquetFieldIdWriteEnabled).build())
       case m: MapType =>
+        // For maps, check if there are key and value field IDs in the parent's metadata
+        val keyMeta = if (fieldMeta.contains(MAP_KEY_FIELD_ID_METADATA_KEY)) {
+          metadataWithFieldId(fieldMeta.getLong(MAP_KEY_FIELD_ID_METADATA_KEY))
+        } else {
+          Metadata.empty
+        }
+        val valueMeta = if (fieldMeta.contains(MAP_VALUE_FIELD_ID_METADATA_KEY)) {
+          metadataWithFieldId(fieldMeta.getLong(MAP_VALUE_FIELD_ID_METADATA_KEY))
+        } else {
+          Metadata.empty
+        }
         // It is ok to use `StructBuilder` here for key and value, since either
         // `OrcWriterOptions.Builder` or `ParquetWriterOptions.Builder` is actually an
         // `AbstractStructBuilder`, and here only handles the common column metadata things.
-        builder.withMapColumn(
-          mapColumn(name,
-            writerOptionsFromField(
-              // This nullable is useless because we use the child of struct column
-              structBuilder(name, nullable),
-              m.keyType,
-              "key",
-              nullable = false,
-              writeInt96, fieldMeta, parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
-            writerOptionsFromField(
-              structBuilder(name, nullable),
-              m.valueType,
-              "value",
-              m.valueContainsNull,
-              writeInt96,
-              fieldMeta,
-              parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
-            // set the nullable for this map
-            // if `m` is a key of another map, this `nullable` should be false
-            // e.g.: map1(map2(int,int), int), the map2 is the map
-            // key of map1, map2 should be non-nullable
-            nullable))
+        val keyOpt = writerOptionsFromField(
+          // This nullable is useless because we use the child of struct column
+          structBuilder(name, nullable),
+          m.keyType,
+          "key",
+          nullable = false,
+          writeInt96, keyMeta, parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0)
+        val valueOpt = writerOptionsFromField(
+          structBuilder(name, nullable),
+          m.valueType,
+          "value",
+          m.valueContainsNull,
+          writeInt96,
+          valueMeta,
+          parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0)
+        // set the nullable for this map
+        // if `m` is a key of another map, this `nullable` should be false
+        // e.g.: map1(map2(int,int), int), the map2 is the map
+        // key of map1, map2 should be non-nullable
+        val mapOpt = if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          mapColumn(name, keyOpt, valueOpt, nullable, parquetFieldId.get)
+        } else {
+          mapColumn(name, keyOpt, valueOpt, nullable)
+        }
+        builder.withMapColumn(mapOpt)
       case BinaryType =>
         if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withBinaryColumn(name, nullable, parquetFieldId.get)

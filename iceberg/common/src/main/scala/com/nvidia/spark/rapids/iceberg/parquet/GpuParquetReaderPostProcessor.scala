@@ -256,23 +256,46 @@ private[iceberg] case class ProcessMap(
   }
 }
 
-/** Process struct column, applying actions to fields if needed. */
+/**
+ * Process struct column, applying actions to fields if needed.
+ * @param fieldActions Actions for each expected field (in expected schema order)
+ * @param inputIndices Mapping from expected field position to input child position.
+ *                     inputIndices(i) = Some(j) means expected field i maps to input child j.
+ *                     inputIndices(i) = None means field doesn't exist in input (needs generation).
+ */
 private[iceberg] case class ProcessStruct(
-    fieldActions: Seq[ColumnAction]
+    fieldActions: Seq[ColumnAction],
+    inputIndices: Seq[Option[Int]]
 ) extends ColumnAction {
+  require(fieldActions.size == inputIndices.size,
+    s"fieldActions size ${fieldActions.size} must match inputIndices size ${inputIndices.size}")
+
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
     val col = ctx.column.get
-    if (fieldActions.forall(_ == PassThrough)) {
+
+    // Check if we can pass through: all PassThrough AND indices are sequential (0, 1, 2, ...)
+    val canPassThrough = fieldActions.forall(_ == PassThrough) &&
+      inputIndices.zipWithIndex.forall { case (optIdx, i) => optIdx.contains(i) }
+
+    if (canPassThrough) {
       col.incRefCount()
     } else {
-      val childCols = fieldActions.zipWithIndex.map { case (action, i) =>
-        val childCol = col.getChildColumnView(i).copyToColumnVector()
-        if (action == PassThrough) {
-          childCol
-        } else {
-          withResource(childCol) { _ =>
-            action.execute(ctx.withColumn(childCol))
-          }
+      val childCols = fieldActions.zip(inputIndices).map { case (action, inputIdx) =>
+        inputIdx match {
+          case Some(idx) =>
+            // Field exists in input - get child at the correct index
+            val childCol = col.getChildColumnView(idx).copyToColumnVector()
+            if (action == PassThrough) {
+              childCol
+            } else {
+              withResource(childCol) { _ =>
+                action.execute(ctx.withColumn(childCol))
+              }
+            }
+          case None =>
+            // Field doesn't exist in input - action must generate the column
+            // (FillNull, FetchConstant, etc.)
+            action.execute(ctx)
         }
       }
       closeOnExcept(childCols) { _ =>
@@ -284,8 +307,9 @@ private[iceberg] case class ProcessStruct(
   override def display(indent: Int): String = {
     val sb = new StringBuilder
     sb.append(" " * indent).append("ProcessStruct\n")
-    fieldActions.zipWithIndex.foreach { case (action, i) =>
-      sb.append(" " * (indent + 2)).append(s"field[$i]:\n")
+    fieldActions.zip(inputIndices).zipWithIndex.foreach { case ((action, inputIdx), i) =>
+      val inputInfo = inputIdx.map(idx => s"input[$idx]").getOrElse("generated")
+      sb.append(" " * (indent + 2)).append(s"field[$i] ($inputInfo):\n")
       sb.append(action.display(indent + 4))
       if (i < fieldActions.size - 1) sb.append("\n")
     }
@@ -358,10 +382,30 @@ private class ActionBuildingVisitor(
       partner: Type,
       fieldResults: JList[ColumnAction]): ColumnAction = {
     val actions = fieldResults.asScala.toSeq
-    if (actions.forall(_ == PassThrough)) {
+
+    // Build input indices mapping from expected field ID to partner (file) field position
+    val partnerFieldIdToIndex: Map[Int, Int] = if (partner != null) {
+      partner.asStructType().fields().asScala.zipWithIndex.map { case (f, i) =>
+        f.fieldId() -> i
+      }.toMap
+    } else {
+      Map.empty
+    }
+
+    // Map each expected field to its input index (if exists in partner/file)
+    val expectedFields = struct.fields().asScala
+    val inputIndices = expectedFields.map { f =>
+      partnerFieldIdToIndex.get(f.fieldId())
+    }.toSeq
+
+    // Check if all PassThrough AND indices are sequential - can simplify to PassThrough
+    val canPassThrough = actions.forall(_ == PassThrough) &&
+      inputIndices.zipWithIndex.forall { case (optIdx, i) => optIdx.contains(i) }
+
+    if (canPassThrough) {
       PassThrough
     } else {
-      ProcessStruct(actions)
+      ProcessStruct(actions, inputIndices)
     }
   }
 
@@ -497,11 +541,13 @@ class GpuParquetReaderPostProcessor(
   // Convert shaded parquet schema to Iceberg schema for comparison
   private val fileIcebergSchema: Schema = ParquetSchemaUtil.convert(shadedFileReadSchema)
 
-  // Build field ID to batch index mapping for file schema
+  // Build field ID to batch index mapping.
+  // The batch returned by parquet reader is in FILE order (since Spark schema uses
+  // file names and file order for parquet reader name matching).
+  // Map field ID to file position (batch index).
   private val fieldIdToBatchIndex: Map[Int, Int] = {
     (0 until fileReadSchema.getFieldCount).flatMap { i =>
-      val t = fileReadSchema.getType(i)
-      Option(t.getId).map(id => id.intValue() -> i)
+      Option(fileReadSchema.getType(i).getId).map(id => id.intValue() -> i)
     }.toMap
   }
 
@@ -522,15 +568,14 @@ class GpuParquetReaderPostProcessor(
   // Expose for testing - displays the action tree
   private[iceberg] def displayActionPlan(): String = {
     rootAction match {
-      case ProcessStruct(fieldActions) =>
+      case ProcessStruct(fieldActions, inputIndices) =>
         val fields = expectedSchema.asStruct().fields().asScala
         val sb = new StringBuilder
         sb.append("ProcessStruct")
-        fieldActions.zip(fields).foreach { case (action, field) =>
+        fieldActions.zip(inputIndices).zip(fields).foreach { case ((action, inputIdx), field) =>
           sb.append("\n")
-          val batchInfo = fieldIdToBatchIndex.get(field.fieldId())
-            .map(idx => s"batch[$idx]").getOrElse("generated")
-          sb.append(s"  ${field.name()} ($batchInfo):\n")
+          val inputInfo = inputIdx.map(idx => s"input[$idx]").getOrElse("generated")
+          sb.append(s"  ${field.name()} ($inputInfo):\n")
           sb.append(action.display(4))
         }
         sb.toString()
@@ -567,10 +612,13 @@ class GpuParquetReaderPostProcessor(
       // Execute actions on batch (rootAction must be ProcessStruct here since
       // PassThrough is handled by canPassThroughBatch early return)
       val fieldActions = rootAction match {
-        case ProcessStruct(actions) => actions
+        case ProcessStruct(actions, _) => actions
         case _ => throw new IllegalStateException(
           s"Root action must be ProcessStruct, but got: ${rootAction.getClass.getSimpleName}")
       }
+
+      // For root-level processing, use fieldIdToBatchIndex to map field IDs to batch columns.
+      // The batch is in readSchema order (expected order with missing fields skipped).
       val columns = fieldActions.zip(fields).map { case (action, field) =>
         val batchIdx = fieldIdToBatchIndex.get(field.fieldId())
         val col = batchIdx.map(idx => batch.column(idx).asInstanceOf[GpuColumnVector].getBase)

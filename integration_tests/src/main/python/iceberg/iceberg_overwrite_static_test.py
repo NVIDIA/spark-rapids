@@ -19,7 +19,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update, StringGen
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
-    get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf
+    get_full_table_name, iceberg_write_enabled_conf
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 
@@ -195,86 +195,6 @@ def test_insert_overwrite_partitioned_table(spark_tmp_table_factory, partition_c
 def test_insert_overwrite_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
     _do_test_insert_overwrite_partitioned_table(spark_tmp_table_factory, partition_col_sql)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('OverwriteByExpressionExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_overwrite_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
-    """Test INSERT OVERWRITE with all data types including unsupported ones (falls back to CPU)."""
-    table_prop = {"format-version": "2"}
-
-    def this_gen_df(spark):
-        cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
-
-    table_name = get_full_table_name(spark_tmp_table_factory)
-    create_iceberg_table(table_name, table_prop=table_prop, df_gen=this_gen_df)
-
-    def insert_initial_data(spark, table_name: str):
-        cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        df = gen_df(spark, list(zip(cols, iceberg_full_gens_list)), seed=INITIAL_INSERT_SEED)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    def overwrite_data(spark, table_name: str):
-        df = this_gen_df(spark)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
-
-    # Initial insert (not tested for fallback)
-    with_cpu_session(lambda spark: insert_initial_data(spark, table_name),
-                     conf = iceberg_static_overwrite_conf)
-
-    # Assert that overwrite falls back to CPU
-    assert_gpu_fallback_collect(lambda spark: overwrite_data(spark, table_name),
-                                "OverwriteByExpressionExec",
-                                conf = iceberg_static_overwrite_conf)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('OverwriteByExpressionExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_overwrite_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
-    """Test INSERT OVERWRITE on partitioned table with all data types including unsupported ones (falls back to CPU)."""
-    table_prop = {"format-version": "2"}
-
-    def this_gen_df(spark):
-        cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
-
-    table_name = get_full_table_name(spark_tmp_table_factory)
-    create_iceberg_table(table_name,
-                         partition_col_sql="bucket(16, _c2), bucket(16, _c3)",
-                         table_prop=table_prop,
-                         df_gen=this_gen_df)
-
-    def insert_initial_data(spark, table_name: str):
-        cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        df = gen_df(spark, list(zip(cols, iceberg_full_gens_list)), seed=INITIAL_INSERT_SEED)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    def overwrite_data(spark, table_name: str):
-        cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        df = gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
-
-    # Initial insert (not tested for fallback)
-    with_cpu_session(lambda spark: insert_initial_data(spark, table_name),
-                     conf = iceberg_static_overwrite_conf)
-
-    # Assert that overwrite falls back to CPU
-    assert_gpu_fallback_collect(lambda spark: overwrite_data(spark, table_name),
-                                "OverwriteByExpressionExec",
-                                conf = iceberg_static_overwrite_conf)
 
 
 @iceberg

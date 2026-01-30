@@ -216,7 +216,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
       val partReaderSparkSchema = TypeWithSchemaVisitor.visit(requiredSchema.asStruct(),
-          fileReadSchema, new SparkSchemaConverter)
+          typeWithIds, new SparkSchemaConverter)
         .asInstanceOf[StructType]
 
       val parquetInfo = ParquetFileInfoWithBlockMeta(file.path,
