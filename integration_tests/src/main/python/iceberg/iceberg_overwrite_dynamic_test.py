@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -141,6 +141,12 @@ def test_insert_overwrite_dynamic_bucket_partitioned(spark_tmp_table_factory, pa
     pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
     pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
     pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
+    pytest.param("_c0", id="identity(byte)"),
+    pytest.param("_c2", id="identity(int)"),
+    pytest.param("_c3", id="identity(long)"),
+    pytest.param("_c6", id="identity(string)"),
+    pytest.param("_c8", id="identity(date)"),
+    pytest.param("_c10", id="identity(decimal)"),
 ])
 def test_insert_overwrite_dynamic_bucket_partitioned_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
@@ -180,49 +186,6 @@ def test_insert_overwrite_dynamic_unsupported_data_types_fallback(spark_tmp_tabl
     def overwrite_data(spark, table_name: str):
         # Use default seed for overwrite data - different from initial
         df = this_gen_df(spark)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
-
-    assert_gpu_fallback_collect(lambda spark: overwrite_data(spark, table_name),
-                                "OverwritePartitionsDynamicExec",
-                                conf=dynamic_overwrite_conf)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('OverwritePartitionsDynamicExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("_c2", id="identity"),
-])
-def test_insert_overwrite_dynamic_unsupported_partition_fallback(
-        spark_tmp_table_factory, partition_col_sql):
-    """Test that INSERT OVERWRITE falls back to CPU with unsupported partition functions."""
-    table_prop = {"format-version": "2"}
-
-    table_name = get_full_table_name(spark_tmp_table_factory)
-
-    # Create table
-    create_iceberg_table(table_name,
-                         partition_col_sql=partition_col_sql,
-                         table_prop=table_prop)
-
-    # Initial insert (CPU only to set up the table)
-    def initial_insert(spark, table_name: str):
-        # Use a specific seed for initial data to ensure different data from overwrite
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=INITIAL_DATA_SEED)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    with_cpu_session(lambda spark: initial_insert(spark, table_name),
-                     conf=iceberg_write_enabled_conf)
-
-    # Overwrite with dynamic mode (assert GPU falls back to CPU)
-    def overwrite_data(spark, table_name: str):
-        # Use default seed for overwrite data - different from initial
-        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
@@ -357,4 +320,69 @@ def test_overwrite_dynamic_aqe(spark_tmp_table_factory, partition_col_sql):
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_insert_overwrite_dynamic_after_drop_partition_field(spark_tmp_table_factory):
+    """Test INSERT OVERWRITE (dynamic mode) on table after dropping a partition field (void transform).
+    
+    When a partition field is dropped, Iceberg creates a 'void transform' - 
+    the field remains in the partition spec but no longer affects partitioning.
+    This test verifies INSERT OVERWRITE (dynamic) still runs correctly on GPU after partition evolution.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    source_table = f"{base_table_name}_source"
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+    
+    table_prop = {"format-version": "2"}
+    # Use two partition columns so after dropping one, we still have at least one
+    partition_col_sql = "bucket(8, _c2), bucket(8, _c3)"
+    
+    # Create source table for overwrite data (no partition evolution needed)
+    create_iceberg_table(source_table, partition_col_sql=partition_col_sql, table_prop=table_prop)
+    
+    # Insert overwrite source data
+    def insert_source_data(spark):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        df.writeTo(source_table).append()
+    
+    with_cpu_session(insert_source_data)
+    
+    # Create partitioned target tables
+    create_iceberg_table(cpu_table_name, partition_col_sql=partition_col_sql, table_prop=table_prop)
+    create_iceberg_table(gpu_table_name, partition_col_sql=partition_col_sql, table_prop=table_prop)
+    
+    # Insert initial data before partition evolution
+    def insert_initial_data(spark, table_name):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)), seed=INITIAL_DATA_SEED)
+        df.writeTo(table_name).append()
+    
+    with_cpu_session(lambda spark: insert_initial_data(spark, cpu_table_name))
+    with_cpu_session(lambda spark: insert_initial_data(spark, gpu_table_name))
+    
+    # Drop one partition field on target tables (creates void transform)
+    def drop_partition_field(spark, table_name):
+        spark.sql(f"ALTER TABLE {table_name} DROP PARTITION FIELD bucket(8, _c2)")
+    
+    with_cpu_session(lambda spark: drop_partition_field(spark, cpu_table_name))
+    with_cpu_session(lambda spark: drop_partition_field(spark, gpu_table_name))
+    
+    # INSERT OVERWRITE (dynamic) after partition evolution - read from shared source table
+    # This is the operation we're testing on GPU
+    def overwrite_data(spark, table_name):
+        spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {source_table}")
+    
+    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name),
+                     conf=dynamic_overwrite_conf)
+    with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name),
+                     conf=dynamic_overwrite_conf)
+    
+    # Compare results
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)

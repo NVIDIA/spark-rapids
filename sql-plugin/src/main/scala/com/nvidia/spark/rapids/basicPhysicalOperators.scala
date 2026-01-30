@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.DataTypeUtils.hasOffset
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.PreProjectSplitIterator.KEY_NUM_PRE_SPLIT
+import com.nvidia.spark.rapids.PreProjectSplitIterator.{KEY_NUM_PRE_SPLIT, PreSplitOutSizeEstimator}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
@@ -361,17 +361,36 @@ object PreProjectSplitIterator {
   def getSplitUntilSize: Long = GpuDeviceManager.getSplitUntilSize
 
   def calcMinOutputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
-    new PreSplitOutSizeEstimator(cb, boundExprs).calcMinOutputSize
+    new PreSplitOutSizeEstimator(cb, boundExprs).calcMinOutputSize()
   }
 
   class PreSplitOutSizeEstimator(cb: ColumnarBatch, tieredProject: GpuTieredProject) {
     assert(cb != null, "The input batch should not be null.")
 
-    def calcMinOutputSize: Long = {
-      val rows = cb.numRows()
-      tieredProject.outputExprs.map(oe =>
-        estimateExprMinSize(oe, rows, oe.nullable, Some(1))
-      ).sum
+    private var maxOffsetColumnSize = 0L
+    private var outputSize: Option[Long] = None
+
+    def calcMinOutputSize(): Long = {
+      if (outputSize.isEmpty) {
+        val rows = cb.numRows()
+        outputSize = Some(tieredProject.outputExprs.map(oe =>
+          estimateExprMinSize(oe, rows, oe.nullable, Some(1))
+        ).sum)
+      }
+      outputSize.get
+    }
+
+    // Return the max size of columns that have an offset buffer.
+    // e.g. array or string columns.
+    def getMaxOffsetColumnSize: Long = {
+      calcMinOutputSize() // make sure the calculation is done
+      maxOffsetColumnSize
+    }
+
+    private def updateOffsetColumnSize(newSize: Long): Unit = {
+      if (newSize > maxOffsetColumnSize) {
+        maxOffsetColumnSize = newSize
+      }
     }
 
     /**
@@ -418,7 +437,12 @@ object PreProjectSplitIterator {
             estimateExprMinSize(elem, rowsNum, elemNullable, childAmount)
           }.sum
         case glit: GpuLiteral =>
-          calcSizeForLiteral(glit.value, glit.dataType, rowsNum, nullable, exprAmount)
+          val ret = calcSizeForLiteral(glit.value, glit.dataType, rowsNum, nullable, exprAmount)
+          glit.dataType match {
+            case _: ArrayType | StringType | _: BinaryType => updateOffsetColumnSize(ret)
+            case _ => // noop
+          }
+          ret
         case otherExpr => // other cases
           val exprType = otherExpr.dataType
           // Get the actual size if it is just a pass-through column
@@ -675,7 +699,15 @@ class PreProjectSplitIterator(
   // of a SQL query. This is the highest level we can cache at without getting it
   // passed in from the Exec that instantiates this split iterator.
   // NOTE: this is overwritten by tests to trigger various corner cases
-  private lazy val splitUntilSize: Double = PreProjectSplitIterator.getSplitUntilSize.toDouble
+  private lazy val splitUntilSize = PreProjectSplitIterator.getSplitUntilSize
+
+  private def ceilDiv(a: Long, b: Long): Long = {
+    if (a % b == 0) {
+      a / b
+    } else {
+      a / b + 1
+    }
+  }
 
   /**
    * calcNumSplit will return the number of splits that we need for the input, in the case
@@ -689,10 +721,14 @@ class PreProjectSplitIterator(
     if (cb.numCols() == 0) {
       0 // rows-only batches should not be split
     } else {
-      val minOutputSize = PreProjectSplitIterator.calcMinOutputSize(cb, boundExprs)
+      val sizeEstimator = new PreSplitOutSizeEstimator(cb, boundExprs)
       // If the minimum size is too large we will split before doing the project, to help avoid
       // extreme cases where the output size is so large that we cannot split it afterwards.
-      math.max(1, math.ceil(minOutputSize / splitUntilSize).toInt)
+      val splitsForOut = math.max(1, ceilDiv(sizeEstimator.calcMinOutputSize(), splitUntilSize))
+      // Need to consider individual column size limit. If a cudf column has an
+      // offset buffer, its size should be <= Int.MaxValue (~2G). See
+      // https://github.com/NVIDIA/spark-rapids/issues/14099
+      math.max(splitsForOut, ceilDiv(sizeEstimator.getMaxOffsetColumnSize, Int.MaxValue)).toInt
     }
   }
 }

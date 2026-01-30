@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * This file was derived from WriteIntoDelta.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -45,8 +45,6 @@ import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.functions.{array, col, explode, lit, struct}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.nvidia.DFUDFShims
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.StructType
 
 /** GPU version of Delta Lake's WriteIntoDelta. */

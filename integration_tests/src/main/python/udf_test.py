@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,8 +49,16 @@ from typing import Iterator, Tuple
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
     'spark.rapids.sql.exec.WindowInPandasExec': 'true',
+    # ArrowWindowPythonExec is the new name for WindowInPandasExec in Spark 4.1+
+    'spark.rapids.sql.exec.ArrowWindowPythonExec': 'true',
     'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true'
 }
+
+# From Spark 41x, Spark uses stricter checker by default,
+# this is a workaround solution to pass some cases,
+# e.g.: Int64 + Int64 can cause overflow, and thus fail when use stricter checker on Spark 411
+arrow_udf_conf_unsafe = copy_and_update(arrow_udf_conf,
+                                        {'spark.sql.execution.pandas.convertToArrowArraySafely': 'false'})
 
 data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
 
@@ -70,7 +78,9 @@ def test_pandas_math_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
                 my_udf(f.col('a'), f.col('b'))),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            # int64 + int64 can overflow when return type is long type
+            conf=arrow_udf_conf_unsafe)
 
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
@@ -83,7 +93,9 @@ def test_iterator_math_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
                 my_udf(f.col('a'), f.col('b'))),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            # int64 + int64 can overflow when return type is long type
+            conf=arrow_udf_conf_unsafe)
 
 
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
@@ -138,7 +150,7 @@ def test_group_aggregate_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .agg(pandas_sum(f.col('b'))),
-            conf=arrow_udf_conf)
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -201,7 +213,8 @@ def test_window_aggregate_udf(data_gen, window):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen).select(
             pandas_sum(f.col('b')).over(window)),
-        conf=arrow_udf_conf)
+        # use unsafe mode to avoid overflow
+        conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order
@@ -270,7 +283,8 @@ def test_group_apply_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .applyInPandas(pandas_add, schema="a long, b long"),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -297,7 +311,8 @@ def test_map_apply_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4)\
                     .mapInPandas(pandas_filter, schema="a long, b long"),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -504,4 +519,4 @@ def test_pandas_math_udf_with_rand():
         # Ensure there is only one partition to make the output comparable.
         lambda spark: unary_op_df(spark, int_gen, length=10, num_slices=1).select(
             my_udf(f.rand(42))),
-        conf=arrow_udf_conf)
+        conf=arrow_udf_conf_unsafe)

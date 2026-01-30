@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.delta.DeltaProbe
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
@@ -30,11 +29,6 @@ object ShimLoaderTemp {
 
   def newOptimizerClass(className: String): Optimizer = {
     ShimReflectionUtils.newInstanceOf[Optimizer](className)
-  }
-
-  def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
-    ShimReflectionUtils.newInstanceOf(
-      "com.nvidia.spark.rapids.parquet.ParquetCachedBatchSerializer")
   }
 
   def newExplainPlan(): ExplainPlanBase = {
