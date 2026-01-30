@@ -546,3 +546,50 @@ def test_update_aqe(spark_tmp_table_factory, update_mode, partition_col_sql):
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.parametrize('update_mode', ['copy-on-write', 'merge-on-read'])
+def test_iceberg_update_after_drop_partition_field(spark_tmp_table_factory, update_mode):
+    """Test UPDATE on table after dropping a partition field (void transform).
+    
+    When a partition field is dropped, Iceberg creates a 'void transform' - 
+    the field remains in the partition spec but no longer affects partitioning.
+    This test verifies UPDATE still runs correctly on GPU after partition evolution.
+    """
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+    
+    # Use two partition columns so after dropping one, we still have at least one
+    partition_col_sql = "bucket(8, _c2), bucket(8, _c3)"
+    
+    # Create partitioned tables with data
+    create_iceberg_table_with_data(cpu_table_name, partition_col_sql=partition_col_sql, 
+                                   update_mode=update_mode)
+    create_iceberg_table_with_data(gpu_table_name, partition_col_sql=partition_col_sql, 
+                                   update_mode=update_mode)
+    
+    # Drop one partition field on both tables (creates void transform)
+    def drop_partition_field(spark, table_name):
+        spark.sql(f"ALTER TABLE {table_name} DROP PARTITION FIELD bucket(8, _c2)")
+    
+    with_cpu_session(lambda spark: drop_partition_field(spark, cpu_table_name))
+    with_cpu_session(lambda spark: drop_partition_field(spark, gpu_table_name))
+    
+    # Execute UPDATE after partition evolution - this is the operation we're testing on GPU
+    def do_update(spark, table_name):
+        spark.sql(f"UPDATE {table_name} SET _c2 = _c2 + 100 WHERE _c2 % 3 = 0")
+    
+    with_gpu_session(lambda spark: do_update(spark, gpu_table_name), 
+                     conf=iceberg_update_cow_enabled_conf)
+    with_cpu_session(lambda spark: do_update(spark, cpu_table_name))
+    
+    # Compare results
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
