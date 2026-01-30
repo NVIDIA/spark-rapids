@@ -113,6 +113,15 @@ object GpuShuffleEnv extends Logging {
   // this forces the initialization when we know we are ready in the driver and executor.
   //
   def initShuffleManager(): Unit = {
+    val conf = SparkEnv.get.conf
+    // Row-based checksum feature was added in Spark 4.1.x (SPARK-51756).
+    // Fully supporting this feature would require kernel development to compute
+    // checksums on the GPU side.
+    if (conf.getBoolean("spark.shuffle.checksum.enabled", false)) {
+      throw new IllegalStateException(
+        "RAPIDS Shuffle Manager does not support spark.shuffle.checksum.enabled. " +
+        "Please set spark.shuffle.checksum.enabled to false or disable the RAPIDS Shuffle Manager.")
+    }
     val shuffleManager = SparkEnv.get.shuffleManager
     if (ShuffleManagerShimUtils.eagerlyInitialized) {
       // skip deferred init
