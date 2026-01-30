@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2025, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,7 +32,26 @@ delta_meta_allow = [
     "ObjectHashAggregateExec",
     "ProjectExec",
     "SerializeFromObjectExec",
-    "SortExec"
+    "SortExec",
+    "Add",
+    "ScalaUDF",
+    "And",
+    "Subtract",
+    "GetStructField",
+    "Coalesce",
+    "AssertNotNull",
+    "Divide",
+    "Cast",
+    "CaseWhen",
+    "GreaterThan",
+    "LessThan",
+    "KnownNotNull",
+    "Or",
+    "IsNull",
+    "Not",
+    "EqualTo",
+    "CheckOverflowInTableWrite",
+    "JsonToStructs"
 ]
 
 delta_write = ["RapidsDeltaWrite"]

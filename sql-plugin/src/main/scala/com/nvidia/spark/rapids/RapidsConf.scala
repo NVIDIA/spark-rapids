@@ -467,7 +467,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "GPU implementation will automatically be wrapped in bridge expressions instead of " +
       "causing plan fallbacks.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val BRIDGE_DISALLOW_LIST = conf("spark.rapids.sql.expression.cpuBridge.disallowList")
     .doc("Comma separated list of expression class names that should not use CPU bridge " +
@@ -475,6 +475,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .stringConf
     .createWithDefault("")
+
+  val CPU_BRIDGE_THREAD_POOL_SIZE = conf("spark.rapids.sql.cpuBridge.threadPoolSize")
+    .doc("Override the default CPU bridge thread pool size. When set to a positive value, " +
+      "uses this specific number of threads instead of the default calculation based on " +
+      "task slots. This is an internal config primarily for testing and debugging.")
+    .internal()
+    .integerConf
+    .checkValue(v => v > 0, "Thread pool size must be positive")
+    .createOptional
 
   val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
     .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
@@ -4033,6 +4042,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       Set.empty
     }
   }
+
+  /**
+   * Get the CPU bridge thread pool size override, if configured.
+   */
+  def getCpuBridgeThreadPoolSize: Option[Int] = get(CPU_BRIDGE_THREAD_POOL_SIZE).map(_.toInt)
 }
 
 case class OomInjectionConf(

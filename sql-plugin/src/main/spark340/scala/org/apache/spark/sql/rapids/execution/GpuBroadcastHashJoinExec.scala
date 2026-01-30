@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,8 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
+    val allCanBeAst = conditionMeta.forall(_.canThisBeAst)
+    val (joinCondition, filterCondition) = if (allCanBeAst) {
       (condition, None)
     } else {
       (None, condition)

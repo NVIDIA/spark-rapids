@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -814,7 +814,7 @@ def test_cast_int_to_string_not_UTC():
 
 not_utc_fallback_test_params = [(timestamp_gen, 'STRING')]
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'Cast')
 @pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params, ids=idfn)
 def test_cast_fallback_not_UTC(from_gen, to_type):
     assert_gpu_fallback_collect(

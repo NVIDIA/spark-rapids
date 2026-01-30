@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -878,7 +878,7 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
         conf={})
 
 
-@allow_non_gpu("ProjectExec")
+@allow_non_gpu("ProjectExec", "StaticInvoke")
 @pytest.mark.skipif(is_before_spark_340(),
                     reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.skipif(is_databricks_version_or_later(13, 3),
@@ -899,7 +899,7 @@ def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, da
     """
     assert_gpu_fallback_collect(
         reader(std_input_path + '/' + data_file),
-        cpu_fallback_class_name="ProjectExec",
+        cpu_fallback_class_name="StaticInvoke",
         conf={})
 
 

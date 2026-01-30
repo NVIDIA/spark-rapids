@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -938,7 +938,7 @@ def test_regexp_replace_fallback_configured_off():
     )
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_unsupported_fallback_regexp_extract():
     gen = mk_str_gen('[abcdef]{0,2}')
     regex_gen = StringGen(r'\[a-z\]\+')
@@ -960,7 +960,7 @@ def test_unsupported_fallback_regexp_extract():
     assert_gpu_did_fallback('REGEXP_EXTRACT("PROD", reg_ex, num)')
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_unsupported_fallback_regexp_extract_all():
     gen = mk_str_gen('[abcdef]{0,2}')
     regex_gen = StringGen(r'\[a-z\]\+')

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1304,11 +1304,13 @@ def get_25_partitions_df(spark):
 # This will be deprecated and replaced case specified non GPU allow list
 non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
                  'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
-                 'ExecutedCommandExec'] if is_not_utc() else []
+                 'ExecutedCommandExec', 'Cast', 'Sequence', 
+                 'Length', 'TimeAdd', 'DateAddInterval', 'ScalarSubquery', 'JsonToStructs'] if is_not_utc() else []
 
 non_supported_tz_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
                  'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
-                 'ExecutedCommandExec'] if not is_supported_time_zone() else []
+                 'ExecutedCommandExec', 'Cast', 'Sequence',
+                 'Length', 'TimeAdd', 'DateAddInterval', 'ScalarSubquery', 'JsonToStructs'] if not is_supported_time_zone() else []
 
 
 # date related regexps for generating date strings within python's range limits
