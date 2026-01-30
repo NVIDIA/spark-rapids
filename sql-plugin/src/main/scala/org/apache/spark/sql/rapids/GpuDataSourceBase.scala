@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,10 +41,9 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
-import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, TextSocketSourceProvider}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.{RapidsErrorUtils, SchemaUtilsShims}
+import org.apache.spark.sql.rapids.shims.{FileStreamSinkShims, RapidsErrorUtils, SchemaUtilsShims}
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.util.{HadoopFSUtils, ThreadUtils, Utils}
@@ -213,12 +212,12 @@ abstract class GpuDataSourceBase(
       // We are reading from the results of a streaming query. Load files from the metadata log
       // instead of listing them using HDFS APIs.
       case (format: FileFormat, _)
-          if FileStreamSink.hasMetadata(
+          if FileStreamSinkShims.hasMetadata(
             caseInsensitiveOptions.get("path").toSeq ++ paths,
             newHadoopConfiguration(),
             sparkSession.sessionState.conf) =>
         val basePath = new Path((caseInsensitiveOptions.get("path").toSeq ++ paths).head)
-        val fileCatalog = new MetadataLogFileIndex(sparkSession, basePath,
+        val fileCatalog = FileStreamSinkShims.newMetadataLogFileIndex(sparkSession, basePath,
           caseInsensitiveOptions, userSpecifiedSchema)
         val dataSchema = userSpecifiedSchema.orElse {
           // Remove "path" option so that it is not added to the paths returned by

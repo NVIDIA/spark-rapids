@@ -769,6 +769,26 @@
                 <module>delta-lake/delta-40x</module>
             </modules>
         </profile>
+        <profile>
+            <id>release411</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>411</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>411</buildver>
+                <spark.version>${spark411.version}</spark.version>
+                <spark.test.version>${spark411.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         --><!-- #endif scala-2.13 -->
         <profile>
             <id>source-javadoc</id>
@@ -794,14 +814,14 @@
             <id>scala-2.12</id>
             <properties>
                 <scala.binary.version>2.12</scala.binary.version>
-                <scala.version>2.12.15</scala.version>
+                <scala.version>2.12.21</scala.version>
             </properties>
         </profile>
         <profile>
             <id>scala-2.13</id>
             <properties>
                 <scala.binary.version>2.13</scala.binary.version>
-                <scala.version>2.13.14</scala.version>
+                <scala.version>2.13.18</scala.version>
             </properties>
         </profile>
         <profile>
@@ -894,7 +914,7 @@
         <spark-rapids-hybrid.version>26.04.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
-        <scala.version>2.12.15</scala.version>
+        <scala.version>2.12.21</scala.version>
         <!--
         -processing
         to suppress unactionable "No processor claimed any of these annotations"
@@ -966,6 +986,7 @@
         <spark357.version>3.5.7</spark357.version>
         <spark400.version>4.0.0</spark400.version>
         <spark401.version>4.0.1</spark401.version>
+        <spark411.version>4.1.1</spark411.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
         <scala.plugin.version>4.9.2</scala.plugin.version>
@@ -1469,10 +1490,8 @@ This will force full Scala code rebuild in downstream modules.
                             <arg>-Wconf:cat=lint-adapted-args:e</arg>
                             <!-- #if scala-2.13 --><!--
                             <arg>-Xsource:2.13</arg>
-                            <arg>-Ywarn-unused:locals,patvars,privates</arg>
                             <arg>-Wconf:cat=deprecation:e,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
-                            <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
                             <arg>-Wconf:cat=other-nullary-override:e</arg>
                             <arg>-Wconf:msg=^(?=.*?method|value|type|object|trait|inheritance)(?=.*?deprecated)(?=.*?since 2.13).+$:s</arg>
                             <arg>-Wconf:msg=^(?=.*?Widening conversion from)(?=.*?is deprecated because it loses precision).+$:s</arg>
@@ -1480,6 +1499,14 @@ This will force full Scala code rebuild in downstream modules.
                             <arg>-Wconf:cat=unchecked&amp;msg=outer reference:s</arg>
                             <arg>-Wconf:cat=unchecked&amp;msg=eliminated by erasure:s</arg>
                             <arg>-Wconf:msg=^(?=.*?a value of type)(?=.*?cannot also be).+$:s</arg>
+                            <arg>-Wconf:cat=unused:e</arg>
+                            <arg>-Wconf:cat=unused-imports:e</arg>
+                            <arg>-Wconf:cat=unused-locals:e</arg>
+                            <arg>-Wconf:cat=unused-nowarn:e</arg>
+                            <arg>-Wconf:cat=unused-params:e</arg>
+                            <arg>-Wconf:cat=unused-pat-vars:e</arg>
+                            <arg>-Wconf:cat=unused-privates:e</arg>
+                            <arg>-Wunused:imports,locals,patvars,privates</arg>
                             --><!-- #endif scala-2.13 -->
                         </args>
                         <jvmArgs>

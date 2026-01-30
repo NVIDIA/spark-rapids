@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,6 +75,16 @@ case class GpuRand(child: Expression, doContextCheck: Boolean) extends ShimUnary
 
   override def withNewSeed(seed: Long): GpuRand = GpuRand(GpuLiteral(seed, LongType),
     doContextCheck)
+
+  // Added in Spark 4.1.0
+  def withShiftedSeed(shift: Long): Expression = {
+    val newSeed = child match {
+      case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int].toLong + shift
+      case GpuLiteral(s, LongType) => s.asInstanceOf[Long] + shift
+      case _ => shift
+    }
+    withNewSeed(newSeed)
+  }
 
   def seedExpression: Expression = child
 

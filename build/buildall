@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,8 +38,8 @@ function print_usage() {
   echo "   -gb, --generate-bloop"
   echo "        generate projects for Bloop clients: IDE (Scala Metals, IntelliJ) or Bloop CLI"
   echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
-  echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
-  echo "        snapshotsWithDatabricks, noSnapshotsWithDatabricks, noSnapshotsScala213, snapshotsScala213."
+  echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots,"
+  echo "        snapshotsWithDatabricks, noSnapshotsWithDatabricks"
   echo "        NOTE: the Databricks-related spark3XYdb shims are not built locally, the jars are fetched prebuilt from a"
   echo " .      remote Maven repo. You can also supply a comma-separated list of build versions. E.g., --profile=330,331 will"
   echo "        build only the distribution jar only for 3.3.0 and 3.3.1"
@@ -54,6 +54,8 @@ function print_usage() {
   echo "        use this option to build project with maven. E.g., --option='-Dcudf.version=cuda12'"
   echo "   --rebuild-dist-only"
   echo "        repackage the dist module artifact using installed dependencies"
+  echo "   --scala213"
+  echo "        build 2.13 shims"
 }
 
 function bloopInstall() {
@@ -152,7 +154,7 @@ case "$1" in
   ;;
 
 -o=*|--option=*)
-  MVN_OPT="${1#*=}"
+  export MVN_OPT="${1#*=}"
   ;;
 
 *)
@@ -172,41 +174,35 @@ if [[ "$DIST_PROFILE" == *Scala213 ]]; then
   SCALA213=1
 fi
 
+MVN=${MVN:-"mvn"}
 # include options to mvn command
-export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
+export MVN="$MVN -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
 
 if [[ "$SCALA213" == "1" ]]; then
-  MVN="$MVN -f scala2.13/"
-  DIST_PROFILE=${DIST_PROFILE:-"noSnapshotsScala213"}
+  POM_FILE="scala2.13/pom.xml"
+  export MVN="$MVN -f scala2.13/"
   $(dirname $0)/make-scala-version-build-files.sh 2.13
-else
-  DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+else 
+  POM_FILE="pom.xml"
 fi
+
+DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+
 
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
 echo "Collecting Spark versions..."
 case $DIST_PROFILE in
 
-  snapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap" "scala2.13/pom.xml"))
-    ;;
-
-  noSnapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" "scala2.13/pom.xml"))
-    ;;
-
   snapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap" "pom.xml"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap" $POM_FILE))
     ;;
 
   noSnapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" "pom.xml"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" $POM_FILE))
     ;;
 
-  minimumFeatureVersionMix)
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "minimumFeatureVersionMix"))
-    ;;
+
 
   [34]*)
     <<< $DIST_PROFILE IFS="," read -ra SPARK_SHIM_VERSIONS
