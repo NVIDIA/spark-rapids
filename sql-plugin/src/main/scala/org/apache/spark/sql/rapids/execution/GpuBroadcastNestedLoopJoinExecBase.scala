@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -608,6 +608,14 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       BroadcastDistribution(IdentityBroadcastMode) :: UnspecifiedDistribution :: Nil
     case GpuBuildRight =>
       UnspecifiedDistribution :: BroadcastDistribution(IdentityBroadcastMode) :: Nil
+  }
+
+  // Match Spark's BroadcastNestedLoopJoinExec.outputPartitioning
+  override def outputPartitioning: Partitioning = (joinType, gpuBuildSide) match {
+    case (_: InnerLike, _) | (LeftOuter, GpuBuildRight) | (RightOuter, GpuBuildLeft) |
+         (LeftSemi, GpuBuildRight) | (LeftAnti, GpuBuildRight) =>
+      streamed.outputPartitioning
+    case _ => super.outputPartitioning
   }
 
   override def output: Seq[Attribute] = {
