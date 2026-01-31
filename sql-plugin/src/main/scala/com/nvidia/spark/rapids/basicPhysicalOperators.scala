@@ -37,7 +37,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, PartitioningCollection, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
 import org.apache.spark.sql.rapids.{GpuCreateArray, GpuCreateMap, GpuCreateNamedStruct, GpuPartitionwiseSampledRDD, GpuPoissonSampler}
@@ -231,7 +231,53 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
-  override def outputPartitioning: Partitioning = child.outputPartitioning
+  /**
+   * Compute output partitioning, handling PartitioningCollection from joins.
+   *
+   * This matches Spark's PartitioningPreservingUnaryExecNode behavior:
+   * 1. Flatten any PartitioningCollection into individual partitionings
+   * 2. Filter to only keep partitionings whose attributes are in the output
+   * 3. Remap attributes through aliases
+   *
+   * This is critical for Spark 4.1+ where UnionExec uses outputPartitioning
+   * to decide between partitioner-aware union vs concatenation.
+   */
+  override def outputPartitioning: Partitioning = {
+    val attributeMap = child.output.zip(output).toMap
+    val outputSet = AttributeSet(output)
+
+    // Flatten a PartitioningCollection into individual partitionings
+    def flattenPartitioning(p: Partitioning): Seq[Partitioning] = p match {
+      case PartitioningCollection(childPartitionings) =>
+        childPartitionings.flatMap(flattenPartitioning)
+      case other => Seq(other)
+    }
+
+    def remapPartitioning(p: Partitioning): Partitioning = p match {
+      case e: Expression =>
+        e.transform {
+          case a: Attribute if attributeMap.contains(a) => attributeMap(a)
+        }.asInstanceOf[Partitioning]
+      case other => other
+    }
+
+    val partitionings = flattenPartitioning(child.outputPartitioning).flatMap {
+      case e: Expression =>
+        // Only keep partitionings whose attributes are all in the output
+        val remapped = remapPartitioning(e.asInstanceOf[Partitioning])
+        remapped match {
+          case re: Expression if re.references.subsetOf(outputSet) => Some(remapped)
+          case _ => None
+        }
+      case other => Some(other)
+    }
+
+    partitionings match {
+      case Seq() => UnknownPartitioning(child.outputPartitioning.numPartitions)
+      case Seq(single) => single
+      case multiple => PartitioningCollection(multiple)
+    }
+  }
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -1611,6 +1657,9 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     }
   }
 
+  override def outputPartitioning: Partitioning =
+    GpuUnionExecShim.getOutputPartitioning(children, output, conf)
+
   // The smallest of our children
   override def outputBatching: CoalesceGoal =
     children.map(GpuExec.outputBatching).reduce(CoalesceGoal.minProvided)
@@ -1622,11 +1671,12 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
 
-    sparkContext.union(children.map(_.executeColumnar())).map { batch =>
-      numOutputBatches += 1
-      numOutputRows += batch.numRows
-      batch
-    }
+    GpuUnionExecShim.unionColumnarRdds(
+      sparkContext,
+      children.map(_.executeColumnar()),
+      outputPartitioning,
+      numOutputRows,
+      numOutputBatches)
   }
 }
 
