@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -648,6 +648,18 @@ object GpuHashJoin {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
 
     JoinTypeChecks.tagForGpu(joinType, meta)
+
+    // Check for struct keys with different field names.
+    // Spark 4.0+ (SPARK-51738) allows struct comparisons where field names differ,
+    // but the GPU implementation currently requires matching field names.
+    // Fall back to CPU for this case until proper GPU support is added.
+    // See https://github.com/NVIDIA/spark-rapids/issues/13100
+    if (!leftKeys.zip(rightKeys).forall { case (l, r) =>
+        l.dataType.sameType(r.dataType) }) {
+      meta.willNotWorkOnGpu("join keys have different types or struct field names differ, " +
+        "which is not yet supported on GPU")
+    }
+
     joinType match {
       case _: InnerLike =>
       case RightOuter | LeftOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
