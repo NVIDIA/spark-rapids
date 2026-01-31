@@ -1443,6 +1443,7 @@ def test_bloom_filter_join_cpu_probe(is_multi_column, kudo_enabled):
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+@pytest.mark.xfail(condition=is_spark_411_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/14148")
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_bloom_filter_join_cpu_build(is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.expression.BloomFilterAggregate": "false",
@@ -1457,6 +1458,7 @@ def test_bloom_filter_join_cpu_build(is_multi_column, kudo_enabled):
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+@pytest.mark.xfail(condition=is_spark_411_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/14148")
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_bloom_filter_join_split_cpu_build(agg_replace_mode, is_multi_column, kudo_enabled):
     conf = {"spark.rapids.sql.hashAgg.replaceMode": agg_replace_mode,
