@@ -888,12 +888,45 @@ class MultiFileCloudSequenceFilePartitionReader(
       dataBuffer: HostMemoryBuffer,
       offsetsBuffer: HostMemoryBuffer,
       numRows: Int): ColumnVector = {
-    val dataLen = dataBuffer.getLength.toInt
+    // Get the actual data length from the final offset (not buffer.getLength which is allocated size)
+    val dataLen = offsetsBuffer.getInt(numRows.toLong * DType.INT32.getSizeInBytes)
+    val offsetsLen = (numRows + 1) * DType.INT32.getSizeInBytes
+
+    // Copy only the actual used bytes to new precisely-sized buffers.
+    // This is necessary because:
+    // 1. HostAlloc.alloc doesn't zero-initialize memory
+    // 2. HostColumnVectorCore.copyToDevice may use the buffer's full length
+    // 3. Buffer slicing might not work correctly with all cudf operations
+    val exactDataBuffer = closeOnExcept(dataBuffer) { _ =>
+      closeOnExcept(offsetsBuffer) { _ =>
+        if (dataLen > 0) {
+          val newBuf = HostAlloc.alloc(dataLen, preferPinned = true)
+          newBuf.copyFromHostBuffer(0, dataBuffer, 0, dataLen)
+          newBuf
+        } else {
+          HostAlloc.alloc(1, preferPinned = true) // Minimum 1 byte for empty data
+        }
+      }
+    }
+
+    val exactOffsetsBuffer = closeOnExcept(exactDataBuffer) { _ =>
+      closeOnExcept(dataBuffer) { _ =>
+        closeOnExcept(offsetsBuffer) { _ =>
+          val newBuf = HostAlloc.alloc(offsetsLen, preferPinned = true)
+          newBuf.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsLen)
+          newBuf
+        }
+      }
+    }
 
     // Create the child HostColumnVectorCore (UINT8 data)
     val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
-    val childCore = new HostColumnVectorCore(DType.UINT8, dataLen,
-      Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
+    val childCore = closeOnExcept(exactDataBuffer) { _ =>
+      closeOnExcept(exactOffsetsBuffer) { _ =>
+        new HostColumnVectorCore(DType.UINT8, dataLen,
+          Optional.of[java.lang.Long](0L), exactDataBuffer, null, null, emptyChildren)
+      }
+    }
 
     // Create the children list for the LIST column
     val listChildren = new util.ArrayList[HostColumnVectorCore]()
@@ -901,12 +934,14 @@ class MultiFileCloudSequenceFilePartitionReader(
 
     // Create the LIST HostColumnVector with proper nested structure
     val listHost = closeOnExcept(childCore) { _ =>
-      new HostColumnVector(DType.LIST, numRows,
-        Optional.of[java.lang.Long](0L), // nullCount = 0
-        null, // no data buffer for LIST type
-        null, // no validity buffer (no nulls)
-        offsetsBuffer, // offsets buffer
-        listChildren) // nested children containing the UINT8 child
+      closeOnExcept(exactOffsetsBuffer) { _ =>
+        new HostColumnVector(DType.LIST, numRows,
+          Optional.of[java.lang.Long](0L), // nullCount = 0
+          null, // no data buffer for LIST type
+          null, // no validity buffer (no nulls)
+          exactOffsetsBuffer, // offsets buffer
+          listChildren) // nested children containing the UINT8 child
+      }
     }
 
     // Single copyToDevice() handles the entire nested structure efficiently

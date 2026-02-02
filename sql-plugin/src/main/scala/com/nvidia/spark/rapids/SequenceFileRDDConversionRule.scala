@@ -20,7 +20,8 @@ import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapred.SequenceFileInputFormat
-import org.apache.hadoop.mapreduce.lib.input.{FileInputFormat => NewFileInputFormat, SequenceFileInputFormat => NewSequenceFileInputFormat}
+import org.apache.hadoop.mapreduce.lib.input.{FileInputFormat => NewFileInputFormat,
+  SequenceFileInputFormat => NewSequenceFileInputFormat}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{HadoopRDD, NewHadoopRDD, RDD}
@@ -28,7 +29,8 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, SerializeFromObject}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.ExternalRDD
-import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InMemoryFileIndex, LogicalRelation}
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InMemoryFileIndex,
+  LogicalRelation}
 
 /**
  * A logical plan rule that converts RDD-based SequenceFile scans to FileFormat-based scans.
@@ -82,33 +84,42 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
       externalRdd: ExternalRDD[_]): Option[LogicalPlan] = {
     try {
       val rdd = externalRdd.rdd
-      
+
       // Determine the expected schema by looking at the original SerializeFromObject output
       // If it has 2 fields (key, value), use full schema; if 1 field, use value-only schema
       val numOutputFields = original.output.size
       val isValueOnly = numOutputFields == 1
-      
+
       // Find the HadoopRDD at the root of the RDD lineage
       findSequenceFileRDDInfo(rdd) match {
         case Some(SequenceFileRDDInfo(paths, _)) =>
           logDebug(s"Found SequenceFile RDD with paths: ${paths.mkString(", ")}, " +
             s"valueOnly: $isValueOnly")
-          
+
           // Determine the schema based on what the user is selecting
           val dataSchema = if (isValueOnly) {
             SequenceFileBinaryFileFormat.valueOnlySchema
           } else {
             SequenceFileBinaryFileFormat.dataSchema
           }
-          
-          // Create the FileIndex
+
+          // Expand glob patterns in paths before creating FileIndex
+          // This is necessary because InMemoryFileIndex doesn't expand globs by default
+          val expandedPaths = expandGlobPaths(paths)
+          if (expandedPaths.isEmpty) {
+            logWarning(s"No files found after expanding glob patterns: ${paths.mkString(", ")}")
+            return None
+          }
+          logDebug(s"Expanded ${paths.size} path patterns to ${expandedPaths.size} paths")
+
+          // Create the FileIndex with expanded paths
           val fileIndex = new InMemoryFileIndex(
             spark,
-            paths.map(new Path(_)),
+            expandedPaths,
             Map.empty[String, String],
             None,
             NoopCache)
-          
+
           // Create the HadoopFsRelation with our internal FileFormat
           val relation = HadoopFsRelation(
             location = fileIndex,
@@ -117,15 +128,15 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
             bucketSpec = None,
             fileFormat = new SequenceFileBinaryFileFormat,
             options = Map.empty)(spark)
-          
+
           // Create LogicalRelation
           val logicalRelation = LogicalRelation(relation, isStreaming = false)
-          
+
           logInfo(s"Successfully converted SequenceFile RDD scan to FileFormat scan: " +
             s"paths=${paths.mkString(",")}, schema=$dataSchema")
-          
+
           Some(logicalRelation)
-          
+
         case None =>
           logDebug(s"RDD lineage does not contain SequenceFile RDD, skipping conversion")
           None
@@ -208,15 +219,15 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
    */
   private def getInputFormatClass(rdd: NewHadoopRDD[_, _]): Option[Class[_]] = {
     val clazz = classOf[NewHadoopRDD[_, _]]
-    
+
     // Find fields containing "inputFormatClass" (handles Scala name mangling)
     val inputFormatFields = clazz.getDeclaredFields.filter(_.getName.contains("inputFormatClass"))
-    
+
     for (field <- inputFormatFields) {
       try {
         field.setAccessible(true)
         val value = field.get(rdd)
-        
+
         if (value != null) {
           val formatClass: Option[Class[_]] = value match {
             case c: Class[_] => Some(c)
@@ -251,7 +262,7 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
     try {
       val clazz = classOf[HadoopRDD[_, _]]
       val inputFormatFields = clazz.getDeclaredFields.filter(_.getName.contains("inputFormatClass"))
-      
+
       for (field <- inputFormatFields) {
         try {
           field.setAccessible(true)
@@ -278,14 +289,14 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
   private def extractPathsFromNewHadoopRDD(rdd: NewHadoopRDD[_, _]): Option[Seq[String]] = {
     try {
       val clazz = classOf[NewHadoopRDD[_, _]]
-      val confFields = clazz.getDeclaredFields.filter(f => 
+      val confFields = clazz.getDeclaredFields.filter(f =>
         f.getName == "_conf" || f.getName.contains("_conf"))
-      
+
       for (confField <- confFields) {
         try {
           confField.setAccessible(true)
           val confValue = confField.get(rdd)
-          
+
           // Handle SerializableConfiguration wrapper
           val conf = confValue match {
             case c: org.apache.hadoop.conf.Configuration => c
@@ -298,7 +309,7 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
                 case _: Exception => null
               }
           }
-          
+
           if (conf != null) {
             val pathsStr = conf.get(NewFileInputFormat.INPUT_DIR)
             if (pathsStr != null && pathsStr.nonEmpty) {
@@ -309,7 +320,7 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
           case NonFatal(_) => // Continue to next field
         }
       }
-      
+
       // Fall back to RDD name
       Option(rdd.name).filter(_.nonEmpty).map(Seq(_))
     } catch {
@@ -329,6 +340,51 @@ case class SequenceFileRDDConversionRule(spark: SparkSession) extends Rule[Logic
       case NonFatal(e) =>
         logDebug(s"Failed to extract paths from HadoopRDD: ${e.getMessage}")
         None
+    }
+  }
+
+  /**
+   * Expands glob patterns in paths using Hadoop FileSystem.
+   * For example, a path like /data/2024/asterisk expands to matching directories.
+   * Non-glob paths are returned as-is if they exist.
+   */
+  private def expandGlobPaths(paths: Seq[String]): Seq[Path] = {
+    val hadoopConf = spark.sessionState.newHadoopConf()
+
+    paths.flatMap { pathStr =>
+      val path = new Path(pathStr)
+      try {
+        val fs = path.getFileSystem(hadoopConf)
+
+        // Check if the path contains glob pattern characters
+        val hasGlob = pathStr.contains("*") || pathStr.contains("?") ||
+          pathStr.contains("[") || pathStr.contains("{")
+
+        if (hasGlob) {
+          // Expand glob pattern
+          val globStatus = fs.globStatus(path)
+          if (globStatus != null && globStatus.nonEmpty) {
+            logDebug(s"Glob pattern '$pathStr' expanded to ${globStatus.length} paths")
+            globStatus.map(_.getPath)
+          } else {
+            logWarning(s"Glob pattern '$pathStr' matched no files")
+            Seq.empty
+          }
+        } else {
+          // Not a glob pattern - check if path exists
+          if (fs.exists(path)) {
+            Seq(path)
+          } else {
+            logWarning(s"Path does not exist: $pathStr")
+            Seq.empty
+          }
+        }
+      } catch {
+        case NonFatal(e) =>
+          logWarning(s"Failed to expand glob path '$pathStr': ${e.getMessage}")
+          // Return original path as fallback, let InMemoryFileIndex handle the error
+          Seq(path)
+      }
     }
   }
 }

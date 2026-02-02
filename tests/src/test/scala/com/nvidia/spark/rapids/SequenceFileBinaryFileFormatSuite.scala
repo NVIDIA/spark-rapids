@@ -380,6 +380,107 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
   }
 
   // ============================================================================
+  // Glob pattern tests
+  // ============================================================================
+
+  test("RDD conversion supports glob patterns in paths") {
+    withTempDir("seqfile-glob-test") { tmpDir =>
+      // Create subdirectories with data files
+      val subDir1 = new File(tmpDir, "2024/01")
+      val subDir2 = new File(tmpDir, "2024/02")
+      val subDir3 = new File(tmpDir, "2025/01")
+      subDir1.mkdirs()
+      subDir2.mkdirs()
+      subDir3.mkdirs()
+
+      val conf = new Configuration()
+      
+      // Write different payloads to each subdirectory
+      val payloads1 = Array(Array[Byte](1, 1, 1))
+      val payloads2 = Array(Array[Byte](2, 2, 2))
+      val payloads3 = Array(Array[Byte](3, 3, 3))
+      
+      writeSequenceFile(new File(subDir1, "part-00000.seq"), conf, payloads1)
+      writeSequenceFile(new File(subDir2, "part-00000.seq"), conf, payloads2)
+      writeSequenceFile(new File(subDir3, "part-00000.seq"), conf, payloads3)
+
+      withConversionEnabledSession { spark =>
+        // Test glob pattern that matches subdirectories: 2024/*
+        val globPath = new File(tmpDir, "2024/*").getAbsolutePath
+        val df = readSequenceFileViaRDD(spark, globPath)
+        
+        val results = df.select("value").collect().map(_.getAs[Array[Byte]](0))
+        
+        // Should find files in 2024/01 and 2024/02 (2 files total)
+        assert(results.length == 2, 
+          s"Expected 2 results from glob pattern '2024/*', got ${results.length}")
+        
+        // Verify we got the exact expected payloads
+        val sortedResults = results.sortBy(_(0))
+        assert(java.util.Arrays.equals(sortedResults(0), payloads1(0)),
+          s"First result should be [1,1,1], got ${sortedResults(0).toSeq}")
+        assert(java.util.Arrays.equals(sortedResults(1), payloads2(0)),
+          s"Second result should be [2,2,2], got ${sortedResults(1).toSeq}")
+      }
+    }
+  }
+
+  test("RDD conversion supports recursive glob patterns") {
+    withTempDir("seqfile-recursive-glob-test") { tmpDir =>
+      // Create nested directory structure
+      val subDir1 = new File(tmpDir, "data/year=2024/month=01")
+      val subDir2 = new File(tmpDir, "data/year=2024/month=02")
+      subDir1.mkdirs()
+      subDir2.mkdirs()
+
+      val conf = new Configuration()
+      
+      val payloads1 = Array(Array[Byte](10, 20, 30))
+      val payloads2 = Array(Array[Byte](40, 50, 60))
+      
+      writeSequenceFile(new File(subDir1, "data.seq"), conf, payloads1)
+      writeSequenceFile(new File(subDir2, "data.seq"), conf, payloads2)
+
+      withConversionEnabledSession { spark =>
+        // Test recursive glob pattern: data/year=2024/*/
+        val globPath = new File(tmpDir, "data/year=2024/*").getAbsolutePath
+        val df = readSequenceFileViaRDD(spark, globPath)
+        
+        val results = df.select("value").collect().map(_.getAs[Array[Byte]](0))
+        
+        assert(results.length == 2,
+          s"Expected 2 results from recursive glob, got ${results.length}")
+      }
+    }
+  }
+
+  test("RDD conversion handles glob pattern with no matches gracefully") {
+    withTempDir("seqfile-glob-nomatch-test") { tmpDir =>
+      // Create a single file
+      val file = new File(tmpDir, "test.seq")
+      val conf = new Configuration()
+      val payloads = Array(Array[Byte](1, 2, 3))
+      writeSequenceFile(file, conf, payloads)
+
+      withConversionEnabledSession { spark =>
+        // Use a glob pattern that matches nothing
+        val globPath = new File(tmpDir, "nonexistent/*").getAbsolutePath
+        
+        // Hadoop's newAPIHadoopFile throws InvalidInputException when glob matches 0 files.
+        // This happens at RDD creation time, before our conversion rule can do anything.
+        // We verify that this expected Hadoop behavior occurs.
+        val exception = intercept[org.apache.hadoop.mapreduce.lib.input.InvalidInputException] {
+          val df = readSequenceFileViaRDD(spark, globPath)
+          df.collect() // Force evaluation
+        }
+        
+        assert(exception.getMessage.contains("matches 0 files"),
+          s"Expected 'matches 0 files' error, got: ${exception.getMessage}")
+      }
+    }
+  }
+
+  // ============================================================================
   // Configuration tests
   // ============================================================================
 
