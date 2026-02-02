@@ -128,12 +128,13 @@ class GpuMultiThreadIcebergParquetReader(
 
     val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
 
-    val filteredParquet = super.filterParquetBlocks(icebergFile, requiredSchema)
+    val (filteredParquet, shadedFileReadSchema) = super.filterParquetBlocks(icebergFile, requiredSchema)
 
     val postProcessor = new GpuParquetReaderPostProcessor(
       filteredParquet,
       constantsProvider(icebergFile),
-      requiredSchema)
+      requiredSchema,
+      shadedFileReadSchema)
 
     val old = postProcessors.put(icebergFile, postProcessor)
     require(old == null, "Iceberg parquet partition file post processor already exists!")
