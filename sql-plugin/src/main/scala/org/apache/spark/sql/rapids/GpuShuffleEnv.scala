@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,6 +106,16 @@ object GpuShuffleEnv extends Logging {
   def isSparkAuthenticateEnabled: Boolean = {
     val conf = SparkEnv.get.conf
     conf.getBoolean("spark.authenticate", false)
+  }
+
+  // Returns true if row-based checksum is enabled, which is not supported
+  // by the RAPIDS Shuffle Manager
+  def isRowBasedChecksumEnabled: Boolean = {
+    val conf = SparkEnv.get.conf
+    // Row-based checksum feature was added in Spark 4.1.x (SPARK-51756).
+    // Fully supporting this feature would require kernel development to compute
+    // checksums on the GPU side.
+    conf.getBoolean("spark.shuffle.checksum.enabled", false)
   }
 
   //
