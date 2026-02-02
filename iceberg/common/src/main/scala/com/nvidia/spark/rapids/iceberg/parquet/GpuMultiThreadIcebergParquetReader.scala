@@ -110,7 +110,7 @@ class GpuMultiThreadIcebergParquetReader(
       conf.threadConf.asInstanceOf[MultiThread].maxNumFilesProcessed,
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
-      false, // useFieldId
+      conf.useFieldId, // useFieldId
       // We always set this to true to disable combining small files into a larger one
       // as iceberg's parquet file may have different schema due to schema evolution.
       true, // queryUsesInputFile

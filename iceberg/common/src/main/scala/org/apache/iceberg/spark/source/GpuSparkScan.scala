@@ -40,6 +40,27 @@ abstract class GpuSparkScan(val cpuScan: SparkScan,
 
   def readTimestampWithoutZone: Boolean = readConf.handleTimestampWithoutZone()
 
+  // For Iceberg tables, disable field ID matching if there are nested types
+  // Iceberg v2 writes field IDs for nested type components (array elements, map keys/values),
+  // but cuDF's field ID matching is designed for top-level columns only
+  lazy val useFieldId: Boolean = {
+    def hasNestedTypes(dataType: org.apache.spark.sql.types.DataType): Boolean = {
+      dataType match {
+        case _: org.apache.spark.sql.types.ArrayType => true
+        case _: org.apache.spark.sql.types.MapType => true
+        case s: org.apache.spark.sql.types.StructType =>
+          s.fields.exists(f => hasNestedTypes(f.dataType))
+        case _ => false
+      }
+    }
+
+    val schema = readSchema()
+    val hasNested = schema.fields.exists(f => hasNestedTypes(f.dataType))
+
+    // Disable field ID matching for nested types in Iceberg
+    !hasNested
+  }
+
   override def readSchema(): StructType = cpuScan.readSchema()
 
   override def estimateStatistics(): Statistics = cpuScan.estimateStatistics()

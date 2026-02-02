@@ -97,7 +97,7 @@ class GpuCoalescingIcebergParquetReader(
       conf.threadConf.asInstanceOf[MultiFile].poolConfBuilder.build(),
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
-      false) // useFieldId
+      conf.useFieldId) // useFieldId
       {
       override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
           nextBlockInfo: SingleDataBlockInfo): Boolean = {

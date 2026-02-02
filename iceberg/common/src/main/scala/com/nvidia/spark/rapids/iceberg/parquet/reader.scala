@@ -135,6 +135,7 @@ case class GpuIcebergParquetReaderConf(
     threadConf: ThreadConf,
     expectedSchema: Schema,
     nameMapping: Option[NameMapping],
+    useFieldId: Boolean,
 )
 
 trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable with Logging {

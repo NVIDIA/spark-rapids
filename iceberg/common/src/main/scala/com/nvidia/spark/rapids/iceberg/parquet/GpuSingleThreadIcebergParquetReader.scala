@@ -146,7 +146,7 @@ private class SingleFileReader(
       DateTimeRebaseCorrected, // dateRebaseMode
       DateTimeRebaseCorrected, // timestampRebaseMode
       true, // hasInt96Timestamps
-      false) // useFieldId
+      conf.useFieldId) // useFieldId
 
     val parquetReader = new PartitionReaderWithBytesRead(parquetPartReader)
     val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet,
