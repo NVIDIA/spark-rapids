@@ -486,6 +486,27 @@ fi
 
 # cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
 if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+  # Create a separate conda env for cudf-udf tests to avoid affecting the base env (python 3.10)
+  CUDF_UDF_ENV="cudf_udf_$(date +"%Y%m%d")"
+  CUDF_UDF_PYTHON_VER="3.12"  # since 26.04, python 3.12+ is required for cudf-py
+  CUDF_VER=$(echo "${PROJECT_VER}" | cut -d '.' -f 1,2)
+  CUDA_VER_FOR_CUDF=${CUDA_VER_FOR_CUDF:-'12.9'}
+
+  conda create -y -n ${CUDF_UDF_ENV} -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
+    python=${CUDF_UDF_PYTHON_VER} cudf=${CUDF_VER} cuda-version=${CUDA_VER_FOR_CUDF}
+
+  # Activate the cudf_udf env and reset PYTHONPATH to use the new env's site-packages
+  source activate ${CUDF_UDF_ENV}
+  CUDF_UDF_PYTHON="${CONDA_ROOT}/envs/${CUDF_UDF_ENV}/bin/python"
+  # Save original PYTHONPATH and reset for cudf_udf env
+  ORIG_PYTHONPATH=${PYTHONPATH}
+  CUDF_UDF_SITE_PACKAGES="${CONDA_ROOT}/envs/${CUDF_UDF_ENV}/lib/python${CUDF_UDF_PYTHON_VER}/site-packages"
+  export PYTHONPATH="${CUDF_UDF_SITE_PACKAGES}:${TMP_PYTHON}/python:${TMP_PYTHON}/python/pyspark/:${PY4J_FILE}"
+  # Set PySpark to use the cudf_udf Python for both driver and workers
+  export PYSPARK_PYTHON=${CUDF_UDF_PYTHON}
+  export PYSPARK_DRIVER_PYTHON=${CUDF_UDF_PYTHON}
+  python -m pip install -r ./requirements.txt
+
   # hardcode config
   [[ ${TEST_PARALLEL} -gt 2 ]] && export TEST_PARALLEL=2
   PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
@@ -493,8 +514,12 @@ if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
     PYSP_TEST_spark_rapids_python_memory_gpu_allocFraction=0.1 \
     PYSP_TEST_spark_rapids_python_concurrentPythonWorkers=2 \
     PYSP_TEST_spark_executorEnv_PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
-    PYSP_TEST_spark_python=${CONDA_ROOT}/bin/python \
     ./run_pyspark_from_build.sh -m cudf_udf --cudf_udf
+
+  # Deactivate and restore original environment
+  conda deactivate
+  export PYTHONPATH=${ORIG_PYTHONPATH}
+  unset PYSPARK_PYTHON PYSPARK_DRIVER_PYTHON
 fi
 
 # Pyarrow tests
