@@ -136,6 +136,16 @@ object GpuShuffleEnv extends Logging {
     conf.getBoolean("spark.authenticate", false)
   }
 
+  // Returns true if row-based checksum is enabled, which is not supported
+  // by the RAPIDS Shuffle Manager
+  def isRowBasedChecksumEnabled: Boolean = {
+    val conf = SparkEnv.get.conf
+    // Row-based checksum feature was added in Spark 4.1.x (SPARK-51756).
+    // Fully supporting this feature would require kernel development to compute
+    // checksums on the GPU side.
+    conf.getBoolean("spark.shuffle.checksum.enabled", false)
+  }
+
   //
   // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
   // this forces the initialization when we know we are ready in the driver and executor.
