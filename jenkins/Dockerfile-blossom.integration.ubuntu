@@ -75,7 +75,7 @@ ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
 ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS="yes"
 RUN conda init && conda config --set channel_priority strict
 
-# Base python version as 3.10 to keep compatibity with spark330
+# Base python version as 3.10 to keep compatibility with spark330
 RUN conda install -y -c conda-forge -c anaconda -c defaults \
         python=3.10 && \
     conda clean -ay
