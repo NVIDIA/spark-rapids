@@ -1623,6 +1623,10 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
         fallThroughReasons += "Spark authentication is enabled"
       }
+      if (GpuShuffleEnv.isRowBasedChecksumEnabled) {
+        fallThroughReasons += "Detected spark.shuffle.checksum.enabled=true. " +
+          "This feature is supported in Spark 4.1+, but is not yet supported by Spark-Rapids."
+      }
     }
     if (rapidsConf.isSqlExplainOnlyEnabled) {
       fallThroughReasons += "Plugin is in explain only mode"
