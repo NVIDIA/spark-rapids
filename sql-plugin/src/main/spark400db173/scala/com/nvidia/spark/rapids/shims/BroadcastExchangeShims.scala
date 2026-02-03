@@ -16,22 +16,25 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.internal.SQLConf
 
 /**
- * Databricks 17.3 version where MAX_BROADCAST_TABLE_BYTES constant was removed.
- * We get the value from the session config instead.
+ * Shim for MAX_BROADCAST_TABLE_BYTES which was removed in Spark 4.1.0.
+ * The constant was 8GB (8L << 30) and is now configurable via conf.maxBroadcastTableSizeInBytes.
  */
 object BroadcastExchangeShims {
+  // 8GB - the original hardcoded value from Spark (kept for backwards compatibility)
+  val MAX_BROADCAST_TABLE_BYTES: Long = 8L << 30
+
   /**
-   * Maximum size for broadcast tables.
-   * In DB 17.3, get from session config instead of constant.
+   * Get the maximum broadcast table size in bytes.
+   * In Spark 4.1.0+, this reads from the configurable value.
    */
-  def MAX_BROADCAST_TABLE_BYTES: Long = {
-    SparkSession.getActiveSession.get.sessionState.conf.maxBroadcastTableSizeInBytes
+  def getMaxBroadcastTableBytes(conf: SQLConf): Long = {
+    conf.maxBroadcastTableSizeInBytes
   }
 }
-
