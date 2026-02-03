@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -23,7 +24,7 @@ import org.apache.spark.sql.catalyst.expressions.{Add, Divide, EvalMode, Express
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Average, Sum}
 
 /**
- * Databricks 17.3 version where evalMode was changed to evalContext.evalMode for arithmetic expressions.
+ * Spark 4.1.0+ and Databricks 17.3 version where evalMode changed to evalContext.evalMode for arithmetic.
  * See: https://github.com/apache/spark/commit/a96e9ca81518bff31b0089d459fe78804ca1aa38
  */
 object TryModeShim {
@@ -34,8 +35,8 @@ object TryModeShim {
       case mul: Multiply => mul.evalContext.evalMode
       case div: Divide => div.evalContext.evalMode
       case mod: Remainder => mod.evalContext.evalMode
-      case avg: Average => avg.evalMode  // Average might not have been updated
-      case sum: Sum => sum.evalContext.evalMode
+      case avg: Average => avg.evalMode  // Average still uses evalMode directly as a parameter
+      case sum: Sum => sum.evalContext.evalMode  // Sum uses evalContext.evalMode
       case _ => throw new RuntimeException(s"Unsupported expression $expr in TRY mode")
     }
     evalMode == EvalMode.TRY

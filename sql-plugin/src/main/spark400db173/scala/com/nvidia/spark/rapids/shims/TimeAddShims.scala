@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -23,9 +24,9 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.expressions.Expression
 
 /**
- * Databricks 17.3 version where TimeAdd was renamed to TimestampAddInterval.
+ * Empty TimeAddShims for Spark 4.1.0+ and Databricks 17.3.
+ * TimeAdd was renamed to TimestampAddInterval and is handled by DayTimeIntervalShims.
  * See: https://github.com/apache/spark/commit/059b395c8cbfe1b0bdc614e6006939e3ac538b13
- * Provide empty map since TimeAdd doesn't exist (renamed to TimestampAddInterval).
  */
 object TimeAddShims {
   val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
