@@ -26,7 +26,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, Expression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat

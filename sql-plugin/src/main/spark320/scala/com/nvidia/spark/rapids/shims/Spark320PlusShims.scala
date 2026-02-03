@@ -76,7 +76,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.aggregate._
 import org.apache.spark.sql.rapids.execution._
-import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
