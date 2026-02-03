@@ -15,6 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "400db173"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -26,7 +27,7 @@ import org.apache.spark.sql.execution.python.ArrowAggregatePythonExec
 import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExec, GpuPythonUDAF}
 
 /**
- * Meta class for ArrowAggregatePythonExec (renamed from AggregateInPandasExec in Spark 4.1.0).
+ * Meta class for ArrowAggregatePythonExec (renamed from AggregateInPandasExec in Spark 4.1.0 and Databricks 17.3).
  */
 class GpuArrowAggregatePythonExecMeta(
     aggPandas: ArrowAggregatePythonExec,

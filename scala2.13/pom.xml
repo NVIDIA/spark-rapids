@@ -1515,7 +1515,6 @@ This will force full Scala code rebuild in downstream modules.
                             <arg>-Xsource:2.13</arg>
                             <arg>-Wconf:cat=deprecation:e,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
-                            <!-- <arg>-Wconf:cat=lint-multiarg-infix:wv</arg> --> <!-- Commented out: lint-multiarg-infix category doesn't exist -->
                             <arg>-Wconf:cat=other-nullary-override:wv</arg>
                             <arg>-Wconf:cat=unused-privates:wv,cat=unused-locals:wv</arg>
                             <arg>-Wconf:msg=^(?=.*?method|value|type|object|trait|inheritance)(?=.*?deprecated)(?=.*?since 2.13).+$:s</arg>
