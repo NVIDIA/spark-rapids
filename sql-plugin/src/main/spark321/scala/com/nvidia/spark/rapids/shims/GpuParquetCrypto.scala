@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-
 /*** spark-rapids-shim-json-lines
+{"spark": "321"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
@@ -28,10 +44,18 @@
 {"spark": "401"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.connector.write.DeltaWrite
+import org.apache.parquet.crypto.ParquetCryptoRuntimeException
 
-trait GpuDeltaWrite extends GpuWrite with DeltaWrite
-
-abstract class GpuDeltaWriteWrapper extends GpuDeltaWrite
+object GpuParquetCrypto {
+  /**
+   * Columnar encryption was added in Spark 3.2.0
+   */
+  def isColumnarCryptoException(e: Throwable): Boolean = {
+    e match {
+      case _: ParquetCryptoRuntimeException => true
+      case _ => false
+    }
+  }
+}

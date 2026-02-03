@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,25 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "400"}
-{"spark": "401"}
-{"spark": "411"}
+{"spark": "321"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.connector.write.DeltaWrite
+import org.apache.spark.sql.execution.datasources.orc.OrcUtils
+import org.apache.spark.sql.types.DataType
 
-trait GpuDeltaWrite extends GpuWrite with DeltaWrite
+// 320+ ORC shims
+object OrcShims extends OrcShims320untilAllBase {
 
-abstract class GpuDeltaWriteWrapper extends GpuDeltaWrite
+  // orcTypeDescriptionString is renamed to getOrcSchemaString from 3.3+
+  def getOrcSchemaString(dt: DataType): String = {
+    OrcUtils.orcTypeDescriptionString(dt)
+  }
+
+}

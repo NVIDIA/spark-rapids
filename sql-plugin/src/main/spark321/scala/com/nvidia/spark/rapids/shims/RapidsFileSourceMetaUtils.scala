@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,18 @@
  * limitations under the License.
  */
 
-
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "400"}
-{"spark": "401"}
-{"spark": "411"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.connector.write.DeltaWrite
+import org.apache.spark.sql.catalyst.expressions.Attribute
 
-trait GpuDeltaWrite extends GpuWrite with DeltaWrite
-
-abstract class GpuDeltaWriteWrapper extends GpuDeltaWrite
+object RapidsFileSourceMetaUtils {
+  /** Do nothing before Spark 3.3.0 */
+  def cleanupFileSourceMetadataInformation(attr: Attribute): Attribute = attr
+}

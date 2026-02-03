@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,29 @@
  * limitations under the License.
  */
 
-
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "400"}
-{"spark": "401"}
-{"spark": "411"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.connector.write.DeltaWrite
+import org.apache.spark.sql.types.StructType
 
-trait GpuDeltaWrite extends GpuWrite with DeltaWrite
+object ColumnDefaultValuesShims {
 
-abstract class GpuDeltaWriteWrapper extends GpuDeltaWrite
+  /** Whether there is any default value in the schema */
+  def hasExistenceDefaultValues(schema: StructType): Boolean = {
+    // Before Spark 340, default values in schema is not supported for scans.
+    false
+  }
+}

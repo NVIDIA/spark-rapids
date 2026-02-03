@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 {"spark": "351"}
@@ -27,7 +28,6 @@
 {"spark": "401"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.catalyst
 
 import com.nvidia.spark.rapids.Arm.closeOnExcept

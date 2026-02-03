@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,27 @@
  * limitations under the License.
  */
 
-
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "400"}
-{"spark": "401"}
-{"spark": "411"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332cdh"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.connector.write.DeltaWrite
+import org.apache.hadoop.mapred.JobID
 
-trait GpuDeltaWrite extends GpuWrite with DeltaWrite
-
-abstract class GpuDeltaWriteWrapper extends GpuDeltaWrite
+object RapidsHadoopWriterUtils {
+  // SPARK-41448 create a jobID directly from the jobTrackerID
+  def createJobID(jobTrackerID: String, id: Int): JobID = {
+    if (id < 0) {
+      throw new IllegalArgumentException("Job number is negative")
+    }
+    new JobID(jobTrackerID, id)
+  }
+}
