@@ -275,6 +275,10 @@ private[sequencefile] final class HostBinaryListBufferer(
    * The caller is responsible for closing the returned buffers.
    * This is used by the multi-file reader which needs host buffers for later GPU transfer.
    *
+   * IMPORTANT: This method returns buffers sized exactly to the actual data, not the allocated
+   * size. This is critical because HostAlloc.alloc doesn't zero-initialize memory, and passing
+   * oversized buffers to cuDF can result in garbage data being included in the output.
+   *
    * @return a tuple of (Some(dataBuffer), Some(offsetsBuffer)) if there is data,
    *         or (None, None) if empty
    */
@@ -290,14 +294,41 @@ private[sequencefile] final class HostBinaryListBufferer(
     // Write the final offset
     offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataLocation.toInt)
 
-    // Transfer ownership - the caller is now responsible for closing these buffers
-    val retData = dataBuffer
-    val retOffsets = offsetsBuffer
+    // Calculate exact sizes needed
+    val exactDataSize = dataLocation
+    val exactOffsetsSize = (numRows + 1).toLong * DType.INT32.getSizeInBytes
+
+    // ALWAYS copy to exactly-sized buffers to avoid garbage data
+    // This is critical because:
+    // 1. HostAlloc.alloc doesn't zero-initialize memory
+    // 2. cuDF's copyToDevice uses the buffer's full length, not the logical row count
+    // 3. Even if exactDataSize == dataBuffer.getLength, there could be alignment padding
+    val exactDataBuffer = if (exactDataSize > 0) {
+      closeOnExcept(dataBuffer) { _ =>
+        val newBuf = HostAlloc.alloc(exactDataSize, preferPinned = true)
+        newBuf.copyFromHostBuffer(0, dataBuffer, 0, exactDataSize)
+        dataBuffer.close()
+        newBuf
+      }
+    } else {
+      // For empty data, still need a valid (but minimal) buffer
+      dataBuffer.close()
+      HostAlloc.alloc(1L, preferPinned = true)
+    }
+
+    val exactOffsetsBuffer = closeOnExcept(exactDataBuffer) { _ =>
+      closeOnExcept(offsetsBuffer) { _ =>
+        val newBuf = HostAlloc.alloc(exactOffsetsSize, preferPinned = true)
+        newBuf.copyFromHostBuffer(0, offsetsBuffer, 0, exactOffsetsSize)
+        offsetsBuffer.close()
+        newBuf
+      }
+    }
+
     dataBuffer = null
     offsetsBuffer = null
-    // Note: directOut doesn't own any resources, no need to close
 
-    (Some(retData), Some(retOffsets))
+    (Some(exactDataBuffer), Some(exactOffsetsBuffer))
   }
 
   override def close(): Unit = {
@@ -883,65 +914,35 @@ class MultiFileCloudSequenceFilePartitionReader(
   /**
    * Build a device column (LIST<UINT8>) from host memory buffers.
    * Uses proper nested HostColumnVector structure for efficient single copyToDevice().
+   *
+   * Note: The input buffers are expected to be exactly-sized (from getHostBuffersAndRelease).
+   * This method transfers ownership of the buffers to the HostColumnVector.
    */
   private def buildDeviceColumnFromHostBuffers(
       dataBuffer: HostMemoryBuffer,
       offsetsBuffer: HostMemoryBuffer,
       numRows: Int): ColumnVector = {
-    // Get the actual data length from the final offset (not buffer.getLength which is allocated size)
+    // Get the actual data length from the final offset
     val dataLen = offsetsBuffer.getInt(numRows.toLong * DType.INT32.getSizeInBytes)
-    val offsetsLen = (numRows + 1) * DType.INT32.getSizeInBytes
-
-    // Copy only the actual used bytes to new precisely-sized buffers.
-    // This is necessary because:
-    // 1. HostAlloc.alloc doesn't zero-initialize memory
-    // 2. HostColumnVectorCore.copyToDevice may use the buffer's full length
-    // 3. Buffer slicing might not work correctly with all cudf operations
-    val exactDataBuffer = closeOnExcept(dataBuffer) { _ =>
-      closeOnExcept(offsetsBuffer) { _ =>
-        if (dataLen > 0) {
-          val newBuf = HostAlloc.alloc(dataLen, preferPinned = true)
-          newBuf.copyFromHostBuffer(0, dataBuffer, 0, dataLen)
-          newBuf
-        } else {
-          HostAlloc.alloc(1, preferPinned = true) // Minimum 1 byte for empty data
-        }
-      }
-    }
-
-    val exactOffsetsBuffer = closeOnExcept(exactDataBuffer) { _ =>
-      closeOnExcept(dataBuffer) { _ =>
-        closeOnExcept(offsetsBuffer) { _ =>
-          val newBuf = HostAlloc.alloc(offsetsLen, preferPinned = true)
-          newBuf.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsLen)
-          newBuf
-        }
-      }
-    }
 
     // Create the child HostColumnVectorCore (UINT8 data)
     val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
-    val childCore = closeOnExcept(exactDataBuffer) { _ =>
-      closeOnExcept(exactOffsetsBuffer) { _ =>
-        new HostColumnVectorCore(DType.UINT8, dataLen,
-          Optional.of[java.lang.Long](0L), exactDataBuffer, null, null, emptyChildren)
-      }
-    }
+    val childCore = new HostColumnVectorCore(DType.UINT8, dataLen,
+      Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
 
     // Create the children list for the LIST column
     val listChildren = new util.ArrayList[HostColumnVectorCore]()
     listChildren.add(childCore)
 
     // Create the LIST HostColumnVector with proper nested structure
+    // The HostColumnVector takes ownership of the buffers
     val listHost = closeOnExcept(childCore) { _ =>
-      closeOnExcept(exactOffsetsBuffer) { _ =>
-        new HostColumnVector(DType.LIST, numRows,
-          Optional.of[java.lang.Long](0L), // nullCount = 0
-          null, // no data buffer for LIST type
-          null, // no validity buffer (no nulls)
-          exactOffsetsBuffer, // offsets buffer
-          listChildren) // nested children containing the UINT8 child
-      }
+      new HostColumnVector(DType.LIST, numRows,
+        Optional.of[java.lang.Long](0L), // nullCount = 0
+        null, // no data buffer for LIST type
+        null, // no validity buffer (no nulls)
+        offsetsBuffer, // offsets buffer
+        listChildren) // nested children containing the UINT8 child
     }
 
     // Single copyToDevice() handles the entire nested structure efficiently
