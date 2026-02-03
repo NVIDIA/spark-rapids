@@ -25,9 +25,9 @@ import org.apache.spark.sql.execution.SparkPlan
 /**
  * Databricks 17.3 version where ShowNamespacesExec was refactored to ShowNamespacesCommand.
  * See: https://github.com/apache/spark/commit/936d4f8b0d1fec05a9a8dd831789b53fe49bee82
- * Provide empty map since the exec class doesn't exist (changed to RunnableCommand).
+ * Return None to skip this exec rule.
  */
 object ShowNamespacesExecShims {
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map.empty
+  val neverReplaceExec: Option[ExecRule[_ <: SparkPlan]] = None
 }
 

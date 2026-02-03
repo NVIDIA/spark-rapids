@@ -16,20 +16,35 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
-import org.apache.spark.sql.catalyst.expressions.Expression
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
+
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.python.ArrowAggregatePythonExec
 
 /**
- * Databricks 17.3 version where AggregateInPandasExec was renamed to ArrowAggregatePythonExec.
- * See: https://github.com/apache/spark/commit/09dd5dd063b6fae4445b679b137407f3aefd4d0c
- * Provide empty map since the old class name doesn't exist.
- * Helper methods are in AggregateInPandasShims trait.
+ * AggregateInPandasExec was renamed to ArrowAggregatePythonExec in Spark 4.1.0 and Databricks 17.3.
  */
 object AggregateInPandasExecShims {
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map.empty
+  val execRule: Option[ExecRule[_ <: SparkPlan]] = Some(
+    GpuOverrides.exec[ArrowAggregatePythonExec](
+      "The backend for an Aggregation Pandas UDF." +
+        " This accelerates the data transfer between the Java process and the Python process." +
+        " It also supports scheduling GPU resources for the Python process" +
+        " when enabled.",
+      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      (aggPy, conf, p, r) => new GpuArrowAggregatePythonExecMeta(aggPy, conf, p, r))
+  )
+
+  def isAggregateInPandasExec(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[ArrowAggregatePythonExec]
+
+  def getGroupingExpressions(plan: SparkPlan): Seq[NamedExpression] = {
+    plan.asInstanceOf[ArrowAggregatePythonExec].groupingExpressions
+  }
 }
 
