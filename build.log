@@ -1,0 +1,1293 @@
++ shift
++ [[ -p=357,411 != '' ]]
++ case "$1" in
++ DIST_PROFILE=357,411
++ shift
++ [[ '' != '' ]]
++ [[ 357,411 == *Scala213 ]]
++ MVN=/home/gshegalov/dist/apache-maven-3.6.3/bin/mvn
++ export 'MVN=/home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3 '
++ MVN='/home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3 '
++ [[ 1 == \1 ]]
++ POM_FILE=scala2.13/pom.xml
++ export 'MVN=/home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3  -f scala2.13/'
++ MVN='/home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3  -f scala2.13/'
+++ dirname ./build/buildall
++ ./build/make-scala-version-build-files.sh 2.13
+aggregator/pom.xml
+./build/../scala2.13/aggregator/pom.xml
+api_validation/pom.xml
+./build/../scala2.13/api_validation/pom.xml
+datagen/pom.xml
+./build/../scala2.13/datagen/pom.xml
+delta-lake/delta-20x/pom.xml
+./build/../scala2.13/delta-lake/delta-20x/pom.xml
+delta-lake/delta-21x/pom.xml
+./build/../scala2.13/delta-lake/delta-21x/pom.xml
+delta-lake/delta-22x/pom.xml
+./build/../scala2.13/delta-lake/delta-22x/pom.xml
+delta-lake/delta-23x/pom.xml
+./build/../scala2.13/delta-lake/delta-23x/pom.xml
+delta-lake/delta-24x/pom.xml
+./build/../scala2.13/delta-lake/delta-24x/pom.xml
+delta-lake/delta-33x/pom.xml
+./build/../scala2.13/delta-lake/delta-33x/pom.xml
+delta-lake/delta-40x/pom.xml
+./build/../scala2.13/delta-lake/delta-40x/pom.xml
+delta-lake/delta-spark330db/pom.xml
+./build/../scala2.13/delta-lake/delta-spark330db/pom.xml
+delta-lake/delta-spark332db/pom.xml
+./build/../scala2.13/delta-lake/delta-spark332db/pom.xml
+delta-lake/delta-spark341db/pom.xml
+./build/../scala2.13/delta-lake/delta-spark341db/pom.xml
+delta-lake/delta-spark350db143/pom.xml
+./build/../scala2.13/delta-lake/delta-spark350db143/pom.xml
+delta-lake/delta-stub/pom.xml
+./build/../scala2.13/delta-lake/delta-stub/pom.xml
+dist/pom.xml
+./build/../scala2.13/dist/pom.xml
+iceberg/iceberg-1-6-x/pom.xml
+./build/../scala2.13/iceberg/iceberg-1-6-x/pom.xml
+iceberg/iceberg-1-9-x/pom.xml
+./build/../scala2.13/iceberg/iceberg-1-9-x/pom.xml
+integration_tests/pom.xml
+./build/../scala2.13/integration_tests/pom.xml
+jdk-profiles/pom.xml
+./build/../scala2.13/jdk-profiles/pom.xml
+pom.xml
+./build/../scala2.13/pom.xml
+Skipping scala2.13/aggregator/pom.xml
+Skipping scala2.13/api_validation/pom.xml
+Skipping scala2.13/datagen/pom.xml
+Skipping scala2.13/delta-lake/delta-20x/pom.xml
+Skipping scala2.13/delta-lake/delta-21x/pom.xml
+Skipping scala2.13/delta-lake/delta-22x/pom.xml
+Skipping scala2.13/delta-lake/delta-23x/pom.xml
+Skipping scala2.13/delta-lake/delta-24x/pom.xml
+Skipping scala2.13/delta-lake/delta-33x/pom.xml
+Skipping scala2.13/delta-lake/delta-40x/pom.xml
+Skipping scala2.13/delta-lake/delta-spark330db/pom.xml
+Skipping scala2.13/delta-lake/delta-spark332db/pom.xml
+Skipping scala2.13/delta-lake/delta-spark341db/pom.xml
+Skipping scala2.13/delta-lake/delta-spark350db143/pom.xml
+Skipping scala2.13/delta-lake/delta-stub/pom.xml
+Skipping scala2.13/dist/pom.xml
+Skipping scala2.13/iceberg/iceberg-1-6-x/pom.xml
+Skipping scala2.13/iceberg/iceberg-1-9-x/pom.xml
+Skipping scala2.13/iceberg/pom.xml
+Skipping scala2.13/integration_tests/pom.xml
+Skipping scala2.13/jdk-profiles/pom.xml
+Skipping scala2.13/pom.xml
+Skipping scala2.13/shim-deps/cloudera/pom.xml
+Skipping scala2.13/shim-deps/databricks/pom.xml
+Skipping scala2.13/shim-deps/pom.xml
+Skipping scala2.13/shuffle-plugin/pom.xml
+Skipping scala2.13/sql-plugin-api/pom.xml
+Skipping scala2.13/sql-plugin/pom.xml
+Skipping scala2.13/tests/pom.xml
+Skipping scala2.13/tools/pom.xml
+Skipping scala2.13/udf-compiler/pom.xml
+shim-deps/cloudera/pom.xml
+./build/../scala2.13/shim-deps/cloudera/pom.xml
+shim-deps/databricks/pom.xml
+./build/../scala2.13/shim-deps/databricks/pom.xml
+shim-deps/pom.xml
+./build/../scala2.13/shim-deps/pom.xml
+shuffle-plugin/pom.xml
+./build/../scala2.13/shuffle-plugin/pom.xml
+sql-plugin-api/pom.xml
+./build/../scala2.13/sql-plugin-api/pom.xml
+sql-plugin/pom.xml
+./build/../scala2.13/sql-plugin/pom.xml
+tests/pom.xml
+./build/../scala2.13/tests/pom.xml
+tools/pom.xml
+./build/../scala2.13/tools/pom.xml
+udf-compiler/pom.xml
+./build/../scala2.13/udf-compiler/pom.xml
+DONE scala2.13 poms generated: exit code = 0
++ DIST_PROFILE=357,411
++ [[ '' != '' ]]
++ MODULE_OPT=
++ echo 'Collecting Spark versions...'
+Collecting Spark versions...
++ case $DIST_PROFILE in
++ IFS=,
++ read -ra SPARK_SHIM_VERSIONS
++ unset DIST_PROFILE
++ echo 'Spark versions involved: 357' '411 ...'
+Spark versions involved: 357 411 ...
+++ /home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3 -f scala2.13/ help:evaluate -Dexpression=project.basedir -q -DforceStdout
++ export MVN_BASE_DIR=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
++ MVN_BASE_DIR=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
++ [[ '' == \t\r\u\e ]]
++ [[ '' != '' ]]
++ MVN_PROFILE_OPT=
++ export BASE_VER=357
++ BASE_VER=357
++ export NUM_SHIMS=2
++ NUM_SHIMS=2
++ export BUILD_PARALLEL=64
++ BUILD_PARALLEL=64
++ [[ 1 != \1 ]]
++ echo 'Building a combined dist jar with Shims for 357' '411 ...'
+Building a combined dist jar with Shims for 357 411 ...
++ export -f build_single_shim
++ [[ '' != \1 ]]
++ /home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3 -f scala2.13/ initialize -pl sql-plugin-api -am
+19:28:53,200 [INFO] Scanning for projects...
+19:28:53,294 [WARNING] 
+19:28:53,294 [WARNING] Some problems were encountered while building the effective model for com.nvidia:rapids-4-spark_2.13:jar:26.02.0-SNAPSHOT
+19:28:53,295 [WARNING] 'build.plugins.plugin.(groupId:artifactId)' must be unique but found duplicate declaration of plugin org.apache.maven.plugins:maven-antrun-plugin @ line 479, column 21
+19:28:53,296 [WARNING] 
+19:28:53,296 [WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+19:28:53,296 [WARNING] 
+19:28:53,296 [WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+19:28:53,297 [WARNING] 
+19:28:53,300 [INFO] ------------------------------------------------------------------------
+19:28:53,301 [INFO] Reactor Build Order:
+19:28:53,301 [INFO] 
+19:28:53,301 [INFO] RAPIDS Accelerator for Apache Spark Root Project                   [pom]
+19:28:53,301 [INFO] RAPIDS Accelerator for Apache Spark JDK Profiles                   [pom]
+19:28:53,301 [INFO] rapids-4-spark-shim-deps-parent_2.13                               [pom]
+19:28:53,302 [INFO] rapids-4-spark-sql-plugin-api_2.13                                 [jar]
+19:28:53,304 [INFO] 
+19:28:53,304 [INFO] ---------------< com.nvidia:rapids-4-spark-parent_2.13 >----------------
+19:28:53,304 [INFO] Building RAPIDS Accelerator for Apache Spark Root Project 26.02.0-SNAPSHOT [1/4]
+19:28:53,304 [INFO] --------------------------------[ pom ]---------------------------------
+19:28:53,360 [INFO] 
+19:28:53,360 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-parent_2.13 ---
+19:28:53,488 [INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+19:28:53,489 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:53,495 [INFO] Rule 2: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+19:28:53,495 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:53,496 [INFO] 
+19:28:53,496 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-parent_2.13 ---
+19:28:53,539 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:53,539 [INFO] 
+19:28:53,539 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-parent_2.13 ---
+19:28:53,799 [INFO] Executing tasks
+19:28:53,802 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark350/extra-resources
+19:28:53,803 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark350/tmp
+19:28:53,803 [INFO] Executed tasks
+19:28:53,803 [INFO] 
+19:28:53,803 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-parent_2.13 ---
+19:28:53,827 [INFO] 
+19:28:53,827 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-parent_2.13 ---
+19:28:53,865 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark350/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark350.com.nvidia.shaded.spark.*
+19:28:53,866 [INFO] 
+19:28:53,866 [INFO] ------------< com.nvidia:rapids-4-spark-jdk-profiles_2.13 >-------------
+19:28:53,866 [INFO] Building RAPIDS Accelerator for Apache Spark JDK Profiles 26.02.0-SNAPSHOT [2/4]
+19:28:53,866 [INFO] --------------------------------[ pom ]---------------------------------
+19:28:53,867 [INFO] 
+19:28:53,867 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:53,869 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:53,869 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:53,869 [INFO] 
+19:28:53,869 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:53,869 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:53,870 [INFO] 
+19:28:53,870 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:53,897 [INFO] Executing tasks
+19:28:53,897 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark350/extra-resources
+19:28:53,897 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark350/tmp
+19:28:53,898 [INFO] Executed tasks
+19:28:53,898 [INFO] 
+19:28:53,898 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:53,898 [INFO] 
+19:28:53,899 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:53,899 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark350/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark350.com.nvidia.shaded.spark.*
+19:28:53,900 [INFO] 
+19:28:53,900 [INFO] ----------< com.nvidia:rapids-4-spark-shim-deps-parent_2.13 >-----------
+19:28:53,900 [INFO] Building rapids-4-spark-shim-deps-parent_2.13 26.02.0-SNAPSHOT     [3/4]
+19:28:53,900 [INFO] --------------------------------[ pom ]---------------------------------
+19:28:54,133 [INFO] 
+19:28:54,133 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:54,134 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:54,135 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:54,135 [INFO] 
+19:28:54,135 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:54,135 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:54,135 [INFO] 
+19:28:54,136 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:54,161 [INFO] Executing tasks
+19:28:54,163 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark350/extra-resources
+19:28:54,163 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark350/tmp
+19:28:54,163 [INFO] Executed tasks
+19:28:54,163 [INFO] 
+19:28:54,163 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:54,164 [INFO] 
+19:28:54,164 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:54,165 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark350/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark350.com.nvidia.shaded.spark.*
+19:28:54,166 [INFO] 
+19:28:54,166 [INFO] -----------< com.nvidia:rapids-4-spark-sql-plugin-api_2.13 >------------
+19:28:54,166 [INFO] Building rapids-4-spark-sql-plugin-api_2.13 26.02.0-SNAPSHOT       [4/4]
+19:28:54,166 [INFO] --------------------------------[ jar ]---------------------------------
+19:28:54,194 [INFO] 
+19:28:54,194 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:54,195 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:54,195 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:54,195 [INFO] 
+19:28:54,195 [INFO] --- scala-maven-plugin:4.9.2:add-source (eclipse-add-source) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:54,291 [INFO] Add Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/main/scala
+19:28:54,291 [INFO] Add Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/test/scala
+19:28:54,292 [INFO] 
+19:28:54,292 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:54,292 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:54,292 [INFO] 
+19:28:54,292 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:54,314 [INFO] Executing tasks
+19:28:54,315 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark350/extra-resources
+19:28:54,315 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark350/tmp
+19:28:54,315 [INFO] Executed tasks
+19:28:54,315 [INFO] 
+19:28:54,315 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:54,316 [INFO] 
+19:28:54,316 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:54,317 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark350/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark350.com.nvidia.shaded.spark.*
+19:28:54,317 [INFO] ------------------------------------------------------------------------
+19:28:54,317 [INFO] Reactor Summary for RAPIDS Accelerator for Apache Spark Root Project 26.02.0-SNAPSHOT:
+19:28:54,318 [INFO] 
+19:28:54,318 [INFO] RAPIDS Accelerator for Apache Spark Root Project ... SUCCESS [  0.561 s]
+19:28:54,318 [INFO] RAPIDS Accelerator for Apache Spark JDK Profiles ... SUCCESS [  0.034 s]
+19:28:54,318 [INFO] rapids-4-spark-shim-deps-parent_2.13 ............... SUCCESS [  0.266 s]
+19:28:54,318 [INFO] rapids-4-spark-sql-plugin-api_2.13 ................. SUCCESS [  0.151 s]
+19:28:54,318 [INFO] ------------------------------------------------------------------------
+19:28:54,318 [INFO] BUILD SUCCESS
+19:28:54,318 [INFO] ------------------------------------------------------------------------
+19:28:54,319 [INFO] Total time:  1.131 s
+19:28:54,319 [INFO] Finished at: 2026-02-02T19:28:54-08:00
+19:28:54,319 [INFO] ------------------------------------------------------------------------
++ printf '%s\n' 357 411
++ xargs -t -I% -P 64 -n 1 bash -c 'build_single_shim "$@"' _ %
+bash -c 'build_single_shim "$@"' _ 357
+bash -c 'build_single_shim "$@"' _ 411
++ BUILD_VER=357
++ mkdir -p /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target
++ BUILD_VER=411
++ mkdir -p /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target
++ ((  BUILD_PARALLEL == 1 || NUM_SHIMS == 1  ))
++ LOG_FILE=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-357.log
++ [[ 357 == \3\5\7 ]]
++ SKIP_CHECKS=false
++ MVN_PHASE=install
++ echo '#### REDIRECTING mvn output to /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-357.log ####'
+#### REDIRECTING mvn output to /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-357.log ####
++ /home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3 -f scala2.13/ -U install -DskipTests -Dbuildver=357 -Drat.skip=false -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=false -pl tools -am
++ ((  BUILD_PARALLEL == 1 || NUM_SHIMS == 1  ))
++ LOG_FILE=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-411.log
++ [[ 411 == \3\5\7 ]]
++ SKIP_CHECKS=true
++ MVN_PHASE=package
++ echo '#### REDIRECTING mvn output to /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-411.log ####'
+#### REDIRECTING mvn output to /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-411.log ####
++ /home/gshegalov/dist/apache-maven-3.6.3/bin/mvn -Dmaven.wagon.http.retryHandler.count=3 -f scala2.13/ -U package -DskipTests -Dbuildver=411 -Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -pl tools -am
++ [[ /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-357.log != \/\d\e\v\/\t\t\y ]]
++ echo /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-357.log:
+/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-357.log:
++ tail -500 /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-357.log
+19:28:57,323 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-parent_2.13 ---
+19:28:57,324 [INFO] 
+19:28:57,324 [INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-parent_2.13 ---
+19:28:57,412 [INFO] Enabled default license matchers.
+19:28:57,413 [INFO] Will parse SCM ignores for exclusions...
+19:28:57,413 [INFO] Finished adding exclusions from SCM ignore files.
+19:28:57,413 [INFO] 76 implicit excludes (use -debug for more details).
+19:28:57,413 [INFO] 22 explicit excludes (use -debug for more details).
+19:28:57,562 [INFO] 15 resources included (use -debug for more details)
+19:28:57,671 [INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 15 licenses.
+19:28:57,672 [INFO] 
+19:28:57,672 [INFO] --- maven-antrun-plugin:3.1.0:run (scalastyle-all-modules) @ rapids-4-spark-parent_2.13 ---
+19:28:57,704 [INFO] Executing tasks
+19:28:57,898 [WARNING]      [echo] Checking scalastyle for all modules using following paths:
+19:28:57,899 [WARNING]      [echo]                                     /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/api_validation/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/datagen/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/common/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-20x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-21x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-22x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-23x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-24x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-33x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-40x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-spark330db/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-spark332db/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-spark341db/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-spark350db143/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/delta-lake/delta-stub/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/iceberg/common/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/iceberg/iceberg-1-6-x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/iceberg/iceberg-1-9-x/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/integration_tests/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/integration_tests/src/test /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/shuffle-plugin/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin-api/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/test /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/tests/src/test /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/udf-compiler/src/main /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/udf-compiler/src/test
+WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by org.apache.tools.ant.types.Permissions (file:/home/gshegalov/.m2/repository/org/apache/ant/ant/1.10.12/ant-1.10.12.jar)
+WARNING: Please consider reporting this to the maintainers of org.apache.tools.ant.types.Permissions
+WARNING: System::setSecurityManager will be removed in a future release
+Processed 1506 file(s)
+Found 0 errors
+Found 0 warnings
+Finished in 5446 ms
+19:29:03,410 [INFO] Executed tasks
+19:29:03,410 [INFO] 
+19:29:03,410 [INFO] --- maven-install-plugin:3.1.1:install (default-install) @ rapids-4-spark-parent_2.13 ---
+19:29:03,425 [INFO] Installing /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/pom.xml to /home/gshegalov/.m2/repository/com/nvidia/rapids-4-spark-parent_2.13/26.02.0-SNAPSHOT/rapids-4-spark-parent_2.13-26.02.0-SNAPSHOT.pom
+19:29:03,430 [INFO] 
+19:29:03,430 [INFO] ------------< com.nvidia:rapids-4-spark-jdk-profiles_2.13 >-------------
+19:29:03,430 [INFO] Building RAPIDS Accelerator for Apache Spark JDK Profiles 26.02.0-SNAPSHOT [2/11]
+19:29:03,430 [INFO] --------------------------------[ pom ]---------------------------------
+19:29:03,432 [INFO] 
+19:29:03,432 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,433 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:03,433 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:03,434 [INFO] 
+19:29:03,434 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,434 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:29:03,434 [INFO] 
+19:29:03,434 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,453 [INFO] Executing tasks
+19:29:03,453 [INFO] Executed tasks
+19:29:03,453 [INFO] 
+19:29:03,454 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,454 [INFO] 
+19:29:03,454 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,455 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark357/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark357.com.nvidia.shaded.spark.*
+19:29:03,456 [INFO] 
+19:29:03,456 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,473 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/jdk-profiles
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 357 main files
+shimplify - INFO - # generating symlinks for shim 357 test files
+19:29:03,810 [INFO] Executed tasks
+19:29:03,810 [INFO] 
+19:29:03,810 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,811 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/main/java added.
+19:29:03,811 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/main/scala added.
+19:29:03,811 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/main/scala-2.13 added.
+19:29:03,811 [INFO] 
+19:29:03,811 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,812 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark357/generated/src/main/scala added.
+19:29:03,812 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark357/generated/src/main/java added.
+19:29:03,812 [INFO] 
+19:29:03,812 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,830 [INFO] Executing tasks
+19:29:03,840 [WARNING]      [echo] Comparing git revisions:
+19:29:03,840 [WARNING]      [echo]     previous=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:03,840 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:03,841 [WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+19:29:03,841 [WARNING]      [echo] Delete /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark357/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+19:29:03,842 [WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+19:29:03,842 [INFO] Executed tasks
+19:29:03,842 [INFO] 
+19:29:03,842 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,843 [INFO] 
+19:29:03,843 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-test-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,843 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/test/java added.
+19:29:03,843 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/test/scala added.
+19:29:03,844 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/test/scala-2.13 added.
+19:29:03,844 [INFO] 
+19:29:03,844 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-shimple-test-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,844 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark357/generated/src/test/scala added.
+19:29:03,844 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark357/generated/src/test/java added.
+19:29:03,845 [INFO] 
+19:29:03,845 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,845 [INFO] 
+19:29:03,845 [INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,846 [INFO] Enabled default license matchers.
+19:29:03,846 [INFO] Will parse SCM ignores for exclusions...
+19:29:03,846 [INFO] Finished adding exclusions from SCM ignore files.
+19:29:03,847 [INFO] 62 implicit excludes (use -debug for more details).
+19:29:03,847 [INFO] 22 explicit excludes (use -debug for more details).
+19:29:03,848 [INFO] 1 resources included (use -debug for more details)
+19:29:03,862 [INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 1 licenses.
+19:29:03,862 [INFO] 
+19:29:03,863 [INFO] --- maven-install-plugin:3.1.1:install (default-install) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:29:03,864 [INFO] Installing /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/pom.xml to /home/gshegalov/.m2/repository/com/nvidia/rapids-4-spark-jdk-profiles_2.13/26.02.0-SNAPSHOT/rapids-4-spark-jdk-profiles_2.13-26.02.0-SNAPSHOT.pom
+19:29:03,866 [INFO] 
+19:29:03,866 [INFO] ----------< com.nvidia:rapids-4-spark-shim-deps-parent_2.13 >-----------
+19:29:03,866 [INFO] Building rapids-4-spark-shim-deps-parent_2.13 26.02.0-SNAPSHOT    [3/11]
+19:29:03,866 [INFO] --------------------------------[ pom ]---------------------------------
+19:29:04,049 [INFO] 
+19:29:04,049 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,050 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:04,050 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:04,050 [INFO] 
+19:29:04,050 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,051 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:29:04,051 [INFO] 
+19:29:04,051 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,069 [INFO] Executing tasks
+19:29:04,070 [INFO] Executed tasks
+19:29:04,070 [INFO] 
+19:29:04,070 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,070 [INFO] 
+19:29:04,070 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,071 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark357/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark357.com.nvidia.shaded.spark.*
+19:29:04,071 [INFO] 
+19:29:04,071 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,088 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/shim-deps
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 357 main files
+shimplify - INFO - # generating symlinks for shim 357 test files
+19:29:04,377 [INFO] Executed tasks
+19:29:04,377 [INFO] 
+19:29:04,377 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,378 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/main/java added.
+19:29:04,378 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/main/scala added.
+19:29:04,378 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/main/scala-2.13 added.
+19:29:04,378 [INFO] 
+19:29:04,378 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,379 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark357/generated/src/main/scala added.
+19:29:04,379 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark357/generated/src/main/java added.
+19:29:04,379 [INFO] 
+19:29:04,379 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,396 [INFO] Executing tasks
+19:29:04,405 [WARNING]      [echo] Comparing git revisions:
+19:29:04,405 [WARNING]      [echo]     previous=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:04,406 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:04,407 [WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+19:29:04,407 [WARNING]      [echo] Delete /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark357/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+19:29:04,407 [WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+19:29:04,407 [INFO] Executed tasks
+19:29:04,407 [INFO] 
+19:29:04,407 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,408 [INFO] 
+19:29:04,408 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-test-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,408 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/test/java added.
+19:29:04,409 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/test/scala added.
+19:29:04,409 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/test/scala-2.13 added.
+19:29:04,409 [INFO] 
+19:29:04,409 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-shimple-test-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,409 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark357/generated/src/test/scala added.
+19:29:04,410 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark357/generated/src/test/java added.
+19:29:04,410 [INFO] 
+19:29:04,410 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,410 [INFO] 
+19:29:04,410 [INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,411 [INFO] Enabled default license matchers.
+19:29:04,411 [INFO] Will parse SCM ignores for exclusions...
+19:29:04,411 [INFO] Finished adding exclusions from SCM ignore files.
+19:29:04,411 [INFO] 62 implicit excludes (use -debug for more details).
+19:29:04,412 [INFO] 22 explicit excludes (use -debug for more details).
+19:29:04,412 [INFO] 3 resources included (use -debug for more details)
+19:29:04,425 [INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 3 licenses.
+19:29:04,425 [INFO] 
+19:29:04,425 [INFO] --- maven-install-plugin:3.1.1:install (default-install) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:29:04,426 [INFO] Installing /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/pom.xml to /home/gshegalov/.m2/repository/com/nvidia/rapids-4-spark-shim-deps-parent_2.13/26.02.0-SNAPSHOT/rapids-4-spark-shim-deps-parent_2.13-26.02.0-SNAPSHOT.pom
+19:29:04,427 [INFO] 
+19:29:04,427 [INFO] -----------< com.nvidia:rapids-4-spark-sql-plugin-api_2.13 >------------
+19:29:04,427 [INFO] Building rapids-4-spark-sql-plugin-api_2.13 26.02.0-SNAPSHOT      [4/11]
+19:29:04,428 [INFO] --------------------------------[ jar ]---------------------------------
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/spark-rapids-jni/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/spark-rapids-jni/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 2.1 kB                    Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/spark-rapids-jni/26.02.0-SNAPSHOT/maven-metadata.xml (2.1 kB at 4.8 kB/s)
+19:29:05,126 [INFO] 
+19:29:05,126 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,128 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:05,128 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:05,128 [INFO] 
+19:29:05,128 [INFO] --- scala-maven-plugin:4.9.2:add-source (eclipse-add-source) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,269 [INFO] Add Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/main/scala
+19:29:05,269 [INFO] Add Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/test/scala
+19:29:05,269 [INFO] 
+19:29:05,270 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,270 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:29:05,270 [INFO] 
+19:29:05,270 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,290 [INFO] Executing tasks
+19:29:05,290 [INFO] Executed tasks
+19:29:05,290 [INFO] 
+19:29:05,290 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,291 [INFO] 
+19:29:05,291 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,292 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark357.com.nvidia.shaded.spark.*
+19:29:05,292 [INFO] 
+19:29:05,292 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,308 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin-api
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 357 main files
+shimplify - INFO - # generating symlinks for shim 357 test files
+19:29:05,585 [INFO] Executed tasks
+19:29:05,585 [INFO] 
+19:29:05,585 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,586 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/java added.
+19:29:05,586 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/scala added.
+19:29:05,586 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/scala-2.13 added.
+19:29:05,586 [INFO] 
+19:29:05,586 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,587 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/generated/src/main/scala added.
+19:29:05,587 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/generated/src/main/java added.
+19:29:05,587 [INFO] 
+19:29:05,587 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,605 [INFO] Executing tasks
+19:29:05,614 [WARNING]      [echo] Comparing git revisions:
+19:29:05,614 [WARNING]      [echo]     previous=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:05,614 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:05,615 [WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+19:29:05,615 [WARNING]      [echo] Delete /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+19:29:05,615 [WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+19:29:05,616 [INFO] Executed tasks
+19:29:05,616 [INFO] 
+19:29:05,616 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,616 [INFO] 
+19:29:05,616 [INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,641 [INFO] Using 'UTF-8' encoding to copy filtered resources.
+19:29:05,641 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/main/resources
+19:29:05,641 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/resources
+19:29:05,641 [INFO] 
+19:29:05,641 [INFO] --- scala-maven-plugin:4.9.2:compile (scala-compile-first) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:05,722 [INFO] Compiler bridge file: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark357/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.13-1.10.0-bin_2.13.18__61.0-1.10.0_20240505T232140.jar
+19:29:07,696 [INFO] compile in 2.0 s
+19:29:07,696 [INFO] 
+19:29:07,696 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-test-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,697 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/java added.
+19:29:07,697 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/scala added.
+19:29:07,697 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/scala-2.13 added.
+19:29:07,697 [INFO] 
+19:29:07,698 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-shimple-test-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,698 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/generated/src/test/scala added.
+19:29:07,698 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/generated/src/test/java added.
+19:29:07,698 [INFO] 
+19:29:07,698 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,699 [INFO] 
+19:29:07,699 [INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,700 [INFO] Using 'UTF-8' encoding to copy filtered resources.
+19:29:07,700 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/test/resources
+19:29:07,700 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/resources
+19:29:07,700 [INFO] 
+19:29:07,700 [INFO] --- scala-maven-plugin:4.9.2:testCompile (scala-test-compile-first) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,707 [INFO] compile in 0.0 s
+19:29:07,707 [INFO] No sources to compile
+19:29:07,707 [INFO] 
+19:29:07,707 [INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,731 [INFO] Tests are skipped.
+19:29:07,731 [INFO] 
+19:29:07,731 [INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,801 [INFO] Building jar: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT.jar
+19:29:07,814 [INFO] 
+19:29:07,814 [INFO] --- maven-jar-plugin:3.3.0:jar (create-spark357-jar) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,827 [INFO] Building jar: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT-spark357.jar
+19:29:07,843 [INFO] 
+19:29:07,843 [INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,844 [INFO] Skipping packaging of the test-jar
+19:29:07,844 [INFO] 
+19:29:07,844 [INFO] >>> scala-maven-plugin:4.9.2:doc-jar (attach-scaladocs) > generate-sources @ rapids-4-spark-sql-plugin-api_2.13 >>>
+19:29:07,845 [INFO] 
+19:29:07,845 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,846 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:07,847 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:07,847 [INFO] 
+19:29:07,847 [INFO] --- scala-maven-plugin:4.9.2:add-source (eclipse-add-source) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,847 [INFO] 
+19:29:07,847 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,848 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:29:07,848 [INFO] 
+19:29:07,848 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,865 [INFO] Executing tasks
+19:29:07,865 [INFO] Executed tasks
+19:29:07,865 [INFO] 
+19:29:07,865 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,866 [INFO] 
+19:29:07,866 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,867 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark357.com.nvidia.shaded.spark.*
+19:29:07,867 [INFO] 
+19:29:07,867 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:07,883 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin-api
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 357 main files
+shimplify - INFO - # generating symlinks for shim 357 test files
+19:29:08,148 [INFO] Executed tasks
+19:29:08,148 [INFO] 
+19:29:08,148 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:08,148 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/java added.
+19:29:08,148 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/scala added.
+19:29:08,149 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/scala-2.13 added.
+19:29:08,149 [INFO] 
+19:29:08,149 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:08,149 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/generated/src/main/scala added.
+19:29:08,149 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/generated/src/main/java added.
+19:29:08,150 [INFO] 
+19:29:08,150 [INFO] <<< scala-maven-plugin:4.9.2:doc-jar (attach-scaladocs) < generate-sources @ rapids-4-spark-sql-plugin-api_2.13 <<<
+19:29:08,150 [INFO] 
+19:29:08,150 [INFO] 
+19:29:08,150 [INFO] --- scala-maven-plugin:4.9.2:doc-jar (attach-scaladocs) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:08,158 [INFO] Skipping javadoc generation
+19:29:08,158 [INFO] 
+19:29:08,158 [INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:08,159 [INFO] Enabled default license matchers.
+19:29:08,159 [INFO] Will parse SCM ignores for exclusions...
+19:29:08,159 [INFO] Finished adding exclusions from SCM ignore files.
+19:29:08,159 [INFO] 62 implicit excludes (use -debug for more details).
+19:29:08,159 [INFO] 22 explicit excludes (use -debug for more details).
+19:29:08,160 [INFO] 1 resources included (use -debug for more details)
+19:29:08,174 [INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 1 licenses.
+19:29:08,174 [INFO] 
+19:29:08,174 [INFO] --- maven-install-plugin:3.1.1:install (default-install) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:08,176 [INFO] Installing /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/pom.xml to /home/gshegalov/.m2/repository/com/nvidia/rapids-4-spark-sql-plugin-api_2.13/26.02.0-SNAPSHOT/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT.pom
+19:29:08,177 [INFO] Installing /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT.jar to /home/gshegalov/.m2/repository/com/nvidia/rapids-4-spark-sql-plugin-api_2.13/26.02.0-SNAPSHOT/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT.jar
+19:29:08,177 [INFO] Installing /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark357/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT-spark357.jar to /home/gshegalov/.m2/repository/com/nvidia/rapids-4-spark-sql-plugin-api_2.13/26.02.0-SNAPSHOT/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT-spark357.jar
+19:29:08,179 [INFO] 
+19:29:08,179 [INFO] -----------------< com.nvidia:rapids-4-spark-sql_2.13 >-----------------
+19:29:08,179 [INFO] Building RAPIDS Accelerator for Apache Spark SQL Plugin 26.02.0-SNAPSHOT [5/11]
+19:29:08,179 [INFO] --------------------------------[ jar ]---------------------------------
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-private_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 3.9 kB                    Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (3.9 kB at 16 kB/s)
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-private-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 627 B                   Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (627 B at 2.6 kB/s)
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-hybrid_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 795 B                   Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (795 B at 3.4 kB/s)
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-hybrid-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 626 B                   Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (626 B at 2.3 kB/s)
+19:29:10,192 [INFO] 
+19:29:10,192 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-sql_2.13 ---
+19:29:10,194 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:10,194 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:10,194 [INFO] 
+19:29:10,194 [INFO] --- scala-maven-plugin:4.9.2:add-source (eclipse-add-source) @ rapids-4-spark-sql_2.13 ---
+19:29:10,195 [INFO] Add Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/src/main/scala
+19:29:10,196 [INFO] Add Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/src/test/scala
+19:29:10,196 [INFO] 
+19:29:10,196 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql_2.13 ---
+19:29:10,197 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:29:10,197 [INFO] 
+19:29:10,197 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql_2.13 ---
+19:29:10,234 [INFO] Executing tasks
+19:29:10,234 [INFO] Executed tasks
+19:29:10,234 [INFO] 
+19:29:10,234 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-sql_2.13 ---
+19:29:10,235 [INFO] 
+19:29:10,235 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql_2.13 ---
+19:29:10,237 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark357/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark357.com.nvidia.shaded.spark.*
+19:29:10,238 [INFO] 
+19:29:10,238 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql_2.13 ---
+19:29:10,271 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 357 main files
+shimplify - INFO - # generating symlinks for shim 357 test files
+19:29:10,897 [INFO] Executed tasks
+19:29:10,897 [INFO] 
+19:29:10,897 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-sql_2.13 ---
+19:29:10,897 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/java added.
+19:29:10,898 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/scala added.
+19:29:10,898 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/scala-2.13 added.
+19:29:10,898 [INFO] 
+19:29:10,898 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-sql_2.13 ---
+19:29:10,898 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark357/generated/src/main/scala added.
+19:29:10,899 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark357/generated/src/main/java added.
+19:29:10,899 [INFO] 
+19:29:10,899 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql_2.13 ---
+19:29:10,916 [INFO] Executing tasks
+19:29:10,925 [WARNING]      [echo] Comparing git revisions:
+19:29:10,925 [WARNING]      [echo]     previous=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:10,925 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:10,926 [WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+19:29:10,926 [WARNING]      [echo] Delete /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark357/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+19:29:10,926 [WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+19:29:10,926 [INFO] Executed tasks
+19:29:10,927 [INFO] 
+19:29:10,927 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-shim-service) @ rapids-4-spark-sql_2.13 ---
+19:29:10,943 [INFO] Executing tasks
+19:29:10,949 [WARNING]      [echo] Skipping shim service file generation, already exists
+19:29:10,950 [INFO] Executed tasks
+19:29:10,950 [INFO] 
+19:29:10,950 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-sql_2.13 ---
+19:29:10,950 [INFO] 
+19:29:10,950 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-license-notice-resources) @ rapids-4-spark-sql_2.13 ---
+19:29:10,951 [INFO] 
+19:29:10,951 [INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-sql_2.13 ---
+19:29:10,951 [INFO] Using 'UTF-8' encoding to copy filtered resources.
+19:29:10,953 [INFO] Copying 0 resource
+19:29:10,953 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/resources
+19:29:10,954 [INFO] Copying 2 resources to META-INF
+19:29:10,955 [INFO] Copying 4 resources
+19:29:10,955 [INFO] 
+19:29:10,956 [INFO] --- scala-maven-plugin:4.9.2:compile (scala-compile-first) @ rapids-4-spark-sql_2.13 ---
+19:29:10,997 [INFO] Compiler bridge file: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark357/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.13-1.10.0-bin_2.13.18__61.0-1.10.0_20240505T232140.jar
+19:29:16,190 [INFO] compiling 51 Scala sources to /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark357/classes ...
+19:29:16,998 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:73: object GpuAscii is not a member of package org.apache.spark.sql.rapids.shims
+19:29:17,433 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:4078: not found: value GpuAscii
+19:29:17,434 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:3948: private method hasDuplicateFieldNames in <$anon: com.nvidia.spark.rapids.UnaryExprMeta[org.apache.spark.sql.catalyst.expressions.JsonToStructs]> is never used
+Applicable -Wconf / @nowarn filters for this fatal warning: msg=<part of the message>, cat=unused-privates, site=com.nvidia.spark.rapids.GpuOverrides.commonExpressions.$anonfun
+19:29:19,853 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:3956: private method hasDateTimeType in <$anon: com.nvidia.spark.rapids.UnaryExprMeta[org.apache.spark.sql.catalyst.expressions.JsonToStructs]> is never used
+Applicable -Wconf / @nowarn filters for this fatal warning: msg=<part of the message>, cat=unused-privates, site=com.nvidia.spark.rapids.GpuOverrides.commonExpressions.$anonfun
+19:29:19,856 [ERROR] four errors found
+19:29:19,966 [INFO] ------------------------------------------------------------------------
+19:29:19,966 [INFO] Reactor Summary for RAPIDS Accelerator for Apache Spark Root Project 26.02.0-SNAPSHOT:
+19:29:19,966 [INFO] 
+19:29:19,966 [INFO] RAPIDS Accelerator for Apache Spark Root Project ... SUCCESS [  8.381 s]
+19:29:19,966 [INFO] RAPIDS Accelerator for Apache Spark JDK Profiles ... SUCCESS [  0.436 s]
+19:29:19,967 [INFO] rapids-4-spark-shim-deps-parent_2.13 ............... SUCCESS [  0.561 s]
+19:29:19,967 [INFO] rapids-4-spark-sql-plugin-api_2.13 ................. SUCCESS [  3.752 s]
+19:29:19,967 [INFO] RAPIDS Accelerator for Apache Spark SQL Plugin ..... FAILURE [ 11.787 s]
+19:29:19,967 [INFO] RAPIDS Accelerator for Apache Spark Shuffle Plugin . SKIPPED
+19:29:19,967 [INFO] RAPIDS Accelerator for Apache Spark Scala UDF Plugin SKIPPED
+19:29:19,967 [INFO] RAPIDS Accelerator for Apache Spark Delta Lake 3.3.x Support SKIPPED
+19:29:19,967 [INFO] RAPIDS Accelerator for Apache Iceberg .............. SKIPPED
+19:29:19,967 [INFO] RAPIDS Accelerator for Apache Spark Aggregator ..... SKIPPED
+19:29:19,968 [INFO] RAPIDS Accelerator for Apache Spark Tools Support .. SKIPPED
+19:29:19,968 [INFO] ------------------------------------------------------------------------
+19:29:19,968 [INFO] BUILD FAILURE
+19:29:19,968 [INFO] ------------------------------------------------------------------------
+19:29:19,968 [INFO] Total time:  25.035 s
+19:29:19,968 [INFO] Finished at: 2026-02-02T19:29:19-08:00
+19:29:19,968 [INFO] ------------------------------------------------------------------------
+19:29:19,969 [ERROR] Failed to execute goal net.alchim31.maven:scala-maven-plugin:4.9.2:compile (scala-compile-first) on project rapids-4-spark-sql_2.13: Execution scala-compile-first of goal net.alchim31.maven:scala-maven-plugin:4.9.2:compile failed: org.apache.commons.exec.ExecuteException: Process exited with an error: 255 (Exit value: 255) -> [Help 1]
+19:29:19,969 [ERROR] 
+19:29:19,969 [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+19:29:19,969 [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+19:29:19,969 [ERROR] 
+19:29:19,969 [ERROR] For more information about the errors and possible solutions, please read the following articles:
+19:29:19,970 [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/PluginExecutionException
+19:29:19,970 [ERROR] 
+19:29:19,970 [ERROR] After correcting the problems, you can resume the build with the command
+19:29:19,970 [ERROR]   mvn <args> -rf :rapids-4-spark-sql_2.13
++ exit 255
+xargs: bash: exited with status 255; aborting
+
+real	0m27.706s
+user	2m30.643s
+sys	0m8.455s
++ [[ /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-411.log != \/\d\e\v\/\t\t\y ]]
++ echo /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-411.log:
+/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-411.log:
++ tail -500 /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/mvn-build-411.log
+19:28:54,937 [INFO] Scanning for projects...
+19:28:55,021 [WARNING] 
+19:28:55,021 [WARNING] Some problems were encountered while building the effective model for com.nvidia:rapids-4-spark_2.13:jar:26.02.0-SNAPSHOT
+19:28:55,022 [WARNING] 'build.plugins.plugin.(groupId:artifactId)' must be unique but found duplicate declaration of plugin org.apache.maven.plugins:maven-antrun-plugin @ line 479, column 21
+19:28:55,023 [WARNING] 
+19:28:55,023 [WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+19:28:55,024 [WARNING] 
+19:28:55,024 [WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+19:28:55,024 [WARNING] 
+19:28:55,028 [INFO] ------------------------------------------------------------------------
+19:28:55,028 [INFO] Reactor Build Order:
+19:28:55,028 [INFO] 
+19:28:55,029 [INFO] RAPIDS Accelerator for Apache Spark Root Project                   [pom]
+19:28:55,029 [INFO] RAPIDS Accelerator for Apache Spark JDK Profiles                   [pom]
+19:28:55,029 [INFO] rapids-4-spark-shim-deps-parent_2.13                               [pom]
+19:28:55,029 [INFO] rapids-4-spark-sql-plugin-api_2.13                                 [jar]
+19:28:55,029 [INFO] RAPIDS Accelerator for Apache Spark SQL Plugin                     [jar]
+19:28:55,030 [INFO] RAPIDS Accelerator for Apache Spark Shuffle Plugin                 [jar]
+19:28:55,030 [INFO] RAPIDS Accelerator for Apache Spark Scala UDF Plugin               [jar]
+19:28:55,030 [INFO] RAPIDS Accelerator for Apache Spark Delta Lake Stub                [jar]
+19:28:55,030 [INFO] RAPIDS Accelerator for Apache Spark Aggregator                     [jar]
+19:28:55,030 [INFO] RAPIDS Accelerator for Apache Spark Tools Support                  [pom]
+19:28:55,033 [INFO] 
+19:28:55,033 [INFO] ---------------< com.nvidia:rapids-4-spark-parent_2.13 >----------------
+19:28:55,033 [INFO] Building RAPIDS Accelerator for Apache Spark Root Project 26.02.0-SNAPSHOT [1/10]
+19:28:55,033 [INFO] --------------------------------[ pom ]---------------------------------
+19:28:55,083 [INFO] 
+19:28:55,083 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-parent_2.13 ---
+19:28:55,211 [INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+19:28:55,211 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:55,218 [INFO] Rule 2: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+19:28:55,218 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:55,219 [INFO] 
+19:28:55,219 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-parent_2.13 ---
+19:28:55,261 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:55,262 [INFO] 
+19:28:55,262 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-parent_2.13 ---
+19:28:55,510 [INFO] Executing tasks
+19:28:55,513 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/extra-resources
+19:28:55,513 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/tmp
+19:28:55,513 [INFO] Executed tasks
+19:28:55,514 [INFO] 
+19:28:55,514 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-parent_2.13 ---
+19:28:55,538 [INFO] 
+19:28:55,538 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-parent_2.13 ---
+19:28:55,577 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark411.com.nvidia.shaded.spark.*
+19:28:55,578 [INFO] 
+19:28:55,578 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-parent_2.13 ---
+19:28:55,606 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 411 main files
+shimplify - INFO - # generating symlinks for shim 411 test files
+19:28:57,082 [INFO] Executed tasks
+19:28:57,082 [INFO] 
+19:28:57,082 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-parent_2.13 ---
+19:28:57,084 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/../.././src/main/java added.
+19:28:57,085 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/../.././src/main/scala added.
+19:28:57,085 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/../.././src/main/scala-2.13 added.
+19:28:57,085 [INFO] 
+19:28:57,085 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-parent_2.13 ---
+19:28:57,086 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/generated/src/main/scala added.
+19:28:57,086 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/generated/src/main/java added.
+19:28:57,086 [INFO] 
+19:28:57,086 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-parent_2.13 ---
+19:28:57,110 [INFO] Executing tasks
+19:28:57,150 [WARNING]      [echo] Comparing git revisions:
+19:28:57,150 [WARNING]      [echo]     previous=N/A
+19:28:57,151 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:28:57,152 [WARNING]      [echo] Generating new version info file
+19:28:57,153 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/classes
+19:28:57,168 [INFO] Executed tasks
+19:28:57,168 [INFO] 
+19:28:57,168 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-parent_2.13 ---
+19:28:57,169 [INFO] 
+19:28:57,170 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-test-sources) @ rapids-4-spark-parent_2.13 ---
+19:28:57,170 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/../.././src/test/java added.
+19:28:57,170 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/../.././src/test/scala added.
+19:28:57,171 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/../.././src/test/scala-2.13 added.
+19:28:57,171 [INFO] 
+19:28:57,171 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-shimple-test-sources) @ rapids-4-spark-parent_2.13 ---
+19:28:57,171 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/generated/src/test/scala added.
+19:28:57,172 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/generated/src/test/java added.
+19:28:57,172 [INFO] 
+19:28:57,172 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-parent_2.13 ---
+19:28:57,173 [INFO] 
+19:28:57,173 [INFO] ------------< com.nvidia:rapids-4-spark-jdk-profiles_2.13 >-------------
+19:28:57,173 [INFO] Building RAPIDS Accelerator for Apache Spark JDK Profiles 26.02.0-SNAPSHOT [2/10]
+19:28:57,174 [INFO] --------------------------------[ pom ]---------------------------------
+19:28:57,176 [INFO] 
+19:28:57,176 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,178 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:57,178 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:57,179 [INFO] 
+19:28:57,179 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,179 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:57,180 [INFO] 
+19:28:57,180 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,209 [INFO] Executing tasks
+19:28:57,209 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/extra-resources
+19:28:57,209 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/tmp
+19:28:57,210 [INFO] Executed tasks
+19:28:57,210 [INFO] 
+19:28:57,210 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,211 [INFO] 
+19:28:57,211 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,212 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark411.com.nvidia.shaded.spark.*
+19:28:57,213 [INFO] 
+19:28:57,213 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,235 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/jdk-profiles
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 411 main files
+shimplify - INFO - # generating symlinks for shim 411 test files
+19:28:57,571 [INFO] Executed tasks
+19:28:57,571 [INFO] 
+19:28:57,571 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,572 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/main/java added.
+19:28:57,572 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/main/scala added.
+19:28:57,572 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/main/scala-2.13 added.
+19:28:57,572 [INFO] 
+19:28:57,572 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,573 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/generated/src/main/scala added.
+19:28:57,573 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/generated/src/main/java added.
+19:28:57,573 [INFO] 
+19:28:57,573 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,592 [INFO] Executing tasks
+19:28:57,602 [WARNING]      [echo] Comparing git revisions:
+19:28:57,602 [WARNING]      [echo]     previous=N/A
+19:28:57,602 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:28:57,604 [WARNING]      [echo] Generating new version info file
+19:28:57,604 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/classes
+19:28:57,620 [INFO] Executed tasks
+19:28:57,620 [INFO] 
+19:28:57,620 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,621 [INFO] 
+19:28:57,621 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-test-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,621 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/test/java added.
+19:28:57,622 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/test/scala added.
+19:28:57,622 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/../.././src/test/scala-2.13 added.
+19:28:57,622 [INFO] 
+19:28:57,622 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-shimple-test-sources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,622 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/generated/src/test/scala added.
+19:28:57,623 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/jdk-profiles/target/spark411/generated/src/test/java added.
+19:28:57,623 [INFO] 
+19:28:57,623 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-jdk-profiles_2.13 ---
+19:28:57,623 [INFO] 
+19:28:57,624 [INFO] ----------< com.nvidia:rapids-4-spark-shim-deps-parent_2.13 >-----------
+19:28:57,624 [INFO] Building rapids-4-spark-shim-deps-parent_2.13 26.02.0-SNAPSHOT    [3/10]
+19:28:57,624 [INFO] --------------------------------[ pom ]---------------------------------
+19:28:57,934 [INFO] 
+19:28:57,934 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:57,935 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:57,936 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:57,936 [INFO] 
+19:28:57,936 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:57,936 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:57,936 [INFO] 
+19:28:57,936 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:57,956 [INFO] Executing tasks
+19:28:57,956 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/extra-resources
+19:28:57,956 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/tmp
+19:28:57,956 [INFO] Executed tasks
+19:28:57,957 [INFO] 
+19:28:57,957 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:57,958 [INFO] 
+19:28:57,958 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:57,958 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark411.com.nvidia.shaded.spark.*
+19:28:57,959 [INFO] 
+19:28:57,959 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:57,977 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/shim-deps
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 411 main files
+shimplify - INFO - # generating symlinks for shim 411 test files
+19:28:58,276 [INFO] Executed tasks
+19:28:58,277 [INFO] 
+19:28:58,277 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:58,277 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/main/java added.
+19:28:58,278 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/main/scala added.
+19:28:58,278 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/main/scala-2.13 added.
+19:28:58,278 [INFO] 
+19:28:58,278 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:58,278 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/generated/src/main/scala added.
+19:28:58,278 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/generated/src/main/java added.
+19:28:58,279 [INFO] 
+19:28:58,279 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:58,296 [INFO] Executing tasks
+19:28:58,304 [WARNING]      [echo] Comparing git revisions:
+19:28:58,305 [WARNING]      [echo]     previous=N/A
+19:28:58,305 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:28:58,305 [WARNING]      [echo] Generating new version info file
+19:28:58,306 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/classes
+19:28:58,324 [INFO] Executed tasks
+19:28:58,324 [INFO] 
+19:28:58,324 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:58,325 [INFO] 
+19:28:58,325 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-test-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:58,325 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/test/java added.
+19:28:58,325 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/test/scala added.
+19:28:58,326 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/../.././src/test/scala-2.13 added.
+19:28:58,326 [INFO] 
+19:28:58,326 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-shimple-test-sources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:58,327 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/generated/src/test/scala added.
+19:28:58,327 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/shim-deps/target/spark411/generated/src/test/java added.
+19:28:58,327 [INFO] 
+19:28:58,327 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-shim-deps-parent_2.13 ---
+19:28:58,328 [INFO] 
+19:28:58,328 [INFO] -----------< com.nvidia:rapids-4-spark-sql-plugin-api_2.13 >------------
+19:28:58,328 [INFO] Building rapids-4-spark-sql-plugin-api_2.13 26.02.0-SNAPSHOT      [4/10]
+19:28:58,328 [INFO] --------------------------------[ jar ]---------------------------------
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/spark-rapids-jni/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/spark-rapids-jni/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 2.1 kB                    Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/spark-rapids-jni/26.02.0-SNAPSHOT/maven-metadata.xml (2.1 kB at 3.5 kB/s)
+19:28:59,125 [INFO] 
+19:28:59,125 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,128 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:59,128 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:28:59,128 [INFO] 
+19:28:59,128 [INFO] --- scala-maven-plugin:4.9.2:add-source (eclipse-add-source) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,275 [INFO] Add Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/main/scala
+19:28:59,275 [INFO] Add Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/test/scala
+19:28:59,275 [INFO] 
+19:28:59,275 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,276 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:28:59,276 [INFO] 
+19:28:59,276 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,301 [INFO] Executing tasks
+19:28:59,302 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/extra-resources
+19:28:59,302 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/tmp
+19:28:59,302 [INFO] Executed tasks
+19:28:59,302 [INFO] 
+19:28:59,302 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,304 [INFO] 
+19:28:59,304 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,304 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark411.com.nvidia.shaded.spark.*
+19:28:59,305 [INFO] 
+19:28:59,305 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,322 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin-api
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 411 main files
+shimplify - INFO - # generating symlinks for shim 411 test files
+19:28:59,590 [INFO] Executed tasks
+19:28:59,590 [INFO] 
+19:28:59,590 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,591 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/java added.
+19:28:59,591 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/scala added.
+19:28:59,591 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/scala-2.13 added.
+19:28:59,591 [INFO] 
+19:28:59,591 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,592 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/generated/src/main/scala added.
+19:28:59,592 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/generated/src/main/java added.
+19:28:59,592 [INFO] 
+19:28:59,592 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,610 [INFO] Executing tasks
+19:28:59,619 [WARNING]      [echo] Comparing git revisions:
+19:28:59,619 [WARNING]      [echo]     previous=N/A
+19:28:59,619 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:28:59,620 [WARNING]      [echo] Generating new version info file
+19:28:59,620 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/classes
+19:28:59,637 [INFO] Executed tasks
+19:28:59,644 [INFO] 
+19:28:59,645 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,645 [INFO] 
+19:28:59,645 [INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,671 [INFO] Using 'UTF-8' encoding to copy filtered resources.
+19:28:59,671 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/main/resources
+19:28:59,671 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/main/resources
+19:28:59,671 [INFO] 
+19:28:59,671 [INFO] --- scala-maven-plugin:4.9.2:compile (scala-compile-first) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:28:59,765 [INFO] Compiler bridge file: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.13-1.10.0-bin_2.13.18__61.0-1.10.0_20240505T232140.jar
+19:28:59,766 [INFO] Compiler bridge file is not installed yet
+warning: 4 deprecations (since 2.12.0)
+warning: 1 deprecation (since 2.12.5)
+warning: 2 deprecations (since 2.12.9)
+warning: 2 deprecations (since 2.13)
+warning: 8 deprecations (since 2.13.0)
+warning: 1 deprecation (since 2.13.12)
+warning: 1 deprecation (since 2.13.4)
+warning: 19 deprecations in total; re-run with -deprecation for details
+warning: 2 feature warnings; re-run with -feature for details
+9 warnings
+19:29:04,340 [INFO] Compiler bridge installed
+19:29:09,579 [INFO] compiling 22 Scala sources and 5 Java sources to /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/classes ...
+19:29:10,384 [INFO] compile in 10.7 s
+19:29:10,385 [INFO] 
+19:29:10,385 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-test-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,386 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/java added.
+19:29:10,386 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/scala added.
+19:29:10,386 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/scala-2.13 added.
+19:29:10,386 [INFO] 
+19:29:10,386 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-source (add-shimple-test-sources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,387 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/generated/src/test/scala added.
+19:29:10,387 [INFO] Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/generated/src/test/java added.
+19:29:10,387 [INFO] 
+19:29:10,387 [INFO] --- build-helper-maven-plugin:3.6.1:add-test-resource (add-test-resources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,387 [INFO] 
+19:29:10,388 [INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,389 [INFO] Using 'UTF-8' encoding to copy filtered resources.
+19:29:10,389 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/src/test/resources
+19:29:10,389 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/../../sql-plugin-api/src/test/resources
+19:29:10,389 [INFO] 
+19:29:10,389 [INFO] --- scala-maven-plugin:4.9.2:testCompile (scala-test-compile-first) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,402 [INFO] compile in 0.0 s
+19:29:10,402 [INFO] No sources to compile
+19:29:10,402 [INFO] 
+19:29:10,402 [INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,442 [INFO] Tests are skipped.
+19:29:10,442 [INFO] 
+19:29:10,442 [INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,529 [INFO] Building jar: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT.jar
+19:29:10,547 [INFO] 
+19:29:10,547 [INFO] --- maven-jar-plugin:3.3.0:jar (create-spark411-jar) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,557 [INFO] Building jar: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin-api/target/spark411/rapids-4-spark-sql-plugin-api_2.13-26.02.0-SNAPSHOT-spark411.jar
+19:29:10,594 [INFO] 
+19:29:10,594 [INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ rapids-4-spark-sql-plugin-api_2.13 ---
+19:29:10,595 [INFO] Skipping packaging of the test-jar
+19:29:10,595 [INFO] 
+19:29:10,595 [INFO] -----------------< com.nvidia:rapids-4-spark-sql_2.13 >-----------------
+19:29:10,595 [INFO] Building RAPIDS Accelerator for Apache Spark SQL Plugin 26.02.0-SNAPSHOT [5/10]
+19:29:10,596 [INFO] --------------------------------[ jar ]---------------------------------
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-private_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 3.9 kB                    Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (3.9 kB at 21 kB/s)
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-private-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 627 B                   Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-private-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (627 B at 2.7 kB/s)
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-hybrid_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 795 B                   Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (795 B at 5.3 kB/s)
+Downloading from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Downloading from apache-snapshots-repo: https://repository.apache.org/content/repositories/snapshots/com/nvidia/rapids-4-spark-hybrid-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml
+Progress (1): 626 B                   Downloaded from snapshots-repo: https://central.sonatype.com/repository/maven-snapshots/com/nvidia/rapids-4-spark-hybrid-parent_2.13/26.02.0-SNAPSHOT/maven-metadata.xml (626 B at 3.1 kB/s)
+19:29:12,600 [INFO] 
+19:29:12,600 [INFO] --- maven-enforcer-plugin:3.5.0:enforce (enforce-maven) @ rapids-4-spark-sql_2.13 ---
+19:29:12,601 [INFO] Rule 1: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:12,601 [INFO] Rule 3: org.apache.maven.enforcer.rules.property.RequireProperty passed
+19:29:12,602 [INFO] 
+19:29:12,602 [INFO] --- scala-maven-plugin:4.9.2:add-source (eclipse-add-source) @ rapids-4-spark-sql_2.13 ---
+19:29:12,602 [INFO] Add Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/src/main/scala
+19:29:12,602 [INFO] Add Test Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/src/test/scala
+19:29:12,602 [INFO] 
+19:29:12,602 [INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql_2.13 ---
+19:29:12,603 [INFO] Highest basedir set to: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13
+19:29:12,603 [INFO] 
+19:29:12,603 [INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql_2.13 ---
+19:29:12,620 [INFO] Executing tasks
+19:29:12,620 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/extra-resources
+19:29:12,620 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/tmp
+19:29:12,621 [INFO] Executed tasks
+19:29:12,621 [INFO] 
+19:29:12,621 [INFO] --- build-helper-maven-plugin:3.6.1:regex-properties (regex-properties) @ rapids-4-spark-sql_2.13 ---
+19:29:12,621 [INFO] 
+19:29:12,621 [INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql_2.13 ---
+19:29:12,622 [INFO] argLine set to -javaagent:/home/gshegalov/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark411.com.nvidia.shaded.spark.*
+19:29:12,622 [INFO] 
+19:29:12,622 [INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql_2.13 ---
+19:29:12,639 [INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['321', '330db', '332db', '341db', '350', '350db143', '351', '352', '353', '354', '355', '356', '357', '400', '401', '411']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 411 main files
+shimplify - INFO - # generating symlinks for shim 411 test files
+19:29:13,192 [INFO] Executed tasks
+19:29:13,192 [INFO] 
+19:29:13,192 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-sources) @ rapids-4-spark-sql_2.13 ---
+19:29:13,192 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/java added.
+19:29:13,193 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/scala added.
+19:29:13,193 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/scala-2.13 added.
+19:29:13,193 [INFO] 
+19:29:13,193 [INFO] --- build-helper-maven-plugin:3.6.1:add-source (add-shimple-sources) @ rapids-4-spark-sql_2.13 ---
+19:29:13,193 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/generated/src/main/scala added.
+19:29:13,193 [INFO] Source directory: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/generated/src/main/java added.
+19:29:13,194 [INFO] 
+19:29:13,194 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql_2.13 ---
+19:29:13,211 [INFO] Executing tasks
+19:29:13,220 [WARNING]      [echo] Comparing git revisions:
+19:29:13,220 [WARNING]      [echo]     previous=N/A
+19:29:13,220 [WARNING]      [echo]      current=31092afb77d9d69d81093872b12501cf9cb55d19
+19:29:13,221 [WARNING]      [echo] Generating new version info file
+19:29:13,221 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/classes
+19:29:13,236 [INFO] Executed tasks
+19:29:13,236 [INFO] 
+19:29:13,236 [INFO] --- maven-antrun-plugin:3.1.0:run (generate-shim-service) @ rapids-4-spark-sql_2.13 ---
+19:29:13,254 [INFO] Executing tasks
+19:29:13,257 [WARNING]      [echo] Recreating shim service file
+19:29:13,258 [INFO]     [mkdir] Created dir: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/classes/META-INF/services
+19:29:13,258 [INFO] Executed tasks
+19:29:13,258 [INFO] 
+19:29:13,258 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-resources) @ rapids-4-spark-sql_2.13 ---
+19:29:13,259 [INFO] 
+19:29:13,259 [INFO] --- build-helper-maven-plugin:3.6.1:add-resource (add-license-notice-resources) @ rapids-4-spark-sql_2.13 ---
+19:29:13,260 [INFO] 
+19:29:13,260 [INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-sql_2.13 ---
+19:29:13,261 [INFO] Using 'UTF-8' encoding to copy filtered resources.
+19:29:13,262 [INFO] Copying 0 resource
+19:29:13,262 [INFO] skip non existing resourceDirectory /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/../../sql-plugin/src/main/resources
+19:29:13,263 [INFO] Copying 2 resources to META-INF
+19:29:13,265 [INFO] Copying 4 resources
+19:29:13,266 [INFO] 
+19:29:13,266 [INFO] --- scala-maven-plugin:4.9.2:compile (scala-compile-first) @ rapids-4-spark-sql_2.13 ---
+19:29:13,309 [INFO] Compiler bridge file: /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/target/spark411/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.13-1.10.0-bin_2.13.18__61.0-1.10.0_20240505T232140.jar
+19:29:20,608 [INFO] compiling 555 Scala sources and 35 Java sources to /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/scala2.13/sql-plugin/target/spark411/classes ...
+19:29:21,023 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:73: object GpuAscii is not a member of package org.apache.spark.sql.rapids.shims
+19:29:21,304 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:4078: not found: value GpuAscii
+19:29:21,304 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:3948: private method hasDuplicateFieldNames in <$anon: com.nvidia.spark.rapids.UnaryExprMeta[org.apache.spark.sql.catalyst.expressions.JsonToStructs]> is never used
+Applicable -Wconf / @nowarn filters for this fatal warning: msg=<part of the message>, cat=unused-privates, site=com.nvidia.spark.rapids.GpuOverrides.commonExpressions.$anonfun
+19:29:27,522 [ERROR] [Error] /home/gshegalov/gits/NVIDIA/spark-rapids.clean-unused-shims/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala:3956: private method hasDateTimeType in <$anon: com.nvidia.spark.rapids.UnaryExprMeta[org.apache.spark.sql.catalyst.expressions.JsonToStructs]> is never used
+Applicable -Wconf / @nowarn filters for this fatal warning: msg=<part of the message>, cat=unused-privates, site=com.nvidia.spark.rapids.GpuOverrides.commonExpressions.$anonfun
+19:29:27,525 [ERROR] four errors found
+19:29:27,620 [INFO] ------------------------------------------------------------------------
+19:29:27,620 [INFO] Reactor Summary for RAPIDS Accelerator for Apache Spark Root Project 26.02.0-SNAPSHOT:
+19:29:27,621 [INFO] 
+19:29:27,621 [INFO] RAPIDS Accelerator for Apache Spark Root Project ... SUCCESS [  2.141 s]
+19:29:27,621 [INFO] RAPIDS Accelerator for Apache Spark JDK Profiles ... SUCCESS [  0.450 s]
+19:29:27,621 [INFO] rapids-4-spark-shim-deps-parent_2.13 ............... SUCCESS [  0.705 s]
+19:29:27,621 [INFO] rapids-4-spark-sql-plugin-api_2.13 ................. SUCCESS [ 12.267 s]
+19:29:27,622 [INFO] RAPIDS Accelerator for Apache Spark SQL Plugin ..... FAILURE [ 17.025 s]
+19:29:27,622 [INFO] RAPIDS Accelerator for Apache Spark Shuffle Plugin . SKIPPED
+19:29:27,622 [INFO] RAPIDS Accelerator for Apache Spark Scala UDF Plugin SKIPPED
+19:29:27,622 [INFO] RAPIDS Accelerator for Apache Spark Delta Lake Stub  SKIPPED
+19:29:27,622 [INFO] RAPIDS Accelerator for Apache Spark Aggregator ..... SKIPPED
+19:29:27,622 [INFO] RAPIDS Accelerator for Apache Spark Tools Support .. SKIPPED
+19:29:27,623 [INFO] ------------------------------------------------------------------------
+19:29:27,623 [INFO] BUILD FAILURE
+19:29:27,623 [INFO] ------------------------------------------------------------------------
+19:29:27,623 [INFO] Total time:  32.694 s
+19:29:27,623 [INFO] Finished at: 2026-02-02T19:29:27-08:00
+19:29:27,623 [INFO] ------------------------------------------------------------------------
+19:29:27,624 [ERROR] Failed to execute goal net.alchim31.maven:scala-maven-plugin:4.9.2:compile (scala-compile-first) on project rapids-4-spark-sql_2.13: Execution scala-compile-first of goal net.alchim31.maven:scala-maven-plugin:4.9.2:compile failed: org.apache.commons.exec.ExecuteException: Process exited with an error: 255 (Exit value: 255) -> [Help 1]
+19:29:27,625 [ERROR] 
+19:29:27,625 [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+19:29:27,625 [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+19:29:27,625 [ERROR] 
+19:29:27,625 [ERROR] For more information about the errors and possible solutions, please read the following articles:
+19:29:27,625 [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/PluginExecutionException
+19:29:27,626 [ERROR] 
+19:29:27,626 [ERROR] After correcting the problems, you can resume the build with the command
+19:29:27,626 [ERROR]   mvn <args> -rf :rapids-4-spark-sql_2.13
++ exit 255
