@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>26.04.0-SNAPSHOT</version>
+    <version>26.02.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -832,9 +832,9 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>26.04.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>26.04.0-SNAPSHOT</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>26.04.0-SNAPSHOT</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>26.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>26.02.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>26.02.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.21</scala.version>
@@ -880,11 +880,7 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
-        <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1</spark321.version>
-        <spark322.version>3.2.2</spark322.version>
-        <spark323.version>3.2.3</spark323.version>
-        <spark324.version>3.2.4</spark324.version>
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
