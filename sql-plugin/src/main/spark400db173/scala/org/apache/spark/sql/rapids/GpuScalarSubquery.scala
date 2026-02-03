@@ -19,14 +19,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar}
-import com.nvidia.spark.rapids.shims.ShimExpression
-
-import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
-import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression}
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.catalyst.expressions.ExprId
+import org.apache.spark.sql.execution.BaseSubqueryExec
 
 /**
  * Databricks 17.3 version with resultUpdated() method.
