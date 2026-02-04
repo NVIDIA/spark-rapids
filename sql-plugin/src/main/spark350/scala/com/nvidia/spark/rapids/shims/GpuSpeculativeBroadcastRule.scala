@@ -33,14 +33,15 @@ import com.nvidia.spark.rapids.{RapidsConf, SpeculativeBroadcastHashJoinExec}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, BindReferences, Expression}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode,
-  ShuffledHashJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashJoin,
+  HashedRelationBroadcastMode, ShuffledHashJoinExec}
 
 /**
  * A queryStageOptimizerRule that transforms SpeculativeBroadcastHashJoinExec
@@ -60,18 +61,25 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
   private def isEnabled: Boolean = rapidsConf.isSpeculativeBroadcastEnabled
 
   private def broadcastThreshold: Long = {
-    rapidsConf.get(RapidsConf.SPECULATIVE_BROADCAST_THRESHOLD)
-      .getOrElse(spark.sessionState.conf.autoBroadcastJoinThreshold)
+    val configuredThreshold = rapidsConf.get(RapidsConf.SPECULATIVE_BROADCAST_THRESHOLD)
+    val autoThreshold = spark.sessionState.conf.autoBroadcastJoinThreshold
+    configuredThreshold.getOrElse {
+      if (autoThreshold > 0) autoThreshold else 10L * 1024 * 1024 // 10MB default
+    }
   }
 
   override def apply(plan: SparkPlan): SparkPlan = {
+    logInfo(s"GpuSpeculativeBroadcastRule.apply called, isEnabled=$isEnabled, " +
+      s"plan=${plan.getClass.getSimpleName}")
     if (!isEnabled) {
       return plan
     }
 
     plan.transformUp {
-      // Handle SpeculativeBroadcastHashJoinExec - the main target
       case specJoin: SpeculativeBroadcastHashJoinExec =>
+        logInfo(s"GpuSpeculativeBroadcastRule: Found SpeculativeBroadcastHashJoinExec, " +
+          s"buildSide=${specJoin.buildSide}, left=${specJoin.left.getClass.getSimpleName}, " +
+          s"right=${specJoin.right.getClass.getSimpleName}")
         transformSpeculativeJoin(specJoin)
     }
   }
@@ -88,38 +96,145 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
       case BuildRight => (specJoin.right, specJoin.left)
     }
 
+    // Log detailed attribute info for debugging
+    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.left.output = ${specJoin.left.output}")
+    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.right.output = ${specJoin.right.output}")
+    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.leftKeys = ${specJoin.leftKeys}")
+    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.rightKeys = ${specJoin.rightKeys}")
+
     // Find the build side shuffle stage
     findShuffleStageInfo(buildChild) match {
       case Some((buildStage, buildSize)) =>
+        logInfo(s"GpuSpeculativeBroadcastRule: buildChild.output = ${buildChild.output}")
+        logInfo(s"GpuSpeculativeBroadcastRule: buildStage.output = ${buildStage.output}")
+        logInfo(s"GpuSpeculativeBroadcastRule: streamChild.output = ${streamChild.output}")
+
+        // Create position-based attribute mapping
+        // Maps attribute by finding its position in child output and using corresponding
+        // position in stage output
+        val (originalBuildOutput, originalStreamOutput) = specJoin.buildSide match {
+          case BuildLeft => (specJoin.left.output, specJoin.right.output)
+          case BuildRight => (specJoin.right.output, specJoin.left.output)
+        }
+
+        // Build index map: exprId -> position in original output
+        val buildPosMap = originalBuildOutput.zipWithIndex.map {
+          case (a, i) => a.exprId -> i
+        }.toMap
+        val streamPosMap = originalStreamOutput.zipWithIndex.map {
+          case (a, i) => a.exprId -> i
+        }.toMap
+
+        logInfo(s"GpuSpeculativeBroadcastRule: buildPosMap = $buildPosMap")
+        logInfo(s"GpuSpeculativeBroadcastRule: streamPosMap = $streamPosMap")
+
+        // Remap expression by finding matching attribute in output by exprId.id
+        // Note: We compare only exprId.id, not the full ExprId (which includes jvmId),
+        // because different AttributeReference objects can have different jvmIds
+        def remapBuildExpr(expr: Expression): Expression = {
+          expr.transform {
+            case a: AttributeReference =>
+              // Find attribute in buildStage.output with same exprId.id
+              val newAttr = buildStage.output.find(_.exprId.id == a.exprId.id).getOrElse(a)
+              if (newAttr ne a) {
+                logInfo(s"GpuSpeculativeBroadcastRule: Remapping build attr " +
+                  s"${a.name}#${a.exprId.id} (jvm=${a.exprId}) -> " +
+                  s"${newAttr.name}#${newAttr.exprId.id} (jvm=${newAttr.exprId})")
+              } else {
+                logInfo(s"GpuSpeculativeBroadcastRule: No match in buildStage for " +
+                  s"${a.name}#${a.exprId.id}, keeping original")
+              }
+              newAttr
+          }
+        }
+
+        def remapStreamExpr(expr: Expression): Expression = {
+          expr.transform {
+            case a: AttributeReference =>
+              // Find attribute in streamChild.output with same exprId.id
+              val newAttr = streamChild.output.find(_.exprId.id == a.exprId.id).getOrElse(a)
+              if (newAttr ne a) {
+                logInfo(s"GpuSpeculativeBroadcastRule: Remapping stream attr " +
+                  s"${a.name}#${a.exprId.id} (jvm=${a.exprId}) -> " +
+                  s"${newAttr.name}#${newAttr.exprId.id} (jvm=${newAttr.exprId})")
+              } else {
+                logInfo(s"GpuSpeculativeBroadcastRule: No match in streamChild for " +
+                  s"${a.name}#${a.exprId.id}, keeping original")
+              }
+              newAttr
+          }
+        }
+
         if (buildSize < broadcastThreshold) {
           // Small enough - use broadcast join (no stream side shuffle!)
           logInfo(s"GpuSpeculativeBroadcastRule: Build side small ($buildSize bytes < " +
             s"$broadcastThreshold), using BroadcastHashJoin - stream side avoids shuffle!")
 
-          val buildKeys = specJoin.buildSide match {
+          // Remap build keys to buildStage.output attributes for HashedRelationBroadcastMode
+          val originalBuildKeys = specJoin.buildSide match {
             case BuildLeft => specJoin.leftKeys
             case BuildRight => specJoin.rightKeys
           }
-          val mode = HashedRelationBroadcastMode(buildKeys)
-          val broadcastExchange = BroadcastExchangeExec(mode, buildStage)
+          val buildKeys = originalBuildKeys.map(remapBuildExpr)
+
+          logInfo(s"GpuSpeculativeBroadcastRule: originalBuildKeys = $originalBuildKeys")
+          logInfo(s"GpuSpeculativeBroadcastRule: remapped buildKeys = $buildKeys")
+
+          // CRITICAL: HashJoin.rewriteKeyExpr rewrites IntegralType keys to Long for optimization.
+          // BroadcastHashJoinExec codegen uses rewriteKeyExpr on streamedKeys, so it expects
+          // the HashedRelation to also use rewritten keys. If we don't rewrite, the codegen
+          // will call get(Long) but the relation only supports get(InternalRow).
+          val rewrittenBuildKeys = HashJoin.rewriteKeyExpr(buildKeys)
+          logInfo(s"GpuSpeculativeBroadcastRule: rewrittenBuildKeys = $rewrittenBuildKeys")
+
+          // Bind the rewritten keys to the buildStage output schema
+          val boundBuildKeys = BindReferences.bindReferences(rewrittenBuildKeys, buildStage.output)
+          logInfo(s"GpuSpeculativeBroadcastRule: boundBuildKeys = $boundBuildKeys")
+
+          val broadcastExchange = BroadcastExchangeExec(
+            HashedRelationBroadcastMode(boundBuildKeys), buildStage)
 
           val (newLeft, newRight) = specJoin.buildSide match {
             case BuildLeft => (broadcastExchange, streamChild)
             case BuildRight => (streamChild, broadcastExchange)
           }
 
+          // For BroadcastHashJoinExec: build side uses remapped keys, stream side unchanged
+          val (newLeftKeys, newRightKeys) = specJoin.buildSide match {
+            case BuildLeft => (buildKeys, specJoin.rightKeys.map(remapStreamExpr))
+            case BuildRight => (specJoin.leftKeys.map(remapStreamExpr), buildKeys)
+          }
+
+          // Remap condition - only remap attributes that belong to build side
+          val newCondition = specJoin.condition.map { c =>
+            c.transform {
+              case a: AttributeReference =>
+                if (buildPosMap.contains(a.exprId)) {
+                  remapBuildExpr(a)
+                } else if (streamPosMap.contains(a.exprId)) {
+                  remapStreamExpr(a)
+                } else {
+                  a
+                }
+            }
+          }
+
+          logInfo(s"GpuSpeculativeBroadcastRule: newLeftKeys=$newLeftKeys, " +
+            s"newRightKeys=$newRightKeys, newCondition=$newCondition")
+
           BroadcastHashJoinExec(
-            specJoin.leftKeys, specJoin.rightKeys, specJoin.joinType,
-            specJoin.buildSide, specJoin.condition, newLeft, newRight)
+            newLeftKeys, newRightKeys, specJoin.joinType,
+            specJoin.buildSide, newCondition, newLeft, newRight)
 
         } else {
           // Too large - fall back to shuffled hash join (need stream side shuffle)
           logInfo(s"GpuSpeculativeBroadcastRule: Build side too large ($buildSize bytes >= " +
             s"$broadcastThreshold), falling back to ShuffledHashJoin")
 
+          // Stream keys don't need remapping for shuffle partitioning (uses original refs)
           val streamKeys = specJoin.buildSide match {
-            case BuildLeft => specJoin.rightKeys
-            case BuildRight => specJoin.leftKeys
+            case BuildLeft => specJoin.rightKeys.map(remapStreamExpr)
+            case BuildRight => specJoin.leftKeys.map(remapStreamExpr)
           }
 
           // Add shuffle for stream side
@@ -132,9 +247,34 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
             case BuildRight => (streamShuffle, buildStage)
           }
 
+          // Remap build side keys
+          val (newLeftKeys, newRightKeys) = specJoin.buildSide match {
+            case BuildLeft =>
+              (specJoin.leftKeys.map(remapBuildExpr), specJoin.rightKeys.map(remapStreamExpr))
+            case BuildRight =>
+              (specJoin.leftKeys.map(remapStreamExpr), specJoin.rightKeys.map(remapBuildExpr))
+          }
+
+          // Remap condition
+          val newCondition = specJoin.condition.map { c =>
+            c.transform {
+              case a: AttributeReference =>
+                if (buildPosMap.contains(a.exprId)) {
+                  remapBuildExpr(a)
+                } else if (streamPosMap.contains(a.exprId)) {
+                  remapStreamExpr(a)
+                } else {
+                  a
+                }
+            }
+          }
+
+          logInfo(s"GpuSpeculativeBroadcastRule: Fallback newLeftKeys=$newLeftKeys, " +
+            s"newRightKeys=$newRightKeys")
+
           ShuffledHashJoinExec(
-            specJoin.leftKeys, specJoin.rightKeys, specJoin.joinType,
-            specJoin.buildSide, specJoin.condition, newLeft, newRight)
+            newLeftKeys, newRightKeys, specJoin.joinType,
+            specJoin.buildSide, newCondition, newLeft, newRight)
         }
 
       case None =>

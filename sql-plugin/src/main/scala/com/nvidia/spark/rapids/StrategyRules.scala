@@ -18,17 +18,20 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy}
+import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 
 /**
  * Provides a Strategy that can implement rules for translating
  * custom logical plan nodes to physical plan nodes.
  * @note This is instantiated via reflection from ShimLoader.
  */
-class StrategyRules extends SparkStrategy {
+class StrategyRules extends SparkStrategy with Logging {
 
   private lazy val deltaStrategies: Seq[SparkStrategy] = {
     // Custom plan nodes that originate from DeltaLake
@@ -73,15 +76,24 @@ class StrategyRules extends SparkStrategy {
 
     // Check if AQE is enabled (required for speculative broadcast to work)
     if (!plan.conf.adaptiveExecutionEnabled) {
+      logInfo("SpeculativeBroadcast: AQE is disabled, skipping")
       return Nil
     }
 
-    val threshold = conf.get(RapidsConf.SPECULATIVE_BROADCAST_THRESHOLD)
-      .getOrElse(plan.conf.autoBroadcastJoinThreshold)
+    // Get threshold, with a sensible default if autoBroadcastJoinThreshold is disabled (-1)
+    val configuredThreshold = conf.get(RapidsConf.SPECULATIVE_BROADCAST_THRESHOLD)
+    val autoThreshold = plan.conf.autoBroadcastJoinThreshold
+    val threshold = configuredThreshold.getOrElse {
+      if (autoThreshold > 0) autoThreshold else 10L * 1024 * 1024 // 10MB default
+    }
+
+    logInfo(s"SpeculativeBroadcast: Checking plan ${plan.getClass.getSimpleName}, " +
+      s"threshold=$threshold (configured=$configuredThreshold, auto=$autoThreshold)")
 
     plan match {
       case ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, otherCondition,
           _, left, right, _) =>
+        logInfo(s"SpeculativeBroadcast: Found equi-join, joinType=$joinType")
 
         // Get size estimates
         val leftSize = left.stats.sizeInBytes.toLong
@@ -92,9 +104,30 @@ class StrategyRules extends SparkStrategy {
         buildSide.flatMap { side =>
           val buildSize = if (side == BuildLeft) leftSize else rightSize
           if (isSpeculativeCandidate(buildSize, threshold)) {
+            // Plan children first
+            val leftPlan = planLater(left)
+            val rightPlan = planLater(right)
+
+            // Add shuffle on build side explicitly (AQE won't add it otherwise)
+            // Use default shuffle partitions from config
+            val numPartitions = plan.conf.numShufflePartitions
+            val (_, plannedLeft, plannedRight) = side match {
+              case BuildLeft =>
+                val partitioning = HashPartitioning(leftKeys, numPartitions)
+                val buildShuffle = ShuffleExchangeExec(partitioning, leftPlan, ENSURE_REQUIREMENTS)
+                (leftKeys, buildShuffle, rightPlan)
+              case BuildRight =>
+                val partitioning = HashPartitioning(rightKeys, numPartitions)
+                val buildShuffle = ShuffleExchangeExec(partitioning, rightPlan, ENSURE_REQUIREMENTS)
+                (rightKeys, leftPlan, buildShuffle)
+            }
+
+            logInfo(s"SpeculativeBroadcast: Creating join with explicit shuffle on " +
+              s"${side} side, numPartitions=$numPartitions")
+
             Some(SpeculativeBroadcastHashJoinExec(
               leftKeys, rightKeys, joinType, side, otherCondition,
-              planLater(left), planLater(right), threshold) :: Nil)
+              plannedLeft, plannedRight, threshold) :: Nil)
           } else {
             None
           }
