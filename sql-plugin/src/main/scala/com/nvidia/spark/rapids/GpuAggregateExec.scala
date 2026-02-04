@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.AggregationTagging
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -37,7 +37,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
@@ -1952,7 +1952,7 @@ case class GpuHashAggregateExec(
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double
-) extends ShimUnaryExecNode with GpuExec {
+) extends GpuPartitioningPreservingUnaryExecNode with GpuExec with Logging {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
   def inputAttributes: Seq[Attribute] =
@@ -2057,15 +2057,16 @@ case class GpuHashAggregateExec(
     aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
   }
 
-  final override def outputPartitioning: Partitioning = {
-    if (hasAlias) {
-      child.outputPartitioning match {
-        case h: HashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
-        case other => other
-      }
-    } else {
-      child.outputPartitioning
-    }
+  /**
+   * Override buildAttributeMap to handle aggregate output semantics.
+   * Collects aliases from resultExpressions, mapping child attributes to output attributes.
+   * This follows Spark CPU's PartitioningPreservingUnaryExecNode.buildAttributeMap pattern.
+   */
+  override protected def buildAttributeMap(): Map[Attribute, Attribute] = {
+    resultExpressions.collect {
+      case a @ GpuAlias(child: Attribute, _) => child -> a.toAttribute
+      case a @ Alias(child: Attribute, _) => child -> a.toAttribute
+    }.toMap
   }
 
   protected def hasAlias: Boolean = outputExpressions.collectFirst { case _: Alias => }.isDefined

@@ -214,36 +214,30 @@ object GpuProjectExec {
   }
 }
 
-object GpuProjectExecLike {
-  def unapply(plan: SparkPlan): Option[(Seq[Expression], SparkPlan)] = plan match {
-    case gpuProjectLike: GpuProjectExecLike =>
-      Some((gpuProjectLike.projectList, gpuProjectLike.child))
-    case _ => None
-  }
-}
-
-trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
-
-  def projectList: Seq[Expression]
-
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
-
-  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+/**
+ * A GPU operator that preserves its child's output partitioning by remapping attributes.
+ *
+ * Mirrors Spark's PartitioningPreservingUnaryExecNode trait behavior, which is used by
+ * operators like Project, Filter, and HashAggregate that don't change partitioning.
+ *
+ * Subclasses can override buildAttributeMap() to customize how input attributes
+ * are mapped to output attributes.
+ */
+trait GpuPartitioningPreservingUnaryExecNode extends ShimUnaryExecNode {
 
   /**
-   * Compute output partitioning, handling PartitioningCollection from joins.
+   * Builds a mapping from child output attributes to this operator's output attributes.
+   * Default implementation zips child.output with output (used by Project).
    *
-   * This matches Spark's PartitioningPreservingUnaryExecNode behavior:
-   * 1. Flatten any PartitioningCollection into individual partitionings
-   * 2. Filter to only keep partitionings whose attributes are in the output
-   * 3. Remap attributes through aliases
-   *
-   * This is critical for Spark 4.1+ where UnionExec uses outputPartitioning
-   * to decide between partitioner-aware union vs concatenation.
+   * HashAggregate overrides this to map grouping expressions to result expressions
+   * using semantic equality.
    */
-  override def outputPartitioning: Partitioning = {
-    val attributeMap = child.output.zip(output).toMap
+  protected def buildAttributeMap(): Map[Attribute, Attribute] = {
+    child.output.zip(output).toMap
+  }
+
+  final override def outputPartitioning: Partitioning = {
+    val attributeMap = buildAttributeMap()
     val outputSet = AttributeSet(output)
 
     // Flatten a PartitioningCollection into individual partitionings
@@ -278,6 +272,24 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
       case multiple => PartitioningCollection(multiple)
     }
   }
+}
+
+object GpuProjectExecLike {
+  def unapply(plan: SparkPlan): Option[(Seq[Expression], SparkPlan)] = plan match {
+    case gpuProjectLike: GpuProjectExecLike =>
+      Some((gpuProjectLike.projectList, gpuProjectLike.child))
+    case _ => None
+  }
+}
+
+trait GpuProjectExecLike extends GpuPartitioningPreservingUnaryExecNode with GpuExec {
+
+  def projectList: Seq[Expression]
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
