@@ -243,8 +243,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
     def pruneIsRowDeletedColumn(plan: SparkPlan): SparkPlan = {
       plan.transformUp {
         case project @ GpuProjectExec(projectList, _, _) =>
-          val newProjList = projectList.filterNot(_.references.exists(
-            _.name == IS_ROW_DELETED_COLUMN_NAME))
+          val newProjList = projectList.filterNot(isRowDeletedColumnRef(_))
           project.copy(projectList = newProjList)
         case fsse: GpuFileSourceScanExec =>
           fsse.copy(originalOutput = fsse.originalOutput.filterNot(
@@ -297,11 +296,10 @@ object DVPredicatePushdown extends ShimPredicateHelper {
       GpuProjectExec(projList2, child, enablePreSplit1), enablePreSplit2) =>
         val projSet1 = projList1.map(_.exprId).toSet
         val projSet2 = projList2.map(_.exprId).toSet
-        val diff = projSet2.diff(projSet1)
-        if (diff.nonEmpty) {
-          p
-        } else {
+        if (projSet1 == projSet2) {
           GpuProjectExec(projList1, child, enablePreSplit1 && enablePreSplit2)
+        } else {
+          p
         }
     }
   }
