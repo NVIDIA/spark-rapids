@@ -141,15 +141,16 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
 
     // Spark often generates a plan that looks like below for deletion vector scans:
     // ...
-    // ProjectExec
-    //   FilterExec
-    //     ProjectExec
+    // ProjectExec <- prune is_row_deleted
+    //   FilterExec <- condition on is_row_deleted
+    //     ProjectExec <- project is_row_deleted
     //       FileSourceScanExec
     //
     // The FilterExec can be removed during the pushdown if the only remaining predicates
-    // are deletion vector predicates. However, this leaves two consecutive ProjectExecs
-    // which is unnecessary. So we merge them here.
-    DVPredicatePushdown.mergeProjects(pushed)
+    // are deletion vector predicates. If the FilterExec is removed, the `is_row_deleted`
+    // column is pruned from the subtree below the FilterExec. This can leave two consecutive
+    // identical ProjectExecs. We merge them here to simplify the plan.
+    DVPredicatePushdown.mergeIdentialProjects(pushed)
   }
 
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
@@ -239,34 +240,69 @@ object DVPredicatePushdown extends ShimPredicateHelper {
       }
     }
 
+    def pruneIsRowDeletedColumn(plan: SparkPlan): SparkPlan = {
+      plan.transformUp {
+        case project @ GpuProjectExec(projectList, _, _) =>
+          val newProjList = projectList.filterNot(_.references.exists(
+            _.name == IS_ROW_DELETED_COLUMN_NAME))
+          project.copy(projectList = newProjList)
+        case fsse: GpuFileSourceScanExec =>
+          fsse.copy(originalOutput = fsse.originalOutput.filterNot(
+            _.name == IS_ROW_DELETED_COLUMN_NAME),
+            requiredSchema = StructType(
+              fsse.requiredSchema.filterNot(_.name == IS_ROW_DELETED_COLUMN_NAME)
+            ))(fsse.rapidsConf)
+      }
+    }
+
     plan.transformUp {
       case filter @ GpuFilterExec(condition, child)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) =>
         // Decompose the condition into CNF
         val conjuncts = splitConjunctivePredicates(condition)
         // the dv condition should be "IS_ROW_DELETED_COLUMN_NAME == 0"
-        val (_, otherPredicates) = conjuncts.partition(p =>
+        val (dvPredicate, otherPredicates) = conjuncts.partition(p =>
           p.references.size == 1 &&
             p.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
             isDVCondition(p)
         )
 
-        if (otherPredicates.isEmpty) {
-          child
+        val otherPredicatesReadingIsRowDeleted = otherPredicates.filter(
+          p => p.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
+        )
+
+        val newChild = if (dvPredicate.nonEmpty && otherPredicatesReadingIsRowDeleted.isEmpty) {
+          // Since we are going to drop this dvPredicate and isRowDeleted is not used in other
+          // predicates, we can prune isRowDeleted column from the child plan
+          pruneIsRowDeletedColumn(child)
         } else {
-          filter.copy(condition = otherPredicates.reduce(GpuAnd))(filter.coalesceAfter)
+          child
+        }
+
+        if (otherPredicates.isEmpty) {
+          newChild
+        } else {
+          filter.copy(condition = otherPredicates.reduce(GpuAnd),
+            child = newChild)(filter.coalesceAfter)
         }
     }
   }
 
   /**
-   * Merges consecutive ProjectExecs into one.
+   * Merges consecutive ProjectExecs into one if their project lists are identical.
    */
-  def mergeProjects(plan: SparkPlan): SparkPlan = {
+  def mergeIdentialProjects(plan: SparkPlan): SparkPlan = {
     plan.transformUp {
-      case GpuProjectExec(projList1,
-      GpuProjectExec(_, child, enablePreSplit1), enablePreSplit2) =>
-        GpuProjectExec(projList1, child, enablePreSplit1 && enablePreSplit2)
+      case p @ GpuProjectExec(projList1,
+      GpuProjectExec(projList2, child, enablePreSplit1), enablePreSplit2) =>
+        val projSet1 = projList1.map(_.exprId).toSet
+        val projSet2 = projList2.map(_.exprId).toSet
+        val diff = projSet2.diff(projSet1)
+        if (diff.nonEmpty) {
+          p
+        } else {
+          GpuProjectExec(projList1, child, enablePreSplit1 && enablePreSplit2)
+        }
     }
   }
 }
