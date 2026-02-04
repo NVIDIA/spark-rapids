@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -24,7 +25,7 @@ import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan, SparkStrategy}
 /**
  * Extension point to enable GPU SQL processing.
  */
-class SQLExecPlugin extends (SparkSessionExtensions => Unit) {
+class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   private val strategyRules: SparkStrategy = ShimLoader.newStrategyRules()
 
   override def apply(extensions: SparkSessionExtensions): Unit = {
@@ -32,6 +33,9 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) {
     extensions.injectQueryStagePrepRule(queryStagePrepOverrides)
     extensions.injectPlannerStrategy(_ => strategyRules)
     extensions.injectPostHocResolutionRule(postHocResolutionOverrides)
+
+    // Try to inject queryStageOptimizerRule for speculative broadcast (Spark 3.5+)
+    tryInjectQueryStageOptimizerRule(extensions)
   }
 
   private def columnarOverrides(sparkSession: SparkSession): ColumnarRule = {
@@ -44,5 +48,30 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) {
 
   private def postHocResolutionOverrides(sparkSession: SparkSession): Rule[LogicalPlan] = {
     ShimLoader.newGpuPostHocResolutionOverrides(sparkSession)
+  }
+
+  /**
+   * Try to inject queryStageOptimizerRule for speculative broadcast.
+   * This API is only available in Spark 3.5+, so we use reflection.
+   */
+  private def tryInjectQueryStageOptimizerRule(extensions: SparkSessionExtensions): Unit = {
+    try {
+      val rule = ShimLoader.newSpeculativeBroadcastRule()
+      if (rule != null) {
+        // Use reflection to call injectQueryStageOptimizerRule
+        val method = extensions.getClass.getMethod(
+          "injectQueryStageOptimizerRule",
+          classOf[Function1[SparkSession, Rule[SparkPlan]]])
+        method.invoke(extensions, rule)
+        logInfo("Injected GpuSpeculativeBroadcastRule for speculative broadcast join")
+      }
+    } catch {
+      case _: NoSuchMethodException =>
+        // injectQueryStageOptimizerRule not available (Spark < 3.5)
+        logDebug("injectQueryStageOptimizerRule not available, " +
+          "speculative broadcast join disabled")
+      case e: Exception =>
+        logWarning("Failed to inject speculative broadcast rule", e)
+    }
   }
 }

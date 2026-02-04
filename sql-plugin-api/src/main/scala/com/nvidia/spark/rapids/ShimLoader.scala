@@ -353,6 +353,34 @@ object ShimLoader {
     constructor.newInstance(ss).asInstanceOf[Rule[LogicalPlan]]
   }
 
+  /**
+   * Create speculative broadcast rule builder for Spark 3.5+.
+   * Returns a function that creates Rule[SparkPlan] from SparkSession.
+   * Returns null if the rule class is not available (older Spark versions).
+   */
+  def newSpeculativeBroadcastRule(): SparkSession => Rule[SparkPlan] = {
+    try {
+      // Load the companion object class (with $ suffix)
+      val companionClz = ShimReflectionUtils.loadClass(
+        "com.nvidia.spark.rapids.shims.GpuSpeculativeBroadcastRule$")
+      // Get the MODULE$ field which holds the singleton instance
+      val moduleField = companionClz.getField("MODULE$")
+      val companionObj = moduleField.get(null)
+      // Get the apply method
+      val applyMethod = companionClz.getMethod("apply", classOf[SparkSession])
+      // Return a function that creates the rule
+      (spark: SparkSession) => {
+        applyMethod.invoke(companionObj, spark).asInstanceOf[Rule[SparkPlan]]
+      }
+    } catch {
+      case _: ClassNotFoundException =>
+        // Rule not available for this Spark version
+        null
+      case e: Exception =>
+        throw new RuntimeException("Failed to load GpuSpeculativeBroadcastRule", e)
+    }
+  }
+
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
     ShimReflectionUtils.newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }

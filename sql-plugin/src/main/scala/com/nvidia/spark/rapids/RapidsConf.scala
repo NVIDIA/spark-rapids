@@ -1123,6 +1123,24 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val SPECULATIVE_BROADCAST_ENABLED =
+    conf("spark.rapids.sql.speculativeBroadcast.enabled")
+    .doc("Enable speculative broadcast join optimization. When enabled, for joins where " +
+      "the build side statistics are uncertain, the optimizer will first shuffle the build " +
+      "side and check actual size. If small enough, it will broadcast the shuffled data " +
+      "and avoid shuffling the stream side entirely. This can significantly reduce shuffle " +
+      "overhead when build side turns out to be small at runtime.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val SPECULATIVE_BROADCAST_THRESHOLD =
+    conf("spark.rapids.sql.speculativeBroadcast.threshold")
+    .doc("Size threshold in bytes for speculative broadcast. If the actual shuffled size " +
+      "of the build side is below this threshold, the data will be broadcast instead of " +
+      "proceeding with shuffle join. Defaults to spark.sql.autoBroadcastJoinThreshold.")
+    .bytesConf(ByteUnit.BYTE)
+    .createOptional
+
   val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
     .doc("Whether sorts should be inserted after some hashed operations to improve " +
       "output ordering. This can improve output file sizes when saving to columnar formats.")
@@ -3467,6 +3485,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
 
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
+
+  lazy val isSpeculativeBroadcastEnabled: Boolean = get(SPECULATIVE_BROADCAST_ENABLED)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
