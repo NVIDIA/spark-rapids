@@ -2896,4 +2896,59 @@ def test_avg_divide_by_zero(data_type, ansi):
         f.col("id").cast(dt).alias("v")).groupBy("k").agg(f.avg(f.when(f.col("k") > 0, f.col("v")).otherwise(None))),
             conf=conf)
 
+@ignore_order
+@pytest.mark.parametrize("kudo_enabled", [True, False], ids=["KUDO", "NO_KUDO"])
+def test_hash_agg_with_aliased_grouping_key_in_result_expr(kudo_enabled):
+    """
+    Test that GpuHashAggregateExec correctly handles GpuAlias in resultExpressions.
+    """
+    def do_it(spark):
+        spark.conf.set("spark.sql.shuffle.partitions", "4")
 
+        # Create two datasets
+        df1 = spark.range(100).selectExpr(
+            "id % 5 as warehouse_id",
+            "id % 3 as year_col",
+            "cast(id * 10 as long) as sales"
+        )
+
+        df2 = spark.range(100).selectExpr(
+            "id % 5 as warehouse_id",
+            "id % 3 as year_col",
+            "cast(id * 20 as long) as sales"
+        )
+
+        # Use year_col in groupBy but alias it in the aggregate result
+        from pyspark.sql.functions import col, sum as sql_sum
+
+        agg1 = df1.groupBy("warehouse_id", "year_col") \
+            .agg(sql_sum("sales").alias("total")) \
+            .select(
+                col("warehouse_id"),
+                col("year_col").alias("year"),
+                col("total").alias("sales_1")
+            )
+
+        agg2 = df2.groupBy("warehouse_id", "year_col") \
+            .agg(sql_sum("sales").alias("total")) \
+            .select(
+                col("warehouse_id"),
+                col("year_col").alias("year"),
+                col("total").alias("sales_2")
+            )
+
+        union_result = agg1.union(agg2)
+
+        # Aggregate over union - groups by different keys than union children
+        final = union_result.groupBy("warehouse_id", "year") \
+            .agg(sql_sum("sales_1").alias("combined_sales"))
+
+        return final
+
+    assert_gpu_and_cpu_are_equal_collect(
+        do_it,
+        conf={
+            kudo_enabled_conf_key: kudo_enabled,
+            "spark.sql.adaptive.enabled": "true"
+        }
+    )
