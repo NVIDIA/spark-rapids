@@ -44,13 +44,16 @@ import org.apache.spark.util.SerializableConfiguration
  *  - value: BinaryType
  *
  * This format is intended to support protobuf payloads stored as raw bytes in the SequenceFile
- * record value bytes. It currently only supports uncompressed SequenceFiles.
+ * record value bytes.
+ *
+ * Compression support:
+ *  - NONE: Fully supported with splitting
+ *  - RECORD: Supported with splitting (each record compressed independently)
+ *  - BLOCK: Supported WITHOUT splitting (entire file read by one task)
  *
  * INTERNAL USE ONLY: This class is not registered as a public DataSource. It is used internally
  * by [[SequenceFileRDDConversionRule]] to convert RDD-based SequenceFile scans to FileFormat
  * scans that can be GPU-accelerated.
- *
- * Compressed SequenceFiles are not supported and will cause runtime failures.
  */
 class SequenceFileBinaryFileFormat extends FileFormat with Serializable {
   import SequenceFileBinaryFileFormat._
@@ -60,8 +63,11 @@ class SequenceFileBinaryFileFormat extends FileFormat with Serializable {
       options: Map[String, String],
       files: Seq[FileStatus]): Option[StructType] = Some(dataSchema)
 
-  // SequenceFile supports splitting at sync markers. The reader handles split boundaries
-  // by checking position BEFORE reading each record, ensuring records are not double-counted.
+  // SequenceFile supports splitting at sync markers for uncompressed and RECORD-compressed files.
+  // For BLOCK-compressed files, splitting is not safe because sync markers are at block boundaries,
+  // not record boundaries. We detect compression at read time and handle accordingly.
+  // Note: We return true here for general cases; BLOCK compression is handled at read time
+  // by reading the entire file when detected.
   override def isSplitable(
       sparkSession: SparkSession,
       options: Map[String, String],
@@ -98,26 +104,31 @@ class SequenceFileBinaryFileFormat extends FileFormat with Serializable {
         tc.addTaskCompletionListener[Unit](_ => reader.close())
       }
 
-      // Compressed SequenceFiles are not supported, fail fast.
-      if (reader.isCompressed || reader.isBlockCompressed) {
-        val compressionType = reader.getCompressionType
-        val msg = s"SequenceFileBinaryFileFormat does not support compressed SequenceFiles " +
-          s"(compressionType=$compressionType), " +
-          s"file=$path, keyClass=${reader.getKeyClassName}, " +
-          s"valueClass=${reader.getValueClassName}"
-        LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat]).error(msg)
-        throw new UnsupportedOperationException(msg)
-      }
-
+      val isBlockCompressed = reader.isBlockCompressed
       val start = partFile.start
       val end = start + partFile.length
       
-      if (start > 0) {
-        // sync(position) positions to the first sync point at or after position.
-        // This is consistent with Hadoop MapReduce's SequenceFileInputFormat.
-        reader.sync(start)
-      }
-      val reqFields = requiredSchema.fields
+      // For BLOCK-compressed files, splitting is problematic because:
+      // 1. Sync markers are at block boundaries, not record boundaries
+      // 2. Records within a block cannot be split
+      // If this is a non-first split of a block-compressed file, we return empty iterator
+      // because the first split will read the entire file.
+      if (isBlockCompressed && start > 0) {
+        LoggerFactory.getLogger(classOf[SequenceFileBinaryFileFormat]).debug(
+          s"Skipping non-first split of block-compressed SequenceFile: $path, start=$start")
+        reader.close()
+        Iterator.empty: Iterator[InternalRow]
+      } else {
+        // For block-compressed files starting at 0, read the entire file (ignore end boundary)
+        // For other files, respect the split boundaries
+        val effectiveEnd = if (isBlockCompressed) Long.MaxValue else end
+        
+        if (start > 0 && !isBlockCompressed) {
+          // sync(position) positions to the first sync point at or after position.
+          // This is consistent with Hadoop MapReduce's SequenceFileInputFormat.
+          reader.sync(start)
+        }
+        val reqFields = requiredSchema.fields
       val reqLen = reqFields.length
       val partLen = partitionSchema.length
       val totalLen = reqLen + partLen
@@ -149,13 +160,14 @@ class SequenceFileBinaryFileFormat extends FileFormat with Serializable {
             // 2. Read the record
             // 3. If posBeforeRead >= end AND syncSeen (from this read), DISCARD the record
             // This ensures each record is processed by exactly one split.
+            // Note: For block-compressed files, effectiveEnd is Long.MaxValue so we read all records.
             val posBeforeRead = reader.getPosition
             val recLen = reader.nextRaw(keyBuf, valueBytes)
             if (recLen < 0) {
               // EOF reached
               done = true
               close()
-            } else if (posBeforeRead >= end && reader.syncSeen()) {
+            } else if (posBeforeRead >= effectiveEnd && reader.syncSeen()) {
               // We were already past the split end, and this read crossed a sync marker.
               // This record belongs to the next split - discard it.
               done = true
@@ -238,6 +250,7 @@ class SequenceFileBinaryFileFormat extends FileFormat with Serializable {
           reader.close()
         }
       }
+      } // end else block for non-skip case
     }
   }
 
