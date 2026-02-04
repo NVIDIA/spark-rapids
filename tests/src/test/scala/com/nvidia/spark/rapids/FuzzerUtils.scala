@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DecimalType, MapType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -188,11 +188,7 @@ object FuzzerUtils {
       generateRow(schema.fields, rand, options)
     }
     
-    // Convert rows to columnar batch using cuDF column builders
-    import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
-    import com.nvidia.spark.rapids.{GpuColumnVector, Arm}
-    import scala.collection.JavaConverters._
-    
+    // Convert rows to columnar batch using cuDF column builders    
     val columns = schema.fields.map { field =>
       val columnData = rows.map(row => {
         val idx = schema.fieldIndex(field.name)
@@ -217,8 +213,7 @@ object FuzzerUtils {
    * Builds a cuDF column from Scala data
    */
   private def buildCudfColumn(dataType: DataType, data: Seq[Any], nullable: Boolean): ai.rapids.cudf.ColumnVector = {
-    import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType}
-    import scala.collection.JavaConverters._
+    import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
     
     dataType match {
       case LongType =>
@@ -261,38 +256,26 @@ object FuzzerUtils {
         }
       case MapType(keyType, valueType, valueContainsNull) =>
         // Map is represented as list<struct<key, value>> in cuDF
-        val keyValuePairs = data.flatMap { v =>
-          if (v == null) Seq.empty
-          else v.asInstanceOf[Map[_, _]].toSeq
-        }
+        // Build it using fromLists by converting each map to a list of struct data
+        import ai.rapids.cudf.HostColumnVector
         
-        val keys = keyValuePairs.map(_._1)
-        val values = keyValuePairs.map(_._2)
+        val structType = new HostColumnVector.StructType(true, Seq(
+          getHostColumnType(keyType, false),  // Keys are not nullable
+          getHostColumnType(valueType, valueContainsNull)
+        ).asJava)
         
-        val keyCol = buildCudfColumn(keyType, keys, false) // Keys are not nullable
-        val valueCol = buildCudfColumn(valueType, values, valueContainsNull)
+        val listType = new HostColumnVector.ListType(nullable, structType)
         
-        try {
-          val structCol = CudfColumnVector.makeStruct(keyValuePairs.length, keyCol, valueCol)
-          try {
-            // Build offsets for the list
-            var offset = 0
-            val offsets = data.map { v =>
-              val current = offset
-              if (v != null) {
-                offset += v.asInstanceOf[Map[_, _]].size
-              }
-              current
-            } :+ offset
-            
-            CudfColumnVector.makeList(structCol, offsets.toArray: _*)
-          } finally {
-            structCol.close()
+        val javaLists = data.map { v =>
+          if (v == null) null
+          else {
+            val map = v.asInstanceOf[Map[_, _]]
+            map.map { case (k, v) =>
+              new HostColumnVector.StructData(boxValue(k).asInstanceOf[Object], boxValue(v).asInstanceOf[Object])
+            }.toList.asJava
           }
-        } finally {
-          keyCol.close()
-          valueCol.close()
         }
+        CudfColumnVector.fromLists(listType, javaLists: _*)
       case _ =>
         throw new IllegalArgumentException(s"Unsupported data type: $dataType")
     }
@@ -302,16 +285,25 @@ object FuzzerUtils {
    * Creates a HostColumnVector type descriptor for lists
    */
   private def getHostListType(elementType: DataType, nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
+    import ai.rapids.cudf.HostColumnVector
+    
+    new HostColumnVector.ListType(nullable, getHostColumnType(elementType, nullable))
+  }
+  
+  /**
+   * Creates a HostColumnVector type descriptor for any data type
+   */
+  private def getHostColumnType(dataType: DataType, nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
     import ai.rapids.cudf.{DType, HostColumnVector}
     
-    elementType match {
-      case LongType => new HostColumnVector.ListType(nullable, new HostColumnVector.BasicType(nullable, DType.INT64))
-      case IntegerType => new HostColumnVector.ListType(nullable, new HostColumnVector.BasicType(nullable, DType.INT32))
-      case DoubleType => new HostColumnVector.ListType(nullable, new HostColumnVector.BasicType(nullable, DType.FLOAT64))
-      case FloatType => new HostColumnVector.ListType(nullable, new HostColumnVector.BasicType(nullable, DType.FLOAT32))
-      case BooleanType => new HostColumnVector.ListType(nullable, new HostColumnVector.BasicType(nullable, DType.BOOL8))
-      case StringType => new HostColumnVector.ListType(nullable, new HostColumnVector.BasicType(nullable, DType.STRING))
-      case _ => throw new IllegalArgumentException(s"Unsupported element type for list: $elementType")
+    dataType match {
+      case LongType => new HostColumnVector.BasicType(nullable, DType.INT64)
+      case IntegerType => new HostColumnVector.BasicType(nullable, DType.INT32)
+      case DoubleType => new HostColumnVector.BasicType(nullable, DType.FLOAT64)
+      case FloatType => new HostColumnVector.BasicType(nullable, DType.FLOAT32)
+      case BooleanType => new HostColumnVector.BasicType(nullable, DType.BOOL8)
+      case StringType => new HostColumnVector.BasicType(nullable, DType.STRING)
+      case _ => throw new IllegalArgumentException(s"Unsupported type: $dataType")
     }
   }
   

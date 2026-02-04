@@ -41,14 +41,22 @@ class SparkSchemaConverter extends TypeWithSchemaVisitor[DataType] {
     : DataType = {
 
     val parquetFields = struct.getFields
+    val icebergFields = iStruct.fields()
     val fields: JList[StructField] = Lists.newArrayListWithExpectedSize(fieldTypes.size)
     for (i <- 0 until parquetFields.size) {
       val parquetField = parquetFields.get(i)
       require(!parquetField.isRepetition(ParquetType.Repetition.REPEATED),
         s"Fields cannot have repetition REPEATED: ${parquetField}")
       val isNullable = parquetField.isRepetition(ParquetType.Repetition.OPTIONAL)
+      
+      // Get the field ID from the Iceberg field and add it to Spark metadata
+      val icebergField = icebergFields.get(i)
+      val fieldId = icebergField.fieldId()
+      val metadataBuilder = new MetadataBuilder()
+      metadataBuilder.putLong("parquet.field.id", fieldId.longValue())
+      
       val field = StructField(parquetField.getName, fieldTypes.get(i), isNullable,
-        Metadata.empty)
+        metadataBuilder.build())
       fields.add(field)
     }
     new StructType(fields.toArray(new Array[StructField](0)))

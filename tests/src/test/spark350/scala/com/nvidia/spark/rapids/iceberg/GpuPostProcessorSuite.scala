@@ -33,6 +33,8 @@ import scala.collection.JavaConverters._
 import com.nvidia.spark.rapids.iceberg.parquet._
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded.unshade
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
+import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.{MetadataColumns, Schema}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType, Type => ShadedType, Types => ShadedTypes}
@@ -40,8 +42,10 @@ import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType.{Primit
 import org.apache.iceberg.shaded.org.apache.parquet.schema.Type.{Repetition => ShadedRepetition}
 import org.apache.iceberg.types.Types
 import org.apache.parquet.hadoop.metadata.BlockMetaData
+import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
 
@@ -49,7 +53,12 @@ import org.apache.spark.sql.types.StructType
  * Unit tests for GpuParquetReaderPostProcessor to verify that the correct
  * ColumnAction tree is built based on schema comparison.
  */
-class GpuPostProcessorSuite extends AnyFunSuite {
+class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
+
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    SpillFramework.initialize(new RapidsConf(new SparkConf()))
+  }
 
   private def createBlockMetaData(rowCount: Long): BlockMetaData = {
     val block = new BlockMetaData()
@@ -147,7 +156,8 @@ class GpuPostProcessorSuite extends AnyFunSuite {
       parquetInfo,
       new JHashMap[Integer, Any](),
       expectedSchema,
-      shadedSchema)
+      shadedSchema,
+      Map.empty)
 
     // When all types match exactly, the entire batch passes through
     assert(processor.displayActionPlan() == "PassThrough")
@@ -353,25 +363,26 @@ class GpuPostProcessorSuite extends AnyFunSuite {
       parquetInfo,
       idToConstant,
       expectedSchema,
-      shadedSchema)
+      shadedSchema,
+      Map.empty)
 
     val expected =
       """ProcessStruct
-        |  pt_long (batch[0]):
+        |  pt_long (input[0]):
         |    PassThrough
-        |  pt_double (batch[1]):
+        |  pt_double (input[1]):
         |    PassThrough
-        |  pt_list (batch[2]):
+        |  pt_list (input[2]):
         |    PassThrough
-        |  pt_map (batch[3]):
+        |  pt_map (input[3]):
         |    PassThrough
-        |  pt_struct (batch[4]):
+        |  pt_struct (input[4]):
         |    PassThrough
-        |  promo_int (batch[5]):
+        |  promo_int (input[5]):
         |    UpCast(int -> bigint)
-        |  promo_float (batch[6]):
+        |  promo_float (input[6]):
         |    UpCast(float -> double)
-        |  promo_binary (batch[7]):
+        |  promo_binary (input[7]):
         |    UpCast(binary -> string)
         |  partition_col (generated):
         |    FetchConstant(fieldId=6, bigint)
@@ -381,33 +392,33 @@ class GpuPostProcessorSuite extends AnyFunSuite {
         |    FetchFilePath
         |  _pos (generated):
         |    FetchRowPosition
-        |  array_of_struct (batch[8]):
+        |  array_of_struct (input[8]):
         |    ProcessList
         |      element:
         |        ProcessStruct
-        |          field[0]:
+        |          field[0] (input[0]):
         |            UpCast(int -> bigint)
-        |          field[1]:
+        |          field[1] (input[1]):
         |            PassThrough
-        |  struct_with_array (batch[9]):
+        |  struct_with_array (input[9]):
         |    ProcessStruct
-        |      field[0]:
+        |      field[0] (input[0]):
         |        ProcessList
         |          element:
         |            UpCast(int -> bigint)
-        |      field[1]:
+        |      field[1] (input[1]):
         |        PassThrough
-        |  map_col (batch[10]):
+        |  map_col (input[10]):
         |    ProcessMap
         |      key:
         |        UpCast(binary -> string)
         |      value:
         |        PassThrough
-        |  mixed_struct (batch[11]):
+        |  mixed_struct (input[11]):
         |    ProcessStruct
-        |      field[0]:
+        |      field[0] (input[0]):
         |        PassThrough
-        |      field[1]:
+        |      field[1] (input[1]):
         |        UpCast(int -> bigint)""".stripMargin
 
     assert(processor.displayActionPlan() == expected)
@@ -435,7 +446,8 @@ class GpuPostProcessorSuite extends AnyFunSuite {
         parquetInfo,
         new JHashMap[Integer, Any](),
         expectedSchema,
-        shadedSchema)
+        shadedSchema,
+        Map.empty)
     }
     assert(ex.getMessage.contains("Missing required field"))
   }
@@ -444,12 +456,10 @@ class GpuPostProcessorSuite extends AnyFunSuite {
    * Test 4: Process a columnar batch with array type (passthrough, no promotion needed)
    */
   test("Process columnar batch with array<long> passthrough") {
-    import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType}
-    import com.nvidia.spark.rapids.{GpuColumnVector, SpillableColumnarBatch}
+    import com.nvidia.spark.rapids.SpillableColumnarBatch
     import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
     import com.nvidia.spark.rapids.SpillPriorities
     import org.apache.spark.sql.types._
-    import org.apache.spark.sql.vectorized.ColumnarBatch
 
     val arrayFieldId = 1
     val arrayElementId = 2
@@ -473,7 +483,8 @@ class GpuPostProcessorSuite extends AnyFunSuite {
       parquetInfo,
       new JHashMap[Integer, Any](),
       expectedSchema,
-      shadedSchema)
+      shadedSchema,
+      Map.empty)
 
     // Verify action plan is PassThrough (no transformation needed)
     assert(processor.displayActionPlan() == "PassThrough")
@@ -499,12 +510,10 @@ class GpuPostProcessorSuite extends AnyFunSuite {
    * Test 5: Process a columnar batch with struct type (passthrough)
    */
   test("Process columnar batch with struct<long, double> passthrough") {
-    import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType}
-    import com.nvidia.spark.rapids.{GpuColumnVector, SpillableColumnarBatch}
+    import com.nvidia.spark.rapids.SpillableColumnarBatch
     import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
     import com.nvidia.spark.rapids.SpillPriorities
     import org.apache.spark.sql.types._
-    import org.apache.spark.sql.vectorized.ColumnarBatch
 
     val structFieldId = 1
     val fieldAId = 2
@@ -534,7 +543,8 @@ class GpuPostProcessorSuite extends AnyFunSuite {
       parquetInfo,
       new JHashMap[Integer, Any](),
       expectedSchema,
-      shadedSchema)
+      shadedSchema,
+      Map.empty)
 
     // Verify action plan is PassThrough
     assert(processor.displayActionPlan() == "PassThrough")
@@ -564,13 +574,10 @@ class GpuPostProcessorSuite extends AnyFunSuite {
    * Test 6: Process a columnar batch with map type (passthrough)
    */
   test("Process columnar batch with map<long, double> passthrough") {
-    import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType}
-    import com.nvidia.spark.rapids.{GpuColumnVector, SpillableColumnarBatch}
+    import com.nvidia.spark.rapids.SpillableColumnarBatch
     import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
     import com.nvidia.spark.rapids.SpillPriorities
     import org.apache.spark.sql.types._
-    import org.apache.spark.sql.vectorized.ColumnarBatch
-    import java.util
 
     val mapFieldId = 1
     val mapKeyId = 2
@@ -598,7 +605,8 @@ class GpuPostProcessorSuite extends AnyFunSuite {
       parquetInfo,
       new JHashMap[Integer, Any](),
       expectedSchema,
-      shadedSchema)
+      shadedSchema,
+      Map.empty)
 
     // Verify action plan is PassThrough
     assert(processor.displayActionPlan() == "PassThrough")
@@ -615,6 +623,84 @@ class GpuPostProcessorSuite extends AnyFunSuite {
           // Verify basic properties
           assert(outputBatch.numRows() == 2)
           assert(outputBatch.numCols() == 1)
+        }
+      }
+    }
+  }
+
+  /**
+   * Test 7: Process struct with type promotion (INT32 -> INT64 on a field)
+   * This exercises the ProcessStruct code path with non-passthrough transformations
+   */
+  test("Process columnar batch with struct<int, double> promoted to struct<long, double>") {
+    import com.nvidia.spark.rapids.SpillableColumnarBatch
+    import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+    import com.nvidia.spark.rapids.SpillPriorities
+    import org.apache.spark.sql.types._
+
+    val structFieldId = 1
+    val fieldAId = 2
+    val fieldBId = 3
+
+    // Build shaded parquet schema: struct<a: INT32, b: DOUBLE>
+    val fieldA = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT32, ShadedRepetition.OPTIONAL)
+      .id(fieldAId).named("a")
+    val fieldB = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+      .id(fieldBId).named("b")
+    val structType = ShadedTypes.optionalGroup().addField(fieldA).addField(fieldB)
+      .id(structFieldId).named("struct_col")
+
+    val parquetSchema = new ShadedMessageType("test", Seq[ShadedType](structType).asJava)
+
+    // Expected schema: struct<a: LONG, b: DOUBLE> (promotion needed for field a)
+    val expectedSchema = new Schema(
+      Types.NestedField.optional(structFieldId, "struct_col",
+        Types.StructType.of(
+          Types.NestedField.optional(fieldAId, "a", Types.LongType.get()),
+          Types.NestedField.optional(fieldBId, "b", Types.DoubleType.get())
+        ))
+    )
+
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema, rowCount = 10)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
+
+    // Verify action plan involves ProcessStruct with UpCast for field a
+    val actionPlan = processor.displayActionPlan()
+    assert(actionPlan.contains("ProcessStruct"))
+    assert(actionPlan.contains("UpCast"))
+
+    // Create a columnar batch with struct<int, double> data using FuzzerUtils
+    import com.nvidia.spark.rapids.FuzzerUtils
+    val schema = StructType(Array(StructField("struct_col",
+      StructType(Seq(
+        StructField("a", IntegerType, true),
+        StructField("b", DoubleType, true)
+      )), true)))
+    val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 2, seed = 42)
+    
+    // Process the batch - this should exercise ProcessStruct with transformation
+    withResource(inputBatch) { _ =>
+      closeOnExcept(SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { spillable =>
+        withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
+          // Verify basic properties
+          assert(outputBatch.numRows() == 2)
+          assert(outputBatch.numCols() == 1)
+          
+          // Verify the output has the correct types
+          import com.nvidia.spark.rapids.GpuColumnVector
+          val gpuCol = outputBatch.column(0).asInstanceOf[GpuColumnVector]
+          val cudfCol = gpuCol.getBase
+          // It's a struct with 2 children
+          assert(cudfCol.getNumChildren == 2)
+          // First child should be INT64 (promoted from INT32)
+          assert(cudfCol.getChildColumnView(0).getType.equals(ai.rapids.cudf.DType.INT64))
+          // Second child should be FLOAT64
+          assert(cudfCol.getChildColumnView(1).getType.equals(ai.rapids.cudf.DType.FLOAT64))
         }
       }
     }

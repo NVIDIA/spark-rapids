@@ -134,7 +134,8 @@ class GpuMultiThreadIcebergParquetReader(
       filteredParquet,
       constantsProvider(icebergFile),
       requiredSchema,
-      shadedFileReadSchema)
+      shadedFileReadSchema,
+      conf.metrics)
 
     val old = postProcessors.put(icebergFile, postProcessor)
     require(old == null, "Iceberg parquet partition file post processor already exists!")

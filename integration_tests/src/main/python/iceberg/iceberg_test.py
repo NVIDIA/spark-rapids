@@ -593,3 +593,42 @@ def test_iceberg_parquet_read_from_url_encoded_path(spark_tmp_table_factory, rea
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM {}".format(table)),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_read_metadata_columns_with_partition_evolution(spark_tmp_table_factory, reader_type):
+    """
+    Test reading Iceberg metadata columns (_file, _pos, _spec_id, _partition) with partition evolution.
+    """
+    table = get_full_table_name(spark_tmp_table_factory)
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        # Create table partitioned by a
+        df = three_col_df(spark, long_gen, int_gen, string_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"CREATE TABLE {table} (a BIGINT, b INT, c STRING) USING ICEBERG PARTITIONED BY (a)")
+        spark.sql(f"INSERT INTO {table} SELECT * FROM {tmpview}")
+        
+        # Evolve partition: add b as partition field
+        spark.sql(f"ALTER TABLE {table} ADD PARTITION FIELD b")
+        
+        # Insert more data after partition evolution
+        df = three_col_df(spark, long_gen, int_gen, string_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"INSERT INTO {table} SELECT * FROM {tmpview}")
+        
+        # Evolve partition again: drop a, keep b
+        spark.sql(f"ALTER TABLE {table} DROP PARTITION FIELD a")
+        
+        # Insert more data after second partition evolution
+        df = three_col_df(spark, long_gen, int_gen, string_gen, seed=2)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"INSERT INTO {table} SELECT * FROM {tmpview}")
+    
+    with_cpu_session(setup_iceberg_table)
+    
+    # Test reading all metadata columns along with data columns
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b, c, _file, _pos, _spec_id, _partition FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})

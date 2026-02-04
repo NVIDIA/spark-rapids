@@ -59,7 +59,8 @@ class GpuCoalescingIcebergParquetReader(
             info,
             constantsProvider(file),
             conf.expectedSchema,
-            shadedFileReadSchema)
+            shadedFileReadSchema,
+            conf.metrics)
 
           info.blocks.map { block =>
             ParquetSingleDataBlockMeta(

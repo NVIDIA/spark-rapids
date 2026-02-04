@@ -152,7 +152,8 @@ private class SingleFileReader(
     val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet,
       idToConstant,
       requiredSchema,
-      shadedFileReadSchema)
+      shadedFileReadSchema,
+      conf.metrics)
 
     inited = true
     (parquetReader, postProcessor)

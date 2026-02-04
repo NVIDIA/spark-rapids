@@ -217,7 +217,6 @@ def test_iceberg_update_partitioned_table_multiple_columns(spark_tmp_table_facto
     )
 
 
-
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
