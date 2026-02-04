@@ -234,7 +234,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
 
     def isLiteralZero(expr: Expression): Boolean = {
       expr match {
-        case GpuLiteral(value, _) if value == 0 => true
+        case GpuLiteral(value: Number, _) if value.longValue() == 0L => true
         case _ => false
       }
     }
