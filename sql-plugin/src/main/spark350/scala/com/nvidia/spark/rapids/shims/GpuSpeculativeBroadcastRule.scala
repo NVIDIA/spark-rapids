@@ -29,7 +29,8 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{RapidsConf, SpeculativeBroadcastHashJoinExec}
+import com.nvidia.spark.rapids.{GpuOverrides, GpuTransitionOverrides, RapidsConf,
+  SpeculativeBroadcastHashJoinExec}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -222,9 +223,14 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
           logInfo(s"GpuSpeculativeBroadcastRule: newLeftKeys=$newLeftKeys, " +
             s"newRightKeys=$newRightKeys, newCondition=$newCondition")
 
-          BroadcastHashJoinExec(
+          val cpuJoin = BroadcastHashJoinExec(
             newLeftKeys, newRightKeys, specJoin.joinType,
             specJoin.buildSide, newCondition, newLeft, newRight)
+
+          // Apply GpuOverrides to convert CPU join to GPU join.
+          // This is necessary because GpuOverrides runs before this rule,
+          // so it cannot convert SpeculativeBroadcastHashJoinExec directly.
+          convertToGpu(cpuJoin)
 
         } else {
           // Too large - fall back to shuffled hash join (need stream side shuffle)
@@ -272,15 +278,50 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
           logInfo(s"GpuSpeculativeBroadcastRule: Fallback newLeftKeys=$newLeftKeys, " +
             s"newRightKeys=$newRightKeys")
 
-          ShuffledHashJoinExec(
+          val cpuJoin = ShuffledHashJoinExec(
             newLeftKeys, newRightKeys, specJoin.joinType,
             specJoin.buildSide, newCondition, newLeft, newRight)
+
+          // Apply GpuOverrides to convert CPU join to GPU join
+          convertToGpu(cpuJoin)
         }
 
       case None =>
         // Build side not ready yet, keep as-is (should not happen normally)
         logWarning("GpuSpeculativeBroadcastRule: Build side shuffle not ready")
         specJoin
+    }
+  }
+
+  /**
+   * Convert a CPU plan to GPU using GpuOverrides and GpuTransitionOverrides.
+   * This is called after creating BroadcastHashJoinExec or ShuffledHashJoinExec
+   * to ensure they run on GPU.
+   *
+   * We need to apply both rules because:
+   * 1. GpuOverrides converts CPU operators to GPU operators
+   * 2. GpuTransitionOverrides handles transitions between CPU and GPU data formats
+   *
+   * This is necessary because the normal ColumnarRule execution runs before AQE,
+   * but this rule runs during AQE after query stages are materialized.
+   */
+  private def convertToGpu(plan: SparkPlan): SparkPlan = {
+    val conf = rapidsConf
+    if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
+      logInfo(s"GpuSpeculativeBroadcastRule: Converting to GPU: " +
+        s"${plan.getClass.getSimpleName}")
+      // First apply GpuOverrides to convert operators
+      val gpuPlan = GpuOverrides().apply(plan)
+      logInfo(s"GpuSpeculativeBroadcastRule: After GpuOverrides: " +
+        s"${gpuPlan.getClass.getSimpleName}")
+      // Then apply GpuTransitionOverrides to handle data format transitions
+      val transitionedPlan = new GpuTransitionOverrides().apply(gpuPlan)
+      logInfo(s"GpuSpeculativeBroadcastRule: After transitions: " +
+        s"${transitionedPlan.getClass.getSimpleName}")
+      transitionedPlan
+    } else {
+      logInfo("GpuSpeculativeBroadcastRule: GPU disabled, keeping CPU plan")
+      plan
     }
   }
 
