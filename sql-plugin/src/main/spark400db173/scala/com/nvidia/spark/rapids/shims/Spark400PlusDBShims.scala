@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.Invoke
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
 import org.apache.spark.sql.rapids.shims.InvokeExprMeta
 
 trait Spark400PlusDBShims extends Spark341PlusDBShims {
@@ -38,5 +39,9 @@ trait Spark400PlusDBShims extends Spark341PlusDBShims {
         .note("The supported types are not deterministic since it's a dynamic expression")
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
+  }
+
+  override def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile] = {
+    partition.innerFiles
   }
 }

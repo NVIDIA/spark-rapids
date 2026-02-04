@@ -74,12 +74,14 @@ case class GpuAtomicReplaceTableAsSelectExec(
       invalidateCache(catalog, table, ident)
     }
     val staged = if (orCreate) {
-      catalog.stageCreateOrReplace(
-        ident, schema, partitioning.toArray, properties.asJava)
+      (catalog.stageCreateOrReplace(
+        ident, schema, partitioning.toArray, properties.asJava): @annotation.nowarn(
+        "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageCreateOrReplace"))
     } else if (catalog.tableExists(ident)) {
       try {
-        catalog.stageReplace(
-          ident, schema, partitioning.toArray, properties.asJava)
+        (catalog.stageReplace(
+          ident, schema, partitioning.toArray, properties.asJava): @annotation.nowarn(
+        "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageReplace"))
       } catch {
         case e: NoSuchTableException =>
           throw QueryCompilationErrors.cannotReplaceMissingTableError(ident, Some(e))

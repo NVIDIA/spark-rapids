@@ -70,9 +70,10 @@ case class GpuAtomicCreateTableAsSelectExec(
       throw QueryCompilationErrors.tableAlreadyExistsError(ident)
     }
     val schema = CharVarcharUtils.getRawSchema(query.schema, conf).asNullable
-    val stagedTable = catalog.stageCreate(
+    val stagedTable = (catalog.stageCreate(
       ident, getV2Columns(schema, catalog.useNullableQuerySchema),
-      partitioning.toArray, properties.asJava)
+      partitioning.toArray, properties.asJava): @annotation.nowarn(
+        "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageCreate"))
 
     writeToTable(catalog, stagedTable, writeOptions, ident, query)
   }

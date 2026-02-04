@@ -86,6 +86,12 @@ trait SparkShims {
       metadataColumns: Seq[AttributeReference] = Seq.empty,
       fileFormat: Option[FileFormat] = None): RDD[InternalRow]
 
+  /**
+   * Get files from FilePartition. In Spark 4.0+, the files method was deprecated
+   * in favor of filesWithAbsolutePaths or innerFiles.
+   */
+  def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile]
+
   def shouldFailDivOverflow: Boolean
 
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]

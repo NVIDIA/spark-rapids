@@ -65,6 +65,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.command._
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -139,7 +140,12 @@ trait Spark320PlusShims extends SparkShims with RebaseShims
       enableAddPartitions = true,
       enableDropPartitions = false)
 
-  override def shouldFailDivOverflow(): Boolean = SQLConf.get.ansiEnabled
+  override def shouldFailDivOverflow: Boolean = SQLConf.get.ansiEnabled
+
+  override def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile] = {
+    (partition.files: @annotation.nowarn(
+      "cat=deprecation&origin=org.apache.spark.sql.execution.datasources.FilePartitionBase.files"))
+  }
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     SparkSessionUtils.leafNodeDefaultParallelism(ss)

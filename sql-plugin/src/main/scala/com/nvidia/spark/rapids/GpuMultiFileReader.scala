@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.io.async._
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -341,7 +342,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
   override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
     assert(partition.isInstanceOf[FilePartition])
     val filePartition = partition.asInstanceOf[FilePartition]
-    val files = filePartition.files
+    val files = SparkShimImpl.getPartitionFiles(filePartition).toArray
     val filePaths = files.map(_.filePath.toString())
     val conf = broadcastedConf.value.value
 

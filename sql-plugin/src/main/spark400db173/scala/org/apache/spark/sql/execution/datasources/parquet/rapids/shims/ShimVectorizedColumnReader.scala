@@ -37,7 +37,7 @@ import org.apache.spark.sql.types.StructType
  * Based on the interface methods: getRootId(), getChild(name), getFieldId(name)
  */
 object IdentityParquetIdMapping extends ParquetIdExternalMapping {
-  override def getRootId(): Option[Int] = None
+  override def getRootId: Option[Int] = None
   override def getChild(name: String): ParquetIdExternalMapping = this
   override def getFieldId(name: String): Option[Int] = None
 }

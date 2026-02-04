@@ -4988,7 +4988,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
         val found = StaticPartitionShims.getStaticPartitions(f.relation).map { parts =>
           parts.exists { part =>
-            part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
+            SparkShimImpl.getPartitionFiles(part).exists(partFile =>
+              checkDeltaFunc(partFile.filePath.toString))
           }
         }.getOrElse {
           f.relation.location.rootPaths.exists { path =>
