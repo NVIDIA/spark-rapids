@@ -1150,7 +1150,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "speculative broadcast optimization. The optimization is only worthwhile when the " +
       "large side is big enough that avoiding its shuffle write provides significant benefit.")
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(10L * 1024L * 1024L * 1024L)
+    .createWithDefault(64L * 1024L * 1024L * 1024L)
 
   val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
     .doc("Whether sorts should be inserted after some hashed operations to improve " +
