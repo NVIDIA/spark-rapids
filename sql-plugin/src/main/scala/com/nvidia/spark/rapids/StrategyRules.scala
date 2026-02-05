@@ -88,6 +88,7 @@ class StrategyRules extends SparkStrategy with Logging {
 
     val autoBroadcastThreshold = plan.conf.autoBroadcastJoinThreshold
     val targetThreshold = conf.speculativeBroadcastTargetThreshold
+    val largeSideMinSize = conf.speculativeBroadcastLargeSideMinSize
 
     plan match {
       case ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, otherCondition,
@@ -102,11 +103,25 @@ class StrategyRules extends SparkStrategy with Logging {
 
         // Try to identify large side and small side
         val candidateOpt = identifyLargeAndSmallSide(
-          left, right, joinType, autoBroadcastThreshold, targetThreshold)
+          left, right, joinType, autoBroadcastThreshold, targetThreshold, largeSideMinSize)
 
-        candidateOpt.map { case (largeSide, smallSide, buildSide) =>
+        candidateOpt.flatMap { case (largeSide, smallSide, buildSide) =>
           val smallSideSize = smallSide.stats.sizeInBytes.toLong
           val largeSideSize = largeSide.stats.sizeInBytes.toLong
+
+          // Only apply to the join with the largest large side in this query.
+          // Find all candidate joins in the plan and check if this one has the largest.
+          val allCandidates = findAllCandidateJoins(
+            plan, autoBroadcastThreshold, targetThreshold, largeSideMinSize)
+          val largeSideSizes = allCandidates.map(_._2)
+          val maxLargeSideSize = if (largeSideSizes.nonEmpty) largeSideSizes.max else 0L
+
+          if (largeSideSize < maxLargeSideSize) {
+            logDebug(s"SpeculativeBroadcast: Skipping join because large side " +
+              s"($largeSideSize) is not the largest ($maxLargeSideSize)")
+            return Nil
+          }
+
           logInfo(s"SpeculativeBroadcast: Candidate found! " +
             s"largeSide=${largeSide.nodeName} (size=$largeSideSize bytes), " +
             s"smallSide=${smallSide.nodeName} (size=$smallSideSize bytes), " +
@@ -144,13 +159,48 @@ class StrategyRules extends SparkStrategy with Logging {
           logInfo(s"SpeculativeBroadcast: Creating join with explicit shuffle on " +
             s"$buildSide side (small side), numPartitions=$numPartitions")
 
-          SpeculativeBroadcastHashJoinExec(
+          Some(SpeculativeBroadcastHashJoinExec(
             leftKeys, rightKeys, joinType, buildSide, otherCondition,
-            plannedLeft, plannedRight, targetThreshold) :: Nil
+            plannedLeft, plannedRight, targetThreshold) :: Nil)
         }.getOrElse(Nil)
 
       case _ => Nil
     }
+  }
+
+  /**
+   * Find all candidate joins in the plan tree and return their large side sizes.
+   * Used to ensure only the join with the largest large side is selected per query.
+   */
+  private def findAllCandidateJoins(
+      plan: LogicalPlan,
+      autoBroadcastThreshold: Long,
+      targetThreshold: Long,
+      largeSideMinSize: Long): Seq[(LogicalPlan, Long)] = {
+
+    val candidates = scala.collection.mutable.ArrayBuffer[(LogicalPlan, Long)]()
+
+    plan.foreach {
+      case j @ Join(left, right, joinType, _, _) =>
+        // Check subtree simplicity
+        if (!containsShuffleJoin(left) && !containsShuffleJoin(right)) {
+          // Try left as large side
+          if (isValidLargeSide(left, largeSideMinSize) &&
+              isValidSmallSide(right, autoBroadcastThreshold, targetThreshold) &&
+              canBuildRight(joinType)) {
+            candidates += ((j, left.stats.sizeInBytes.toLong))
+          }
+          // Try right as large side
+          else if (isValidLargeSide(right, largeSideMinSize) &&
+              isValidSmallSide(left, autoBroadcastThreshold, targetThreshold) &&
+              canBuildLeft(joinType)) {
+            candidates += ((j, right.stats.sizeInBytes.toLong))
+          }
+        }
+      case _ =>
+    }
+
+    candidates.toSeq
   }
 
   /**
@@ -162,17 +212,20 @@ class StrategyRules extends SparkStrategy with Logging {
       right: LogicalPlan,
       joinType: JoinType,
       autoBroadcastThreshold: Long,
-      targetThreshold: Long): Option[(LogicalPlan, LogicalPlan, BuildSide)] = {
+      targetThreshold: Long,
+      largeSideMinSize: Long): Option[(LogicalPlan, LogicalPlan, BuildSide)] = {
 
     // Try left as large side, right as small side
-    if (isValidLargeSide(left) && isValidSmallSide(right, autoBroadcastThreshold, targetThreshold)
-        && canBuildRight(joinType)) {
+    if (isValidLargeSide(left, largeSideMinSize) &&
+        isValidSmallSide(right, autoBroadcastThreshold, targetThreshold) &&
+        canBuildRight(joinType)) {
       return Some((left, right, BuildRight))
     }
 
     // Try right as large side, left as small side
-    if (isValidLargeSide(right) && isValidSmallSide(left, autoBroadcastThreshold, targetThreshold)
-        && canBuildLeft(joinType)) {
+    if (isValidLargeSide(right, largeSideMinSize) &&
+        isValidSmallSide(left, autoBroadcastThreshold, targetThreshold) &&
+        canBuildLeft(joinType)) {
       return Some((right, left, BuildLeft))
     }
 
@@ -185,9 +238,26 @@ class StrategyRules extends SparkStrategy with Logging {
    * Requirements:
    * - Has a FileScan as leaf
    * - Only IS NOT NULL filters allowed (no substantive filtering)
+   * - Size estimate >= largeSideMinSize (must be big enough to benefit from optimization)
    */
-  private def isValidLargeSide(plan: LogicalPlan): Boolean = {
-    hasFileScan(plan) && hasOnlyIsNotNullFilter(plan)
+  private def isValidLargeSide(plan: LogicalPlan, largeSideMinSize: Long): Boolean = {
+    if (!hasFileScan(plan)) {
+      logDebug(s"SpeculativeBroadcast: Large side ${plan.nodeName} has no FileScan")
+      return false
+    }
+
+    if (!hasOnlyIsNotNullFilter(plan)) {
+      logDebug(s"SpeculativeBroadcast: Large side ${plan.nodeName} has non-IS-NOT-NULL filter")
+      return false
+    }
+
+    val estimate = plan.stats.sizeInBytes.toLong
+    if (estimate < largeSideMinSize) {
+      logDebug(s"SpeculativeBroadcast: Large side too small ($estimate < $largeSideMinSize)")
+      return false
+    }
+
+    true
   }
 
   /**

@@ -1144,6 +1144,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(1024L * 1024L * 1024L)
 
+  val SPECULATIVE_BROADCAST_LARGE_SIDE_MIN_SIZE =
+    conf("spark.rapids.sql.speculativeBroadcast.largeSideMinSize")
+    .doc("Minimum size in bytes for the large side (stream side) to be considered for " +
+      "speculative broadcast optimization. The optimization is only worthwhile when the " +
+      "large side is big enough that avoiding its shuffle write provides significant benefit.")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(10L * 1024L * 1024L * 1024L)
+
   val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
     .doc("Whether sorts should be inserted after some hashed operations to improve " +
       "output ordering. This can improve output file sizes when saving to columnar formats.")
@@ -3493,6 +3501,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val speculativeBroadcastTargetThreshold: Long =
     get(SPECULATIVE_BROADCAST_TARGET_THRESHOLD)
+
+  lazy val speculativeBroadcastLargeSideMinSize: Long =
+    get(SPECULATIVE_BROADCAST_LARGE_SIDE_MIN_SIZE)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
