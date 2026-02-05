@@ -120,7 +120,7 @@ private[iceberg] case class FetchConstant(
 /** Fill with null values for missing optional column. */
 private[iceberg] case class FillNull(sparkType: DataType) extends ColumnAction {
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    GpuColumnVector.fromNull(ctx.numRows, sparkType).getBase
+    GpuColumnVector.columnVectorFromNull(ctx.numRows, sparkType)
   }
 
   override def display(indent: Int): String = {
@@ -189,10 +189,11 @@ private[iceberg] case class ProcessList(
     if (elementAction == PassThrough) {
       col.incRefCount()
     } else {
-      val elementCol = col.getChildColumnView(0).copyToColumnVector()
-      closeOnExcept(elementCol) { _ =>
-        val transformed = elementAction.execute(ctx.withColumn(elementCol))
-        closeOnExcept(transformed) { _ =>
+      val elementCol = withResource(col.getChildColumnView(0)) { childView =>
+        childView.copyToColumnVector()
+      }
+      withResource(elementCol) { _ =>
+        withResource(elementAction.execute(ctx.withColumn(elementCol))) { transformed =>
           withResource(col.replaceListChild(transformed)) { view =>
             view.copyToColumnVector()
           }
@@ -221,18 +222,21 @@ private[iceberg] case class ProcessMap(
       col.incRefCount()
     } else {
       // Map in cuDF is list<struct<key,value>>
-      val structCol = col.getChildColumnView(0).copyToColumnVector()
+      val structCol = withResource(col.getChildColumnView(0)) { childView =>
+        childView.copyToColumnVector()
+      }
       withResource(structCol) { _ =>
-        val keyCol = structCol.getChildColumnView(0).copyToColumnVector()
-        val valueCol = structCol.getChildColumnView(1).copyToColumnVector()
-        closeOnExcept(keyCol) { _ =>
-          closeOnExcept(valueCol) { _ =>
-            val newKey = keyAction.execute(ctx.withColumn(keyCol))
-            closeOnExcept(newKey) { _ =>
-              val newValue = valueAction.execute(ctx.withColumn(valueCol))
-              closeOnExcept(newValue) { _ =>
-                val kvStruct = CudfColumnVector.makeStruct(newKey, newValue)
-                closeOnExcept(kvStruct) { _ =>
+        val keyCol = withResource(structCol.getChildColumnView(0)) { childView =>
+          childView.copyToColumnVector()
+        }
+        val valueCol = withResource(structCol.getChildColumnView(1)) { childView =>
+          childView.copyToColumnVector()
+        }
+        withResource(keyCol) { _ =>
+          withResource(valueCol) { _ =>
+            withResource(keyAction.execute(ctx.withColumn(keyCol))) { newKey =>
+              withResource(valueAction.execute(ctx.withColumn(valueCol))) { newValue =>
+                withResource(CudfColumnVector.makeStruct(newKey, newValue)) { kvStruct =>
                   withResource(col.replaceListChild(kvStruct)) { view =>
                     view.copyToColumnVector()
                   }
@@ -280,39 +284,31 @@ private[iceberg] case class ProcessStruct(
         require(inputIndices.forall(_.isEmpty),
           "When struct column is missing, all inputIndices must be None")
         val childCols = fieldActions.map(action => action.execute(ctx))
-        closeOnExcept(childCols) { _ =>
-          CudfColumnVector.makeStruct(ctx.numRows, childCols: _*)
+        withResource(childCols) { cols =>
+          CudfColumnVector.makeStruct(ctx.numRows, cols: _*)
         }
       
       case Some(col) =>
-        // Check if we can pass through: all PassThrough AND indices are sequential (0, 1, 2, ...)
-        val canPassThrough = fieldActions.forall(_ == PassThrough) &&
-          inputIndices.zipWithIndex.forall { case (optIdx, i) => optIdx.contains(i) }
-
-        if (canPassThrough) {
-          col.incRefCount()
-        } else {
-          val childCols = fieldActions.zip(inputIndices).map { case (action, inputIdx) =>
-            inputIdx match {
-              case Some(idx) =>
-                // Field exists in input - get child at the correct index
-                val childCol = col.getChildColumnView(idx).copyToColumnVector()
-                if (action == PassThrough) {
-                  childCol
-                } else {
-                  withResource(childCol) { _ =>
-                    action.execute(ctx.withColumn(childCol))
-                  }
+        val childCols = fieldActions.zip(inputIndices).map { case (action, inputIdx) =>
+          inputIdx match {
+            case Some(idx) =>
+              // Field exists in input - get child at the correct index
+              val childCol = col.getChildColumnView(idx).copyToColumnVector()
+              if (action == PassThrough) {
+                childCol
+              } else {
+                withResource(childCol) { _ =>
+                  action.execute(ctx.withColumn(childCol))
                 }
-              case None =>
-                // Field doesn't exist in input - action must generate the column
-                // (FillNull, FetchConstant, etc.)
-                action.execute(ctx)
-            }
+              }
+            case None =>
+              // Field doesn't exist in input - action must generate the column
+              // (FillNull, FetchConstant, etc.)
+              action.execute(ctx)
           }
-          closeOnExcept(childCols) { _ =>
-            CudfColumnVector.makeStruct(ctx.numRows, childCols: _*)
-          }
+        }
+        withResource(childCols) { cols =>
+          CudfColumnVector.makeStruct(ctx.numRows, cols: _*)
         }
     }
   }
@@ -605,6 +601,9 @@ class GpuParquetReaderPostProcessor(
       accessors)
   }
 
+  private val expectedFields = expectedSchema.asStruct().fields().asScala
+  private val expectedSparkTypes = expectedFields.map(f => SparkSchemaUtil.convert(f.`type`()))
+
   // Check if we can pass through the entire batch without any processing.
   private val canPassThroughBatch: Boolean = rootAction == PassThrough
 
@@ -612,7 +611,7 @@ class GpuParquetReaderPostProcessor(
   private[iceberg] def displayActionPlan(): String = {
     rootAction match {
       case ProcessStruct(fieldActions, inputIndices) =>
-        val fields = expectedSchema.asStruct().fields().asScala
+        val fields = expectedFields
         val sb = new StringBuilder
         sb.append("ProcessStruct")
         fieldActions.zip(inputIndices).zip(fields).foreach { case ((action, inputIdx), field) =>
@@ -674,8 +673,7 @@ class GpuParquetReaderPostProcessor(
               val col = batchIdx.map(i => batch.column(i).asInstanceOf[GpuColumnVector].getBase)
               val ctx = new ColumnActionContext(this, col)
               val result = action.execute(ctx)
-              val sparkType = SparkSchemaUtil.convert(field.`type`())
-              columns(idx) = GpuColumnVector.from(result, sparkType)
+            columns(idx) = GpuColumnVector.from(result, expectedSparkTypes(idx))
             }
           }
 
