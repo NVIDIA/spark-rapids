@@ -215,8 +215,6 @@ object GpuProjectExec {
 }
 
 /**
- * A GPU operator that preserves its child's output partitioning by remapping attributes.
- *
  * Mirrors Spark's PartitioningPreservingUnaryExecNode trait behavior, which is used by
  * operators like Project, Filter, and HashAggregate that don't change partitioning.
  *
@@ -227,15 +225,22 @@ trait GpuPartitioningPreservingUnaryExecNode extends ShimUnaryExecNode {
 
   /**
    * Builds a mapping from child output attributes to this operator's output attributes.
-   * Default implementation zips child.output with output (used by Project).
-   *
-   * HashAggregate overrides this to map grouping expressions to result expressions
-   * using semantic equality.
    */
   protected def buildAttributeMap(): Map[Attribute, Attribute] = {
     child.output.zip(output).toMap
   }
 
+  /**
+   * Compute output partitioning, handling PartitioningCollection from joins.
+   *
+   * This matches Spark's PartitioningPreservingUnaryExecNode behavior:
+   * 1. Flatten any PartitioningCollection into individual partitionings
+   * 2. Filter to only keep partitionings whose attributes are in the output
+   * 3. Remap attributes through aliases
+   *
+   * This is critical for Spark 4.1+ where UnionExec uses outputPartitioning
+   * to decide between partitioner-aware union vs concatenation.
+   */
   final override def outputPartitioning: Partitioning = {
     val attributeMap = buildAttributeMap()
     val outputSet = AttributeSet(output)

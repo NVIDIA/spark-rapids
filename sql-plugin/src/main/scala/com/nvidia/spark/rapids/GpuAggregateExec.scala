@@ -2060,7 +2060,6 @@ case class GpuHashAggregateExec(
   /**
    * Override buildAttributeMap to handle aggregate output semantics.
    * Collects aliases from resultExpressions, mapping child attributes to output attributes.
-   * This follows Spark CPU's PartitioningPreservingUnaryExecNode.buildAttributeMap pattern.
    */
   override protected def buildAttributeMap(): Map[Attribute, Attribute] = {
     resultExpressions.collect {
