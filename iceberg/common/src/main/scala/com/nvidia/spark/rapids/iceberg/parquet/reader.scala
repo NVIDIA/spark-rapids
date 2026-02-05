@@ -45,7 +45,8 @@ import org.apache.parquet.hadoop.metadata.BlockMetaData
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.execution.datasources.parquet.ParquetToSparkSchemaConverter
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class IcebergPartitionedFile(
@@ -209,9 +210,14 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b._2))
       val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
-      val partReaderSparkSchema = TypeWithSchemaVisitor.visit(requiredSchema.asStruct(),
-          fileReadSchema, new SparkSchemaConverter)
-        .asInstanceOf[StructType]
+      val sqlConf = SQLConf.get
+      val partReaderSparkSchema = new ParquetToSparkSchemaConverter(
+        sqlConf.isParquetBinaryAsString,
+        sqlConf.isParquetINT96AsTimestamp,
+        conf.caseSensitive,
+        sqlConf.parquetInferTimestampNTZEnabled,
+        sqlConf.legacyParquetNanosAsLong
+      ).convert(unshade(fileReadSchema))
 
       val parquetFileInfo = ParquetFileInfoWithBlockMeta(file.path,
         blocks,
