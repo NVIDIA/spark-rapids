@@ -236,7 +236,8 @@ class GpuDeltaParquetFileFormatBase(
       fileScan.rapidsConf,
       fileScan.allMetrics,
       useMetadataRowIndex = false,
-      tablePath)
+      tablePath,
+      queryUsesInputFile = tablePath.isEmpty && fileScan.queryUsesInputFile)
   }
 
   /**
@@ -314,13 +315,14 @@ class DeltaMultiFileReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     useMetadataRowIndex: Boolean,
-    tablePath: Option[String]
+    tablePath: Option[String],
+    queryUsesInputFile: Boolean
     ) extends GpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
       dataSchema, readDataSchema, partitionSchema,
       filters, rapidsConf,
       poolConfBuilder = ThreadPoolConfBuilder(rapidsConf),
       metrics = metrics,
-      queryUsesInputFile = true) {
+      queryUsesInputFile = queryUsesInputFile) {
 
   private val schemaWithIndices = readDataSchema.fields.zipWithIndex
   def findColumn(name: String): Option[ColumnMetadata] = {
