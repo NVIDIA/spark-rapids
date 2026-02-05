@@ -2059,13 +2059,14 @@ case class GpuHashAggregateExec(
 
   /**
    * Override buildAttributeMap to handle aggregate output semantics.
-   * Collects aliases from resultExpressions, mapping child attributes to output attributes.
    */
   override protected def buildAttributeMap(): Map[Attribute, Attribute] = {
-    resultExpressions.collect {
+    val baseMap = child.output.zip(output).toMap
+    val aliasMap = resultExpressions.collect {
       case a @ GpuAlias(child: Attribute, _) => child -> a.toAttribute
       case a @ Alias(child: Attribute, _) => child -> a.toAttribute
     }.toMap
+    baseMap ++ aliasMap
   }
 
   protected def hasAlias: Boolean = outputExpressions.collectFirst { case _: Alias => }.isDefined
