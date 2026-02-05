@@ -108,8 +108,19 @@ class StrategyRules extends SparkStrategy with Logging {
             val leftPlan = planLater(left)
             val rightPlan = planLater(right)
 
-            // Add shuffle on build side explicitly (AQE won't add it otherwise)
-            // Use default shuffle partitions from config
+            // IMPORTANT: We must add ShuffleExchangeExec explicitly here, rather than
+            // relying on EnsureRequirements to add it based on requiredChildDistribution.
+            //
+            // Reason: EnsureRequirements only adds shuffle when child's outputPartitioning
+            // does NOT satisfy the required distribution. If build side already has compatible
+            // partitioning (e.g., from a previous aggregation), EnsureRequirements won't add
+            // any shuffle. But we NEED a ShuffleExchangeExec so that:
+            // 1. AQE wraps it as ShuffleQueryStageExec
+            // 2. The shuffle stage gets materialized independently
+            // 3. We can obtain runtime statistics (mapStats) with actual data size
+            //
+            // Without explicit shuffle, there's no ShuffleQueryStageExec, no mapStats,
+            // and SpeculativeBroadcastRule cannot make the runtime decision.
             val numPartitions = plan.conf.numShufflePartitions
             val (_, plannedLeft, plannedRight) = side match {
               case BuildLeft =>

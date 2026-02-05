@@ -25,8 +25,9 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
-import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec,
+  GpuShuffleExchangeExecBase}
 
 abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
@@ -34,39 +35,52 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 
+  /**
+   * Check if the ShuffleQueryStageExec contains a GPU shuffle.
+   */
+  private def isGpuShuffle(sqse: ShuffleQueryStageExec): Boolean = {
+    sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase] ||
+      (sqse.plan.isInstanceOf[ReusedExchangeExec] &&
+        sqse.plan.asInstanceOf[ReusedExchangeExec].child.isInstanceOf[GpuShuffleExchangeExecBase])
+  }
+
   def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {
     buildSide.wrapped match {
       case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
           bqse.plan.asInstanceOf[ReusedExchangeExec]
               .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase] ||
-          sqse.plan.isInstanceOf[ReusedExchangeExec] &&
-          sqse.plan.asInstanceOf[ReusedExchangeExec]
-              .child.isInstanceOf[GpuShuffleExchangeExecBase]
+      case sqse: ShuffleQueryStageExec => isGpuShuffle(sqse)
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
           reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
       case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
+      // Handle BroadcastExchangeExec created by SpeculativeBroadcastRule
+      // Its child is a ShuffleQueryStageExec containing GPU shuffle
+      case bce: BroadcastExchangeExec =>
+        bce.child match {
+          case sqse: ShuffleQueryStageExec => isGpuShuffle(sqse)
+          case _ => buildSide.canThisBeReplaced
+        }
       case _ => buildSide.canThisBeReplaced
     }
   }
 
   def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
-    def isOnGpu(sqse: ShuffleQueryStageExec): Boolean = sqse.plan match {
-      case _: GpuShuffleExchangeExecBase => true
-      case ReusedExchangeExec(_, _: GpuShuffleExchangeExecBase) => true
-      case _ => false
-    }
     val buildSideOnGpu = buildSide match {
       case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
               bqse.plan.asInstanceOf[ReusedExchangeExec]
                   .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => isOnGpu(sqse)
+      case sqse: ShuffleQueryStageExec => isGpuShuffle(sqse)
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
           reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
       case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
-      case GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _) => isOnGpu(sqse)
+      case bce: BroadcastExchangeExec =>
+        bce.child match {
+          case sqse: ShuffleQueryStageExec => isGpuShuffle(sqse)
+          case _ => false
+        }
+      case GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _) => isGpuShuffle(sqse)
       case _ => false
     }
     if (!buildSideOnGpu) {

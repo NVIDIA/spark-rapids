@@ -4371,10 +4371,16 @@ object GpuOverrides extends Logging {
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
       conf: RapidsConf,
-      parent: Option[RapidsMeta[_, _, _]]): SparkPlanMeta[INPUT]  =
-    execs.get(plan.getClass)
-      .map(r => r.wrap(plan, conf, parent, r).asInstanceOf[SparkPlanMeta[INPUT]])
-      .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
+      parent: Option[RapidsMeta[_, _, _]]): SparkPlanMeta[INPUT]  = {
+    // If the plan is already a GpuExec, don't try to replace it again
+    if (plan.isInstanceOf[GpuExec]) {
+      new DoNotReplaceOrWarnSparkPlanMeta[INPUT](plan, conf, parent)
+    } else {
+      execs.get(plan.getClass)
+        .map(r => r.wrap(plan, conf, parent, r).asInstanceOf[SparkPlanMeta[INPUT]])
+        .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
+    }
+  }
 
   val commonExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     exec[GenerateExec] (

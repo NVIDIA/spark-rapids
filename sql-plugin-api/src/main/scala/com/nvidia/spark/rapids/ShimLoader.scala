@@ -362,7 +362,7 @@ object ShimLoader {
     try {
       // Load the companion object class (with $ suffix)
       val companionClz = ShimReflectionUtils.loadClass(
-        "com.nvidia.spark.rapids.shims.GpuSpeculativeBroadcastRule$")
+        "com.nvidia.spark.rapids.shims.SpeculativeBroadcastRule$")
       // Get the MODULE$ field which holds the singleton instance
       val moduleField = companionClz.getField("MODULE$")
       val companionObj = moduleField.get(null)
@@ -377,7 +377,7 @@ object ShimLoader {
         // Rule not available for this Spark version
         null
       case e: Exception =>
-        throw new RuntimeException("Failed to load GpuSpeculativeBroadcastRule", e)
+        throw new RuntimeException("Failed to load SpeculativeBroadcastRule", e)
     }
   }
 

@@ -29,20 +29,19 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuOverrides, GpuTransitionOverrides, RapidsConf,
-  SpeculativeBroadcastHashJoinExec}
+import com.nvidia.spark.rapids.{GpuOverrides, RapidsConf, SpeculativeBroadcastHashJoinExec}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, BindReferences, Expression}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
+import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashJoin,
-  HashedRelationBroadcastMode, ShuffledHashJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode,
+  HashJoin, ShuffledHashJoinExec}
 
 /**
  * A queryStageOptimizerRule that transforms SpeculativeBroadcastHashJoinExec
@@ -52,10 +51,11 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashJoin,
  * - If small enough: converts to BroadcastHashJoin (stream side avoids shuffle)
  * - If too large: converts to ShuffledHashJoin (adds shuffle for stream side)
  *
- * This achieves TRUE speculative broadcast: stream side shuffle is completely
- * avoided when build side turns out to be small at runtime.
+ * This rule is CPU/GPU neutral - it produces standard Spark CPU operators
+ * (BroadcastHashJoinExec or ShuffledHashJoinExec). The subsequent GpuOverrides
+ * pass will convert these to GPU operators if applicable.
  */
-case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan] with Logging {
+case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan] with Logging {
 
   private def rapidsConf: RapidsConf = new RapidsConf(spark.sessionState.conf)
 
@@ -70,19 +70,34 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
   }
 
   override def apply(plan: SparkPlan): SparkPlan = {
-    logInfo(s"GpuSpeculativeBroadcastRule.apply called, isEnabled=$isEnabled, " +
-      s"plan=${plan.getClass.getSimpleName}")
+    // Check if plan contains SpeculativeBroadcastHashJoinExec
+    val specJoins = plan.collect { case s: SpeculativeBroadcastHashJoinExec => s }
+    logWarning(s"SpeculativeBroadcastRule.apply called, isEnabled=$isEnabled, " +
+      s"plan=${plan.getClass.getSimpleName}, containsSpecJoin=${specJoins.nonEmpty}, " +
+      s"specJoinCount=${specJoins.size}")
+    if (specJoins.nonEmpty) {
+      logWarning(s"SpeculativeBroadcastRule: Plan tree:\n${plan.treeString}")
+    }
     if (!isEnabled) {
       return plan
     }
 
-    plan.transformUp {
+    val result = plan.transformUp {
       case specJoin: SpeculativeBroadcastHashJoinExec =>
-        logInfo(s"GpuSpeculativeBroadcastRule: Found SpeculativeBroadcastHashJoinExec, " +
+        logWarning(s"SpeculativeBroadcastRule: Found SpeculativeBroadcastHashJoinExec, " +
           s"buildSide=${specJoin.buildSide}, left=${specJoin.left.getClass.getSimpleName}, " +
           s"right=${specJoin.right.getClass.getSimpleName}")
         transformSpeculativeJoin(specJoin)
     }
+
+    // Verify transformation
+    val remaining = result.collect { case s: SpeculativeBroadcastHashJoinExec => s }
+    logWarning(s"SpeculativeBroadcastRule: After transform, remaining SpecJoins: " +
+      s"${remaining.size}, result root: ${result.getClass.getSimpleName}")
+    if (remaining.nonEmpty) {
+      logWarning(s"SpeculativeBroadcastRule: Result tree:\n${result.treeString}")
+    }
+    result
   }
 
   /**
@@ -98,17 +113,17 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
     }
 
     // Log detailed attribute info for debugging
-    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.left.output = ${specJoin.left.output}")
-    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.right.output = ${specJoin.right.output}")
-    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.leftKeys = ${specJoin.leftKeys}")
-    logInfo(s"GpuSpeculativeBroadcastRule: specJoin.rightKeys = ${specJoin.rightKeys}")
+    logWarning(s"SpeculativeBroadcastRule: specJoin.left.output = ${specJoin.left.output}")
+    logWarning(s"SpeculativeBroadcastRule: specJoin.right.output = ${specJoin.right.output}")
+    logWarning(s"SpeculativeBroadcastRule: specJoin.leftKeys = ${specJoin.leftKeys}")
+    logWarning(s"SpeculativeBroadcastRule: specJoin.rightKeys = ${specJoin.rightKeys}")
 
     // Find the build side shuffle stage
     findShuffleStageInfo(buildChild) match {
       case Some((buildStage, buildSize)) =>
-        logInfo(s"GpuSpeculativeBroadcastRule: buildChild.output = ${buildChild.output}")
-        logInfo(s"GpuSpeculativeBroadcastRule: buildStage.output = ${buildStage.output}")
-        logInfo(s"GpuSpeculativeBroadcastRule: streamChild.output = ${streamChild.output}")
+        logWarning(s"SpeculativeBroadcastRule: buildChild.output = ${buildChild.output}")
+        logWarning(s"SpeculativeBroadcastRule: buildStage.output = ${buildStage.output}")
+        logWarning(s"SpeculativeBroadcastRule: streamChild.output = ${streamChild.output}")
 
         // Create position-based attribute mapping
         // Maps attribute by finding its position in child output and using corresponding
@@ -126,8 +141,8 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
           case (a, i) => a.exprId -> i
         }.toMap
 
-        logInfo(s"GpuSpeculativeBroadcastRule: buildPosMap = $buildPosMap")
-        logInfo(s"GpuSpeculativeBroadcastRule: streamPosMap = $streamPosMap")
+        logInfo(s"SpeculativeBroadcastRule: buildPosMap = $buildPosMap")
+        logInfo(s"SpeculativeBroadcastRule: streamPosMap = $streamPosMap")
 
         // Remap expression by finding matching attribute in output by exprId.id
         // Note: We compare only exprId.id, not the full ExprId (which includes jvmId),
@@ -138,11 +153,11 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
               // Find attribute in buildStage.output with same exprId.id
               val newAttr = buildStage.output.find(_.exprId.id == a.exprId.id).getOrElse(a)
               if (newAttr ne a) {
-                logInfo(s"GpuSpeculativeBroadcastRule: Remapping build attr " +
+                logInfo(s"SpeculativeBroadcastRule: Remapping build attr " +
                   s"${a.name}#${a.exprId.id} (jvm=${a.exprId}) -> " +
                   s"${newAttr.name}#${newAttr.exprId.id} (jvm=${newAttr.exprId})")
               } else {
-                logInfo(s"GpuSpeculativeBroadcastRule: No match in buildStage for " +
+                logInfo(s"SpeculativeBroadcastRule: No match in buildStage for " +
                   s"${a.name}#${a.exprId.id}, keeping original")
               }
               newAttr
@@ -155,11 +170,11 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
               // Find attribute in streamChild.output with same exprId.id
               val newAttr = streamChild.output.find(_.exprId.id == a.exprId.id).getOrElse(a)
               if (newAttr ne a) {
-                logInfo(s"GpuSpeculativeBroadcastRule: Remapping stream attr " +
+                logInfo(s"SpeculativeBroadcastRule: Remapping stream attr " +
                   s"${a.name}#${a.exprId.id} (jvm=${a.exprId}) -> " +
                   s"${newAttr.name}#${newAttr.exprId.id} (jvm=${newAttr.exprId})")
               } else {
-                logInfo(s"GpuSpeculativeBroadcastRule: No match in streamChild for " +
+                logInfo(s"SpeculativeBroadcastRule: No match in streamChild for " +
                   s"${a.name}#${a.exprId.id}, keeping original")
               }
               newAttr
@@ -168,7 +183,7 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
 
         if (buildSize < broadcastThreshold) {
           // Small enough - use broadcast join (no stream side shuffle!)
-          logInfo(s"GpuSpeculativeBroadcastRule: Build side small ($buildSize bytes < " +
+          logWarning(s"SpeculativeBroadcastRule: Build side small ($buildSize bytes < " +
             s"$broadcastThreshold), using BroadcastHashJoin - stream side avoids shuffle!")
 
           // Remap build keys to buildStage.output attributes for HashedRelationBroadcastMode
@@ -178,19 +193,19 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
           }
           val buildKeys = originalBuildKeys.map(remapBuildExpr)
 
-          logInfo(s"GpuSpeculativeBroadcastRule: originalBuildKeys = $originalBuildKeys")
-          logInfo(s"GpuSpeculativeBroadcastRule: remapped buildKeys = $buildKeys")
+          logInfo(s"SpeculativeBroadcastRule: originalBuildKeys = $originalBuildKeys")
+          logInfo(s"SpeculativeBroadcastRule: remapped buildKeys = $buildKeys")
 
           // CRITICAL: HashJoin.rewriteKeyExpr rewrites IntegralType keys to Long for optimization.
           // BroadcastHashJoinExec codegen uses rewriteKeyExpr on streamedKeys, so it expects
           // the HashedRelation to also use rewritten keys. If we don't rewrite, the codegen
           // will call get(Long) but the relation only supports get(InternalRow).
           val rewrittenBuildKeys = HashJoin.rewriteKeyExpr(buildKeys)
-          logInfo(s"GpuSpeculativeBroadcastRule: rewrittenBuildKeys = $rewrittenBuildKeys")
+          logInfo(s"SpeculativeBroadcastRule: rewrittenBuildKeys = $rewrittenBuildKeys")
 
           // Bind the rewritten keys to the buildStage output schema
           val boundBuildKeys = BindReferences.bindReferences(rewrittenBuildKeys, buildStage.output)
-          logInfo(s"GpuSpeculativeBroadcastRule: boundBuildKeys = $boundBuildKeys")
+          logInfo(s"SpeculativeBroadcastRule: boundBuildKeys = $boundBuildKeys")
 
           val broadcastExchange = BroadcastExchangeExec(
             HashedRelationBroadcastMode(boundBuildKeys), buildStage)
@@ -220,21 +235,26 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
             }
           }
 
-          logInfo(s"GpuSpeculativeBroadcastRule: newLeftKeys=$newLeftKeys, " +
+          logInfo(s"SpeculativeBroadcastRule: newLeftKeys=$newLeftKeys, " +
             s"newRightKeys=$newRightKeys, newCondition=$newCondition")
 
           val cpuJoin = BroadcastHashJoinExec(
             newLeftKeys, newRightKeys, specJoin.joinType,
             specJoin.buildSide, newCondition, newLeft, newRight)
 
-          // Apply GpuOverrides to convert CPU join to GPU join.
-          // This is necessary because GpuOverrides runs before this rule,
-          // so it cannot convert SpeculativeBroadcastHashJoinExec directly.
-          convertToGpu(cpuJoin)
+          // Since queryStageOptimizerRules run after postStageCreationRules (where GpuOverrides
+          // normally runs), we need to manually invoke GpuOverrides to convert this new join
+          // to GPU if applicable.
+          logWarning(s"SpeculativeBroadcastRule: Created BroadcastHashJoinExec, " +
+            s"invoking GpuOverrides to convert to GPU")
+          val gpuConverted = GpuOverrides().apply(cpuJoin)
+          logWarning(s"SpeculativeBroadcastRule: After GpuOverrides: " +
+            s"${gpuConverted.getClass.getSimpleName}")
+          gpuConverted
 
         } else {
           // Too large - fall back to shuffled hash join (need stream side shuffle)
-          logInfo(s"GpuSpeculativeBroadcastRule: Build side too large ($buildSize bytes >= " +
+          logWarning(s"SpeculativeBroadcastRule: Build side too large ($buildSize bytes >= " +
             s"$broadcastThreshold), falling back to ShuffledHashJoin")
 
           // Stream keys don't need remapping for shuffle partitioning (uses original refs)
@@ -275,53 +295,28 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
             }
           }
 
-          logInfo(s"GpuSpeculativeBroadcastRule: Fallback newLeftKeys=$newLeftKeys, " +
+          logInfo(s"SpeculativeBroadcastRule: Fallback newLeftKeys=$newLeftKeys, " +
             s"newRightKeys=$newRightKeys")
 
           val cpuJoin = ShuffledHashJoinExec(
             newLeftKeys, newRightKeys, specJoin.joinType,
             specJoin.buildSide, newCondition, newLeft, newRight)
 
-          // Apply GpuOverrides to convert CPU join to GPU join
-          convertToGpu(cpuJoin)
+          // Since queryStageOptimizerRules run after postStageCreationRules (where GpuOverrides
+          // normally runs), we need to manually invoke GpuOverrides to convert this new join
+          // to GPU if applicable.
+          logWarning(s"SpeculativeBroadcastRule: Created ShuffledHashJoinExec, " +
+            s"invoking GpuOverrides to convert to GPU")
+          val gpuConverted = GpuOverrides().apply(cpuJoin)
+          logWarning(s"SpeculativeBroadcastRule: After GpuOverrides: " +
+            s"${gpuConverted.getClass.getSimpleName}")
+          gpuConverted
         }
 
       case None =>
         // Build side not ready yet, keep as-is (should not happen normally)
-        logWarning("GpuSpeculativeBroadcastRule: Build side shuffle not ready")
+        logWarning("SpeculativeBroadcastRule: Build side shuffle not ready")
         specJoin
-    }
-  }
-
-  /**
-   * Convert a CPU plan to GPU using GpuOverrides and GpuTransitionOverrides.
-   * This is called after creating BroadcastHashJoinExec or ShuffledHashJoinExec
-   * to ensure they run on GPU.
-   *
-   * We need to apply both rules because:
-   * 1. GpuOverrides converts CPU operators to GPU operators
-   * 2. GpuTransitionOverrides handles transitions between CPU and GPU data formats
-   *
-   * This is necessary because the normal ColumnarRule execution runs before AQE,
-   * but this rule runs during AQE after query stages are materialized.
-   */
-  private def convertToGpu(plan: SparkPlan): SparkPlan = {
-    val conf = rapidsConf
-    if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
-      logInfo(s"GpuSpeculativeBroadcastRule: Converting to GPU: " +
-        s"${plan.getClass.getSimpleName}")
-      // First apply GpuOverrides to convert operators
-      val gpuPlan = GpuOverrides().apply(plan)
-      logInfo(s"GpuSpeculativeBroadcastRule: After GpuOverrides: " +
-        s"${gpuPlan.getClass.getSimpleName}")
-      // Then apply GpuTransitionOverrides to handle data format transitions
-      val transitionedPlan = new GpuTransitionOverrides().apply(gpuPlan)
-      logInfo(s"GpuSpeculativeBroadcastRule: After transitions: " +
-        s"${transitionedPlan.getClass.getSimpleName}")
-      transitionedPlan
-    } else {
-      logInfo("GpuSpeculativeBroadcastRule: GPU disabled, keeping CPU plan")
-      plan
     }
   }
 
@@ -349,6 +344,6 @@ case class GpuSpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPl
 /**
  * Companion object with factory method for SparkSessionExtensions.
  */
-object GpuSpeculativeBroadcastRule {
-  def apply(spark: SparkSession): Rule[SparkPlan] = new GpuSpeculativeBroadcastRule(spark)
+object SpeculativeBroadcastRule {
+  def apply(spark: SparkSession): Rule[SparkPlan] = new SpeculativeBroadcastRule(spark)
 }
